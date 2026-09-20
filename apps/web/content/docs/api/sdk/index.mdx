@@ -1,0 +1,49 @@
+---
+title: Node.js SDK
+description: Deploy and manage Openship from JavaScript or TypeScript.
+---
+
+The `openship` package gives your application access to projects, deployments, domains, backups, and
+the other platform operations. Native SDK calls and HTTP controllers use the same shared core.
+
+## Choose a mode
+
+| Mode | Use when | Start here |
+| --- | --- | --- |
+| **Remote client** | Openship already runs on a server or in Cloud. | [Connect to an API](/docs/api/sdk/client) |
+| **Native SDK** | Your Node application owns storage, providers, and the installation lifecycle. | [Embed Openship](/docs/api/sdk/native) |
+
+Both modes expose the same named operation groups. A configured provider and the caller's permissions
+determine which operations can run.
+
+## Install
+
+The SDK is currently a repository preview. Published `openship@0.7.2` contains the CLI only.
+[Build and install the SDK tarball](/docs/api/sdk/installation) before using these imports.
+
+## A deployment in code
+
+This function accepts either a remote client or a native user scope:
+
+```ts title="deploy-site.mts"
+import type { OpenshipClient, ScopedShip } from "openship";
+
+export async function deploySite(ship: OpenshipClient | ScopedShip) {
+  const submitted = await ship.deploy({
+    name: "my-site",
+    source: { type: "files", files: { "index.html": "<h1>Hello from Openship</h1>" } },
+  });
+  const outcome = await ship.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+  if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+  return ship.projects.get(submitted.project_id);
+}
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Deployment workflows" href="/docs/api/deployments" description="Deploy files, directories, or Git sources; follow logs and handle decisions." />
+  <Card title="Users and organizations" href="/docs/api/sdk/identity" description="Select a tenant and connect your application's verified identities." />
+  <Card title="Runnable example" href="/docs/api/sdk/examples" description="Deploy, redeploy, reopen state, and clean up using the installed package." />
+  <Card title="Method reference" href="/docs/api" description="Find every current operation, organized by resource." />
+</Cards>

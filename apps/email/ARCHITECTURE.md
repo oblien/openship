@@ -46,6 +46,18 @@ themselves separately.
 
 ## Database topology - one host, four DBs
 
+Container installs publish the mail database only on host loopback. New setups try
+port 5432, then the first free port in 5433–5460 if 5432 is occupied. To select a
+specific port, set `OPENSHIP_MAIL_DB_PORT` in the API process environment before
+running mail setup. The value must be a decimal port from 1 to 65535; an occupied
+explicit port stops setup with an error.
+
+The selected port is saved with the mail engine configuration and reused when
+recreating a missing engine. Existing installations keep their retained port;
+changing the API setting does not move a running database. Start-only repairs read
+the existing container binding. Inside the PostgreSQL container the port remains
+5432, and the mail daemons use the selected host port.
+
 ```
 openship Postgres ($DATABASE_URL)                 ← unrelated to mail
 └── schema "public"
@@ -236,7 +248,7 @@ That's it. No new TS generator. iRedMail keeps doing what it does well.
 | **Dovecot** | IMAP / POP3 / LMTP / ManageSieve / LDA. Reads `vmail.mailbox`, `vmail.domain`. Writes `vmail.last_login`, `vmail.used_quota`, `vmail.share_folder`. | (uses `vmail`) |
 | **Amavisd** | Mail filtering bridge. Invokes ClamAV + SpamAssassin. | `amavisd` |
 | **iRedAPD** | Policy daemon (greylisting, throttling, SRS). | `iredapd` |
-| **ClamAV** | Antivirus. Stateless. | - |
+| **ClamAV** | Antivirus. Signature database on a bind mount, seeded from the image on first boot — clamd will not start without it. | - |
 | **SpamAssassin** | Spam scoring. Stateless. | - |
 | **fail2ban** | Brute-force protection on SMTP/IMAP/POP3 auth. | `fail2ban` |
 

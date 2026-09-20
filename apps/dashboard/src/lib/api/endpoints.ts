@@ -38,6 +38,7 @@ export const endpoints = {
     env: (id: string | number) => `projects/${id}/env`,
     git: (id: string | number) => `projects/${id}/git`,
     gitLink: (id: string | number) => `projects/${id}/git/link`,
+    releaseImageSource: (id: string | number) => `projects/${id}/release-image-source`,
     branches: (id: string | number) => `projects/${id}/branches`,
     branch: (id: string | number) => `projects/${id}/branch`,
     autoDeploy: (id: string | number) => `projects/${id}/auto-deploy`,
@@ -63,8 +64,8 @@ export const endpoints = {
     ensure: "projects/ensure",
     folderSession: "projects/folder/session",
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
-    // #336: real (unmasked) per-service env for the folder-scan wizard reveal.
-    folderEnvReveal: (sessionId: string) => `projects/folder/scan/${sessionId}/env-reveal`,
+    // #336: POST { service, keys } — real (unmasked) values for one folder-scan
+    // service's named keys.
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,
   },
 
@@ -74,6 +75,7 @@ export const endpoints = {
   apps: {
     catalog: "apps/catalog",
     catalogEntry: (id: string) => `apps/catalog/${id}`,
+    catalogHostFit: (id: string) => `apps/catalog/${id}/host-fit`,
     install: "apps",
     custom: "apps/custom",
     customEntry: (appId: string) => `apps/custom/${appId}`,
@@ -103,6 +105,8 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/stop`,
     restart: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/restart`,
+    applyEnvironment: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/apply-env`,
     driftAccept: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/drift/accept`,
     driftKeep: (projectId: string | number, serviceId: string) =>
@@ -115,7 +119,7 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/env`,
     envSet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
-    // #336: real (unmasked) compose env for the "show values" reveal.
+    // #336: POST { keys } — real (unmasked) values for the named keys only.
     envReveal: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env-reveal`,
   },
@@ -153,6 +157,28 @@ export const endpoints = {
     certificate: (id: string) => `domains/${encodeURIComponent(id)}/certificate`,
     primary: (id: string) => `domains/${encodeURIComponent(id)}/primary`,
     records: (id: string) => `domains/${encodeURIComponent(id)}/records`,
+    dnsPlan: (id: string) => `domains/${encodeURIComponent(id)}/dns/plan`,
+    dnsApply: (id: string) => `domains/${encodeURIComponent(id)}/dns/apply`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  DNS (Provider credentials & zones)                              */
+  /* ---------------------------------------------------------------- */
+  /* ---------------------------------------------------------------- */
+  /*  Credentials (third-party secrets: registry logins, DNS tokens)  */
+  /* ---------------------------------------------------------------- */
+  credentials: {
+    providers: "credentials/providers",
+    list: "credentials",
+    byId: (id: string) => `credentials/${encodeURIComponent(id)}`,
+    verify: (id: string) => `credentials/${encodeURIComponent(id)}/verify`,
+  },
+
+  dns: {
+    providers: "dns/providers",
+    credentials: "dns/credentials",
+    credentialById: (id: string) => `dns/credentials/${encodeURIComponent(id)}`,
+    verifyZone: "dns/verify-zone",
   },
 
   /* ---------------------------------------------------------------- */
@@ -209,8 +235,17 @@ export const endpoints = {
     connect: "github/connect",
     connectRedirect: "github/connect/redirect",
     connectPoll: "github/connect/poll",
+    installationClaim: "github/installations/claim",
     disconnect: "github/disconnect",
     instanceToken: "github/instance-token",
+    sources: "github/sources",
+    sourceManifest: "github/sources/manifest",
+    sourceManifestConvert: "github/sources/manifest/convert",
+    sourceManual: "github/sources/manual",
+    source: (id: string) => `github/sources/${encodeURIComponent(id)}`,
+    sourceVerify: (id: string) => `github/sources/${encodeURIComponent(id)}/verify`,
+    sourceDefault: (id: string) => `github/sources/${encodeURIComponent(id)}/default`,
+    sourceInstall: (id: string) => `github/sources/${encodeURIComponent(id)}/install`,
   },
 
   /* ---------------------------------------------------------------- */
@@ -279,6 +314,7 @@ export const endpoints = {
     servers: "system/servers",
     server: (id: string) => `system/servers/${id}`,
     serverReachability: (id: string) => `system/servers/${id}/reachability`,
+    serverDeletionPreview: (id: string) => `system/servers/${id}/deletion-preview`,
     serverRateLimit: (id: string) => `system/servers/${id}/rate-limit`,
     serverPortsScan: (id: string) => `system/servers/${id}/ports/scan`,
     // Native-module versioning + migration (OpenResty, …)
@@ -305,6 +341,8 @@ export const endpoints = {
     allContainersScan: () => `system/containers/scan`,
     // Fleet bulk apply — server-derived targets, body only picks the intents
     allContainersApply: () => `system/containers/apply-all`,
+    // Live fleet progress: queued/running applies + the ones that just settled
+    allContainersApplying: () => `system/containers/applying`,
     // Per-server GitHub auth (self-hosted)
     serverGithub: (id: string) => `system/servers/${id}/github`,
     serverGithubConnect: (id: string) => `system/servers/${id}/github/connect`,
@@ -328,8 +366,19 @@ export const endpoints = {
       switchBack: "system/migration/switch-back",
     },
     dataTransfer: {
+      preview: "system/data-transfer/preview",
+      directSession: "system/data-transfer/direct/session",
+      directSend: "system/data-transfer/direct/send",
+      directSendStream: "system/data-transfer/direct/send/stream",
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
+      importSession: "system/data-transfer/import/session",
+      importPreview: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/preview`,
+      importChunk: (sessionId: string, index: number) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/chunk/${index}`,
+      importFinalizeStream: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/finalize/stream`,
     },
   },
 
@@ -340,8 +389,7 @@ export const endpoints = {
     steps: "mail/steps",
     status: "mail/status",
     servers: "mail/servers",
-    forgetServer: (serverId: string) =>
-      `mail/servers/${encodeURIComponent(serverId)}`,
+    forgetServer: (serverId: string) => `mail/servers/${encodeURIComponent(serverId)}`,
     scan: "mail/scan",
     adopt: "mail/adopt",
     setup: "mail/setup",
@@ -354,8 +402,7 @@ export const endpoints = {
     portsCheck: "mail/ports/check",
     portsResolve: "mail/ports/resolve",
     admin: {
-      domains: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/domains`,
+      domains: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/domains`,
       domain: (serverId: string, domain: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}`,
       domainDependents: (serverId: string, domain: string) =>
@@ -364,28 +411,33 @@ export const endpoints = {
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns`,
       domainDnsAcknowledge: (serverId: string, domain: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/acknowledge`,
+      domainDnsPlan: (serverId: string, domain: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/plan`,
+      domainDnsApply: (serverId: string, domain: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/apply`,
       pendingDomainDns: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains-dns/pending`,
-      mailboxes: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/mailboxes`,
+      mailboxes: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/mailboxes`,
       mailbox: (serverId: string, email: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/mailboxes/${encodeURIComponent(email)}`,
-      aliases: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/aliases`,
+      rotatePlatformMailbox: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/platform-mailbox/rotate`,
+      aliases: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/aliases`,
       alias: (serverId: string, id: number) =>
         `mail/admin/${encodeURIComponent(serverId)}/aliases/${id}`,
-      stats: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/stats`,
-      dnsScan: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/dns-scan`,
-      relay: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/relay`,
+      inboundRules: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules`,
+      inboundRule: (serverId: string, ruleId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules/${encodeURIComponent(ruleId)}`,
+      inboundRulesTest: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules/test`,
+      stats: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/stats`,
+      dnsScan: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/dns-scan`,
+      relay: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/relay`,
       backupPolicy: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/backup-policy`,
-      backupRuns: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/backup-runs`,
-      testEmail: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/test-email`,
+      backupRuns: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/backup-runs`,
+      testEmail: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/test-email`,
       componentAction: (serverId: string, key: string, action: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/components/${encodeURIComponent(key)}/${encodeURIComponent(action)}`,
       componentLogs: (serverId: string, key: string) =>
@@ -419,6 +471,9 @@ export const endpoints = {
     repoCompose: "migration/repo-compose",
     preview: "migration/preview",
     migrate: "migration/migrate",
+    /** Move a project we already own to another server (door B) — the run it starts is an
+     *  ordinary migration run, so every id-addressed route above serves it too. */
+    projectMove: "migration/project",
     migration: (id: string) => `migration/migrations/${id}`,
     cutover: (id: string) => `migration/migrations/${id}/cutover`,
     cancel: (id: string) => `migration/migrations/${id}/cancel`,
@@ -483,7 +538,10 @@ export const endpoints = {
   issues: {
     open: "issues",
     resolved: "issues?status=resolved",
+    health: "issues/health",
+    healthScan: "issues/health/scan",
     rescan: "issues/rescan",
+    rescanStatus: "issues/rescan/status",
   },
 
   /* ---------------------------------------------------------------- */
@@ -529,14 +587,17 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
-  /*  Billing (Stripe-backed cloud billing — SaaS + local-proxy)      */
+  /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
     plans: "billing/plans",
     state: "billing/state",
     usage: "billing/usage",
+    resources: "billing/resources",
     topupPacks: "billing/topup-packs",
     subscription: "billing/subscription",
+    cancel: "billing/cancel",
+    resume: "billing/resume",
     topup: "billing/topup",
     portal: "billing/portal",
   },
@@ -545,22 +606,17 @@ export const endpoints = {
   /*  Backups (policies + runs)                                       */
   /* ---------------------------------------------------------------- */
   backups: {
-    listPolicies: (projectId: string | number) =>
-      `projects/${projectId}/backup-policies`,
-    createPolicy: (projectId: string | number) =>
-      `projects/${projectId}/backup-policies`,
+    listPolicies: (projectId: string | number) => `projects/${projectId}/backup-policies`,
+    createPolicy: (projectId: string | number) => `projects/${projectId}/backup-policies`,
     updatePolicy: (policyId: string) => `backup-policies/${policyId}`,
     deletePolicy: (policyId: string) => `backup-policies/${policyId}`,
     runNow: (policyId: string) => `backup-policies/${policyId}/run`,
-    listRuns: (projectId: string | number) =>
-      `projects/${projectId}/backup-runs`,
+    listRuns: (projectId: string | number) => `projects/${projectId}/backup-runs`,
     getRun: (runId: string) => `backup-runs/${runId}`,
     protectRun: (runId: string) => `backup-runs/${runId}/protect`,
     prepareRestore: (runId: string) => `backup-runs/${runId}/restore/prepare`,
-    applyRestore: (restoreId: string) =>
-      `backup-restores/${restoreId}/apply`,
-    cancelRestore: (restoreId: string) =>
-      `backup-restores/${restoreId}/cancel`,
+    applyRestore: (restoreId: string) => `backup-restores/${restoreId}/apply`,
+    cancelRestore: (restoreId: string) => `backup-restores/${restoreId}/cancel`,
     getRestore: (restoreId: string) => `backup-restores/${restoreId}`,
   },
 } as const;

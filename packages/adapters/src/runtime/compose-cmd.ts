@@ -15,3 +15,23 @@ export function resolveComposeCmd(config: {
   if (config.commandArgv != null) return config.commandArgv;
   return config.command ? ["sh", "-c", config.command] : undefined;
 }
+
+/**
+ * Resolve a compose service's container `Entrypoint` (#575) — the other half of
+ * container shape, decided here so both halves live in one file.
+ *
+ * `undefined` means "say nothing", and the caller must then omit the key entirely
+ * so Docker keeps the image's own ENTRYPOINT. An empty array is NOT that: compose
+ * `entrypoint: []` / `entrypoint: ""` asks for the ENTRYPOINT to be CLEARED, and
+ * Docker's create takes `Entrypoint: []` as exactly that. Collapsing the two is the
+ * bug this exists to prevent — it kept the image's wrapper running and handed it the
+ * operator's command as arguments, so the wrapper chose what ran.
+ *
+ * The parser already split a string form into argv (no implicit `sh -c`), so there
+ * is nothing to interpret here beyond absent-vs-empty.
+ */
+export function resolveComposeEntrypoint(advanced?: {
+  entrypoint?: string[] | null;
+}): string[] | undefined {
+  return advanced?.entrypoint ?? undefined;
+}

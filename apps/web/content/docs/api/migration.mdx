@@ -1,6 +1,6 @@
 ---
-title: Migration API
-description: Scan a server's existing Docker deployment and adopt the discovered services as an Openship project.
+title: Migration
+description: Discover, adopt, and move services between servers.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,28 +10,11 @@ under Openship management. It inspects a server's Docker over SSH, returns the s
 creates an Openship `services` project from the ones you pick. In the dashboard this is the **migration
 wizard**; there is no CLI equivalent.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/migration/scan`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
 <Callout title="Self-hosted only" type="info">
 This module is mounted only when your instance runs in self-hosted mode — adopting a deployment requires SSH
 into a server you manage, which Openship Cloud has no notion of. On a cloud instance these routes are not
 mounted and return `404`.
 </Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/migration/scan` | `server:write` | Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. |
-| `POST /api/migration/adopt` | `server:write` | Create an Openship project from the selected discovered services. |
-
-Both routes take the target `serverId` in the request body (not the URL). Openship checks that the server
-belongs to your organization and that you have `server:write` on it before doing anything.
 
 ## Scan a server
 
@@ -50,7 +33,7 @@ POST /api/migration/scan
 />
 
 ```bash
-curl -X POST https://your-host/api/migration/scan \
+curl -X POST "$OPENSHIP_URL/api/migration/scan" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123"}'
@@ -78,7 +61,7 @@ POST /api/migration/adopt
 />
 
 ```bash
-curl -X POST https://your-host/api/migration/adopt \
+curl -X POST "$OPENSHIP_URL/api/migration/adopt" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123","projectName":"legacy-stack","serviceNames":["web","worker"]}'
@@ -86,7 +69,7 @@ curl -X POST https://your-host/api/migration/adopt \
 
 On success the response is `{ "success": true, … }` with the created project's details.
 
-## Errors you might see
+## Errors
 
 <Callout title="400 — missing or empty field" type="warn">
 `serverId` is required on both routes; `adopt` additionally requires a non-empty `projectName` and at least
@@ -104,3 +87,30 @@ Openship couldn't reach or inspect the server's Docker (SSH unreachable, Docker 
 denied), or the adoption failed. The message includes the underlying reason. Confirm the server is online and
 its Docker is accessible, then retry.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| List active server migration sessions. | `GET /api/migration/active`<br />`server:read` · Self-hosted |
+| Create an Openship project from the selected discovered services. | `POST /api/migration/adopt`<br />`server:write` · Self-hosted |
+| Start a server migration from the reviewed plan. | `POST /api/migration/migrate`<br />`server:write` · Self-hosted |
+| Delete an eligible migration record. | `DELETE /api/migration/migrations/:id`<br />`server:write` · Self-hosted |
+| Read migration progress and state. | `GET /api/migration/migrations/:id`<br />`server:read` · Self-hosted |
+| Request cancellation of a migration. | `POST /api/migration/migrations/:id/cancel`<br />`server:write` · Self-hosted |
+| Clean up resources created on the migration target. | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` · Self-hosted |
+| Switch traffic to the prepared migration target. | `POST /api/migration/migrations/:id/cutover`<br />`server:write` · Self-hosted |
+| Resume an interrupted migration. | `POST /api/migration/migrations/:id/resume`<br />`server:write` · Self-hosted |
+| Stream migration progress. | `GET /api/migration/migrations/:id/stream`<br />`server:read` · Self-hosted |
+| Preview a migration plan. | `POST /api/migration/preview`<br />`server:write` · Self-hosted |
+| Import a discovered project. | `POST /api/migration/project`<br />`server:write` · Self-hosted |
+| Refresh an imported project from its source. | `POST /api/migration/reimport`<br />`server:write` · Self-hosted |
+| Read Compose configuration from a repository for import. | `POST /api/migration/repo-compose`<br />`server:read` · Self-hosted |
+| Reveal explicitly requested environment values for an authorized import. | `POST /api/migration/reveal-env`<br />`server:write` · Self-hosted |
+| List migration history. | `GET /api/migration/runs`<br />`server:read` · Self-hosted |
+| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `POST /api/migration/scan`<br />`server:write` · Self-hosted |
+| Stream server-discovery progress. | `GET /api/migration/scan/stream`<br />`server:write` · Self-hosted |
+
+{/* api-operations:end */}

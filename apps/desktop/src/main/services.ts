@@ -2,10 +2,10 @@
  * Local service supervisor for the PACKAGED desktop app.
  *
  * A shipped installer has no dev servers behind it, so the app boots its own:
- *   - API:       the bundled `openship-api` binary (bun --compile). Embedded
- *                PGlite (no external Postgres), in-process job runner (no Redis).
- *   - Dashboard: the bundled Next standalone server, run with Electron's own
- *                Node (ELECTRON_RUN_AS_NODE) — no separate Node install needed.
+ *   - API:       the bundled server/index.js, run with Electron's own Node.
+ *                Embedded PGlite, in-process job runner (no Redis).
+ *   - Dashboard: the bundled Next standalone server, also run with Electron's
+ *                own Node — no separate Node installation needed.
  *
  * Both bind DYNAMIC free ports chosen at launch (never fixed 4000/3001), so a
  * busy port never bricks the app. Electron is the single source of truth for

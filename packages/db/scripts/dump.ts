@@ -17,7 +17,7 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { dumpSubgraph, type SubgraphScope } from "../src/dump";
+import type { SubgraphScope } from "../src/dump";
 
 function parseScope(args: string[]): SubgraphScope {
   const scopeIdx = args.indexOf("--scope");
@@ -58,6 +58,9 @@ async function main() {
   const stripEncrypted = args.includes("--strip-encrypted");
   const scope = parseScope(args);
 
+  // Source-only command: use this installed PGlite package's own assets.
+  delete process.env.OPENSHIP_PGLITE_ASSETS_DIR;
+  const { dumpSubgraph } = await import("../src/dump");
   const dump = await dumpSubgraph(scope, { stripEncrypted });
   const payload = JSON.stringify(dump, null, 2);
 

@@ -1,5 +1,5 @@
-import { redirect } from 'react-router';
+import { replace } from 'react-router';
 
 export function clientLoader() {
-  throw redirect(`/settings/general`);
+  throw replace('/settings/general');
 }

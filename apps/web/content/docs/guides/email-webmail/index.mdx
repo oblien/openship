@@ -54,8 +54,6 @@ Setup** form. If you already run **several** mail servers, you'll see a list of 
 server** to start another. (With a single existing server, Openship opens it straight to its admin panel; use
 the **Add mail server** button there to set up another.)
 
-<Callout title="Screenshot">The **Emails** page showing the "Mail Server Setup" form (server picker, Domain field, Admin Password field). *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -101,8 +99,6 @@ record (things like MX, SPF, DKIM, and DMARC) — each with a **Copy value** but
 Go to wherever your domain's DNS is managed, add each record, and come back. Then click **I've set the records
 - continue**.
 
-<Callout title="Screenshot">The DNS hold banner on the Emails page: the "Publish DNS records" heading with a card per record and copy buttons. *(screenshot pending)*</Callout>
-
 <Callout title="Why this matters" type="info">
 Email delivery breaks without these records — they're how Gmail and Outlook decide your mail is real and not
 spam. If you host DNS at a supported provider, the banner also offers **Auto-configure DNS**, which pushes the
@@ -120,8 +116,6 @@ your **VPS provider's panel** (Hostinger, DigitalOcean, AWS, and so on), **not**
 
 The banner shows your server's IP address and the value to point it at (`mail.yourdomain`). Set it there, wait
 a few minutes for it to take effect, then click **I've set the PTRs - continue**.
-
-<Callout title="Screenshot">The PTR hold banner showing the server IP, the target `mail.<domain>` value, and the "I've set the PTRs - continue" button. *(screenshot pending)*</Callout>
 
 <Callout title="Reverse DNS in one line" type="info">
 Normal DNS turns a name into an IP address; reverse DNS (a **PTR** record) turns the IP back into a name. Big
@@ -158,15 +152,17 @@ server. It's organized into tabs:
   points at this server.
 - **Mailboxes** — create email accounts under a domain. Each one is a login (`name@domain`) with its own
   password and quota. This is also where you change the `postmaster` password later.
+- **Aliases** — forwarding addresses, and a catch-all for everything else at a domain.
+- **Notifications** — get told in a notification channel (Slack, Telegram, Discord, a webhook) when mail
+  arrives at one of these addresses.
+- **Sending** — how outbound mail leaves: direct, or relayed through a provider. **Send test email** lives
+  here too.
 - **DNS** — a reference copy of every record each domain needs, with a **Verify** button that checks whether
   they're actually published.
 - **Health** — live status of each mail process, refreshed automatically.
-- **Test** — send a real test email to confirm delivery.
 - **Backup** — snapshot the mail server (accounts, messages, keys) to one of your backup destinations.
 - **Advanced** — the IMAP/SMTP connection settings for wiring up a mail app by hand, plus power-user actions
   like restarting the stack or re-running the wizard.
-
-<Callout title="Screenshot">The mail admin panel on the Emails page: the tab bar (Overview, Domains, Mailboxes, DNS, Health, Test, Backup, Advanced) with the Overview tab open. *(screenshot pending)*</Callout>
 
 <Callout title="Adding a second domain" type="info">
 When you add a domain under the **Domains** tab, Openship generates its DNS records (including a fresh DKIM
@@ -204,8 +200,6 @@ Two choices:
 
 The summary panel on the right restates your target and domain.
 
-<Callout title="Screenshot">The "Deploy webmail" screen: the "Deploy to" option cards, the Domain field, and the summary panel with the "Deploy webmail" button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -220,7 +214,14 @@ When it's done, the Overview card's button changes to **Open webmail**, which op
 
 </Steps>
 
-## Prefer the terminal?
+<Callout title="Upgrading a webmail from Openship 0.6.1 or earlier" type="warn">
+Webmail used to ship as a prebuilt bundle instead of an app, and those older installs can't be redeployed —
+they're replaced. The Overview card shows a **Replace webmail** link, and the deploy screen explains what goes
+before the button does anything: the old webmail's project, container and sign-in sessions. Your mailboxes,
+domains and every message stay on the mail server, untouched — everyone just signs in to the new inbox again.
+</Callout>
+
+## CLI
 
 The provisioning flow works from the CLI too (webmail deploy is dashboard-only for now). Every `mail` command
 is self-hosted only.
@@ -250,7 +251,7 @@ When the install pauses, the CLI prints the exact `--start-step` number to resum
 `mail setup` command and it picks up right where it left off.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="I don't see an “Emails” item in the sidebar" type="warn">
 Email is self-hosted only. It appears when Openship is running on your own infrastructure. On a managed/cloud
@@ -258,9 +259,22 @@ plan it's hidden on purpose.
 </Callout>
 
 <Callout title="The “Check Port 25” step warns that port 25 is blocked" type="warn">
-This step is a check, not a wall — the install keeps going even when it warns. But outbound mail won't actually
-send until port 25 is open. Many hosting providers block it by default (some need a support request to open it).
-Ask your provider to open it, then use the **Test** tab to confirm mail flows once setup has finished.
+This step is a check, not a wall — the install keeps going even when it warns. Direct-to-MX sending needs
+outbound port 25. Many hosting providers block it by default, including AWS. You can
+finish setup and route sending through an SMTP provider from the **Sending** tab (Amazon SES, and similar),
+then use **Sending → Send test email** to confirm mail flows.
+</Callout>
+
+<Callout title="“Verify Public Mail Ports” warns about TCP 25 but 465/587/993 are open" type="warn">
+On a single-server install the probe runs from the same machine it is testing. An outbound port-25 restriction
+can make `mail.example.com:25` time out even when the daemon listens on a non-loopback interface. If all three
+client ports complete a TCP handshake and only TCP 25 times out, setup continues with a warning. Connection
+refusals, routing errors, missing or loopback-only listeners, and client-port failures still stop setup.
+
+Health keeps inbound SMTP **unverified**. Check TCP 25 from an independent host or send a test message from
+another mail provider: open client ports do not prove that other mail servers can reach your inbound SMTP.
+If receiving fails, check inbound TCP 25 in the host and provider firewalls. A relay configured in **Sending**
+handles outgoing mail only.
 </Callout>
 
 <Callout title="Mail sends but lands in spam" type="warn">
@@ -274,7 +288,7 @@ DNS changes can take a few minutes (sometimes longer) to spread. Give it time, t
 tab. Double-check you pasted the value exactly and added it to the right domain.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Custom domains" href="/docs/guides/custom-domains" description="How DNS and automatic HTTPS work for your apps — useful background for the mail DNS steps." />

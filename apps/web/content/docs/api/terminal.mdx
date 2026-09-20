@@ -1,6 +1,6 @@
 ---
-title: Terminal API
-description: Open an interactive SSH shell to a managed server over a WebSocket, authenticated by a single-use handshake ticket.
+title: Server terminal
+description: Issue access tickets and open an SSH session.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -16,25 +16,6 @@ This module is mounted only when the instance is **not** in cloud mode, and ever
 guarded by a local-only middleware. On Openship Cloud these paths return **404**. (Cloud service shells go
 through a different subsystem, `/api/services/terminal`.)
 </Callout>
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/terminal/ticket`.
-The ticket endpoint takes a personal access token as a bearer header (`Authorization: Bearer <token>`,
-created with [`openship token create`](/docs/cli/access)) or the dashboard's session cookie. The WebSocket
-upgrade authenticates via the ticket (or a same-origin session cookie) **inside** the handshake — see below.
-See the [API overview](/docs/api) and [auth model](/docs/security/auth) for the full picture.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/terminal/ticket` | `terminal:write` | Mint a one-shot ticket for a WebSocket handshake against a server. |
-| `GET /api/terminal/ws/:serverId` | `public` * | WebSocket upgrade that opens the remote PTY. |
-
-\* The upgrade route is public **at the router level** only because HTTP middleware returning 401 would abort
-the handshake before a structured error frame could be sent. Auth still happens inside the upgrade (ticket or
-session cookie), and both the ticket endpoint and the upgrade require `server:admin` on the target server.
 
 ## Mint a ticket
 
@@ -53,7 +34,7 @@ POST /api/terminal/ticket
 />
 
 ```bash
-curl -X POST https://your-host/api/terminal/ticket \
+curl -X POST "$OPENSHIP_URL/api/terminal/ticket" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123"}'
@@ -84,16 +65,15 @@ subprotocols in the `Sec-WebSocket-Protocol` header; the value must be the prefi
 followed by the token from `/ticket`:
 
 ```js
-const { token } = await fetch('/api/terminal/ticket', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const { token } = await fetch("/api/terminal/ticket", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ serverId }),
 }).then((r) => r.json());
 
-const ws = new WebSocket(
-  `wss://your-host/api/terminal/ws/${serverId}`,
-  [`openship.terminal.v1+${token}`],
-);
+const ws = new WebSocket(`wss://your-host/api/terminal/ws/${serverId}`, [
+  `openship.terminal.v1+${token}`,
+]);
 ```
 
 The upgrade enforces, in order: the request `Origin` must be a trusted origin; the ticket must be valid (or a
@@ -137,7 +117,7 @@ Server → client control messages:
   }}
 />
 
-## Errors you might see
+## Errors
 
 `error` frames carry a machine-readable `code`: `ssh_auth`, `ssh_connect`, `server_not_found`, `max_sessions`,
 `idle_timeout`, `session_cap`, `resume_failed`, or `server_error`. The accompanying close code is in the
@@ -162,3 +142,14 @@ reported identically so server existence can't be probed across tenants.
 You've hit the per-user concurrent-terminal cap. Close an existing session (or let a parked one time out)
 before opening another. Resumes don't count against the cap.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Mint a one-shot ticket for a WebSocket handshake against a server. | `POST /api/terminal/ticket`<br />`terminal:write` · Self-hosted |
+| WebSocket upgrade that opens the remote PTY. | `GET /api/terminal/ws/:serverId`<br />`Handler authentication` · Self-hosted |
+
+{/* api-operations:end */}

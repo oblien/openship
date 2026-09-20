@@ -24,8 +24,6 @@ That doorbell has a name: a **webhook**. A webhook is just a little message GitH
 
 Go to your project and open the **Source** tab. Under **Source Repository** you'll find the deploy triggers for this repo.
 
-<Callout title="Screenshot">Project page, **Source** tab, the **Source Repository** section showing the linked repo and the deploy trigger cards. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -35,8 +33,6 @@ Go to your project and open the **Source** tab. Under **Source Repository** you'
 Find the **Auto Deploy** card and switch its toggle on. When it's on, the card reads **Enabled** and "Pushes trigger deployments automatically". When it's off, it reads **Disabled** and "Deployments must be started manually".
 
 That's the whole thing — from now on, every `git push` to your deploy branch rebuilds and ships automatically.
-
-<Callout title="Screenshot">The **Auto Deploy** card with the toggle switched on, showing the **Enabled** state. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -52,8 +48,6 @@ The fix is the **Webhook Endpoint** card. Pick one of your project's **verified 
 This card only appears once the project has at least one **verified** domain. If you have none yet, you'll see just the **Enable auto-deploy** notice — attach and verify a domain first (see [Custom domains](/docs/guides/custom-domains)), then come back and the card will be here. The menu only ever lists domains that belong to this project and are verified.
 </Callout>
 
-<Callout title="Screenshot">The **Webhook Endpoint** card with the domain picker open, listing the project's verified domains. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -66,7 +60,7 @@ The **Webhook** card shows whether GitHub is actually reaching Openship: **Activ
 
 </Steps>
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI too. You'll need the project's ID — run `openship project list` to find it.
 
@@ -90,11 +84,11 @@ You don't have to think about this, but here's what happens under the hood so no
 
 - **Public Openship** — if your Openship API has a public web address, turning on Auto Deploy registers a webhook on your repo that points at `…/api/webhooks/github`. GitHub calls it on every push.
 - **Verified domain** — if you set a Webhook Endpoint, GitHub delivers instead to `https://<your-domain>/_openship/hooks/github`, which routes to Openship. This is the option for private or laptop installs.
-- **Openship Cloud** — with the Openship GitHub App installed, push events arrive through the app automatically; there's no per-repo webhook to manage.
+- **GitHub App** — on Openship Cloud or with your own self-hosted App, push events arrive through the App automatically; there's no duplicate per-repo webhook to manage.
 
 In every case, Openship starts a fresh build from the commit you just pushed — the same build you'd get by clicking Deploy.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="The Auto Deploy toggle won't turn on" type="warn">
 You'll see an **Enable auto-deploy** notice, and the error reads *"Set a webhook domain or expose this Openship API on a public URL to enable auto-deploy."* GitHub has no way to reach Openship yet. Either put Openship on a public address, or set a **Webhook Endpoint** domain on the Source tab (see step 3).
@@ -110,9 +104,17 @@ This means Openship couldn't add the webhook to your repository — usually beca
 
 <Callout title="I pushed, but nothing deployed" type="warn">
 Check the **Webhook** status card on the Source tab. If it says **Inactive**, delivery isn't reaching Openship — revisit the webhook endpoint above. Also confirm you pushed to the project's **deploy branch**; pushes to other branches are ignored.
+
+If another deployment is running, the new push is reported as a **failed** delivery,
+with the reason in the project's webhook events. Wait for the running deployment
+to finish or cancel it, then **Redeliver** the failed event from GitHub's webhook
+delivery history. GitHub does not automatically redeliver failures. Openship
+accepts a retry of the same failed delivery ID and remembers projects already
+handled by that delivery, so only the remaining projects are retried. It also skips
+a commit that is already building or live. A successful delivery remains deduplicated.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Link a repo and ship it — the setup auto-deploy builds on." />

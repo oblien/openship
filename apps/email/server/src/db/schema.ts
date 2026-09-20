@@ -95,5 +95,5 @@ export const cookieConsent = sqliteTable('cookie_consent', {
 });
 
 // Branding moved to a JSON file on disk - see [lib/branding.ts].
-// Source of truth is `${BRANDING_PATH}/config.json`, written by the
-// openship dashboard over SSH. No SQLite row.
+// Source of truth is `${BRANDING_PATH}/config.json`, seeded on first read and
+// updated through `PATCH /admin/branding` (BRANDING_ADMIN_TOKEN). No SQLite row.

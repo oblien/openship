@@ -12,6 +12,10 @@
     "./ports": {
       "types": "./src/ports.ts",
       "import": "./src/ports.ts"
+    },
+    "./scale": {
+      "types": "./src/scale/index.ts",
+      "import": "./src/scale/index.ts"
     }
   },
   "//typesVersions": "Electron main (apps/desktop) emits CommonJS, so it is stuck on classic moduleResolution, which predates `exports` maps and cannot see the ./ports subpath. This is how that resolver finds it; modern consumers use `exports` above.",
@@ -19,12 +23,15 @@
     "*": {
       "ports": [
         "./src/ports.ts"
+      ],
+      "scale": [
+        "./src/scale/index.ts"
       ]
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "build": "tsup src/index.ts src/scale/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/scale/index.ts --format esm --dts --watch",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist .turbo node_modules"

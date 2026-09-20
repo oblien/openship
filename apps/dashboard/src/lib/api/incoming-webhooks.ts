@@ -7,6 +7,8 @@ export type IncomingWebhookAuthMode = "token" | "hmac" | "none";
 export interface IncomingWebhookActionConfig {
   /** deploy: restrict the redeploy to this service (omit = whole project). */
   serviceId?: string;
+  /** deploy: redeploy these services together once (preferred over serviceId). */
+  serviceIds?: string[];
   /** job: the job key to run. */
   jobKey?: string;
 }
@@ -73,10 +75,16 @@ export const incomingWebhooksApi = {
     api.post<{ data: IncomingWebhook }>(endpoints.projects.incomingWebhooks(projectId), body),
 
   update: (projectId: string, hookId: string, body: UpdateIncomingWebhookBody) =>
-    api.patch<{ data: IncomingWebhook }>(endpoints.projects.incomingWebhook(projectId, hookId), body),
+    api.patch<{ data: IncomingWebhook }>(
+      endpoints.projects.incomingWebhook(projectId, hookId),
+      body,
+    ),
 
   rotate: (projectId: string, hookId: string) =>
-    api.post<{ data: IncomingWebhook }>(endpoints.projects.incomingWebhookRotate(projectId, hookId), {}),
+    api.post<{ data: IncomingWebhook }>(
+      endpoints.projects.incomingWebhookRotate(projectId, hookId),
+      {},
+    ),
 
   remove: (projectId: string, hookId: string) =>
     api.delete<{ data: { ok: true } }>(endpoints.projects.incomingWebhook(projectId, hookId)),

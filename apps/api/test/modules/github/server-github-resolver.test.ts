@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GITHUB_KNOWN_HOSTS } from "../../../src/modules/github/github-known-hosts";
+import { GITHUB_KNOWN_HOSTS } from "@repo/platform/engine/modules/github/github-known-hosts";
 
 // Mutable env so a single suite can exercise both self-hosted and CLOUD_MODE.
 const { envMock, getByServer, listByServer } = vi.hoisted(() => ({
@@ -8,25 +8,25 @@ const { envMock, getByServer, listByServer } = vi.hoisted(() => ({
   listByServer: vi.fn(),
 }));
 
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
     serverGithubAuth: { getByServer, deleteByServer: vi.fn() },
     githubDeployKey: { listByServer, deleteByServer: vi.fn() },
   },
 }));
-vi.mock("../../../src/lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (s: string) => `ENC:${s}`,
   decrypt: (s: string) => s.replace(/^ENC:/, ""),
 }));
 // Sibling modules imported at load time — stubbed so the service loads in isolation.
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   startServerDeviceFlow: vi.fn(),
   getDeviceFlowStatus: vi.fn(),
   cancelDeviceFlow: vi.fn(),
 }));
-vi.mock("../../../src/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   createDeployKey: vi.fn(),
   revokeDeployKey: vi.fn(),
 }));
@@ -35,7 +35,7 @@ import {
   resolveServerGitCredential,
   canResolveServerGitCredential,
   disconnectServerGithub,
-} from "../../../src/modules/github/server-github.service";
+} from "@repo/platform/engine/modules/github/server-github.service";
 
 const ctx = { userId: "u1", organizationId: "o1" } as any;
 const resolve = (owner: string | null = "acme", repo: string | null = "app") =>

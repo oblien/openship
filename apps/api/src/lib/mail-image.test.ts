@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, it, expect } from "vitest";
 
-import { APP_VERSION } from "./app-version";
-import { mailBuildSpec, pinnedMailImage } from "./mail-image";
+import { APP_VERSION } from "@repo/platform/engine/lib/app-version";
+import { mailBuildSpec, pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
 
 const MAIL_DOCKERFILE = join("apps", "email", "Dockerfile");
 const saved = { ...process.env };

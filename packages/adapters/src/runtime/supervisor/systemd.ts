@@ -17,12 +17,10 @@ import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../.
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
 import { sampleBareUsage, ZERO_USAGE } from "./usage";
 import { sq, parseLogLevel } from "../build-pipeline";
-import { probeListeningPort } from "../port-conflict";
+import { portOccupantDetails, probeListeningPort } from "../port-conflict";
+import { managedDeploymentUnitName } from "../../system/port-owner";
 import { execReliable } from "../../system/remote-journal";
 import { DeployError } from "@repo/core";
-
-/** Prefix for all openship systemd units */
-const UNIT_PREFIX = "openship";
 
 /**
  * Escape an env value for a double-quoted systemd `Environment=` assignment.
@@ -56,7 +54,7 @@ export class SystemdSupervisor implements ProcessSupervisor {
   // ── Helpers ──────────────────────────────────────────────────────────
 
   private unitName(deploymentId: string): string {
-    return `${UNIT_PREFIX}-${deploymentId}.service`;
+    return managedDeploymentUnitName(deploymentId);
   }
 
   private unitPath(deploymentId: string): string {
@@ -112,7 +110,7 @@ Restart=on-failure
 RestartSec=3
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${UNIT_PREFIX}-${opts.deploymentId}
+SyslogIdentifier=${this.unitName(opts.deploymentId).replace(/\.service$/, "")}
 
 [Install]
 WantedBy=multi-user.target
@@ -162,16 +160,7 @@ WantedBy=multi-user.target
             (occupant ? ` by ${occupant.command}` : "") +
             ". Stop the existing process before deploying.",
           "PORT_IN_USE",
-          {
-            port: opts.port,
-            pid: occupant?.pid,
-            command: occupant?.command,
-            rawCommand: occupant?.rawCommand,
-            systemdUnit: occupant?.systemdUnit,
-            systemdDescription: occupant?.systemdDescription,
-            deploymentId: occupant?.deploymentId,
-            isManagedDeployment: occupant?.isManagedDeployment,
-          },
+          portOccupantDetails(opts.port, occupant),
         );
       }
 
@@ -194,6 +183,10 @@ WantedBy=multi-user.target
   async start(deploymentId: string): Promise<void> {
     const unitName = this.unitName(deploymentId);
     await this.executor.exec(`systemctl start ${sq(unitName)}`);
+  }
+
+  async canStart(deploymentId: string): Promise<boolean> {
+    return this.executor.exists(this.unitPath(deploymentId));
   }
 
   async restart(deploymentId: string): Promise<void> {

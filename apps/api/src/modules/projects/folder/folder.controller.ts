@@ -1,108 +1,31 @@
 import type { Context } from "hono";
-import { safeErrorMessage } from "@repo/core";
-import { getRequestContext } from "../../../lib/request-context";
-import { requestApiPublicUrl } from "../../../lib/public-url";
-import { projectInfoToScanResponse } from "../../deployments/prepare.service";
-import { createFolderSession, acceptRelayUpload, scanFolderSession } from "./folder.service";
-import { getFolderSession } from "./session-store";
+import { ValidationError } from "@repo/core";
+import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
+import { requestApiPublicUrl } from "@repo/platform/engine/lib/public-url";
+import { operationContext, applyOperationContext } from "../../../lib/operation-context";
 
-/**
- * POST /projects/folder/session
- * Open a folder-upload session. Returns the upload target: an Oblien
- * workspace-scoped token (SaaS, direct upload) or a relay upload path +
- * single-use ticket (self-hosted).
- */
 export async function createSession(c: Context) {
-  const { organizationId, userId } = getRequestContext(c);
-  const body = await c.req
-    .json<{ stack?: string; packageManager?: string; name?: string }>()
-    .catch(() => ({}) as { stack?: string; packageManager?: string; name?: string });
-
-  try {
-    const result = await createFolderSession({
-      orgId: organizationId,
-      userId,
-      stack: body.stack,
-      packageManager: body.packageManager,
-      name: body.name,
-      apiBaseUrl: requestApiPublicUrl(c.req.raw),
-    });
-    return c.json({ success: true, ...result });
-  } catch (err) {
-    return c.json({ error: safeErrorMessage(err) }, 502);
-  }
+  const body = await c.req.json().catch(() => ({}));
+  const result = await getPlatformKernel().sources.open(operationContext(c), body, { apiBaseUrl: requestApiPublicUrl(c.req.raw) });
+  applyOperationContext(c, result.context);
+  return c.json({ success: true, ...result.data });
 }
-
-/**
- * POST /projects/folder/upload/:sessionId  (self-hosted only)
- * Streamed tar.gz body → staging dir. Ticket-authorized. Binary body, so this
- * route is excluded from MCP tool generation (see mcp-tools DENY list).
- */
 export async function uploadRelay(c: Context) {
-  const { organizationId } = getRequestContext(c);
-  const sessionId = c.req.param("sessionId");
-  const session = sessionId ? getFolderSession(sessionId) : undefined;
-  if (!session || session.orgId !== organizationId) {
-    return c.json({ error: "Upload session not found" }, 404);
-  }
-  if (session.mode !== "api-relay") {
-    return c.json({ error: "Session does not accept relay uploads" }, 400);
-  }
-
-  const ticket = c.req.header("x-upload-ticket") ?? c.req.query("ticket");
-  if (!ticket || ticket !== session.uploadTicket) {
-    return c.json({ error: "Invalid upload ticket" }, 403);
-  }
-
-  const body = c.req.raw.body;
-  if (!body) return c.json({ error: "Empty upload" }, 400);
-
-  try {
-    await acceptRelayUpload(session, body);
-    return c.json({ success: true });
-  } catch (err) {
-    return c.json({ error: safeErrorMessage(err) }, 500);
-  }
+  const result = await getPlatformKernel().sources.upload(operationContext(c), c.req.param("sessionId")!, c.req.header("x-upload-ticket") ?? c.req.query("ticket") ?? "", c.req.raw.body!);
+  applyOperationContext(c, result.context);
+  return c.json(result.data);
 }
-
-/**
- * POST /projects/folder/scan/:sessionId
- * Authoritative framework detection on the uploaded source. Same response
- * shape as scanLocal so the deploy wizard consumes it unchanged.
- */
 export async function scanSession(c: Context) {
-  const { organizationId } = getRequestContext(c);
-  const sessionId = c.req.param("sessionId");
-  const session = sessionId ? getFolderSession(sessionId) : undefined;
-  if (!session || session.orgId !== organizationId) {
-    return c.json({ error: "Upload session not found" }, 404);
-  }
-
-  try {
-    const result = await scanFolderSession(session);
-    return c.json({ success: true, sessionId, ...projectInfoToScanResponse(result) });
-  } catch (err) {
-    return c.json({ error: safeErrorMessage(err) }, 500);
-  }
+  const sessionId = c.req.param("sessionId")!;
+  const body = await c.req.text();
+  const input = body.trim() ? await c.req.json().catch(() => { throw new ValidationError("Invalid JSON body"); }) : {};
+  const result = await getPlatformKernel().sources.scan(operationContext(c), sessionId, input);
+  applyOperationContext(c, result.context);
+  c.header("Cache-Control", "no-store");
+  return c.json({ success: true, sessionId, ...result.data });
 }
-
-/**
- * GET /projects/folder/scan/:sessionId/env-reveal
- * #336: the scan response masks compose env, so the wizard's "show values"
- * toggle fetches the REAL values here. Backed by `session.services`, which the
- * scan captured PRE-mask. Write-gated at the route (project:write) so a
- * read-only caller can't reveal. Returns real env keyed by service name.
- */
 export async function revealSessionEnv(c: Context) {
-  const { organizationId } = getRequestContext(c);
-  const sessionId = c.req.param("sessionId");
-  const session = sessionId ? getFolderSession(sessionId) : undefined;
-  if (!session || session.orgId !== organizationId) {
-    return c.json({ error: "Upload session not found" }, 404);
-  }
-  const environments: Record<string, Record<string, string>> = {};
-  for (const s of session.services ?? []) {
-    if (s.name) environments[s.name] = s.environment ?? {};
-  }
-  return c.json({ success: true, environments });
+  const result = await getPlatformKernel().sources.reveal(operationContext(c), c.req.param("sessionId")!, await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ success: true, environment: result.data });
 }

@@ -19,14 +19,18 @@ vi.mock("node:child_process", () => ({
 vi.mock("node:fs", () => ({
   existsSync: () => false,
   mkdirSync: () => undefined,
+  realpathSync: (p: string) => String(p),
   readFileSync: () => "",
   writeFileSync: () => undefined,
+  renameSync: () => undefined,
 }));
 vi.mock("../../src/lib/source-install", () => ({ readSourceInstall: () => null }));
 vi.mock("@repo/adapters/proxy", () => ({ sanitizeEdgeVhosts: async () => {} }));
 vi.mock("@repo/adapters", async () => {
   const lua = await import("../../../../packages/adapters/src/infra/openresty-lua");
+  const { dockerSocketMock } = await import("../helpers/harness");
   return {
+    ...dockerSocketMock,
     systemCatalog: { installs: { docker: () => ({ supported: false }) } },
     EDGE_HOST_STATE_DIR: lua.EDGE_HOST_STATE_DIR,
     EDGE_CONTAINER_MOUNTS: lua.EDGE_CONTAINER_MOUNTS,

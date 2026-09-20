@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./notifications.controller";
-import { CreateChannelBody, UpdateChannelBody, UpsertSubscriptionBody } from "./notification.schema";
+import { CreateChannelBody, UpdateChannelBody, UpsertSubscriptionBody, UpsertNotificationDefaultBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "notifications",
@@ -22,23 +22,23 @@ r.get("/categories", { tag: "notifications:read", mcp: { description: "List noti
 
 // ── Channels (per-user)
 r.get("/channels", { tag: "notifications:read", mcp: { description: "List the caller's notification channels (email, webhook, etc.)." } }, ctrl.listChannels);
-r.post("/channels", { tag: "notifications:write", body: CreateChannelBody, mcp: { description: "Create a notification channel." } }, ctrl.createChannel);
-r.patch("/channels/:id", { tag: "notifications:write", body: UpdateChannelBody, mcp: { description: "Update a notification channel." } }, ctrl.updateChannel);
-r.post("/channels/:id/test", { tag: "notifications:write", mcp: { description: "Send a test delivery to a channel; marks it verified on success." } }, ctrl.testChannel);
-r.delete("/channels/:id", { tag: "notifications:write", mcp: { description: "Delete a notification channel." } }, ctrl.deleteChannel);
+r.post("/channels", { tag: "notifications:write", auditHandledByOperation: true, body: CreateChannelBody, mcp: { description: "Create a notification channel." } }, ctrl.createChannel);
+r.patch("/channels/:id", { tag: "notifications:write", auditHandledByOperation: true, body: UpdateChannelBody, mcp: { description: "Update a notification channel." } }, ctrl.updateChannel);
+r.post("/channels/:id/test", { tag: "notifications:write", auditHandledByOperation: true, mcp: { description: "Send a test delivery to a channel; marks it verified on success." } }, ctrl.testChannel);
+r.delete("/channels/:id", { tag: "notifications:write", auditHandledByOperation: true, mcp: { description: "Delete a notification channel." } }, ctrl.deleteChannel);
 
 // ── Subscriptions (per-user × org)
 r.get("/subscriptions", { tag: "notifications:read", mcp: { description: "List the caller's notification subscriptions." } }, ctrl.listSubscriptions);
-r.put("/subscriptions", { tag: "notifications:write", body: UpsertSubscriptionBody, mcp: { description: "Create or update a notification subscription." } }, ctrl.upsertSubscription);
-r.delete("/subscriptions/:id", { tag: "notifications:write", mcp: { description: "Delete a notification subscription." } }, ctrl.deleteSubscription);
+r.put("/subscriptions", { tag: "notifications:write", auditHandledByOperation: true, body: UpsertSubscriptionBody, mcp: { description: "Create or update a notification subscription." } }, ctrl.upsertSubscription);
+r.delete("/subscriptions/:id", { tag: "notifications:write", auditHandledByOperation: true, mcp: { description: "Delete a notification subscription." } }, ctrl.deleteSubscription);
 
 // ── Org defaults (admin-controlled — admin tag)
 r.get("/defaults", { tag: "notifications:read", mcp: { description: "List org default notification settings." } }, ctrl.listDefaults);
-r.put("/defaults", { tag: "notifications:admin" }, ctrl.upsertDefault);
+r.put("/defaults", { tag: "notifications:admin", body: UpsertNotificationDefaultBody, auditHandledByOperation: true }, ctrl.upsertDefault);
 
 // ── Deliveries (in-app inbox)
 r.get("/deliveries", { tag: "notifications:read", mcp: { description: "List notification deliveries (the in-app alert feed)." } }, ctrl.listDeliveries);
 r.get("/deliveries/unseen-count", { tag: "notifications:read", mcp: { description: "Count unseen notifications." } }, ctrl.unseenCount);
-r.post("/deliveries/:id/seen", { tag: "notifications:write", mcp: { description: "Mark a notification delivery as seen." } }, ctrl.markSeen);
+r.post("/deliveries/:id/seen", { tag: "notifications:write", auditHandledByOperation: true, mcp: { description: "Mark a notification delivery as seen." } }, ctrl.markSeen);
 
 export const notificationsRoutes = r.hono;

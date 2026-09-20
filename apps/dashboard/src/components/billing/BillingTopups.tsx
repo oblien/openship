@@ -1,10 +1,16 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { needsCloudPlan } from "@/lib/billing-presentation";
+import { randomUUID } from "@/lib/random-uuid";
+import { BillingEmptyState } from "./BillingEmptyState";
+import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
+
+import React, { useEffect, useRef, useState } from "react";
 import { Loader2, Plus, ExternalLink, Receipt } from "lucide-react";
 import { api } from "@/lib/api/client";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
+import { formatMilliCredits } from "@/lib/billing-usage";
 
 export type { BillingState };
 
@@ -17,7 +23,6 @@ interface TopupPack {
   name: string;
   credits_milli: number;
   price_cents: number;
-  stripePriceId: string;
   sortOrder: number;
 }
 
@@ -45,18 +50,23 @@ function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function formatCredits(milliCredits: number): string {
-  // milli-credits → credits
-  const credits = Math.round(milliCredits / 1000);
-  return credits.toLocaleString();
-}
-
 /* ------------------------------------------------------------------ */
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
-export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
+export function BillingTopups({ state }: BillingTopupsProps) {
   const { t } = useI18n();
+  if (needsCloudPlan(state)) return <BillingEmptyState kind="topups" />;
+  if (state.topups?.status === "unavailable") return <div className="space-y-5">
+    <p className="rounded-2xl bg-card p-6 text-sm text-muted-foreground">{state.capabilities?.subscriptionChange ? t.billing.deployGate.paymentDescription : t.billing.plansRoute.changeViaSupport}</p>
+    <BillingSubscriptionControls state={state} />
+  </div>;
+  return <CreditPacks state={state} />;
+}
+
+const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
+  const { t, locale } = useI18n();
+  const allowance = state.subscription?.interval === "annual" ? state.plan?.annualCredits : state.plan?.monthlyCredits;
   // Availability is decided by Openship Cloud (billing state), NOT hardcoded —
   // so top-ups can launch by flipping the cloud flag with no dashboard release.
   // Absent flag → treated as not-available (coming soon).
@@ -67,6 +77,8 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
   const [error, setError] = useState<string | null>(null);
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
   const [openingPortal, setOpeningPortal] = useState(false);
+  const checkoutAttempts = useRef(new Map<string, string>());
+  const checkoutBusy = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,14 +102,20 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
   }, []);
 
   const handleBuy = async (packId: string) => {
+    if (!topupsAvailable || checkoutBusy.current) return;
+    checkoutBusy.current = true;
     setBuyingPackId(packId);
     setError(null);
     try {
-      const res = await api.post<CheckoutResponse>("billing/topup", { packId });
+      // An uncertain response may already have created the hosted checkout.
+      // Retry the same purchase key; a different pack is a different purchase.
+      if (!checkoutAttempts.current.has(packId)) checkoutAttempts.current.set(packId, randomUUID());
+      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: checkoutAttempts.current.get(packId) });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.checkoutError);
       setBuyingPackId(null);
+      checkoutBusy.current = false;
     }
   };
 
@@ -149,6 +167,8 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {packs.map((pack) => {
               const isBuying = buyingPackId === pack.id;
+              const percent = allowance != null && Number.isFinite(allowance) && allowance > 0
+                ? new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(pack.credits_milli / allowance) : null;
               return (
                 <div
                   key={pack.id}
@@ -156,19 +176,20 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
                     topupsAvailable ? "hover:border-border" : "opacity-70"
                   }`}
                 >
-                  <p className="text-sm font-medium text-muted-foreground">{pack.name}</p>
-
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <Plus className="size-5 text-primary" />
-                    <span className="text-3xl font-semibold tabular-nums text-foreground">
-                      {formatCredits(pack.credits_milli)}
-                    </span>
-                    <span className="text-sm text-muted-foreground">{t.billing.topups.credits}</span>
+                  <p className="text-xs font-medium text-muted-foreground">{t.billing.topups.extraUsage}</p>
+                  <div className="mt-3 flex items-baseline gap-1 text-3xl font-semibold tabular-nums text-foreground">
+                    {percent ? <><Plus className="size-5 text-primary" aria-hidden="true" /><bdi>{percent}</bdi></>
+                      : <span className="text-lg">{t.billing.topups.prepaidUsage}</span>}
                   </div>
-
-                  <p className="mt-3 text-2xl font-medium tabular-nums text-foreground">
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{percent ? t.billing.topups.allowanceEquivalent : t.billing.resourcesGuide.usageSummary}</p>
+                  <p className="mt-4 text-2xl font-medium tabular-nums text-foreground">
                     {formatPrice(pack.price_cents)}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t.billing.topups.oneTime}</p>
+                  <details className="mt-4 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer font-medium">{t.billing.resourcesGuide.usageDetails}</summary>
+                    <p className="mt-2 tabular-nums">{interpolate(t.billing.overview.creditsAmount, { n: formatMilliCredits(pack.credits_milli, locale) })}</p>
+                  </details>
 
                   {topupsAvailable ? (
                     <button
@@ -225,7 +246,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
             </div>
           </div>
 
-          <button
+          {state.capabilities?.portal === true ? <button
             onClick={handleOpenPortal}
             disabled={openingPortal}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
@@ -241,7 +262,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
                 <ExternalLink className="size-3.5" />
               </>
             )}
-          </button>
+          </button> : <a href="mailto:support@openship.io" className="text-sm font-medium text-primary hover:underline">{t.billing.portal.supportButton}</a>}
         </div>
       </div>
     </div>

@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const verifyPendingDomains = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../src/modules/domains/domain.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => ({
   verifyPendingDomains,
 }));
 
-import { SYSTEM_JOB_BY_KEY } from "../../../src/modules/jobs/job.registry";
+import { SYSTEM_JOB_BY_KEY } from "@repo/platform/engine/modules/jobs/job.registry";
 
 describe("domains:verify-pending system job", () => {
   it("is available on Desktop and every other platform", () => {

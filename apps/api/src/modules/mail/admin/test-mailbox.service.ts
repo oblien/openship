@@ -35,33 +35,34 @@
  */
 
 import type { CommandExecutor } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
-import { decrypt, encrypt } from "../../../lib/encryption";
-import { sshManager } from "../../../lib/ssh-manager";
+import { safeErrorMessage, mailHostname } from "@repo/core";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import {
   readState,
   mutateState,
   type MailServerState,
   type TestMailboxState,
-} from "../mail-state";
+} from "@repo/platform/engine/modules/mail/mail-state";
 import {
   buildCreds,
   buildUpsertMailboxSql,
   buildUpsertSelfForwardingSql,
   DOMAIN_RE,
+  isManagedMailboxUsable,
   PLATFORM_LOCAL_PART,
   PlatformMailboxError,
   randomPassword,
   rollbackMailbox,
   type PlatformMailboxCreds,
-} from "./platform-mailbox.service";
-import { transaction, queryOne, q } from "./psql-runner";
-import { hashPassword } from "./password";
+} from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
+import { transaction, queryOne, q } from "@repo/platform/engine/modules/mail/admin/psql-runner";
+import { hashPassword } from "@repo/platform/engine/modules/mail/admin/password";
 import {
   createMaildirOnDisk,
   generateMaildir,
-} from "./maildir";
-import { recountDomain } from "./domains.service";
+} from "@repo/platform/engine/modules/mail/admin/maildir";
+import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
 
 export interface EnsureOpenshipTestMailboxOptions {
   /** Force a fresh password even if cached creds exist. */
@@ -71,8 +72,9 @@ export interface EnsureOpenshipTestMailboxOptions {
 /**
  * Provision (or reuse) `openship@<domain>` as a per-domain test mailbox.
  *
- * Fast path: `state.testMailboxes[domain].email` matches and `rotate` is
- * not set — pure read, decrypt cached password, return.
+ * Fast path: `state.testMailboxes[domain].email` matches, `rotate` is not
+ * set, and its active mailbox + self-forwarding rows still exist. Decrypt
+ * the cached password and return.
  *
  * Slow path: validate the domain exists in `vmail.domain`, mint a 24-byte
  * base64url password, hash via doveadm, UPSERT mailbox + self-forwarding
@@ -101,7 +103,7 @@ export async function ensureOpenshipTestMailbox(
     const email = `${PLATFORM_LOCAL_PART}@${targetDomain}`;
     // Submission host is always the primary install — every domain shares
     // the same `mail.<state.domain>` MX / submission endpoint.
-    const smtpHost = `mail.${state.domain}`;
+    const smtpHost = mailHostname(state.domain);
     const rotate = opts?.rotate === true;
 
     // Fast path: cached creds match target identity and no rotation
@@ -110,7 +112,14 @@ export async function ensureOpenshipTestMailbox(
     // platform helper — log once and use the raw value; next rotation
     // re-encrypts.
     const cached = state.testMailboxes?.[targetDomain];
-    if (!rotate && cached && cached.email === email && cached.password) {
+    if (
+      !rotate &&
+      cached &&
+      cached.email &&
+      cached.email.toLowerCase() === email &&
+      cached.password &&
+      (await isManagedMailboxUsable(exec, email))
+    ) {
       let plaintext: string;
       try {
         plaintext = decrypt(cached.password);
@@ -126,6 +135,18 @@ export async function ensureOpenshipTestMailbox(
         smtpHost: cached.smtpHost ?? smtpHost,
         rotated: false,
       });
+    }
+
+    if (
+      !rotate &&
+      cached &&
+      cached.email &&
+      cached.email.toLowerCase() === email &&
+      cached.password
+    ) {
+      console.warn(
+        `[ensureOpenshipTestMailbox] cached mailbox ${email} is missing or inactive in vmail; recreating it and rotating the stale credential.`,
+      );
     }
 
     // Slow path: confirm the domain row exists, then mint + UPSERT + persist.

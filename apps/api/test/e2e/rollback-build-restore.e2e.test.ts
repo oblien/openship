@@ -29,9 +29,9 @@ import { getBuildImage } from "@repo/core";
 import { repos, type Deployment, type Project } from "@repo/db";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
-import { pinnedAppImage, snapshotNeedsGitSource } from "../../src/modules/deployments/pinned-artifacts";
-import { buildConfigSnapshot } from "../../src/modules/deployments/build.service";
-import { createBuildConfig } from "../../src/modules/deployments/build-config";
+import { pinnedAppImage, snapshotNeedsGitSource } from "@repo/platform/engine/modules/deployments/pinned-artifacts";
+import { buildConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
+import { createBuildConfig } from "@repo/platform/engine/modules/deployments/build-config";
 
 const FIXTURE = join(import.meta.dirname, "../../../../fixtures/deploy/node");
 const APP_PORT = 3000;
@@ -86,6 +86,9 @@ describeDockerE2E("build → redeploy → restore without rebuilding", () => {
       // this from the same table detection uses keeps the fixture in step with
       // the stack definitions instead of pinning a tag by hand.
       buildImage: getBuildImage("node", "npm"),
+      // Match importLocal(): without this the schema's historical "github"
+      // default classifies the fixture as clone-backed and discards localPath.
+      gitProvider: "local",
       localPath: sourceDir,
       installCommand: "",
       buildCommand: "",

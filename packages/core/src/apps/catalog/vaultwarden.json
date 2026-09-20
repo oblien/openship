@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "vaultwarden",
   "name": "Vaultwarden",
-  "description": "Lightweight self-hosted password manager (Bitwarden-compatible).",
+  "description": "Lightweight self-hosted password manager (Bitwarden-compatible). Open the admin panel with the token below to invite your first account.",
   "kind": "template",
   "logo": "vaultwarden",
   "category": "other",
@@ -16,18 +16,67 @@
     {
       "name": "vaultwarden",
       "image": "vaultwarden/server:latest",
-      "ports": [
-        "80:80"
-      ],
       "exposedPort": 80,
       "exposed": true,
       "environment": {
-        "DOMAIN": "{{publicUrl:vaultwarden}}"
+        "DOMAIN": "{{publicUrl:vaultwarden}}",
+        "SIGNUPS_ALLOWED": "false"
       },
       "volumes": [
         "vaultwarden_data:/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "secretEnv": [
+        "ADMIN_TOKEN"
+      ],
+      "ports": [
+        "8206:80"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "ADMIN_TOKEN",
+      "service": "vaultwarden",
+      "label": "Admin panel token",
+      "help": "Auto-generated. Unlocks /admin, where you invite your own account.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "connection": {
+    "title": "Set up Vaultwarden",
+    "description": "Public sign-up is disabled. Open the admin panel with the token below, invite your own email address, then register that address in any Bitwarden client.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Admin panel",
+        "source": "template:{{env:vaultwarden:DOMAIN}}/admin",
+        "kind": "url",
+        "recommended": true,
+        "help": "Paste the admin token below to sign in, then use Invite User."
+      },
+      {
+        "id": "url",
+        "label": "Vault URL",
+        "source": "publicUrl:vaultwarden",
+        "kind": "url",
+        "help": "Point the Bitwarden app/extension at this as its self-hosted server URL."
+      },
+      {
+        "id": "adminToken",
+        "label": "Admin token",
+        "source": "env:vaultwarden:ADMIN_TOKEN",
+        "secret": true,
+        "help": "Full control of the server. Treat it like a root password."
+      }
+    ],
+    "firstLogin": {
+      "note": "Invitations work without SMTP: after inviting your address in /admin, register that same address from the vault URL to set your master password."
+    }
+  },
+  "verified": true
 }

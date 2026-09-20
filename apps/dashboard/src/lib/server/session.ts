@@ -54,7 +54,7 @@ export async function needsOrgSelection(
       "auth/organization/list",
       { cache: "no-store" },
     );
-    const orgs = !res ? [] : Array.isArray(res) ? res : res.data ?? [];
+    const orgs = !res ? [] : Array.isArray(res) ? res : (res.data ?? []);
     // Trust the active org only if it's an ACTUAL membership. A stale/foreign
     // active org (e.g. the zero-auth Local User's workspace carried over after
     // cloud-connect) must NOT count as resolved — otherwise the two layouts
@@ -111,7 +111,22 @@ export type DeploymentInfo = {
   /** True when OpenShip runs ON a server (self-hosted, non-desktop) — the host
    *  is itself a deployable target, auto-registered as an isLocal server. */
   isServerHost?: boolean;
+  /** Whether the box is currently a deploy target for itself (host control on).
+   *  Tracks the operator's runtime Settings toggle, so it can differ from
+   *  isServerHost (which is fixed by DEPLOY_MODE). Optional: an older API omits
+   *  it, and consumers treat a missing value as "unknown / fall back to server". */
+  hostControlEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
+  /** Running server release. Optional because older APIs omit it. */
+  version?: string;
+  /**
+   * Which product this instance presents itself as — "platform" (the full deploy
+   * platform) or "mail" (Openship Mail). Resolved by the API's single
+   * product-mode resolver, so it already accounts for CLOUD_MODE and the
+   * operator's instance_settings toggle. Optional because an older API won't
+   * send it; `resolveProductView` treats a missing value as "platform".
+   */
+  productMode?: "platform" | "mail";
   cloudAuthUrl: string;
   cloudApiUrl: string;
   machineName?: string;

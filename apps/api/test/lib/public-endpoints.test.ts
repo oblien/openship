@@ -14,17 +14,31 @@ import {
   mergeServiceRoutingPatch,
   pickCanonicalDomainRow,
   resolveProjectAccess,
+  serviceDomainRowsToPublicEndpoints,
+  resolveServicePublicEndpoints,
+  resolveServiceRouteHostname,
   resolveStoredPublicEndpoints,
   syncStoredPublicEndpoints,
   type ProjectDomainRow,
   type StoredServiceRouting,
-} from "../../src/lib/public-endpoints";
-import { getRoutingBaseDomain } from "../../src/lib/routing-domains";
+} from "@repo/platform/engine/lib/public-endpoints";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
+import { normalizeCustomHostname, resolveServiceHostnameLabel } from "@repo/core";
 
-// Build a domain row with only the fields the access resolver reads; the rest
-// of ProjectDomainRow is irrelevant here, so cast rather than fill every column.
-const row = (r: Partial<ProjectDomainRow>): ProjectDomainRow =>
-  ({ verified: false, isPrimary: false, serviceId: null, domainType: "custom", ...r }) as ProjectDomainRow;
+const row = (
+  r: Partial<ProjectDomainRow> & Pick<ProjectDomainRow, "hostname">,
+): ProjectDomainRow => ({
+  hostname: r.hostname,
+  verified: false,
+  isPrimary: false,
+  serviceId: null,
+  targetPort: null,
+  targetPath: null,
+  domainType: "custom",
+  redirectTo: null,
+  redirectStatus: null,
+  ...r,
+});
 
 describe("public endpoint helpers", () => {
   it("uses the primary project custom domain when an explicit route target is provided", () => {
@@ -97,6 +111,65 @@ describe("public endpoint helpers", () => {
     });
 
     expect(endpoints).toEqual([]);
+  });
+
+  it.each([
+    ["explicit non-primary rows", false, "free", "custom"],
+    ["explicit primary rows", true, "free", "custom"],
+    ["legacy non-primary rows", false, null, null],
+    ["legacy primary rows", true, null, null],
+  ] as const)(
+    "sorts custom domains ahead of free subdomains for %s",
+    (_, isPrimary, freeType, customType) => {
+      const endpoints = resolveStoredPublicEndpoints({
+        projectDomains: [
+          row({
+            hostname: `app.${getRoutingBaseDomain()}`,
+            isPrimary,
+            verified: true,
+            targetPort: 3000,
+            domainType: freeType,
+          }),
+          row({
+            hostname: "zz-app.example.com",
+            isPrimary,
+            verified: true,
+            targetPort: 3000,
+            domainType: customType,
+          }),
+        ],
+      });
+
+      expect(endpoints[0]).toMatchObject({
+        customDomain: "zz-app.example.com",
+        domainType: "custom",
+      });
+    },
+  );
+
+  it("uses the same inferred ordering for service-scoped route rows", () => {
+    const endpoints = serviceDomainRowsToPublicEndpoints(
+      [
+        row({
+          hostname: `service.${getRoutingBaseDomain()}`,
+          serviceId: "svc-1",
+          targetPort: 3000,
+          domainType: null,
+        }),
+        row({
+          hostname: "zz-service.example.com",
+          serviceId: "svc-1",
+          targetPort: 3000,
+          domainType: null,
+        }),
+      ],
+      "svc-1",
+    );
+
+    expect(endpoints[0]).toMatchObject({
+      customDomain: "zz-service.example.com",
+      domainType: "custom",
+    });
   });
 
   it("creates a default managed route when a target path is provided", () => {
@@ -259,8 +332,47 @@ describe("mergeServiceRoutingPatch", () => {
       stored: multiRoute,
     });
 
+    // `[]` clears the EXTRAS, not the row's routing: one route lives in the
+    // scalar columns, so an empty array with a stored hostname is still one
+    // route. Unrouting the row takes an explicit null (next test).
     expect(next.publicEndpoints).toEqual([]);
     expect(next.domain).toBe("convex-backend");
+  });
+
+  it("treats an explicit null hostname as a CLEAR, not as absent", () => {
+    // The one way to say "this row has no hostname" about a row that had one —
+    // an app re-installed with no route (the webmail proxy variant). Resolved
+    // with `??`, the caller's null fell back to `stored` and the row kept the
+    // hostname it was redeployed to drop, still live in its derived domain row.
+    const next = mergeServiceRoutingPatch({
+      patch: { exposed: false, domainType: "free", domain: null, customDomain: null, publicEndpoints: [] },
+      stored: multiRoute,
+    });
+
+    expect(next.domain).toBeNull();
+    expect(next.customDomain).toBeNull();
+    expect(next.publicEndpoints).toEqual([]);
+  });
+
+  it("clears a stored CUSTOM hostname the same way", () => {
+    const stored = {
+      ...multiRoute,
+      domain: null,
+      customDomain: "webmail.example.com",
+      domainType: "custom",
+      publicEndpoints: [{ port: 3210, domainType: "custom", customDomain: "webmail.example.com" }],
+    } as StoredServiceRouting;
+
+    const next = mergeServiceRoutingPatch({
+      patch: { exposed: false, domainType: "free", domain: null, customDomain: null, publicEndpoints: [] },
+      stored,
+    });
+
+    // A surviving scalar `customDomain` is what kept the derived domain row alive,
+    // and a surviving row is what made `onWebmailDeployed` return early — no vhost
+    // and no cert for the hostname the operator actually asked for.
+    expect(next.customDomain).toBeNull();
+    expect(next.publicEndpoints).toEqual([]);
   });
 
   it("keeps a single route in the scalar columns (create / single-route edit)", () => {
@@ -410,5 +522,110 @@ describe("resolveProjectAccess", () => {
     });
     expect(access.kind).toBe("none");
     expect(access.host).toBeNull();
+  });
+});
+
+// The ONE service→hostname resolver deploy preflight uses so its cloud gate and its
+// per-service domain check classify the SAME hostname (the drift they used to hand-copy
+// is what 403'd a connected org's compose deploy).
+describe("resolveServiceRouteHostname", () => {
+  const base = getRoutingBaseDomain();
+
+  it("returns null when the service isn't exposed (no public hostname to gate)", () => {
+    expect(resolveServiceRouteHostname({ name: "api", exposed: false }, "myproj")).toBeNull();
+    expect(resolveServiceRouteHostname({ name: "api" }, "myproj")).toBeNull();
+  });
+
+  it("synthesizes the default <project>-<service> free subdomain when no slug is chosen", () => {
+    // The bug's exact input: a compose service with an EMPTY domain. The resolver must
+    // still produce the hostname the deploy will route at, so the gate can see it.
+    const label = resolveServiceHostnameLabel("myproj", "api", undefined, "compose");
+    expect(resolveServiceRouteHostname({ name: "api", exposed: true }, "myproj")).toEqual({
+      hostname: `${label}.${base}`,
+      isCustom: false,
+      label,
+    });
+  });
+
+  it("uses an explicit free subdomain slug as the label", () => {
+    const label = resolveServiceHostnameLabel("myproj", "api", "custom-sub", "compose");
+    expect(
+      resolveServiceRouteHostname({ name: "api", exposed: true, domain: "custom-sub" }, "myproj"),
+    ).toEqual({ hostname: `${label}.${base}`, isCustom: false, label });
+  });
+
+  it("classifies a custom domain by hostname truth (normalized), never as a free label", () => {
+    const host = normalizeCustomHostname(" App.Example.COM ");
+    expect(
+      resolveServiceRouteHostname(
+        { name: "api", exposed: true, customDomain: " App.Example.COM " },
+        "myproj",
+      ),
+    ).toEqual({ hostname: host, isCustom: true, label: null });
+  });
+});
+
+// The ONE place the service→routes rule lives. Deploy-side callers pass
+// projectSlug so an exposed service is NEVER silently unrouted just because it
+// hasn't been given an explicit slug yet — the exact bug that shipped a running
+// compose service with no route. Persistence/gate callers pass no slug and keep
+// the "empty free slug drops" stored semantics.
+describe("resolveServicePublicEndpoints", () => {
+  const svc = { name: "api", exposed: true, exposedPort: "3000", domainType: "free" as const };
+
+  it("drops an exposed free service with no slug when no projectSlug is supplied (stored semantics)", () => {
+    expect(resolveServicePublicEndpoints(svc)).toEqual([]);
+  });
+
+  it("preserves the exposed primary free route with its default <project>-<service> label when projectSlug is supplied", () => {
+    const label = resolveServiceHostnameLabel("myproj", "api", undefined, "compose");
+    expect(resolveServicePublicEndpoints(svc, { projectSlug: "myproj" })).toEqual([
+      { port: 3000, domain: label, customDomain: undefined, domainType: "free" },
+    ]);
+  });
+
+  it("leaves an explicit free slug untouched (fallback only fills an empty primary)", () => {
+    expect(
+      resolveServicePublicEndpoints({ ...svc, domain: "chosen" }, { projectSlug: "myproj" }),
+    ).toEqual([{ port: 3000, domain: "chosen", customDomain: undefined, domainType: "free" }]);
+  });
+
+  it("never synthesizes a free label for a custom primary", () => {
+    const host = normalizeCustomHostname("app.example.com");
+    expect(
+      resolveServicePublicEndpoints(
+        { ...svc, domainType: "custom", customDomain: "app.example.com" },
+        { projectSlug: "myproj" },
+      ),
+    ).toEqual([{ port: 3000, domain: undefined, customDomain: host, domainType: "custom" }]);
+  });
+
+  it("returns [] for a service that isn't exposed, projectSlug notwithstanding", () => {
+    expect(resolveServicePublicEndpoints({ ...svc, exposed: false }, { projectSlug: "myproj" })).toEqual(
+      [],
+    );
+  });
+
+  it("returns [] for an exposed service with no routable port", () => {
+    expect(
+      resolveServicePublicEndpoints(
+        { name: "api", exposed: true, domainType: "free" },
+        { projectSlug: "myproj" },
+      ),
+    ).toEqual([]);
+  });
+
+  it("fills an empty primary in an explicit publicEndpoints array (index 0) with the default label", () => {
+    const label = resolveServiceHostnameLabel("myproj", "api", undefined, "compose");
+    expect(
+      resolveServicePublicEndpoints(
+        {
+          name: "api",
+          exposed: true,
+          publicEndpoints: [{ port: 3000, domainType: "free" }],
+        },
+        { projectSlug: "myproj" },
+      ),
+    ).toEqual([{ port: 3000, domain: label, customDomain: undefined, domainType: "free" }]);
   });
 });

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2, Trash2, Network, Globe, PlugZap } from "lucide-react";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
+import { useProjectConnections } from "@/hooks/use-project-connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppLogo } from "@/components/AppLogo";
 import { useToast } from "@/context/ToastContext";
@@ -18,19 +19,10 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const c = t.projects.connections;
   const { showToast } = useToast();
-  const [links, setLinks] = useState<ProjectConnection[] | null>(null);
+  const links = useProjectConnections(projectId);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    connectionsApi
-      .list(projectId)
-      .then((res) => setLinks(res?.data ?? []))
-      .catch(() => setLinks([]));
-  }, [projectId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const remove = async (link: ProjectConnection) => {
     if (removing) return;
@@ -38,7 +30,6 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
     try {
       await connectionsApi.remove(projectId, link.id);
       showToast(c.removed, "success");
-      load();
     } catch (err) {
       showToast(getApiErrorMessage(err, c.failed), "error");
     } finally {
@@ -63,7 +54,7 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
               <AppLogo appId={l.sourceAppTemplateId ?? undefined} className="size-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">{l.sourceName}</p>
+              <p className="truncate text-sm font-medium text-foreground">{l.sourceServiceName ? `${l.sourceServiceName} · ${l.sourceName}` : l.sourceName}</p>
               <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
                 <code className="font-mono">{l.envKey}</code>
                 <span className="inline-flex items-center gap-1 text-muted-foreground/60">

@@ -16,7 +16,7 @@
  * update must never leave the box without a mail engine.
  */
 
-import { buildMailImageRef, safeErrorMessage } from "@repo/core";
+import { buildMailImageRef, safeErrorMessage, mailHostname } from "@repo/core";
 import type { CommandExecutor, LogEntry } from "../../types";
 import type { SystemLog, SystemLogCallback } from "../types";
 import { sq } from "../local-shell";
@@ -29,7 +29,10 @@ import {
   managedImagesAreFromSource,
   swapManagedImage,
 } from "../managed-image";
-import { waitForPortListening } from "../port-listen";
+import { dirOf, elevatedExecutor } from "../elevated-executor";
+import { resolveEnvironment } from "../environment";
+import { waitForPortListening, probePortListeningOnce } from "../port-listen";
+import { rootOrDegrade } from "../privilege";
 import {
   MAIL_CONTAINER,
   MAIL_DB_CONTAINER,
@@ -41,7 +44,10 @@ import {
   MAIL_DB_NAME,
   MAIL_DB_USER,
   MAIL_DB_HOST_BIND,
-  MAIL_DB_PORT,
+  MAIL_DB_FALLBACK_PORT,
+  MAIL_DB_PORT_RANGE_MAX,
+  MAIL_DB_INTERNAL_PORT,
+  resolveMailDbPort,
   type MailMount,
 } from "../../infra/mail-container";
 
@@ -86,7 +92,7 @@ export interface ContainerMailOptions {
   /** The primary mail domain (FIRST_DOMAIN), injected into the engine on first boot. */
   domain: string;
   /**
-   * Per-install secrets (iRedMail DB passwords, etc.). Written to a root-only
+   * Per-install secrets (iRedMail DB passwords, etc.). Written to a 0600
    * env-file and passed via `--env-file`, never on the command line — so they
    * never appear in `ps`/shell history (the same no-shell-exposure rule the SASL
    * password write follows).
@@ -96,15 +102,17 @@ export interface ContainerMailOptions {
   image?: string;
   container?: string;
   dbContainer?: string;
+  /**
+   * Host port for the PostgreSQL sidecar. Defaults to `OPENSHIP_MAIL_DB_PORT`
+   * if set in the environment, otherwise 5432.
+   */
+  dbPort?: number;
   /** How long to wait for the mail ports before calling the start a failure. */
   verifyTimeoutMs?: number;
 }
 
 /** Is a container present (running or stopped)? */
-async function containerExists(
-  executor: CommandExecutor,
-  container: string,
-): Promise<boolean> {
+async function containerExists(executor: CommandExecutor, container: string): Promise<boolean> {
   return (await containerState(executor, container)) !== null;
 }
 
@@ -127,7 +135,11 @@ function pullFailureMessage(image: string, output: string): string {
       .filter(Boolean)
       .pop() ?? "";
 
-  if (/manifest unknown|manifest for .* not found|not found: manifest|repository .* not found/.test(text)) {
+  if (
+    /manifest unknown|manifest for .* not found|not found: manifest|repository .* not found/.test(
+      text,
+    )
+  ) {
     return (
       `The mail engine image ${image} isn't in the registry. ` +
       "The engine image isn't published yet, so a server can only run it from a local " +
@@ -140,7 +152,11 @@ function pullFailureMessage(image: string, output: string): string {
       "Log this server's Docker into that registry, or set OPENSHIP_MAIL_IMAGE to one it can read."
     );
   }
-  if (/timeout|timed out|no such host|temporary failure|network is unreachable|connection refused|i\/o timeout|tls|certificate/.test(text)) {
+  if (
+    /timeout|timed out|no such host|temporary failure|network is unreachable|connection refused|i\/o timeout|tls|certificate/.test(
+      text,
+    )
+  ) {
     return (
       `This server couldn't reach the registry to pull ${image} (${lastLine || "network error"}). ` +
       "Check its outbound network/DNS and proxy settings, then retry."
@@ -155,34 +171,336 @@ function mountArg(m: MailMount): string {
   return `-v ${sq(`${m.host}:${m.container}:${opts}`)}`;
 }
 
-/** Write a root-only env-file the launcher passes via `--env-file`. */
+/**
+ * An env-file record is LINE-DELIMITED, so the line break — not the shell — is
+ * the injection character here. A value containing CR/LF closes its own record
+ * and everything after it becomes further `KEY=VALUE` records, which docker
+ * feeds to the container verbatim.
+ *
+ * That matters because these values include an operator-supplied password, and
+ * the engine runs `--network host --cap-add NET_ADMIN` with host bind mounts.
+ * Two concrete escalations an injected record buys:
+ *   - `BASH_FUNC_<name>%%=() { … }` — bash imports exported functions from the
+ *     environment, so this SHADOWS a real binary the entrypoint calls (psql, nc,
+ *     perl) and runs as root inside the container. Docker's own parser only
+ *     rejects an empty key or whitespace IN the key, so `%%` sails through.
+ *   - shadowing a legitimate key: duplicates are last-wins, and `...opts.secrets`
+ *     is spread last, so an injected record overrides FIRST_DOMAIN /
+ *     OPENSHIP_MAIL_DB_* (repoint the first-boot DB client, or reach the
+ *     superuser SQL load that templates FIRST_DOMAIN in).
+ *
+ * So: validate the record shape and FAIL CLOSED. Rejecting beats sanitizing —
+ * silently rewriting a password would produce an install whose stored credential
+ * doesn't match the one the operator typed.
+ */
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Write the env-file the launcher passes via `--env-file`, mode 0600.
+ *
+ * Owned by whichever account this `executor` is — root when it is the elevated view, which
+ * is why every caller follows the write with {@link handOverEnvFile}.
+ */
 async function writeEnvFile(
   executor: CommandExecutor,
   path: string,
   env: Record<string, string>,
 ): Promise<void> {
+  for (const [k, v] of Object.entries(env)) {
+    if (!ENV_KEY_RE.test(k)) {
+      throw new Error(`Refusing to write env-file: invalid variable name ${JSON.stringify(k)}.`);
+    }
+    if (/[\r\n]/.test(v)) {
+      throw new Error(
+        `Refusing to write env-file: value for ${k} spans multiple lines, which would inject additional environment records.`,
+      );
+    }
+  }
   const body =
     Object.entries(env)
-      // Values may contain anything; keep them one-per-line and unquoted — docker's
-      // env-file parser takes the whole rest of the line verbatim as the value.
+      // Values are single-line and unquoted — docker's env-file parser takes the
+      // whole rest of the line verbatim as the value.
       .map(([k, v]) => `${k}=${v}`)
       .join("\n") + "\n";
-  await executor.writeFile(path, body);
-  await executor.exec(`chmod 600 ${sq(path)}`).catch(() => {});
+  // Born private, not tightened after publication. The privileged executor's
+  // private staging path carries this mode through its root-owned rename.
+  await executor.writeFile(path, body, { mode: 0o600 });
 }
 
 const ENGINE_ENV_FILE = `${MAIL_HOST_STATE_DIR}/engine.env`;
 const DB_ENV_FILE = `${MAIL_HOST_STATE_DIR}/db.env`;
 
+/**
+ * Hand a secret env-file to the account that runs `docker`, and make sure it can reach it.
+ *
+ * GH-630: `docker run --env-file <path>` opens that file CLIENT-SIDE, in the CLI's own
+ * process, before it ever reaches the daemon socket — so it has to be readable by whoever
+ * invokes docker, and being in the `docker` group grants the socket, not the file. The
+ * elevated write publishes these root:root (`writeFile` chowns 0:0 so the `mv` cannot leave
+ * the file writable by the login user) and `writeEnvFile` creates it as 0600, which on a non-root
+ * login is exactly unreadable. Setting up mail died with `docker: --env-file: open
+ * /var/lib/openship/mail/db.env: permission denied`, surfaced as the unrelated-sounding
+ * "the mail database container failed to become ready".
+ *
+ * Moving the FILE rather than elevating the LAUNCH is the load-bearing choice. The docker
+ * CLI's identity also decides which DAEMON it reaches and which registry credentials it
+ * presents: `DOCKER_HOST` for a rootless daemon lives in the login user's shell profile,
+ * which `sudo -n sh -c` never reads (the #482 trap), and root has its own
+ * ~/.docker/config.json. A `docker run` elevated to root while every inspect and pull stays
+ * on the login user can therefore address a different daemon entirely — creating a SECOND
+ * host-network engine to fight the live one for :25, and passing verification anyway because
+ * the /proc port probe is daemon-blind. So every docker command on the mail path runs as one
+ * identity and only the file moves. (`installContainerEdge` does elevate its own docker, so
+ * this is not a repo-wide invariant: that path passes no `--env-file` and its bind mounts are
+ * resolved daemon-side by root, so it never needed the login user's view of the filesystem.)
+ *
+ * Three operations, and the two beyond the chown each close a way it silently fails anyway:
+ *
+ *  1. `chown` — the handover itself.
+ *  2. `chmod 400`, not 600. The kernel enforces the mode against the owner too, so
+ *     read-only keeps docker's client-side read working while an UNELEVATED `writeFile`
+ *     still fails loudly — and that refusal is load-bearing. `retainedDbPassword`'s
+ *     `test -s .../pgdata/PG_VERSION` probe reads "denied" as "no cluster" (pgdata is 0700
+ *     uid-999), so if elevation later degrades, a re-run mints a fresh superuser password
+ *     and would overwrite the only copy of the one the cluster was initialised with — GH-564
+ *     with its recovery value destroyed. Before this handover existed that write was refused
+ *     because the file was root's; 0400 keeps it refused now that it is the login user's.
+ *  3. `chmod a+x` on the two directories above it. Ownership is not reach: docker opens the
+ *     file as `loginUser`, so every component of the path must be traversable by it. The tree
+ *     is created by a bare `mkdir -p` (step 2) that takes the sudo session's umask — 0755 on
+ *     a default host, but 0750 wherever login.defs sets UMASK 027 (the CIS default), and
+ *     there the chown succeeds while the open fails with the identical error and nothing
+ *     warns. `a+x` grants search without listing, and only on the arm that needs it, so a
+ *     root-only box stays exactly as tight as it is today. Deliberately NOT `ensureOwnedDir`,
+ *     whose `chown -R` would hand the container's vmail and pgdata trees to the login user.
+ *
+ * Confidentiality is unchanged, and provably so from two directions: the account gaining
+ * ownership already held the plaintext, because `elevatedExecutor.writeFile` stages the
+ * content unelevated as that same login before publishing it; and it provably has arbitrary
+ * root, because the chown only lands if `sudo -n sh -c` does. It is the account Openship
+ * drives THIS SERVER as — a remote box's SSH login, not necessarily the one Openship itself
+ * runs under.
+ *
+ * `canSudo` is the exact condition, and it is a property of the writer rather than a guess: a
+ * root login already owns the file, and a login with no route to root wrote it itself
+ * (`rootOrDegrade` degrades to the caller's own executor) — and on the swap arm, where this
+ * run wrote nothing, has no route to root to repair it with either. A probe that cannot
+ * answer lands there too, which is why it degrades instead of throwing: `ensureContainerMail`
+ * documents that a best-effort image swap never throws, and this is the one await in it that
+ * would otherwise break that contract.
+ */
+async function handOverEnvFile(
+  executor: CommandExecutor,
+  path: string,
+  onLog: SystemLogCallback,
+): Promise<void> {
+  const profile = await resolveEnvironment(executor).catch(() => null);
+  if (!profile || profile.isRoot || !profile.canSudo) return;
+
+  // `$SUDO_USER` only as a last resort, so an owner we could not name fails loudly rather
+  // than expanding to nothing — `ensureOwnedDir` keeps the same fallback for the same reason.
+  // A uid with no passwd entry answers `opsh_uid`/`opsh_sudo` but leaves `opsh_user` empty,
+  // and that is precisely a host whose file IS root-owned and does need the handover.
+  const owner = profile.loginUser ? sq(profile.loginUser) : '"$SUDO_USER"';
+  const stateDir = dirOf(path);
+
+  // One `&&` chain: reach without ownership is as useless as ownership without reach, so a
+  // failure at any step has to reach the operator rather than leave a half-done handover
+  // reported as success.
+  await elevatedExecutor(executor)
+    .exec(
+      `chown ${owner} ${sq(path)} && chmod 400 ${sq(path)} && ` +
+        `chmod a+x ${sq(stateDir)} ${sq(dirOf(stateDir))}`,
+    )
+    .catch((err: unknown) => {
+      onLog(
+        log(
+          `Could not give ${profile.loginUser || "the login user"} access to ${path}: ` +
+            `${safeErrorMessage(err)}. docker opens --env-file as that account, so the mail ` +
+            "containers will fail to start.",
+          "warn",
+        ),
+      );
+    });
+}
+
+/** One key back out of an env-file we wrote. Same trivial `K=V` shape as `writeEnvFile`. */
+async function readEnvFileValue(
+  executor: CommandExecutor,
+  path: string,
+  key: string,
+): Promise<string | null> {
+  const body = await executor.readFile(path).catch(() => "");
+  for (const line of body.split("\n")) {
+    const eq = line.indexOf("=");
+    if (eq > 0 && line.slice(0, eq).trim() === key) return line.slice(eq + 1);
+  }
+  return null;
+}
+
+/**
+ * The superuser password an ALREADY-INITIALISED cluster is holding, or null if this is a
+ * first install.
+ *
+ * GH-564: `POSTGRES_PASSWORD` only takes effect during `initdb`. On a redeploy over a
+ * RETAINED pgdata the sidecar starts a cluster that already has its own superuser
+ * password, so handing it a freshly minted one means every connection fails auth —
+ * db-bootstrap then cannot load the schema and `vmail` never appears. The engine's
+ * early-return is keyed on the ENGINE container existing, so an engine that was removed
+ * (or never came up) while pgdata survived lands straight in the create path.
+ *
+ * So: if the data directory holds a cluster, the credential of record is the one on disk,
+ * not the one we just generated. PG_VERSION is the marker initdb writes — the same probe
+ * the compose path uses.
+ */
+async function retainedDbPassword(
+  executor: CommandExecutor,
+  onLog: SystemLogCallback,
+): Promise<string | null> {
+  const initialised = await executor
+    .exec(`test -s ${sq(`${MAIL_DB_HOST_DATA_DIR}/pgdata/PG_VERSION`)} && echo yes || true`)
+    .then((out) => out.trim() === "yes")
+    .catch(() => false);
+  if (!initialised) return null;
+
+  const retained = await readEnvFileValue(executor, DB_ENV_FILE, "POSTGRES_PASSWORD");
+  if (retained) {
+    onLog(
+      log(
+        `Reusing the existing mail database credential — ${MAIL_DB_HOST_DATA_DIR} already ` +
+          `holds an initialised cluster, and its superuser password cannot be changed by ` +
+          `an env var.`,
+      ),
+    );
+    return retained;
+  }
+
+  // The cluster exists but we no longer hold its password. Minting one would produce a
+  // sidecar that cannot authenticate, a failed bootstrap, and a confusing error far from
+  // the cause — so stop here and name the two things that actually recover it.
+  throw new Error(
+    `The mail database directory ${MAIL_DB_HOST_DATA_DIR} holds an initialised Postgres ` +
+      `cluster, but its credential is missing from ${DB_ENV_FILE}. A new password cannot ` +
+      `be applied to an existing cluster. Either restore ${DB_ENV_FILE} with the original ` +
+      `POSTGRES_PASSWORD, or — if the mail data is expendable — remove ` +
+      `${MAIL_DB_HOST_DATA_DIR} to reinitialise the database from scratch.`,
+  );
+}
+
+/**
+ * For an existing initialised cluster, read the retained database port from ENGINE_ENV_FILE.
+ * Preserving the previously assigned port prevents repairs/restarts from drifting ports.
+ */
+export async function retainedDbPort(
+  executor: CommandExecutor,
+  onLog?: SystemLogCallback,
+): Promise<number | null> {
+  const initialised = await executor
+    .exec(`test -s ${sq(`${MAIL_DB_HOST_DATA_DIR}/pgdata/PG_VERSION`)} && echo yes || true`)
+    .then((out) => out.trim() === "yes")
+    .catch(() => false);
+  if (!initialised) return null;
+
+  const retained = await readEnvFileValue(executor, ENGINE_ENV_FILE, "OPENSHIP_MAIL_DB_PORT");
+  if (!retained) return null;
+  const n = resolveMailDbPort(retained);
+
+  onLog?.(
+    log(
+      `Reusing existing mail database port ${n} — ${MAIL_DB_HOST_DATA_DIR} already holds ` +
+        `an initialised cluster.`,
+    ),
+  );
+  return n;
+}
+
+/**
+ * Resolve an available host loopback port for the mail database sidecar.
+ * If the preferred port is free, returns it. If the default 5432 is occupied and
+ * the port was not explicitly specified, scans up to MAIL_DB_PORT_RANGE_MAX (5460)
+ * for the first available port.
+ */
+export async function findAvailableMailDbPort(
+  executor: CommandExecutor,
+  preferredPort: number,
+  isExplicit: boolean,
+  onLog: SystemLogCallback,
+): Promise<number> {
+  resolveMailDbPort(preferredPort);
+  const probe = await probePortListeningOnce(executor, preferredPort);
+  if (probe !== true) {
+    if (probe === null)
+      onLog(
+        log(
+          `Could not probe mail database port ${preferredPort}; Docker will validate the binding.`,
+          "warn",
+        ),
+      );
+    return preferredPort;
+  }
+
+  // If the user explicitly configured this port, do not auto-switch ports
+  if (isExplicit) {
+    throw new Error(
+      `Configured mail database port ${preferredPort} is already in use. Choose a free OPENSHIP_MAIL_DB_PORT.`,
+    );
+  }
+
+  // Auto-discovery: default port is occupied; scan candidate range 5433..5460
+  for (let port = MAIL_DB_FALLBACK_PORT; port <= MAIL_DB_PORT_RANGE_MAX; port++) {
+    const candidate = await probePortListeningOnce(executor, port);
+    if (candidate === false) {
+      onLog(
+        log(
+          `Default PostgreSQL port ${preferredPort} is in use on this host. ` +
+            `Automatically selected available port ${port} for the mail database ` +
+            `(can be overridden via OPENSHIP_MAIL_DB_PORT).`,
+          "warn",
+        ),
+      );
+      return port;
+    }
+  }
+
+  throw new Error(
+    `No free mail database port was found in ${preferredPort}, ${MAIL_DB_FALLBACK_PORT}-${MAIL_DB_PORT_RANGE_MAX}. Set OPENSHIP_MAIL_DB_PORT to a free port.`,
+  );
+}
+
+/** Inspect the existing sidecar without changing it or reading root-only files. */
+async function containerDbPort(
+  executor: CommandExecutor,
+  container: string,
+): Promise<number | null> {
+  const raw = await executor
+    .exec(`docker inspect -f '{{json .HostConfig.PortBindings}}' ${sq(container)} 2>/dev/null`)
+    .catch(() => "");
+  if (!raw.trim()) return null;
+  let bindings: Record<string, Array<{ HostIp?: string; HostPort?: string }>>;
+  try {
+    bindings = JSON.parse(raw);
+  } catch {
+    throw new Error("Could not read the mail database container's port bindings.");
+  }
+  const binding = bindings?.[`${MAIL_DB_INTERNAL_PORT}/tcp`];
+  if (binding?.length !== 1 || binding[0].HostIp !== MAIL_DB_HOST_BIND || !binding[0].HostPort) {
+    throw new Error(
+      "The mail database container must publish one PostgreSQL port on host loopback.",
+    );
+  }
+  return resolveMailDbPort(binding[0].HostPort);
+}
+
 /** `docker run` argv for the Postgres sidecar (loopback-published, bind-mounted data). */
-function buildDbRunCommand(container: string): string {
+export function buildDbRunCommand(container: string, dbPort: number = resolveMailDbPort()): string {
+  resolveMailDbPort(dbPort);
   return [
     "docker run -d",
     `--name ${sq(container)}`,
     "--restart unless-stopped",
     `--env-file ${sq(DB_ENV_FILE)}`,
     `-e ${sq(`PGDATA=${MAIL_DB_PGDATA}`)}`,
-    `-p ${sq(`${MAIL_DB_HOST_BIND}:${MAIL_DB_PORT}:${MAIL_DB_PORT}`)}`,
+    `-p ${sq(`${MAIL_DB_HOST_BIND}:${dbPort}:${MAIL_DB_INTERNAL_PORT}`)}`,
     `-v ${sq(`${MAIL_DB_HOST_DATA_DIR}:${MAIL_DB_CONTAINER_DATA_DIR}:z`)}`,
     sq(MAIL_DB_IMAGE),
   ].join(" ");
@@ -216,11 +534,15 @@ async function startDb(
   executor: CommandExecutor,
   container: string,
   onLog: SystemLogCallback,
+  dbPort: number = resolveMailDbPort(),
 ): Promise<boolean> {
   await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
-  const run = await executor.streamExec(buildDbRunCommand(container), onLog as (l: LogEntry) => void);
+  const run = await executor.streamExec(
+    buildDbRunCommand(container, dbPort),
+    onLog as (l: LogEntry) => void,
+  );
   if (run.code !== 0) return false;
-  const listening = await waitForPortListening(executor, MAIL_DB_PORT, { timeoutMs: 60_000 });
+  const listening = await waitForPortListening(executor, dbPort, { timeoutMs: 60_000 });
   // checked:false = inconclusive probe; don't fail the DB on a missing /proc read.
   return !(listening.checked && !listening.listening);
 }
@@ -282,7 +604,7 @@ function makeMailStart(
   opts: ContainerMailOptions,
 ): (image: string) => Promise<boolean> {
   const { onLog } = opts;
-  const hostname = `mail.${opts.domain}`;
+  const hostname = mailHostname(opts.domain);
   return async (image: string) => {
     if (!(await startEngine(executor, container, image, hostname, onLog))) return false;
     return (await verifyMailEngine(executor, opts)).ok;
@@ -316,6 +638,14 @@ export async function ensureContainerMail(
   const current = await containerImageRef(executor, container);
   if (current) {
     if (current === image) return { container, dbContainer, image, updated: false };
+
+    // The `engine.env` this swap launches against was written by a PREVIOUS install, so on
+    // a box provisioned before GH-630 it is still root-owned and no amount of relaunching
+    // fixes it. Repair it here, or a non-root box can never update its engine: `startEngine`
+    // dies on the client-side `--env-file` open, `swapManagedImage` rolls back through the
+    // same callback and dies identically, and a perfectly healthy engine gets reported as
+    // `mailDown` with nothing in the log pointing at permissions.
+    await handOverEnvFile(executor, ENGINE_ENV_FILE, onLog);
 
     const start = makeMailStart(executor, container, opts);
     const swap = await swapManagedImage(executor, {
@@ -360,13 +690,39 @@ export async function ensureContainerMail(
     if (pull.code !== 0) throw new Error(pullFailureMessage(image, output.join("\n")));
   }
 
-  // 2. Host state dirs (engine mounts + DB data dir), created over the same
-  //    executor that runs the containers — a missing host dir silently becomes an
-  //    empty bind and loses data.
+  // 2. Host state dirs (engine mounts + DB data dir). Through the privilege gate, and
+  //    reported rather than swallowed: these are root-owned paths under
+  //    /var/lib/openship/mail, so on a box we log into as a non-root sudo user the
+  //    unelevated `mkdir` fails. The comment here already named the consequence — "a
+  //    missing host dir silently becomes an empty bind and loses data" — and then
+  //    `.catch(() => {})` made it silent, so the one outcome worth an operator's
+  //    attention was the one nothing could observe. Degrades rather than throws, so an
+  //    unmeasurable host keeps today's behaviour.
+  const hostState = await rootOrDegrade(executor, {
+    purpose: "Creating the mail engine's host state directories",
+    consequence: "A missing directory becomes an empty bind mount, which loses mail data.",
+    report: (message) => onLog(log(message, "warn")),
+  });
   for (const mount of MAIL_CONTAINER_MOUNTS) {
-    await executor.exec(`mkdir -p ${sq(mount.host)}`).catch(() => {});
+    await hostState.exec(`mkdir -p ${sq(mount.host)}`).catch((err: unknown) => {
+      onLog(
+        log(
+          `Could not create the mail state directory ${mount.host}: ${safeErrorMessage(err)}. ` +
+            `Docker will create it empty, which loses mail data.`,
+          "warn",
+        ),
+      );
+    });
   }
-  await executor.exec(`mkdir -p ${sq(MAIL_DB_HOST_DATA_DIR)}`).catch(() => {});
+  await hostState.exec(`mkdir -p ${sq(MAIL_DB_HOST_DATA_DIR)}`).catch((err: unknown) => {
+    onLog(
+      log(
+        `Could not create the mail database directory ${MAIL_DB_HOST_DATA_DIR}: ` +
+          `${safeErrorMessage(err)}. Postgres will start on an empty bind mount.`,
+        "warn",
+      ),
+    );
+  });
 
   // 3. Secret env-files (root-only), consumed via --env-file so creds never hit a
   //    shell string. The engine's first-boot entrypoint reads these to init the
@@ -375,31 +731,48 @@ export async function ensureContainerMail(
   // PGSQL_ROOT_PASSWD) with an empty `vmail` database; the engine's first-boot
   // entrypoint then creates the vmail/vmailadmin/amavisd/iredapd/fail2ban roles
   // (from the per-role passwords passed in the engine env) and loads the schema.
-  await writeEnvFile(executor, DB_ENV_FILE, {
+  // A cluster already on disk owns its own superuser password (GH-564); a freshly
+  // generated one would only be applied by initdb, which will not run again.
+  const retainedRoot = await retainedDbPassword(hostState, onLog);
+  const dbRootPassword =
+    retainedRoot ?? opts.secrets.PGSQL_ROOT_PASSWD ?? opts.secrets.VMAIL_DB_ADMIN_PASSWD ?? "";
+  const isExplicitPort =
+    opts.dbPort !== undefined || Boolean(process.env.OPENSHIP_MAIL_DB_PORT?.trim());
+  const preferredPort = resolveMailDbPort(opts.dbPort);
+  const retainedPort =
+    (await retainedDbPort(hostState, onLog)) ?? (await containerDbPort(executor, dbContainer));
+  const dbPort =
+    retainedPort ?? (await findAvailableMailDbPort(executor, preferredPort, isExplicitPort, onLog));
+  await writeEnvFile(hostState, DB_ENV_FILE, {
     POSTGRES_USER: "postgres",
     POSTGRES_DB: MAIL_DB_NAME,
-    POSTGRES_PASSWORD:
-      opts.secrets.PGSQL_ROOT_PASSWD ?? opts.secrets.VMAIL_DB_ADMIN_PASSWD ?? "",
+    POSTGRES_PASSWORD: dbRootPassword,
   });
-  await writeEnvFile(executor, ENGINE_ENV_FILE, {
+  await handOverEnvFile(executor, DB_ENV_FILE, onLog);
+  await writeEnvFile(hostState, ENGINE_ENV_FILE, {
+    ...opts.secrets,
     FIRST_DOMAIN: opts.domain,
     OPENSHIP_MAIL_DB_HOST: MAIL_DB_HOST_BIND,
-    OPENSHIP_MAIL_DB_PORT: String(MAIL_DB_PORT),
+    OPENSHIP_MAIL_DB_PORT: String(dbPort),
     OPENSHIP_MAIL_DB_NAME: MAIL_DB_NAME,
     OPENSHIP_MAIL_DB_USER: MAIL_DB_USER,
-    ...opts.secrets,
+    // Spread LAST so the retained value wins: the engine's first-boot bootstrap connects
+    // as the superuser, and it has to use the password the cluster actually has, not the
+    // one this deploy generated.
+    ...(retainedRoot ? { PGSQL_ROOT_PASSWD: retainedRoot } : {}),
   });
+  await handOverEnvFile(executor, ENGINE_ENV_FILE, onLog);
 
   try {
     // 4. DB sidecar first — the engine's entrypoint blocks on it.
     onLog(log("Starting the mail database (postgres sidecar)..."));
-    if (!(await startDb(executor, dbContainer, onLog))) {
+    if (!(await startDb(executor, dbContainer, onLog, dbPort))) {
       throw new Error("the mail database container failed to become ready");
     }
 
     // 5. Engine.
     onLog(log("Starting the mail engine container..."));
-    if (!(await startEngine(executor, container, image, `mail.${opts.domain}`, onLog))) {
+    if (!(await startEngine(executor, container, image, mailHostname(opts.domain), onLog))) {
       throw new Error("the mail engine container failed to start");
     }
 
@@ -466,6 +839,10 @@ export async function startContainerMail(
     };
   }
 
+  const dbPort = await containerDbPort(executor, dbContainer);
+  if (dbPort === null)
+    return { started: false, reason: "Could not determine the existing mail database port." };
+
   // DB sidecar first: the engine's entrypoint blocks on it.
   onLog(log("Starting the mail database (postgres sidecar)..."));
   const db = await executor.streamExec(
@@ -475,10 +852,10 @@ export async function startContainerMail(
   if (db.code !== 0) {
     return { started: false, reason: "the mail database container did not start" };
   }
-  const dbListening = await waitForPortListening(executor, MAIL_DB_PORT, { timeoutMs: 60_000 });
+  const dbListening = await waitForPortListening(executor, dbPort, { timeoutMs: 60_000 });
   // checked:false = inconclusive probe; don't fail on a missing /proc read.
   if (dbListening.checked && !dbListening.listening) {
-    return { started: false, reason: `the mail database is not listening on :${MAIL_DB_PORT}` };
+    return { started: false, reason: `the mail database is not listening on :${dbPort}` };
   }
 
   onLog(log("Starting the mail engine container..."));

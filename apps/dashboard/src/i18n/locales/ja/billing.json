@@ -3,6 +3,8 @@
     "title": "容量と使用状況",
     "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",
     "routes": "無料ルート",
+    "runningServices": "稼働中のサービス",
+    "projects": "プロジェクト",
     "workspaces": "ワークスペース",
     "unlimited": "無制限",
     "used": "使用済み",
@@ -11,12 +13,12 @@
   },
   "topupsComingSoon": "都度購入のクレジットチャージは近日提供予定です。ここで月間割り当てに加えてクレジットを追加できます。",
   "header": {
-    "credits": "Credits",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "credits": "クレジット",
+    "creditsSuffix": "/ {limit}",
+    "overQuota": "割り当て超過",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "送受信の合計",
+    "build": "ビルド時間",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -33,9 +35,10 @@
     "invoices": "請求書"
   },
   "portal": {
-    "openButton": "Stripeポータルを開く",
+    "openButton": "請求ポータルを開く",
     "errorMissingUrl": "レスポンスにポータルURLが含まれていません",
-    "errorOpenFailed": "Stripeポータルを開けませんでした"
+    "errorOpenFailed": "Stripeポータルを開けませんでした",
+    "supportButton": "サポートに連絡"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "再接続"
     },
     "notEnabled": {
-      "title": "この組織では請求が有効になっていません",
-      "description": "請求は設定されていますが、この組織ではアクティブになっていません。有効にするには管理者にお問い合わせください。"
+      "title": "Cloud の購入はまだ利用できません",
+      "description": "Openship ではサブスクリプションとクレジットの購入がまだ有効になっていません。しばらくしてからもう一度お試しください。"
+    },
+    "notConfigured": {
+      "title": "Cloud の請求設定が完了していません",
+      "description": "Openship 側で請求の設定を完了する必要があります。Openship サポートにお問い合わせください。"
+    },
+    "forbidden": {
+      "title": "請求情報へのアクセス権がありません",
+      "description": "組織のオーナーに請求情報へのアクセス権を付与してもらってください。"
+    },
+    "signInRequired": {
+      "title": "請求情報を表示するにはログインしてください",
+      "description": "セッションを確認できませんでした。再度ログインして続行してください。",
+      "signIn": "ログイン"
+    },
+    "loadFailed": {
+      "title": "請求情報を読み込めませんでした",
+      "description": "請求機能は一時的に利用できません。もう一度お試しください。問題が続く場合は Openship サポートにお問い合わせください。"
     }
   },
   "plansRoute": {
     "loadError": "プランの読み込みに失敗しました",
     "genericError": "問題が発生しました",
     "tryAgain": "もう一度試す",
-    "checkoutError": "チェックアウトの開始に失敗しました"
+    "checkoutError": "チェックアウトの開始に失敗しました",
+    "replacementNotice": "プランや請求間隔を変更すると、支払い後に選択した通常料金で新しい期間が始まります。自動の日割り計算はありません。",
+    "changeViaSupport": "現在のサブスクリプションを変更するにはサポートにお問い合わせください。",
+    "billingUnavailable": "このアカウントではまだ購入できません。"
   },
   "pricing": {
     "custom": "カスタム",
@@ -73,23 +96,32 @@
     "currentPlan": "現在のプラン",
     "contactSales": "営業に問い合わせる",
     "freeForever": "永久無料",
-    "upgrade": "アップグレード"
+    "upgrade": "アップグレード",
+    "comingSoon": "近日公開",
+    "billingInterval": "請求間隔",
+    "monthly": "月払い",
+    "annual": "年払い",
+    "billedAnnually": "年払いで請求"
   },
   "topups": {
     "loadError": "追加購入パックの読み込みに失敗しました",
-    "title": "クレジットを追加購入",
-    "description": "Stripe経由で課金される一回限りのクレジットパックです。クレジットに有効期限はなく、毎月の割り当てに上乗せされます。",
+    "title": "Cloud利用枠を追加",
+    "description": "ビルドとアプリ向けの買い切り利用枠です。残高に追加されますが、プロジェクト数、ビルド時間、サービス数の上限は変わりません。",
     "tryAgain": "もう一度試す",
     "credits": "クレジット",
     "redirecting": "リダイレクト中…",
     "buy": "購入",
     "empty": "現在利用できる追加購入パックはありません。",
     "receiptsTitle": "最近の追加購入",
-    "receiptsDescription": "領収書はStripeで管理されています。請求ポータルを開いて、請求履歴の確認や領収書のダウンロードを行ってください。",
+    "receiptsDescription": "追加利用枠の購入領収書を確認できます。",
     "opening": "開いています…",
-    "openPortal": "Stripeポータルを開く",
+    "openPortal": "請求ポータルを開く",
     "checkoutError": "チェックアウトの開始に失敗しました",
-    "portalError": "請求ポータルを開けませんでした"
+    "portalError": "請求ポータルを開けませんでした",
+    "extraUsage": "追加の利用枠",
+    "prepaidUsage": "前払い利用枠",
+    "allowanceEquivalent": "請求サイクル1回分の利用枠に対する割合",
+    "oneTime": "一回払い"
   },
   "overview": {
     "creditsLeft": "残りクレジット",
@@ -99,18 +131,17 @@
     "resetsInDay": "{n}日後",
     "resetsInDays": "{n}日後",
     "none": "—",
-    "upgradeToPro": "Proにアップグレード",
     "recentActivity": "最近のアクティビティ",
     "last7Days": "過去7日間",
     "viewFullUsage": "使用量の詳細を表示",
     "noUsageYet": "まだ使用量はありません",
     "usageError": "使用量の読み込みに失敗しました",
-    "needMoreCredits": "クレジットがもっと必要ですか？",
+    "needMoreCredits": "クレジットを追加しますか？",
     "oneTimeTopups": "一回限りの追加購入、サブスクリプションの変更なし",
     "seeAllPacks": "すべてのパックを見る",
     "packsError": "パックの読み込みに失敗しました",
     "noPacks": "利用できる追加購入パックはありません。",
-    "creditsAmount": "{n}クレジット",
+    "creditsAmount": "{n} クレジット",
     "oneTime": "{price} 一回限り",
     "buy": "購入",
     "checkoutError": "チェックアウトの開始に失敗しました"
@@ -133,11 +164,11 @@
     },
     "chart": {
       "title": "使用量の推移",
-      "subtitle": "{unit}ごとの従量制ユニットを積み上げ表示。"
+      "subtitle": "{unit}ごとのCloudクレジット。"
     },
     "breakdown": {
       "title": "リソース別内訳",
-      "subtitle": "選択した範囲における従量制リソースの使用量に比例して割り当てられたクレジット。",
+      "subtitle": "選択した日付の実際のリソース使用量です。Cloudクレジットの合計は上に表示されます。",
       "resource": "リソース",
       "units": "ユニット",
       "credits": "クレジット",
@@ -146,10 +177,22 @@
       "empty": "選択した範囲に使用量はありません。"
     },
     "resources": {
-      "cpu": { "label": "CPU時間", "units": "vCPU時間" },
-      "memory": { "label": "メモリ", "units": "GB時間" },
-      "disk": { "label": "ディスクIO", "units": "GB" },
-      "network": { "label": "ネットワーク", "units": "GB" }
+      "cpu": {
+        "label": "CPU時間",
+        "units": "vCPU時間"
+      },
+      "memory": {
+        "label": "メモリ",
+        "units": "GB時間"
+      },
+      "disk": {
+        "label": "ディスクアクセス",
+        "units": "GB"
+      },
+      "network": {
+        "label": "データ転送",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "ワークスペース",
@@ -186,15 +229,177 @@
       "incomplete": "未完了",
       "incomplete_expired": "期限切れ",
       "unpaid": "未払い",
-      "paused": "一時停止中"
-    }
+      "paused": "一時停止中",
+      "credit_exhausted": "Cloud一時停止中"
+    },
+    "includedTitle": "含まれるもの",
+    "perYear": "${price}/年"
   },
   "paymentPanel": {
     "title": "支払い方法",
-    "description": "カード、銀行口座、請求先情報はStripeカスタマーポータルで管理されます。ポータルを開いて、支払い方法の追加、削除、更新を行ってください。"
+    "description": "お支払い方法と請求先情報を管理します。"
   },
   "invoicesPanel": {
     "title": "請求書",
-    "description": "請求書と領収書はStripeカスタマーポータルにあります。ポータルを開いて、請求履歴の確認やPDF請求書のダウンロードを行ってください。"
+    "description": "請求履歴と請求書を確認または請求できます。"
+  },
+  "subscription": {
+    "title": "サブスクリプション",
+    "renewsOn": "{date}に更新",
+    "endsOn": "更新を停止しました。サブスクリプションは{date}に終了します。",
+    "endsAtPeriodEnd": "更新を停止しました。サブスクリプションは支払い済み期間の終了時に終了します。",
+    "renewalEnabled": "自動更新は有効です。",
+    "ended": "サブスクリプションは終了しました。再開するにはプランを選択してください。",
+    "billedMonthly": "月払い",
+    "cancel": "サブスクリプションを解約",
+    "resume": "更新を再開",
+    "cancelNotice": "支払い済み期間の終了後は更新されません。それまではサブスクリプションが維持されます。",
+    "confirmCancel": "更新を停止",
+    "keepPlan": "サブスクリプションを維持",
+    "error": "サブスクリプションを更新できませんでした。もう一度お試しください。"
+  },
+  "checkout": {
+    "checking": "Cloudプランと残高を更新しています。支払いの処理には少し時間がかかる場合があります。",
+    "active": "Cloudプランは有効です。",
+    "pending": "支払いを処理中の可能性があります。このページを更新してプランと残高を確認してください。完了した支払いが反映されない場合はサポートにお問い合わせください。",
+    "support": "サポートに連絡"
+  },
+  "deployGate": {
+    "title": "デプロイするプランを選択",
+    "description": "プロジェクトの作成、コードのビルド、アプリの実行には有料のCloudプランが必要です。",
+    "preserved": "プロジェクトの設定はこの画面に保持されます。決済は新しいタブで開きます。プランが有効になったら、ここに戻って続行してください。",
+    "close": "プロジェクトに戻る",
+    "checkPlan": "プランを確認",
+    "loading": "Cloudプランを読み込み中…",
+    "loadError": "Cloudプランを読み込めませんでした。もう一度お試しください。",
+    "ownerRequired": "ワークスペースのオーナーにCloudプランの選択または管理を依頼してください。",
+    "readyTitle": "プロジェクトに戻ってください",
+    "ready": "Cloudプランが更新されました。このウィンドウを閉じて、もう一度お試しください。",
+    "pending": "プランはまだ変更されていません。決済を完了してから再度確認してください。",
+    "blockedTitle": "Cloudプランの確認が必要です",
+    "creditsTitle": "Cloud利用枠を使い切りました",
+    "creditsDescription": "利用枠を追加するか、上位プランを選択してください。追加の利用枠ではプロジェクト数、ビルド時間、サービス数の上限は増えません。",
+    "paymentDescription": "デプロイを続けるには、支払い情報またはサブスクリプションを更新してください。",
+    "pausedDescription": "このワークスペースのCloudデプロイは一時停止中です。アクセスを再開するにはサポートにお問い合わせください。",
+    "upgradeTitle": "このプロジェクトにはより多くの容量が必要です",
+    "upgradeDescription": "必要な容量のあるプランを選ぶか、プロジェクトを調整して再試行してください。",
+    "manageBilling": "請求を管理",
+    "topups": "利用枠を追加",
+    "checkoutOpened": "決済は別のタブで準備できています。開かなかった場合は下のリンクをご利用ください。",
+    "continueCheckout": "決済に進む",
+    "reasons": {
+      "static-only": "現在のプランにはこの種類のアプリが含まれていません。対応するプランを選択してください。",
+      "build-minutes-exhausted": "月間ビルド時間の上限に達しました。上位プランを選ぶか、ビルド枠がリセットされるまでお待ちください。",
+      "free-subdomain-limit": "プランのCloudサブドメインをすべて使用しています。上位プランを選ぶか、不要なサブドメインを削除してください。",
+      "resource-tier": "このプロジェクトに必要なCPUまたはメモリがプランの上限を超えています。上位プランを選ぶか、プロジェクト設定でリソースを減らしてください。",
+      "running-services": "実行中サービス数の上限に達しました。上位プランを選ぶか、不要なサービスを停止してください。",
+      "project-limit": "プロジェクト数の上限に達しました。上位プランを選ぶか、不要なプロジェクトを削除してください。"
+    }
+  },
+  "resourcesGuide": {
+    "title": "Cloudの使用量について",
+    "credits": "Cloudクレジット",
+    "creditsHint": "ビルドと実行中のアプリは、CPU、メモリ、ディスクアクセス、データ転送にクレジットを使用します。大きな処理ほど消費が速くなります。",
+    "creditsPerCycle": "請求サイクルあたり {amount} クレジット",
+    "buildTime": "ビルド時間",
+    "buildMinutes": "月あたり {amount} 分",
+    "buildHint": "コードのビルドにかかる時間です。5分のビルドは月間利用枠から5分を消費します。",
+    "apps": "実行中のサービス",
+    "appsHint": "同時に動くアプリ、データベース、ワーカーの数です。実行中のComposeサービスはそれぞれ1つとして数えます。",
+    "machine": "サービスごとのCPUとメモリ",
+    "machineHint": "1つのサービスで選択できるCPUとメモリの最大サイズです。共有残高ではなく、リソースの上限です。",
+    "projects": "プロジェクト",
+    "projectsHint": "下書きを含む、ワークスペースに保存されたプロジェクトです。",
+    "routesHint": "アプリの公開Cloudアドレスです。",
+    "unlimited": "上限なし",
+    "notIncluded": "含まれていません",
+    "noPlan": "Cloudプラン未契約",
+    "setupOnly": "サブスクリプションが必要",
+    "setupHint": "プロジェクトの作成、コードのビルド、アプリの実行にはCloudプランを選択してください。",
+    "includedTitle": "リソース",
+    "limitsHint": "プランに含まれるプロジェクト、実行中のサービス、月間ビルド時間。",
+    "balanceRule": "利用枠を使い切るとアプリは一時停止します。続行するには利用枠を追加し、リソース上限を増やすにはプランをアップグレードしてください。",
+    "reset": "ビルド枠のリセット日：{date}",
+    "cpuHint": "時間あたりの処理能力の使用量です。1 vCPUを1時間使うと1 vCPU時間になります。",
+    "memoryHint": "時間あたりのメモリ使用量です。1 GBを1時間使うと1 GB時間になります。",
+    "diskHint": "アプリが読み書きしたデータ量です。保存容量ではなく、ディスクのアクセス量を示します。",
+    "networkHint": "アプリが送受信したデータ量です。",
+    "usageMeaning": "数値の見方",
+    "selectedRange": "選択した期間の使用クレジット",
+    "usageHint": "選択した期間の実際のCPU、メモリ、ディスク処理、データ転送の使用量です。",
+    "creditsChart": "{unit}ごとのCloudクレジット。",
+    "allProjects": "すべてのプロジェクト",
+    "from": "開始日（UTC）",
+    "to": "終了日・当日を含む（UTC）",
+    "invalidRange": "終了日は開始日以降にしてください。",
+    "moreFeatures": "その他の機能",
+    "usageAllowance": "Cloud使用量",
+    "usageIncluded": "共有の利用枠を含む",
+    "usageSummary": "ビルドと実行中のアプリは利用枠を共有します。マシンが大きく、実行時間が長いほど消費量が増えます。",
+    "usageDetails": "使用量の詳細",
+    "usagePercent": "{percent}% 使用済み"
+  },
+  "onboarding": {
+    "workspaceDescription": "Cloudプランを選んでプロジェクトを作成し、コードをビルドしてアプリを実行しましょう。契約前はプロジェクトやコンピューティングリソースは含まれません。",
+    "includedCredits": "含まれる Cloud クレジット",
+    "noFreeCompute": "無料の Cloud コンピューティング枠はありません",
+    "planRequired": "プランが必要です",
+    "savedCredits": "保存された利用残高",
+    "savedCreditsHint": "前払いの利用残高はこのワークスペースに保持されます。Cloudデプロイで使うにはプランを選択してください。",
+    "offerTitle": "Openship Cloud で公開",
+    "offerLabel": "デプロイを始める",
+    "offerDescription": "プロジェクトのための場所と、アプリのビルド時間やリソースを提供します。",
+    "startingWith": "{name} で始める",
+    "subscribe": "{name} を契約",
+    "compare": "すべてのプランを比較",
+    "checkoutNote": "契約前に支払い情報をご確認ください。",
+    "choosePlan": "プランを選択",
+    "stepsTitle": "プロジェクトから本番環境へ",
+    "stepPlan": "プランを選択",
+    "stepPlanHint": "必要なプロジェクト数、サービス数、ビルド時間を選択します。",
+    "stepCheckout": "支払いを完了",
+    "stepCheckoutHint": "お支払い後にCloudプランが有効になります。",
+    "stepDeploy": "プロジェクトをデプロイ",
+    "stepDeployHint": "プロジェクトを作成して「デプロイ」を押します。",
+    "usageTitle": "Cloud の使用状況はここから",
+    "usageDescription": "有料プランでデプロイすると、ビルドとアプリの使用状況をここで確認できます。",
+    "paymentTitle": "支払い方法は未登録です",
+    "paymentDescription": "購入時に支払い方法を追加してください。初回購入後はここで管理できます。",
+    "invoicesTitle": "請求書はまだありません",
+    "invoicesDescription": "初回の支払い後に請求書と領収書が表示されます。",
+    "topupsTitle": "Cloud プランで始める",
+    "topupsDescription": "プランにはビルドとアプリの利用枠が含まれます。契約が有効になった後で追加できます。",
+    "compareTitle": "プロジェクトに合うプランを探す",
+    "compareDescription": "プロジェクト数、サービス数、ビルド時間、各アプリで使えるCPUとメモリを比較できます。",
+    "savedProjects": "ワークスペースには保存済みのプロジェクトが{count}件あります。追加するにはプランを契約してください。"
+  },
+  "resourceOverview": {
+    "overviewHint": "ワークスペースの使用量、残りの割り当て、プランの上限。",
+    "remaining": "残り {amount}",
+    "unavailable": "使用量を取得できません",
+    "measuredUsage": "この期間の実測値",
+    "sharedCompute": "共通のコンピュート枠を使用",
+    "computeTitle": "コンピュート使用量",
+    "computeHint": "CPU、メモリ、ディスク処理、アプリのデータ転送は共通の枠を使用します。ビルドと実行中のアプリが含まれます。",
+    "cpu": "CPU時間",
+    "cpuHint": "1 vCPU-hはCPUコア1個を1時間使用した量です。アプリの稼働時間ではなく処理量を表します。",
+    "memory": "メモリ時間",
+    "memoryHint": "1 GB-hは1 GBのメモリを1時間確保した量です。",
+    "disk": "ディスク処理量",
+    "diskHint": "アプリのディスクへの読み書き量です。保存容量ではありません。",
+    "transfer": "アプリのデータ転送",
+    "transferHint": "アプリの受信・送信データです。Edgeの配信量は別に表示します。",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Edge転送量",
+    "bandwidthHint": "ワークスペースのEdgeルートの受信・送信トラフィックです。月間枠はコンピュートとは別です。上限に達すると更新またはアップグレードまでルートが停止します。",
+    "requests": "Edgeリクエスト",
+    "requestsHint": "ワークスペースのEdgeルートで処理したHTTPリクエスト数です。課金記録やAPI呼び出しではなく、訪問者からのリクエストです。",
+    "requestsIncluded": "トラフィック枠に含まれます",
+    "partialError": "一部の使用量を取得できませんでした。更新して再試行してください。",
+    "refresh": "リソース使用量を更新",
+    "period": "{start} – {end}",
+    "currentPeriod": "現在の請求期間",
+    "viewUsage": "使用量の詳細を見る",
+    "bandwidthPerMonth": "{amount} GB / 月"
   }
 }

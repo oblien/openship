@@ -11,6 +11,9 @@ import type { CommandExecutor, LogEntry } from "@repo/adapters";
  * These drive the exec transport (`execMgmtStream` → `streamChunkBytes` → the
  * controller) through a real Hono SSE stream and compare the bytes the client
  * receives with the bytes the edge emitted.
+ *
+ * `SSE_PRIMER` prefixes every stream this helper opens, so it is part of the
+ * expected bytes — the assertions stay exact rather than becoming "starts with".
  */
 
 const h = vi.hoisted(() => ({
@@ -25,7 +28,7 @@ vi.mock("../../../src/lib/permission", () => ({
   permission: { assert: vi.fn(async () => {}) },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     retain: vi.fn(),
     release: vi.fn(),
@@ -33,7 +36,7 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
   },
 }));
 
-vi.mock("@/lib/openresty-paths", () => ({
+vi.mock("@repo/platform/engine/lib/openresty-paths", () => ({
   getOpenRestyPaths: vi.fn(async () => ({})),
 }));
 
@@ -52,12 +55,16 @@ vi.mock("@repo/db", async (importOriginal) => {
         ...actual.repos.project,
         findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1" })),
       },
+      server: {
+        ...actual.repos.server,
+        get: vi.fn(async (id: string) => ({ id, organizationId: "org_1", isLocal: false })),
+      },
     },
   };
 });
 
-vi.mock("../../../src/lib/project-analytics", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/project-analytics")>();
+vi.mock("@repo/platform/engine/lib/project-analytics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/project-analytics")>();
   return {
     ...actual,
     resolveProjectTrafficSource: vi.fn(async () => ({
@@ -69,6 +76,7 @@ vi.mock("../../../src/lib/project-analytics", async (importOriginal) => {
 });
 
 import { serverLogStream } from "../../../src/modules/projects/project.controller";
+import { SSE_PRIMER } from "../../../src/lib/sse";
 
 /**
  * An executor with no `forwardPort`, which is what selects the exec transport,
@@ -115,7 +123,7 @@ describe("serverLogStream relay", () => {
 
     const relayed = await relay(splitMidCharacter(frame, "é"));
 
-    expect(relayed.toString("hex")).toBe(Buffer.from(frame, "utf8").toString("hex"));
+    expect(relayed.toString("hex")).toBe(Buffer.from(SSE_PRIMER + frame, "utf8").toString("hex"));
   });
 
   it("keeps a payload parseable AND unmangled across a mid-character split", async () => {
@@ -147,7 +155,9 @@ describe("serverLogStream relay", () => {
       bytes.subarray(cuts[1]),
     ]);
 
-    expect(relayed.toString("hex")).toBe(bytes.toString("hex"));
+    expect(relayed.toString("hex")).toBe(
+      Buffer.concat([Buffer.from(SSE_PRIMER, "utf8"), bytes]).toString("hex"),
+    );
   });
 
   it("relays an ASCII frame unchanged", async () => {
@@ -155,6 +165,14 @@ describe("serverLogStream relay", () => {
 
     const relayed = await relay([Buffer.from(frame, "utf8")]);
 
-    expect(relayed.toString()).toBe(frame);
+    expect(relayed.toString()).toBe(SSE_PRIMER + frame);
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn(async () => {}) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

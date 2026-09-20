@@ -1,54 +1,33 @@
 "use client";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+
+import { useId } from "react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useI18n } from "@/components/i18n-provider";
 import { CHART_TOOLTIP_LABEL_STYLE, CHART_TOOLTIP_STYLE } from "@/lib/chart-theme";
-import type { Dictionary } from "@/i18n";
+import { formatBillingNumber, usageTimestamp, type CreditUsagePoint } from "@/lib/billing-usage";
 
-interface UsageChartProps {
-  buckets: Array<{
-    timestamp: string;
-    cpu_time_minutes: number;
-    memory_gb_minutes: number;
-    disk_io_gb: number;
-    network_gb: number;
-    credits: number;       // Oblien's authoritative per-bucket credits
-  }>;
-  granularity: "day" | "week";
-}
-
-const SERIES = [
-  { key: "cpu_time_minutes", labelKey: "cpu", color: "#3b82f6" },
-  { key: "memory_gb_minutes", labelKey: "memory", color: "#8b5cf6" },
-  { key: "disk_io_gb", labelKey: "diskIo", color: "#f59e0b" },
-  { key: "network_gb", labelKey: "network", color: "#10b981" },
-] as const;
-
-export function UsageChart({ buckets, granularity }: UsageChartProps) {
-  const { t } = useI18n();
+export function UsageChart({ buckets, granularity }: { buckets: CreditUsagePoint[]; granularity: "day" | "week" }) {
+  const { t, locale } = useI18n();
+  const fillId = useId();
+  const data = buckets.map((bucket) => ({ ...bucket, time: usageTimestamp(bucket.timestamp).getTime() }))
+    .filter((bucket) => Number.isFinite(bucket.time)).sort((a, b) => a.time - b.time);
+  const formatDate = (value: number) => new Date(value).toLocaleDateString(locale, { timeZone: "UTC", month: "short", day: "numeric" });
   return (
-    <ResponsiveContainer width="100%" height={320}>
-      <AreaChart data={buckets}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis dataKey="timestamp" tickFormatter={(v) => formatTick(v, granularity, t)} />
-        <YAxis />
-        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
-        <Legend />
-        {SERIES.map((s) => (
-          <Area key={s.key} type="monotone" dataKey={s.key} stackId="usage" stroke={s.color} fill={s.color} fillOpacity={0.4} name={t.billing.chart[s.labelKey]} />
-        ))}
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 0 }} accessibilityLayer>
+        <defs><linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.03} />
+        </linearGradient></defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={formatDate} minTickGap={35} tick={{ fontSize: 11 }} />
+        <YAxis tickFormatter={(value: number) => formatBillingNumber(value, locale)} tick={{ fontSize: 11 }} width={52} />
+        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+          labelFormatter={(value) => `${formatDate(Number(value))}${granularity === "week" ? ` · ${t.billing.usage.granularity.week}` : ""}`}
+          formatter={(value) => [formatBillingNumber(Number(value), locale), t.billing.resourcesGuide.credits]} />
+        <Area type="linear" dataKey="credits" name={t.billing.resourcesGuide.credits} stroke="var(--primary)" fill={`url(#${fillId})`}
+          strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
-}
-
-function formatTick(iso: string, granularity: "day" | "week", t: Dictionary): string {
-  const d = new Date(iso);
-  return granularity === "week"
-    ? interpolate(t.billing.chart.weekTick, { n: String(getWeekNumber(d)) })
-    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function getWeekNumber(d: Date): number {
-  const start = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
 }

@@ -6,7 +6,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { AppSettingsTab } from "./AppSettingsTab";
 import { ServicesTab } from "./ServicesTab";
-import { BuildSettings } from "./BuildSettings";
+import { BuildSettings, ProjectEnvironmentSettings } from "./BuildSettings";
 
 /**
  * The Configuration tab for an installed app — one surface, two modes:
@@ -51,7 +51,10 @@ export function AppConfiguration() {
       {mode === "app" ? (
         <AppSettingsTab />
       ) : isServices ? (
-        <ServicesTab />
+        <>
+          <ProjectEnvironmentSettings />
+          <ServicesTab />
+        </>
       ) : (
         <BuildSettings />
       )}

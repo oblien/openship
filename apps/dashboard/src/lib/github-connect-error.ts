@@ -9,6 +9,44 @@
  */
 export const GITHUB_CONNECT_ERROR_KEY = "openship.github.connectError";
 
+type ConnectErrorStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function browserStorage(): ConnectErrorStorage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Store a callback error for the window that initiated the OAuth flow. */
+export function storeGitHubConnectError(
+  error: string,
+  storage: ConnectErrorStorage | null = browserStorage(),
+): void {
+  if (!error || !storage) return;
+  try {
+    storage.setItem(GITHUB_CONNECT_ERROR_KEY, error);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Read and clear the callback error so it cannot leak into a later attempt. */
+export function consumeGitHubConnectError(
+  storage: ConnectErrorStorage | null = browserStorage(),
+): string | null {
+  if (!storage) return null;
+  try {
+    const error = storage.getItem(GITHUB_CONNECT_ERROR_KEY);
+    if (error !== null) storage.removeItem(GITHUB_CONNECT_ERROR_KEY);
+    return error;
+  } catch {
+    return null;
+  }
+}
+
 const MESSAGES: Record<string, string> = {
   account_already_linked_to_different_user:
     "That GitHub account is already linked to a different Openship user. Sign in as that user, or disconnect GitHub there first.",
@@ -20,6 +58,13 @@ const MESSAGES: Record<string, string> = {
 };
 
 export function githubConnectErrorMessage(code: string | null | undefined): string {
-  if (!code) return "Couldn't connect GitHub. Please try again.";
-  return MESSAGES[code] ?? `Couldn't connect GitHub (${code}).`;
+  const value = code?.trim();
+  if (!value) return "Couldn't connect GitHub. Please try again.";
+  if (MESSAGES[value]) return MESSAGES[value];
+
+  // OAuth failures arrive as machine codes, while later installation-claim
+  // failures are already useful server messages stored through the same
+  // cross-window channel. Preserve those messages instead of wrapping them as
+  // if the entire sentence were an unknown error code.
+  return /^[a-z\d._-]+$/i.test(value) ? `Couldn't connect GitHub (${value}).` : value;
 }

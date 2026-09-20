@@ -5,7 +5,7 @@ import {
   deriveOblienEventId,
   extractNamespace,
   type OblienEventEnvelope,
-} from "./oblien-webhook-crypto";
+} from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
 const SECRET = "whsec_test_oblien_123";
 
@@ -77,12 +77,22 @@ describe("deriveOblienEventId", () => {
     );
   });
 
-  it("collapses an exact re-delivery (same event + workspace + period_end)", () => {
-    const a = deriveOblienEventId(base);
-    const b = deriveOblienEventId({ ...base, timestamp: "later-but-same-period" });
-    // period_end wins over timestamp in the key, so a re-delivery of the same
-    // period's usage dedupes.
+  it("collapses provider retries using their stable delivery id", () => {
+    const a = deriveOblienEventId(base, "evt-stable");
+    const b = deriveOblienEventId({ ...base, timestamp: "later-but-same-period" }, "evt-stable");
     expect(a).toBe(b);
+  });
+
+  it("uses the signed event identity while keeping different namespaces isolated", () => {
+    const current = { ...base, id: "evt-signed" };
+    expect(deriveOblienEventId(current, "evt-signed")).toBe(deriveOblienEventId({ ...current, timestamp: "later" }, "evt-signed"));
+    expect(deriveOblienEventId(current)).not.toBe(deriveOblienEventId({ ...current, data: { namespace: "os-another" } }));
+  });
+
+  it("keeps different usage updates within the same billing period", () => {
+    const first = { ...base, data: { ...base.data, credits_used: 10 } };
+    const second = { ...base, data: { ...base.data, credits_used: 20 } };
+    expect(deriveOblienEventId(first)).not.toBe(deriveOblienEventId(second));
   });
 
   it("keeps distinct periods distinct", () => {

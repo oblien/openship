@@ -87,7 +87,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   fetchMgmt: vi.fn(async (_serverId: string, path: string) =>
     path.startsWith("/analytics/totals") ? h.totals : null,
   ),
@@ -103,14 +103,14 @@ vi.mock("../../../src/lib/project-analytics", () => ({
  * would offer every caller a way around both. Stubbing the cache to always report "not
  * scraped recently" exercises the real path instead.
  */
-vi.mock("../../../src/lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({
     get: vi.fn(async () => undefined),
     set: vi.fn(async () => {}),
   })),
 }));
 
-const { scrapeServerIfStale } = await import("../../../src/modules/system/analytics-scraper");
+const { scrapeServerIfStale } = await import("@repo/platform/engine/modules/system/analytics-scraper");
 const scrapeServer = scrapeServerIfStale;
 
 beforeEach(() => {

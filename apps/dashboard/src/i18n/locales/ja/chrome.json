@@ -22,6 +22,11 @@
     "backToSetup": "セットアップに戻る",
     "personal": "個人"
   },
+  "mailRail": {
+    "selectServer": "メールサーバーを選択",
+    "switchServer": "メールサーバーを切り替える",
+    "setupIncomplete": "セットアップ未完了"
+  },
   "migration": {
     "inProgressTitle": "移行中",
     "inProgressBody": "データを移動しています。切り替えが完了するとこのページは更新されます — 通常は30〜90秒かかります。",

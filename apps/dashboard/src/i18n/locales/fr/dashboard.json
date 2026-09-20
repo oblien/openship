@@ -55,11 +55,12 @@
     "appsEmptyDesc": "En un clic, entièrement auto-hébergé — bases de données, automatisation, analytique, coffres de mots de passe et plus encore, sur vos propres serveurs."
   },
   "nav": {
+    "scale": "Mise à l’échelle",
     "home": "Accueil",
     "new-project": "Nouveau projet",
     "projects": "Projets",
     "deployments": "Déploiements",
-    "issues": "Problèmes",
+    "issues": "Surveillance",
     "backups": "Sauvegardes",
     "domains": "Domaines",
     "monitoring": "Supervision",
@@ -67,10 +68,18 @@
     "emails": "E-mails",
     "settings": "Paramètres",
     "billing": "Facturation et utilisation",
+    "audit": "Journal d'audit",
+    "mailSetup": "Configurer la messagerie",
+    "mailSetupProgress": "Progression de la configuration",
+    "addMailbox": "Ajouter une boîte aux lettres",
+    "webmail": "Webmail",
     "sections": {
       "main": "Principal",
       "settings": "Paramètres",
       "infrastructure": "Infrastructure",
+      "mail": "Messagerie",
+      "delivery": "Distribution",
+      "system": "Système",
       "account": "Compte"
     },
     "apps": "Applications",

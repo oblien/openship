@@ -14,6 +14,16 @@ const nextConfig = {
   // fails at runtime with "cannot find module".
   outputFileTracingRoot: path.resolve(__dirname, "../.."),
   transpilePackages: ["@repo/ui", "@repo/core"],
+  async redirects() {
+    const movedDocs = [
+      ["/docs/api/sdk/reference", "/docs/api"],
+      ["/docs/api/sdk/deployments", "/docs/api/deployments"],
+    ];
+    return movedDocs.flatMap(([source, destination]) => [
+      { source, destination, permanent: true },
+      { source: `${source}.md`, destination: `${destination}.md`, permanent: true },
+    ]);
+  },
   // Serve each doc as raw markdown at `/docs/<slug>.md` (llms.txt convention) —
   // rewritten to the `docs-raw` route handler, which emits text/markdown.
   async rewrites() {

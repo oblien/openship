@@ -21,7 +21,7 @@ hand.
 - That's it. You do **not** need to pre-install Docker or anything else — Openship installs what's missing.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -31,8 +31,6 @@ hand.
 
 In the dashboard, open the **Servers** page and press **Add Server**. (If this is your first server,
 the empty page has an **Add Your First Server** button that does the same thing.)
-
-<Callout title="Screenshot">The Servers page empty state, with the **Add Server** button and the "What gets configured" cards (Docker, OpenResty, Monitoring, Git). *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -62,8 +60,6 @@ guessing later.
 
 When the test passes, press **Save & Continue to Setup**.
 
-<Callout title="Screenshot">The SSH Connection form with name, IP, port, username, and the Password / SSH Key / Agent authentication switch. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -76,8 +72,6 @@ Once the server is saved, Openship offers two ways to install what's needed:
 - **Step-by-Step Setup** — you review each component and choose what to install, seeing detailed status first.
 
 If you're new, pick **Automatic Setup**.
-
-<Callout title="Screenshot">The "Server Setup" choice screen with the **Automatic Setup** and **Step-by-Step Setup** cards. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -103,8 +97,6 @@ first time a deployment actually needs them — you never install them by hand:
 Once any of these is installed, it shows up on the server's **Components** tab (below), where you can
 re-check, reinstall, or remove it. When setup finishes, you land on the server's own page.
 
-<Callout title="Screenshot">The install progress panel: a component checklist (Docker, Git) with a progress bar and an expandable log. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -121,8 +113,6 @@ Each server gets its own page, split into tabs. From here you can see how it's d
 
 The header also has **Edit** (change the connection details) and, in the "…" menu, **Remove Server**
 (which clears the stored SSH credentials and settings).
-
-<Callout title="Screenshot">A server detail page showing the Overview / Components / Security / Terminal tabs and the CPU / memory / disk stat cards. *(screenshot pending)*</Callout>
 
 ### Rate limiting (Security tab)
 
@@ -143,7 +133,7 @@ server as `localhost` on your own computer — the same idea as VS Code's port f
 bound to loopback only and stays active just while it's running. This tab is hidden outside the
 desktop app.
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI. You must be logged in (`openship login`) and on a self-hosted
 Openship.
@@ -182,7 +172,7 @@ openship server rate-limit <server-id> --rps 50 --burst 20
 
 The installable components are `docker`, `git`, `openresty`, `certbot`, and `rsync`.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="Can't reach the server" type="error">
 Openship couldn't open an SSH connection. Check that the machine is powered on, that its SSH service
@@ -210,7 +200,7 @@ you'll see a "couldn't read" message. Install OpenResty from the **Components** 
 to **Security**.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Put an app on your new server — choose 'Server' when Openship asks where to run it." />

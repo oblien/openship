@@ -19,39 +19,39 @@ vi.mock("@repo/db", () => ({
 
 vi.mock("../../lib/controller-helpers", () => ({ platform: vi.fn() }));
 
-vi.mock("../../lib/openship-manifest-sync", () => ({
+vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
   syncProjectToServerManifest: vi.fn(),
 }));
 
-vi.mock("../github/clone-auth", () => ({ resolveBuildGitToken: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/clone-auth", () => ({ resolveBuildGitToken: vi.fn() }));
 
-vi.mock("../../lib/git-forwarding", () => ({ openDeployRelay: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/git-forwarding/index", () => ({ openDeployRelay: vi.fn() }));
 
-vi.mock("./service-checks", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/service-checks", () => ({
   preCreateServiceDeployments: vi.fn(),
   emitServiceCheckRun: vi.fn().mockResolvedValue(undefined),
   emitInitialServiceChecks: vi.fn(),
   rollupDeploymentStatus: (...args: unknown[]) => rollupDeploymentStatus(...args),
 }));
 
-vi.mock("./deployment-lifecycle", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
   onFailure: vi.fn(),
   onSuccess: vi.fn(),
   onCancelled: vi.fn(),
   setDeploymentStatus: (...args: unknown[]) => setDeploymentStatus(...args),
 }));
 
-vi.mock("./rollback", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/rollback/index", () => ({
   onDeploymentReady: (...args: unknown[]) => onDeploymentReady(...args),
 }));
 
-import { finalizeComposeDeploy } from "./build-pipeline";
+import { finalizeComposeDeploy } from "@repo/platform/engine/modules/deployments/build-pipeline";
 
-const asDeployment = (deployment: Partial<Deployment>) => deployment as Deployment;
+const asDeployment = (deployment: Partial<Deployment>) => ({ organizationId: "org-1", ...deployment }) as Deployment;
 const asProject = (project: Partial<Project>) => project as Project;
 const logger = {} as BuildLogger;
 const previousDeploymentId = "previous-deployment";
-const project = asProject({ id: "project-1", activeDeploymentId: previousDeploymentId });
+const project = asProject({ id: "project-1", organizationId: "org-1", activeDeploymentId: previousDeploymentId });
 
 function deploymentWithStatus(status: Deployment["status"]): Deployment {
   return asDeployment({
@@ -126,3 +126,8 @@ describe("finalizeComposeDeploy", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: vi.fn() }));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: vi.fn() }));

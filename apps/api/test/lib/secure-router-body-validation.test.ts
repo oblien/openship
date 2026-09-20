@@ -13,7 +13,7 @@ import { Type } from "@sinclair/typebox";
 vi.mock("../../src/lib/rate-limit", () => ({
   rateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, resetMs: 60_000 })),
 }));
-vi.mock("../../src/config/env", () => ({ env: {} }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {} }));
 vi.mock("../../src/middleware/auth", () => ({
   authMiddleware: (c: { set: (k: string, v: unknown) => void }, next: () => unknown) => {
     c.set("ctx", { userId: "user-1", organizationId: "org-1" });

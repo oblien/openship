@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
@@ -27,7 +28,7 @@ import {
   sshTarget,
 } from "./system-ssh";
 import { openSystemSshReverseTunnel } from "./reverse-tunnel";
-import { SshDisconnectedError } from "./errors";
+import { commandForError, SshDisconnectedError } from "./errors";
 
 const execFileAsync = promisify(execFile);
 
@@ -35,6 +36,14 @@ const execFileAsync = promisify(execFile);
  *  plane's native separators. The plain `join` is the other namespace: LOCAL
  *  staging paths under tmpdir. See SshExecutor for what a leaked backslash costs. */
 const remoteDirname = posix.dirname;
+
+function abortError(operation: string, signal: AbortSignal): Error {
+  const reason = signal.reason;
+  const suffix = reason instanceof Error && reason.message ? `: ${reason.message}` : "";
+  const error = new Error(`SSH ${operation} cancelled${suffix}`);
+  error.name = "AbortError";
+  return error;
+}
 
 /** Clamp a PTY window dimension to a sane range (mirrors SshExecutor). */
 function clampWindow(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -67,6 +76,7 @@ function describeSshFailure(stderr: string, fallback: string): Error {
  */
 export class SystemSshExecutor implements CommandExecutor {
   private readonly config: SshConfig;
+  private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
   private readonly controlPath = makeControlPath();
   /** Resolves once the ControlMaster connection is established. */
   private masterPromise: Promise<void> | null = null;
@@ -85,6 +95,29 @@ export class SystemSshExecutor implements CommandExecutor {
       throw new Error("System SSH executor requires a host.");
     }
     this.config = config;
+  }
+
+  runWithAbortSignal<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+    if (signal.aborted) return Promise.reject(abortError("operation", signal));
+    return this.abortScope.run(signal, async () => {
+      this.throwIfAborted("operation");
+      return fn();
+    });
+  }
+
+  private operationSignal(): AbortSignal | undefined {
+    return this.abortScope.getStore();
+  }
+
+  private resolvedSignal(explicit?: AbortSignal): AbortSignal | undefined {
+    const ambient = this.operationSignal();
+    if (!explicit || explicit === ambient) return ambient ?? explicit;
+    if (!ambient) return explicit;
+    return AbortSignal.any([explicit, ambient]);
+  }
+
+  private throwIfAborted(operation: string, signal = this.operationSignal()): void {
+    if (signal?.aborted) throw abortError(operation, signal);
   }
 
   private baseArgs(): string[] {
@@ -179,7 +212,10 @@ export class SystemSshExecutor implements CommandExecutor {
     remoteCommand: string,
     opts?: { timeout?: number; input?: string },
   ): Promise<{ stdout: string; stderr: string; code: number; timedOut: boolean }> {
+    const signal = this.operationSignal();
+    this.throwIfAborted("command", signal);
     await this.ensureMaster();
+    this.throwIfAborted("command", signal);
     return new Promise((resolve, reject) => {
       const child = spawn("ssh", [...this.baseArgs(), sshTarget(this.config), remoteCommand], {
         env: sshChildEnv(this.config),
@@ -189,7 +225,22 @@ export class SystemSshExecutor implements CommandExecutor {
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const finish = (act: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        act();
+      };
+      const onAbort = () => {
+        try { child.kill("SIGKILL"); } catch {}
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
       if (opts?.timeout) {
         timer = setTimeout(() => {
           timedOut = true;
@@ -201,15 +252,20 @@ export class SystemSshExecutor implements CommandExecutor {
       child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
       child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
       child.on("error", (e) => {
-        if (timer) clearTimeout(timer);
-        reject(new Error(`ssh failed to start: ${e.message}`));
+        finish(() => reject(new Error(`ssh failed to start: ${e.message}`)));
       });
       child.on("close", (code) => {
-        if (timer) clearTimeout(timer);
         const c = code ?? 1;
         void this.maybeSignalDisconnect(c).catch(() => {});
-        resolve({ stdout, stderr, code: c, timedOut });
+        finish(() => {
+          if (signal?.aborted) reject(abortError("command", signal));
+          else resolve({ stdout, stderr, code: c, timedOut });
+        });
       });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
 
       if (opts?.input !== undefined) {
         child.stdin.write(opts.input);
@@ -224,7 +280,7 @@ export class SystemSshExecutor implements CommandExecutor {
     const timeout = opts?.timeout ?? 30_000;
     const res = await this.runSsh(SystemSshExecutor.ENV_PREFIX + command, { timeout });
     if (res.timedOut) {
-      throw new Error(`Command timed out after ${timeout}ms: ${command}`);
+      throw new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`);
     }
     if (res.code !== 0) {
       // 255 is an SSH-level failure (auth/connection); map auth specially so
@@ -238,14 +294,29 @@ export class SystemSshExecutor implements CommandExecutor {
   async streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     await this.ensureMaster();
+    const signal = this.resolvedSignal(opts?.signal);
+    if (signal?.aborted) return { code: 0, output: "" };
     return new Promise((resolve) => {
       const child = spawn(
         "ssh",
         [...this.baseArgs(), sshTarget(this.config), SystemSshExecutor.ENV_PREFIX + command],
         { env: sshChildEnv(this.config), stdio: ["ignore", "pipe", "pipe"] },
       );
+
+      // Abort = kill the ssh client, which tears the channel down. Resolve with
+      // code 0 like SshExecutor does: an abort is the caller's own decision, not
+      // a transport failure, and callers that care (a cancelled build) re-check
+      // `signal.aborted` themselves. Without this the signal was ignored outright
+      // and a cancelled remote build streamed to completion.
+      let aborted = false;
+      const onAbort = () => {
+        aborted = true;
+        child.kill("SIGKILL");
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       // Raw passthrough (see LocalExecutor.streamExec): forward the untouched
       // byte stream as rawData so the client's xterm renders "\r"/ANSI natively
@@ -262,19 +333,29 @@ export class SystemSshExecutor implements CommandExecutor {
       child.stdout.on("data", (chunk: Buffer) => onChunk(chunk, "info"));
       child.stderr.on("data", (chunk: Buffer) => onChunk(chunk, "warn"));
       child.on("error", (err) => {
+        signal?.removeEventListener("abort", onAbort);
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
       });
       child.on("close", (code) => {
-        const c = code ?? 1;
+        signal?.removeEventListener("abort", onAbort);
+        const c = aborted ? 0 : (code ?? 1);
         void this.maybeSignalDisconnect(c).catch(() => {});
         resolve({ code: c, output: chunks.join("") });
       });
     });
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
-    const remoteCommand = `mkdir -p ${sq(remoteDirname(path))} && cat > ${sq(path)}`;
+  async writeFile(path: string, content: string, opts?: { mode?: number }): Promise<void> {
+    const target = sq(path);
+    // Truncate first, tighten next, stream last. For an existing permissive file
+    // this means there may briefly be an empty file at the old mode, but secret
+    // bytes are not sent until chmod has succeeded.
+    const prepare =
+      opts?.mode === undefined
+        ? `cat > ${target}`
+        : `: > ${target} && chmod ${opts.mode.toString(8)} ${target} && cat > ${target}`;
+    const remoteCommand = `mkdir -p ${sq(remoteDirname(path))} && ${prepare}`;
     const res = await this.runSsh(remoteCommand, { input: content });
     if (res.code !== 0) {
       throw new Error(res.stderr.trim() || `Failed to write ${path} (exit ${res.code})`);

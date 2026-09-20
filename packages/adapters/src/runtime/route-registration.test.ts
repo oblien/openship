@@ -194,3 +194,88 @@ describe("registerResolvedRoutes — proxy tunables", () => {
     });
   });
 });
+
+// `registerRoute` REPLACES the whole vhost file, so a registration that omits the
+// project's compiled vercel.json rules does not leave them alone — it DELETES them. This
+// path had no slot for them, so a plain single-app or static deploy silently wiped
+// whatever a domain edit or "Retry routing" had installed, and a working redirect stopped
+// working on the next push with nothing in the log.
+describe("registerResolvedRoutes — compiled vercel.json rules", () => {
+  const RULES = {
+    // A full-URL rewrite carries its own origin, so it needs no resolved backend and
+    // travels with the rest. Dropping it here is what kept an external rewrite from ever
+    // going live on a plain deploy — and, worse, let the deploy strip one the live
+    // re-apply had installed, since the option existed but nothing forwarded it.
+    proxyLocations: [
+      {
+        pathPrefix: "/proxy/",
+        external: true,
+        targetUrl: "https://api.example.com",
+        pattern: "/proxy/(.*)",
+        upstreamPath: "/v2/$1",
+      },
+    ],
+    redirects: [
+      { path: "/blog/", exact: false, statusCode: 308, destination: "/news/$1", pattern: "/blog/(.*)" },
+    ],
+    headerRules: [{ path: "/api/", headers: [{ key: "Cache-Control", value: "no-store" }] }],
+    cleanUrls: true,
+    trailingSlash: false,
+  };
+
+  it("carries them onto a STATIC registration", async () => {
+    const routing = { registerRoute: vi.fn(async () => {}) } as any;
+    await registerResolvedRoutes(
+      logger,
+      routing,
+      undefined,
+      [{ hostname: "site.example.com", tls: false, targetPath: "/" }],
+      { staticRoot: "/opt/openship/static/site" },
+      undefined,
+      { ...RULES },
+    );
+    expect(routing.registerRoute.mock.calls[0][0]).toMatchObject({
+      staticRoot: "/opt/openship/static/site",
+      ...RULES,
+    });
+  });
+
+  it("carries them onto a PROXIED registration too", async () => {
+    // registerRoute is what decides cleanUrls/trailingSlash apply to a staticRoot only, so
+    // passing them on both branches is correct here; redirects and headers apply to either.
+    const routing = { registerRoute: vi.fn(async () => {}) } as any;
+    await registerResolvedRoutes(
+      logger,
+      routing,
+      undefined,
+      [domain("app.example.com")],
+      routeTarget,
+      undefined,
+      { ...RULES },
+    );
+    expect(routing.registerRoute.mock.calls[0][0]).toMatchObject(RULES);
+  });
+
+  // trailingSlash is a TRI-STATE: `false` emits the opposite redirect from `true`, so a
+  // truthiness guard would silently turn "strip the slash" into "don't care".
+  it("passes trailingSlash:false through, and omits the keys when there are no rules", async () => {
+    const routing = { registerRoute: vi.fn(async () => {}) } as any;
+    await registerResolvedRoutes(
+      logger,
+      routing,
+      undefined,
+      [domain("a.example.com"), domain("b.example.com")],
+      routeTarget,
+      undefined,
+      { trailingSlash: false },
+    );
+    expect(routing.registerRoute.mock.calls[0][0]).toMatchObject({ trailingSlash: false });
+
+    const bare = { registerRoute: vi.fn(async () => {}) } as any;
+    await registerResolvedRoutes(logger, bare, undefined, [domain("c.example.com")], routeTarget);
+    const cfg = bare.registerRoute.mock.calls[0][0];
+    for (const key of ["proxyLocations", "redirects", "headerRules", "cleanUrls", "trailingSlash"]) {
+      expect(cfg).not.toHaveProperty(key);
+    }
+  });
+});

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { devSourceTag } from "./managed-images";
+import { devSourceTag } from "@repo/platform/engine/lib/managed-images";
 
 const roots: string[] = [];
 function makeComponent(files: Record<string, string>): { context: string; subdir: string } {

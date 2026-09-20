@@ -20,8 +20,9 @@
 set -u
 
 CLI_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DIST="$CLI_DIR/dist/index.js"
-SERVER="$CLI_DIR/dist/server/index.js"
+PACKAGE_DIR="${SMOKE_PACKAGE_DIR:-$CLI_DIR/../../packages/openship}"
+DIST="$PACKAGE_DIR/dist/index.js"
+SERVER="$PACKAGE_DIR/dist/server/index.js"
 FAILED=0
 VER_RE='^[0-9]+\.[0-9]+\.[0-9]+'
 
@@ -32,7 +33,7 @@ group() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 # ── build ────────────────────────────────────────────────────────────────
 if [ "${SMOKE_SKIP_BUILD:-}" != "1" ]; then
   group "Building CLI (dist + staged server)…"
-  (cd "$CLI_DIR" && bun run build) >/dev/null 2>&1 || { echo "build failed"; exit 1; }
+  (cd "$PACKAGE_DIR" && bun run build) >/dev/null 2>&1 || { echo "build failed"; exit 1; }
 fi
 [ -f "$DIST" ] || { echo "no dist/index.js — build the CLI first"; exit 1; }
 
@@ -176,8 +177,8 @@ fi
 # were the `bin`, npm emits `sh.exe` calls that break every Windows install.
 # The `bin` must be dist/node-entry.js with a plain `#!/usr/bin/env node`.
 group "C7 — npm bin shebang (Windows launcher regression, #460)"
-NODE_ENTRY="$CLI_DIR/dist/node-entry.js"
-BIN_FIELD="$(cd "$CLI_DIR" && node -e 'process.stdout.write(require("./package.json").bin.openship||"")' 2>/dev/null)"
+NODE_ENTRY="$PACKAGE_DIR/dist/node-entry.js"
+BIN_FIELD="$(cd "$PACKAGE_DIR" && node -e 'process.stdout.write(require("./package.json").bin.openship||"")' 2>/dev/null)"
 if [ "$BIN_FIELD" != "./dist/node-entry.js" ]; then
   fail "package.json bin.openship is '$BIN_FIELD' (expected ./dist/node-entry.js — npm would read index.js's sh polyglot)"
 elif [ ! -f "$NODE_ENTRY" ]; then

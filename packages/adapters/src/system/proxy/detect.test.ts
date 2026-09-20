@@ -20,6 +20,15 @@ function makeExecutor(rules: Array<[string, string]>): CommandExecutor {
   return { exec } as unknown as CommandExecutor;
 }
 
+/**
+ * One line of the `docker ps --no-trunc --format …` output the shared port-owner
+ * resolver reads: id, name, image, then the four `openship.*` label columns — empty
+ * here, because everything these fixtures put on 80/443 is somebody else's.
+ */
+function psLine(name: string, image: string): string {
+  return ["deadbeef".repeat(8), name, image, "", "", "", ""].join("\t");
+}
+
 describe("probeEdge classification", () => {
   test("free when nothing listens on 80/443", async () => {
     const status = await probeEdge(makeExecutor([]));
@@ -176,8 +185,8 @@ describe("probeEdge classification", () => {
     const status = await probeEdge(
       makeExecutor([
         ["docker ps --filter name=openship-edge", "openship-edge"],
-        ["docker ps --filter publish=80", "traefik-1\ttraefik:v3.0"],
-        ["docker ps --filter publish=443", "traefik-1\ttraefik:v3.0"],
+        ["--filter publish=80", psLine("traefik-1", "traefik:v3.0")],
+        ["--filter publish=443", psLine("traefik-1", "traefik:v3.0")],
       ]),
     );
     expect(status.classification).toBe("known");
@@ -189,8 +198,8 @@ describe("probeEdge classification", () => {
     // publish` matches it. Recognized as ours by the openship-edge image name.
     const status = await probeEdge(
       makeExecutor([
-        ["docker ps --filter publish=80", "openship-edge\tghcr.io/oblien/openship-edge:latest"],
-        ["docker ps --filter publish=443", "openship-edge\tghcr.io/oblien/openship-edge:latest"],
+        ["--filter publish=80", psLine("openship-edge", "ghcr.io/oblien/openship-edge:latest")],
+        ["--filter publish=443", psLine("openship-edge", "ghcr.io/oblien/openship-edge:latest")],
       ]),
     );
     expect(status.classification).toBe("ours");
@@ -201,8 +210,8 @@ describe("probeEdge classification", () => {
   test("known when a dockerized traefik owns the ports", async () => {
     const status = await probeEdge(
       makeExecutor([
-        ["docker ps --filter publish=80", "traefik-1\ttraefik:v3.0"],
-        ["docker ps --filter publish=443", "traefik-1\ttraefik:v3.0"],
+        ["--filter publish=80", psLine("traefik-1", "traefik:v3.0")],
+        ["--filter publish=443", psLine("traefik-1", "traefik:v3.0")],
       ]),
     );
     expect(status.classification).toBe("known");

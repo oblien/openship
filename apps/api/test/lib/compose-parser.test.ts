@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseComposeEnvFile, parseComposeFile } from "../../src/lib/compose-parser";
+import { serializeEnvFile } from "@repo/core";
+import {
+  blockingComposeFields,
+  parseComposeEnvFile,
+  parseComposeFile,
+  resolveComposeEnvironmentTemplates,
+} from "@repo/platform/engine/lib/compose-parser";
 
 describe("parseComposeFile", () => {
   it("resolves Docker Compose environment interpolation from .env content", () => {
@@ -26,6 +32,11 @@ EMPTY_VALUE=
     );
 
     expect(parsed.services[0]?.image).toBe("node:20");
+    expect(parsed.services[0]?.advanced?.imageTemplate).toEqual({
+      expression: "node:${NODE_VERSION:-22}",
+      unresolvedVariables: [],
+      sourceValue: "node:20",
+    });
     expect(parsed.services[0]?.environment).toEqual({
       BETTER_AUTH_SECRET: "from-env",
       DATABASE_URL: "postgres://openship:secret@db:5432/app",
@@ -42,6 +53,21 @@ EMPTY_VALUE=
       variable: "EMPTY_VALUE",
       defaultValue: "fallback",
       resolvedValue: "fallback",
+    });
+  });
+
+  it("retains image interpolation provenance and ordinary missing variables", () => {
+    const service = parseComposeFile(`
+services:
+  app:
+    image: ghcr.io/acme/app:\${RELEASE_CHANNEL}-\${VERSION}
+`).services[0]!;
+
+    expect(service.image).toBe("ghcr.io/acme/app:-");
+    expect(service.advanced?.imageTemplate).toEqual({
+      expression: "ghcr.io/acme/app:${RELEASE_CHANNEL}-${VERSION}",
+      unresolvedVariables: ["RELEASE_CHANNEL", "VERSION"],
+      sourceValue: "ghcr.io/acme/app:-",
     });
   });
 
@@ -154,13 +180,15 @@ describe("parseComposeEnvFile - quoting, escapes, comments, edge cases", () => {
   });
 
   it("ignores blank lines and comments", () => {
-    expect(parseComposeEnvFile(`
+    expect(
+      parseComposeEnvFile(`
 # A leading comment
 FOO=bar
 
   # An indented comment
 BAZ=qux
-`)).toEqual({ FOO: "bar", BAZ: "qux" });
+`),
+    ).toEqual({ FOO: "bar", BAZ: "qux" });
   });
 
   it("strips trailing inline comments outside quotes", () => {
@@ -311,6 +339,34 @@ BAZ=qux
     });
   });
 
+  it("loads downloaded production variables without expanding or truncating secrets", () => {
+    const rows = [
+      { key: "REF", value: "must-not-be-substituted" },
+      { key: "PASSWORD", value: "user's${REF} $REF $$ 'single' \"double\" `backtick`" },
+      { key: "PATH_VALUE", value: "  C:\\new\\folder\\" },
+      { key: "CERT", value: "first\r\nNEXT=still part of the certificate\nlast\n" },
+      { key: "ESCAPES", value: "'literal \\n and real\nnewline'" },
+      { key: "__proto__", value: "valid-environment-key" },
+      { key: "AFTER", value: "intact" },
+    ];
+    expect(parseComposeEnvFile(serializeEnvFile(rows))).toEqual(Object.fromEntries(rows.map(({ key, value }) => [key, value])));
+  });
+
+  it("interpolates unescaped references while preserving escaped dollars and closing backslashes", () => {
+    expect(parseComposeEnvFile(String.raw`REF=expanded
+VALUE="\$REF $REF \${REF} \\\$REF"
+PATH_VALUE="ends with\\"
+AFTER=ok`)).toEqual({
+      REF: "expanded", VALUE: "$REF expanded ${REF} \\$REF", PATH_VALUE: "ends with\\", AFTER: "ok",
+    });
+  });
+
+  it("uses the last assignment's interpolation rule for duplicate keys", () => {
+    expect(parseComposeEnvFile("REF=value\nA=$REF\nA='$REF'\nB='$REF'\nB=$REF")).toEqual({
+      REF: "value", A: "$REF", B: "value",
+    });
+  });
+
   it("realistic project .env - database, secrets, runtime config", () => {
     const result = parseComposeEnvFile(`
 # Database
@@ -354,6 +410,163 @@ services:
     expect(api?.build).toBe("./services/api");
     expect(api?.dockerfile).toBe("Dockerfile.prod");
     expect(worker?.build).toBe("./services/worker");
+  });
+
+  it("extracts service-specific build args in map and list form (#689)", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        APP_PACKAGE: "@myorg/api"
+        FEATURE_FLAG: true
+        FROM_ENV:
+        FROM_TEMPLATE: "\${FROM_ENV}"
+  worker:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        - APP_PACKAGE=@myorg/worker
+        - FROM_ENV
+        - EMPTY=
+`,
+      { env: { FROM_ENV: "resolved" } },
+    );
+
+    expect(parsed.services.find((service) => service.name === "api")?.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/api",
+      FEATURE_FLAG: "true",
+      FROM_ENV: null,
+      FROM_TEMPLATE: "${FROM_ENV}",
+    });
+    expect(parsed.services.find((service) => service.name === "worker")?.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/worker",
+      FROM_ENV: null,
+      EMPTY: "",
+    });
+    expect(
+      parsed.services.find((service) => service.name === "api")?.advanced?.buildArgTemplateKeys,
+    ).toEqual(["FROM_TEMPLATE"]);
+    expect(
+      parsed.services.find((service) => service.name === "worker")?.advanced?.buildArgTemplateKeys,
+    ).toEqual([]);
+  });
+
+  it("keeps required build-arg expressions raw and reports their missing variable", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        TOKEN: \${BUILD_TOKEN:?set BUILD_TOKEN}
+`);
+
+    expect(parsed.services[0]?.buildArgs).toEqual({
+      TOKEN: "${BUILD_TOKEN:?set BUILD_TOKEN}",
+    });
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual(["TOKEN"]);
+    expect(parsed.missingRequired).toEqual([
+      { variable: "BUILD_TOKEN", message: "set BUILD_TOKEN" },
+    ]);
+  });
+
+  it("tracks escaped dollars so they are expanded exactly once", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      args:
+        HOME_REF: "$$HOME"
+`);
+
+    expect(parsed.services[0]?.buildArgs).toEqual({ HOME_REF: "$$HOME" });
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual(["HOME_REF"]);
+  });
+
+  it("marks an explicitly empty build args block so sync can clear stale stored args", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args: {}
+`);
+
+    expect(parsed.services[0]?.buildArgs).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual([]);
+  });
+
+  it("marks a build declaration after its entire args key is removed", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+`);
+
+    expect(parsed.services[0]?.buildArgs).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual([]);
+  });
+
+  it("preserves unresolved bare build args as unset so deploy can use its invocation env", () => {
+    const [service] = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        UNSET_MAP:
+        -ignored-object: []
+`).services;
+    expect(service?.buildArgs).toEqual({ UNSET_MAP: null });
+  });
+
+  it("blocks Compose build behavior Openship cannot reproduce", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      target: release
+      ssh:
+        - default=private-material
+      secrets:
+        - npm_token
+`);
+
+    expect(
+      blockingComposeFields(parsed.unsupported)
+        .map((issue) => issue.field)
+        .sort(),
+    ).toEqual(["build.secrets", "build.ssh", "build.target"]);
+    expect(JSON.stringify(parsed.unsupported)).not.toContain("private-material");
+  });
+
+  it("blocks malformed build args and contexts outside the linked repository", () => {
+    const malformed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        - BAD-KEY=never-log-this
+`);
+    expect(blockingComposeFields(malformed.unsupported)).toEqual([
+      expect.objectContaining({ field: "build.args[0]", blocking: true }),
+    ]);
+    expect(JSON.stringify(malformed.unsupported)).not.toContain("never-log-this");
+
+    for (const context of ["https://github.com/acme/app.git", "/srv/app"]) {
+      const parsed = parseComposeFile(`services:\n  api:\n    build: ${context}\n`);
+      expect(blockingComposeFields(parsed.unsupported)).toEqual([
+        expect.objectContaining({ field: "build.context", blocking: true }),
+      ]);
+    }
   });
 
   it("extracts image-only services (no build, just image)", () => {
@@ -509,7 +722,14 @@ services:
       { envFileContent: "API_TOKEN=abc123\n" },
     );
     // interpolation resolves first, THEN shell-split → argv (no sh -c).
-    expect(parsed.services[0]?.commandArgv).toEqual(["node", "app.js", "--token", "abc123", "--port", "3000"]);
+    expect(parsed.services[0]?.commandArgv).toEqual([
+      "node",
+      "app.js",
+      "--token",
+      "abc123",
+      "--port",
+      "3000",
+    ]);
   });
 
   it("empty list command → [] (clears image CMD) (#332)", () => {
@@ -658,6 +878,11 @@ services:
   it(":? reports instead of throwing when the variable is unset", () => {
     const parsed = parseComposeFile(compose("NODE_VERSION:?NODE_VERSION is required"));
     expect(parsed.services[0]?.image).toBe("node:");
+    expect(parsed.services[0]?.advanced?.imageTemplate).toEqual({
+      expression: "node:${NODE_VERSION:?NODE_VERSION is required}",
+      unresolvedVariables: ["NODE_VERSION"],
+      sourceValue: "node:",
+    });
     expect(parsed.missingRequired).toEqual([
       { variable: "NODE_VERSION", message: "NODE_VERSION is required" },
     ]);
@@ -693,8 +918,9 @@ services:
   });
 
   it("keeps the author's message verbatim, punctuation and all", () => {
-    expect(parseComposeFile(compose("DB_URL:?DB_URL must be set (see README)")).missingRequired)
-      .toEqual([{ variable: "DB_URL", message: "DB_URL must be set (see README)" }]);
+    expect(
+      parseComposeFile(compose("DB_URL:?DB_URL must be set (see README)")).missingRequired,
+    ).toEqual([{ variable: "DB_URL", message: "DB_URL must be set (see README)" }]);
   });
 
   it("flags the env row as required + missing so the wizard can prompt for it", () => {
@@ -816,14 +1042,18 @@ describe("parseComposeFile — service resource limits", () => {
 
   it("parses the swarm form (deploy.resources.limits)", () => {
     const parsed = parseComposeFile(
-      svc("    deploy:\n      resources:\n        limits:\n          memory: 3072M\n          cpus: '1.5'\n"),
+      svc(
+        "    deploy:\n      resources:\n        limits:\n          memory: 3072M\n          cpus: '1.5'\n",
+      ),
     );
     expect(parsed.services[0]?.advanced?.resources).toEqual({ cpuCores: 1.5, memoryMb: 3072 });
   });
 
   it("lets the more specific deploy block win over the short form", () => {
     const parsed = parseComposeFile(
-      svc("    mem_limit: 512m\n    deploy:\n      resources:\n        limits:\n          memory: 8g\n"),
+      svc(
+        "    mem_limit: 512m\n    deploy:\n      resources:\n        limits:\n          memory: 8g\n",
+      ),
     );
     expect(parsed.services[0]?.advanced?.resources?.memoryMb).toBe(8192);
   });
@@ -864,5 +1094,356 @@ describe("parseComposeFile — service resource limits", () => {
     );
     expect(parsed.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
     expect(parsed.services[0]?.advanced?.healthcheck?.test).toBe("curl -f localhost");
+  });
+});
+
+describe("parseComposeFile — shared namespaces (network_mode / pid)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("stores the sharing forms on advanced, keyed the way the runtime reads them", () => {
+    const parsed = parseComposeFile(
+      svc("    network_mode: service:gluetun\n    pid: container:abc123\n"),
+    );
+    expect(parsed.services[0]?.advanced?.networkMode).toBe("service:gluetun");
+    expect(parsed.services[0]?.advanced?.pidMode).toBe("container:abc123");
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("stores network_mode: none", () => {
+    const parsed = parseComposeFile(svc("    network_mode: none\n"));
+    expect(parsed.services[0]?.advanced?.networkMode).toBe("none");
+  });
+
+  it("reports `host` as BLOCKING and stores nothing", () => {
+    // The refusal this feature is built around: importing it anyway deploys a
+    // container that bypasses the edge and can reach Openship's own loopback API.
+    // Blocking (not a warning) because there is nothing the wizard could collect
+    // to fix it — the compose file has to change.
+    const parsed = parseComposeFile(svc("    network_mode: host\n"));
+    expect(parsed.services[0]?.advanced?.networkMode).toBeUndefined();
+    expect(blockingComposeFields(parsed.unsupported)).toHaveLength(1);
+    expect(parsed.unsupported[0]).toMatchObject({
+      service: "app",
+      field: "network_mode",
+      blocking: true,
+    });
+  });
+
+  it("reports an unsupported value as blocking rather than dropping it", () => {
+    const parsed = parseComposeFile(svc("    network_mode: my-custom-net\n"));
+    expect(parsed.services[0]?.advanced?.networkMode).toBeUndefined();
+    expect(blockingComposeFields(parsed.unsupported)).toHaveLength(1);
+  });
+
+  it("says nothing about the compose default network", () => {
+    const parsed = parseComposeFile(svc("    network_mode: bridge\n"));
+    expect(parsed.services[0]?.advanced?.networkMode).toBeUndefined();
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("interpolates the value before validating it", () => {
+    const parsed = parseComposeFile(svc("    network_mode: service:${VPN_SVC}\n"), {
+      envFileContent: "VPN_SVC=gluetun\n",
+    });
+    expect(parsed.services[0]?.advanced?.networkMode).toBe("service:gluetun");
+  });
+
+  it("leaves advanced absent when neither key is declared", () => {
+    const parsed = parseComposeFile(svc("    ports:\n      - '80:80'\n"));
+    expect(parsed.services[0]?.advanced).toBeUndefined();
+  });
+});
+
+// #388: stop_signal / stop_grace_period were parsed only to warn "not modeled"
+// and then dropped, so a service that needs longer than Docker's 10s to flush on
+// shutdown got SIGKILLed mid-write. They now flow through advanced to the
+// container's StopSignal / StopTimeout.
+describe("parseComposeFile — shutdown behavior (stop_signal / stop_grace_period)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("stores stop_signal and stop_grace_period on advanced without warning", () => {
+    const parsed = parseComposeFile(svc("    stop_signal: SIGINT\n    stop_grace_period: 1m30s\n"));
+    expect(parsed.services[0]?.advanced?.stopSignal).toBe("SIGINT");
+    expect(parsed.services[0]?.advanced?.stopGracePeriod).toBe("1m30s");
+    // The whole point of the fix: these keys are honored, not reported dropped.
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("stop_signal");
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("stop_grace_period");
+  });
+
+  it("accepts a bare-number grace period (compose treats it as seconds)", () => {
+    const parsed = parseComposeFile(svc("    stop_grace_period: 30\n"));
+    expect(parsed.services[0]?.advanced?.stopGracePeriod).toBe("30");
+  });
+
+  it("interpolates stop_signal from the env file", () => {
+    const parsed = parseComposeFile(svc("    stop_signal: ${SIG}\n"), {
+      envFileContent: "SIG=SIGQUIT\n",
+    });
+    expect(parsed.services[0]?.advanced?.stopSignal).toBe("SIGQUIT");
+  });
+
+  it("omits both when neither is declared", () => {
+    const parsed = parseComposeFile(svc("    ports:\n      - '80:80'\n"));
+    expect(parsed.services[0]?.advanced?.stopSignal).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.stopGracePeriod).toBeUndefined();
+  });
+});
+
+/**
+ * #575. `entrypoint:` used to be parsed, sometimes warned about, and then dropped —
+ * the image's own ENTRYPOINT always ran. The clearing form was worse than dropped:
+ * `requestsSomething` reads `[]` / `""` as "asks for nothing", so it produced no
+ * warning either, and that form is precisely the one people pair with `command:` to
+ * run a binary directly in an image whose ENTRYPOINT is a wrapper.
+ *
+ * `[]` vs absent is therefore the distinction every case here exists to hold.
+ */
+describe("parseComposeFile — entrypoint (#575)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("shell-splits a string form into argv, with no implicit sh -c", () => {
+    const parsed = parseComposeFile(svc("    entrypoint: /custom-init.sh --verbose\n"));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/custom-init.sh", "--verbose"]);
+    // Honored now, so it must not also be reported as dropped.
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("entrypoint");
+  });
+
+  it("takes a list form as argv verbatim", () => {
+    const parsed = parseComposeFile(
+      svc("    entrypoint:\n      - /bin/tini\n      - '--'\n      - /app/start\n"),
+    );
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/bin/tini", "--", "/app/start"]);
+  });
+
+  // THE bug. An empty list is a request to CLEAR, and it used to vanish in silence.
+  it("stores an empty list as the CLEAR, and does not silently skip it", () => {
+    const parsed = parseComposeFile(
+      svc("    entrypoint: []\n    command:\n      - /app/bin/thing\n      - --flag\n"),
+    );
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([]);
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("entrypoint");
+    // The pairing that makes it useful: command still overrides CMD as argv (#332).
+    expect(parsed.services[0]?.commandArgv).toEqual(["/app/bin/thing", "--flag"]);
+  });
+
+  it("treats an empty STRING as the clear too", () => {
+    const parsed = parseComposeFile(svc('    entrypoint: ""\n'));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([]);
+  });
+
+  // The other side of the distinction: absent must stay absent, or every service
+  // would start claiming it wants the image entrypoint cleared.
+  it("omits the key entirely when no entrypoint is declared", () => {
+    const parsed = parseComposeFile(svc("    ports:\n      - '80:80'\n"));
+    expect(parsed.services[0]?.advanced?.entrypoint).toBeUndefined();
+  });
+
+  it("interpolates from the env file", () => {
+    const parsed = parseComposeFile(svc("    entrypoint: ${INIT} --once\n"), {
+      envFileContent: "INIT=/opt/init.sh\n",
+    });
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/opt/init.sh", "--once"]);
+  });
+
+  it("quotes hold, so an argument with spaces stays one word", () => {
+    const parsed = parseComposeFile(svc('    entrypoint: /bin/sh -c "sleep 1 && exec app"\n'));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([
+      "/bin/sh",
+      "-c",
+      "sleep 1 && exec app",
+    ]);
+  });
+});
+
+describe("parseComposeFile — dropped-key reporting", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("names each host-level key it can't honor, as a warning", () => {
+    const parsed = parseComposeFile(
+      svc(
+        "    privileged: true\n    cap_add:\n      - NET_ADMIN\n    sysctls:\n      net.ipv4.ip_forward: '1'\n",
+      ),
+    );
+    expect(parsed.unsupported.map((u) => u.field).sort()).toEqual([
+      "cap_add",
+      "privileged",
+      "sysctls",
+    ]);
+    // Warnings, not refusals: the service still runs, just without the extra.
+    expect(blockingComposeFields(parsed.unsupported)).toEqual([]);
+  });
+
+  it("ignores an empty declaration — nothing was actually requested", () => {
+    const parsed = parseComposeFile(svc("    cap_add: []\n    sysctls: {}\n"));
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("blocks a long-form tmpfs mount, which would otherwise become persistent disk", () => {
+    // Binds has no tmpfs syntax, so a sourceless mount reaches Docker as a bare
+    // path — an ANONYMOUS VOLUME. A RAM-backed, ephemeral, size-capped mount would
+    // silently become disk-backed and unbounded.
+    const parsed = parseComposeFile(
+      svc("    volumes:\n      - type: tmpfs\n        target: /run/cache\n"),
+    );
+    const blocking = blockingComposeFields(parsed.unsupported);
+    expect(blocking).toHaveLength(1);
+    expect(blocking[0]?.field).toBe("volumes[].type=tmpfs");
+  });
+
+  it("blocks volume.subpath, which would otherwise mount the WHOLE volume", () => {
+    const parsed = parseComposeFile(
+      svc(
+        "    volumes:\n      - type: volume\n        source: data\n        target: /d\n        volume:\n          subpath: only/this\n",
+      ),
+    );
+    expect(blockingComposeFields(parsed.unsupported).map((u) => u.field)).toEqual([
+      "volumes[].volume.subpath",
+    ]);
+  });
+
+  it("warns on bind.propagation without blocking", () => {
+    const parsed = parseComposeFile(
+      svc(
+        "    volumes:\n      - type: bind\n        source: /h\n        target: /c\n        bind:\n          propagation: rslave\n",
+      ),
+    );
+    expect(parsed.unsupported.map((u) => u.field)).toEqual(["volumes[].bind.propagation"]);
+    expect(blockingComposeFields(parsed.unsupported)).toEqual([]);
+  });
+
+  it("reports only the unmodeled part of `deploy`, since resources.limits IS honored", () => {
+    const honored = parseComposeFile(
+      svc("    deploy:\n      resources:\n        limits:\n          memory: 1g\n"),
+    );
+    expect(honored.unsupported).toEqual([]);
+    expect(honored.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
+
+    const partly = parseComposeFile(
+      svc(
+        "    deploy:\n      replicas: 3\n      resources:\n        limits:\n          memory: 1g\n",
+      ),
+    );
+    expect(partly.unsupported.map((u) => u.field)).toEqual(["deploy"]);
+    expect(partly.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
+  });
+
+  it("says custom networks are flattened, and names them", () => {
+    const parsed = parseComposeFile(svc("    networks:\n      - backend\n"));
+    expect(parsed.unsupported[0]?.field).toBe("networks");
+    expect(parsed.unsupported[0]?.reason).toContain("backend");
+  });
+
+  it("reports nothing for a plain service", () => {
+    const parsed = parseComposeFile(
+      svc("    ports:\n      - '80:80'\n    volumes:\n      - ./c:/etc/c:ro\n"),
+    );
+    expect(parsed.unsupported).toEqual([]);
+  });
+});
+
+describe("parseComposeFile — a key set to its own default is not a loss", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("says nothing when the file explicitly asks for the default behaviour", () => {
+    // `privileged: false` requests exactly what the container already gets. Listing
+    // it teaches the operator to skim a list that mixes real losses with non-losses.
+    const parsed = parseComposeFile(
+      svc("    privileged: false\n    init: false\n    pids_limit: 0\n    read_only: false\n"),
+    );
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("still reports the same keys when they ask for something", () => {
+    const parsed = parseComposeFile(svc("    privileged: true\n    pids_limit: 100\n"));
+    expect(parsed.unsupported.map((u) => u.field).sort()).toEqual(["pids_limit", "privileged"]);
+  });
+});
+
+describe("parseComposeFile — deploy-time environment templates (#673)", () => {
+  it("keeps the raw embedded expression beside its scan-time preview", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      DATABASE_URL: postgresql://user:\${POSTGRES_PASSWORD:?set it}@db:5432/app
+      LITERAL: fixed
+`).services[0]!;
+
+    expect(service.environment.DATABASE_URL).toBe("postgresql://user:@db:5432/app");
+    expect(service.environmentTemplates).toEqual({
+      DATABASE_URL: "postgresql://user:${POSTGRES_PASSWORD:?set it}@db:5432/app",
+    });
+    expect(service.advanced?.environmentTemplateKeys).toEqual(["DATABASE_URL"]);
+    expect(service.environmentMeta?.DATABASE_URL).toMatchObject({
+      source: "interpolated",
+      required: true,
+      unresolvedVariables: ["POSTGRES_PASSWORD"],
+    });
+  });
+
+  it("marks list/object passthrough forms and preserves escaped dollars", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      - TOKEN
+      - PRICE=$$5
+  worker:
+    image: example/worker
+    environment:
+      TOKEN:
+`);
+
+    expect(parsed.services[0]?.environmentTemplates).toEqual({
+      TOKEN: "$TOKEN",
+      PRICE: "$$5",
+    });
+    expect(parsed.services[1]?.environmentTemplates).toEqual({ TOKEN: "$TOKEN" });
+  });
+
+  it("writes an empty provenance marker when every value is literal", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      EMPTY: ""
+`).services[0]!;
+
+    expect(service.environmentTemplates).toBeUndefined();
+    expect(service.advanced?.environmentTemplateKeys).toEqual([]);
+  });
+
+  it("keeps Compose default, alternate, nested, and escaped-dollar semantics", () => {
+    const resolved = resolveComposeEnvironmentTemplates(
+      { EMPTY: "", SET: "value" },
+      {
+        DEFAULT: "${MISSING:-fallback}",
+        EMPTY_IS_SET: "${EMPTY-default}",
+        ALTERNATE: "${SET:+enabled}",
+        NESTED: "${OUTER:-${INNER:-nested-fallback}}",
+        ESCAPED: "$$TOKEN",
+      },
+    );
+
+    expect(resolved.env).toMatchObject({
+      DEFAULT: "fallback",
+      EMPTY_IS_SET: "",
+      ALTERNATE: "enabled",
+      NESTED: "nested-fallback",
+      ESCAPED: "$TOKEN",
+    });
+    expect(resolved.missingRequired).toEqual([]);
+  });
+
+  it("reads a self-reference from the lower layer without fixed-point growth", () => {
+    const resolved = resolveComposeEnvironmentTemplates(
+      { PATH: "/usr/bin" },
+      { PATH: "${PATH}:/app/bin" },
+    );
+
+    expect(resolved.env.PATH).toBe("/usr/bin:/app/bin");
   });
 });

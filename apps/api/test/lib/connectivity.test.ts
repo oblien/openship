@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { registerConnectivityCheck, runConnectivityCheck } from "../../src/lib/connectivity";
+import { registerConnectivityCheck, runConnectivityCheck } from "@repo/platform/engine/lib/connectivity";
 
 describe("connectivity registry", () => {
   it("returns misconfigured for an unknown kind (never throws)", async () => {

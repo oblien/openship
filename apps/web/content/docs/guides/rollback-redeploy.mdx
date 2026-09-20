@@ -23,14 +23,15 @@ Open your project and click the **Deployments** tab. You'll see two things:
 - At the top, a **Deploy Latest Changes** card with a **Redeploy Project** button — that's for shipping again.
 - Below it, the **history**: every deploy this project has had, newest first, each on its own row.
 
+Use the page controls below the rows to browse older deployments. Search and status filters apply to the
+whole history, including deployments on other pages.
+
 Each row shows the version (like `v3`), a status, the commit message, and small labels that tell you the
 state of that version:
 
 - **Active** — the version currently live and serving your site.
 - **Snapshotted** — Openship still has this version's finished build saved, so rolling back to it skips the build entirely.
 - **Pinned** — this version is kept safe forever and will never be cleaned up (more on this below).
-
-<Callout title="Screenshot">Project → **Deployments** tab: the "Deploy Latest Changes" card on top and the deploy history list below, showing the **Active** / **Snapshotted** / **Pinned** labels on rows. *(screenshot pending)*</Callout>
 
 ## Roll back to a version that worked
 
@@ -66,8 +67,6 @@ and reminds you what rollback does either way:
 
 Confirm, and Openship brings that version back as a new entry in your history. Rolling back doesn't erase
 anything: the version you rolled away from stays in the list, so you can roll forward again the same way.
-
-<Callout title="Screenshot">The row **⋮** menu open, with **Rollback to this version** highlighted and the confirmation dialog. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -128,17 +127,25 @@ To *force* a from-source rebuild of a specific commit even when its build is sti
 
 ## How many versions stay instantly restorable
 
-Saved builds take disk, so Openship keeps a window of the most recent ones and cleans up the rest. You'll find
-the setting in your project's **Backup** tab — and in the deploy wizard when you edit the target server, since
-it's that machine's disk being used.
+Open **Project → Advanced → Rollback history** to set the maximum number of past deployments whose
+artifacts are kept. The default is **5**, inherited from the instance's default unless you set a project
+override. Disk measurements are informational; they do not change this limit. The same setting is available
+in the deployment wizard.
 
-By default the window sizes itself: Openship measures free space on the deploy host and how much one of your
-builds actually takes, then keeps as many as fit comfortably (between 2 and 20). The card shows what it
-measured — something like *"5 versions · ~1.8 GB each · 42 GB free · sized automatically"*. Type a number to
-pin the window yourself; clear the field to hand it back to Openship.
+The active deployment and pinned deployments are kept in addition to this window. A multi-service deployment
+counts once, even if it needs several images. Set the limit to **0** to keep only active and pinned releases.
 
-Versions beyond the window aren't lost — you can still roll back to them, Openship just rebuilds their commit
-instead of reusing a saved build.
+Cleanup runs after deployments finish, when you save a limit, and when you unpin a deployment. The scheduled
+**Deployment artifact cleanup** job retries failed cleanup and reconciles existing history; you can also run
+it manually from Jobs. Cleanup waits for any running deployment worker to finish.
+
+Older rows remain in the history but lose their **Snapshotted** label after their artifacts are reclaimed.
+An image or file tree still needed by an active, pinned, or retained deployment stays on the host until its
+last retained reference expires. Operator-managed and third-party registry images are not removed.
+
+Rollback checks what is actually available. Expired source builds can be rebuilt from their recorded commit;
+image releases can be pulled again from their recorded reference. Bare hosts without a restartable supervisor
+unit rebuild from source. A release without either a usable artifact or a reproducible source cannot be restored.
 
 ## Pin a version so it's always there
 
@@ -154,7 +161,7 @@ You can pin up to **10** deploys per project. Pin your last reliable release bef
 that way rollback is always one click away, no rebuild required.
 </Callout>
 
-## Prefer the terminal?
+## CLI
 
 Every action above works from the CLI. First list the deploys to get their IDs:
 
@@ -190,7 +197,7 @@ To simply ship the latest commit of the whole project (the terminal equivalent o
 *specific* deploy from the history.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“This deployment is already active”" type="error">
 You're trying to roll back to the version that's already live. Pick a *different* row from the history — the
@@ -208,7 +215,7 @@ bad data change or a migration, rolling back the code won't undo it. You'll need
 backup or fix it directly.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Auto-deploy on push" href="/docs/guides/auto-deploy" description="Ship every commit automatically — and roll back just as easily when one misbehaves." />

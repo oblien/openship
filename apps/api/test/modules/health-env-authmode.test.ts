@@ -64,11 +64,16 @@ afterEach(async () => {
   // first case's mode leaks into every later case (they all saw "none"). The
   // real app clears it the same way after any settings write — see
   // clearAuthModeCache() callers in modules/system/setup.controller.ts.
-  const { clearAuthModeCache } = await import("../../src/lib/auth-mode");
+  const { clearAuthModeCache } = await import("@repo/platform/engine/lib/auth-mode");
   clearAuthModeCache();
 });
 
 describe("GET /health/env authMode", () => {
+  it("reports the running API release consumed by the dashboard sidebar", async () => {
+    const { APP_VERSION } = await import("@repo/platform/engine/lib/app-version");
+    expect((await getEnv()).body.version).toBe(APP_VERSION);
+  });
+
   it("reports the persisted zero-auth mode instead of hardcoding local", async () => {
     settings.authMode = "none";
 

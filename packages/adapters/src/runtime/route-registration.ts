@@ -26,7 +26,13 @@ const ROUTE_RETRY_DELAY_MS = 1500;
 const ROUTE_MAX_ATTEMPTS = 5;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-import type { RouteConfig, RouteHostRedirect } from "../types";
+import type {
+  RouteConfig,
+  RouteHeaderRule,
+  RouteHostRedirect,
+  RouteProxyLocation,
+  RouteRedirect,
+} from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import type { DeployRouting, DeploySsl } from "./deploy-pipeline";
 
@@ -59,6 +65,31 @@ export interface RouteRegistrationOptions {
    * would make each of them re-answer a question the project already answered.
    */
   proxy?: ProxySettings;
+  /**
+   * The project's compiled `vercel.json` routing rules — rewrite locations, redirects,
+   * response headers, and the `cleanUrls` / `trailingSlash` URL shape.
+   *
+   * Options rather than part of each `routeTarget`, for exactly the reason `proxy` is:
+   * they are properties of the PROJECT, not of a particular upstream, so every vhost it
+   * owns gets the same ones.
+   *
+   * They have to travel this way because `registerRoute` REPLACES the whole vhost file —
+   * a registration that omits them does not leave them alone, it deletes them. Without
+   * them here a plain single-app or static deploy silently dropped whatever a domain edit
+   * or "Retry routing" had installed, so a working redirect stopped working on the next
+   * push with nothing in the log.
+   *
+   * `proxyLocations` is topology-FREE by construction: this path compiles without a
+   * `backendTargetUrl`, so a rewrite to a PATH (`/api/(.*)` → `/api/index.js`, a function
+   * on Vercel) is already reported as skipped upstream and never arrives here. Only a
+   * full-URL destination — which carries its own origin — reaches this option, so
+   * applying it to every domain cannot mis-target the way a resolved backend would.
+   */
+  proxyLocations?: RouteProxyLocation[];
+  redirects?: RouteRedirect[];
+  headerRules?: RouteHeaderRule[];
+  cleanUrls?: boolean;
+  trailingSlash?: boolean;
 }
 
 /**
@@ -169,6 +200,16 @@ export async function registerResolvedRoutes(
     if (options?.proxy) {
       routeConfig.proxy = options.proxy;
     }
+
+    // Compiled vercel.json rules, for the same reason and in the same way as `proxy`.
+    // `cleanUrls`/`trailingSlash` are honoured by registerRoute for a staticRoot route
+    // only (a proxied app's framework owns its URL shape), so they are safe to pass on
+    // both branches; redirects, headers and rewrite locations apply to either.
+    if (options?.proxyLocations?.length) routeConfig.proxyLocations = options.proxyLocations;
+    if (options?.redirects?.length) routeConfig.redirects = options.redirects;
+    if (options?.headerRules?.length) routeConfig.headerRules = options.headerRules;
+    if (options?.cleanUrls) routeConfig.cleanUrls = true;
+    if (options?.trailingSlash !== undefined) routeConfig.trailingSlash = options.trailingSlash;
 
     // Add webhook proxy location if this domain is the project's webhook domain
     if (options?.webhookDomain && domain.hostname === options.webhookDomain && options.webhookProxy) {

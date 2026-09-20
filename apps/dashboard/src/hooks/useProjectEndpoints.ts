@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { beginFetchState } from "./begin-fetch-state";
 import { api, ApiError, endpoints, projectsApi } from "@/lib/api";
 
 /**
@@ -275,8 +276,19 @@ function useEndpoint<T>(
     return { data: null, isLoading: true, error: null };
   });
 
+  /**
+   * Which id the data currently on screen belongs to — the difference between a REFRESH and a
+   * NAVIGATION, which need opposite answers below.
+   *
+   * Same id: we are re-reading data the user is already looking at, so it must keep showing.
+   * Different id: whatever we hold is another project's, and reporting it as loaded would
+   * render project A's page under project B's URL.
+   */
+  const loadedIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!id) {
+      loadedIdRef.current = null;
       setState({ data: null, isLoading: false, error: null });
       return;
     }
@@ -284,12 +296,17 @@ function useEndpoint<T>(
     // Cached ready → flip into resolved state and bail.
     const cached = cache.get(id);
     if (cached?.kind === "ready") {
+      loadedIdRef.current = id;
       setState({ data: cached.data, isLoading: false, error: null });
       return;
     }
 
     let cancelled = false;
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    // Stale-while-revalidate: a REFRESH keeps what's on screen, a first load reports loading.
+    // Load-bearing rather than a nicety — see `beginFetchState`, which owns the reasoning and
+    // the infinite-loop regression it exists to prevent.
+    const loadedId = loadedIdRef.current;
+    setState((prev) => beginFetchState(prev, loadedId, id));
 
     let promise: Promise<T>;
     if (cached?.kind === "loading") {
@@ -303,20 +320,29 @@ function useEndpoint<T>(
 
     promise
       .then((data) => {
-        cache.set(id, { kind: "ready", data });
+        // A retry/invalidation may already own this key with another promise.
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) {
+          cache.set(id, { kind: "ready", data });
+        }
         // Guard: don't write A's result into B's state if id has
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
-        if (cancelled || idRef.current !== id) return;
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
+        loadedIdRef.current = id;
         setState({ data, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
         // Errors are NOT cached — drop the entry so a future mount /
         // refresh re-fires the request. Otherwise a transient 5xx
         // permanently bricks the page until full reload.
-        cache.delete(id);
-        if (cancelled || idRef.current !== id) return;
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) cache.delete(id);
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
         const message = err instanceof Error ? err.message : "Request failed";
+        // The data goes with the error, so the next revision must report loading again rather
+        // than revalidating something that is no longer on screen.
+        loadedIdRef.current = null;
         setState({ data: null, isLoading: false, error: message });
       });
 
@@ -335,10 +361,15 @@ function useEndpoint<T>(
     if (!id || !pollMs || pollMs <= 0) return;
     let cancelled = false;
     const handle = setInterval(() => {
+      const previous = cache.get(id);
+      if (previous?.kind === "loading") return;
+      const startedRevision = revKey ? getRevision(revKey) : 0;
       fetcher(id)
         .then((data) => {
+          if (cancelled || idRef.current !== id || cache.get(id) !== previous ||
+            (revKey && getRevision(revKey) !== startedRevision)) return;
           cache.set(id, { kind: "ready", data });
-          if (cancelled || idRef.current !== id) return;
+          loadedIdRef.current = id;
           setState({ data, isLoading: false, error: null });
         })
         .catch(() => {});
@@ -347,7 +378,7 @@ function useEndpoint<T>(
       cancelled = true;
       clearInterval(handle);
     };
-  }, [id, cache, fetcher, pollMs]);
+  }, [id, cache, fetcher, pollMs, revKey]);
 
   return state;
 }
@@ -378,6 +409,9 @@ async function fetchProjectInfo(id: string): Promise<ProjectInfoData> {
 // first domain's cached numbers; `fetchOverview` splits it back apart.
 const OVERVIEW_KEY_SEP = "::";
 
+/** Analytics overview aggregates traffic server-side; high-traffic projects can exceed the 15s default. */
+const ANALYTICS_OVERVIEW_TIMEOUT_MS = 60_000;
+
 function overviewCacheKey(id: string, domain?: string | null): string {
   return domain ? `${id}${OVERVIEW_KEY_SEP}${domain}` : id;
 }
@@ -386,10 +420,14 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
   const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
-  const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
-    endpoints.analytics.overview,
-    { params: { projectId, ...(domain ? { domain } : {}) } },
-  );
+  const response = await api.get<{
+    data: AnalyticsOverviewResponse;
+    success?: boolean;
+    error?: string;
+  }>(endpoints.analytics.overview, {
+    params: { projectId, ...(domain ? { domain } : {}) },
+    timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+  });
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");
   }
@@ -620,4 +658,11 @@ export function invalidateProjectCaches(id: string) {
     if (key === id || key.startsWith(historyPrefix)) usageHistoryCache.delete(key);
   }
   bumpRevision(id);
+}
+
+/** Invalidate a shared environment-list mutation once for every affected project. */
+export function invalidateProjectCachesFor(ids: Iterable<string>) {
+  for (const id of new Set(ids)) {
+    if (id) invalidateProjectCaches(id);
+  }
 }

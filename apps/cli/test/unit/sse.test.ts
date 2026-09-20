@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSSE, type SSEEvent } from "../../src/lib/sse";
+import { parseSSE, type SSEEvent } from "@repo/sdk/client";
 
 /** Build a byte stream from string chunks (chunk boundaries need not align to events). */
 function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {

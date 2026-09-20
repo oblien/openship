@@ -1,14 +1,20 @@
 import { useTRPC } from '@/providers/query-provider';
 import { useQuery } from '@tanstack/react-query';
-import { useSession } from '@/lib/auth-client';
 
-export const useAttachments = (messageId: string) => {
-  const { data: session } = useSession();
+/**
+ * Prepare an attachment-byte query without running it during normal message
+ * rendering. Callers explicitly refetch after an open/download action.
+ */
+export const useAttachments = (messageId: string, folder?: string) => {
   const trpc = useTRPC();
   const AttachmentsQuery = useQuery(
     trpc.mail.getMessageAttachments.queryOptions(
-      { messageId },
-      { enabled: !!session?.user.id && !!messageId, staleTime: 1000 * 60 * 60 },
+      { messageId, folder },
+      {
+        enabled: false,
+        staleTime: 1000 * 60 * 60,
+        gcTime: 1000 * 60 * 5,
+      },
     ),
   );
 

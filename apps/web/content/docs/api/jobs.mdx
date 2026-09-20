@@ -1,0 +1,127 @@
+---
+title: Jobs
+description: Create command jobs, run them, and inspect schedules and results.
+---
+
+A job runs a command on one or more authorized servers. Jobs can run manually, on a cron schedule, once
+at a specified time, or in response to configured events. This surface requires a self-hosted installation.
+
+Job methods take the job's **`key`**. Run methods take a **run ID**. Writing a command job also requires
+administration access to every target server.
+
+## Create a command job
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const job = await ship.jobs.create({
+  label: "Check Node version",
+  serverId: "srv_123",
+  command: "node --version",
+  scheduleType: "manual",
+  timeoutMs: 10_000,
+});
+console.log(job.key);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/jobs" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"Check Node version","serverId":"srv_123","command":"node --version","scheduleType":"manual","timeoutMs":10000}'
+```
+
+</Tab>
+</Tabs>
+
+| Field | Type | Use |
+| --- | --- | --- |
+| `label` | `string` | Required; 1–120 characters. |
+| `command` | `string` | Required; command to execute, at most 10,000 characters. |
+| `serverId` / `serverIds` | `string` / `string[]` | Target server or up to 50 servers. |
+| `scheduleType` | `manual`, `recurring`, or `once` | Choose how the job is scheduled. |
+| `cronExpression` | `string` | Cron expression for a recurring job. |
+| `runAt` | `string` | ISO timestamp with a timezone for a one-time job. |
+| `timeoutMs` | `number` | Execution timeout, 1,000–86,400,000 ms. |
+| `retry` | `object` | `maxAttempts` (1–10) and `backoffSeconds` (0–3,600). |
+| `env` / `secrets` | `Record<string, string>` | Environment values; secrets are encrypted and masked in reads. |
+| `dependsOn` | `string[]` | Up to 50 prerequisite job keys. |
+| `triggerEvents` | `string[]` | Up to 50 event IDs from `triggerEvents()`. |
+| `notifyConfig` | `object` | Channel IDs and states: `running`, `success`, or `failed`. |
+
+`update(key, input)` accepts partial configuration plus `enabled`. System jobs only accept
+`cronExpression` and `enabled`, and cannot be removed. Secret updates replace the supplied secret map.
+
+## Run and inspect
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const submitted = await ship.jobs.run("job_key");
+console.log(submitted.runId, submitted.summary);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/jobs/job_key/run" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+Submission can return a `runId` or an immediate summary. Use `getRun(runId)` to inspect execution status,
+attempt, output, errors, and timing. `listRuns(key, { limit })` returns history; `limit` is 1–1,000.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+for await (const event of ship.jobs.streamRun("run_123")) {
+  console.log(event);
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -N "$OPENSHIP_URL/api/jobs/runs/run_123/stream" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+## Native scheduling
+
+An owned native installation does not start scheduling by default. Set `jobs: { enabled: true }` in its
+startup configuration only when it should own that work. Running one job manually and enabling recurring
+scheduling are separate actions. See [background work limits](/docs/api/sdk/compatibility#current-limits).
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream live output from a job run. | `jobs.streamRun(id, options?)` | `GET /api/jobs/runs/:runId/stream`<br />`job:read` · Self-hosted |
+| List available system and custom jobs. | `jobs.list()` | `GET /api/jobs`<br />`job:read` · Self-hosted |
+| Create a custom command job with schedule and target configuration. | `jobs.create(input)` | `POST /api/jobs`<br />`job:write` · Self-hosted |
+| List events that can trigger custom jobs. | `jobs.triggerEvents()` | `GET /api/jobs/trigger-events`<br />`job:read` · Self-hosted |
+| Read scheduled backup policies alongside jobs. | `jobs.backupSchedules()` | `GET /api/jobs/backup-schedules`<br />`job:read` · Self-hosted |
+| Read a job’s configuration and recent runs. | `jobs.get(id)` | `GET /api/jobs/:key`<br />`job:read` · Self-hosted |
+| Change a schedule or custom job configuration. | `jobs.update(id, input)` | `PATCH /api/jobs/:key`<br />`job:write` · Self-hosted |
+| Delete a custom job; system jobs can be disabled instead. | `jobs.remove(id)` | `DELETE /api/jobs/:key`<br />`job:write` · Self-hosted |
+| Trigger a job immediately. | `jobs.run(id)` | `POST /api/jobs/:key/run`<br />`job:write` · Self-hosted |
+| Read a job’s run history. | `jobs.listRuns(id, input?)` | `GET /api/jobs/:key/runs`<br />`job:read` · Self-hosted |
+| Read a recorded run, result, and captured output. | `jobs.getRun(id)` | `GET /api/jobs/runs/:runId`<br />`job:read` · Self-hosted |
+
+{/* api-operations:end */}

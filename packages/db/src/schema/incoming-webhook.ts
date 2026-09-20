@@ -1,13 +1,7 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  boolean,
-  jsonb,
-  index,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 import { project } from "./project";
+import type { ExecutionAuthority } from "@repo/core";
 
 // ─── Incoming webhooks ───────────────────────────────────────────────────────
 
@@ -28,10 +22,13 @@ import { project } from "./project";
 /** What a hook does when called. Extensible — add a variant + a dispatch case. */
 export type IncomingWebhookActionType = "deploy" | "job";
 
-/** Per-action config (jsonb). deploy: optional target service; job: the job key. */
+/** Per-action config (jsonb). deploy: optional target services; job: the job key. */
 export type IncomingWebhookActionConfig = {
   /** deploy: restrict the redeploy to this service (omit = whole project). */
   serviceId?: string;
+  /** deploy: restrict one coordinated redeploy to these services. Takes precedence
+   * over the legacy singular serviceId when present. */
+  serviceIds?: string[];
   /** job: the `job.key` to run. */
   jobKey?: string;
 };
@@ -54,10 +51,7 @@ export const incomingWebhook = pgTable(
 
     /** Pluggable action fired on call. */
     actionType: text("action_type").$type<IncomingWebhookActionType>().notNull(),
-    actionConfig: jsonb("action_config")
-      .$type<IncomingWebhookActionConfig>()
-      .notNull()
-      .default({}),
+    actionConfig: jsonb("action_config").$type<IncomingWebhookActionConfig>().notNull().default({}),
 
     /** Auth mode + the (encrypted) credential for that mode. */
     authMode: text("auth_mode").$type<IncomingWebhookAuthMode>().notNull().default("token"),
@@ -67,6 +61,8 @@ export const incomingWebhook = pgTable(
     hmacSecretEncrypted: text("hmac_secret_encrypted"),
 
     createdBy: text("created_by"),
+    /** Captured by authorized management operations; revalidated on every invocation. */
+    executionAuthority: jsonb("execution_authority").$type<ExecutionAuthority>(),
     lastFiredAt: timestamp("last_fired_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -1,0 +1,58 @@
+name: Documentation issue
+description: Report missing, unclear, or incorrect documentation
+title: "[Docs]: "
+labels: ["documentation"]
+type: task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us make the OpenShip documentation clearer and more accurate.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Existing issue
+      description: Search the existing issues before submitting a new report.
+      options:
+        - label: I have searched the existing issues and found no duplicate.
+          required: true
+
+  - type: dropdown
+    id: issue-kind
+    attributes:
+      label: Documentation problem
+      description: What kind of documentation change is needed?
+      options:
+        - Missing documentation
+        - Incorrect documentation
+        - Unclear documentation
+        - Outdated documentation
+        - Example or tutorial request
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link to the relevant page or provide the file path or section name.
+      placeholder: https://... or docs/...
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Explain what is missing, incorrect, unclear, or outdated.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-change
+    attributes:
+      label: Suggested change
+      description: If possible, describe or draft the documentation you would like to see.
+    validations:
+      required: false

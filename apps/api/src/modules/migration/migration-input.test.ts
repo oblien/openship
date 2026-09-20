@@ -7,7 +7,7 @@ import {
   sanitizeServiceEnv,
   sanitizeCustomPaths,
   sanitizeRoutes,
-} from "./migration-input";
+} from "@repo/platform/engine/modules/migration/migration-input";
 
 describe("sanitizeCustomPaths", () => {
   it("keeps well-formed absolute source→dest pairs, trimmed", () => {
@@ -164,6 +164,38 @@ describe("sanitizeRoutes", () => {
     });
     expect(sanitizeRoutes({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/../etc" } })).toEqual({
       a: { domainType: "custom", customDomain: "x.com" },
+    });
+  });
+
+  it("preserves exact matching, including an exact root path", () => {
+    expect(
+      sanitizeRoutes({
+        mcp: {
+          domainType: "custom",
+          customDomain: "mcp.example.com",
+          targetPath: "/mcp",
+          exact: true,
+        },
+        root: {
+          domainType: "custom",
+          customDomain: "root.example.com",
+          targetPath: "/",
+          exact: true,
+        },
+      }),
+    ).toEqual({
+      mcp: {
+        domainType: "custom",
+        customDomain: "mcp.example.com",
+        targetPath: "/mcp",
+        exact: true,
+      },
+      root: {
+        domainType: "custom",
+        customDomain: "root.example.com",
+        targetPath: "/",
+        exact: true,
+      },
     });
   });
 

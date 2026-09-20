@@ -7,10 +7,10 @@ Most GitHub problems fall into one of four buckets: Openship can't read your rep
 won't import, a **public** repo that should need no login keeps asking you to connect, or pushes aren't
 triggering deployments. This page walks each one from the exact message you'll see to the fix.
 
-Openship can reach GitHub three ways — the **Openship GitHub App**, an **OAuth** account, or the local
-`gh` CLI — and it manages the push webhooks that power auto-deploy. If you haven't connected yet, start
+Openship can reach GitHub through the managed **Openship GitHub App**, workspace-owned GitHub Apps, a
+personal token, SSH key, or the local `gh` identity. It also manages the webhooks that power auto-deploy. If you haven't connected yet, start
 with [Deploy from GitHub](/docs/guides/deploy-from-github); the connection card itself lives in
-[Settings → General](/docs/dashboard/settings).
+[Settings → Git](/docs/dashboard/settings).
 
 ## Openship can't read your repositories
 
@@ -25,8 +25,8 @@ personal access token, or removed the App). Openship isn't broken — it just ha
 
 **How to fix:**
 
-1. Go to **Settings → General** and look at the **GitHub** card. If it doesn't show your login, press
-   **Connect GitHub** and approve the window that pops up.
+1. Go to **Settings → Git**. For a workspace-owned App, verify its source card and make sure it lists the
+   intended GitHub account. For a local identity, use the **GitHub** card to reconnect it.
 2. If it *does* show a login but repos still won't load, press **Disconnect**, then **Connect GitHub** again
    to mint a fresh token.
 3. On a self-hosted instance using the CLI fallback, run `gh auth login` in the terminal on the machine
@@ -65,12 +65,11 @@ skipped the repo, can't see it.
 
 **How to fix:**
 
-1. **Install / re-scope the App.** From the repo picker or **Settings → General → Install GitHub App**, open
-   the GitHub install screen. When GitHub asks *which repositories* to grant, choose **All repositories** or
-   make sure the specific private repo is ticked. A common cause is an install that granted only *some*
-   repos.
+1. **Install / re-scope the App.** In **Settings → Git**, use **Install on account** on the intended
+   workspace-owned source (or **Install GitHub App** for the managed App). When GitHub asks *which
+   repositories* to grant, choose **All repositories** or make sure the private repo is selected.
 2. **Or add a personal access token.** In the project's **Source** tab, paste a token into the
-   **Clone Token Override** card (or set a global one in **Settings → Tokens → GitHub clone credentials**).
+   **Clone Token Override** card (or set a global one in **Settings → Git → GitHub clone credentials**).
    The token must include the **`repo`** scope — `public_repo` alone only reaches public repos.
 3. Reload the picker; the repo should now appear.
 

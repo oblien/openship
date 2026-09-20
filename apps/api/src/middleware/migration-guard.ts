@@ -27,7 +27,7 @@
  */
 
 import type { MiddlewareHandler } from "hono";
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 import { isMigrationInProgress } from "../modules/system/migration/migration-lock";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

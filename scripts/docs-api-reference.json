@@ -1,0 +1,3275 @@
+{
+  "methods": {
+    "deployments.create": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Submit a deployment for a configured project.",
+      "route": "POST /api/deployments"
+    },
+    "deployments.get": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read the persisted deployment record.",
+      "route": "GET /api/deployments/:id"
+    },
+    "deployments.list": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read a page of deployments using project and environment filters.",
+      "route": "GET /api/deployments"
+    },
+    "deployments.logs": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read captured deployment logs.",
+      "route": "GET /api/deployments/:id/logs"
+    },
+    "deployments.buildStatus": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read persisted status, pending prompts, and cancellation state.",
+      "route": "GET /api/deployments/:id/build"
+    },
+    "deployments.restorePlan": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Inspect whether rollback needs retained artifacts or a rebuild.",
+      "route": "GET /api/deployments/:id/restore-plan"
+    },
+    "deployments.cancel": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Request cancellation and return whether settlement is pending.",
+      "route": "POST /api/deployments/:id/cancel"
+    },
+    "deployments.respond": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Answer a pending deployment prompt with an offered action ID.",
+      "route": "POST /api/deployments/:id/build/respond"
+    },
+    "deployments.rollback": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Restore the selected deployment through the rollback workflow.",
+      "route": "POST /api/deployments/:id/rollback"
+    },
+    "deployments.redeploy": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Submit a new deployment based on an existing release.",
+      "route": "POST /api/deployments/:id/redeploy"
+    },
+    "deployments.pin": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Pin or unpin retained rollback artifacts.",
+      "route": "POST /api/deployments/:id/pin"
+    },
+    "deployments.keep": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Accept a release waiting for a keep/reject decision.",
+      "route": "POST /api/deployments/:id/keep"
+    },
+    "deployments.reject": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Reject a held release and restore the prior deployment when possible.",
+      "route": "POST /api/deployments/:id/reject"
+    },
+    "deployments.remove": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Remove an eligible deployment and its retained resources.",
+      "route": "DELETE /api/deployments/:id"
+    },
+    "deployments.restart": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Restart the deployment’s runtime.",
+      "route": "POST /api/deployments/:id/restart"
+    },
+    "deployments.skipPortCheck": {
+      "page": "deployments",
+      "section": "Control",
+      "description": "Skip the specified advisory port check.",
+      "route": "POST /api/deployments/:id/skip-port-check"
+    },
+    "deployments.events": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Stream deployment progress events.",
+      "route": "GET /api/deployments/:id/stream"
+    },
+    "deployments.containerInfo": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read runtime/container information.",
+      "route": "GET /api/deployments/:id/info"
+    },
+    "deployments.containerUsage": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read current CPU, memory, disk, and network usage.",
+      "route": "GET /api/deployments/:id/usage"
+    },
+    "deployments.pendingActions": {
+      "page": "deployments",
+      "section": "Observe",
+      "description": "Read unresolved actions for the deployment.",
+      "route": "GET /api/deployments/:id/pending"
+    },
+    "deployments.sslStatus": {
+      "page": "deployments",
+      "section": "Certificates",
+      "description": "Read certificate status for a domain.",
+      "route": "POST /api/deployments/ssl/status"
+    },
+    "deployments.renewSsl": {
+      "page": "deployments",
+      "section": "Certificates",
+      "description": "Request certificate renewal for a domain.",
+      "route": "POST /api/deployments/ssl/renew"
+    },
+    "deployments.prepare": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Detect and prepare source configuration before submission.",
+      "route": "POST /api/deployments/prepare"
+    },
+    "deployments.buildAccess": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Submit a prepared upload/build workflow.",
+      "route": "POST /api/deployments/build/access"
+    },
+    "deployments.start": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Start an already prepared deployment.",
+      "route": "POST /api/deployments/:id/build"
+    },
+    "projects.getHome": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Read the project overview and summary counts.",
+      "route": "GET /api/projects/home"
+    },
+    "projects.create": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Create a project record from explicit configuration.",
+      "route": "POST /api/projects"
+    },
+    "projects.ensure": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Create or select a project during source import.",
+      "route": "POST /api/projects/ensure"
+    },
+    "projects.list": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Return a page of accessible projects.",
+      "route": "GET /api/projects"
+    },
+    "projects.get": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Read one project and its active deployment ID.",
+      "route": "GET /api/projects/:id"
+    },
+    "projects.update": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Update project configuration.",
+      "route": "PATCH /api/projects/:id"
+    },
+    "projects.remove": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Tear down the project and remove its records; inspect the returned steps.",
+      "route": "DELETE /api/projects/:id"
+    },
+    "projects.getInfo": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Read the project’s detailed information.",
+      "route": "GET /api/projects/:id/info"
+    },
+    "projects.getGitInfo": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Read linked Git source information.",
+      "route": "GET /api/projects/:id/git"
+    },
+    "projects.listBranches": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "List branches available from the linked source.",
+      "route": "GET /api/projects/:id/branches"
+    },
+    "projects.linkRepo": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Link a Git repository to the project.",
+      "route": "POST /api/projects/:id/git/link"
+    },
+    "projects.setReleaseImageSource": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Configure a release image as the deployment source.",
+      "route": "PUT /api/projects/:id/release-image-source"
+    },
+    "projects.setAutoDeploy": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Enable or disable automatic deployment triggers.",
+      "route": "POST /api/projects/:id/auto-deploy"
+    },
+    "projects.setWebhookDomain": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Choose the domain used for the project webhook.",
+      "route": "POST /api/projects/:id/webhook-domain"
+    },
+    "projects.listDeployments": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Read a page of the project’s deployments.",
+      "route": "GET /api/projects/:id/deployments"
+    },
+    "projects.deploymentSession": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Read the project’s current deployment session.",
+      "route": "POST /api/projects/:id/deployment-session"
+    },
+    "projects.clearBuildCache": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Clear authorized build cache for the project.",
+      "route": "POST /api/projects/:id/clear-build"
+    },
+    "projects.getRollbackCapacity": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Inspect retained rollback capacity.",
+      "route": "GET /api/projects/:id/rollback-capacity"
+    },
+    "projects.checkPorts": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Check deployment port requirements.",
+      "route": "POST /api/projects/:id/port-check"
+    },
+    "projects.checkOutput": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Check the configured build output.",
+      "route": "POST /api/projects/:id/output-check"
+    },
+    "projects.getPendingActions": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Read actions that need a deployment or routing decision.",
+      "route": "GET /api/projects/:id/pending-actions"
+    },
+    "projects.getCommitStatus": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Compare source and deployed commit status.",
+      "route": "GET /api/projects/:id/commit-status"
+    },
+    "projects.listEnvironments": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "List the project’s environments.",
+      "route": "GET /api/projects/:id/environments"
+    },
+    "projects.createEnvironment": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Create an environment from the supplied configuration.",
+      "route": "POST /api/projects/:id/environments"
+    },
+    "projects.listEnvVars": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Read environment variables with secrets masked.",
+      "route": "GET /api/projects/:id/env"
+    },
+    "projects.mergeEnvVars": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Upsert and delete named environment variables.",
+      "route": "PATCH /api/projects/:id/env"
+    },
+    "projects.getResources": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Read resource limits and sleep settings.",
+      "route": "GET /api/projects/:id/resources"
+    },
+    "projects.updateResources": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Change resource allocations.",
+      "route": "PATCH /api/projects/:id/resources"
+    },
+    "projects.setSleepMode": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Set the project’s sleep behavior.",
+      "route": "POST /api/projects/:id/sleep-mode"
+    },
+    "projects.setOptions": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Change deployment options.",
+      "route": "POST /api/projects/:id/options"
+    },
+    "projects.setBranch": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Select the default Git branch.",
+      "route": "POST /api/projects/:id/branch"
+    },
+    "projects.enable": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Enable the project runtime.",
+      "route": "POST /api/projects/:id/enable"
+    },
+    "projects.disable": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Disable the project runtime.",
+      "route": "POST /api/projects/:id/disable"
+    },
+    "projects.retryRouting": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Retry applying the project’s routing configuration.",
+      "route": "POST /api/projects/:id/routing/retry"
+    },
+    "projects.runtimeLogs": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read recent runtime log entries.",
+      "route": "GET /api/projects/:id/logs"
+    },
+    "projects.getCloneToken": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Read whether a project clone token is configured.",
+      "route": "GET /api/projects/:id/clone-token"
+    },
+    "projects.updateCloneToken": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Set, rotate, or clear the project clone token.",
+      "route": "PATCH /api/projects/:id/clone-token"
+    },
+    "projects.deletionPreview": {
+      "page": "projects",
+      "section": "Lifecycle",
+      "description": "Inspect resources that project deletion would affect.",
+      "route": "GET /api/projects/:id/deletion-preview"
+    },
+    "projects.listRouteRules": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "List the project’s edge route rules.",
+      "route": "GET /api/projects/:id/route-rules"
+    },
+    "projects.createRouteRule": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Add an edge route rule.",
+      "route": "POST /api/projects/:id/route-rules"
+    },
+    "projects.updateRouteRule": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Update an edge route rule using its typed input.",
+      "route": "PATCH /api/projects/:id/route-rules/:ruleId"
+    },
+    "projects.removeRouteRule": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Remove the specified edge route rule.",
+      "route": "DELETE /api/projects/:id/route-rules/:ruleId"
+    },
+    "projects.getIncidents": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read open and resolved health incidents.",
+      "route": "GET /api/projects/:id/incidents"
+    },
+    "projects.connectDomain": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Attach a domain to the project.",
+      "route": "POST /api/projects/:id/connect"
+    },
+    "projects.listConnections": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "List the project’s outgoing resource connections.",
+      "route": "GET /api/projects/:id/connections"
+    },
+    "projects.listConnectionCandidates": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "List accessible projects and apps for a service connection.",
+      "route": "GET /api/projects/:id/connections/candidates"
+    },
+    "projects.listConnectionConsumers": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "List projects consuming this project’s outputs.",
+      "route": "GET /api/projects/:id/connections/consumers"
+    },
+    "projects.createConnection": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Connect an output to a target environment variable.",
+      "route": "POST /api/projects/:id/connections"
+    },
+    "projects.connectBundle": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Apply a group of compatible resource connections.",
+      "route": "POST /api/projects/:id/connections/bundle"
+    },
+    "projects.removeConnection": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Remove a resource connection.",
+      "route": "DELETE /api/projects/:id/connections/:linkId"
+    },
+    "projects.getStorage": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Read the project’s object-storage binding.",
+      "route": "GET /api/projects/:id/storage"
+    },
+    "projects.bindStorage": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Bind a configured storage bucket.",
+      "route": "POST /api/projects/:id/storage"
+    },
+    "projects.unbindStorage": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "Remove the storage binding.",
+      "route": "DELETE /api/projects/:id/storage"
+    },
+    "projects.getEdgeConfig": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read the project’s edge configuration.",
+      "route": "GET /api/projects/:id/edge-config"
+    },
+    "projects.getServerLogStreamToken": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Obtain an authorized server-log stream token.",
+      "route": "GET /api/projects/:id/server-logs/stream-token"
+    },
+    "projects.recentServerLogs": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read recent request/server logs.",
+      "route": "GET /api/projects/:id/server-logs/recent"
+    },
+    "projects.transferToCloud": {
+      "page": "projects",
+      "section": "Cloud transfer",
+      "description": "Request a Cloud transfer; fixed scopes currently require unavailable tenant mapping.",
+      "route": "POST /api/projects/:id/transfer/to-cloud"
+    },
+    "projects.transferToSelfHosted": {
+      "page": "projects",
+      "section": "Cloud transfer",
+      "description": "Request a transfer from Cloud; fixed-scope Cloud mapping limits apply.",
+      "route": "POST /api/projects/:id/transfer/to-self-hosted"
+    },
+    "projects.getAppSettings": {
+      "page": "apps",
+      "section": "Connections, storage, and apps",
+      "description": "Read curated settings for an installed catalog app.",
+      "route": "GET /api/projects/:id/app-settings"
+    },
+    "projects.updateAppSettings": {
+      "page": "apps",
+      "section": "Connections, storage, and apps",
+      "description": "Apply curated app setting changes.",
+      "route": "PATCH /api/projects/:id/app-settings"
+    },
+    "projects.getAppConnection": {
+      "page": "apps",
+      "section": "Connections, storage, and apps",
+      "description": "Read app connection details; these may include credentials and require write access.",
+      "route": "GET /api/projects/:id/app-connection"
+    },
+    "projects.scanLocal": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Scan an allowed local source directory.",
+      "route": "POST /api/projects/scan"
+    },
+    "projects.importLocal": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Import an allowed local project.",
+      "route": "POST /api/projects/import"
+    },
+    "projects.listLocal": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "List discoverable local projects.",
+      "route": "GET /api/projects/local"
+    },
+    "projects.streamRuntimeLogs": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Stream project runtime log events.",
+      "route": "GET /api/projects/:id/logs/stream"
+    },
+    "projects.streamServerLogs": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Stream project request/server log events.",
+      "route": "GET /api/projects/:id/server-logs/stream"
+    },
+    "sources.stage": {
+      "page": "sources",
+      "section": "Operations",
+      "description": "Package and stage generated files or an allowed directory.",
+      "workflow": "/docs/api/sources#upload-a-source-folder"
+    },
+    "sources.open": {
+      "page": "sources",
+      "section": "Operations",
+      "description": "Open a folder upload session and return its upload instructions.",
+      "route": "POST /api/projects/folder/session"
+    },
+    "sources.scan": {
+      "page": "sources",
+      "section": "Operations",
+      "description": "Detect build configuration from a staged source session.",
+      "route": "POST /api/projects/folder/scan/:sessionId"
+    },
+    "sources.reveal": {
+      "page": "sources",
+      "section": "Operations",
+      "description": "Reveal explicitly requested source values after authorization.",
+      "route": "POST /api/projects/folder/scan/:sessionId/env-reveal"
+    },
+    "services.streamLogs": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Stream log events for a service.",
+      "route": "GET /api/projects/:id/services/:serviceId/logs/stream"
+    },
+    "services.list": {
+      "page": "services",
+      "section": "Operations",
+      "description": "List services belonging to a project.",
+      "route": "GET /api/projects/:id/services"
+    },
+    "services.create": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Add a service definition to a project.",
+      "route": "POST /api/projects/:id/services"
+    },
+    "services.sync": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Synchronize service definitions from Compose source.",
+      "route": "POST /api/projects/:id/services/sync"
+    },
+    "services.activeContainers": {
+      "page": "services",
+      "section": "Operations",
+      "description": "List active project containers.",
+      "route": "GET /api/projects/:id/services/containers"
+    },
+    "services.get": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Read one service definition and state.",
+      "route": "GET /api/projects/:id/services/:serviceId"
+    },
+    "services.update": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Update service configuration.",
+      "route": "PATCH /api/projects/:id/services/:serviceId"
+    },
+    "services.remove": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Remove a service and its selected resources.",
+      "route": "DELETE /api/projects/:id/services/:serviceId"
+    },
+    "services.acceptDrift": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Accept the source version of a detected configuration drift.",
+      "route": "POST /api/projects/:id/services/:serviceId/drift/accept"
+    },
+    "services.keepDrift": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Keep the current configuration when resolving drift.",
+      "route": "POST /api/projects/:id/services/:serviceId/drift/keep"
+    },
+    "services.listEnvVars": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Read service environment variables with masked secrets.",
+      "route": "GET /api/projects/:id/services/:serviceId/env"
+    },
+    "services.setEnvVars": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Apply service environment variable changes.",
+      "route": "PUT /api/projects/:id/services/:serviceId/env"
+    },
+    "services.revealEnv": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Reveal authorized service environment values.",
+      "route": "POST /api/projects/:id/services/:serviceId/env-reveal"
+    },
+    "services.applyEnvironment": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Apply saved runtime environment by replacing the service container using its current image, without a build.",
+      "route": "POST /api/projects/:id/services/:serviceId/apply-env"
+    },
+    "services.volumeSizes": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Read persistent-volume sizes for the service.",
+      "route": "GET /api/projects/:id/services/:serviceId/volume-sizes"
+    },
+    "services.start": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Start the service runtime.",
+      "route": "POST /api/projects/:id/services/:serviceId/start"
+    },
+    "services.stop": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Stop the service runtime.",
+      "route": "POST /api/projects/:id/services/:serviceId/stop"
+    },
+    "services.restart": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Restart the service runtime.",
+      "route": "POST /api/projects/:id/services/:serviceId/restart"
+    },
+    "services.runtimeLogs": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Read recent service runtime logs.",
+      "route": "GET /api/projects/:id/services/:serviceId/logs"
+    },
+    "services.exec": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Execute an authorized command in the service runtime.",
+      "route": "POST /api/projects/:id/services/:serviceId/exec"
+    },
+    "domains.verifyStream": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Stream domain verification progress.",
+      "route": "POST /api/domains/:id/verify/stream"
+    },
+    "domains.list": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "List domains using the supplied filters.",
+      "route": "GET /api/domains"
+    },
+    "domains.create": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Attach a domain using the requested project and routing configuration.",
+      "route": "POST /api/domains"
+    },
+    "domains.get": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Read one domain record.",
+      "route": "GET /api/domains/:id"
+    },
+    "domains.remove": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Remove a domain and its routing binding.",
+      "route": "DELETE /api/domains/:id"
+    },
+    "domains.verify": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Run domain verification.",
+      "route": "POST /api/domains/:id/verify"
+    },
+    "domains.records": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Read DNS records required by a domain.",
+      "route": "GET /api/domains/:id/records"
+    },
+    "domains.dnsPlan": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Preview DNS changes before applying them.",
+      "route": "GET /api/domains/:id/dns/plan"
+    },
+    "domains.dnsApply": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Apply the authorized DNS plan.",
+      "route": "POST /api/domains/:id/dns/apply"
+    },
+    "domains.setPrimary": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Select the project’s primary domain.",
+      "route": "POST /api/domains/:id/primary"
+    },
+    "domains.renewSsl": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Request certificate renewal for a domain record.",
+      "route": "POST /api/domains/:id/renew"
+    },
+    "domains.verifySsl": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Check the domain’s current certificate.",
+      "route": "POST /api/domains/:id/verify-ssl"
+    },
+    "domains.uploadCert": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Install a supplied certificate and private key.",
+      "route": "POST /api/domains/:id/certificate"
+    },
+    "domains.preview": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Preview domain connection requirements.",
+      "route": "POST /api/domains/preview"
+    },
+    "domains.renewAllSsl": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Request renewal for eligible certificates.",
+      "route": "POST /api/domains/renew-all"
+    },
+    "domains.verifyPending": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Verify pending domains visible to the caller.",
+      "route": "POST /api/domains/verify-pending"
+    },
+    "dns.listProviders": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "List supported DNS providers and their credential fields.",
+      "route": "GET /api/dns/providers"
+    },
+    "dns.listCredentials": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "List the organization’s DNS credentials.",
+      "route": "GET /api/dns/credentials"
+    },
+    "dns.getCredential": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "Read a DNS credential with secrets masked.",
+      "route": "GET /api/dns/credentials/:id"
+    },
+    "dns.addCredential": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "Store a DNS provider credential.",
+      "route": "POST /api/dns/credentials"
+    },
+    "dns.removeCredential": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "Remove a DNS credential.",
+      "route": "DELETE /api/dns/credentials/:id"
+    },
+    "dns.verifyZone": {
+      "page": "dns",
+      "section": "Operations",
+      "description": "Check access to the requested DNS zone.",
+      "route": "POST /api/dns/verify-zone"
+    },
+    "credentials.listProviders": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "List provider credential types and required fields.",
+      "route": "GET /api/credentials/providers"
+    },
+    "credentials.list": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "List stored credentials with secrets masked.",
+      "route": "GET /api/credentials"
+    },
+    "credentials.create": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Store a provider credential.",
+      "route": "POST /api/credentials"
+    },
+    "credentials.get": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Read one masked credential.",
+      "route": "GET /api/credentials/:id"
+    },
+    "credentials.update": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Rename, re-scope, or rotate a credential.",
+      "route": "PATCH /api/credentials/:id"
+    },
+    "credentials.remove": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Remove a credential.",
+      "route": "DELETE /api/credentials/:id"
+    },
+    "credentials.verify": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Check the credential against its provider and record the result.",
+      "route": "POST /api/credentials/:id/verify"
+    },
+    "servers.applyContainer": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Apply a managed container configuration.",
+      "route": "POST /api/system/servers/:id/containers/:component/apply/stream"
+    },
+    "servers.containerApplyEvents": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Stream a managed-container apply session.",
+      "route": "GET /api/system/servers/:id/containers/:component/apply/stream"
+    },
+    "servers.getInstallSession": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Read an installation session.",
+      "route": "GET /api/system/install/session"
+    },
+    "servers.respondToInstall": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Answer a pending installation prompt.",
+      "route": "POST /api/system/install/respond"
+    },
+    "servers.installComponents": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Submit installation of selected components.",
+      "route": "POST /api/system/install/stream"
+    },
+    "servers.installEvents": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Stream installation progress.",
+      "route": "GET /api/system/install/stream"
+    },
+    "servers.monitor": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Stream server monitoring data.",
+      "route": "GET /api/system/monitor/stream"
+    },
+    "servers.listAllContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "List managed containers across accessible servers.",
+      "route": "GET /api/system/containers"
+    },
+    "servers.scanAllContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Refresh managed-container state across accessible servers.",
+      "route": "POST /api/system/containers/scan"
+    },
+    "servers.containersBehind": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "List managed containers with available updates.",
+      "route": "GET /api/system/containers/behind"
+    },
+    "servers.containerIssues": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "List managed-container health or configuration issues.",
+      "route": "GET /api/system/containers/issues"
+    },
+    "servers.applyingContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Read currently active container apply sessions.",
+      "route": "GET /api/system/containers/applying"
+    },
+    "servers.applyAllContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Apply requested managed-container changes across servers.",
+      "route": "POST /api/system/containers/apply-all"
+    },
+    "servers.list": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "List registered servers.",
+      "route": "GET /api/system/servers"
+    },
+    "servers.create": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Register an SSH server.",
+      "route": "POST /api/system/servers"
+    },
+    "servers.testConnection": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Test the supplied SSH connection configuration.",
+      "route": "POST /api/system/test-connection"
+    },
+    "servers.networkCapabilities": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Read infrastructure availability, provider profiles, and supported network operations.",
+      "route": "GET /api/system/networks/capabilities"
+    },
+    "servers.listNetworks": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "List organization-owned private networks and their latest verification.",
+      "route": "GET /api/system/networks"
+    },
+    "servers.getNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Read a private network, its server attachments, and verification report.",
+      "route": "GET /api/system/networks/:id"
+    },
+    "servers.createNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Save an existing private network using an idempotent request ID.",
+      "route": "POST /api/system/networks"
+    },
+    "servers.updateNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Update idle native-network inventory using its current revision; invalidate earlier verification.",
+      "route": "PATCH /api/system/networks/:id"
+    },
+    "servers.verifyNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Verify private connectivity, latency, and loss; optionally measure bounded throughput for a selected pair.",
+      "route": "POST /api/system/networks/:id/verify"
+    },
+    "servers.removeNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Remove unused native-network inventory at the current revision, preserving servers and external networks.",
+      "route": "DELETE /api/system/networks/:id"
+    },
+    "servers.reviseManagedNetworkAccess": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Revise the private connection policy of stopped setup using its current progress sequence and an idempotent request ID.",
+      "route": "PATCH /api/system/networks/preparations/:preparationId/connections"
+    },
+    "servers.listComputeClusters": {
+      "page": "servers",
+      "section": "Compute clusters",
+      "description": "List organization-owned compute clusters and their private networks.",
+      "route": "GET /api/system/compute-clusters"
+    },
+    "servers.getComputeCluster": {
+      "page": "servers",
+      "section": "Compute clusters",
+      "description": "Read a compute cluster, its selected servers, and private network.",
+      "route": "GET /api/system/compute-clusters/:id"
+    },
+    "servers.createComputeCluster": {
+      "page": "servers",
+      "section": "Compute clusters",
+      "description": "Group selected servers on an existing private network using an idempotent request ID.",
+      "route": "POST /api/system/compute-clusters"
+    },
+    "servers.updateComputeCluster": {
+      "page": "servers",
+      "section": "Compute clusters",
+      "description": "Update a compute cluster and its selected servers using the current revision.",
+      "route": "PATCH /api/system/compute-clusters/:id"
+    },
+    "servers.removeComputeCluster": {
+      "page": "servers",
+      "section": "Compute clusters",
+      "description": "Remove compute-cluster inventory at the current revision, retaining its servers and private network.",
+      "route": "DELETE /api/system/compute-clusters/:id"
+    },
+    "servers.infrastructure": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Read the private networks and compute cluster associated with a server.",
+      "route": "GET /api/system/servers/:id/infrastructure"
+    },
+    "servers.clusterCapabilities": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Compatibility method for private-network capabilities; prefer networkCapabilities.",
+      "route": "GET /api/system/clusters/capabilities"
+    },
+    "servers.prepareManagedNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Prepare missing networking tools on selected servers, retain per-step logs, and produce a reviewable plan. Repeat the same request to retry a failed preparation.",
+      "route": "POST /api/system/networks/preparations"
+    },
+    "servers.getManagedNetworkPreparation": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Read saved prerequisite checks, installation logs, failures, and the resulting network operation.",
+      "route": "GET /api/system/networks/preparations/:preparationId"
+    },
+    "servers.discardManagedNetworkPreparation": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Discard stopped setup and its unapplied plan using the current progress sequence. Installed tools and servers are retained; completed network cleanup is required once apply has started.",
+      "route": "DELETE /api/system/networks/preparations/:preparationId"
+    },
+    "servers.removeManagedNetworkPreparationMember": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Remove one server from stopped initial setup and save a paused replacement selection. Preparation starts only on explicit retry; diagnostics, services, data, and installed tools are retained.",
+      "route": "DELETE /api/system/networks/preparations/:preparationId/members/:serverId"
+    },
+    "servers.removeManagedNetworkOperationMember": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Remove a server from an unfinished initial network operation. Restore its changes on the original hosts and save the remaining selection, paused until preparation is explicitly retried.",
+      "route": "DELETE /api/system/networks/operations/:operationId/members/:serverId"
+    },
+    "servers.listManagedNetworkPreparations": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "List recent server preparations that still need attention or network review.",
+      "route": "GET /api/system/networks/preparations"
+    },
+    "servers.managedNetworkPreparationEvents": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Subscribe to saved preparation snapshots and completion. Reconnecting only reads progress; it never restarts preparation.",
+      "route": "GET /api/system/networks/preparations/:preparationId/stream"
+    },
+    "servers.managedNetworkOperationEvents": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Subscribe to durable network apply, verification, and recovery progress.",
+      "route": "GET /api/system/networks/operations/:operationId/stream"
+    },
+    "servers.clusterEvents": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Subscribe to private-network overview and unfinished preparation snapshots.",
+      "route": "GET /api/system/networks/stream"
+    },
+    "servers.planManagedNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Inspect servers and persist a reviewable WireGuard plan without changing host networking.",
+      "route": "POST /api/system/networks/plans"
+    },
+    "servers.getManagedNetworkOperation": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Read a managed network plan, per-host progress, verification, and recovery state.",
+      "route": "GET /api/system/networks/operations/:operationId"
+    },
+    "servers.applyManagedNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Apply an approved network plan, resume an interrupted operation, or restore its previous network.",
+      "route": "POST /api/system/networks/operations/:operationId/apply"
+    },
+    "servers.discardManagedNetworkPlan": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Discard an unapplied plan and its stopped preparation atomically. Active or unresolved host changes must be recovered through the network operation.",
+      "route": "DELETE /api/system/networks/operations/:operationId"
+    },
+    "servers.listClusters": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Compatibility method for private-network inventory; prefer listNetworks.",
+      "route": "GET /api/system/clusters"
+    },
+    "servers.getCluster": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Read private-network details using the legacy clusterId input; prefer getNetwork.",
+      "route": "GET /api/system/clusters/:id"
+    },
+    "servers.createCluster": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Create private-network inventory using the legacy method; prefer createNetwork.",
+      "route": "POST /api/system/clusters"
+    },
+    "servers.updateCluster": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Update private-network inventory using the legacy clusterId input; prefer updateNetwork.",
+      "route": "PATCH /api/system/clusters/:id"
+    },
+    "servers.verifyCluster": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Verify private-network connectivity using the legacy clusterId input; prefer verifyNetwork.",
+      "route": "POST /api/system/clusters/:id/verify"
+    },
+    "servers.removeCluster": {
+      "page": "servers",
+      "section": "Legacy network methods",
+      "description": "Remove native-network inventory using the legacy clusterId input; prefer removeNetwork.",
+      "route": "DELETE /api/system/clusters/:id"
+    },
+    "servers.inspectNetwork": {
+      "page": "servers",
+      "section": "Private networks",
+      "description": "Inspect a server’s machine identity and private interfaces without changing its network.",
+      "route": "POST /api/system/servers/:id/network/inspect"
+    },
+    "servers.githubStatus": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Read the server’s GitHub authentication status.",
+      "route": "GET /api/system/servers/:id/github"
+    },
+    "servers.connectGitHub": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Start GitHub authentication for a server.",
+      "route": "POST /api/system/servers/:id/github/connect"
+    },
+    "servers.pollGitHubConnection": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Poll a server’s GitHub authentication flow.",
+      "route": "GET /api/system/servers/:id/github/connect/poll"
+    },
+    "servers.setGitHubToken": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Store a GitHub token for a server.",
+      "route": "PUT /api/system/servers/:id/github/token"
+    },
+    "servers.generateGitHubKey": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Generate a GitHub SSH key on the server.",
+      "route": "POST /api/system/servers/:id/github/ssh-key"
+    },
+    "servers.useGitHubDeployKeys": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Select repository deploy keys for server clones.",
+      "route": "PUT /api/system/servers/:id/github/deploy-key-mode"
+    },
+    "servers.disconnectGitHub": {
+      "page": "servers",
+      "section": "Git credentials",
+      "description": "Remove the server’s GitHub authentication.",
+      "route": "DELETE /api/system/servers/:id/github"
+    },
+    "servers.listTunnels": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "List the server’s port-forward configurations.",
+      "route": "GET /api/system/servers/:id/tunnels"
+    },
+    "servers.saveTunnel": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Create or update a port-forward configuration.",
+      "route": "POST /api/system/servers/:id/tunnels"
+    },
+    "servers.startTunnel": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Start an authorized port forward.",
+      "route": "POST /api/system/servers/:id/tunnels/:tunnelId/start"
+    },
+    "servers.stopTunnel": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Stop a port forward.",
+      "route": "POST /api/system/servers/:id/tunnels/:tunnelId/stop"
+    },
+    "servers.removeTunnel": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Remove a port-forward configuration.",
+      "route": "DELETE /api/system/servers/:id/tunnels/:tunnelId"
+    },
+    "servers.listContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "List one server’s managed containers.",
+      "route": "GET /api/system/servers/:id/containers"
+    },
+    "servers.scanContainers": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Refresh one server’s managed-container state.",
+      "route": "POST /api/system/servers/:id/containers/scan"
+    },
+    "servers.containerApplySession": {
+      "page": "servers",
+      "section": "Managed containers",
+      "description": "Read a container’s active apply session.",
+      "route": "GET /api/system/servers/:id/containers/:component/apply/session"
+    },
+    "servers.get": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Read a server’s configuration and state.",
+      "route": "GET /api/system/servers/:id"
+    },
+    "servers.reachability": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Read server reachability.",
+      "route": "GET /api/system/servers/:id/reachability"
+    },
+    "servers.update": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Change registered server configuration.",
+      "route": "PATCH /api/system/servers/:id"
+    },
+    "servers.deletionPreview": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Inspect workloads affected by removing the server.",
+      "route": "GET /api/system/servers/:id/deletion-preview"
+    },
+    "servers.remove": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Remove a server using the requested workload cleanup policy.",
+      "route": "DELETE /api/system/servers/:id"
+    },
+    "servers.exec": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Execute an authorized command on the server.",
+      "route": "POST /api/system/servers/:id/exec"
+    },
+    "servers.listModules": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "List the server’s managed components.",
+      "route": "GET /api/system/servers/:id/modules"
+    },
+    "servers.scanModules": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Refresh managed-component state.",
+      "route": "POST /api/system/servers/:id/modules/scan"
+    },
+    "servers.applyModule": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Apply a managed component’s configuration.",
+      "route": "POST /api/system/servers/:id/modules/:module/apply"
+    },
+    "servers.getRateLimit": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Read per-server request rate-limit configuration.",
+      "route": "GET /api/system/servers/:id/rate-limit"
+    },
+    "servers.updateRateLimit": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Update per-server request rate limits.",
+      "route": "PATCH /api/system/servers/:id/rate-limit"
+    },
+    "servers.check": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Run a server health check.",
+      "route": "POST /api/system/check"
+    },
+    "servers.installComponent": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Install one managed component.",
+      "route": "POST /api/system/install"
+    },
+    "servers.removeComponent": {
+      "page": "servers",
+      "section": "Components and installation",
+      "description": "Remove a managed component.",
+      "route": "POST /api/system/remove"
+    },
+    "servers.scanPorts": {
+      "page": "servers",
+      "section": "Server lifecycle",
+      "description": "Scan ports on an authorized server.",
+      "route": "POST /api/system/servers/:id/ports/scan"
+    },
+    "system.info": {
+      "page": "health",
+      "section": "Operations",
+      "description": "Read installation and deployment-mode information.",
+      "route": "GET /api/health/env"
+    },
+    "system.browse": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Browse an authorized host filesystem location.",
+      "route": "GET /api/system/browse"
+    },
+    "system.health": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Read database and installation health.",
+      "route": "GET /api/system/diagnostics"
+    },
+    "system.getSettings": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Read instance settings.",
+      "route": "GET /api/system/settings"
+    },
+    "system.updateSettings": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Change instance settings.",
+      "route": "PATCH /api/system/settings"
+    },
+    "system.getEmailSettings": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Read SMTP settings with secrets masked.",
+      "route": "GET /api/system/settings/email"
+    },
+    "system.updateEmailSettings": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Configure SMTP delivery for the installation.",
+      "route": "PUT /api/system/settings/email"
+    },
+    "system.sendTestEmail": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Send a test message using the configured SMTP settings.",
+      "route": "POST /api/system/settings/email/test"
+    },
+    "system.resetSettings": {
+      "page": "system",
+      "section": "Operations",
+      "description": "Reset supported instance settings.",
+      "route": "DELETE /api/system/settings"
+    },
+    "system.listUntrackedEdgeSites": {
+      "page": "edge",
+      "section": "Operations",
+      "description": "List edge sites not tracked by project records.",
+      "route": "GET /api/system/edge/untracked"
+    },
+    "system.removeUntrackedEdgeSite": {
+      "page": "edge",
+      "section": "Operations",
+      "description": "Remove an authorized untracked edge site.",
+      "route": "POST /api/system/edge/untracked/remove"
+    },
+    "apps.listCatalog": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "List available app templates.",
+      "route": "GET /api/apps/catalog"
+    },
+    "apps.listCustom": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "List the organization’s custom app definitions.",
+      "route": "GET /api/apps/custom"
+    },
+    "apps.saveCustom": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "Validate and save a custom app definition.",
+      "route": "POST /api/apps/custom"
+    },
+    "apps.install": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "Create or update an installation draft and return its project.",
+      "route": "POST /api/apps"
+    },
+    "apps.getCatalogEntry": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "Read a template and its accessible installation draft.",
+      "route": "GET /api/apps/catalog/:id"
+    },
+    "apps.hostFit": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "Check template requirements against a destination.",
+      "route": "GET /api/apps/catalog/:id/host-fit"
+    },
+    "apps.removeCustom": {
+      "page": "apps",
+      "section": "Operations",
+      "description": "Remove a custom catalog definition.",
+      "route": "DELETE /api/apps/custom/:appId"
+    },
+    "backupDestinations.list": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "List backup storage destinations.",
+      "route": "GET /api/backup-destinations"
+    },
+    "backupDestinations.create": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Create a backup destination.",
+      "route": "POST /api/backup-destinations"
+    },
+    "backupDestinations.preflightDraft": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Test destination configuration before saving it.",
+      "route": "POST /api/backup-destinations/preflight"
+    },
+    "backupDestinations.get": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Read a destination with credentials protected.",
+      "route": "GET /api/backup-destinations/:id"
+    },
+    "backupDestinations.usage": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Read destination storage usage.",
+      "route": "GET /api/backup-destinations/:id/usage"
+    },
+    "backupDestinations.update": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Update destination settings.",
+      "route": "PATCH /api/backup-destinations/:id"
+    },
+    "backupDestinations.remove": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Remove an eligible destination.",
+      "route": "DELETE /api/backup-destinations/:id"
+    },
+    "backupDestinations.preflight": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "Test a saved destination and record its verification state.",
+      "route": "POST /api/backup-destinations/:id/preflight"
+    },
+    "backups.streamRun": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Stream backup execution progress.",
+      "route": "GET /api/backup-runs/:runId/stream"
+    },
+    "backups.streamRestore": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Stream restore progress.",
+      "route": "GET /api/backup-restores/:restoreId/stream"
+    },
+    "backups.listPolicies": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "List backup policies for the requested source.",
+      "route": "GET /api/projects/:projectId/backup-policies"
+    },
+    "backups.createPolicy": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Create a backup policy and retention configuration.",
+      "route": "POST /api/projects/:projectId/backup-policies"
+    },
+    "backups.listRuns": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "List recorded backup runs using typed filters.",
+      "route": "GET /api/projects/:projectId/backup-runs"
+    },
+    "backups.updatePolicy": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Change a backup policy.",
+      "route": "PATCH /api/backup-policies/:policyId"
+    },
+    "backups.removePolicy": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Remove a backup policy.",
+      "route": "DELETE /api/backup-policies/:policyId"
+    },
+    "backups.run": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Trigger a policy’s backup now.",
+      "route": "POST /api/backup-policies/:policyId/run"
+    },
+    "backups.getRun": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Read a backup run and its result.",
+      "route": "GET /api/backup-runs/:runId"
+    },
+    "backups.protectRun": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Protect or unprotect a run from retention pruning.",
+      "route": "POST /api/backup-runs/:runId/protect"
+    },
+    "backups.prepareRestore": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Stage and validate a restore without applying it.",
+      "route": "POST /api/backup-runs/:runId/restore/prepare"
+    },
+    "backups.getRestore": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Read a restore session and its confirmation requirements.",
+      "route": "GET /api/backup-restores/:restoreId"
+    },
+    "backups.applyRestore": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Apply a prepared restore using the required confirmation.",
+      "route": "POST /api/backup-restores/:restoreId/apply"
+    },
+    "backups.cancelRestore": {
+      "page": "backups",
+      "section": "Operations",
+      "description": "Request cancellation of a restore.",
+      "route": "POST /api/backup-restores/:restoreId/cancel"
+    },
+    "billing.listPlans": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read the plan catalog, optionally localized.",
+      "route": "GET /api/billing/plans"
+    },
+    "billing.getState": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read current billing state.",
+      "route": "GET /api/billing/state"
+    },
+    "billing.getResources": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read compute usage, edge traffic, and bandwidth limits.",
+      "route": "GET /api/billing/resources"
+    },
+    "billing.getSubscription": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read subscription and renewal state.",
+      "route": "GET /api/billing/subscription"
+    },
+    "billing.createSubscription": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Create a subscription checkout or subscription change.",
+      "route": "POST /api/billing/subscription"
+    },
+    "billing.cancelSubscription": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Stop subscription renewal at the end of the paid period.",
+      "route": "POST /api/billing/cancel"
+    },
+    "billing.resumeSubscription": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Resume a scheduled subscription renewal.",
+      "route": "POST /api/billing/resume"
+    },
+    "billing.createTopup": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Create a credit top-up checkout.",
+      "route": "POST /api/billing/topup"
+    },
+    "billing.listTopupPacks": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "List available credit packs.",
+      "route": "GET /api/billing/topup-packs"
+    },
+    "billing.createPortal": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Create a billing portal session.",
+      "route": "POST /api/billing/portal"
+    },
+    "billing.getUsage": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read billable usage for the requested period.",
+      "route": "GET /api/billing/usage"
+    },
+    "billing.listAllowanceDetail": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read detailed allowance allocation and consumption.",
+      "route": "GET /api/billing/allowances"
+    },
+    "notices.list": {
+      "page": "notices",
+      "section": "Operations",
+      "description": "Read active public installation announcements.",
+      "route": "GET /api/notices"
+    },
+    "github.getStatus": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Read GitHub connection status.",
+      "route": "GET /api/github/status"
+    },
+    "github.getHome": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Read the GitHub overview for the current identity.",
+      "route": "GET /api/github/home"
+    },
+    "github.connect": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Start a supported GitHub connection flow.",
+      "route": "POST /api/github/connect"
+    },
+    "github.claimInstallation": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Claim an authorized GitHub App installation.",
+      "route": "POST /api/github/installations/claim"
+    },
+    "github.getLocalStatus": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Read local Git identity availability.",
+      "route": "GET /api/github/local-status"
+    },
+    "github.pollConnect": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Poll an in-progress connection flow.",
+      "route": "GET /api/github/connect/poll"
+    },
+    "github.setInstanceToken": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Configure the installation’s GitHub token.",
+      "route": "POST /api/github/instance-token"
+    },
+    "github.disconnect": {
+      "page": "github",
+      "section": "Connect",
+      "description": "Disconnect a GitHub identity or source association.",
+      "route": "POST /api/github/disconnect"
+    },
+    "github.listRepos": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "List accessible repositories.",
+      "route": "GET /api/github/repos"
+    },
+    "github.listOrgRepos": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "List repositories in a GitHub organization.",
+      "route": "GET /api/github/orgs/:org/repos"
+    },
+    "github.getRepo": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Read repository metadata.",
+      "route": "GET /api/github/repos/:owner/:repo"
+    },
+    "github.createRepo": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Create a repository through the configured GitHub identity.",
+      "route": "POST /api/github/repos"
+    },
+    "github.deleteRepo": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Delete an authorized repository.",
+      "route": "DELETE /api/github/repos/:owner/:repo"
+    },
+    "github.listBranches": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "List repository branches.",
+      "route": "GET /api/github/repos/:owner/:repo/branches"
+    },
+    "github.getCloneToken": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Obtain an authorized repository clone credential.",
+      "route": "GET /api/github/repos/:owner/:repo/clone-token"
+    },
+    "github.detectStack": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Detect build configuration in a repository.",
+      "route": "GET /api/github/repos/:owner/:repo/detect"
+    },
+    "github.listFiles": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "List repository files at a path.",
+      "route": "GET /api/github/repos/:owner/:repo/files"
+    },
+    "github.listTree": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Read a repository tree.",
+      "route": "GET /api/github/repos/:owner/:repo/tree"
+    },
+    "github.getFile": {
+      "page": "github",
+      "section": "Repositories and source",
+      "description": "Read repository file content.",
+      "route": "GET /api/github/repos/:owner/:repo/file"
+    },
+    "github.listWebhooks": {
+      "page": "github",
+      "section": "Webhooks",
+      "description": "List repository webhooks.",
+      "route": "GET /api/github/repos/:owner/:repo/webhooks"
+    },
+    "github.registerWebhook": {
+      "page": "github",
+      "section": "Webhooks",
+      "description": "Register a repository webhook for deployment events.",
+      "route": "POST /api/github/repos/:owner/:repo/webhooks"
+    },
+    "github.deleteWebhook": {
+      "page": "github",
+      "section": "Webhooks",
+      "description": "Delete a repository webhook.",
+      "route": "DELETE /api/github/repos/:owner/:repo/webhooks"
+    },
+    "github.listSources": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "List configured GitHub App sources.",
+      "route": "GET /api/github/sources"
+    },
+    "github.beginManifest": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Start GitHub App manifest registration.",
+      "route": "POST /api/github/sources/manifest"
+    },
+    "github.convertManifest": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Convert a completed GitHub App manifest.",
+      "route": "POST /api/github/sources/manifest/convert"
+    },
+    "github.createManualSource": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Register an existing GitHub App source.",
+      "route": "POST /api/github/sources/manual"
+    },
+    "github.updateSource": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Change a GitHub App source’s configuration.",
+      "route": "PATCH /api/github/sources/:id"
+    },
+    "github.verifySource": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Verify source credentials with GitHub.",
+      "route": "POST /api/github/sources/:id/verify"
+    },
+    "github.setDefaultSource": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Select the default GitHub App source.",
+      "route": "POST /api/github/sources/:id/default"
+    },
+    "github.createInstallUrl": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Create an installation URL for a GitHub App source.",
+      "route": "POST /api/github/sources/:id/install"
+    },
+    "github.deleteSource": {
+      "page": "github",
+      "section": "GitHub App sources",
+      "description": "Remove a GitHub App source.",
+      "route": "DELETE /api/github/sources/:id"
+    },
+    "permissions.orgMeta": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Read the selected organization’s permission metadata.",
+      "route": "GET /api/permissions/org-meta"
+    },
+    "permissions.listResources": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "List resources available for permission grants.",
+      "route": "GET /api/permissions/resources"
+    },
+    "permissions.createTeamOrg": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Create a team organization with the caller as its owner.",
+      "route": "POST /api/permissions/create-team-org"
+    },
+    "permissions.listGrants": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Read grants for the requested subject.",
+      "route": "GET /api/permissions/grants"
+    },
+    "permissions.upsertGrant": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Create or update one resource grant.",
+      "route": "POST /api/permissions/grants"
+    },
+    "permissions.replaceGrants": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Replace the requested subject’s grant set.",
+      "route": "PUT /api/permissions/grants"
+    },
+    "permissions.listInvitations": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "List organization invitations.",
+      "route": "GET /api/permissions/invitations"
+    },
+    "permissions.inviteWithGrants": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Invite a member with explicit role and optional grants.",
+      "route": "POST /api/permissions/invite-with-grants"
+    },
+    "permissions.listMembers": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "List organization members.",
+      "route": "GET /api/permissions/members"
+    },
+    "permissions.materializeInvitation": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Apply accepted invitation grants to the resulting membership.",
+      "route": "POST /api/permissions/invitations/:id/materialize"
+    },
+    "permissions.deleteGrant": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Remove one grant.",
+      "route": "DELETE /api/permissions/grants/:id"
+    },
+    "permissions.acceptInvitation": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Accept an authorized invitation.",
+      "route": "POST /api/permissions/invitations/:id/accept"
+    },
+    "permissions.rejectInvitation": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Reject an invitation.",
+      "route": "POST /api/permissions/invitations/:id/reject"
+    },
+    "permissions.cancelInvitation": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Cancel a pending invitation.",
+      "route": "POST /api/permissions/invitations/:id/cancel"
+    },
+    "permissions.resendInvitation": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Resend an eligible invitation.",
+      "route": "POST /api/permissions/invitations/:id/resend"
+    },
+    "permissions.setMemberRole": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Change a member’s organization role.",
+      "route": "PATCH /api/permissions/members/:id"
+    },
+    "permissions.removeMember": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Remove a member while preserving the final owner.",
+      "route": "DELETE /api/permissions/members/:id"
+    },
+    "tokens.list": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "List your tokens without exposing their secrets.",
+      "route": "GET /api/tokens"
+    },
+    "tokens.create": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "Create a token; its secret is returned once.",
+      "route": "POST /api/tokens"
+    },
+    "tokens.authorizeMcpClient": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "Authorize or explicitly re-scope an MCP client binding.",
+      "route": "POST /api/tokens/mcp-authorize"
+    },
+    "tokens.listMcpClients": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "List your authorized MCP clients.",
+      "route": "GET /api/tokens/mcp-clients"
+    },
+    "tokens.revoke": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "Revoke a token by its token ID.",
+      "route": "DELETE /api/tokens/:id"
+    },
+    "tokens.getMcpClient": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "Read one MCP client authorization.",
+      "route": "GET /api/tokens/mcp-clients/:clientId"
+    },
+    "tokens.disconnectMcpClient": {
+      "page": "tokens",
+      "section": "Operations",
+      "description": "Revoke an MCP client authorization.",
+      "route": "DELETE /api/tokens/mcp-clients/:clientId"
+    },
+    "webhooks.list": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "List the project’s incoming webhooks.",
+      "route": "GET /api/projects/:id/incoming-webhooks"
+    },
+    "webhooks.create": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Create an incoming hook with an authorized action and authentication mode.",
+      "route": "POST /api/projects/:id/incoming-webhooks"
+    },
+    "webhooks.deliveries": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "List project webhook deliveries.",
+      "route": "GET /api/projects/:id/webhook-deliveries"
+    },
+    "webhooks.update": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Update a hook and reauthorize its action when requested.",
+      "route": "PATCH /api/projects/:id/incoming-webhooks/:hookId"
+    },
+    "webhooks.rotate": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Rotate hook credentials and reauthorize execution.",
+      "route": "POST /api/projects/:id/incoming-webhooks/:hookId/rotate"
+    },
+    "webhooks.remove": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Remove an incoming hook.",
+      "route": "DELETE /api/projects/:id/incoming-webhooks/:hookId"
+    },
+    "webhooks.hookDeliveries": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Read one hook’s delivery history.",
+      "route": "GET /api/projects/:id/incoming-webhooks/:hookId/deliveries"
+    },
+    "webhooks.invoke": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Invoke the hook’s saved action through the SDK.",
+      "route": "POST /api/projects/:id/incoming-webhooks/:hookId/invoke"
+    },
+    "webhooks.listDeliveries": {
+      "page": "webhooks",
+      "section": "Operations",
+      "description": "Read webhook deliveries visible in the organization.",
+      "route": "GET /api/settings/webhook-deliveries"
+    },
+    "updates.list": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "List update status; behindOnly filters to available updates.",
+      "route": "GET /api/updates"
+    },
+    "updates.scan": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Refresh the organization’s update scan.",
+      "route": "POST /api/updates/scan"
+    },
+    "updates.apply": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Apply an available update to the specified project ID.",
+      "route": "POST /api/updates/:projectId/apply"
+    },
+    "audit.list": {
+      "page": "audit",
+      "section": "Operations",
+      "description": "Read filtered, paginated audit events.",
+      "route": "GET /api/audit"
+    },
+    "audit.facets": {
+      "page": "audit",
+      "section": "Operations",
+      "description": "Read available audit filter values.",
+      "route": "GET /api/audit/facets"
+    },
+    "audit.getSettings": {
+      "page": "audit",
+      "section": "Operations",
+      "description": "Read audit retention settings.",
+      "route": "GET /api/audit/settings"
+    },
+    "audit.updateSettings": {
+      "page": "audit",
+      "section": "Operations",
+      "description": "Change audit retention settings.",
+      "route": "PATCH /api/audit/settings"
+    },
+    "settings.get": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Read the current user’s preferences and defaults.",
+      "route": "GET /api/settings"
+    },
+    "settings.update": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Update user settings.",
+      "route": "PUT /api/settings"
+    },
+    "settings.setBuildMode": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Choose where builds run by default.",
+      "route": "PATCH /api/settings/build-mode"
+    },
+    "settings.setRouteStrategy": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Choose the default routing strategy.",
+      "route": "PATCH /api/settings/route-strategy"
+    },
+    "settings.setDeployDefaults": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Set the default deployment target and resources.",
+      "route": "PATCH /api/settings/deploy-defaults"
+    },
+    "settings.setCloneCredentials": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Configure credentials for source cloning.",
+      "route": "PATCH /api/settings/clone-credentials"
+    },
+    "settings.setCloneStrategy": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Choose how source is transferred to build servers.",
+      "route": "PATCH /api/settings/clone-strategy-preference"
+    },
+    "settings.setTransferPreferences": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Set source transfer preferences.",
+      "route": "PATCH /api/settings/transfer"
+    },
+    "settings.setGitForwarding": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Configure forwarding of Git identity to build servers.",
+      "route": "PATCH /api/settings/forward-git"
+    },
+    "notifications.categories": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "List supported notification categories and events.",
+      "route": "GET /api/notifications/categories"
+    },
+    "notifications.listChannels": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "List configured delivery channels.",
+      "route": "GET /api/notifications/channels"
+    },
+    "notifications.createChannel": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Create a delivery channel.",
+      "route": "POST /api/notifications/channels"
+    },
+    "notifications.listSubscriptions": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Read notification subscriptions.",
+      "route": "GET /api/notifications/subscriptions"
+    },
+    "notifications.upsertSubscription": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Create or update a subscription.",
+      "route": "PUT /api/notifications/subscriptions"
+    },
+    "notifications.listDefaults": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Read default notification routing.",
+      "route": "GET /api/notifications/defaults"
+    },
+    "notifications.upsertDefault": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Set default notification routing for a category.",
+      "route": "PUT /api/notifications/defaults"
+    },
+    "notifications.listDeliveries": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Read notification delivery history.",
+      "route": "GET /api/notifications/deliveries"
+    },
+    "notifications.unseenCount": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Count notifications the user has not seen.",
+      "route": "GET /api/notifications/deliveries/unseen-count"
+    },
+    "notifications.updateChannel": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Update channel configuration or rotate credentials.",
+      "route": "PATCH /api/notifications/channels/:id"
+    },
+    "notifications.testChannel": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Test the channel’s delivery configuration.",
+      "route": "POST /api/notifications/channels/:id/test"
+    },
+    "notifications.removeChannel": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Remove a delivery channel.",
+      "route": "DELETE /api/notifications/channels/:id"
+    },
+    "notifications.removeSubscription": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Remove a subscription.",
+      "route": "DELETE /api/notifications/subscriptions/:id"
+    },
+    "notifications.markSeen": {
+      "page": "notifications",
+      "section": "Operations",
+      "description": "Mark the selected notifications seen.",
+      "route": "POST /api/notifications/deliveries/:id/seen"
+    },
+    "issues.list": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Read visible active or resolved issues and their suggested actions.",
+      "route": "GET /api/issues"
+    },
+    "issues.summary": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Read issue counts by severity.",
+      "route": "GET /api/issues/summary"
+    },
+    "issues.health": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Read cached workload health snapshots.",
+      "route": "GET /api/issues/health"
+    },
+    "issues.scanHealth": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Refresh current workload health without enabling the scheduler.",
+      "route": "POST /api/issues/health/scan"
+    },
+    "issues.rescan": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Run applicable issue checkers immediately.",
+      "route": "POST /api/issues/rescan"
+    },
+    "issues.rescanStatus": {
+      "page": "issues",
+      "section": "Operations",
+      "description": "Read the status of an issue rescan.",
+      "route": "GET /api/issues/rescan/status"
+    },
+    "analytics.streamUsage": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Stream current resource usage.",
+      "route": "GET /api/analytics/usage/stream"
+    },
+    "analytics.summary": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read summary statistics for the selected scope and period.",
+      "route": "GET /api/analytics"
+    },
+    "analytics.periods": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "List supported analytics periods.",
+      "route": "GET /api/analytics/periods"
+    },
+    "analytics.overview": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read aggregate traffic and application analytics.",
+      "route": "GET /api/analytics/overview"
+    },
+    "analytics.geo": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read geographic traffic statistics.",
+      "route": "GET /api/analytics/geo"
+    },
+    "analytics.deploymentStats": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read deployment outcome statistics.",
+      "route": "GET /api/analytics/deployments"
+    },
+    "analytics.usage": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read current workload resource usage.",
+      "route": "GET /api/analytics/usage"
+    },
+    "analytics.containerInfo": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read analytics runtime/container information.",
+      "route": "GET /api/analytics/container"
+    },
+    "analytics.resources": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read configured resource allocations.",
+      "route": "GET /api/analytics/resources"
+    },
+    "analytics.usageHistory": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read historical resource usage.",
+      "route": "GET /api/analytics/usage/history"
+    },
+    "analytics.setPathsCollection": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Enable or disable request-path collection.",
+      "route": "POST /api/analytics/paths-collection/:projectId"
+    },
+    "analytics.serverBuckets": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read server traffic buckets.",
+      "route": "GET /api/analytics/server/:serverId"
+    },
+    "analytics.serverGeo": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read geographic server-request statistics.",
+      "route": "GET /api/analytics/server/:serverId/geo"
+    },
+    "analytics.serverLive": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read current server traffic data.",
+      "route": "GET /api/analytics/server/:serverId/live"
+    },
+    "analytics.dashboard": {
+      "page": "analytics",
+      "section": "Operations",
+      "description": "Read the analytics dashboard aggregate.",
+      "route": "GET /api/analytics/dashboard"
+    },
+    "jobs.streamRun": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Stream live output from a job run.",
+      "route": "GET /api/jobs/runs/:runId/stream"
+    },
+    "jobs.list": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "List available system and custom jobs.",
+      "route": "GET /api/jobs"
+    },
+    "jobs.create": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Create a custom command job with schedule and target configuration.",
+      "route": "POST /api/jobs"
+    },
+    "jobs.triggerEvents": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "List events that can trigger custom jobs.",
+      "route": "GET /api/jobs/trigger-events"
+    },
+    "jobs.backupSchedules": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Read scheduled backup policies alongside jobs.",
+      "route": "GET /api/jobs/backup-schedules"
+    },
+    "jobs.get": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Read a job’s configuration and recent runs.",
+      "route": "GET /api/jobs/:key"
+    },
+    "jobs.update": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Change a schedule or custom job configuration.",
+      "route": "PATCH /api/jobs/:key"
+    },
+    "jobs.remove": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Delete a custom job; system jobs can be disabled instead.",
+      "route": "DELETE /api/jobs/:key"
+    },
+    "jobs.run": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Trigger a job immediately.",
+      "route": "POST /api/jobs/:key/run"
+    },
+    "jobs.listRuns": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Read a job’s run history.",
+      "route": "GET /api/jobs/:key/runs"
+    },
+    "jobs.getRun": {
+      "page": "jobs",
+      "section": "Operations",
+      "description": "Read a recorded run, result, and captured output.",
+      "route": "GET /api/jobs/runs/:runId"
+    }
+  },
+  "http": {
+    "GET /api/auth/*": {
+      "page": "auth",
+      "description": "Handle browser sessions and authentication through Better Auth."
+    },
+    "POST /api/auth/*": {
+      "page": "auth",
+      "description": "Handle sign-in, account, and session mutations through Better Auth."
+    },
+    "GET /api/auth/cloud-callback": {
+      "page": "auth",
+      "description": "Exchange a cloud auth `code` for a local session cookie."
+    },
+    "GET /api/auth/desktop-auth-poll": {
+      "page": "auth",
+      "description": "Electron polls this by `nonce` until the cloud sign-in resolves."
+    },
+    "POST /api/auth/desktop-auth-start": {
+      "page": "auth",
+      "description": "Register a `(nonce, state, PKCE verifier)` tuple before the system browser opens."
+    },
+    "GET /api/auth/desktop-claim": {
+      "page": "auth",
+      "description": "Exchange a one-time claim `code` for a session cookie, then redirect."
+    },
+    "GET /api/auth/desktop-login": {
+      "page": "auth",
+      "description": "Mint a session for the zero-auth local admin and redirect to the dashboard."
+    },
+    "GET /api/auth/get-session": {
+      "page": "auth",
+      "description": "Return the current session; in zero-auth desktop mode, bootstrap one on first hit."
+    },
+    "GET /api/auth/invitation-preview/:id": {
+      "page": "auth",
+      "description": "Read a safe preview of a team invitation."
+    },
+    "GET /api/auth/mcp/jwks": {
+      "page": "auth",
+      "description": "Read the public keys used to verify MCP OAuth tokens."
+    },
+    "GET /api/auth/mcp/userinfo": {
+      "page": "auth",
+      "description": "Read the identity associated with an MCP OAuth token."
+    },
+    "POST /api/auth/organization/accept-invitation": {
+      "page": "auth",
+      "description": "Accept an invitation through the browser session boundary."
+    },
+    "POST /api/auth/organization/cancel-invitation": {
+      "page": "auth",
+      "description": "Cancel a pending invitation through the browser session boundary."
+    },
+    "POST /api/auth/organization/invite-member": {
+      "page": "auth",
+      "description": "Invite a member through the browser session boundary."
+    },
+    "POST /api/auth/organization/leave": {
+      "page": "auth",
+      "description": "Leave the active organization."
+    },
+    "POST /api/auth/organization/reject-invitation": {
+      "page": "auth",
+      "description": "Reject a pending invitation through the browser session boundary."
+    },
+    "POST /api/auth/organization/remove-member": {
+      "page": "auth",
+      "description": "Remove a member through the browser session boundary."
+    },
+    "POST /api/auth/organization/update-member-role": {
+      "page": "auth",
+      "description": "Update a member role through the browser session boundary."
+    },
+    "POST /api/auth/sign-up/*": {
+      "page": "auth",
+      "description": "Handle sign-up with the installation's account-creation policy."
+    },
+    "POST /api/billing/oblien-webhook": {
+      "page": "billing",
+      "description": "Receive authenticated Oblien billing events."
+    },
+    "POST /api/billing/webhook/stripe": {
+      "page": "billing",
+      "description": "Retired Stripe webhook; returns 410 without changing billing."
+    },
+    "GET /api/cloud/account": {
+      "page": "cloud",
+      "description": "The connected cloud account (name, email, avatar)."
+    },
+    "POST /api/cloud/analytics": {
+      "page": "cloud",
+      "description": "Proxy Oblien analytics for a hostname in the caller's namespace."
+    },
+    "POST /api/cloud/connect-authorize": {
+      "page": "cloud",
+      "description": "Consent page mints a one-time handoff code (cookie session checked inline)."
+    },
+    "POST /api/cloud/connect-finalize": {
+      "page": "cloud",
+      "description": "Complete the connect popup: exchange the PKCE code and store the cloud bearer."
+    },
+    "GET /api/cloud/connect-handoff": {
+      "page": "cloud",
+      "description": "Validate connect params, then 302 to the dashboard consent page."
+    },
+    "GET /api/cloud/connect-poll": {
+      "page": "cloud",
+      "description": "Poll the local Cloud connection handoff."
+    },
+    "GET /api/cloud/desktop-handoff": {
+      "page": "cloud",
+      "description": "OAuth → one-time code → redirect to the desktop app callback."
+    },
+    "POST /api/cloud/disconnect": {
+      "page": "cloud",
+      "description": "Revoke the current cloud session server-side (idempotent)."
+    },
+    "POST /api/cloud/edge-proxy": {
+      "page": "cloud",
+      "description": "Sync the managed edge proxy (bind a slug to a target)."
+    },
+    "POST /api/cloud/edge-proxy/delete": {
+      "page": "cloud",
+      "description": "Remove an authorized Cloud edge-proxy route."
+    },
+    "POST /api/cloud/edge-proxy/verify": {
+      "page": "cloud",
+      "description": "Begin verification for an edge-proxy domain."
+    },
+    "POST /api/cloud/edge-proxy/verify-check": {
+      "page": "cloud",
+      "description": "Check edge-proxy domain verification."
+    },
+    "POST /api/cloud/exchange-code": {
+      "page": "cloud",
+      "description": "Exchange a one-time code for user + session (rate-limited)."
+    },
+    "POST /api/cloud/export-subgraph": {
+      "page": "cloud",
+      "description": "Export an org- or project-scope subgraph dump (rate-limited)."
+    },
+    "GET /api/cloud/github/install-callback": {
+      "page": "cloud",
+      "description": "GitHub install callback — atomically claim a durable user/workspace nonce after matching user-token and Openship App-JWT verification."
+    },
+    "POST /api/cloud/github/install-url": {
+      "page": "cloud",
+      "description": "Build the App install URL with a one-time state token."
+    },
+    "POST /api/cloud/github/installation-token": {
+      "page": "cloud",
+      "description": "Mint a short-lived (~60min) installation access token."
+    },
+    "GET /api/cloud/github/installations": {
+      "page": "cloud",
+      "description": "List the org owner's GitHub App installations."
+    },
+    "GET /api/cloud/github/oauth-bridge": {
+      "page": "cloud",
+      "description": "Consume the bridge token and redirect the browser into GitHub OAuth."
+    },
+    "POST /api/cloud/github/oauth-handoff": {
+      "page": "cloud",
+      "description": "Start GitHub OAuth: return a one-time bridge URL."
+    },
+    "GET /api/cloud/github/oauth-success": {
+      "page": "cloud",
+      "description": "Friendly \"GitHub connected\" close-window page."
+    },
+    "GET /api/cloud/github/user-status": {
+      "page": "cloud",
+      "description": "Cloud-resolved GitHub OAuth identity (login, avatar) for the caller."
+    },
+    "POST /api/cloud/ingest-subgraph": {
+      "page": "cloud",
+      "description": "Ingest an org- or project-scope subgraph dump (rate-limited, 50MB cap)."
+    },
+    "POST /api/cloud/pages": {
+      "page": "cloud",
+      "description": "Create a Cloud Page (proxy Oblien `pages.create`)."
+    },
+    "POST /api/cloud/pages/delete": {
+      "page": "cloud",
+      "description": "Delete a Cloud Page by slug."
+    },
+    "POST /api/cloud/pages/disable": {
+      "page": "cloud",
+      "description": "Disable a Cloud Page by slug."
+    },
+    "POST /api/cloud/pages/enable": {
+      "page": "cloud",
+      "description": "Enable a Cloud Page by slug."
+    },
+    "POST /api/cloud/preflight": {
+      "page": "cloud",
+      "description": "Cloud deployment preflight — slug / custom-domain availability."
+    },
+    "POST /api/cloud/resource-proxy": {
+      "page": "cloud",
+      "description": "Run an allowed Pages or routing action after verifying customer namespace ownership."
+    },
+    "GET /api/cloud/route-registry": {
+      "page": "cloud",
+      "description": "Read routes or certificates belonging to the caller's Cloud namespace."
+    },
+    "POST /api/cloud/send-invitation": {
+      "page": "cloud",
+      "description": "Relay an invitation email via the SaaS mail infrastructure."
+    },
+    "GET /api/cloud/status": {
+      "page": "cloud",
+      "description": "Openship Cloud connection status for this instance."
+    },
+    "POST /api/cloud/teardown-project": {
+      "page": "cloud",
+      "description": "Delete a project's rows on the SaaS (bring-home / reconcile)."
+    },
+    "POST /api/cloud/token": {
+      "page": "cloud",
+      "description": "Mint a namespace-scoped Oblien token for the caller's org."
+    },
+    "GET /api/cloud/workspaces": {
+      "page": "cloud",
+      "description": "List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local)."
+    },
+    "GET /api/github/connect/redirect": {
+      "page": "github",
+      "description": "GitHub OAuth callback — browser navigates here, no session yet."
+    },
+    "GET /api/health": {
+      "page": "health",
+      "description": "Liveness probe — returns `{ status, timestamp }`."
+    },
+    "GET /api/images": {
+      "page": "images",
+      "description": "List available build/service images, optionally filtered by `?search=` and `?category=`."
+    },
+    "GET /api/mail/admin/:serverId/aliases": {
+      "page": "mail",
+      "description": "List mail aliases on a server."
+    },
+    "POST /api/mail/admin/:serverId/aliases": {
+      "page": "mail",
+      "description": "Create a mail alias."
+    },
+    "DELETE /api/mail/admin/:serverId/aliases/:id": {
+      "page": "mail",
+      "description": "Remove a mail alias."
+    },
+    "PATCH /api/mail/admin/:serverId/aliases/:id": {
+      "page": "mail",
+      "description": "Update a mail alias."
+    },
+    "GET /api/mail/admin/:serverId/backup-policy": {
+      "page": "mail",
+      "description": "The mail server's backup policy (or `null`)."
+    },
+    "POST /api/mail/admin/:serverId/backup-policy": {
+      "page": "mail",
+      "description": "Create or update the backup policy."
+    },
+    "GET /api/mail/admin/:serverId/backup-runs": {
+      "page": "mail",
+      "description": "Recent backup runs for the mail server."
+    },
+    "POST /api/mail/admin/:serverId/components/:key/:action": {
+      "page": "mail",
+      "description": "Run an action (`start`/`stop`/`restart`/…) on one component."
+    },
+    "GET /api/mail/admin/:serverId/components/:key/logs": {
+      "page": "mail",
+      "description": "Tail a component's logs."
+    },
+    "POST /api/mail/admin/:serverId/components/restart-all": {
+      "page": "mail",
+      "description": "Restart every mail component."
+    },
+    "GET /api/mail/admin/:serverId/dns-scan": {
+      "page": "mail",
+      "description": "Live DNS health scan (MX/SPF/DKIM/DMARC/PTR)."
+    },
+    "GET /api/mail/admin/:serverId/domains": {
+      "page": "mail",
+      "description": "List mail domains on the server."
+    },
+    "POST /api/mail/admin/:serverId/domains": {
+      "page": "mail",
+      "description": "Add a mail domain."
+    },
+    "GET /api/mail/admin/:serverId/domains-dns/pending": {
+      "page": "mail",
+      "description": "List additional domains whose DNS is still pending."
+    },
+    "DELETE /api/mail/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "description": "Delete a domain (add `?cascade=true` to remove its mailboxes too)."
+    },
+    "GET /api/mail/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "description": "Get one domain's config."
+    },
+    "PATCH /api/mail/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "description": "Update a domain (quotas, limits, active flag)."
+    },
+    "GET /api/mail/admin/:serverId/domains/:domain/dependents": {
+      "page": "mail",
+      "description": "Count mailboxes/aliases that depend on a domain."
+    },
+    "GET /api/mail/admin/:serverId/domains/:domain/dns": {
+      "page": "mail",
+      "description": "DNS records + publish state for an additional domain."
+    },
+    "POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge": {
+      "page": "mail",
+      "description": "Confirm a domain's DNS records are published."
+    },
+    "POST /api/mail/admin/:serverId/domains/:domain/dns/apply": {
+      "page": "mail",
+      "description": "Apply the mail domain's DNS plan through a configured provider."
+    },
+    "GET /api/mail/admin/:serverId/domains/:domain/dns/plan": {
+      "page": "mail",
+      "description": "Preview the mail domain's DNS records."
+    },
+    "GET /api/mail/admin/:serverId/inbound-rules": {
+      "page": "mail",
+      "description": "List inbound mail rules."
+    },
+    "POST /api/mail/admin/:serverId/inbound-rules": {
+      "page": "mail",
+      "description": "Create an inbound mail rule."
+    },
+    "DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId": {
+      "page": "mail",
+      "description": "Remove an inbound mail rule."
+    },
+    "PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId": {
+      "page": "mail",
+      "description": "Update an inbound mail rule."
+    },
+    "POST /api/mail/admin/:serverId/inbound-rules/test": {
+      "page": "mail",
+      "description": "Evaluate a message against inbound mail rules."
+    },
+    "GET /api/mail/admin/:serverId/mailboxes": {
+      "page": "mail",
+      "description": "List mailboxes in a domain."
+    },
+    "POST /api/mail/admin/:serverId/mailboxes": {
+      "page": "mail",
+      "description": "Create a mailbox."
+    },
+    "DELETE /api/mail/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "description": "Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete)."
+    },
+    "GET /api/mail/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "description": "Get one mailbox."
+    },
+    "PATCH /api/mail/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "description": "Update a mailbox (name, password, quota, active)."
+    },
+    "POST /api/mail/admin/:serverId/platform-mailbox/rotate": {
+      "page": "mail",
+      "description": "Rotate the platform mailbox credential."
+    },
+    "DELETE /api/mail/admin/:serverId/relay": {
+      "page": "mail",
+      "description": "Remove outbound relay configuration."
+    },
+    "GET /api/mail/admin/:serverId/relay": {
+      "page": "mail",
+      "description": "Read outbound relay configuration."
+    },
+    "POST /api/mail/admin/:serverId/relay": {
+      "page": "mail",
+      "description": "Configure an outbound relay."
+    },
+    "GET /api/mail/admin/:serverId/stats": {
+      "page": "mail",
+      "description": "Aggregate counts (domains, mailboxes, storage)."
+    },
+    "POST /api/mail/admin/:serverId/test-email": {
+      "page": "mail",
+      "description": "Send a test email from the server."
+    },
+    "POST /api/mail/adopt": {
+      "page": "mail",
+      "description": "Re-adopt a scanned server whose orchestrator state was lost."
+    },
+    "POST /api/mail/credentials/postmaster": {
+      "page": "mail",
+      "description": "Rotate the postmaster account password."
+    },
+    "GET /api/mail/health/:serverId": {
+      "page": "mail",
+      "description": "Mail daemons, outbound delivery, and cached public-port reachability (TCP 25/465/587/993)."
+    },
+    "POST /api/mail/scan": {
+      "page": "mail",
+      "description": "Probe a server for an existing iRedMail install + its on-server state (read-only)."
+    },
+    "GET /api/mail/servers": {
+      "page": "mail",
+      "description": "List every server Openship has provisioned (or is provisioning) mail on."
+    },
+    "DELETE /api/mail/servers/:serverId": {
+      "page": "mail",
+      "description": "Stop managing a server (drops the DB row only; leaves the stack + state file intact)."
+    },
+    "POST /api/mail/setup": {
+      "page": "mail",
+      "description": "Start or resume the install wizard — returns an SSE stream."
+    },
+    "POST /api/mail/setup/cancel": {
+      "page": "mail",
+      "description": "Cancel the running setup."
+    },
+    "POST /api/mail/setup/dns-ack": {
+      "page": "mail",
+      "description": "Mark DNS (DKIM) records as configured, releasing the DNS gate."
+    },
+    "POST /api/mail/setup/ptr-ack": {
+      "page": "mail",
+      "description": "Mark reverse-DNS (PTR) as configured, releasing the PTR gate."
+    },
+    "POST /api/mail/setup/reset": {
+      "page": "mail",
+      "description": "Wipe the on-server state file (does not touch iRedMail)."
+    },
+    "GET /api/mail/status": {
+      "page": "mail",
+      "description": "Current setup progress for a server (rendered from its on-server state file)."
+    },
+    "GET /api/mail/steps": {
+      "page": "mail",
+      "description": "List all setup steps and the total count."
+    },
+    "POST /api/mail/webmail/deploy-external": {
+      "page": "mail",
+      "description": "Deploy webmail for an external mail server."
+    },
+    "POST /api/mail/webmail/deploy-project": {
+      "page": "mail",
+      "description": "Create a webmail project + deployment and start the build."
+    },
+    "GET /api/mail/webmail/targets": {
+      "page": "mail",
+      "description": "List deploy-target options (self-hosted servers / cloud)."
+    },
+    "GET /api/mcp": {
+      "page": "mcp",
+      "description": "Returns `405` — this server never pushes messages, so there is no SSE stream to open."
+    },
+    "POST /api/mcp": {
+      "page": "mcp",
+      "description": "Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`."
+    },
+    "GET /api/migration/active": {
+      "page": "migration",
+      "description": "List active server migration sessions."
+    },
+    "POST /api/migration/adopt": {
+      "page": "migration",
+      "description": "Create an Openship project from the selected discovered services."
+    },
+    "POST /api/migration/migrate": {
+      "page": "migration",
+      "description": "Start a server migration from the reviewed plan."
+    },
+    "DELETE /api/migration/migrations/:id": {
+      "page": "migration",
+      "description": "Delete an eligible migration record."
+    },
+    "GET /api/migration/migrations/:id": {
+      "page": "migration",
+      "description": "Read migration progress and state."
+    },
+    "POST /api/migration/migrations/:id/cancel": {
+      "page": "migration",
+      "description": "Request cancellation of a migration."
+    },
+    "POST /api/migration/migrations/:id/cleanup-target": {
+      "page": "migration",
+      "description": "Clean up resources created on the migration target."
+    },
+    "POST /api/migration/migrations/:id/cutover": {
+      "page": "migration",
+      "description": "Switch traffic to the prepared migration target."
+    },
+    "POST /api/migration/migrations/:id/resume": {
+      "page": "migration",
+      "description": "Resume an interrupted migration."
+    },
+    "GET /api/migration/migrations/:id/stream": {
+      "page": "migration",
+      "description": "Stream migration progress."
+    },
+    "POST /api/migration/preview": {
+      "page": "migration",
+      "description": "Preview a migration plan."
+    },
+    "POST /api/migration/project": {
+      "page": "migration",
+      "description": "Import a discovered project."
+    },
+    "POST /api/migration/reimport": {
+      "page": "migration",
+      "description": "Refresh an imported project from its source."
+    },
+    "POST /api/migration/repo-compose": {
+      "page": "migration",
+      "description": "Read Compose configuration from a repository for import."
+    },
+    "POST /api/migration/reveal-env": {
+      "page": "migration",
+      "description": "Reveal explicitly requested environment values for an authorized import."
+    },
+    "GET /api/migration/runs": {
+      "page": "migration",
+      "description": "List migration history."
+    },
+    "POST /api/migration/scan": {
+      "page": "migration",
+      "description": "Inspect a server's Docker and return the adoptable stack — read-only, changes nothing."
+    },
+    "GET /api/migration/scan/stream": {
+      "page": "migration",
+      "description": "Stream server-discovery progress."
+    },
+    "POST /api/notices": {
+      "page": "notices",
+      "description": "Publish an installation notice using operator authority.",
+      "sdk": "operator.notices.create(input)"
+    },
+    "DELETE /api/notices/:id": {
+      "page": "notices",
+      "description": "Deactivate an installation notice using operator authority.",
+      "sdk": "operator.notices.remove(id)"
+    },
+    "GET /api/notices/all": {
+      "page": "notices",
+      "description": "List all installation notices using operator authority.",
+      "sdk": "operator.notices.listAll()"
+    },
+    "POST /api/projects/:id/resources": {
+      "page": "projects",
+      "description": "Update resources (POST alias of the PATCH)."
+    },
+    "GET /api/projects/:id/routing/edge-status": {
+      "page": "projects",
+      "description": "Read edge readiness for the project."
+    },
+    "POST /api/projects/:id/routing/ensure-edge/respond": {
+      "page": "projects",
+      "description": "Answer an edge setup prompt for the project."
+    },
+    "POST /api/projects/:id/routing/ensure-edge/stream": {
+      "page": "projects",
+      "description": "Stream edge setup for the project."
+    },
+    "POST /api/projects/folder/upload/:sessionId": {
+      "page": "sources",
+      "description": "Upload the gzipped tarball (self-hosted relay, 300 MB limit)."
+    },
+    "POST /api/services/terminal/ticket": {
+      "page": "service-terminal",
+      "description": "Mint a one-shot, short-lived WebSocket auth ticket for a service."
+    },
+    "GET /api/services/terminal/ws/:serviceId": {
+      "page": "service-terminal",
+      "description": "WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie)."
+    },
+    "POST /api/system/bootstrap-admin": {
+      "page": "system",
+      "description": "Create the initial administrator during authorized bootstrap."
+    },
+    "POST /api/system/cloud-connect": {
+      "page": "system",
+      "description": "Begin the installation's Cloud account connection."
+    },
+    "GET /api/system/cloud-status": {
+      "page": "system",
+      "description": "Read the installation's Cloud connection status."
+    },
+    "PUT /api/system/data-transfer/direct/chunk/:sessionId/:index": {
+      "page": "data-transfer",
+      "description": "Receive one chunk of an authorized direct transfer."
+    },
+    "POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream": {
+      "page": "data-transfer",
+      "description": "Finalize a received direct transfer and stream progress."
+    },
+    "POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat": {
+      "page": "data-transfer",
+      "description": "Keep a direct chunk-transfer session alive."
+    },
+    "POST /api/system/data-transfer/direct/chunk/init": {
+      "page": "data-transfer",
+      "description": "Open a direct chunk-transfer upload."
+    },
+    "POST /api/system/data-transfer/direct/receive": {
+      "page": "data-transfer",
+      "description": "Receive a direct instance transfer."
+    },
+    "POST /api/system/data-transfer/direct/send": {
+      "page": "data-transfer",
+      "description": "Send an instance to an authorized destination."
+    },
+    "POST /api/system/data-transfer/direct/send/stream": {
+      "page": "data-transfer",
+      "description": "Send an instance and stream transfer progress."
+    },
+    "POST /api/system/data-transfer/direct/session": {
+      "page": "data-transfer",
+      "description": "Create a direct-transfer session."
+    },
+    "POST /api/system/data-transfer/export": {
+      "page": "data-transfer",
+      "description": "Export the instance or selected projects (instance administrator)."
+    },
+    "POST /api/system/data-transfer/import": {
+      "page": "data-transfer",
+      "description": "Import an export file, ≤500 MB, with scope and conflict options (instance administrator)."
+    },
+    "POST /api/system/data-transfer/import/session": {
+      "page": "data-transfer",
+      "description": "Open a chunked file-import session."
+    },
+    "PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index": {
+      "page": "data-transfer",
+      "description": "Upload one file-import chunk."
+    },
+    "POST /api/system/data-transfer/import/session/:sessionId/finalize/stream": {
+      "page": "data-transfer",
+      "description": "Apply a reviewed file import and stream progress."
+    },
+    "POST /api/system/data-transfer/import/session/:sessionId/preview": {
+      "page": "data-transfer",
+      "description": "Preview an uploaded file's selection, conflicts, and server mappings."
+    },
+    "GET /api/system/data-transfer/preview": {
+      "page": "data-transfer",
+      "description": "List exportable projects and instance row counts (instance administrator)."
+    },
+    "POST /api/system/data-transfer/preview": {
+      "page": "data-transfer",
+      "description": "Preview a project selection and its dependencies (instance administrator)."
+    },
+    "POST /api/system/edge/import-sites": {
+      "page": "edge",
+      "description": "Import discovered edge sites."
+    },
+    "GET /api/system/health": {
+      "page": "system",
+      "description": "Read installation health."
+    },
+    "POST /api/system/invite-signup": {
+      "page": "system",
+      "description": "Create an account from an eligible self-hosted invitation."
+    },
+    "POST /api/system/migration/preflight": {
+      "page": "data-transfer",
+      "description": "Team-migration readiness check (read-only)."
+    },
+    "POST /api/system/migration/start": {
+      "page": "data-transfer",
+      "description": "Migrate single-user → your own remote server."
+    },
+    "POST /api/system/migration/start-cloud": {
+      "page": "data-transfer",
+      "description": "Migrate → Openship Cloud."
+    },
+    "POST /api/system/migration/start-tunnel": {
+      "page": "data-transfer",
+      "description": "Expose this instance via an edge tunnel."
+    },
+    "POST /api/system/migration/switch-back": {
+      "page": "data-transfer",
+      "description": "Reverse a migration back to single-user."
+    },
+    "GET /api/system/onboarding": {
+      "page": "system",
+      "description": "First-run check — is any server configured yet?"
+    },
+    "POST /api/system/onboarding": {
+      "page": "system",
+      "description": "First-run setup; persists settings and creates the first server. Returns 403 once configured."
+    },
+    "POST /api/system/onboarding/test-connection": {
+      "page": "system",
+      "description": "Test a connection during initial onboarding."
+    },
+    "POST /api/system/reset-admin-password": {
+      "page": "system",
+      "description": "Reset the administrator password through the local recovery boundary."
+    },
+    "POST /api/system/self-edge/preflight": {
+      "page": "edge",
+      "description": "Check edge readiness for the Openship installation itself."
+    },
+    "POST /api/system/self-register": {
+      "page": "system",
+      "description": "Register the Openship installation as a managed application."
+    },
+    "GET /api/system/self-register/stream": {
+      "page": "system",
+      "description": "Stream installation registration progress."
+    },
+    "GET /api/system/setup": {
+      "page": "system",
+      "description": "Read instance config for the desktop app."
+    },
+    "POST /api/system/setup": {
+      "page": "system",
+      "description": "Push instance config from the desktop app."
+    },
+    "POST /api/system/upgrade-to-auth": {
+      "page": "system",
+      "description": "Promote a zero-auth instance to email/password login."
+    },
+    "POST /api/terminal/ticket": {
+      "page": "terminal",
+      "description": "Mint a one-shot ticket for a WebSocket handshake against a server."
+    },
+    "GET /api/terminal/ws/:serverId": {
+      "page": "terminal",
+      "description": "WebSocket upgrade that opens the remote PTY."
+    },
+    "POST /api/webhooks/:provider": {
+      "page": "webhooks",
+      "description": "Receive a provider webhook (`github` or `stripe`), verify its signature, and dispatch it."
+    },
+    "POST /api/webhooks/backup": {
+      "page": "webhooks",
+      "description": "Trigger a backup from an inbound webhook (bearer token is the credential)."
+    },
+    "POST /api/webhooks/incoming/:id": {
+      "page": "webhooks",
+      "description": "Authenticate an incoming hook and dispatch its saved action."
+    },
+    "GET /.well-known/oauth-authorization-server": {
+      "page": "auth",
+      "description": "Discover the OAuth authorization server."
+    },
+    "GET /.well-known/oauth-authorization-server/api/mcp": {
+      "page": "auth",
+      "description": "Discover the OAuth authorization server."
+    },
+    "GET /.well-known/oauth-authorization-server/api/proxy/api/mcp": {
+      "page": "auth",
+      "description": "Discover the OAuth authorization server."
+    },
+    "GET /.well-known/oauth-protected-resource": {
+      "page": "auth",
+      "description": "Discover OAuth metadata for this protected resource."
+    },
+    "GET /.well-known/oauth-protected-resource/api/mcp": {
+      "page": "auth",
+      "description": "Discover OAuth metadata for this protected resource."
+    },
+    "GET /.well-known/oauth-protected-resource/api/proxy/api/mcp": {
+      "page": "auth",
+      "description": "Discover OAuth metadata for this protected resource."
+    },
+    "GET /auth/callback/close": {
+      "page": "auth",
+      "description": "Close a completed browser authentication handoff."
+    },
+    "GET /auth/callback/install": {
+      "page": "auth",
+      "description": "Complete the GitHub App browser handoff using installation state."
+    },
+    "POST /api/system/clusters/network-preparations": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `POST /api/system/networks/preparations`."
+    },
+    "GET /api/system/clusters/network-preparations/:preparationId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/preparations/:preparationId`."
+    },
+    "DELETE /api/system/clusters/network-preparations/:preparationId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `DELETE /api/system/networks/preparations/:preparationId`."
+    },
+    "DELETE /api/system/clusters/network-preparations/:preparationId/members/:serverId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `DELETE /api/system/networks/preparations/:preparationId/members/:serverId`."
+    },
+    "DELETE /api/system/clusters/network-operations/:operationId/members/:serverId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `DELETE /api/system/networks/operations/:operationId/members/:serverId`."
+    },
+    "GET /api/system/clusters/network-preparations": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/preparations`."
+    },
+    "GET /api/system/clusters/network-preparations/:preparationId/stream": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/preparations/:preparationId/stream`."
+    },
+    "GET /api/system/clusters/network-operations/:operationId/stream": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/operations/:operationId/stream`."
+    },
+    "GET /api/system/clusters/stream": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/stream`."
+    },
+    "POST /api/system/clusters/network-plans": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `POST /api/system/networks/plans`."
+    },
+    "GET /api/system/clusters/network-operations/:operationId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `GET /api/system/networks/operations/:operationId`."
+    },
+    "POST /api/system/clusters/network-operations/:operationId/apply": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `POST /api/system/networks/operations/:operationId/apply`."
+    },
+    "DELETE /api/system/clusters/network-operations/:operationId": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `DELETE /api/system/networks/operations/:operationId`."
+    },
+    "PATCH /api/system/clusters/network-preparations/:preparationId/connections": {
+      "page": "servers",
+      "section": "Legacy network URLs",
+      "description": "Compatibility alias for `PATCH /api/system/networks/preparations/:preparationId/connections`."
+    }
+  }
+}

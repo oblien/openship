@@ -1,0 +1,76 @@
+---
+title: CLI command reference
+description: Every public CLI command, argument, and option, grouped by task.
+---
+
+Use `openship <command> --help` to check the version installed on your machine. `<value>` is required; `[value]` is optional. Aliases appear beside the command name.
+
+## Global options
+
+| Option | Meaning |
+| --- | --- |
+| `-V, --version` | output the version number |
+| `--json` | Machine-readable JSON output (stdout data only) |
+| `--native-config <file>` | Run SDK commands using an explicitly trusted JavaScript configuration |
+| `-h, --help` | display help for command |
+
+Put global options before the command, for example `openship --json project list`. See [native mode](/docs/cli/native) before using `--native-config`.
+
+## Connect
+
+| Command | Purpose |
+| --- | --- |
+| [`openship login`](/docs/cli/reference/login) | Authenticate with a Personal Access Token (create one in dashboard Settings) |
+| [`openship logout`](/docs/cli/reference/logout) | Remove the stored Openship token |
+| [`openship context`](/docs/cli/reference/context) | Manage connection contexts (list/use/add/rm) |
+| [`openship token`](/docs/cli/reference/token) | Manage personal access tokens |
+| [`openship api`](/docs/cli/reference/api) | Make an authenticated request to any Openship API route (like `gh api`) |
+
+## Deploy
+
+| Command | Purpose |
+| --- | --- |
+| [`openship init`](/docs/cli/reference/init) | Link the current directory to an Openship project (.openship/project.json) |
+| [`openship config`](/docs/cli/reference/config) | Author and validate openship.json (declarative deploy config) |
+| [`openship deploy`](/docs/cli/reference/deploy) | Trigger a deployment for the current project |
+| [`openship deployment`](/docs/cli/reference/deployment) | Manage deployments (list, inspect, redeploy, rollback, …) |
+| [`openship logs`](/docs/cli/reference/logs) | View or stream a deployment's logs |
+
+## Applications
+
+| Command | Purpose |
+| --- | --- |
+| [`openship project`](/docs/cli/reference/project) | Manage Openship projects |
+| [`openship app`](/docs/cli/reference/app) | Browse, install, and configure catalog apps |
+| [`openship service`](/docs/cli/reference/service) | Manage the services in a compose stack (a multi-service project) |
+| [`openship domain`](/docs/cli/reference/domain) | Manage custom domains, DNS verification, and SSL certificates |
+
+## Infrastructure
+
+| Command | Purpose |
+| --- | --- |
+| [`openship server`](/docs/cli/reference/server) | Manage self-hosted SSH servers |
+| [`openship backup`](/docs/cli/reference/backup) | Manage backups: policies, runs, restores, destinations |
+| [`openship edge`](/docs/cli/reference/edge) | Install and manage the OpenResty edge (reverse proxy, TLS, per-route rules) |
+| [`openship mail`](/docs/cli/reference/mail) | Self-hosted mail server (iRedMail) setup and admin [self-host] |
+| [`openship system`](/docs/cli/reference/system) | Instance settings, onboarding, migration, and data transfer |
+
+## Local installation
+
+| Command | Purpose |
+| --- | --- |
+| [`openship up`](/docs/cli/reference/up) | Start Openship as a persistent service (boot + auto-restart); --foreground to run attached |
+| [`openship stop`](/docs/cli/reference/stop) | Stop Openship (started by `openship up`) — it won't restart or return on reboot |
+| [`openship status`](/docs/cli/reference/status) | Show the local Openship service (installed/running, ports) and the active context's API health |
+| [`openship doctor`](/docs/cli/reference/doctor) | Check database + services health and repair a corrupt local database |
+| [`openship open`](/docs/cli/reference/open) | Open the Openship dashboard in your browser |
+| [`openship install`](/docs/cli/reference/install) | Download and install the Openship desktop app for this OS |
+| [`openship update`](/docs/cli/reference/update) | Update the Openship CLI + bundled server to the latest release |
+| [`openship uninstall`](/docs/cli/reference/uninstall) | Remove Openship from this machine: stop it, delete its data (database, certs, edge config), its images, and ~/.openship. Deployed apps are left running. |
+| [`openship reset-admin-password`](/docs/cli/reference/reset-admin-password) | Reset the local admin login on THIS machine (no sign-in required) |
+
+## Shell
+
+| Command | Purpose |
+| --- | --- |
+| [`openship completion`](/docs/cli/reference/completion) | Generate shell completion scripts |

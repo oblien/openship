@@ -38,11 +38,12 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DIST = join(CLI_DIR, "dist");
+const PACKAGE_DIR = join(CLI_DIR, "../../packages/openship");
+const DIST = join(PACKAGE_DIR, "dist");
 const OUT = join(CLI_DIR, ".cli-payload");
 const STAGE = join(OUT, "stage");
 
-const pkg = JSON.parse(readFileSync(join(CLI_DIR, "package.json"), "utf8")) as {
+const pkg = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as {
   name: string;
   version: string;
   type?: string;

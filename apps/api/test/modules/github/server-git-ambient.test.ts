@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { probeServerGitAccess } from "../../../src/modules/github/server-git-ambient";
+import { probeServerGitAccess } from "@repo/platform/engine/modules/github/server-git-ambient";
 
 const REPO = "https://github.com/acme/app.git";
 

@@ -1,12 +1,13 @@
 import type { Context, Next } from "hono";
 import { randomUUID } from "node:crypto";
 import { repos } from "@repo/db";
-import { auth } from "../lib/auth";
-import { env, trustedOrigins } from "../config/env";
+import { SDK_SCOPE_HEADER, ValidationError } from "@repo/contracts";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { ensureLocalUser } from "../lib/local-user";
 import { resolveActiveOrganizationId } from "./active-organization";
 import { zeroAuthAllowed } from "./zero-auth-guard";
-import { hashPatToken } from "../lib/pat";
+import { hashPatToken } from "@repo/platform/engine/lib/pat";
 import { isPatToken, parseBearerToken } from "../lib/bearer";
 import {
   buildRequestContext,
@@ -125,15 +126,20 @@ async function finishBearer(
   boundOrg: string | null,
   patScope: { tokenId: string; scoped: boolean } | undefined,
   principalKind: PrincipalKind,
-): Promise<typeof PAT_HANDLED> {
-  await applyAuthedRequest(
+  readOnly: boolean,
+): Promise<Response | typeof PAT_HANDLED> {
+  const applied = await applyAuthedRequest(
     c,
     user,
     { id: principalId, activeOrganizationId: boundOrg },
     "bearer",
     patScope,
     principalKind,
+    { organizationId: boundOrg, readOnly },
   );
+  if (!applied) {
+    return c.json({ error: "Invalid or expired access token", code: "INVALID_TOKEN" }, 401);
+  }
   await next();
   return PAT_HANDLED;
 }
@@ -206,7 +212,10 @@ export async function resolveBearerIdentity(
   // row keyed by (user, client), written at consent. No binding → the token
   // never passed consent → DENY EVERYTHING (a scoped principal with a grant key
   // that has no rows), rather than fall through to the user's full role.
-  const binding = await repos.personalAccessToken.findOAuthBinding(session.userId, session.clientId);
+  const binding = await repos.personalAccessToken.findOAuthBinding(
+    session.userId,
+    session.clientId,
+  );
   return {
     kind: "oauth",
     userId: session.userId,
@@ -231,7 +240,10 @@ export async function resolveBearerIdentity(
  * Returns null (not a bearer / fall through), an error Response, or PAT_HANDLED
  * after a successful auth + next().
  */
-async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof PAT_HANDLED | null> {
+async function tryBearerAuth(
+  c: Context,
+  next: Next,
+): Promise<Response | typeof PAT_HANDLED | null> {
   const token = parseBearerToken(c);
   if (!token) return null; // no Authorization: Bearer → session path
   const isPat = isPatToken(token);
@@ -242,7 +254,10 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
   if (originIsBrowserTrusted(c)) {
     return isPat
       ? c.json(
-          { error: "Access tokens are not allowed from browser origins", code: "BEARER_NOT_ALLOWED_FROM_BROWSER" },
+          {
+            error: "Access tokens are not allowed from browser origins",
+            code: "BEARER_NOT_ALLOWED_FROM_BROWSER",
+          },
           401,
         )
       : null;
@@ -258,7 +273,8 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
   }
 
   const user = await repos.user.findById(resolved.userId);
-  if (!user) return c.json({ error: "Invalid or expired access token", code: "INVALID_TOKEN" }, 401);
+  if (!user)
+    return c.json({ error: "Invalid or expired access token", code: "INVALID_TOKEN" }, 401);
 
   const denied = enforceBoundOrgAndReadOnly(c, {
     boundOrg: resolved.organizationId,
@@ -269,7 +285,9 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
         ? "This access token is scoped to a different organization"
         : "This authorization is scoped to a different organization",
     readOnlyMessage:
-      resolved.kind === "pat" ? "This access token is read-only" : "This MCP authorization is read-only",
+      resolved.kind === "pat"
+        ? "This access token is read-only"
+        : "This MCP authorization is read-only",
   });
   if (denied) return denied;
 
@@ -287,6 +305,7 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
     resolved.organizationId,
     patScope,
     resolved.kind,
+    resolved.readOnly,
   );
 }
 
@@ -310,10 +329,7 @@ export async function authMiddleware(c: Context, next: Next) {
     // path. Return a 503 with a typed code so callers can distinguish
     // "no session" (cookie missing) from "session machinery broken".
     console.error("[auth] getSession threw:", err);
-    return c.json(
-      { error: "Authentication service unavailable", code: "AUTH_UNAVAILABLE" },
-      503,
-    );
+    return c.json({ error: "Authentication service unavailable", code: "AUTH_UNAVAILABLE" }, 503);
   }
 
   if (session) {
@@ -336,7 +352,7 @@ export async function authMiddleware(c: Context, next: Next) {
     // a browser cookie session — both flow through Better Auth's
     // getSession, but only Bearer carries the Authorization header.
     const sessionKind: SessionKind = hasBearerHeader(c) ? "bearer" : "cookie";
-    await applyAuthedRequest(
+    const applied = await applyAuthedRequest(
       c,
       session.user,
       session.session as {
@@ -345,6 +361,12 @@ export async function authMiddleware(c: Context, next: Next) {
       },
       sessionKind,
     );
+    // Better Auth can serve a signed/cached session whose user or membership was
+    // removed by a wipe import. Treat it as stale authentication; never continue
+    // into permission/route handlers without a RequestContext.
+    if (!applied) {
+      return c.json({ error: "Unauthorized", code: "SESSION_STALE" }, 401);
+    }
     return next();
   }
 
@@ -361,8 +383,15 @@ export async function authMiddleware(c: Context, next: Next) {
   }
 
   const user = await ensureLocalUser();
-  c.set("session", { id: "zero-auth", userId: user.id });
-  await applyAuthedRequest(c, user, { id: "zero-auth" }, "zero-auth");
+  const applied = await applyAuthedRequest(
+    c,
+    user,
+    { id: "zero-auth", userId: user.id },
+    "zero-auth",
+  );
+  if (!applied) {
+    return c.json({ error: "Unauthorized", code: "AUTH_CONTEXT_UNAVAILABLE" }, 401);
+  }
   return next();
 }
 
@@ -381,34 +410,41 @@ export async function authMiddleware(c: Context, next: Next) {
 async function applyAuthedRequest(
   c: Context,
   user: { id: string; email?: string | null; name?: string | null },
-  session:
-    | { id?: string; activeOrganizationId?: string | null }
-    | null,
+  session: { id?: string; userId?: string; activeOrganizationId?: string | null } | null,
   sessionKind: SessionKind,
   patScope?: { tokenId: string; scoped: boolean },
   principalKind?: PrincipalKind,
-): Promise<void> {
-  c.set("user", user);
-  if (session && sessionKind !== "zero-auth") c.set("session", session);
-  const orgId = await resolveActiveOrganizationId(
-    user.id,
-    session?.activeOrganizationId ?? null,
-  );
-  if (orgId) c.set("activeOrganizationId", orgId);
-
-  // Build the RequestContext. If the user has no org membership yet
-  // (brand-new signup, mid-provisioning) we skip ctx — downstream
-  // handlers that call getRequestContext will get a clear error
-  // pointing at the missing org, which is correct behavior: org-bound
-  // routes shouldn't have run anyway.
-  if (!orgId) return;
+  credential?: { organizationId: string | null; readOnly: boolean },
+): Promise<boolean> {
+  const scopeHeader = c.req.header(SDK_SCOPE_HEADER)?.trim().toLowerCase();
+  if (scopeHeader !== undefined && scopeHeader !== "fixed") {
+    throw new ValidationError(`${SDK_SCOPE_HEADER} must be 'fixed' when provided`);
+  }
+  const fixedScope = scopeHeader === "fixed";
+  const requestedOrg = c.req.header("X-Organization-Id")?.trim();
+  if (fixedScope && !requestedOrg) {
+    throw new ValidationError("X-Organization-Id is required for fixed organization scope");
+  }
+  // A credential binding is not a UX default. If that membership disappeared,
+  // fail authentication instead of falling back to another organization.
+  const orgId =
+    credential?.organizationId ??
+    (fixedScope && requestedOrg
+      ? requestedOrg
+      : await resolveActiveOrganizationId(user.id, session?.activeOrganizationId ?? null));
+  if (!orgId) return false;
 
   const membership = await repos.member.find(orgId, user.id);
   // Zero-auth's synthetic user is owner of its personal org via
-  // provisionUser, so this lookup succeeds there too. If it doesn't,
-  // we still skip ctx rather than crash — better-auth-shield and
-  // other middlewares will reject the request appropriately.
-  if (!membership) return;
+  // provisionUser, so this lookup succeeds there too. Any authenticated
+  // principal without a current membership is stale and must fail here.
+  if (!membership) return false;
+
+  // Publish the legacy fields only once all context invariants hold. A stale
+  // session must not leave a half-authenticated request behind.
+  c.set("user", user);
+  if (session) c.set("session", session);
+  c.set("activeOrganizationId", orgId);
 
   // A scoped PAT acts as a restricted principal whose grants come from the
   // token (permission.assert / github-access read them via tokenScope), so
@@ -434,10 +470,13 @@ async function applyAuthedRequest(
       sessionKind,
       principalKind: principalKind ?? null,
       tokenScope: patScope?.scoped ? { tokenId: patScope.tokenId } : null,
+      credential: credential ?? null,
+      scopeMode: fixedScope ? "fixed" : "resource",
       clientIp,
       userAgent,
       traceId: randomUUID(),
       hono: c,
     }),
   );
+  return true;
 }

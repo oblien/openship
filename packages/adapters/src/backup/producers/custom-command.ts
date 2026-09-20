@@ -17,7 +17,9 @@
  * is explicitly "custom_command".
  */
 
+import { payloadSpec } from "@repo/core";
 import { registerProducer } from "../registry";
+import { isRedactedCommand } from "../common/artifact-metadata";
 import type {
   Artifact,
   ArtifactRef,
@@ -87,13 +89,28 @@ class CustomCommandProducerImpl implements BackupProducer {
           "Re-run the backup policy to capture a restorable one.",
       );
     }
+    // Refuse BEFORE running it. Runs captured while the recorded metadata went through
+    // the build-log credential scrubber hold a command whose URL userinfo was replaced
+    // with `***`, so it executes and fails on authentication — from a half-finished
+    // restore, with a message from mongorestore/psql that says nothing about why. The
+    // marker cannot occur in a real DSN (see isRedactedCommand), and the boot backfill
+    // repairs these from the owning policy when one still exists.
+    if (isRedactedCommand(restoreCommand)) {
+      throw new Error(
+        "Backup's recorded restoreCommand had its credentials redacted when it was " +
+          "captured, so running it would fail authentication partway through the restore. " +
+          "Re-run the backup policy to capture a restorable artifact (or restore by hand " +
+          "using the command on the policy).",
+      );
+    }
 
     const body = await artifact.open();
     const exit = await executor.pipeIntoCommand(
       service,
       ["sh", "-c", restoreCommand],
       body,
-      { timeoutMs: 60 * 60 * 1000 },
+      // Ceiling from the catalog, so the number is not a per-producer literal.
+      { timeoutMs: payloadSpec("custom_command").restoreTimeoutMs },
     );
     if (exit.code !== 0) {
       throw new Error(

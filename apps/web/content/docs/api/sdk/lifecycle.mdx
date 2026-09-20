@@ -1,0 +1,75 @@
+---
+title: Lifecycle and configuration
+description: Configure native storage, providers, execution policy, and orderly shutdown.
+---
+
+Keep one native installation open for the lifetime of the application that owns it.
+
+## Lifecycle
+
+| Call | Effect |
+| --- | --- |
+| `await createShip(options)` | Initialize the owned worker, storage, and providers. |
+| `await ship.start()` | Enable operations and any explicitly configured scheduling. |
+| `await ship.scope({ identity, organizationId })` | Create an authorized user/organization view. |
+| `await ship.close({ mode: "drain" })` | Refuse new mutations, drain owned work, and release resources. |
+
+Use `try/finally` around work or close during your application's shutdown. A scope does not own the
+installation. Closing an installation does not delete its database or project configuration.
+
+## Required configuration
+
+| Option | Requirement |
+| --- | --- |
+| `instanceId` | Stable installation ID; reuse it when reopening. |
+| `stateDirectory` | Absolute private directory for source, releases, and provider state. |
+| `storage` | Explicit PGlite or PostgreSQL configuration. |
+| `encryptionKey` | Persistent UTF-8 secret of 32–4096 bytes. |
+| `runtime` | `bare`, `docker`, or `cloud`. |
+| `identity` | Trusted identity adapter; see [identity setup](/docs/api/sdk/identity). |
+
+The database is bound to its installation ID and key fingerprint. A different ID or key is rejected
+when reopening. Storage never defaults to the CLI's existing database.
+
+## Storage
+
+| Driver | Configuration | Migration behavior |
+| --- | --- | --- |
+| PGlite | `{ driver: "pglite", dataDir: "/absolute/path/database" }` | Applies bundled migrations by default. |
+| In-memory PGlite | `{ driver: "pglite", dataDir: "memory://" }` | Ephemeral state for tests or short-lived installations. |
+| PostgreSQL | `{ driver: "postgres", url, migrations: "verify" }` | Verifies migrations by default; choose `"apply"` explicitly to apply them. |
+
+Use `migrations: "verify"` when reopening an already migrated installation. `stateDirectory` and
+PGlite's `dataDir` are separate settings. Preserve both and the encryption key for persistent use.
+
+## Providers and policy
+
+| Option | Effect |
+| --- | --- |
+| `routing` | `"managed"` by default; `"none"` is available with the bare runtime. |
+| `cloud` | Explicit Cloud provider credentials and optional hosted configuration. |
+| `policy.allowHostExecution` | Allow local builds, host administration, and host SSH facilities. Disabled by default. |
+| `policy.sourceRoots` | Absolute directories from which native directory sources may be imported. |
+| `policy.allowLocalForwarding` | Allow loopback listeners that forward to authorized remote servers. |
+| `administration` | Expose trusted `ship.operator` methods. Disabled by default. |
+| `jobs` | Enable the retained job/backup scheduler at startup. Disabled by default. |
+| `recovery` | `"none"` or exclusive recovery for an owned, file-backed PGlite process. |
+| `diagnostics` | `"inherit"`, `"stderr"`, or `"silent"` engine diagnostics. |
+| `environment` | Additional provider settings; reserved storage, identity, and ownership fields cannot be overridden. |
+| `caller` | Trusted call attribution: `source` (`"api"` or `"cli"`) and `userAgent`. It does not grant permissions. |
+
+See [compatibility](/docs/api/sdk/compatibility) before enabling scheduling or Cloud forwarding.
+
+## Shutdown deadlines
+
+`close({ mode: "drain", timeoutMs })` limits how long the caller waits. A timeout rejects that wait;
+owned work continues draining. Do not delete installation files while it is still closing.
+
+Cancelling a deployment wait also stops observation only. Use `deployment(id).cancel()` to request
+execution cancellation and inspect its resulting status.
+
+## Attach to an existing kernel
+
+Advanced hosts that already own a `PlatformKernel` can call `createShip({ platform, identity })`.
+This overload returns a synchronous facade. It does not start or close caller-owned resources.
+Most integrations should use the owned factory shown in [native setup](/docs/api/sdk/native).

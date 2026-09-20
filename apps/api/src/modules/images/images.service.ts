@@ -14,10 +14,10 @@
  */
 
 import { Oblien } from "@repo/adapters";
-import { env } from "../../config/env";
-import { getOblienClient } from "../../lib/openship-cloud";
-import { getOrgCloudToken } from "../../lib/cloud/client";
-import { cacheStore } from "../../lib/cache-store";
+import { env } from "@repo/platform/engine/config/env";
+import { getOblienClient } from "@repo/platform/engine/lib/openship-cloud";
+import { getOrgCloudToken } from "@repo/platform/engine/lib/cloud/client";
+import { cacheStore } from "@repo/platform/engine/lib/cache-store/index";
 
 export interface ImageCatalogEntry {
   /** Unique slug, e.g. "postgres" - what the user picks in the catalog */

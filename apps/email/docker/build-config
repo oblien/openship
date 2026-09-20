@@ -14,6 +14,12 @@ export USE_FAIL2BAN='YES'
 # The runtime vmail DB is the sidecar on loopback; the entrypoint bootstraps it.
 export SQL_SERVER_ADDRESS='127.0.0.1'
 export SQL_SERVER_PORT='5432'
+# Don't let the installer fetch ClamAV signatures. It writes them to
+# /var/lib/clamav, which is a host bind mount at runtime — so the mount hides them
+# and clamd starts against an empty database directory (issue #565). A later build
+# step fetches them into the seed dir the entrypoint copies from instead. Sourced by
+# check_env before conf/clamav's `${FRESHCLAM_UPDATE_IMMEDIATELY:=YES}`, so this wins.
+export FRESHCLAM_UPDATE_IMMEDIATELY='NO'
 # Placeholder secrets — overwritten on first boot from the per-install env-file.
 export DOMAIN_ADMIN_PASSWD_PLAIN='build-placeholder'
 export VMAIL_DB_BIND_PASSWD='build-placeholder'

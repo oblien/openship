@@ -26,7 +26,7 @@ const { getLocalGhToken, listLocalGhRepos } = vi.hoisted(() => ({
   listLocalGhRepos: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   githubFetch,
   resolveGitHubAuthMode,
   getUserStatus,
@@ -37,12 +37,12 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   getGitHubAuthMode: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.http", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch,
   ghFetchSoft: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   getLocalGhToken,
   listLocalGhRepos,
   listLocalGhOrgs: vi.fn(),
@@ -51,19 +51,19 @@ vi.mock("../../../src/modules/github/github.local-auth", () => ({
 
 // env: {} → CLOUD_MODE is falsy, so createGitHubSource takes the LOCAL branch
 // (GhCliSource + LocalGitHubSource) — exactly the merge these tests exercise.
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {},
   runtimeTarget: { id: "local" },
 }));
 
-import { createGitHubSource } from "../../../src/modules/github/sources";
+import { createGitHubSource } from "@repo/platform/engine/modules/github/sources/index";
 // Pre-warm the lazily `await import`-ed source modules (+ their heavy
 // github.service dependency) at collection time, so createGitHubSource's
 // internal dynamic imports hit a warm cache. Otherwise the first call's cold
 // transform can exceed the per-test timeout under full-suite contention.
-import "../../../src/modules/github/sources/gh-cli-source";
-import "../../../src/modules/github/sources/local-source";
-import "../../../src/modules/github/sources/app-source";
+import "@repo/platform/engine/modules/github/sources/gh-cli-source";
+import "@repo/platform/engine/modules/github/sources/local-source";
+import "@repo/platform/engine/modules/github/sources/app-source";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as never;
 

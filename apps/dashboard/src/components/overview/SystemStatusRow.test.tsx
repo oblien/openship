@@ -31,7 +31,7 @@ describe("SystemStatusRow", () => {
     expect(html).toContain("Operational");
     expect(html).toContain("text-success");
     // Nothing to look at → no affordance to click. The row still states the status.
-    expect(html).not.toContain('href="/issues"');
+    expect(html).not.toContain('href="/monitoring"');
   });
 
   it("treats a pending update as operational, not a fault", () => {
@@ -45,7 +45,7 @@ describe("SystemStatusRow", () => {
   it("counts what's broken and opens the tracker", () => {
     const html = row(brokenIn("outage"));
     expect(html).toContain("4 issues");
-    expect(html).toContain('href="/issues"');
+    expect(html).toContain('href="/monitoring"');
     expect(html).toContain("text-danger");
   });
 
@@ -61,7 +61,7 @@ describe("SystemStatusRow", () => {
   });
 
   it("claims nothing until the feed has answered", () => {
-    // "Operational" before `/issues` replies would be a guess, and the guess is always
+    // "Operational" before `/monitoring` replies would be a guess, and the guess is always
     // the reassuring one.
     const html = row([], false);
     expect(html).not.toContain("Operational");

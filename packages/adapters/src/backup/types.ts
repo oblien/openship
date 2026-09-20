@@ -39,6 +39,21 @@ export interface ServiceHandle {
   /** Runtime-specific container/workspace id when the service is
    *  currently deployed. Null if it has never deployed or was destroyed. */
   containerId: string | null;
+  /**
+   * Whether that container is actually RUNNING, when we were able to ask.
+   *
+   * `undefined`/`null` mean UNKNOWN — a runtime that cannot enumerate containers
+   * (cloud), an unreachable host, or a caller that never looked. Unknown is not
+   * "no": a producer must treat it as permission to proceed, or every cloud and
+   * bare source would lose its logical dump.
+   *
+   * Only `false` is evidence. It exists because `containerId` cannot carry this:
+   * a STOPPED container still has an id, so a dump producer that keys on presence
+   * alone selects itself and then fails at the exec (`is not running`) instead of
+   * falling back to the volume snapshot — which for a stopped database is the
+   * COLD, and therefore better, artifact.
+   */
+  containerRunning?: boolean | null;
   /** Project slug — used in destination key paths. */
   projectSlug: string;
   /** Whether this service's NAMED volumes are project-scoped
@@ -95,7 +110,7 @@ export interface ExecuteCommandOpts {
 }
 
 export interface StreamPathOpts {
-  compression?: "zstd" | "gzip" | "none";
+  compression?: PayloadCompression;
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
   /**
@@ -110,10 +125,31 @@ export interface StreamPathOpts {
   /** Absolute ceiling regardless of traffic, behind `idleTimeoutMs`. Docker
    *  helper default 6 hours, matching restore. */
   timeoutMs?: number;
+  /**
+   * Freeze the service's own processes while the copy runs, so the archive is a
+   * point-in-time image rather than a torn one.
+   *
+   * A `tar` of a live volume is CRASH-CONSISTENT: the app keeps writing while the copy
+   * walks the tree, so files captured early and late disagree, and a database data
+   * directory copied that way can be unrecoverable. Quiescing uses Docker's native cgroup
+   * freezer (`docker pause`) on the TARGET container — the tar helper is a separate
+   * container on the same volume and is not frozen, so the copy proceeds against a
+   * filesystem nobody is writing to.
+   *
+   * What it buys and what it does NOT:
+   *  - removes concurrent writes for the duration of the copy;
+   *  - does NOT flush the application's own in-memory buffers or force an fsync, so a
+   *    database still deserves its logical dump (pg_dump/mysqldump) over this.
+   *
+   * Opt-in, never implied: the service is unavailable for as long as the copy takes, which
+   * for a large volume is minutes. The caller chooses availability or consistency; the
+   * artifact records which it got.
+   */
+  quiesce?: boolean;
 }
 
 export interface ReceiveStreamOpts {
-  compression?: "zstd" | "gzip" | "none";
+  compression?: PayloadCompression;
   /** Wipe the target before extracting. Default false — adapter-
    *  specific safer modes (delete-then-recreate volume) take precedence. */
   clearTarget?: boolean;
@@ -190,6 +226,24 @@ export interface BackupExecutor {
     opts?: { clearTarget?: boolean },
   ): Promise<{ bytesWritten: number }>;
 
+  /**
+   * The environment the service's process is ACTUALLY running with.
+   *
+   * Producers detect a database and authenticate to it from `ServiceHandle.env`,
+   * which is assembled from the service row plus the project's env-var rows. That
+   * covers everything Openship deployed and nothing it adopted: a service row built
+   * from a running container carries no `environment` at all, so `POSTGRES_DB` and
+   * `POSTGRES_USER` are simply absent and `PgDumpProducer.detects()` returns false
+   * for an image that is plainly postgres — the volume fallback then runs instead
+   * and finds nothing to snapshot (#611). The credentials are right there in the
+   * container's own `Config.Env`; nothing was reading them.
+   *
+   * Optional, and docker-only by nature — a bare host has no container to inspect,
+   * and a cloud workspace's env is not ours to enumerate. Absent means "no extra
+   * source of env", never an error.
+   */
+  readContainerEnv?(service: ServiceHandle): Promise<Record<string, string>>;
+
   /** Whether a named-volume source already exists on this daemon, and if so
    *  whether it holds data. Lets a caller REFUSE to overwrite a pre-existing,
    *  non-empty target volume (e.g. a cross-server migration that reuses bare
@@ -229,16 +283,21 @@ export type ExecutorFactory = (runtime: unknown) => BackupExecutor;
 
 // ─── Producer (WHAT) ─────────────────────────────────────────────────────────
 
-/** Canonical payload kinds. Stored in `backup_policy.payload_kind` as
- *  a string — the producer registry resolves by this name, so new
- *  kinds don't need a schema migration. */
-export type PayloadKind =
-  | "volume"
-  | "pg_dump"
-  | "mysql_dump"
-  | "redis_rdb"
-  | "mongo_dump"
-  | "custom_command";
+/**
+ * Canonical payload kinds. Stored in `backup_policy.payload_kind` as a string — the
+ * producer registry resolves by this name, so new kinds don't need a schema migration.
+ *
+ * RE-EXPORTED, not declared. The union used to be written out here as well as in
+ * `@repo/core`, where the dashboard reads it — the two were a documented "mirror",
+ * which is another way of saying the compiler was not checking them against each
+ * other. The catalog in core is the declaration; every fact about a kind (its label,
+ * its restore semantics, its config keys) is stated there once, and a kind that
+ * exists here without a spec there is a compile error.
+ */
+// `export … from` re-exports without binding the name locally, and four
+// declarations below annotate with it.
+import type { PayloadCompression, PayloadKind } from "@repo/core";
+export type { PayloadCompression, PayloadKind };
 
 /**
  * The policy's `payloadConfig`, forwarded WHOLE by the orchestrator.
@@ -267,6 +326,41 @@ export interface ProducerOpts {
   restoreCommand?: string;
   /** custom_command: filename portion of the destination key. */
   artifactName?: string;
+  /** Freeze the service while a volume is copied — see `StreamPathOpts.quiesce`.
+   *  Forwarded straight through from the policy's `payloadConfig`. */
+  quiesce?: boolean;
+  /**
+   * `path`: absolute directories inside the service to archive, one artifact each.
+   *
+   * Validated with `validateBackupPath` at save time AND again in the producer — these
+   * strings are interpolated into a shell command, and a policy row can predate the
+   * validation or arrive from an import.
+   */
+  paths?: string[];
+  /**
+   * `path`: empty the target directory before extracting into it, instead of merging.
+   *
+   * Defaults FALSE, unlike a volume restore's `clearTarget`. A volume is a
+   * single-purpose store, so replacing it wholesale is what an operator means; a
+   * folder can be shared with other things the service put there. Refused outright for
+   * a top-level or system directory — see `validateClearPath`.
+   */
+  clearPath?: boolean;
+  /**
+   * Compressor for a volume archive. Default `zstd` — the best ratio, and what every
+   * existing artifact used.
+   *
+   * Worth exposing because zstd is NOT in `alpine:3`: the helper `apk add`s it at runtime,
+   * which means a volume backup REQUIRES network egress from the helper (the executor's
+   * `NetworkDisabled: compression !== "zstd"` is that dependency written down) and pays the
+   * fetch on every capture and every restore. `gzip` is a busybox built-in, so it is
+   * offline-capable and immediate at a worse ratio — the right choice on an air-gapped box,
+   * and the reason the payload-matrix E2E finishes in seconds rather than minutes.
+   *
+   * Recorded on the artifact, and restore decompresses from that record, so changing it is
+   * safe for artifacts already captured.
+   */
+  compression?: PayloadCompression;
 }
 
 /**
@@ -309,8 +403,9 @@ export interface ArtifactRef {
   payloadKind: PayloadKind;
   sha256: string;
   sizeBytes: number;
-  /** Lazily-resolved stream from the destination. The producer pipes
-   *  this through whatever decompression/parsing it needs. */
+  /** Lazily-resolved stream from the destination. Finish validation
+   *  before opening, and open before clearing or writing target data: the
+   *  orchestrator records that writes may begin when it hands out this stream. */
   open: () => Promise<Readable>;
 }
 

@@ -1,0 +1,90 @@
+---
+title: backup policy
+description: Commands, arguments, and options for openship backup policy.
+cliGroup: openship backup policy
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship backup policy
+
+Backup policies (schedules) for a project
+
+```text
+openship backup policy [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/backup/policy#openship-backup-policy-list) | List backup policies for a project |
+| [`create [options]`](/docs/cli/reference/backup/policy#openship-backup-policy-create) | Create a backup policy for a project |
+| [`run [options] <policyId>`](/docs/cli/reference/backup/policy#openship-backup-policy-run) | Trigger a policy's backup now |
+| [`update <policyId> <file>`](/docs/cli/reference/backup/policy#openship-backup-policy-update) | Update a backup policy from a JSON file |
+| [`remove\|rm <policyId>`](/docs/cli/reference/backup/policy#openship-backup-policy-remove) | Remove a backup policy |
+
+## openship backup policy create
+
+Create a backup policy for a project
+
+```text
+openship backup policy create [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Project ID |
+| `--destination <id>` | Backup destination ID |
+| `--service <id>` | Scope the policy to a single service |
+| `--cron <expr>` | Cron schedule (e.g. '0 3 * * *') |
+| `--pre-deploy` | Also run this backup before each deploy |
+| `--retain-count <n>` | Keep at most N runs |
+| `--retain-days <n>` | Keep runs for N days |
+| `--payload-kind <kind>` | Payload kind (default: auto) |
+| `--payload-config <json>` | Payload config as a JSON object |
+| `--pre-hook <cmd>` | Shell command run before the backup |
+| `--post-hook <cmd>` | Shell command run after the backup |
+| `--disabled` | Create the policy disabled |
+
+## openship backup policy list
+
+List backup policies for a project
+
+```text
+openship backup policy list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Project ID |
+
+## openship backup policy remove
+
+Remove a backup policy
+
+```text
+openship backup policy remove|rm [options] <policyId>
+```
+
+## openship backup policy run
+
+Trigger a policy's backup now
+
+```text
+openship backup policy run [options] <policyId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `policyId` | Backup policy ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--follow` | Stream the run to completion |
+
+## openship backup policy update
+
+Update a backup policy from a JSON file
+
+```text
+openship backup policy update [options] <policyId> <file>
+```

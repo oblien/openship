@@ -13,8 +13,8 @@
  */
 
 import IORedis from "ioredis";
-import { env, REDIS_REQUIRED } from "../../config/env";
-import { isRedisReachable } from "../../lib/redis";
+import { env, REDIS_REQUIRED } from "@repo/platform/engine/config/env";
+import { isRedisReachable } from "@repo/platform/engine/lib/redis";
 import { MemoryRateLimitStore } from "./memory-store";
 import { RedisRateLimitStore } from "./redis-store";
 import { getPolicy, type PolicyId } from "./policies";

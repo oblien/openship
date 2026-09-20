@@ -16,6 +16,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 vi.mock("@repo/adapters", () => ({
+  // Read at module scope by openship-server-store (imported transitively), so the
+  // mock has to carry it or nothing under test loads. Its value is irrelevant here.
+  HOST_STATE_DIR: "/root/.openship",
   detectMailEngine: vi.fn(),
   MAIL_CONTAINER: "openship-mail",
   MAIL_DB_CONTAINER: "openship-mail-db",
@@ -28,14 +31,14 @@ vi.mock("@repo/adapters", () => ({
 }));
 
 const withExecutor = vi.fn();
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: (id: string, fn: (e: unknown) => unknown) => withExecutor(id, fn),
   },
 }));
 
 const readState = vi.fn();
-vi.mock("../../../src/modules/mail/mail-state", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   readState: (...args: unknown[]) => readState(...args),
 }));
@@ -52,7 +55,7 @@ vi.mock("../../../src/lib/request-context", () => ({
 
 import { detectMailEngine } from "@repo/adapters";
 import { getStatus } from "../../../src/modules/mail/mail.controller";
-import { forgetMailEngine } from "../../../src/modules/mail/mail-engine";
+import { forgetMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
 
 const SERVER = "srv_1";
 /** Minimal state: no dnsRecords and no webmail, so neither augment step runs. */
@@ -154,4 +157,41 @@ describe("GET /mail/status — engine state", () => {
     expect(body.active).toBe(false);
     expect(body.serverId).toBe(SERVER);
   });
+
+  it("does not demote an install finished before the public-port step existed", async () => {
+    readState.mockResolvedValue({
+      ...STATE,
+      finishedAt: new Date("2026-08-01T00:00:00Z").toISOString(),
+      completedSteps: Object.fromEntries(
+        Array.from({ length: 8 }, (_, index) => [
+          String(index + 1),
+          { stepId: index + 1, success: true, message: "done" },
+        ]),
+      ),
+    });
+
+    const body = await callStatus();
+    const publicPorts = (body.steps as Array<Record<string, unknown>>).find(
+      (step) => step.key === "verify_reachability",
+    );
+
+    expect(publicPorts).toMatchObject({ status: "completed" });
+    expect(publicPorts?.warning).toMatch(/Health tab checks it live/i);
+  });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn().mockResolvedValue(undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));

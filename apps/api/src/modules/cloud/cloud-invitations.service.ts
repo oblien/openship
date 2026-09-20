@@ -13,8 +13,8 @@
  * could rotate inviters within their tenant; this is the cross-cutting
  * SaaS-side ceiling.
  */
-import { cacheStore } from "../../lib/cache-store";
-import { sendMail } from "../../lib/mail";
+import { cacheStore } from "@repo/platform/engine/lib/cache-store/index";
+import { sendMail } from "@repo/platform/engine/lib/mail";
 
 const INVITATION_RATE_LIMIT_PER_HOUR = 20;
 const INVITATION_RATE_LIMIT_TTL_S = 60 * 60;

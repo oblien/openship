@@ -18,7 +18,8 @@
  * Wire format:
  *   PATCH /admin/branding
  *   X-Branding-Admin-Token: <token>
- *   { siteTitle?, siteDescription?, loginHeading?, loginSubtext?, loginFooter?, homeHtml? }
+ *   { siteTitle?, siteDescription?, loginHeading?, loginSubtext?, loginFooter?,
+ *     homeHtml?, showPoweredBy? }
  *   →  200 { branding: Branding }   or   401 { error }   or   400 { error }
  */
 
@@ -35,6 +36,7 @@ const patchSchema = z.object({
   loginSubtext: z.string().max(240).optional(),
   loginFooter: z.string().max(240).optional(),
   homeHtml: z.string().max(50_000).nullable().optional(),
+  showPoweredBy: z.boolean().optional(),
 });
 
 /**

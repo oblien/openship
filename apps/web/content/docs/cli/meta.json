@@ -1,4 +1,18 @@
 {
   "title": "CLI",
-  "pages": ["index", "run", "deploy", "projects", "self-host", "access"]
+  "pages": [
+    "index",
+    "---Get connected---",
+    "run",
+    "access",
+    "native",
+    "---Workflows---",
+    "deploy",
+    "projects",
+    "self-host",
+    "edge",
+    "automation",
+    "---Reference---",
+    "reference"
+  ]
 }

@@ -14,10 +14,10 @@ vi.mock("@repo/db", () => ({
     resourceGrant: { findForResource: vi.fn(async () => null) },
   },
 }));
-vi.mock("../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import { checkPermission } from "../../src/lib/permission";
-import { wildcardProjectGrantRejected } from "../../src/modules/tokens/token.schema";
+import { wildcardProjectGrantRejected } from "@repo/contracts";
 
 type G = { resourceType: string; resourceId: string; permissions: string[] };
 

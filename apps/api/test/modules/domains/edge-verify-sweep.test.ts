@@ -28,13 +28,13 @@ const { listAll, servableTokens, recordServeError, ensureTargetVerified, probeOw
 vi.mock("@repo/db", () => ({
   repos: { edgeTargetVerification: { listAll, servableTokens, recordServeError } },
 }));
-vi.mock("../../../src/lib/edge-target-verify", () => ({
+vi.mock("@repo/platform/engine/lib/edge-target-verify", () => ({
   ensureTargetVerified,
   probeOwnToken,
   resolveRoutingFor,
 }));
 
-import { runEdgeVerifySweep } from "../../../src/modules/domains/edge-verify-schedule";
+import { runEdgeVerifySweep } from "@repo/platform/engine/modules/domains/edge-verify-schedule";
 import { servableTokens as realServableTokens } from "../../../../../packages/db/src/repos/edge-target-verification.repo";
 
 const DAY = 24 * 60 * 60 * 1000;

@@ -1,0 +1,298 @@
+.scale-workspace {
+  container-name: scale-workspace;
+  container-type: inline-size;
+}
+
+.scale-floating-surface {
+  background: var(--th-card-on-page);
+  box-shadow: none;
+}
+
+.scale-toolbar {
+  max-width: calc(100% - 32px);
+  flex-wrap: wrap;
+}
+
+.scale-workspace[data-inspector] .scale-toolbar {
+  max-width: calc(100% - 388px);
+}
+
+.scale-toolbar[data-scope="cluster"] .scale-toolbar-identity {
+  width: 380px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@container scale-workspace (max-width: 700px) {
+  .scale-toolbar[data-scope="cluster"] {
+    width: calc(100% - 32px);
+    flex-wrap: wrap;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-identity,
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions {
+    width: 100%;
+  }
+
+  .scale-workspace[data-scope="cluster"] .scale-storage-notice {
+    top: 144px;
+  }
+}
+
+.scale-inspector-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--th-overlay) 60%, transparent);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  touch-action: none;
+  transition:
+    opacity 180ms ease-out,
+    visibility 0s linear 180ms;
+}
+
+.scale-inspector-backdrop[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.scale-inspector-overlay {
+  position: absolute;
+  inset-block-start: 16px;
+  inset-block-end: 16px;
+  inset-inline-end: 16px;
+  z-index: 50;
+  width: 340px;
+  max-width: calc(100% - 32px);
+}
+
+.scale-inspector-launcher {
+  position: absolute;
+  inset-block-start: 16px;
+  inset-inline-end: 16px;
+  z-index: 50;
+  width: 340px;
+  max-width: calc(100% - 32px);
+}
+
+.scale-storage-notice {
+  top: 88px;
+  max-width: min(32rem, calc(100% - 32px));
+}
+
+@container scale-workspace (max-width: 560px) {
+  .scale-toolbar {
+    width: calc(100% - 32px);
+    flex-wrap: wrap;
+  }
+
+  .scale-toolbar-identity,
+  .scale-toolbar-actions {
+    width: 100%;
+  }
+
+  .scale-storage-notice {
+    top: 144px;
+  }
+}
+
+@container scale-workspace (max-width: 720px) {
+  .scale-workspace[data-inspector] .scale-toolbar {
+    top: calc(30px + var(--scale-preview-height, 82px));
+    max-width: calc(100% - 32px);
+  }
+
+  .scale-workspace[data-inspector="expanded"] .scale-toolbar {
+    visibility: hidden;
+  }
+}
+
+@container scale-workspace (max-width: 400px) {
+  .scale-add-context,
+  .scale-back-prefix {
+    display: none;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions > button,
+  .scale-toolbar[data-scope="cluster"] [aria-label="History"] button {
+    width: 28px;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions {
+    gap: 0;
+  }
+}
+
+.scale-resource-tone[data-kind="edge"] {
+  --scale-node-color: var(--warning);
+  --scale-node-tint: var(--warning-bg);
+  --scale-node-border: var(--warning-border);
+}
+
+.scale-resource-tone[data-kind="service"] {
+  --scale-node-color: var(--success);
+  --scale-node-tint: var(--success-bg);
+  --scale-node-border: var(--success-border);
+}
+
+.scale-resource-tone[data-kind="postgres"] {
+  --scale-node-color: var(--info);
+  --scale-node-tint: var(--info-bg);
+  --scale-node-border: var(--info-border);
+}
+
+.scale-resource-tone[data-kind="redis"] {
+  --scale-node-color: var(--danger);
+  --scale-node-tint: var(--danger-bg);
+  --scale-node-border: var(--danger-border);
+}
+
+.scale-resource-icon {
+  color: var(--scale-node-color);
+  background: var(--scale-node-tint);
+}
+
+.scale-palette-item {
+  border-color: var(--scale-node-border);
+  background: color-mix(in srgb, var(--scale-node-tint) 50%, var(--th-card-on-page));
+}
+
+.scale-palette-item:hover {
+  border-color: var(--scale-node-color);
+  background: color-mix(in srgb, var(--scale-node-tint) 80%, var(--th-card-on-page));
+}
+
+.scale-palette-item:focus-visible {
+  outline: 2px solid var(--scale-node-color);
+  outline-offset: 2px;
+}
+
+.scale-cluster-composition {
+  border-color: var(--scale-node-border);
+  background: color-mix(in srgb, var(--scale-node-tint) 40%, var(--th-card-on-page));
+}
+
+.scale-resource-node {
+  border-color: var(--scale-node-border);
+}
+
+.scale-resource-node:hover,
+.scale-resource-node[data-selected="true"] {
+  border-color: var(--scale-node-color);
+}
+
+.scale-resource-node[data-selected="true"] {
+  outline: 2px solid var(--scale-node-tint);
+  outline-offset: 2px;
+}
+
+.scale-open-cluster {
+  color: var(--scale-node-color);
+  background: var(--scale-node-tint);
+}
+
+.scale-open-cluster:hover {
+  background: color-mix(in srgb, var(--scale-node-color) 15%, var(--th-card-on-page));
+}
+
+.scale-open-cluster:focus-visible {
+  outline: 2px solid var(--scale-node-color);
+  outline-offset: 2px;
+}
+
+.scale-canvas .react-flow {
+  --xy-background-color-default: var(--background);
+  --xy-edge-stroke-selected-default: var(--foreground);
+  --xy-minimap-background-color-default: var(--th-card-on-page);
+}
+
+.scale-resource-node,
+.scale-canvas-controls {
+  background: var(--th-card-on-page);
+}
+
+.scale-resource-node .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--scale-node-color);
+  background: var(--th-card-on-page);
+}
+
+.scale-resource-node .react-flow__handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+
+.scale-resource-node .react-flow__handle:hover,
+.scale-resource-node .react-flow__handle.connectingto {
+  border-color: var(--scale-node-color);
+  background: var(--scale-node-color);
+}
+
+.scale-canvas .react-flow__node:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 1rem;
+}
+
+.scale-canvas .scale-traffic-edge {
+  stroke: var(--th-on-25);
+  stroke-width: 1.5;
+}
+
+.scale-canvas .scale-traffic-edge.is-selected {
+  stroke: var(--foreground);
+  stroke-width: 2;
+}
+
+.scale-canvas .scale-traffic-edge.is-disabled {
+  stroke-dasharray: 5 5;
+  opacity: 0.6;
+}
+
+.scale-edge-label {
+  position: absolute;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--th-card-on-page);
+  color: var(--foreground);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.scale-canvas .react-flow__minimap {
+  width: 140px;
+  height: 96px;
+  margin-bottom: 28px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.scale-canvas .react-flow__minimap svg {
+  width: 140px;
+  height: 96px;
+}
+
+.scale-canvas .react-flow__attribution {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scale-page *,
+  .scale-page *::before,
+  .scale-page *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

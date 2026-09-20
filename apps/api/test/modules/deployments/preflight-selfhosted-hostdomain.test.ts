@@ -37,20 +37,20 @@ vi.mock("../../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "desktop" }),
 }));
 
-vi.mock("../../../src/lib/cloud/client", () => ({ cloudClient }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient }));
 
-vi.mock("../../../src/lib/cloud/session", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/session", () => ({
   isCloudConnectedForOrg: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock("../../../src/lib/cloud-preflight", () => ({ runCloudPreflight }));
+vi.mock("@repo/platform/engine/lib/cloud-preflight", () => ({ runCloudPreflight }));
 
-vi.mock("../../../src/lib/dns-resolver", () => ({
+vi.mock("@repo/platform/engine/lib/dns-resolver", () => ({
   resolveRecords: vi.fn().mockResolvedValue([]),
   lookupAddresses: vi.fn().mockResolvedValue([]),
 }));
 
-import { runPreflightChecks } from "../../../src/modules/deployments/preflight";
+import { runPreflightChecks } from "@repo/platform/engine/modules/deployments/preflight";
 
 // process.env is process-global; a reused worker could carry HOST_DOMAIN into a
 // later file's fresh env parse. This file's own env is already parsed, so the
@@ -117,3 +117,12 @@ describe("runPreflightChecks — self-hosted HOST_DOMAIN (#427 follow-up)", () =
     expect(preflightFn.mock.calls.length).toBe(0);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "desktop" }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "desktop" }),
+}));

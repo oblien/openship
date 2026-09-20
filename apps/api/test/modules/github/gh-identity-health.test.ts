@@ -21,38 +21,42 @@ const { cacheGet, cacheSet, cacheDelete } = vi.hoisted(() => ({
   cacheDelete: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({ getGitHubAuthMode }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({ getGitHubAuthMode }));
 
-vi.mock("../../../src/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
 
 vi.mock("@repo/db", () => ({
   repos: { instanceSettings: { get: instanceSettingsGet, upsert: vi.fn() } },
 }));
 
-vi.mock("../../../src/lib/encryption", () => ({ decrypt, encrypt: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt, encrypt: vi.fn() }));
 
-vi.mock("../../../src/lib/system-debug", () => ({ systemDebug: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({ systemDebug: vi.fn() }));
 
-vi.mock("../../../src/lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({ get: cacheGet, set: cacheSet, delete: cacheDelete })),
 }));
 
 // Not CLOUD_MODE → the gh path is live (the SaaS hard-floor is covered elsewhere).
-vi.mock("../../../src/config/env", () => ({ env: {}, runtimeTarget: { id: "local" } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {}, runtimeTarget: { id: "local" } }));
 
 vi.mock("@octokit/auth-oauth-device", () => ({ createOAuthDeviceAuth: vi.fn() }));
 
-import { getLocalGhStatus } from "../../../src/modules/github/github.local-auth";
+import {
+  getLocalGhStatus,
+  ghAuthTokenViaConfig,
+  resolveGhHostsPath,
+} from "@repo/platform/engine/modules/github/github.local-auth";
 
 /** GitHub's /user answering with `status`. */
-function githubUserReturns(status: number, body: unknown = {}) {
+function githubUserReturns(
+  status: number,
+  body: unknown = {},
+  headers: Record<string, string> = {},
+) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    })),
+    vi.fn(async () => new Response(JSON.stringify(body), { status, headers })),
   );
 }
 
@@ -74,6 +78,103 @@ beforeEach(() => {
     ghDeviceTokenMethod: "token",
   });
   decrypt.mockReturnValue("ghp_live_token");
+});
+
+describe("GitHub CLI config isolation", () => {
+  it("applies GitHub CLI's documented config-path precedence", () => {
+    expect(
+      resolveGhHostsPath(
+        { GH_CONFIG_DIR: "/isolated/gh", XDG_CONFIG_HOME: "/isolated/xdg" },
+        "/home/operator",
+        "linux",
+      ),
+    ).toBe("/isolated/gh/hosts.yml");
+
+    expect(
+      resolveGhHostsPath({ XDG_CONFIG_HOME: "/isolated/xdg" }, "/home/operator", "linux"),
+    ).toBe("/isolated/xdg/gh/hosts.yml");
+
+    expect(resolveGhHostsPath({}, "/home/operator", "linux")).toBe(
+      "/home/operator/.config/gh/hosts.yml",
+    );
+
+    expect(
+      resolveGhHostsPath(
+        { APPDATA: "C:\\Users\\operator\\AppData\\Roaming" },
+        "C:\\Users\\operator",
+        "win32",
+      ),
+    ).toBe("C:\\Users\\operator\\AppData\\Roaming\\GitHub CLI\\hosts.yml");
+  });
+
+  it.each([
+    {
+      name: "GH_CONFIG_DIR",
+      environment: { GH_CONFIG_DIR: "/isolated/gh" },
+      expected: "/isolated/gh/hosts.yml",
+    },
+    {
+      name: "XDG_CONFIG_HOME",
+      environment: { XDG_CONFIG_HOME: "/isolated/xdg" },
+      expected: "/isolated/xdg/gh/hosts.yml",
+    },
+  ])(
+    "does not fall back to another user's home when $name is set",
+    async ({ environment, expected }) => {
+      const read = vi.fn(async (path: string) => {
+        if (path === "/home/other-user/.config/gh/hosts.yml") {
+          return "github.com:\n  oauth_token: ghp_wrong_user\n";
+        }
+        throw Object.assign(new Error("missing isolated config"), { code: "ENOENT" });
+      });
+
+      await expect(
+        ghAuthTokenViaConfig({
+          environment,
+          homeDirectory: "/home/other-user",
+          platform: "linux",
+          read,
+        }),
+      ).resolves.toBeNull();
+
+      expect(read).toHaveBeenCalledOnce();
+      expect(read).toHaveBeenCalledWith(expected, "utf-8");
+    },
+  );
+
+  it("does not fall back when the authoritative config exists without a GitHub token", async () => {
+    const read = vi.fn(async (path: string) => {
+      if (path === "/isolated/gh/hosts.yml") return "example.com:\n  oauth_token: other\n";
+      return "github.com:\n  oauth_token: ghp_wrong_user\n";
+    });
+
+    await expect(
+      ghAuthTokenViaConfig({
+        environment: { GH_CONFIG_DIR: "/isolated/gh" },
+        homeDirectory: "/home/other-user",
+        platform: "linux",
+        read,
+      }),
+    ).resolves.toBeNull();
+
+    expect(read).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledWith("/isolated/gh/hosts.yml", "utf-8");
+  });
+
+  it("still reads the normal home config when no override is present", async () => {
+    const read = vi.fn(async () => "github.com:\n  oauth_token: ghp_expected_user\n");
+
+    await expect(
+      ghAuthTokenViaConfig({
+        environment: {},
+        homeDirectory: "/home/operator",
+        platform: "linux",
+        read,
+      }),
+    ).resolves.toBe("ghp_expected_user");
+
+    expect(read).toHaveBeenCalledWith("/home/operator/.config/gh/hosts.yml", "utf-8");
+  });
 });
 
 describe("getLocalGhStatus — credential health", () => {
@@ -109,6 +210,26 @@ describe("getLocalGhStatus — credential health", () => {
     if (status.available) throw new Error("unreachable");
     expect(status.problem).toBe("rejected");
   });
+
+  it.each([
+    { headers: { "x-ratelimit-remaining": "0" }, body: {} },
+    { headers: { "retry-after": "60" }, body: {} },
+    { headers: {}, body: { message: "You have exceeded a secondary rate limit." } },
+  ])(
+    "does not reject a durable credential when GitHub rate limits verification",
+    async ({ headers, body }) => {
+      githubUserReturns(403, body, headers);
+      expect(await getLocalGhStatus()).toMatchObject({
+        available: false,
+        method: "token",
+        problem: "unreachable",
+      });
+
+      // A cold cache after the transient failure still resolves the durable token.
+      githubUserReturns(200, { login: "account", id: 7, avatar_url: "" });
+      expect(await getLocalGhStatus()).toMatchObject({ available: true, login: "account" });
+    },
+  );
 
   it("does NOT blame the credential for a 5xx", async () => {
     githubUserReturns(500);

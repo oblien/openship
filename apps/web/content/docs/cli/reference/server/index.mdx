@@ -1,0 +1,175 @@
+---
+title: server
+description: Commands, arguments, and options for openship server.
+cliGroup: openship server
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server
+
+Manage self-hosted SSH servers
+
+```text
+openship server [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list\|ls`](/docs/cli/reference/server#openship-server-list) | List servers in the active organization |
+| [`add [options]`](/docs/cli/reference/server#openship-server-add) | Add a new server |
+| [`rm\|remove <id>`](/docs/cli/reference/server#openship-server-rm) | Delete a server |
+| [`test-connection\|test [options]`](/docs/cli/reference/server#openship-server-test-connection) | Test an SSH connection without saving it |
+| [`check [options] <serverId>`](/docs/cli/reference/server#openship-server-check) | Run component health checks against a saved server |
+| [`update [options] <serverId>`](/docs/cli/reference/server#openship-server-update) | Check for and apply native-module migrations (OpenResty, …) |
+| [`install [options] <serverId>`](/docs/cli/reference/server#openship-server-install) | Install components on a server |
+| [`install-session [sessionId]`](/docs/cli/reference/server#openship-server-install-session) | Inspect a server installation session |
+| [`install-respond [options] <sessionId>`](/docs/cli/reference/server#openship-server-install-respond) | Respond to an installation prompt |
+| [`rate-limit [options] <serverId>`](/docs/cli/reference/server#openship-server-rate-limit) | Read or update per-server OpenResty rate limiting |
+| [`monitor <serverId>`](/docs/cli/reference/server#openship-server-monitor) | Stream live system stats (SSE) |
+| [`ssh <serverId>`](/docs/cli/reference/server#openship-server-ssh) | Open an interactive SSH terminal (coming soon) |
+
+## openship server add
+
+Add a new server
+
+```text
+openship server add [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--host <host>` | SSH host / IP |
+| `--name <name>` | Display name |
+| `--port <port>` | SSH port (default: "22") |
+| `--user <user>` | SSH user (default: "root") |
+| `--auth-method <method>` | Auth method (password\|key\|agent) |
+| `--password <password>` | SSH password (password auth) |
+| `--key-path <path>` | Path to private key (key auth) |
+| `--key-passphrase <passphrase>` | Private key passphrase |
+| `--jump-host <host>` | SSH jump / bastion host |
+| `--ssh-args <args>` | Extra raw ssh args |
+
+## openship server check
+
+Run component health checks against a saved server
+
+```text
+openship server check [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Limit to specific components |
+
+## openship server install
+
+Install components on a server
+
+```text
+openship server install [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Components to install (docker\|git\|edge\|rsync) |
+| `--follow` | Stream install logs live (SSE) |
+
+## openship server install-respond
+
+Respond to an installation prompt
+
+```text
+openship server install-respond [options] <sessionId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--action <action>` | Action id offered by the prompt |
+
+## openship server install-session
+
+Inspect a server installation session
+
+```text
+openship server install-session [options] [sessionId]
+```
+
+## openship server list
+
+List servers in the active organization
+
+```text
+openship server list|ls [options]
+```
+
+## openship server monitor
+
+Stream live system stats (SSE)
+
+```text
+openship server monitor [options] <serverId>
+```
+
+## openship server rate-limit
+
+Read or update per-server OpenResty rate limiting
+
+```text
+openship server rate-limit [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--rps <n>` | Requests per second (0 removes the limit) |
+| `--burst <n>` | Burst allowance |
+| `--whitelist <cidr...>` | CIDRs exempt from limiting |
+
+## openship server rm
+
+Delete a server
+
+```text
+openship server rm|remove [options] <id>
+```
+
+## openship server ssh
+
+Open an interactive SSH terminal (coming soon)
+
+```text
+openship server ssh [options] <serverId>
+```
+
+## openship server test-connection
+
+Test an SSH connection without saving it
+
+```text
+openship server test-connection|test [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--host <host>` | SSH host / IP |
+| `--port <port>` | SSH port (default: "22") |
+| `--user <user>` | SSH user (default: "root") |
+| `--auth-method <method>` | Auth method (password\|key\|agent) |
+| `--password <password>` | SSH password |
+| `--key-path <path>` | Path to private key |
+| `--key-passphrase <passphrase>` | Private key passphrase |
+| `--jump-host <host>` | SSH jump / bastion host |
+| `--ssh-args <args>` | Extra raw ssh args |
+
+## openship server update
+
+Check for and apply native-module migrations (OpenResty, …)
+
+```text
+openship server update [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Limit to specific modules |
+| `--check` | Only report drift; don't apply |

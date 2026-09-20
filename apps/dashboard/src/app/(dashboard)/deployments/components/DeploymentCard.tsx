@@ -136,6 +136,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     action_required: t.deployments.status.actionRequired,
     rejected: t.deployments.status.rejected,
     reconciling: t.deployments.status.verifying,
+    no_changes: t.deployments.status.noChanges,
   };
   const statusLabel = statusLabelMap[deployment.status] ?? t.deployments.status.pending;
 
@@ -213,7 +214,8 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               {t.deployments.card.pinned}
             </span>
           )}
-          {!deployment.pinned && deployment.artifactRetainedAt && !deployment.isActive && (
+          {!deployment.pinned && deployment.artifactRetainedAt && !deployment.isActive &&
+            (deployment.status === "success" || deployment.status === "partial_failure") && (
             <span
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
               title={t.deployments.card.snapshottedTitle}

@@ -79,7 +79,15 @@ export function AddCustomAppModal({
       <div className="p-6">
         <h3 className="text-base font-semibold text-foreground">Add a custom app</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Upload an app definition (JSON). It&apos;s added to your catalog and marked unverified.
+          Upload an app definition (JSON). It&apos;s added to your catalog and marked unverified.{" "}
+          <a
+            href="https://openship.io/docs/guides/add-an-app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            How to write one
+          </a>
         </p>
 
         <label

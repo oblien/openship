@@ -1,0 +1,136 @@
+---
+title: domain
+description: Commands, arguments, and options for openship domain.
+cliGroup: openship domain
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship domain
+
+Manage custom domains, DNS verification, and SSL certificates
+
+```text
+openship domain [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/domain#openship-domain-list) | List a project's custom domains |
+| [`add [options] <hostname>`](/docs/cli/reference/domain#openship-domain-add) | Add a custom domain to a project |
+| [`preview <hostname>`](/docs/cli/reference/domain#openship-domain-preview) | Preview the DNS records a hostname would need (no changes saved) |
+| [`verify <id>`](/docs/cli/reference/domain#openship-domain-verify) | Run DNS verification for a domain |
+| [`primary <id>`](/docs/cli/reference/domain#openship-domain-primary) | Make a domain the project's primary hostname |
+| [`records <id>`](/docs/cli/reference/domain#openship-domain-records) | Show the DNS records for an existing domain |
+| [`renew <id>`](/docs/cli/reference/domain#openship-domain-renew) | Renew the SSL certificate for a domain |
+| [`verify-ssl <id>`](/docs/cli/reference/domain#openship-domain-verify-ssl) | Recheck that a domain's SSL certificate is issued and valid (no reissue) |
+| [`renew-all`](/docs/cli/reference/domain#openship-domain-renew-all) | Renew SSL for every near-expiry domain in your organization |
+
+## openship domain add
+
+Add a custom domain to a project
+
+```text
+openship domain add [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Domain hostname (e.g. app.example.com) |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID to attach the domain to |
+| `--primary` | Mark this domain as the project's primary (default: false) |
+
+## openship domain list
+
+List a project's custom domains
+
+```text
+openship domain list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID to list domains for |
+
+## openship domain preview
+
+Preview the DNS records a hostname would need (no changes saved)
+
+```text
+openship domain preview [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Domain hostname to preview |
+
+## openship domain primary
+
+Make a domain the project's primary hostname
+
+```text
+openship domain primary [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+## openship domain records
+
+Show the DNS records for an existing domain
+
+```text
+openship domain records [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+## openship domain renew
+
+Renew the SSL certificate for a domain
+
+```text
+openship domain renew [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+## openship domain renew-all
+
+Renew SSL for every near-expiry domain in your organization
+
+```text
+openship domain renew-all [options]
+```
+
+## openship domain verify
+
+Run DNS verification for a domain
+
+```text
+openship domain verify [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+## openship domain verify-ssl
+
+Recheck that a domain's SSL certificate is issued and valid (no reissue)
+
+```text
+openship domain verify-ssl [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |

@@ -1,0 +1,169 @@
+---
+title: system
+description: Commands, arguments, and options for openship system.
+cliGroup: openship system
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship system
+
+Instance settings, onboarding, migration, and data transfer
+
+```text
+openship system [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`settings`](/docs/cli/reference/system#openship-system-settings) | Read or update instance settings |
+| [`onboarding`](/docs/cli/reference/system#openship-system-onboarding) | First-run instance setup |
+| [`upgrade-to-auth [options]`](/docs/cli/reference/system#openship-system-upgrade-to-auth) | Promote a zero-auth instance to email/password login |
+| [`browse [path]`](/docs/cli/reference/system#openship-system-browse) | List directories on the instance host (defaults to home) |
+| [`migration`](/docs/cli/reference/system/migration#openship-system-migration) | Team-mode migration lifecycle |
+| [`data-transfer`](/docs/cli/reference/system#openship-system-data-transfer) | Whole-instance export / import (owner-only) |
+
+## openship system browse
+
+List directories on the instance host (defaults to home)
+
+```text
+openship system browse [options] [path]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `path` | Directory to list |
+
+## openship system data-transfer
+
+Whole-instance export / import (owner-only)
+
+```text
+openship system data-transfer [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`export [options]`](/docs/cli/reference/system#openship-system-data-transfer-export) | Export the entire instance to a JSON file |
+| [`import [options]`](/docs/cli/reference/system#openship-system-data-transfer-import) | Import an instance export file |
+
+## openship system data-transfer export
+
+Export the entire instance to a JSON file
+
+```text
+openship system data-transfer export [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--passphrase <passphrase>` | Seal secrets under this passphrase |
+| `--out <file>` | Write the export to this file instead of stdout |
+
+## openship system data-transfer import
+
+Import an instance export file
+
+```text
+openship system data-transfer import [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--file <path>` | Path to an export file |
+| `--passphrase <passphrase>` | Passphrase used at export time |
+| `--mode <mode>` | wipe (replace) \| merge (default: "wipe") |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship system onboarding
+
+First-run instance setup
+
+```text
+openship system onboarding [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`apply [options]`](/docs/cli/reference/system#openship-system-onboarding-apply) | Configure a fresh instance (fails once already configured) |
+
+## openship system onboarding apply
+
+Configure a fresh instance (fails once already configured)
+
+```text
+openship system onboarding apply [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--ssh-host <host>` | SSH host of the target server |
+| `--ssh-port <n>` | SSH port (default 22) |
+| `--ssh-user <user>` | SSH user (default root) |
+| `--ssh-auth-method <method>` | SSH auth method |
+| `--ssh-password <password>` | SSH password |
+| `--ssh-key-path <path>` | SSH private key path |
+| `--ssh-key-passphrase <pass>` | SSH key passphrase |
+| `--ssh-jump-host <host>` | SSH jump host |
+| `--ssh-args <args>` | Extra SSH args |
+| `--server-name <name>` | Display name for the server |
+| `--auth-mode <mode>` | Initial auth mode: none \| local \| cloud |
+| `--tunnel-provider <provider>` | Tunnel provider |
+| `--tunnel-token <token>` | Tunnel token |
+| `--default-build-mode <mode>` | Default build mode |
+| `--default-rollback-window <n>` | Default rollback window |
+
+## openship system settings
+
+Read or update instance settings
+
+```text
+openship system settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/system#openship-system-settings-get) | Show current instance settings |
+| [`set [options]`](/docs/cli/reference/system#openship-system-settings-set) | Update instance-level settings |
+
+## openship system settings get
+
+Show current instance settings
+
+```text
+openship system settings get [options]
+```
+
+## openship system settings set
+
+Update instance-level settings
+
+```text
+openship system settings set [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--auth-mode <mode>` | Auth mode: none \| local \| cloud |
+| `--confirm <phrase>` | Required for auth-mode none: "I-understand-no-auth" |
+| `--tunnel-provider <provider>` | Tunnel provider (empty string clears) |
+| `--tunnel-token <token>` | Tunnel token |
+| `--default-build-mode <mode>` | Default build mode |
+| `--default-rollback-window <n>` | Default rollback window |
+| `--invitation-mail-source <src>` | Invitation mail source: platform \| cloud |
+
+## openship system upgrade-to-auth
+
+Promote a zero-auth instance to email/password login
+
+```text
+openship system upgrade-to-auth [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Account display name |
+| `--email <email>` | Account email |
+| `--password <password>` | Account password (prompted if omitted) |
+| `--use-own-mail-server` | Warm the self-hosted mail server for auth emails |

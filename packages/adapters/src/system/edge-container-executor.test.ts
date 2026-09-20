@@ -7,6 +7,8 @@ import {
   readMaybeInContainer,
   writeEdgeFile,
 } from "./edge-container-executor";
+import { EXECUTOR_DELEGATE } from "./elevated-executor";
+import { cacheKeyFor } from "./environment";
 import { logEntry } from "./local-shell";
 import type { CommandExecutor, LogEntry } from "../types";
 
@@ -145,6 +147,27 @@ describe("edgeContainerExecutor", () => {
     const edge = edgeContainerExecutor(inner, "openship-edge");
     await edge.dispose?.();
     expect(inner.dispose).toHaveBeenCalled();
+  });
+
+  /**
+   * The exception to the passthrough above, and the reason it is an exception: this wrapper
+   * changes WHICH MACHINE `exec` runs on. `EXECUTOR_DELEGATE` claims the opposite — it is how
+   * `elevatedExecutor` tells the profile cache that two objects are one box — so answering it
+   * here would file the container's os-release and uid under the host's key. The elevated
+   * `inner` is not hypothetical: it is exactly what `containerEdgeProvider` passes.
+   */
+  it("is never mistaken for another view of the host, even over an elevated inner", () => {
+    const inner = fakeExecutor();
+    const elevated = new Proxy(inner, {
+      get: (t, p) => (p === EXECUTOR_DELEGATE ? t : Reflect.get(t, p, t)),
+    });
+    const edge = edgeContainerExecutor(elevated, "openship-edge");
+
+    const delegate = (e: CommandExecutor) => (e as unknown as Record<symbol, unknown>)[EXECUTOR_DELEGATE];
+    expect(delegate(elevated)).toBe(inner);
+    expect(delegate(edge)).toBeUndefined();
+    expect(cacheKeyFor(edge)).toBe(edge);
+    expect(cacheKeyFor(elevated)).toBe(inner);
   });
 });
 

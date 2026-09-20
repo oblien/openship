@@ -21,6 +21,14 @@ records which it came from and the import adapts, so a **desktop → server** mo
 not convert anything by hand.
 </Callout>
 
+<Callout title="Use Data Transfer for an instance move" type="warn">
+The **Settings → Team → Migrate → Own server** shortcut is unavailable in this
+version. Its preflight reports the missing deployment step and cannot start a
+restore on an unprepared target. Install and start the destination first, then
+use the export/import steps below. Verify the imported installation and its
+projects before retiring the source.
+</Callout>
+
 ## What travels (and what to check after)
 
 **Carried:** servers/SSH connections · projects · services · domains & routes · environment variables ·
@@ -107,6 +115,19 @@ re-binds the project to a path that exists here.
 </Step>
 
 </Steps>
+
+## Source release maintenance commands
+
+A source release uses a flat `api/`, `dashboard/`, and `packages/` layout. Its
+headless import entry is `api/scripts/import-instance.ts`; the database dump and
+restore entries are under `packages/db/scripts/`. These commands and the release
+supervisor use the assets from their installed PGlite package. They do not reuse
+`OPENSHIP_PGLITE_ASSETS_DIR` from a compiled CLI installation.
+
+For a running destination, use the Data Transfer API or dashboard above. A
+headless import must use the destination's database configuration and encryption
+key, with any process owning that embedded database stopped first. It is a data
+import command; it does not install, start, route, or cut over the destination.
 
 ## Deploy only what changed (don't restart your databases)
 

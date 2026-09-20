@@ -9,6 +9,11 @@ import { join, dirname, parse } from "node:path";
 export interface ProjectLink {
   projectId?: string;
   branch?: string;
+  name?: string;
+  slug?: string;
+  context?: string;
+  native?: { instanceId: string; organizationId: string };
+  defaults?: { environment: string };
 }
 
 const LINK_REL = join(".openship", "project.json");

@@ -25,17 +25,19 @@ export function createOrphanedResourceRepo(db: Database) {
 
     /** All orphans, oldest first (GC processes them fairly). */
     async listAll(): Promise<OrphanedResource[]> {
-      return db
-        .select()
-        .from(orphanedResource)
-        .orderBy(asc(orphanedResource.createdAt));
+      return db.select().from(orphanedResource).orderBy(asc(orphanedResource.createdAt));
     },
 
     async listByServer(serverId: string): Promise<OrphanedResource[]> {
+      return db.select().from(orphanedResource).where(eq(orphanedResource.serverId, serverId));
+    },
+
+    async listByProject(projectId: string): Promise<OrphanedResource[]> {
       return db
         .select()
         .from(orphanedResource)
-        .where(eq(orphanedResource.serverId, serverId));
+        .where(eq(orphanedResource.projectId, projectId))
+        .orderBy(asc(orphanedResource.createdAt));
     },
 
     async delete(id: string): Promise<void> {
@@ -48,6 +50,12 @@ export function createOrphanedResourceRepo(db: Database) {
         .update(orphanedResource)
         .set({ attempts: sql`${orphanedResource.attempts} + 1`, lastAttemptAt: new Date() })
         .where(eq(orphanedResource.id, id));
+    },
+
+    /** Persist recovery metadata before a GC operation destroys the source that
+     *  metadata was discovered from (for example container volume mounts). */
+    async updatePayload(id: string, payload: unknown): Promise<void> {
+      await db.update(orphanedResource).set({ payload }).where(eq(orphanedResource.id, id));
     },
   };
 }

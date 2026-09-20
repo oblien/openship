@@ -59,10 +59,25 @@ export class ApiError extends Error {
 }
 
 /**
+ * Copy for a client-side timeout.
+ *
+ * `controller.abort()` is called with no reason, so the browser's own message is
+ * `signal is aborted without reason` — which reached users as the entire error
+ * text on the add-server "Test connection" button. One constant so the banner
+ * and the per-call message can't drift.
+ */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "Request timed out. The server took too long to respond.";
+
+/**
  * Returns `true` when the error was caused by a request abort / timeout.
+ *
+ * Matched on `name`, not `instanceof DOMException`: undici (SSR, tests) and some
+ * polyfills throw a plain `Error` named `AbortError`, and those must not read as
+ * an ordinary failure.
  */
 export function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
+  return err instanceof Error && err.name === "AbortError";
 }
 
 /**
@@ -80,6 +95,9 @@ export function getApiErrorMessage(
   err: unknown,
   fallback = "Request failed",
 ): string {
+  // Before the generic Error arm: an abort's own message is the browser's
+  // internal wording, never something to show.
+  if (isAbortError(err)) return REQUEST_TIMEOUT_MESSAGE;
   if (err instanceof ApiError) {
     const body = err.body as Record<string, unknown> | undefined;
     if (body && typeof body.message === "string") return body.message;
@@ -254,8 +272,13 @@ async function doFetch<T>(
 
   /* --- Headers ---------------------------------------------------- */
   const headers = new Headers(init.headers);
+  const rawBody =
+    body instanceof FormData ||
+    (typeof Blob !== "undefined" && body instanceof Blob) ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body);
 
-  if (body && typeof body === "object" && !(body instanceof FormData)) {
+  if (body && typeof body === "object" && !rawBody) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -273,12 +296,7 @@ async function doFetch<T>(
       headers,
       credentials: "include",
       signal: controller.signal,
-      body:
-        body instanceof FormData
-          ? body
-          : body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
+      body: rawBody ? (body as BodyInit) : body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (!res.ok) {
@@ -302,11 +320,13 @@ async function doFetch<T>(
 
     return (await res.text()) as T;
   } catch (err) {
-    // Network-level failures: server unreachable (TypeError) or request timeout (AbortError)
-    if (err instanceof TypeError) {
+    // Network-level failures: server unreachable (TypeError) or request timeout (AbortError).
+    // Through the exported predicates, so the banner and `getApiErrorMessage`
+    // classify the same throw the same way.
+    if (isNetworkError(err)) {
       _networkErrorHandler?.("Cannot reach the server. Make sure the API is running.");
-    } else if (err instanceof DOMException && err.name === "AbortError") {
-      _networkErrorHandler?.("Request timed out. The server took too long to respond.");
+    } else if (isAbortError(err)) {
+      _networkErrorHandler?.(REQUEST_TIMEOUT_MESSAGE);
     }
     throw err;
   } finally {

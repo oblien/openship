@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
-import { sizeOfMoveSet } from "./migration-size";
+import { sizeOfMoveSet } from "@repo/platform/engine/modules/migration/migration-size";
 
 /** Fake executor: `exec` replies from a (cmd → string) responder; a responder
  *  returning `THROW` simulates a timeout/failure (the real code `.catch`es). */

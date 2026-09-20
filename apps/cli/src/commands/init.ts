@@ -1,3 +1,4 @@
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship init` — link the current directory to an Openship project by
  * writing .openship/project.json. Later commands (e.g. deploy) read this file
@@ -13,7 +14,9 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { join } from "node:path";
-import { paginate, ApiError } from "../lib/api-client";
+import { getShipClient, nativeSession, ApiError } from "../lib/ship-client";
+import { iteratePages } from "@repo/sdk/client";
+import type { ProjectLink } from "../lib/project-link";
 import { getActiveContext } from "../lib/config";
 import { err, info, isJsonMode, ok, printJson } from "../lib/output";
 
@@ -22,14 +25,6 @@ interface ProjectRow {
   name?: string;
   slug?: string;
   source?: string;
-}
-
-interface ProjectLink {
-  projectId: string;
-  name?: string;
-  slug?: string;
-  context: string;
-  defaults: { environment: string };
 }
 
 export const initCommand = new Command("init")
@@ -46,7 +41,7 @@ export const initCommand = new Command("init")
 
     if (existsSync(linkPath) && !opts.force) {
       err(`Already linked (${linkPath}). Re-run with --force to overwrite.`);
-      process.exit(1);
+      exitCommand(1);
     }
 
     let projectId: string | undefined = opts.project;
@@ -55,18 +50,18 @@ export const initCommand = new Command("init")
     try {
       if (!projectId) {
         const projects: ProjectRow[] = [];
-        for await (const p of paginate<ProjectRow>("/projects", { perPage: 100 })) {
+        for await (const p of iteratePages(getShipClient().projects.list, { perPage: 100 })) {
           projects.push(p);
         }
 
         if (projects.length === 0) {
           err("No projects found for the active context. Create one in the dashboard first.");
-          process.exit(1);
+          exitCommand(1);
         }
 
         if (opts.yes) {
           err("Multiple projects available; pass --project <id> in non-interactive mode.");
-          process.exit(1);
+          exitCommand(1);
         }
 
         info("\n  Select a project to link:\n");
@@ -86,21 +81,25 @@ export const initCommand = new Command("init")
         }
         if (!picked) {
           err("No matching project.");
-          process.exit(1);
+          exitCommand(1);
         }
         projectId = picked.id;
       }
     } catch (e) {
+      rethrowCommandExit(e);
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
       err(`Couldn't list projects: ${msg}`);
-      process.exit(1);
+      exitCommand(1);
     }
 
+    const session = nativeSession();
     const link: ProjectLink = {
       projectId: projectId!,
       ...(picked?.name ? { name: picked.name } : {}),
       ...(picked?.slug ? { slug: picked.slug } : {}),
-      context: getActiveContext(),
+      ...(session
+        ? { native: { instanceId: session.ship.instanceId, organizationId: session.client.organizationId } }
+        : { context: getActiveContext() }),
       defaults: { environment: opts.environment || "production" },
     };
 

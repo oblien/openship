@@ -1,15 +1,16 @@
 {
-  "title": "Issues",
-  "subtitle": "Everything Openship found wrong across your projects, servers and domains.",
+  "title": "Monitoring",
+  "subtitle": "Health, updates and activity across your projects, servers and domains.",
   "tabs": {
     "open": "Open",
+    "health": "Health",
     "resolved": "Resolved"
   },
   "resolvedNote": "History covers container and server incidents — the other checks report current state, so a fixed certificate or deploy simply stops appearing here.",
   "rescan": "Re-scan",
   "rescanning": "Scanning",
   "filters": {
-    "searchPlaceholder": "Search issues",
+    "searchPlaceholder": "Search monitoring",
     "all": "All",
     "outage": "Outage",
     "action_required": "Action needed",
@@ -79,9 +80,9 @@
     "more": "{n} more",
     "hide": "Hide until something changes"
   },
-  "loadFailed": "Couldn't load issues",
+  "loadFailed": "Couldn't load monitoring",
   "toast": {
-    "title": "Issues",
+    "title": "Monitoring",
     "rescanned": "Re-scan finished",
     "rescanPartial": "Re-scan finished, {n} check(s) failed",
     "rescanFailed": "Re-scan failed",

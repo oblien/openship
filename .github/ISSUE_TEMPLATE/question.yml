@@ -1,0 +1,51 @@
+name: Question
+description: Ask for help or clarification about OpenShip
+title: "[Question]: "
+labels: ["question"]
+type: task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the documentation and existing issues do not answer your question.
+
+  - type: checkboxes
+    id: prior-research
+    attributes:
+      label: Prior research
+      description: Check the documentation and existing issues before asking a new question.
+      options:
+        - label: I have searched the documentation and existing issues for an answer.
+          required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: State the question clearly and explain what you are trying to accomplish.
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempts
+    attributes:
+      label: What have you tried?
+      description: Share the documentation, commands, configuration, or approaches you have already tried.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include relevant version, deployment, operating system, or browser details.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add logs, screenshots, links, or any other useful information. Remove secrets first.
+    validations:
+      required: false

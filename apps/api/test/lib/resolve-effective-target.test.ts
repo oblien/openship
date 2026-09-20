@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveEffectiveTarget } from "../../src/lib/deployment-runtime";
-import type { DeploymentMeta } from "../../src/lib/deployment-runtime";
+import { resolveEffectiveTarget } from "@repo/platform/engine/lib/deployment-runtime";
+import type { DeploymentMeta } from "@repo/platform/engine/lib/deployment-runtime";
 
 // A deployment PINNED to a serverId must route over SSH to that server no matter
 // the host platform — including the DESKTOP app operating a remote server. The
@@ -12,6 +12,17 @@ import type { DeploymentMeta } from "../../src/lib/deployment-runtime";
 const meta = (m: Partial<DeploymentMeta>): DeploymentMeta => m as DeploymentMeta;
 
 describe("resolveEffectiveTarget", () => {
+  it.each(["desktop", "selfhosted", "cloud"] as const)("keeps a bound Cloud Docker build on Oblien from %s", base => {
+    expect(resolveEffectiveTarget(base, meta({ deployTarget: "cloud", buildStrategy: "server",
+      runtimeMode: "docker", cloudDockerWorkspace: { projectId: "project-a", workspaceId: "vm-a" } }))).toBe("cloud");
+  });
+  it.each([{ deployTarget: "local" }, { serverId: "server-a" }] as const)("refuses conflicting Cloud Docker placement %j", conflict => {
+    expect(() => resolveEffectiveTarget("selfhosted", meta({ ...conflict,
+      cloudDockerWorkspace: { projectId: "project-a", workspaceId: "vm-a" } }))).toThrow("conflicts");
+  });
+  it("keeps an existing provider workspace on Cloud during self-hosted cleanup", () => {
+    expect(resolveEffectiveTarget("selfhosted", meta({ deployTarget: "cloud", workspaceId: "existing-vm" }))).toBe("cloud");
+  });
   it("routes a server-pinned deployment to SSH regardless of host platform", () => {
     expect(resolveEffectiveTarget("desktop", meta({ serverId: "srv_1" }))).toBe("server");
     expect(resolveEffectiveTarget("selfhosted", meta({ serverId: "srv_1" }))).toBe("server");

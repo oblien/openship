@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { DockerContainerDetail } from "@repo/adapters";
-import type { ManifestProjectEntry } from "../../lib/openship-manifest";
+import type { ManifestProjectEntry } from "@repo/platform/engine/lib/openship-manifest";
 import {
   reconcileOpenshipProjects,
   isBuildHelper,
@@ -8,8 +8,10 @@ import {
   openshipStackName,
   splitEnvByProvenance,
   toDiscoveredService,
-} from "./docker-reconcile";
-import type { ComposeService } from "../../lib/compose-parser";
+  parseComposePort,
+  isExternalHostPublish,
+} from "@repo/platform/engine/modules/migration/docker-reconcile";
+import type { ComposeService } from "@repo/platform/engine/lib/compose-parser";
 
 describe("isBuildHelper", () => {
   it("is true only for a transient builder (openship.build, no deployment/service)", () => {
@@ -157,6 +159,44 @@ describe("splitEnvByProvenance — inverts Docker's create-time env merge (#394)
 });
 
 describe("toDiscoveredService — env import separates operator config from image defaults (#394)", () => {
+  it("preserves an exact-match flag from the proxy route index", () => {
+    const detail = container({
+      labels: {},
+      ports: [{ privatePort: 3000, publicPort: 3100, type: "tcp" }],
+    });
+    const svc = toDiscoveredService(
+      detail,
+      undefined,
+      undefined,
+      undefined,
+      new Map([
+        [
+          3100,
+          [
+            {
+              port: 3100,
+              path: "/mcp",
+              exact: true,
+              domains: ["mcp.example.com"],
+              ssl: { enabled: false },
+            },
+          ],
+        ],
+      ]),
+    );
+
+    expect(svc.existingRoute).toEqual([
+      {
+        port: 3100,
+        path: "/mcp",
+        exact: true,
+        domains: ["mcp.example.com"],
+        ssl: { enabled: false },
+        source: undefined,
+      },
+    ]);
+  });
+
   it("imports the operator's vars and reports the image-supplied ones with values", () => {
     const detail = container({ labels: {}, env: CAPTURED.overrideMatchingDefault });
 
@@ -344,5 +384,56 @@ describe("openshipStackName — group Openship-deployed containers by their stac
     expect(openshipStackName(undefined, "web")).toBeNull();
     // Name that doesn't end in the service label → not our pattern.
     expect(openshipStackName("openship-supabase-kong", "web")).toBeNull();
+  });
+});
+
+describe("parseComposePort — captures the pinned host interface (#388)", () => {
+  it("returns no hostIp for a bare container port (nothing published)", () => {
+    expect(parseComposePort("5432")).toEqual({ host: null, hostIp: undefined, container: "5432", proto: undefined });
+  });
+
+  it("returns no hostIp for the short host:container form (Docker binds all interfaces)", () => {
+    expect(parseComposePort("5432:5432")).toEqual({
+      host: 5432,
+      hostIp: undefined,
+      container: "5432",
+      proto: undefined,
+    });
+  });
+
+  it("captures an explicit loopback interface", () => {
+    expect(parseComposePort("127.0.0.1:5432:5432")).toMatchObject({ host: 5432, hostIp: "127.0.0.1", container: "5432" });
+  });
+
+  it("captures an explicit all-interfaces bind and preserves the protocol", () => {
+    expect(parseComposePort("0.0.0.0:5353:53/udp")).toEqual({
+      host: 5353,
+      hostIp: "0.0.0.0",
+      container: "53",
+      proto: "udp",
+    });
+  });
+});
+
+describe("isExternalHostPublish — was a publish reachable off-box? (#388)", () => {
+  it("treats an unpinned interface as external (Docker publishes on 0.0.0.0)", () => {
+    expect(isExternalHostPublish(undefined)).toBe(true);
+    expect(isExternalHostPublish("")).toBe(true);
+    expect(isExternalHostPublish("  ")).toBe(true);
+  });
+
+  it("treats an explicit all-interfaces bind as external", () => {
+    expect(isExternalHostPublish("0.0.0.0")).toBe(true);
+    expect(isExternalHostPublish("::")).toBe(true);
+  });
+
+  it("treats explicit loopback interfaces as NOT external", () => {
+    expect(isExternalHostPublish("127.0.0.1")).toBe(false);
+    expect(isExternalHostPublish("localhost")).toBe(false);
+    expect(isExternalHostPublish("::1")).toBe(false);
+  });
+
+  it("treats a concrete LAN interface as external (reachable on that NIC)", () => {
+    expect(isExternalHostPublish("192.168.1.10")).toBe(true);
   });
 });

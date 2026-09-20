@@ -31,7 +31,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   postEdgeMgmt: vi.fn(async (serverId: string | null, path: string, body: unknown) => {
     h.pushes.push({ serverId, path, body });
   }),
@@ -39,7 +39,7 @@ vi.mock("../../../src/lib/project-analytics", () => ({
 }));
 
 const { pushProjectAnalyticsConfig, reconcileAnalyticsConfig } = await import(
-  "../../../src/modules/analytics/analytics-config.service"
+  "@repo/platform/engine/modules/analytics/analytics-config.service"
 );
 
 beforeEach(() => {
@@ -209,7 +209,7 @@ describe("reconcile after an edge restart", () => {
   it("keeps going when one project cannot be resolved", async () => {
     h.allProjects = [proj("p1", true), proj("p2", true)];
     h.sourcesByProject = { p2: [{ kind: "self-hosted", domain: "b.com", serverId: "srv1" }] };
-    const { resolveProjectTrafficSources } = await import("../../../src/lib/project-analytics");
+    const { resolveProjectTrafficSources } = await import("@repo/platform/engine/lib/project-analytics");
     vi.mocked(resolveProjectTrafficSources).mockImplementationOnce(async () => {
       throw new Error("no deployment");
     });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_MASK } from "@repo/platform/engine/lib/secret-env";
 
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({
@@ -27,14 +28,14 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/free-domain-guard", () => freeGate);
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => freeGate);
 
 const domainService = vi.hoisted(() => ({
   ensurePendingServiceDomain: vi.fn(),
   removeServiceDomain: vi.fn(),
   reuseServerCertForDomain: vi.fn(),
 }));
-vi.mock("../../../src/modules/domains/domain.service", () => domainService);
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => domainService);
 
 /**
  * The route-reconcile block is where a bad routing patch does its REAL damage —
@@ -44,8 +45,8 @@ vi.mock("../../../src/modules/domains/domain.service", () => domainService);
  * assertion below passes vacuously against code that never executed.
  */
 const reconcileProjectRoutes = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/route-apply.service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/route-apply.service")>();
+vi.mock("@repo/platform/engine/lib/route-apply.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/route-apply.service")>();
   return { ...actual, reconcileProjectRoutes };
 });
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
@@ -53,7 +54,11 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });
 
-import { createService, updateService } from "../../../src/modules/services/service.service";
+import {
+  acceptServiceDrift,
+  createService,
+  updateService,
+} from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", slug: "acme" };
@@ -112,10 +117,24 @@ describe("service routing patch", () => {
 
   /** What the edge was asked to stop serving on this save. */
   const removedHosts = () =>
-    ((reconcileProjectRoutes.mock.calls.at(-1)?.[1] as { removes?: Array<{ hostname: string }> })
-      ?.removes ?? []).map((r) => r.hostname);
+    (
+      (reconcileProjectRoutes.mock.calls.at(-1)?.[1] as { removes?: Array<{ hostname: string }> })
+        ?.removes ?? []
+    ).map((r) => r.hostname);
 
   it("persists a scalar custom-domain patch and keeps the sibling route", async () => {
+    const updated = {
+      ...multiRouteService(),
+      domainType: "custom",
+      domain: null,
+      customDomain: "api.example.com",
+      publicEndpoints: [
+        { port: 3210, domainType: "custom", customDomain: "api.example.com" },
+        { port: 3211, domainType: "free", domain: "acme-backend-http" },
+      ],
+    };
+    serviceRepo.findById.mockResolvedValueOnce(multiRouteService()).mockResolvedValueOnce(updated);
+
     await updateService(ctx, project.id, "svc_1", {
       domainType: "custom",
       customDomain: "api.example.com",
@@ -131,6 +150,15 @@ describe("service routing patch", () => {
       { port: 3210, domainType: "custom", customDomain: "api.example.com" },
       { port: 3211, domainType: "free", domain: "acme-backend-http" },
     ]);
+    // Saving a service route materializes the same persisted Domain row used by
+    // project domains. DNS preview/apply therefore stays in domain.service;
+    // updateService neither duplicates nor silently invokes provider writes.
+    expect(domainService.ensurePendingServiceDomain).toHaveBeenCalledWith({
+      projectId: project.id,
+      serviceId: "svc_1",
+      hostname: "api.example.com",
+      targetPort: 3210,
+    });
   });
 
   it("does not gate a custom-domain save on the free routes the row already had", async () => {
@@ -212,10 +240,11 @@ describe("service routing patch", () => {
 
     await updateService(ctx, project.id, "svc_1", { exposed: false } as never);
 
-    expect(removedHosts().map((h) => h.split(".")[0]).sort()).toEqual([
-      "acme-backend",
-      "acme-backend-http",
-    ]);
+    expect(
+      removedHosts()
+        .map((h) => h.split(".")[0])
+        .sort(),
+    ).toEqual(["acme-backend", "acme-backend-http"]);
     // Config is untouched, so nothing is de-configured — a mere pause must never
     // delete a domain row the operator verified.
     expect(domainService.removeServiceDomain).not.toHaveBeenCalled();
@@ -246,9 +275,9 @@ describe("service routing patch", () => {
   });
 
   it("refuses a cleared subdomain instead of dropping the sibling route", async () => {
-    await expect(
-      updateService(ctx, project.id, "svc_1", { domain: "" } as never),
-    ).rejects.toThrow(/free route needs a subdomain/i);
+    await expect(updateService(ctx, project.id, "svc_1", { domain: "" } as never)).rejects.toThrow(
+      /free route needs a subdomain/i,
+    );
 
     expect(serviceRepo.update).not.toHaveBeenCalled();
     expect(reconcileProjectRoutes).not.toHaveBeenCalled();
@@ -299,6 +328,134 @@ describe("service routing patch", () => {
     expect(serviceRepo.create).toHaveBeenCalled();
   });
 
+  it("persists build args when a service is created manually (#689)", async () => {
+    await createService(ctx, project.id, {
+      name: "api",
+      build: ".",
+      dockerfile: "Dockerfile",
+      buildArgs: { APP_PACKAGE: "@myorg/api", FROM_ENV: null },
+    } as never);
+
+    expect(serviceRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildArgs: { APP_PACKAGE: "@myorg/api", FROM_ENV: null },
+        advanced: { buildArgTemplateKeys: [] },
+      }),
+    );
+  });
+
+  it("makes a manual build-arg update literal without dropping other advanced config", async () => {
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      buildArgs: { HOME_REF: "${HOME}" },
+      advanced: {
+        buildArgTemplateKeys: ["HOME_REF"],
+        readiness: { enabled: true },
+      },
+    });
+
+    await updateService(ctx, project.id, "svc_1", {
+      buildArgs: { HOME_REF: "$HOME" },
+    } as never);
+
+    expect(serviceRepo.update).toHaveBeenCalledWith(
+      "svc_1",
+      expect.objectContaining({
+        buildArgs: { HOME_REF: "$HOME" },
+        advanced: {
+          buildArgTemplateKeys: [],
+          readiness: { enabled: true },
+        },
+      }),
+    );
+  });
+
+  it("restores masked build args and their interpolation provenance on an unrelated edit", async () => {
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      buildArgs: { TOKEN: "stored-secret", REF: "${BUILD_REF}", REMOVED: "old" },
+      advanced: { buildArgTemplateKeys: ["REF"], readiness: { enabled: true } },
+    });
+    await updateService(ctx, project.id, "svc_1", {
+      buildArgs: { TOKEN: ENV_MASK, REF: ENV_MASK, INHERITED: null, EMPTY: "", GHOST: ENV_MASK },
+      restart: "always",
+    } as never);
+    expect(writtenPatch().buildArgs).toEqual({
+      TOKEN: "stored-secret",
+      REF: "${BUILD_REF}",
+      INHERITED: null,
+      EMPTY: "",
+    });
+    expect(writtenPatch().advanced).toEqual({
+      buildArgTemplateKeys: ["REF"],
+      readiness: { enabled: true },
+    });
+  });
+
+  it("drops source-less masks on create and masks the returned build args", async () => {
+    const response = await createService(ctx, project.id, {
+      name: "api",
+      build: ".",
+      buildArgs: { TOKEN: "new-secret", GHOST: ENV_MASK, INHERITED: null },
+    } as never);
+    expect(serviceRepo.create.mock.calls.at(-1)?.[0].buildArgs).toEqual({
+      TOKEN: "new-secret",
+      INHERITED: null,
+    });
+    expect(response?.buildArgs).toEqual({ TOKEN: ENV_MASK, INHERITED: null });
+  });
+
+  it("makes a manual image update literal without dropping other advanced config", async () => {
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      image: "ghcr.io/acme/api:v1",
+      advanced: {
+        imageTemplate: {
+          expression: "ghcr.io/acme/api:${IMAGE_TAG}",
+          unresolvedVariables: ["IMAGE_TAG"],
+        },
+        readiness: { enabled: true },
+      },
+    });
+
+    await updateService(ctx, project.id, "svc_1", {
+      image: "ghcr.io/acme/api:v2",
+    } as never);
+
+    expect(serviceRepo.update).toHaveBeenCalledWith(
+      "svc_1",
+      expect.objectContaining({
+        image: "ghcr.io/acme/api:v2",
+        advanced: {
+          readiness: { enabled: true },
+        },
+      }),
+    );
+  });
+
+  it("applies build args when an upstream drift is accepted (#689)", async () => {
+    const drifted = {
+      ...multiRouteService(),
+      build: ".",
+      dockerfile: "Dockerfile",
+      buildArgs: { APP_PACKAGE: "@myorg/old" },
+      importedSpec: { buildArgs: { APP_PACKAGE: "@myorg/old" } },
+      driftSpec: { buildArgs: { APP_PACKAGE: "@myorg/api" } },
+    };
+    serviceRepo.findById.mockResolvedValueOnce(drifted).mockResolvedValueOnce({
+      ...drifted,
+      buildArgs: { APP_PACKAGE: "@myorg/api" },
+      driftSpec: null,
+    });
+
+    await acceptServiceDrift(ctx, project.id, "svc_1");
+
+    expect(serviceRepo.update).toHaveBeenCalledWith(
+      "svc_1",
+      expect.objectContaining({ buildArgs: { APP_PACKAGE: "@myorg/api" } }),
+    );
+  });
+
   // #424: a container answers to BOTH its name and its custom alias on the
   // project network, so every write path (create name, rename, alias, project
   // internalAlias) must reject a value already taken by any of those. The old
@@ -337,7 +494,7 @@ describe("service routing patch", () => {
       expect(serviceRepo.create).not.toHaveBeenCalled();
     });
 
-    it("create: a normalized-duplicate name is rejected (\"My DB\" vs \"my-db\")", async () => {
+    it('create: a normalized-duplicate name is rejected ("My DB" vs "my-db")', async () => {
       serviceRepo.listByProject.mockResolvedValue([{ id: "svc_2", name: "My DB" }]);
 
       await expect(
@@ -381,4 +538,15 @@ describe("service routing patch", () => {
       expect(serviceRepo.update).toHaveBeenCalled();
     });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });

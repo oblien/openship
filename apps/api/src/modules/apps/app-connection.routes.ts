@@ -26,6 +26,7 @@ r.get(
   "/",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     mcp: { description: "Get an installed app's resolved connection details (URLs + generated keys)." },
   },
   cloudProjectProxy,

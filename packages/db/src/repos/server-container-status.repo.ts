@@ -13,7 +13,15 @@ export type ServerContainerComponent = "edge" | "mail";
 
 export function createServerContainerStatusRepo(db: Database) {
   return {
-    /** Upsert a scan result for a (server, component). Unique on (serverId, component). */
+    /**
+     * Upsert a scan result for a (server, component). Unique on (serverId, component).
+     *
+     * `latestInProgress` is PRESERVED when the caller omits it: a detect probe knows
+     * what the box runs, not whether an apply is mid-flight, and writing its default
+     * would clear the flag under a running swap (every scan path — the 6-hourly job,
+     * the boot hook, a manual Scan, the dashboard's mount auto-scan — hits this).
+     * Only the apply itself, through {@link setInProgress}, owns the flag.
+     */
     async upsert(data: Omit<NewServerContainerStatus, "id">): Promise<void> {
       const id = generateId("scs");
       await db
@@ -28,7 +36,9 @@ export function createServerContainerStatusRepo(db: Database) {
             runningVersion: data.runningVersion ?? null,
             pinnedVersion: data.pinnedVersion ?? null,
             behind: data.behind,
-            latestInProgress: data.latestInProgress,
+            ...(data.latestInProgress === undefined
+              ? {}
+              : { latestInProgress: data.latestInProgress }),
             detail: data.detail ?? null,
             checkedAt: data.checkedAt ?? new Date(),
             updatedAt: new Date(),
@@ -40,6 +50,11 @@ export function createServerContainerStatusRepo(db: Database) {
      * Drop a (server, component) row. Used when a scan finds the component is no
      * longer present on the box (edge removed, mail uninstalled) — leaving the row
      * would keep reporting drift for a container that is gone.
+     *
+     * A row whose apply is IN PROGRESS is left alone: mid-swap the container is
+     * legitimately absent for a moment, and deleting the row there both erases the
+     * in-flight state every surface renders and orphans the apply's own
+     * `setInProgress(false)` (it would update zero rows).
      */
     async remove(serverId: string, component: ServerContainerComponent): Promise<void> {
       await db
@@ -48,6 +63,7 @@ export function createServerContainerStatusRepo(db: Database) {
           and(
             eq(serverContainerStatus.serverId, serverId),
             eq(serverContainerStatus.component, component),
+            eq(serverContainerStatus.latestInProgress, false),
           ),
         );
     },
@@ -112,6 +128,20 @@ export function createServerContainerStatusRepo(db: Database) {
             eq(serverContainerStatus.component, component),
           ),
         );
+    },
+
+    /**
+     * Clear every in-progress flag. Boot-only: an apply lives in the API process
+     * (its session, logs and step model are in memory), so a flag that survived a
+     * restart describes a run that no longer exists. Without this the flag is
+     * indistinguishable from a live swap and every surface renders a permanent
+     * "Updating…" — the very reason readers used to bound their polling.
+     */
+    async clearAllInProgress(): Promise<void> {
+      await db
+        .update(serverContainerStatus)
+        .set({ latestInProgress: false, updatedAt: new Date() })
+        .where(eq(serverContainerStatus.latestInProgress, true));
     },
   };
 }

@@ -7,7 +7,8 @@
  *   - a subtle "update available" banner,
  *   - a one-time "what's new" card after an update lands,
  *   - a changelog details modal.
- * All actions link to GitHub; desktop can drive the native in-app updater.
+ * Changelog actions link to the product website; desktop can drive the native
+ * in-app updater.
  */
 
 import { useState } from "react";
@@ -21,7 +22,7 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import type { AdvisorySeverity } from "@repo/core";
+import { changelogUrl, type AdvisorySeverity } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useUpdates } from "./useUpdates";
@@ -71,7 +72,8 @@ export function UpdateCenter() {
   const updating = desktop && updatePhase !== "idle";
   const updatingVersion = state?.latestVersion ?? latest?.version ?? "";
   const pct = Math.round(Math.min(1, Math.max(0, updateProgress)) * 100);
-  const changelog = state?.latestChangelogUrl ?? "https://github.com/oblien/openship/releases";
+  const changelog = state?.latestChangelogUrl ?? changelogUrl();
+  const whatsNewChangelog = whatsNewVersion ? changelogUrl(`v${whatsNewVersion}`) : changelog;
 
   return (
     <>
@@ -207,7 +209,7 @@ export function UpdateCenter() {
                     {w.whatsNew}
                   </button>
                 )}
-                <ExternalLinkBtn href={changelog}>{w.changelog}</ExternalLinkBtn>
+                <ExternalLinkBtn href={whatsNewChangelog}>{w.changelog}</ExternalLinkBtn>
               </div>
             </div>
             <button
@@ -247,7 +249,7 @@ export function UpdateCenter() {
               {latest.notes?.trim() || w.noNotes}
             </pre>
             <div className="border-t border-border/50 px-5 py-3">
-              <ExternalLinkBtn href={changelog}>{w.viewOnGithub}</ExternalLinkBtn>
+              <ExternalLinkBtn href={changelog}>{w.viewChangelog}</ExternalLinkBtn>
             </div>
           </div>
         </div>

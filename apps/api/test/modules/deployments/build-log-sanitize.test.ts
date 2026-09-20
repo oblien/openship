@@ -4,11 +4,12 @@ import type { LogEntry } from "@repo/adapters";
 import {
   MAX_ENTRY_CHARS,
   MAX_TOTAL_CHARS,
+  redactCredentials,
   sanitizeLogText,
   sanitizeLogsForPersistence,
   sanitizeStorableStrings,
   sliceWithoutSplittingPair,
-} from "../../../src/modules/deployments/build-log-sanitize";
+} from "@repo/platform/engine/modules/deployments/build-log-sanitize";
 
 /**
  * `build_session.logs` is jsonb. Postgres REFUSES a jsonb value carrying a NUL
@@ -232,5 +233,86 @@ describe("sanitizeLogsForPersistence", () => {
     expect(out[out.length - 1].message).toBe("LAST LINE");
     expect(out.some((e) => e.step === "build")).toBe(true);
     expect(out.filter((e) => e.message.includes("omitted from the stored copy"))).toHaveLength(1);
+  });
+});
+
+/**
+ * The deploy pipeline builds `https://<token>:x-oauth-basic@github.com/o/r.git` for a
+ * user token and `https://x-access-token:<token>@…` for an App installation token
+ * (injectGitToken / gitCredentialPair, packages/adapters/src/runtime/git-clone.ts) and
+ * interpolates it into a shell command whose git output is persisted. So the credential is one the
+ * pipeline manufactures itself — masking project env upstream does nothing for it,
+ * and `build_session.logs` outlives the ~60-minute token in backups and exports.
+ */
+describe("redactCredentials", () => {
+  it("redacts the userinfo of the URL the clone path actually builds", () => {
+    const out = redactCredentials(
+      "Cloning into 'app'... https://x-access-token:ghs_AbCdEf0123456789xyz@github.com/acme/app.git",
+    );
+    expect(out).not.toContain("ghs_AbCdEf0123456789xyz");
+    expect(out).not.toContain("x-access-token");
+    expect(out).toContain("https://***@github.com/acme/app.git");
+  });
+
+  it("redacts the user-token pair — secret in the USERNAME slot", () => {
+    const out = redactCredentials(
+      "Cloning into 'app'... https://ghp_0123456789abcdefghij:x-oauth-basic@github.com/acme/app.git",
+    );
+    expect(out).not.toContain("ghp_0123456789abcdefghij");
+    expect(out).not.toContain("x-oauth-basic");
+    expect(out).toContain("https://***@github.com/acme/app.git");
+  });
+
+  it("redacts a token used as the whole userinfo (no colon)", () => {
+    const out = redactCredentials("remote: https://ghp_0123456789abcdefghij@github.com/a/b");
+    expect(out).not.toContain("ghp_0123456789abcdefghij");
+    expect(out).toContain("https://***@github.com/a/b");
+  });
+
+  it("redacts a bare token with no URL around it", () => {
+    expect(redactCredentials("AUTH=github_pat_11ABCDEFG0123456789abcdefgh")).toBe("AUTH=***");
+    expect(redactCredentials("token ghs_ABCDEFGHIJKLMNOP0")).toBe("token ***");
+  });
+
+  it("leaves the SSH form and ordinary output alone", () => {
+    // git@github.com carries no secret and has no "://" — must not be touched.
+    for (const keep of [
+      "Cloning via git@github.com:acme/app.git",
+      "npm WARN deprecated foo@1.2.3: use bar",
+      "GET https://github.com/acme/app.git 200",
+      "user@host:~/app$ npm run build",
+    ]) {
+      expect(redactCredentials(keep)).toBe(keep);
+    }
+  });
+
+  it("runs through sanitizeLogText, so every persisted line is covered", () => {
+    const line = "https://x-access-token:ghs_ABCDEFGHIJKLMNOP0@github.com/a/b.git";
+    expect(sanitizeLogText(line)).not.toContain("ghs_ABCDEFGHIJKLMNOP0");
+    // ...and via the array path the pipeline actually calls.
+    const [entry] = sanitizeLogsForPersistence([
+      { timestamp: "t", message: `fatal: could not read ${line}`, level: "error" } as LogEntry,
+    ]);
+    expect(entry!.message).not.toContain("ghs_ABCDEFGHIJKLMNOP0");
+    expect(entry!.message).toContain("***");
+  });
+
+  it("redacts BEFORE the length cap, so the longest lines are not skipped", () => {
+    // A token past MAX_ENTRY_CHARS: if capping ran first, the pattern would never
+    // see it. It must be gone, not merely truncated.
+    const line = `${"x".repeat(MAX_ENTRY_CHARS + 100)} https://u:ghs_ABCDEFGHIJKLMNOP0@h/x`;
+    const out = sanitizeLogText(line);
+    expect(out).not.toContain("ghs_ABCDEFGHIJKLMNOP0");
+  });
+
+  it("stays linear on a long credential-free line (no catastrophic backtracking)", () => {
+    // Regression: an unbounded scheme quantifier backtracked at every start position
+    // over a long run of scheme-legal characters, turning the oversized-payload case
+    // below from milliseconds into >280 seconds — a hang on the persist path, i.e. a
+    // deploy that never records its outcome.
+    const hostile = "a.b-c+d".repeat(200_000); // ~1.4M scheme-legal chars, no "@"
+    const started = performance.now();
+    expect(redactCredentials(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 });

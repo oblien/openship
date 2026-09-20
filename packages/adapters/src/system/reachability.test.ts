@@ -1,10 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
 import { createServer } from "node:net";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
-import { probeTcp, probeHttp, waitForReady } from "./reachability";
+import { probeTcp, probeTcpDetailed, probeHttp, waitForReady } from "./reachability";
 
 const tcpMock = vi.hoisted(() => ({
   simulateTimeout: false,
+  /** Emit `error` with this errno instead of dialing. Drives the classification
+   *  table without depending on the box's DNS or routing. */
+  errorCode: null as string | null,
   setTimeout: vi.fn(),
   destroy: vi.fn(),
 }));
@@ -15,20 +18,26 @@ vi.mock("node:net", async (importOriginal) => {
   return {
     ...actual,
     connect: (...args: unknown[]) => {
-      if (!tcpMock.simulateTimeout) {
+      if (!tcpMock.simulateTimeout && !tcpMock.errorCode) {
         return (actual.connect as (...params: unknown[]) => ReturnType<typeof actual.connect>)(...args);
       }
 
-      const listeners = new Map<string, (() => void)[]>();
+      const listeners = new Map<string, ((...a: unknown[]) => void)[]>();
+      const emit = (event: string, ...a: unknown[]) => {
+        for (const listener of listeners.get(event) ?? []) listener(...a);
+      };
       const socket = {
         setTimeout: (timeoutMs: number) => {
           tcpMock.setTimeout(timeoutMs);
           queueMicrotask(() => {
-            for (const listener of listeners.get("timeout") ?? []) listener();
+            if (tcpMock.simulateTimeout) return emit("timeout");
+            const err: NodeJS.ErrnoException = new Error(`simulated ${tcpMock.errorCode}`);
+            err.code = tcpMock.errorCode ?? undefined;
+            emit("error", err);
           });
           return socket;
         },
-        once: (event: string, listener: () => void) => {
+        once: (event: string, listener: (...a: unknown[]) => void) => {
           const eventListeners = listeners.get(event) ?? [];
           eventListeners.push(listener);
           listeners.set(event, eventListeners);
@@ -41,6 +50,16 @@ vi.mock("node:net", async (importOriginal) => {
     },
   };
 });
+
+/** Run `fn` with the socket mock emitting `error` carrying `code`. */
+async function withDialError<T>(code: string, fn: () => Promise<T>): Promise<T> {
+  tcpMock.errorCode = code;
+  try {
+    return await fn();
+  } finally {
+    tcpMock.errorCode = null;
+  }
+}
 
 /** Bind a throwaway TCP server on an ephemeral port and return {port, close}. */
 async function listenEphemeral(): Promise<{ port: number; close: () => void }> {
@@ -100,6 +119,83 @@ describe("probeTcp", () => {
     } finally {
       tcpMock.simulateTimeout = false;
     }
+  });
+});
+
+/**
+ * A dropped packet and a refused one demand different fixes, and the host-channel
+ * diagnosis reads this to decide whether a firewall rule is even relevant (#490).
+ * Flattening them back into a boolean is the regression to catch here.
+ */
+describe("probeTcpDetailed", () => {
+  test("ok, with nothing else to explain, when the port accepts", async () => {
+    const { port, close } = await listenEphemeral();
+    try {
+      expect(await probeTcpDetailed("127.0.0.1", port, 1000)).toEqual({ ok: true });
+    } finally {
+      close();
+    }
+  });
+
+  test("a real refusal reports `refused`, not `timeout`", async () => {
+    // Unmocked: this is the one failure a loopback dial produces for real, so it
+    // pins the classification against the actual kernel errno, not our mock's.
+    expect(await probeTcpDetailed("127.0.0.1", await freePort(), 1000)).toMatchObject({
+      ok: false,
+      reason: "refused",
+      code: "ECONNREFUSED",
+    });
+  });
+
+  test("silence to the deadline reports `timeout` — the dropped-packet shape", async () => {
+    tcpMock.simulateTimeout = true;
+    try {
+      expect(await probeTcpDetailed("example.test", 22, 600)).toMatchObject({
+        ok: false,
+        reason: "timeout",
+      });
+    } finally {
+      tcpMock.simulateTimeout = false;
+    }
+  });
+
+  test("a name that didn't resolve is its own cause, never a firewall", async () => {
+    for (const code of ["ENOTFOUND", "EAI_AGAIN"]) {
+      expect(await withDialError(code, () => probeTcpDetailed("nope.invalid", 22, 600))).toMatchObject(
+        { ok: false, reason: "unresolved", code },
+      );
+    }
+  });
+
+  test("no route home is distinguished from a filtered one", async () => {
+    for (const code of ["EHOSTUNREACH", "ENETUNREACH", "ENETDOWN"]) {
+      expect(await withDialError(code, () => probeTcpDetailed("10.0.0.1", 22, 600))).toMatchObject({
+        ok: false,
+        reason: "no_route",
+        code,
+      });
+    }
+  });
+
+  test("a kernel-side connect timeout counts as `timeout`, not a stray error", async () => {
+    expect(await withDialError("ETIMEDOUT", () => probeTcpDetailed("10.0.0.1", 22, 600))).toMatchObject(
+      { ok: false, reason: "timeout", code: "ETIMEDOUT" },
+    );
+  });
+
+  test("an unrecognized errno falls back to `error` and carries it verbatim", async () => {
+    // `error` must stay the catch-all: guessing a cause here would put a firewall
+    // rule in front of an operator whose problem is something else entirely.
+    expect(await withDialError("EPERM", () => probeTcpDetailed("10.0.0.1", 22, 600))).toMatchObject({
+      ok: false,
+      reason: "error",
+      code: "EPERM",
+      message: "simulated EPERM",
+    });
+  });
+
+  test("probeTcp stays a boolean view of the same probe", async () => {
+    expect(await withDialError("ECONNREFUSED", () => probeTcp("10.0.0.1", 22, 600))).toBe(false);
   });
 });
 

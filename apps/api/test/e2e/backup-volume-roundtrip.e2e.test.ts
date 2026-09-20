@@ -21,10 +21,16 @@
  *     old code stopped unconditionally and always started, which threw here.
  *   - No helper container is left behind (`AutoRemove: false` + `finally` reap).
  *
- * The local destination is a tmpdir, not the default `BACKUP_LOCAL_ROOT`: the
- * root/deny-list rules are create-time gates in destination.service.ts and are
- * covered by test/modules/backups/local-destination-path.test.ts. The adapter
- * itself reads no env — it takes the row's endpoint as its root.
+ * The local destination is a tmpdir INSIDE `env.BACKUP_LOCAL_ROOT` (pointed at a
+ * dedicated tmp root by vitest.e2e.config.ts, since config/env.ts parses the
+ * environment at import). The adapter itself still reads no env — it takes the
+ * row's endpoint as its root — but the gate in front of it does: local
+ * destinations are refused unless the instance opted in AND the endpoint resolves
+ * inside that root, on every path that USES a row, not only the ones that create
+ * one. A seeded row takes no create path, so this test is the one that has to
+ * satisfy the consumer gate. Which paths reject what is covered by
+ * test/modules/backups/local-destination-path.test.ts and
+ * backup-local-destination-gate.test.ts.
  *
  * Skips without a reachable daemon, FAILS under RUN_DOCKER_E2E=1 (what CI sets).
  * See test/helpers/docker-e2e.ts.
@@ -32,13 +38,13 @@
 
 import { it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { DockerRuntime, initPlatform, resetPlatform, scopedVolumeName } from "@repo/adapters";
 import { repos, type BackupRestoreStatus } from "@repo/db";
+import { env } from "@repo/platform/engine/config/index";
 import type { RequestContext } from "../../src/lib/request-context";
-import { resolvePlatformConfig } from "../../src/lib/controller-helpers";
+import { resolvePlatformConfig } from "@repo/platform/engine/lib/platform-config";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
   seedOrg,
@@ -50,8 +56,8 @@ import {
   seedBackupPolicy,
   seedBackupRun,
 } from "../helpers/seed";
-import { backupOrchestrator } from "../../src/modules/backups/backup.orchestrator";
-import { restoreOrchestrator } from "../../src/modules/backups/restore.orchestrator";
+import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { restoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 /** Same image the executor's helpers use, so the test adds no extra pull. */
 const HELPER_IMAGE = "alpine:3";
@@ -179,7 +185,10 @@ describeDockerE2E("backup → wipe → restore, real volume", () => {
         `printf %s '${NESTED}' > /mnt/nested/deep.txt`,
     );
 
-    destRoot = await mkdtemp(join(tmpdir(), "openship-backup-e2e-"));
+    // Inside the sandbox root, because the gate re-resolves containment on every
+    // use — a tmpdir next to it reads as an escape and fails the run.
+    await mkdir(env.BACKUP_LOCAL_ROOT, { recursive: true });
+    destRoot = await mkdtemp(join(env.BACKUP_LOCAL_ROOT, "run-"));
     const destination = await seedBackupDestination(organizationId, {
       kind: "local",
       endpoint: destRoot,
@@ -201,7 +210,10 @@ describeDockerE2E("backup → wipe → restore, real volume", () => {
     if (volumeName) {
       await runtime.docker.getVolume(volumeName).remove({ force: true }).catch(() => {});
     }
-    if (destRoot) await rm(destRoot, { recursive: true, force: true }).catch(() => {});
+    // The root, not just this run's subdirectory: the suite created both, the root
+    // is this process's alone, and removing the parent can't leave a child behind
+    // — including when beforeAll threw between the two.
+    await rm(env.BACKUP_LOCAL_ROOT, { recursive: true, force: true }).catch(() => {});
     await runtime?.dispose?.().catch(() => {});
     resetPlatform();
   }, 120_000);

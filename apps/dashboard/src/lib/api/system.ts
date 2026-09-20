@@ -1,5 +1,52 @@
 import { api, getApiBaseUrl, getActiveOrganizationId } from "./client";
+import type { ServerInfrastructure } from "@repo/contracts";
 import { endpoints } from "./endpoints";
+// Removal types + the timeout rule live with the pure helpers so the modal and this
+// client share one definition (and so the rule is testable without React).
+import {
+  serverRemovalTimeoutMs,
+  type ServerDeletionPreview,
+  type ServerRemovalResult,
+} from "../server-removal";
+
+/**
+ * Client budget for an ad-hoc SSH probe.
+ *
+ * Deliberately far above the 15s default: a probe's whole job is a COLD SSH
+ * connect, and the API's own budget for one already exceeds 15s (a 20s ssh2
+ * `readyTimeout`, then a 15s `echo`). On the default the browser aborted first
+ * every time, so a firewalled or slow host could never deliver the server's
+ * classified answer ("Host is not reachable", "Authentication failed") — the
+ * operator saw only the abort. The client budget must stay above the server's,
+ * or the diagnosis this endpoint exists to produce is unreachable.
+ */
+const SSH_PROBE_TIMEOUT_MS = 45_000;
+
+/**
+ * Raw credentials for an ad-hoc SSH probe.
+ *
+ * One shape for both probe endpoints — authed and onboarding land on the same
+ * `buildEphemeralSshConfig`, so a field one of them accepts is a field both do.
+ */
+export interface SshProbeInput {
+  sshHost: string;
+  sshPort?: number;
+  sshUser?: string;
+  sshAuthMethod: string;
+  sshPassword?: string;
+  sshKeyPath?: string;
+  /** Pasted/uploaded private-key material (paste sub-mode). */
+  sshPrivateKey?: string;
+  sshKeyPassphrase?: string;
+  sshJumpHost?: string;
+  sshArgs?: string;
+}
+
+/** `ok:false` is a REACHED verdict with a reason; a throw is a failure to ask. */
+export interface SshProbeResult {
+  ok: boolean;
+  message: string;
+}
 
 export interface BrowseEntry {
   name: string;
@@ -45,6 +92,16 @@ export interface InstanceSettings {
   autoUpdateInfra?: boolean;
   /** Run one detect-only scan on a relevant surface load when the cache is stale. */
   autoScanInfra?: boolean;
+  /** Stored instance-wide product mode override. null = unset (env decides). */
+  productMode?: "platform" | "mail" | null;
+  /** What the instance actually resolves to right now (override ?? env). */
+  productModeEffective?: "platform" | "mail";
+  /** Stored host-control override — may OpenShip deploy to the machine it runs
+   *  on ("This Server")? null = unset (the OPENSHIP_HOST_CONTROL env decides). */
+  hostControl?: boolean | null;
+  /** What host control actually resolves to right now (override ?? env), already
+   *  false off a non-selfhosted target so the UI agrees with the backend. */
+  hostControlEffective?: boolean;
 }
 
 /** Instance SMTP config as returned by the API — password is never included. */
@@ -59,6 +116,66 @@ export interface InstanceEmailSettings {
   deliverable: boolean;
 }
 
+/** Mirrors the API's ReachabilityCode (apps/api/src/lib/ssh-manager.ts). */
+export type ServerReachabilityCode =
+  | "ok"
+  | "cooldown"
+  | "unreachable"
+  | "no_address"
+  | "host_channel_blocked"
+  | "host_control_disabled"
+  | "unknown";
+
+/**
+ * Which container→host channel state produced a `host_channel_blocked`.
+ *
+ * Mirrors HostChannelCode in @repo/adapters (src/system/executor.ts) — the
+ * dashboard can't import the adapters (ssh/docker, server-only). It refines the
+ * reachability code rather than replacing it, because the REMEDY differs: a
+ * `not_configured` channel is provisioned with `openship up`, while an
+ * `unreachable` one is usually a host firewall dropping bridge→host traffic, and
+ * offering the wrong one of those sends an operator to edit a firewall that was
+ * never involved (#509).
+ */
+export type HostChannelCode =
+  | "ok"
+  | "not_applicable"
+  | "disabled"
+  | "not_configured"
+  | "key_unreadable"
+  | "unreachable"
+  /** Reached, then the key was refused — #527. Distinct from `unreachable` because the
+   *  remedy is re-authorizing a key, not opening a firewall. */
+  | "auth_rejected";
+
+/**
+ * GET /servers/:id/reachability — liveness plus the reason.
+ *
+ * `target` is what the API DIALED; for THIS box that's the container→host SSH
+ * bridge, never the row's display `sshHost` (#490). It is null when there was no
+ * endpoint to dial at all — a channel that was never provisioned — and the banner
+ * relies on that: a present `target` is read as evidence something answered, or
+ * failed to (#509).
+ */
+export interface ServerReachability {
+  reachable: boolean;
+  code: ServerReachabilityCode;
+  target: string | null;
+  port: number | null;
+  hint: string | null;
+  rule: string | null;
+  channel?: HostChannelCode | null;
+  /**
+   * The address the channel WILL use once provisioned — intent, never a machine that
+   * failed to answer. Optional because nothing produces it today: the API can only
+   * report what its own env says, and in this state the env says nothing, so filling
+   * this in would mean guessing at what `openship up` would have written. Consumed
+   * already (rendered as intent, in its own sentence) so that whichever surface can
+   * honestly supply it needs no client change.
+   */
+  intendedTarget?: string | null;
+}
+
 export interface ServerInfo {
   id: string;
   name: string | null;
@@ -70,6 +187,10 @@ export interface ServerInfo {
   sshUser: string;
   sshAuthMethod: string | null;
   sshKeyPath: string | null;
+  /** True when a pasted/uploaded private key is stored (encrypted) for this
+   *  server. The material itself is never returned — this is the only signal the
+   *  edit form gets, so it can offer "a key is stored; paste to replace". */
+  hasStoredKeyMaterial?: boolean;
   sshJumpHost: string | null;
   sshArgs: string | null;
   createdAt: string;
@@ -77,6 +198,14 @@ export interface ServerInfo {
   country?: string | null;
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount?: number;
+  /**
+   * The local row's container→host SSH channel (#509) — null for a remote row, and
+   * null when the diagnosis couldn't run. An annotation, not a gate: `ok: false`
+   * means the host-only operations are unavailable, while ordinary container deploys
+   * to this row still work over the Docker socket. `hint` is the same string
+   * `GET /servers/:id/reachability` returns for the row.
+   */
+  hostChannel?: { ok: boolean; channel: HostChannelCode; hint: string | null } | null;
 }
 
 /** A native module's cached drift status on a server (server_module_status). */
@@ -215,6 +344,39 @@ export interface BulkApplyResult {
   }>;
 }
 
+/**
+ * One managed component the org is applying right now. `queued` means the bulk run
+ * accepted it but hasn't reached it yet (it has no session, so no steps); `running`
+ * carries the live step model and the session id a log view re-attaches to.
+ */
+export interface ContainerApplyActive {
+  serverId: string;
+  serverName: string;
+  component: "edge" | "mail";
+  state: "queued" | "running";
+  /** What the operator asked for. Null for a run whose cached row is gone. */
+  intent: ContainerApplyIntent | null;
+  sessionId?: string;
+  steps?: ContainerApplyStep[];
+  startedAt?: string;
+}
+
+/** An apply that finished moments ago — the only source of a "done" beat. */
+export interface ContainerApplySettled {
+  serverId: string;
+  serverName: string;
+  component: "edge" | "mail";
+  ok: boolean;
+  error?: string;
+  finishedAt: string;
+}
+
+/** Live fleet progress: what's in flight, and what just settled. */
+export interface ContainerApplyProgress {
+  active: ContainerApplyActive[];
+  recent: ContainerApplySettled[];
+}
+
 /** One step of a container image swap, for the progress bar. */
 export interface ContainerApplyStep {
   id: "pull" | "recreate" | "verify";
@@ -238,6 +400,21 @@ export type ContainerApplyEvent =
 /** True when running inside the Electron desktop shell */
 function isElectron(): boolean {
   return !!(window as any).desktop?.isDesktop;
+}
+
+/**
+ * The desktop bridge that opens the native "Select SSH Key" dialog, or undefined
+ * outside the desktop shell.
+ *
+ * `system.browseFile` is the right home for it, but already-installed desktop
+ * builds only expose the onboarding channel — which opens the identical dialog —
+ * so fall back to it rather than shipping a button that does nothing until the
+ * user updates the app.
+ */
+function sshKeyBridge(): (() => Promise<string | null>) | undefined {
+  if (typeof window === "undefined" || !isElectron()) return undefined;
+  const d = (window as any).desktop;
+  return d?.system?.browseFile ?? d?.onboarding?.browseFile;
 }
 
 export interface ComponentStatus {
@@ -457,6 +634,22 @@ export const systemApi = {
   /** Whether native folder picker is available */
   hasNativePicker: isElectron,
 
+  /**
+   * Native SSH-key file picker (Electron) - returns absolute path or null.
+   *
+   * Desktop-only on purpose: the API reads the key off ITS OWN filesystem, which
+   * on desktop is this machine. On a remote/VPS instance the key lives on the
+   * server, where no browser dialog can reach it — so the caller keeps the typed
+   * path field and this returns null.
+   */
+  pickSshKeyFile: async (): Promise<string | null> => {
+    const bridge = sshKeyBridge();
+    return bridge ? bridge() : null;
+  },
+
+  /** Whether the native SSH-key picker is available (desktop shell only). */
+  hasNativeFilePicker: (): boolean => !!sshKeyBridge(),
+
   /** Get instance settings (self-hosted / desktop only) */
   getSettings: () =>
     api.get<InstanceSettings>(endpoints.system.settings),
@@ -488,17 +681,17 @@ export const systemApi = {
   sendTestEmail: (to: string) =>
     api.post<{ ok: boolean; error?: string }>(endpoints.system.emailSettingsTest, { to }),
 
-  /** Test SSH connection with credentials (without saving) */
-  testConnection: (data: {
-    sshHost: string;
-    sshPort?: number;
-    sshUser?: string;
-    sshAuthMethod: string;
-    sshPassword?: string;
-    sshKeyPath?: string;
-    sshKeyPassphrase?: string;
-  }) =>
-    api.post<{ ok: boolean; message: string }>(endpoints.system.testConnection, data),
+  /** Test SSH connection with credentials (without saving). */
+  testConnection: (data: SshProbeInput) =>
+    api.post<SshProbeResult>(endpoints.system.testConnection, data, {
+      timeout: SSH_PROBE_TIMEOUT_MS,
+    }),
+
+  /** The same probe, pre-auth, for the onboarding wizard's first server. */
+  onboardingTestConnection: (data: SshProbeInput) =>
+    api.post<SshProbeResult>(endpoints.system.onboardingTestConnection, data, {
+      timeout: SSH_PROBE_TIMEOUT_MS,
+    }),
 
   /** Run system health checks on a specific server */
   checkServer: (serverId: string, components?: string[]) =>
@@ -552,9 +745,18 @@ export const systemApi = {
   getServerById: (id: string) =>
     api.get<ServerInfo>(endpoints.system.server(id)),
 
-  /** Lightweight liveness probe for the list view (TCP reachability). */
+  getServerInfrastructure: (id: string) =>
+    api.get<ServerInfrastructure>(`${endpoints.system.server(id)}/infrastructure`),
+
+  /**
+   * Lightweight liveness probe for the list view (TCP reachability).
+   *
+   * `target` is the address the API actually dials — for THIS box that's the
+   * container→host SSH bridge, not the row's display `sshHost`, so never show
+   * `sshHost` as the thing that didn't answer (#490).
+   */
   probeReachability: (id: string) =>
-    api.get<{ reachable: boolean }>(endpoints.system.serverReachability(id)),
+    api.get<ServerReachability>(endpoints.system.serverReachability(id)),
 
   /** Create a new server */
   createServerEntry: (data: Record<string, unknown>) =>
@@ -564,9 +766,32 @@ export const systemApi = {
   updateServerEntry: (id: string, data: Record<string, unknown>) =>
     api.patch<ServerInfo>(endpoints.system.server(id), data),
 
-  /** Delete a server */
-  deleteServerEntry: (id: string) =>
-    api.delete<{ ok: boolean }>(endpoints.system.server(id)),
+  /** What "Remove server" is about to take with it — every project/app bound to the
+   *  box plus the server-scoped records that cascade. Read-only; safe on modal open. */
+  serverDeletionPreview: (id: string) =>
+    api.get<{ ok: boolean; preview: ServerDeletionPreview }>(
+      endpoints.system.serverDeletionPreview(id),
+    ),
+
+  /**
+   * Remove a server, resolving the fate of every workload bound to it.
+   *
+   * `destroyOnSource` is the operator's explicit opt-in to stop and delete the
+   * containers on the machine; without it the workloads are removed from Openship
+   * only and keep running. Flags travel as query params (same idiom as
+   * `projectsApi.delete`), and the timeout scales with the workload count because
+   * each teardown is its own SSH round-trip — a short client timeout would abort a
+   * request the server then finishes anyway.
+   */
+  deleteServerEntry: (
+    id: string,
+    opts: { destroyOnSource?: boolean; workloadCount?: number } = {},
+  ) => {
+    const qs = opts.destroyOnSource ? "?destroyOnSource=true" : "";
+    return api.delete<ServerRemovalResult>(`${endpoints.system.server(id)}${qs}`, {
+      timeout: serverRemovalTimeoutMs(opts),
+    });
+  },
 
   // ── Native-module updates (per-server) ─────────────────────────────────────
 
@@ -682,6 +907,26 @@ export const systemApi = {
   setInfraAutoScan: (enabled: boolean) =>
     api.patch<{ ok: boolean }>(endpoints.system.settings, { autoScanInfra: enabled }),
 
+  /**
+   * Read the host-control state (#527): the stored override plus what it
+   * effectively resolves to right now. `effective` is what the toggle shows;
+   * `stored === null` means "no instance override, the env default governs" and
+   * lets the UI note when the env is what's holding it off.
+   */
+  getHostControl: async (): Promise<{ stored: boolean | null; effective: boolean }> => {
+    const s = await api.get<InstanceSettings>(endpoints.system.settings);
+    return { stored: s.hostControl ?? null, effective: Boolean(s.hostControlEffective) };
+  },
+
+  /**
+   * Set the host-control override. Accepts a boolean to pin it, or null to clear
+   * the override and follow the env default again. The API hard-gates this to the
+   * box-owning org's owner (403 otherwise) — only they may make this box a
+   * host-root deploy target.
+   */
+  setHostControl: (enabled: boolean | null) =>
+    api.patch<{ ok: boolean }>(endpoints.system.settings, { hostControl: enabled }),
+
   /** Org-wide managed-container drift summary for the home nudge. */
   containersBehind: () =>
     api.get<{ servers: number; components: number }>(endpoints.system.containersBehind()),
@@ -715,6 +960,14 @@ export const systemApi = {
     api.post<BulkApplyResult>(endpoints.system.allContainersApply(), intents ? { intents } : {}, {
       timeout: 120_000,
     }),
+
+  /**
+   * Live progress for every apply the org has in flight, plus the ones that settled
+   * in the last minute or so. Cheap (cached rows + in-memory sessions) — polled only
+   * while something is running.
+   */
+  applyingContainers: () =>
+    api.get<ContainerApplyProgress>(endpoints.system.allContainersApplying()),
 
   // ── Rate Limiting (per-server) ─────────────────────────────────────────────
 

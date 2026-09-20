@@ -32,7 +32,8 @@
       "total": "Total",
       "successful": "Réussis",
       "failed": "Échoués",
-      "inProgress": "En cours"
+      "inProgress": "En cours",
+      "pageTitle": "Sur cette page"
     },
     "autoDeploy": {
       "title": "Déploiement automatique",
@@ -69,6 +70,7 @@
     "actionRequired": "Action requise",
     "rejected": "Rejeté",
     "verifying": "Vérification",
+    "noChanges": "Aucun changement",
     "pending": "En attente"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "Échec du désépinglage du déploiement",
     "rollbackModeInstant": "Restauration instantanée — réutilise l'image conservée de cette version, sans reconstruction.",
     "rollbackModeRebuild": "Reconstruction — l'image de cette version n'est plus sur l'hôte, son commit est reconstruit.",
+    "rollbackModeReacquireImage": "Restauration depuis le registre — récupère la référence d'image exacte enregistrée pour cette version, sans reconstruire les sources.",
     "rollbackModeMixed": "Presque instantané — {count} service(s) ont perdu leur image et seront reconstruits."
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "Ils continuent de tourner et ne sont pas touchés : {names}",
     "confirm": "Revenir",
     "cancel": "Annuler"
+  },
+  "loadFailed": "Impossible de charger les déploiements.",
+  "retry": "Réessayer",
+  "pagination": {
+    "label": "Pages de l’historique des déploiements",
+    "previous": "Page précédente",
+    "next": "Page suivante",
+    "pageOf": "Page {page} sur {total}",
+    "range": "Déploiements {from}–{to} sur {total}"
   }
 }

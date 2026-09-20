@@ -1,0 +1,24 @@
+---
+title: logs
+description: Commands, arguments, and options for openship logs.
+cliGroup: openship logs
+---
+
+See the [workflow guide](/docs/cli/deploy) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship logs
+
+View or stream a deployment's logs
+
+```text
+openship logs [options] [deploymentId]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `deploymentId` | Deployment ID (defaults to the latest deployment of the linked project) |
+
+| Option | Meaning |
+| --- | --- |
+| `-f, --follow` | Stream live logs via SSE until the deployment finishes |
+| `--tail <n>` | Show only the last N log lines (snapshot mode) |

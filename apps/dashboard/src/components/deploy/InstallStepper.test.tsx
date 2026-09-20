@@ -51,8 +51,16 @@ describe("InstallStepper status → icon + token", () => {
     expect(html).toContain("text-danger");
   });
 
+  it("stopped: a neutral slash — settled, but NOT a failure and NOT still running", () => {
+    const html = render("stopped");
+    expect(html).toContain("lucide-circle-slash");
+    expect(html).not.toContain("animate-spin"); // a stopped install must not still spin
+    expect(html).not.toContain("text-danger"); // a cancel is not a fault
+    expect(html).not.toContain("lucide-circle-alert");
+  });
+
   it("uses only theme tokens, never hardcoded status colors", () => {
-    for (const s of ["pending", "active", "done", "skipped", "failed"] as const) {
+    for (const s of ["pending", "active", "done", "skipped", "failed", "stopped"] as const) {
       const html = render(s);
       expect(html).not.toMatch(/emerald|amber|rose|\bred-\d|\bgreen-\d/);
     }
@@ -65,10 +73,13 @@ describe("InstallStepper children (per-service sub-list)", () => {
       children: <span data-testid="svc">backend running</span>,
     });
     expect(html).toContain("backend running");
-    expect(html).toContain("ml-[22px]"); // the indent wrapper only appears with children
+    // Logical margin so the indent mirrors in RTL — `ml-` would hang the sub-list
+    // off the wrong side in Arabic, outside its parent's icon column.
+    expect(html).toContain("ms-[22px]"); // the indent wrapper only appears with children
+    expect(html).not.toContain("ml-[22px]");
   });
 
   it("omits the indent wrapper when there are no children", () => {
-    expect(render("done")).not.toContain("ml-[22px]");
+    expect(render("done")).not.toContain("ms-[22px]");
   });
 });

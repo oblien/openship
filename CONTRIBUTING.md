@@ -2,6 +2,23 @@
 
 Thanks for your interest in contributing! This guide covers everything you need to get started.
 
+## Before you open an issue
+
+Every issue must use exactly one of the repository's issue categories. Choose the matching form from
+the **New issue** page; blank, untyped issues are not accepted.
+
+| Category      | Title prefix    | Label           | GitHub issue type |
+| ------------- | --------------- | --------------- | ----------------- |
+| Bug           | `[Bug]`         | `bug`           | Bug               |
+| Feature       | `[Feature]`     | `enhancement`   | Feature           |
+| Improvement   | `[Improvement]` | `enhancement`   | Feature           |
+| Documentation | `[Docs]`        | `documentation` | Task              |
+| Question      | `[Question]`    | `question`      | Task              |
+
+If you create an issue through an API, CLI, or AI assistant instead of the GitHub form chooser,
+you must apply the matching title prefix, label, and GitHub issue type from the table above. Never
+create a generic or untyped issue. Issues without a category are incomplete and may be closed.
+
 ## Before you open a pull request
 
 **Bug fixes, tests, docs, and small self-contained improvements** are welcome as direct pull
@@ -45,6 +62,8 @@ Every PR is reviewed by a human, so make it easy to trust:
 
 AI tools are fine to use — but **you** are the author and are accountable for every line you submit:
 
+- **Type every issue.** When an AI assistant opens an issue, it must use one of the five issue forms
+  or apply the exact category mapping above. It must never create a generic or untyped issue.
 - **Understand your whole diff.** If you can't explain a line in review, don't submit it.
 - **Verify, don't trust.** Actually run the change and confirm it does what the PR claims. Do not
   paste generated code — or a generated PR description — that you haven't checked against the real
@@ -160,6 +179,29 @@ If you're adding something that should only exist in the cloud version:
 2. Make any required env vars (like Stripe keys) optional in `apps/api/src/config/env.ts`
 3. Self-hosters should never see 500s from missing cloud config
 
+## Adding an App to the Catalog
+
+The one-click **Apps** catalog is data, not code — adding one is a small pull request that adds a
+single JSON file. No TypeScript required.
+
+1. Write `packages/core/src/apps/catalog/<id>.json` (start it with
+   `"$schema": "https://openship.io/app.schema.json"` for editor autocomplete)
+2. Regenerate the merged artifact and validate:
+
+```bash
+cd packages/core
+bun scripts/gen-catalog.ts                  # rewrites src/apps/catalog.json (a drift test fails CI without it)
+bunx vitest run src/apps/catalog.test.ts    # shape + referential validation for every app
+```
+
+3. Keep `"available": false` until it deploys cleanly end to end
+
+Apps must be open-source, use an official image **pinned** to a version, and auto-generate any
+credentials. Full walkthrough and field reference:
+
+- **[Add an app](https://openship.io/docs/guides/add-an-app)** — builds a real two-service app step by step
+- **[App catalog JSON](https://openship.io/docs/reference/app-catalog)** — every field
+
 ## Database
 
 ```bash
@@ -170,6 +212,38 @@ bun run --cwd packages/db db:studio  # Open Drizzle Studio (database browser)
 ```
 
 Schema lives in `packages/db/src/schema/`.
+
+## Testing
+
+Most workspaces run [Vitest](https://vitest.dev/), and most colocate tests with the code they
+cover, so `foo.test.ts` sits next to `foo.ts`. Some group them under a `test/` directory
+instead (`packages/adapters/test/`, `apps/cli/test/`), and `apps/email/server` uses Bun's
+built-in test runner rather than Vitest. Follow whichever convention the workspace you are
+editing already uses.
+
+The rest of this section covers `apps/dashboard`, which is Vitest with colocated tests.
+
+Run repository script tests with `bun run test:scripts`; CI includes them in its
+Other packages job. The root `bun run test` command runs workspace tests and accepts
+Turbo filters, such as `bun run test --filter=@repo/sdk`.
+
+### Dashboard test environments
+
+Dashboard tests use Node by default. Tests that need browser events opt into the
+existing Happy DOM environment with `// @vitest-environment happy-dom`. Follow
+`apps/dashboard/src/components/ui/button.test.tsx`: create a React root for each
+test, wrap rendering and interactions in `act()`, and unmount the root and restore
+globals during cleanup. Pure rendering tests can use `react-dom/server` in Node.
+
+The `@/*` alias and automatic JSX runtime already match those used by the app.
+Keep parser and other pure-logic tests on Node. Run a focused dashboard suite with
+`bun run --cwd apps/dashboard test src/lib/dotenv.test.ts`, or omit the path for
+all dashboard tests.
+
+### Prove the test can fail
+
+A test that cannot fail proves nothing. Before opening a PR, deliberately break the code
+under test, confirm the test fails, then restore it. Say so in the PR description.
 
 ## Verification
 

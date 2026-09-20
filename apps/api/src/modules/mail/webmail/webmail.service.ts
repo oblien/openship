@@ -1,15 +1,12 @@
 /**
- * Webmail service - helpers shared by the webmail controller + bridge.
+ * Webmail target discovery — which servers a webmail can be deployed to.
  *
- * The deploy itself lives in [webmail-project.service.ts](./webmail-project.service.ts);
- * this file holds the pieces that are not part of the deploy lifecycle:
- * picking a deploy target and reading the persisted install record off
- * the mail-state file.
+ * The install itself lives in
+ * [webmail-install.service.ts](./webmail-install.service.ts), and its status is
+ * read from the project row, not from here.
  */
 
-import { sshManager } from "../../../lib/ssh-manager";
 import { repos } from "@repo/db";
-import { readState, type MailWebmailState } from "../mail-state";
 
 // ─── Targets discovery ──────────────────────────────────────────────────────
 
@@ -73,26 +70,4 @@ export async function listWebmailTargets(
   });
 
   return options;
-}
-
-// ─── Status read ─────────────────────────────────────────────────────────────
-
-/**
- * Read the persisted `webmail` block off the mail server's state file.
- * Used by the /emails overview tab so it keeps rendering the post-install
- * info (URL, version, hostname) regardless of whether the project row
- * exists. Returns null when not installed or unreachable.
- */
-export async function getWebmailState(
-  mailServerId: string,
-): Promise<MailWebmailState | null> {
-  try {
-    const state = await sshManager.withExecutor(mailServerId, (exec) =>
-      readState(exec),
-    );
-    if (!state?.webmail?.installed) return null;
-    return state.webmail;
-  } catch {
-    return null;
-  }
 }

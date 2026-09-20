@@ -1,0 +1,88 @@
+---
+title: system migration
+description: Commands, arguments, and options for openship system migration.
+cliGroup: openship system migration
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship system migration
+
+Team-mode migration lifecycle
+
+```text
+openship system migration [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`preflight [options]`](/docs/cli/reference/system/migration#openship-system-migration-preflight) | Read-only readiness check for the own-server migration |
+| [`start [options]`](/docs/cli/reference/system/migration#openship-system-migration-start) | Migrate this instance onto your own server |
+| [`start-cloud [options]`](/docs/cli/reference/system/migration#openship-system-migration-start-cloud) | Migrate this instance to Openship Cloud |
+| [`start-tunnel [options]`](/docs/cli/reference/system/migration#openship-system-migration-start-tunnel) | Expose this instance via an edge tunnel |
+| [`switch-back [options]`](/docs/cli/reference/system/migration#openship-system-migration-switch-back) | Reverse migration back to single-user (teammates lose access) |
+
+## openship system migration preflight
+
+Read-only readiness check for the own-server migration
+
+```text
+openship system migration preflight [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server-id <id>` | Target server id |
+| `--hostname <host>` | Custom domain pointing at the server |
+| `--slug <slug>` | Free &lt;slug&gt;.opsh.io subdomain |
+
+## openship system migration start
+
+Migrate this instance onto your own server
+
+```text
+openship system migration start [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server-id <id>` | Target server id |
+| `--hostname <host>` | Custom domain pointing at the server |
+| `--slug <slug>` | Free &lt;slug&gt;.opsh.io subdomain |
+
+## openship system migration start-cloud
+
+Migrate this instance to Openship Cloud
+
+```text
+openship system migration start-cloud [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--allow-non-empty-target` | Proceed even if the cloud org already has projects |
+
+## openship system migration start-tunnel
+
+Expose this instance via an edge tunnel
+
+```text
+openship system migration start-tunnel [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--slug <slug>` | Tunnel slug |
+
+## openship system migration switch-back
+
+Reverse migration back to single-user (teammates lose access)
+
+```text
+openship system migration switch-back [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--abandon-remote` | Skip pulling remote data; keep the local DB as-is |
+| `-y, --yes` | Skip the confirmation prompt |

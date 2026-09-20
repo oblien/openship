@@ -17,6 +17,7 @@ export interface PreflightResult {
     ssh: { ok: boolean; detail: string };
     releaseDist: { ok: boolean; detail: string };
     domain: { ok: boolean; detail: string };
+    deployment?: { ok: boolean; detail: string };
   };
 }
 

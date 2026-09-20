@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, Save } from "lucide-react";
 import { deployApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useI18n } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { AppSettingsForm, hasAdvancedFields } from "@/components/app-settings/AppSettingsForm";
@@ -22,6 +23,7 @@ export function AppSettingsTab() {
   const { t } = useI18n();
   const ps = t.projectSettings.appSettings;
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
 
   const s = useAppSettings(id);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -57,7 +59,7 @@ export function AppSettingsTab() {
       showToast(ps.applied, "success");
       setPendingApply(false);
     } catch (err) {
-      showToast(getApiErrorMessage(err, ps.applyFailed), "error");
+      if (!showCloudPricing(err)) showToast(getApiErrorMessage(err, ps.applyFailed), "error");
     } finally {
       setApplying(false);
     }

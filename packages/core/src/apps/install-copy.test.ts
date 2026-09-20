@@ -72,6 +72,85 @@ describe("authored install copy is additive (no schemaVersion bump)", () => {
   });
 });
 
+describe("inline service build context is additive (no schemaVersion bump)", () => {
+  it("accepts a built service (build instead of image) at schemaVersion 1", () => {
+    const tpl = {
+      ...base,
+      services: [
+        {
+          name: "compute",
+          build: {
+            dockerfile: "FROM alpine:3.20\nARG TOKEN\nENTRYPOINT [\"/bin/sh\"]\n",
+            files: [{ path: "run.sh", content: "echo {{config:TOKEN}}" }],
+          },
+        },
+      ],
+      schemaVersion: 1,
+    };
+    expect(isValidAppTemplate(tpl)).toBe(true);
+    expect(parseAppTemplate(tpl)).toEqual({ ok: true });
+  });
+});
+
+describe("Neon ships as one bundle with a console AND a connection", () => {
+  // No bundled app uses an inline build any more (Neon was the last, and it is
+  // now a single prebuilt control-plane container). The build path stays covered
+  // by the synthetic template above; what has to stay pinned here is that Neon
+  // is not headless — the whole point of the app is that it hands back a UI to
+  // open and a Postgres URL to connect with.
+  it("is a single service that routes its console", () => {
+    const neon = getAppTemplate("neon");
+    expect(neon).toBeDefined();
+    expect(neon!.kind).toBe("template");
+    // No longer badged experimental: it was booted end to end — console served,
+    // bootstrap ran at the earliest install timing, and the advertised URL
+    // reached Postgres. Absent `hosting` defaults to "self-hosted".
+    expect(neon!.hosting).toBeUndefined();
+    // But NOT `verified`, which means official image + reviewed pipeline. neond
+    // is a single-maintainer community control plane whose image build workflow
+    // was deleted from its repo, so its provenance is unreviewable no matter how
+    // well it runs. "We tested it" and "we vouch for the publisher" are separate
+    // claims and only the first one is true here.
+    expect(neon!.verified).toBe(false);
+    expect(neon!.services).toHaveLength(1);
+    const svc = neon!.services![0];
+    expect(svc.name).toBe("neond");
+    expect(svc.image).toContain("neond/neond:");
+    expect(svc.exposed).toBe(true);
+    expect(svc.routes?.some((r) => r.port === 3000)).toBe(true);
+  });
+
+  it("survives a redeploy: a clean shutdown releases the boot lock", () => {
+    // neond's boot lease is a lockfile, not an flock, so a SIGKILL at Docker's
+    // 10s default leaves it behind and every later boot refuses to start.
+    const svc = getAppTemplate("neon")!.services![0];
+    expect(svc.stopGracePeriod).toBeTruthy();
+  });
+
+  it("publishes both a console URL and a usable database URL", () => {
+    const outputs = getAppTemplate("neon")!.connection?.outputs ?? [];
+    const console_ = outputs.find((o) => o.id === "console");
+    expect(console_?.source).toBe("publicUrl:neond");
+    expect(console_?.kind).toBe("url");
+    const db = outputs.find((o) => o.id === "dbUrl");
+    expect(db?.secret).toBe(true);
+    // The endpoint port is assigned at runtime, so the URL is only correct if it
+    // reads the port the bootstrap step captured rather than hardcoding one.
+    expect(db?.source).toContain("{{env:neond:NEOND_PG_PORT}}");
+  });
+
+  it("bootstraps the admin account so the console is not an empty signup form", () => {
+    const step = (getAppTemplate("neon")!.prepare ?? []).find((p) => p.capture === "pgPort");
+    expect(step).toBeDefined();
+    expect(step!.service).toBe("neond");
+    expect(step!.phase).toBe("post-ready");
+    // Registration is only open while zero users exist, so this must not fail a
+    // redeploy once it has already run.
+    expect(step!.mustSucceed).toBeFalsy();
+    expect(step!.persistAs?.key).toBe("NEOND_PG_PORT");
+  });
+});
+
 describe("connection output `kind` is additive (no schemaVersion bump)", () => {
   it("accepts a url-kind output", () => {
     const tpl = {

@@ -1,11 +1,22 @@
 import type { BuildConfig } from "../types";
-import { packageManagerEnsureCommand } from "@repo/core";
+import { packageManagerEnsureCommand, nodeBinDirs, normalizeImageRef } from "@repo/core";
 
 import { sq } from "./build-pipeline";
 import { normalizeDockerRootDirectory } from "./docker-paths";
 
 const DOCKER_BUILD_EVENT_PREFIX = "[openship-build]";
-const INLINE_BUILD_ENV_EXCLUDES = new Set(["FORCE_COLOR", "TERM"]);
+/**
+ * Project env vars that must never reach the inline `export` prefix on a RUN line.
+ *
+ * `PATH` is not a preference, it is a correctness gate: the prefix is emitted
+ * AFTER the stage-level `ENV PATH` (see nodeBinPathEnvLine), so a project that
+ * sets PATH — usually by copying a value out of another platform — silently
+ * deletes `node_modules/.bin` from the lookup path and every dependency binary
+ * goes back to exit 127. The image already knows its own PATH; a build step has
+ * no business restating it. Applies to the JS, static, PHP-asset and
+ * workspace-prepare recipes at once, since all four share buildEnvPrefix.
+ */
+const INLINE_BUILD_ENV_EXCLUDES = new Set(["FORCE_COLOR", "TERM", "PATH"]);
 
 function formatDockerBuildEvent(
   step: "clone" | "install" | "build",
@@ -64,6 +75,26 @@ function runtimeCopyDirectives(config: BuildConfig, sourceDir: string): string[]
 
 function needsMultiStage(config: BuildConfig): boolean {
   return config.buildImage !== config.runtimeImage;
+}
+
+/**
+ * `ENV PATH` for one stage, so a command naming a locally-installed binary
+ * (`next build`, `next start`) resolves — the failure in openship#623, where a
+ * detected `next build` reached `/bin/sh` with nothing on PATH and exited 127.
+ *
+ * ENV rather than an inline `export` inside the RUN line, because the same PATH is
+ * needed by three things an inline export cannot reach: the workspace-prepare step
+ * (its own RUN layer, emitted before the source WORKDIR), the container's start
+ * command (docker.ts sets `Cmd: ["sh","-c", startCommand]`, which overrides this
+ * file's CMD entirely but still inherits the image env), and any `docker exec` an
+ * operator runs. One line per stage covers all of them.
+ *
+ * ENV does not cross a `FROM`, so every stage that runs project code emits its own.
+ * Returns null for non-node package managers.
+ */
+function nodeBinPathEnvLine(packageManager: string | undefined, roots: string[]): string | null {
+  const dirs = nodeBinDirs(packageManager, roots);
+  return dirs.length > 0 ? `ENV PATH="${dirs.join(":")}:$PATH"` : null;
 }
 
 /** The monorepo workspace-prepare RUN line (root `pnpm install` etc.). This is
@@ -125,9 +156,22 @@ function installRunLine(config: BuildConfig, envPrefix: string): string | null {
 const JS_PACKAGE_MANAGERS = ["pnpm", "yarn", "bun", "npm"] as const;
 
 /**
+ * Package manager for a Node asset stage, sniffed from the build command itself
+ * (`pnpm install && pnpm build` → pnpm) rather than taken from the project's — on
+ * the PHP recipe `config.packageManager` is "composer", which says nothing about
+ * which JS PM the asset build needs. Falls back to npm: the stage is a Node image
+ * running a JS build either way, so its `node_modules/.bin` layout is npm's.
+ */
+function assetStagePackageManager(config: BuildConfig): string {
+  const command = config.buildCommand?.trim() ?? "";
+  return (
+    JS_PACKAGE_MANAGERS.find((pm) => new RegExp(`(^|\\s|&&\\s*)${pm}\\s`).test(command)) ?? "npm"
+  );
+}
+
+/**
  * Build step only, prepared for a Node stage: the corepack prelude is chosen
- * from the command itself (`pnpm install && pnpm build` → pnpm) rather than from
- * the project's package manager.
+ * from the command itself rather than from the project's package manager.
  */
 function buildOnlyRunLine(config: BuildConfig, envPrefix: string): string | null {
   const command = config.buildCommand?.trim() ?? "";
@@ -217,10 +261,16 @@ function generatePhpDockerfile(config: BuildConfig): string {
   if (installLine) lines.push(installLine);
 
   if (assetBuildLine) {
+    // The asset stage is a Node image running the JS build, so it needs the same
+    // PATH as a JS recipe — keyed off the command's own PM, not the project's.
+    const assetBinPath = nodeBinPathEnvLine(assetStagePackageManager(config), [sourceDir, "/workspace"]);
     lines.push(
       `FROM ${PHP_ASSET_BUILD_IMAGE} AS assets`,
+      ...(assetBinPath ? [assetBinPath] : []),
       `WORKDIR /workspace`,
-      `COPY . /workspace`,
+      // Include Composer's installed packages and generated files. Copying the
+      // complete workspace also handles custom vendor-dir and monorepo installs.
+      `COPY --from=builder /workspace /workspace`,
       `WORKDIR ${sourceDir}`,
       assetBuildLine,
     );
@@ -288,12 +338,153 @@ function staticNginxTemplateLines(port: number): string[] {
  * empty or wrong dir when `rootDirectory` / `outputDirectory` handling shifts, so
  * both the Dockerfile and `buildStaticToHost` call this.
  */
+/**
+ * The builder stage's WORKDIR — the directory `COPY . /workspace` lands the build
+ * context in, offset by `rootDirectory` for a monorepo sub-app.
+ *
+ * Exported so the static extractor can ask the one question it cannot answer
+ * locally: is this project's doc-root the same directory as its build context? It
+ * is exactly when `outputDirectory` is empty or ".", and that is the case where
+ * the context's own build files (`.dockerignore`, the generated Dockerfile) would
+ * otherwise be published as site content.
+ */
+export function builderContextRoot(config: BuildConfig): string {
+  return builderSourceDir(normalizeDockerRootDirectory(config.rootDirectory, config.localPath));
+}
+
+/**
+ * Is this a TOP-LEVEL doc-root entry that is a build input rather than content?
+ *
+ * `Dockerfile.*` covers both the single-app generated name (`Dockerfile.openship`)
+ * and the compose batch builder's per-service one
+ * (`Dockerfile.openship.<sessionId>`), plus a repo's own `Dockerfile.prod`.
+ */
+export function isExcludedDocRootEntry(name: string): boolean {
+  return (
+    name === ".dockerignore" ||
+    name === ".git" ||
+    name === "Dockerfile" ||
+    name.startsWith("Dockerfile.")
+  );
+}
+
 export function staticBuilderOutputPath(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
   const output = normalizeRelativePath(config.outputDirectory);
   return output ? `${sourceDir}/${output}` : sourceDir;
+}
+
+/** Ruby stacks run the recipe below — the language default and any project that
+ *  pinned its own Ruby tag are built the same way. */
+function isRubyRuntime(config: BuildConfig): boolean {
+  return /^ruby(?::|$)/.test(normalizeImageRef(config.runtimeImage));
+}
+
+/** Builder-only. `ruby:*-slim` installs gcc/make to compile Ruby and then
+ *  purges them, so `bundle install` hits the first native gem (`pg`, `bootsnap`)
+ *  with no compiler. This is the set Rails' own Dockerfile installs. */
+const RUBY_BUILD_PACKAGES = [
+  "build-essential",
+  "git",
+  "pkg-config",
+  "libpq-dev",
+  "libyaml-dev",
+  "libffi-dev",
+  "libsqlite3-dev",
+] as const;
+
+/** Shared libs the compiled gems link against at runtime; the `-dev` headers
+ *  stay in the builder. libvips is here because Active Storage shells out to it,
+ *  and a missing one surfaces on first image upload rather than at boot. */
+const RUBY_RUNTIME_PACKAGES = ["libpq5", "libyaml-0-2", "libsqlite3-0", "libvips", "curl"] as const;
+
+function rubyPackagesRunLine(stage: "build" | "runtime"): string {
+  const debian = stage === "build" ? RUBY_BUILD_PACKAGES : RUBY_RUNTIME_PACKAGES;
+  const alpine = stage === "build"
+    ? "build-base git pkgconf postgresql-dev yaml-dev libffi-dev sqlite-dev"
+    : "libpq yaml sqlite-libs vips curl";
+  // A configured official ruby:* tag may use Alpine rather than Debian. Select
+  // against the stage's actual OS, independently for the builder and runtime.
+  return (
+    `RUN if [ -f /etc/alpine-release ]; then apk add --no-cache ${alpine}; ` +
+    `else apt-get update -qq && apt-get install --no-install-recommends -y ${debian.join(" ")} ` +
+    `&& rm -rf /var/lib/apt/lists/*; fi`
+  );
+}
+
+/**
+ * Ruby recipe: a builder with the toolchain, a runtime with only shared libs.
+ *
+ * Emits its own two stages rather than using the generic multi-stage path —
+ * `needsMultiStage` is false here (one image for both), but the whole point is
+ * that the stages need different apt sets from that same base.
+ *
+ * Bundler installs to BUNDLE_PATH, outside the app dir, so the gems are a
+ * separate COPY. Both stages declare the same BUNDLE_* values: a runtime whose
+ * BUNDLE_WITHOUT disagreed would make `bundle exec` re-resolve and fail.
+ */
+function generateRubyDockerfile(config: BuildConfig): string {
+  const sourceDir = builderSourceDir(
+    normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
+  );
+  const envPrefix = buildEnvPrefix(config.envVars);
+  const workspacePrepare = config.workspacePrepareCommand?.trim();
+
+  // Deployment mode makes the lockfile authoritative instead of silently
+  // re-resolving what dev tested against.
+  const bundleEnv =
+    "ENV BUNDLE_PATH=/usr/local/bundle BUNDLE_WITHOUT=development:test BUNDLE_DEPLOYMENT=1";
+
+  // apt before the source copy, so the layer caches across every commit.
+  const lines: string[] = [
+    `FROM ${config.buildImage} AS builder`,
+    bundleEnv,
+    `ENV RAILS_ENV=production RACK_ENV=production`,
+    rubyPackagesRunLine("build"),
+    `WORKDIR /workspace`,
+    `COPY . /workspace`,
+  ];
+
+  if (workspacePrepare) {
+    lines.push(workspacePrepareRunLine(config, envPrefix, workspacePrepare));
+  }
+
+  lines.push(`WORKDIR ${sourceDir}`);
+
+  const stepsLine = installBuildRunLine(config, envPrefix);
+  if (stepsLine) {
+    lines.push(stepsLine);
+  }
+
+  lines.push(
+    `FROM ${config.runtimeImage} AS runtime`,
+    bundleEnv,
+    // Development is the default RAILS_ENV, and a development Rails rejects the
+    // deployed hostname via config.hosts. Static serving is on because the edge
+    // proxies to the app; nothing else serves public/assets.
+    `ENV RAILS_ENV=production RACK_ENV=production RAILS_LOG_TO_STDOUT=1 RAILS_SERVE_STATIC_FILES=1`,
+    rubyPackagesRunLine("runtime"),
+    `COPY --from=builder /usr/local/bundle /usr/local/bundle`,
+    ...runtimeCopyDirectives(config, sourceDir),
+    `WORKDIR /app`,
+    // tmp/ and log/ are written per request; storage/ is the declared volume,
+    // chowned so the mount is writable when Docker creates it.
+    `RUN if [ -f /etc/alpine-release ]; then addgroup -S -g 1000 rails ` +
+      `&& adduser -S -u 1000 -G rails -h /home/rails rails; ` +
+      `else groupadd --system --gid 1000 rails ` +
+      `&& useradd --system --uid 1000 --gid 1000 --create-home --shell /bin/bash rails; fi ` +
+      `&& mkdir -p tmp log storage && chown -R rails:rails /app`,
+    `USER rails`,
+    `EXPOSE ${config.port}`,
+  );
+
+  if (config.startCommand) {
+    lines.push(`CMD ["sh", "-c", ${JSON.stringify(config.startCommand)}]`);
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -313,11 +504,10 @@ function generateStaticDockerfile(config: BuildConfig): string {
     .map((line) => `'${line}'`)
     .join(" ");
 
-  const lines: string[] = [
-    `FROM ${config.buildImage} AS builder`,
-    `WORKDIR /workspace`,
-    `COPY . /workspace`,
-  ];
+  const lines: string[] = [`FROM ${config.buildImage} AS builder`];
+  const buildBinPath = nodeBinPathEnvLine(config.packageManager, [sourceDir, "/workspace"]);
+  if (buildBinPath) lines.push(buildBinPath);
+  lines.push(`WORKDIR /workspace`, `COPY . /workspace`);
   if (workspacePrepare) {
     lines.push(workspacePrepareRunLine(config, envPrefix, workspacePrepare));
   }
@@ -356,6 +546,12 @@ export function generateDockerfile(config: BuildConfig): string {
     return generatePhpDockerfile(config);
   }
 
+  // Deliberately NOT gated on needsMultiStage: Ruby declares one image for both
+  // stages, but they need different apt sets (compiler vs shared libs only).
+  if (isRubyRuntime(config)) {
+    return generateRubyDockerfile(config);
+  }
+
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
@@ -363,17 +559,17 @@ export function generateDockerfile(config: BuildConfig): string {
   const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
 
-  const lines: string[] = multiStage
-    ? [
-        `FROM ${config.buildImage} AS builder`,
-        `WORKDIR /workspace`,
-        `COPY . /workspace`,
-      ]
-    : [
-        `FROM ${config.runtimeImage}`,
-        `WORKDIR /workspace`,
-        `COPY . /workspace`,
-      ];
+  const lines: string[] = [
+    multiStage ? `FROM ${config.buildImage} AS builder` : `FROM ${config.runtimeImage}`,
+  ];
+
+  // Ahead of COPY so the layer survives every source change. On the single-stage
+  // path this is also the runtime stage — WORKDIR is left at `sourceDir` and
+  // node_modules is right there — so one line covers build AND start.
+  const buildBinPath = nodeBinPathEnvLine(config.packageManager, [sourceDir, "/workspace"]);
+  if (buildBinPath) lines.push(buildBinPath);
+
+  lines.push(`WORKDIR /workspace`, `COPY . /workspace`);
 
   // Monorepo workspace prepare: runs ONCE at /workspace (repo root)
   // before we cd into the sub-app and run the per-service install.
@@ -400,6 +596,10 @@ export function generateDockerfile(config: BuildConfig): string {
     lines.push(`FROM ${config.runtimeImage} AS runtime`);
     lines.push(...runtimeCopyDirectives(config, sourceDir));
     lines.push(`WORKDIR /app`);
+    // The copy retargets `sourceDir` → /app, so the runtime stage needs its own
+    // ENV (ENV does not cross a FROM) pointing at the new location.
+    const runtimeBinPath = nodeBinPathEnvLine(config.packageManager, ["/app"]);
+    if (runtimeBinPath) lines.push(runtimeBinPath);
   }
   lines.push(`EXPOSE ${config.port}`);
   if (config.startCommand) {

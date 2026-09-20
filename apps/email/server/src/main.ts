@@ -18,7 +18,7 @@
 
 import { dirname, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { getCookie } from 'hono/cookie';
@@ -33,6 +33,7 @@ import { appRouter } from './trpc';
 import { buildContext } from './ctx';
 import { getSession } from './lib/session';
 import { getBranding, assetsDir } from './lib/branding';
+import { renderIndexHtml } from './lib/index-html';
 import { brandingAdminRoute } from './routes/branding-admin';
 
 const app = new Hono();
@@ -150,6 +151,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientBuildDir =
   process.env.CLIENT_BUILD_DIR ?? resolvePath(__dirname, '../../client/build/client');
 
+// The HTML document, branded (GH-568). Registered BEFORE serveStatic because
+// serveStatic resolves `/` and `/index.html` to the file on disk and would
+// answer with the build-time <title>/<meta> - the very thing that made
+// siteTitle look write-only. Assets are untouched below and keep their
+// immutable caching; only the document is dynamic, so it must not be cached by
+// intermediaries or a rebrand would appear stuck.
+const sendIndexHtml = (c: Context) =>
+  c.html(renderIndexHtml(clientBuildDir), 200, {
+    'Cache-Control': 'no-cache, must-revalidate',
+  });
+
+app.get('/', sendIndexHtml);
+app.get('/index.html', sendIndexHtml);
+
 // Static files: assets, fonts, manifest, etc. serveStatic falls through to
 // the next handler when a path doesn't resolve to a file on disk, which is
 // what lets the SPA fallback below handle client-side routes.
@@ -157,8 +172,10 @@ app.use('/*', serveStatic({ root: clientBuildDir }));
 
 // SPA fallback - any unmatched GET serves index.html so React Router can
 // take over routing on the client. Registered last so it never shadows API
-// routes (those returned a response above and never fell through).
-app.get('*', serveStatic({ root: clientBuildDir, path: 'index.html' }));
+// routes (those returned a response above and never fell through). Deep links
+// are documents too, so they get the same branded shell - a link preview of
+// https://mail.example.com/mail/inbox must not say "OpenShip Mail" either.
+app.get('*', sendIndexHtml);
 
 const port = env.PORT;
 console.log(`[zero] listening on http://localhost:${port}`);

@@ -1,3 +1,4 @@
+import { createEncryption } from "../encryption";
 import { describe, it, expect, beforeEach } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -25,8 +26,8 @@ async function freshDb() {
   await client.exec("SET session_replication_role = replica;"); // skip FK seeding
   return {
     db,
-    projectRepo: createProjectRepo(db),
-    deploymentRepo: createDeploymentRepo(db),
+    projectRepo: createProjectRepo(db, createEncryption("repository-test-secret")),
+    deploymentRepo: createDeploymentRepo(db, createEncryption("repository-test-secret")),
   };
 }
 

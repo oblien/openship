@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
  * proving anything about the real command string.
  */
 const src = readFileSync(
-  fileURLToPath(new URL("../../src/lib/host-disk.ts", import.meta.url)),
+  fileURLToPath(new URL("../../../../packages/platform/src/engine/lib/host-disk.ts", import.meta.url)),
   "utf8",
 );
 

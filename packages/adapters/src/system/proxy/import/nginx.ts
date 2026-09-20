@@ -8,6 +8,7 @@
 
 import {
   PROXY_DIRECTIVES,
+  isLoopbackHost,
   parseProxyValue,
   sanitizeProxySettings,
   type ProxySettings,
@@ -17,7 +18,7 @@ import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyScanResult } from "../../types";
 import { EDGE_HOST_PATHS, OPENRESTY_DEFAULT_PATHS } from "../../../infra/openresty-lua";
 import { containerCommand } from "../../edge-container-executor";
-import { resolveOurEdgeContainer } from "../detect";
+import { detectEdgeContainer, resolveOurEdgeContainer } from "../detect";
 import { collapseByHost, extractBlocks, stripComments, tryExec } from "./parse-utils";
 
 /**
@@ -45,6 +46,27 @@ async function dumpResolvedConfig(
   return null;
 }
 
+/**
+ * nginx's compiled `--prefix` — the base a prefix-relative `root` resolves against.
+ *
+ * `-T` inlines every `include` but does NOT rewrite directive VALUES, so a stock
+ * `root html;` survives the dump verbatim and only nginx's own prefix says where it
+ * points. `-V` prints the configure line to STDERR, hence the redirect.
+ *
+ * Null when no binary answers, or when the build passed no `--prefix`: nginx's
+ * compiled-in default (`/usr/local/nginx`) is a guess, and a wrong guess here
+ * publishes the wrong directory to the internet. Callers skip the site with that as
+ * the stated reason instead.
+ */
+async function nginxPrefix(executor: CommandExecutor, bins: string[]): Promise<string | null> {
+  for (const bin of bins) {
+    const out = await tryExec(executor, `${bin} -V 2>&1`);
+    const prefix = out?.match(/--prefix=(\S+)/)?.[1];
+    if (prefix) return prefix;
+  }
+  return null;
+}
+
 async function loadNginxConfig(executor: CommandExecutor): Promise<string> {
   const dumped = await dumpResolvedConfig(executor, ["nginx", "openresty"]);
   if (dumped) return dumped;
@@ -62,18 +84,23 @@ function firstDirective(body: string, name: string): string | undefined {
   return m?.[1]?.trim();
 }
 
-/** Parse `upstream <name> { server <host:port>; ... }` → name → first host:port. */
-function parseUpstreams(config: string): Map<string, string> {
-  const map = new Map<string, string>();
+/** Parse `upstream <name> { server <host:port>; ... }` → every declared target. */
+function parseUpstreams(config: string): Map<string, string[]> {
+  const map = new Map<string, string[]>();
   const re = /(?:^|[\s;}])upstream\s+(\S+)\s*\{([^}]*)\}/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(config)) !== null) {
     const name = m[1];
-    const server = m[2].match(/(?:^|[\s;{])server\s+([^;\s]+)/);
-    if (name && server?.[1]) map.set(name, server[1].trim());
+    const body = m[2] ?? "";
+    const targets = [...body.matchAll(/(?:^|[\s;{])server\s+([^;\s]+)/g)]
+      .map((server) => server[1]?.trim())
+      .filter((target): target is string => Boolean(target));
+    if (name && targets.length > 0) map.set(name, targets);
   }
   return map;
 }
+
+const HTTP_PROXY_TARGET_RE = /^(https?:\/\/)([^/?#]+)([/?#].*)?$/i;
 
 /**
  * Turn a raw proxy_pass value into a concrete Openship route target, or reject
@@ -83,17 +110,28 @@ function parseUpstreams(config: string): Map<string, string> {
  */
 function resolveProxyTarget(
   proxyPass: string,
-  upstreams: Map<string, string>,
+  upstreams: Map<string, string[]>,
+  opts: { allowVariablesAfterAuthority?: boolean } = {},
 ): { url: string } | { reason: string } {
   const raw = proxyPass.replace(/;$/, "").trim();
-  if (raw.includes("$")) return { reason: `proxy_pass "${raw}" uses an nginx variable` };
+  const parsed = raw.match(HTTP_PROXY_TARGET_RE);
+  if (raw.includes("$")) {
+    // Variables in the authority can select an arbitrary upstream, so strict port
+    // inventory must fail closed. Variables after it only rewrite the request URI:
+    // nginx still dials the concrete host:port, which is all inventory needs.
+    const authority = parsed?.[2];
+    if (!opts.allowVariablesAfterAuthority || !authority || authority.includes("$")) {
+      return { reason: `proxy_pass "${raw}" uses an nginx variable` };
+    }
+  }
   if (/\/\/unix:/i.test(raw)) return { reason: `proxy_pass "${raw}" targets a unix socket` };
-  const m = raw.match(/^(https?:\/\/)([^/]+)(\/.*)?$/i);
+  const m = parsed;
   if (!m) return { reason: `unrecognized proxy_pass "${raw}"` };
   const scheme = m[1];
   const authority = m[2];
   const host = authority.replace(/:\d+$/, "");
-  if (upstreams.has(host)) return { url: `${scheme}${upstreams.get(host)}` };
+  const declaredUpstream = upstreams.get(authority);
+  if (declaredUpstream?.[0]) return { url: `${scheme}${declaredUpstream[0]}` };
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   // `localhost` is NOT safe to carry over verbatim: nginx resolves it to ::1
   // first, and most app servers bind IPv4 only — so an adopted
@@ -103,8 +141,75 @@ function resolveProxyTarget(
   if (host === "localhost" || host === "ip6-localhost") {
     return { url: raw.replace(/^(https?:\/\/)[^/:]+/i, "$1127.0.0.1") };
   }
-  if (isIp || host.includes(".")) return { url: raw };
+  if (isIp || host.includes(".") || (host.startsWith("[") && host.endsWith("]"))) {
+    return { url: raw };
+  }
   return { reason: `proxy_pass host "${host}" is an undeclared upstream — not migratable` };
+}
+
+/**
+ * Inventory every concrete loopback TCP upstream in raw nginx config, regardless
+ * of whether its server_name is public/migratable. Allocation cannot reuse the
+ * migration parser's filtered `ImportedSite[]`: default (`_`), localhost, regex,
+ * or otherwise unsupported vhosts can still dial a host port and capture a new
+ * workload. An unresolved proxy_pass rejects the whole inventory; "could not
+ * prove where this route dials" is never equivalent to "it dials no loopback
+ * port" in a security-sensitive allocation decision.
+ */
+function strictLoopbackUpstreamPorts(config: string): Set<number> {
+  const normalized = stripComments(config);
+  const upstreams = parseUpstreams(normalized);
+  const ports = new Set<number>();
+
+  for (const match of normalized.matchAll(/(?:^|[;{}\s])proxy_pass\s+([^;]+);/g)) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    const resolved = resolveProxyTarget(raw, upstreams, { allowVariablesAfterAuthority: true });
+    if ("reason" in resolved) {
+      // Unix sockets never consume a TCP port and therefore cannot collide with
+      // Docker's loopback publishing. Every other unresolved target is unknown.
+      if (/\/\/unix:/i.test(raw)) continue;
+      throw new Error(`Cannot inventory Openship edge routes: ${resolved.reason}`);
+    }
+
+    // The migration parser intentionally selects the first member of a named
+    // upstream because one Openship route has one target. Collision inventory
+    // has a stricter job: every member can receive traffic from the stale vhost,
+    // so every concrete loopback member must protect its port.
+    const parsed = raw.match(HTTP_PROXY_TARGET_RE);
+    const authority = parsed?.[2];
+    const scheme = parsed?.[1];
+    const targets =
+      authority && scheme && upstreams.has(authority)
+        ? upstreams.get(authority)!.map((target) => `${scheme}${target}`)
+        : [resolved.url];
+
+    for (const target of targets) {
+      let url: URL;
+      try {
+        url = new URL(target);
+      } catch {
+        throw new Error(`Cannot inventory Openship edge routes: invalid proxy_pass "${raw}"`);
+      }
+      if (!isLoopbackHost(url.hostname)) continue;
+      const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+      if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+        throw new Error(`Cannot inventory Openship edge routes: invalid loopback port in "${raw}"`);
+      }
+      ports.add(port);
+    }
+  }
+
+  return ports;
+}
+
+function parseStrictEdgeConfig(raw: string): ProxyScanResult & {
+  loopbackUpstreamPorts: Set<number>;
+} {
+  return {
+    ...parseNginxConfig(raw),
+    loopbackUpstreamPorts: strictLoopbackUpstreamPorts(raw),
+  };
 }
 
 /**
@@ -137,13 +242,41 @@ function locationBlocks(serverBody: string): { path: string; body: string }[] {
  * order. `proxy_pass` is only valid inside a location (or `if`) in nginx, so
  * this — not a server-level scan — is where real routes live.
  */
-function extractLocationProxies(serverBody: string): { path: string; proxyPass: string }[] {
-  const out: { path: string; proxyPass: string }[] = [];
+function extractLocationProxies(serverBody: string): {
+  routes: { path: string; proxyPass: string; exact?: boolean }[];
+  unsupported: string[];
+  sawProxyLocation: boolean;
+} {
+  const routes: { path: string; proxyPass: string; exact?: boolean }[] = [];
+  const unsupported: string[] = [];
+  let sawProxyLocation = false;
   for (const loc of locationBlocks(serverBody)) {
     const pp = firstDirective(loc.body, "proxy_pass");
-    if (pp) out.push({ path: loc.path, proxyPass: pp });
+    if (!pp) continue;
+    sawProxyLocation = true;
+
+    // Keep nginx's match mode separate from the path. Feeding the raw selector
+    // (`= /mcp`) to the route writer makes its injection guard correctly reject
+    // the whitespace, while stripping `=` without remembering it silently widens
+    // an exact route into a prefix. Regex and named locations have no equivalent
+    // in the imported route model, so drop only that location, not the whole vhost.
+    const exact = loc.path.match(/^=\s+(.+)$/);
+    if (exact) {
+      routes.push({ path: exact[1].trim(), proxyPass: pp, exact: true });
+      continue;
+    }
+    const strongPrefix = loc.path.match(/^\^~\s+(.+)$/);
+    if (strongPrefix) {
+      routes.push({ path: strongPrefix[1].trim(), proxyPass: pp });
+      continue;
+    }
+    if (/^~\*?(?:\s|$)/.test(loc.path) || loc.path.startsWith("@")) {
+      unsupported.push(loc.path);
+      continue;
+    }
+    routes.push({ path: loc.path, proxyPass: pp });
   }
-  return out;
+  return { routes, unsupported, sawProxyLocation };
 }
 
 /** Blank out quoted tokens so a directive-shaped word inside a VALUE can't be read
@@ -275,16 +408,59 @@ function parseProxyDirectives(body: string): {
   };
 }
 
+/**
+ * Loopback `server_name`s, which are never migratable hostnames: they only match a
+ * request that ARRIVED with `Host: localhost` — an on-box curl — so a vhost claiming
+ * one cannot be served for anybody through a public edge.
+ *
+ * Filtering them alongside `_` and regex names is what keeps nginx's SHIPPED default
+ * vhost (`server_name localhost; root html;`) out of the migrate set: it is a
+ * placeholder welcome page, not a site, and carrying it over failed at APPLY time on
+ * its prefix-relative root — reported to the operator as "1 site not served" for a
+ * site that never existed. A block that has a loopback name AND a real one keeps the
+ * real one; a block left with nothing falls into the no-usable-name skip below.
+ */
+const LOOPBACK_SERVER_NAMES = new Set([
+  "localhost",
+  "localhost.localdomain",
+  "ip6-localhost",
+  "ip6-loopback",
+]);
+
+/**
+ * Absolutize a `root`. nginx treats a value not starting with `/` as relative to its
+ * compiled prefix, so a bare `html` is legal config meaning `<prefix>/html`.
+ *
+ * Resolving HERE, where the prefix is known, is what keeps the raw token from
+ * reaching the vhost writer — which rejects it with "must be an absolute path", an
+ * accurate sentence about a config that is perfectly valid nginx, at the one moment
+ * (post-cutover) when the operator can least afford a misleading error.
+ */
+function resolveStaticRoot(root: string, prefix?: string): { root: string } | { reason: string } {
+  if (root.startsWith("/")) return { root };
+  if (!prefix) {
+    return {
+      reason:
+        `static root "${root}" is relative to nginx's compiled prefix, ` +
+        `which this host didn't report`,
+    };
+  }
+  return { root: `${prefix.replace(/\/+$/, "")}/${root}` };
+}
+
 function parseServer(
   body: string,
   source: string,
-  upstreams: Map<string, string>,
+  upstreams: Map<string, string[]>,
+  prefix?: string,
 ): { site?: ImportedSite; warnings: string[] } {
   const warnings: string[] = [];
-  const names = firstDirective(body, "server_name")
-    ?.split(/\s+/)
-    .filter((n) => n && n !== "_" && !n.startsWith("~"))
-    ?? [];
+  const names =
+    firstDirective(body, "server_name")
+      ?.split(/\s+/)
+      .filter(
+        (n) => n && n !== "_" && !n.startsWith("~") && !LOOPBACK_SERVER_NAMES.has(n.toLowerCase()),
+      ) ?? [];
 
   // ssl if any `listen ... ssl` or `listen 443` (443 as a whole token — not 8443)
   const listens = [...body.matchAll(/(?:^|[;{\s])listen\s+([^;]+);/g)].map((m) => m[1]);
@@ -294,33 +470,42 @@ function parseServer(
   const certPath = firstDirective(body, "ssl_certificate");
   const keyPath = firstDirective(body, "ssl_certificate_key");
 
-  // No usable server_name = the default catch-all (`server_name _;` / omitted).
-  // It can't become a vhost (there's no hostname to register) and every nginx has
-  // one, so it's an expected skip, not a config item the operator lost.
+  // No usable server_name = the default catch-all (`server_name _;` / omitted), or a
+  // loopback-only block like nginx's shipped default vhost. It can't become a vhost
+  // (there's no routable hostname to register) and every nginx has one, so it's an
+  // expected skip, not a config item the operator lost.
   if (names.length === 0) return { warnings: [] };
 
   // All routes for this vhost. Locations are the real source; fall back to a
   // (technically-invalid but seen-in-the-wild) server-level proxy_pass.
-  const rawTargets = extractLocationProxies(body);
-  if (rawTargets.length === 0) {
+  const extracted = extractLocationProxies(body);
+  const rawTargets = extracted.routes;
+  for (const selector of extracted.unsupported) {
+    warnings.push(
+      `nginx: ${names[0]} location "${selector}" uses an unsupported regex or named selector (skipped)`,
+    );
+  }
+  if (rawTargets.length === 0 && !extracted.sawProxyLocation) {
     const serverLevel = firstDirective(body, "proxy_pass");
     if (serverLevel) rawTargets.push({ path: "/", proxyPass: serverLevel });
   }
 
-  const resolved: { path: string; url: string }[] = [];
+  const resolved: { path: string; url: string; exact?: boolean }[] = [];
   for (const t of rawTargets) {
     const r = resolveProxyTarget(t.proxyPass, upstreams);
     if ("reason" in r) warnings.push(`nginx: ${names[0]} ${t.path} — ${r.reason} (skipped)`);
-    else resolved.push({ path: t.path, url: r.url });
+    else resolved.push({ path: t.path, url: r.url, ...(t.exact ? { exact: true } : {}) });
   }
 
   let target: ImportedSite["target"];
-  let routes: { path: string; url: string }[] | undefined;
+  let routes: ImportedSite["routes"];
   if (resolved.length > 0) {
-    // Primary = the root location ("/") if present, else the first resolved.
+    // Primary = the inclusive root location ("/") if present, else the first
+    // resolved route. An exact `location = /` is an extra match, not the prefix
+    // fallback that serves every other path.
     // `routes` carries the FULL per-path set so a path-fan-out vhost (e.g.
     // `/ → :1010`, `/v3 → :1020`) is preserved — the edge can path-route it.
-    const primary = resolved.find((r) => r.path === "/") ?? resolved[0];
+    const primary = resolved.find((r) => r.path === "/" && !r.exact) ?? resolved[0];
     target = { kind: "proxy", url: primary.url };
     routes = resolved;
   } else if (isHttpsUpgradeForSelf(body, names)) {
@@ -332,7 +517,12 @@ function parseServer(
     // only on :80 serving an empty webroot.
     return { warnings: [] };
   } else if (root && !isAcmeWebrootOnly(body)) {
-    target = { kind: "static", root: root.replace(/;$/, "") };
+    const resolved = resolveStaticRoot(root.replace(/;$/, ""), prefix);
+    if ("reason" in resolved) {
+      warnings.push(`nginx: ${names[0]} — ${resolved.reason} (skipped)`);
+      return { warnings };
+    }
+    target = { kind: "static", root: resolved.root };
   } else if (root) {
     // A root that exists ONLY to answer /.well-known/acme-challenge — certbot
     // scaffolding, not a site. Our edge answers ACME itself (nginx.conf proxies
@@ -353,8 +543,11 @@ function parseServer(
 }
 
 /** Parse a raw nginx config string into normalized sites. Shared by `scanNginx`
- *  (foreign `/etc/nginx`) and `scanOpenshipEdge` (our OpenResty sites tree). */
-function parseNginxConfig(raw: string): ProxyScanResult {
+ *  (foreign `/etc/nginx`) and `scanOpenshipEdge` (our OpenResty sites tree).
+ *
+ *  `prefix` absolutizes a prefix-relative `root`; our own edge always writes
+ *  absolute roots, so the "ours" callers pass none. */
+function parseNginxConfig(raw: string, prefix?: string): ProxyScanResult {
   const warnings: string[] = [];
   const sites: ImportedSite[] = [];
 
@@ -372,7 +565,7 @@ function parseNginxConfig(raw: string): ProxyScanResult {
   }
 
   for (const body of blocks) {
-    const { site, warnings: blockWarnings } = parseServer(body, "nginx", upstreams);
+    const { site, warnings: blockWarnings } = parseServer(body, "nginx", upstreams, prefix);
     warnings.push(...blockWarnings);
     if (site) sites.push(site);
   }
@@ -396,7 +589,13 @@ function parseNginxConfig(raw: string): ProxyScanResult {
  * answering only on port 80 with an empty webroot.
  */
 export async function scanNginx(executor: CommandExecutor): Promise<ProxyScanResult> {
-  return parseNginxConfig(await loadNginxConfig(executor));
+  const raw = await loadNginxConfig(executor);
+  // Only pay for the extra `-V` when a root that needs the prefix is actually
+  // present. A commented-out `root html;` false-positives the probe, which costs one
+  // cheap exec and nothing else — the prefix is unused if no site needs it.
+  const relativeRoot = /(?:^|[;{\s])root\s+[^/;\s]/.test(raw);
+  const prefix = relativeRoot ? await nginxPrefix(executor, ["nginx", "openresty"]) : null;
+  return parseNginxConfig(raw, prefix ?? undefined);
 }
 
 /**
@@ -435,9 +634,7 @@ const OUR_EDGE_SITE_GLOBS = [
  * bare→container conversion would make `-T` dump the ORPHANED bare config over the
  * container's own sites on the "ours" read path.
  */
-export async function scanForeignOpenResty(
-  executor: CommandExecutor,
-): Promise<ProxyScanResult> {
+export async function scanForeignOpenResty(executor: CommandExecutor): Promise<ProxyScanResult> {
   const dump = await dumpResolvedConfig(executor, ["openresty"]);
   if (dump) return parseNginxConfig(dump);
   return scanOpenshipEdge(executor);
@@ -457,4 +654,62 @@ export async function scanOpenshipEdge(executor: CommandExecutor): Promise<Proxy
   if (!container) return parseNginxConfig("");
   const fromContainer = await tryExec(executor, containerCommand(container, cat));
   return parseNginxConfig(fromContainer ?? "");
+}
+
+/**
+ * Security-sensitive variant of {@link scanOpenshipEdge}.
+ *
+ * The ordinary migration/read surface is intentionally fail-soft. Port
+ * allocation cannot use that contract: treating an SSH, permission, or Docker
+ * read failure as an empty edge would allow allocation of a port an existing
+ * vhost still dials. This variant therefore proves that the sites trees are
+ * readable and rejects when the running Openship edge cannot be inspected.
+ */
+export async function scanOpenshipEdgeStrict(
+  executor: CommandExecutor,
+  knownContainer?: string | null,
+): Promise<ProxyScanResult & { loopbackUpstreamPorts: Set<number> }> {
+  // First prove which managed edge container exists. Readable bind-mount files
+  // are insufficient: they can outlive a stopped/removed edge while a foreign
+  // proxy serves a different route set on :80/:443.
+  const detected = await detectEdgeContainer(executor);
+  if (!detected) {
+    // A bare OpenResty host may have no usable Docker daemon at all. Its
+    // resolved config is still authoritative and follows every include, so use
+    // it before declaring the read inconclusive. A missing/failed dump is not
+    // treated as empty: it can also mean permissions or transport failed.
+    const bareConfig = await dumpResolvedConfig(executor, ["openresty"]);
+    if (bareConfig) return parseStrictEdgeConfig(bareConfig);
+    throw new Error(
+      "Cannot read Openship edge routes: neither Docker nor bare OpenResty inventory is available",
+    );
+  }
+  if (!detected.exists) {
+    // "No Openship container" is not proof that the edge has no routes. A
+    // foreign nginx/caddy/traefik may still own :80/:443 and retain a stale
+    // loopback upstream that a new workload could capture. Allocation callers
+    // run this only after routing preflight, so a genuinely fresh Docker host
+    // should have an Openship edge by now. The one supported container-less
+    // topology is bare OpenResty; its resolved config is authoritative.
+    const bareConfig = await dumpResolvedConfig(executor, ["openresty"]);
+    if (bareConfig) return parseStrictEdgeConfig(bareConfig);
+    throw new Error(
+      "Cannot read Openship edge routes: no running Openship edge or bare OpenResty inventory is available",
+    );
+  }
+  if (!detected.running) {
+    throw new Error("Cannot read Openship edge routes: the edge container is not running");
+  }
+  const container = knownContainer ?? detected.name;
+  if (!container) throw new Error("Cannot read Openship edge routes: container identity missing");
+  // Dump the FULL resolved config from the active process namespace. Reading
+  // only sites-enabled misses loopback upstreams in the baked/base config (ACME,
+  // webhook/control routes) and misses includes outside the known site globs.
+  const fromContainer = await executor.exec(
+    containerCommand(container, "openresty -T 2>/dev/null"),
+  );
+  if (!fromContainer.trim() || !/server\s*\{/.test(fromContainer)) {
+    throw new Error("Cannot read Openship edge routes: active OpenResty config dump was empty");
+  }
+  return parseStrictEdgeConfig(fromContainer);
 }

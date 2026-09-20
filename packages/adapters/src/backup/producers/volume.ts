@@ -2,10 +2,11 @@
  * VolumeCopyProducer — the universal fallback. Tars every backupable
  * volume (named + bind) into one artifact per volume.
  *
- * For services without specialized DB producers (postgres/mysql/redis/
- * mongo come in Chunk 3), this is what runs. Crash-consistent — the
- * service keeps running during the snapshot; the bytes are whatever
- * the filesystem looks like at that moment.
+ * For services without a specialized DB producer, this is what runs. Crash-consistent
+ * by default — the service keeps running during the copy, so the bytes are whatever the
+ * filesystem looked like across the walk, not at one instant. Pass `quiesce` to freeze
+ * the container for the duration and get a point-in-time archive instead; the artifact
+ * records which one it is under `metadata.consistency`.
  *
  * Restore = receiveStream into the same volume id. Producer-side
  * decisions: clear the target before extracting (assumes the user
@@ -14,6 +15,7 @@
  */
 
 import type { Readable } from "node:stream";
+import { recordedCodec } from "../common/dump-pipeline";
 import { registerProducer } from "../registry";
 import type {
   Artifact,
@@ -38,25 +40,64 @@ class VolumeCopyProducerImpl implements BackupProducer {
   ): AsyncIterable<Artifact> {
     const sources = await executor.listSources(service);
     if (sources.length === 0) {
-      // No volumes = nothing to back up. Return an empty manifest —
-      // the orchestrator records this as a successful zero-artifact run.
-      return;
+      // Used to `return` here, which the orchestrator recorded as a SUCCESSFUL
+      // zero-artifact run — a nightly schedule reporting green while backing up
+      // nothing at all (#611). "Nothing to back up" is not a successful backup; it
+      // means we could not find the data, and the operator has to hear that.
+      //
+      // The container id is in the message because it is the whole diagnosis. With
+      // one, the live container was inspected and genuinely has no volume or bind
+      // mounts. Without one, we only ever saw the service row's `volumes` column,
+      // which is empty for services Openship adopted rather than deployed (the
+      // control plane's own compose stack is the reported case: its rows are
+      // created from running containers and carry no volume specs).
+      throw new Error(
+        `Nothing to back up: no volumes or bind mounts found for service "${service.name}". ` +
+          (service.containerId
+            ? `Its live container (${service.containerId.slice(0, 12)}) reports no volume or bind ` +
+              `mounts, so there is no persistent data here to capture.`
+            : `No container was resolved for it, so only the service's recorded volumes could be ` +
+              `checked and it has none. If this service does hold data, redeploy it so Openship ` +
+              `records its volumes, or point the policy at a database payload instead of a volume ` +
+              `snapshot.`),
+      );
     }
 
     const selected = opts.sourceIds && opts.sourceIds.length > 0
       ? sources.filter((s) => opts.sourceIds!.includes(s.id))
       : sources.filter((s) => s.type !== "tmpfs");
 
+    // Every candidate filtered out is the same failure one step later: an explicit
+    // `sourceIds` that matches nothing, or a service whose only mounts are tmpfs
+    // (never backupable — the data is gone when the container stops).
+    if (selected.length === 0) {
+      const available = sources.map((s) => `${s.id} (${s.type})`).join(", ");
+      throw new Error(
+        `Nothing to back up for service "${service.name}": ` +
+          (opts.sourceIds && opts.sourceIds.length > 0
+            ? `the policy selects ${opts.sourceIds.join(", ")}, none of which is a source on this ` +
+              `service. Available: ${available}.`
+            : `its only mounts are tmpfs, which hold no data across a restart. Found: ${available}.`),
+      );
+    }
+
     for (const source of selected) {
+      // zstd unless told otherwise: best ratio, and what every existing artifact used. The
+      // knob matters because zstd is apk-installed into the helper at runtime, so the
+      // default needs egress — see ProducerOpts.compression.
+      const compression = opts.compression ?? "zstd";
       const { stdout, awaitExit } = await executor.streamPath(service, source.id, {
-        compression: "zstd",
+        compression,
         exclude: opts.exclude,
+        quiesce: opts.quiesce,
       });
 
       // The artifact stream is the executor's stdout. The orchestrator
       // pipes it onward + tracks any awaitExit failures.
       yield {
-        name: `volume-${sanitizeArtifactName(source.id)}.tar.zst`,
+        name: `volume-${sanitizeArtifactName(source.id)}.tar${
+          compression === "zstd" ? ".zst" : compression === "gzip" ? ".gz" : ""
+        }`,
         stream: stdout as unknown as Readable,
         payloadKind: "volume",
         sizeHint: source.sizeHint,
@@ -65,7 +106,12 @@ class VolumeCopyProducerImpl implements BackupProducer {
           volumeSource: source.source,
           volumeTarget: source.target,
           volumeType: source.type,
-          compression: "zstd",
+          compression,
+          // Recorded so the artifact says what it IS, rather than leaving an operator to
+          // assume. `crash` means the service kept writing while tar walked the tree —
+          // usable for most payloads, and the reason a database deserves a logical dump
+          // instead. `quiesced` means the container was frozen for the copy.
+          consistency: opts.quiesce ? "quiesced" : "crash",
         },
       };
 
@@ -100,7 +146,12 @@ class VolumeCopyProducerImpl implements BackupProducer {
     }
     const stream = await artifact.open();
     await executor.receiveStream(service, volumeId, stream, {
-      compression: (artifact.metadata.compression as "zstd" | "gzip" | "none") ?? "zstd",
+      // Through the recorded-codec reader rather than a cast: the cast trusted jsonb to
+      // hold one of three strings, and anything else (a typo in a hand-written policy,
+      // a value from a newer build) reached the restore helper as a codec it cannot
+      // build a pipeline for. `recordedCodec` maps the unknown to `zstd` — the only
+      // safe guess, and for the same documented reason.
+      compression: recordedCodec(artifact.metadata.compression),
       clearTarget: opts.clearTarget ?? true,
       signal: opts.signal,
     });

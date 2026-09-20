@@ -22,6 +22,11 @@
     "backToSetup": "Back to setup",
     "personal": "Personal"
   },
+  "mailRail": {
+    "selectServer": "Select a mail server",
+    "switchServer": "Switch mail server",
+    "setupIncomplete": "Setup incomplete"
+  },
   "migration": {
     "inProgressTitle": "Migration in progress",
     "inProgressBody": "Your data is being moved. This page will refresh when the cutover finishes — typically 30-90 seconds.",

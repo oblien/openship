@@ -55,11 +55,12 @@
     "appsEmptyDesc": "ワンクリックで完全セルフホスト — データベース、自動化、アナリティクス、パスワード管理などを自分のサーバーで実行できます。"
   },
   "nav": {
+    "scale": "スケーリング",
     "home": "ホーム",
     "new-project": "新規プロジェクト",
     "projects": "プロジェクト",
     "deployments": "デプロイ",
-    "issues": "問題",
+    "issues": "モニタリング",
     "backups": "バックアップ",
     "domains": "ドメイン",
     "monitoring": "モニタリング",
@@ -67,10 +68,18 @@
     "emails": "メール",
     "settings": "設定",
     "billing": "請求と使用状況",
+    "audit": "監査ログ",
+    "mailSetup": "メールをセットアップ",
+    "mailSetupProgress": "セットアップの進行状況",
+    "addMailbox": "メールボックスを追加",
+    "webmail": "ウェブメール",
     "sections": {
       "main": "メイン",
       "settings": "設定",
       "infrastructure": "インフラストラクチャ",
+      "mail": "メール",
+      "delivery": "配信",
+      "system": "システム",
       "account": "アカウント"
     },
     "apps": "アプリ",

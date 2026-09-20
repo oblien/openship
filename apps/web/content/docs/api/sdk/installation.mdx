@@ -1,0 +1,74 @@
+---
+title: Install the SDK
+description: Install the preview package and use its JavaScript, TypeScript, and CLI entry points.
+---
+
+Requires **Node.js 22 or later**. ESM, CommonJS, and TypeScript declarations are included.
+
+## Install the preview
+
+The published `openship@0.7.2` package is CLI-only. To use the SDK from this checkout:
+
+1. Build the public package from the repository root:
+
+   ```bash
+   bun install --frozen-lockfile
+   bun run build:sdk
+   ```
+
+2. Create a tarball. Use the filename printed by `npm pack`:
+
+   ```bash
+   cd packages/openship
+   npm pack
+   ```
+
+3. Install that tarball in your Node project:
+
+   ```bash
+   npm install /absolute/path/to/openship-0.7.2.tgz
+   ```
+
+After an SDK-enabled release is published, this becomes `npm install openship`. A local tarball and
+the existing npm release can share a version number while containing different exports.
+
+## Choose an import
+
+| Import | Provides |
+| --- | --- |
+| `openship` | Native factory, remote clients, deployment helpers, public types, and errors. |
+| `openship/client` | Remote clients and HTTP helpers. |
+| `openship/native` | Native factory, identity types, lifecycle options, and scoped operations. |
+
+<Tabs items={['ES modules', 'CommonJS']}>
+<Tab value="ES modules">
+
+```ts title="imports.mts"
+import { createShip, OpenshipClient } from "openship";
+import type { ScopedShip, ProjectOperations } from "openship";
+```
+
+</Tab>
+<Tab value="CommonJS">
+
+```js title="imports.cjs"
+const { OpenshipClient } = require("openship/client");
+const { createShip } = require("openship/native");
+```
+
+</Tab>
+</Tabs>
+
+Imports are passive. An import does not start the CLI, open a database, or create a worker.
+
+## Use the CLI from the same installation
+
+```bash
+npx openship --help
+```
+
+Installing the dependency locally provides both application imports and the command through `npx` or
+npm scripts. A global CLI installation does not replace your application's local dependency.
+
+Continue with [remote setup](/docs/api/sdk/client), [native setup](/docs/api/sdk/native), or the
+[runnable example](/docs/api/sdk/examples). See [compatibility](/docs/api/sdk/compatibility) for server requirements.

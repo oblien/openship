@@ -32,6 +32,10 @@ const serviceRepo = vi.hoisted(() => ({
   syncMonorepoApps: vi.fn(),
 }));
 
+const serverRepo = vi.hoisted(() => ({
+  getInOrganization: vi.fn(),
+}));
+
 // Fully mocked (no importOriginal) so the test never boots a real PGlite —
 // ensureProject only ever touches these three repos.
 vi.mock("@repo/db", () => ({
@@ -39,6 +43,8 @@ vi.mock("@repo/db", () => ({
     project: projectRepo,
     projectGroup: projectGroupRepo,
     service: serviceRepo,
+    server: serverRepo,
+    dockerMigrationRun: { findActiveForProject: vi.fn().mockResolvedValue(null) },
     settings: { listCloudLinkedOrgIds: vi.fn().mockResolvedValue([]) },
     domain: { getPrimaryByProject: vi.fn().mockResolvedValue(null) },
   },
@@ -48,7 +54,7 @@ vi.mock("@repo/db", () => ({
   getDriver: () => "postgres",
 }));
 
-vi.mock("../../../src/modules/domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   deriveEnvironmentPublicEndpoints: vi.fn(),
   deriveNextProjectRouteState: vi.fn(() => ({ publicEndpoints: [] })),
   persistProjectRouteState: vi.fn(),
@@ -57,16 +63,16 @@ vi.mock("../../../src/modules/domains/project-route.service", () => ({
   syncProjectRouteState: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", () => ({
   applyProjectRouting: vi.fn(),
 }));
 
-import { ensureProject } from "../../../src/modules/projects/project-crud.service";
-import { ENV_MASK } from "../../../src/lib/secret-env";
+import { createProject, ensureProject } from "@repo/platform/engine/modules/projects/project-crud.service";
+import { ENV_MASK } from "@repo/platform/engine/lib/secret-env";
 import {
   newFolderSessionId,
   putFolderSession,
-} from "../../../src/modules/projects/folder/session-store";
+} from "@repo/platform/engine/modules/projects/folder/session-store";
 
 /** A two-service compose, exactly as folder/scan returns it. */
 const scannedServices = [
@@ -103,6 +109,7 @@ describe("ensureProject compose services", () => {
     projectGroupRepo.create.mockResolvedValue({ id: "grp_new" });
     serviceRepo.listByProject.mockResolvedValue([]);
     serviceRepo.syncFromCompose.mockResolvedValue([]);
+    serverRepo.getInOrganization.mockResolvedValue({ id: "srv_remote" });
   });
 
   it("persists the scanned services on the project it creates", async () => {
@@ -118,7 +125,44 @@ describe("ensureProject compose services", () => {
     );
 
     expect(result.created).toBe(true);
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", scannedServices);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", scannedServices, {
+      composeAuthoritative: true,
+    });
+  });
+
+  it.each([false, true])("refuses preview source config before changing a production target (existing=%s, #195)", async (existing) => {
+    if (existing) projectRepo.findById.mockResolvedValue(existingProject);
+
+    await expect(ensureProject({
+      name: "my-stack",
+      ...(existing ? { projectId: existingProject.id } : {}),
+      deploymentEnvironment: "preview",
+      gitProvider: "upload",
+      services: scannedServices,
+    }, "org_1")).rejects.toMatchObject({ code: "DEPLOYMENT_ENVIRONMENT_TARGET_MISMATCH" });
+
+    expect(projectRepo.update).not.toHaveBeenCalled();
+    expect(projectRepo.create).not.toHaveBeenCalled();
+    expect(projectGroupRepo.create).not.toHaveBeenCalled();
+    expect(serviceRepo.syncFromCompose).not.toHaveBeenCalled();
+  });
+
+  it("persists scanner-backed services through the create entry point used by local import", async () => {
+    await createProject(
+      {
+        name: "my-stack",
+        gitProvider: "local",
+        localPath: "/opt/apps/my-stack",
+        framework: "docker-compose",
+        projectType: "services",
+        services: scannedServices,
+      } as any,
+      "org_1",
+    );
+
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", scannedServices, {
+      composeAuthoritative: true,
+    });
   });
 
   it("re-syncs the services when updating an existing project", async () => {
@@ -136,7 +180,9 @@ describe("ensureProject compose services", () => {
     );
 
     expect(result.created).toBe(false);
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", scannedServices);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", scannedServices, {
+      composeAuthoritative: true,
+    });
   });
 
   it("leaves the service table alone when the request carries no services", async () => {
@@ -145,13 +191,31 @@ describe("ensureProject compose services", () => {
     expect(serviceRepo.syncFromCompose).not.toHaveBeenCalled();
   });
 
+  it("validates and persists a new project's registered-server binding", async () => {
+    await createProject({ name: "remote-app", serverId: "srv_remote" } as any, "org_1");
+
+    expect(serverRepo.getInOrganization).toHaveBeenCalledWith("srv_remote", "org_1");
+    expect(projectRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ serverId: "srv_remote", organizationId: "org_1" }),
+      undefined,
+    );
+  });
+
+  it("rejects a missing/foreign server before creating any project rows", async () => {
+    serverRepo.getInOrganization.mockResolvedValue(null);
+
+    await expect(
+      createProject({ name: "remote-app", serverId: "srv_foreign" } as any, "org_1"),
+    ).rejects.toThrow();
+
+    expect(projectGroupRepo.create).not.toHaveBeenCalled();
+    expect(projectRepo.create).not.toHaveBeenCalled();
+  });
+
   it("never wipes rows with an empty list (a caller that sent services: [])", async () => {
     projectRepo.findById.mockResolvedValue(existingProject);
 
-    await ensureProject(
-      { projectId: "proj_1", name: "my-stack", services: [] } as any,
-      "org_1",
-    );
+    await ensureProject({ projectId: "proj_1", name: "my-stack", services: [] } as any, "org_1");
 
     expect(serviceRepo.syncFromCompose).not.toHaveBeenCalled();
   });
@@ -195,6 +259,7 @@ describe("ensureProject compose services — masked env", () => {
     projectGroupRepo.create.mockResolvedValue({ id: "grp_new" });
     serviceRepo.listByProject.mockResolvedValue([]);
     serviceRepo.syncFromCompose.mockResolvedValue([]);
+    serverRepo.getInOrganization.mockResolvedValue({ id: "srv_remote" });
   });
 
   it("restores masked values from the upload session that captured them", async () => {
@@ -205,9 +270,11 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: { DB_PASSWORD: "s3cret" } }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: { DB_PASSWORD: "s3cret" } })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("restores from the stored row when re-ensuring an existing project", async () => {
@@ -221,17 +288,21 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", [
-      expect.objectContaining({ environment: { DB_PASSWORD: "from-row" } }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_1",
+      [expect.objectContaining({ environment: { DB_PASSWORD: "from-row" } })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("drops a masked value with no source instead of persisting the sentinel", async () => {
     await ensureProject({ name: "my-stack", services: maskedServices } as any, "org_1");
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: {} }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: {} })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("ignores an upload session belonging to another org", async () => {
@@ -242,21 +313,24 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: {} }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: {} })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("passes revealed/edited values through untouched", async () => {
     const uploadSessionId = seedScannedSession();
-    const edited = [{ name: "api", image: "ghcr.io/acme/api:1", environment: { DB_PASSWORD: "typed-by-user" } }];
+    const edited = [
+      { name: "api", image: "ghcr.io/acme/api:1", environment: { DB_PASSWORD: "typed-by-user" } },
+    ];
 
-    await ensureProject(
-      { name: "my-stack", services: edited, uploadSessionId } as any,
-      "org_1",
-    );
+    await ensureProject({ name: "my-stack", services: edited, uploadSessionId } as any, "org_1");
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", edited);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", edited, {
+      composeAuthoritative: true,
+    });
     // No mask anywhere → no need to read rows back at all.
     expect(serviceRepo.listByProject).not.toHaveBeenCalled();
   });

@@ -61,6 +61,7 @@
  * patcher overwrites wholesale plus one `include` line that is appended once.
  */
 
+import { SYSTEM } from "@repo/core";
 import { CLOUDFLARE_IPV4, CLOUDFLARE_IPV6 } from "./cloudflare-ips.generated";
 
 /** Filename of the generated real-ip include, inside the OpenResty conf dir. */
@@ -171,4 +172,81 @@ export function edgeRealIpConf(): string {
   }
 
   return lines.join("\n") + "\n";
+}
+
+/**
+ * Header Openship Cloud's edge names the client in.
+ *
+ * Not CF-Connecting-IP: the Cloud edge is a proxy in its own right, and the header it
+ * OVERWRITES on the way to the origin is `X-Real-IP`. Two different fronts, two
+ * different headers — and `real_ip_header` is one per config scope, which is the whole
+ * reason a Cloud-fronted host needs its own block instead of the http-scope one.
+ */
+export const CLOUD_EDGE_REAL_IP_HEADER = "X-Real-IP";
+
+/**
+ * Is this hostname one Openship Cloud's shared edge fronts?
+ *
+ * A free `<slug>.opsh.io` host is served by Cloud's edge, which proxies to this box on
+ * plain :80 — so for that vhost, and only that vhost, the TCP peer is the Cloud edge
+ * and the visitor is named in a header.
+ *
+ * Deliberately the LITERAL cloud domain, not the API's `getRoutingBaseDomain()` (which
+ * prefers `HOST_DOMAIN`): with `HOST_DOMAIN` set, "managed" hostnames live on the
+ * operator's own wildcard zone pointed straight at this box, with nothing in front. A
+ * header-trust block there would believe a header no proxy sets — i.e. hand every
+ * visitor a free choice of source address.
+ */
+export function isCloudFrontedHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.+$/, "");
+  const suffix = `.${SYSTEM.DOMAINS.CLOUD_DOMAIN.toLowerCase()}`;
+  return host.length > suffix.length && host.endsWith(suffix);
+}
+
+/**
+ * The realip block that belongs INSIDE a Cloud-fronted vhost, at server scope.
+ *
+ * Without it such a host falls through to the http-scope block, which reads
+ * CF-Connecting-IP — a header the Cloud edge does not send. `remote_addr` then stays
+ * the edge for every visitor, and the four things that read it break in the way
+ * {@link edgeRealIpConf} describes: country resolves to the edge, distinct visitors
+ * collapse to one, every visitor shares a single rate-limit bucket, and an IP ban bans
+ * the edge or nobody. It is also the value `proxy_set_header X-Real-IP` forwards, so
+ * the app behind the route sees the edge too — including this API's own login limiter
+ * when the instance is served on its free URL.
+ *
+ * Trust here is anchored to the VHOST, not to a peer address — see the emitted comment for
+ * why a peer list cannot work for this front and what that costs.
+ *
+ * `indent` is applied to every line so the caller can drop the result straight into a
+ * generated `server { }` body.
+ */
+export function cloudEdgeRealIpConf(indent = "    "): string {
+  const lines: string[] = [
+    "# Openship Cloud's edge fronts this free host, so the peer is the edge and the",
+    "# visitor is named in X-Real-IP (which that front OVERWRITES). The http-scope block",
+    "# reads CF-Connecting-IP for Cloudflare-fronted custom domains, and there is one",
+    "# real_ip_header per scope — hence this override.",
+    "#",
+    "# Trust is scoped to this VHOST instead of to a peer list, deliberately. The Cloud",
+    "# edge reaches origins from its own address, which this box has no way to know and",
+    "# which Cloudflare's ranges (the visitor→edge leg) do not contain — so a peer list",
+    "# here silently ignores the header and every free-domain visitor stays the edge.",
+    "#",
+    "# What bounds it is the server_name: this block exists only inside a <slug>.opsh.io",
+    "# vhost, a hostname whose only legitimate path is that edge. Someone who reaches this",
+    "# box directly on :80 with a forged Host AND a forged X-Real-IP can choose their own",
+    "# apparent address for THIS vhost — accepted, because the alternative is the address",
+    "# being wrong for every visitor all the time. Custom domains keep the peer-anchored",
+    "# http-scope block; do not widen this to them.",
+    `real_ip_header ${CLOUD_EDGE_REAL_IP_HEADER};`,
+    // OFF, unlike the http-scope block: the Cloud edge OVERWRITES X-Real-IP with a single
+    // address, so there is no list to walk, and "skip trusted addresses from the right"
+    // has no meaning once every address is trusted.
+    "real_ip_recursive off;",
+    "set_real_ip_from 0.0.0.0/0;",
+    "set_real_ip_from ::/0;",
+  ];
+
+  return lines.map((l) => `${indent}${l}`).join("\n") + "\n";
 }

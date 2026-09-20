@@ -214,8 +214,12 @@ export class DockerEdgeExecutor implements CommandExecutor {
     if (code !== 0) throw new Error(stderr.trim() || `Failed to rename ${from}`);
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
-    if (this.fileMode === "mounted") return this.files.writeFile(path, content);
+  async writeFile(path: string, content: string, opts?: { mode?: number }): Promise<void> {
+    if (this.fileMode === "mounted") {
+      return opts === undefined
+        ? this.files.writeFile(path, content)
+        : this.files.writeFile(path, content, opts);
+    }
 
     // base64 in the COMMAND, never on stdin: `run()` deliberately doesn't hijack
     // the connection (see the note above — hijack breaks every exec under Bun),
@@ -224,13 +228,17 @@ export class DockerEdgeExecutor implements CommandExecutor {
     const encoded = Buffer.from(content, "utf8").toString("base64");
     const dir = path.replace(/\/[^/]*$/, "");
     if (dir && dir !== path) await this.exec(`mkdir -p ${sq(dir)}`);
+    if (opts?.mode !== undefined) {
+      // Tighten the destination before the first decoded payload byte lands.
+      await this.exec(`: > ${sq(path)} && chmod ${opts.mode.toString(8)} ${sq(path)}`);
+    }
     if (encoded.length === 0) {
-      await this.exec(`: > ${sq(path)}`);
+      if (opts?.mode === undefined) await this.exec(`: > ${sq(path)}`);
       return;
     }
     for (let offset = 0; offset < encoded.length; offset += WRITE_CHUNK) {
       const chunk = encoded.slice(offset, offset + WRITE_CHUNK);
-      const redirect = offset === 0 ? ">" : ">>";
+      const redirect = offset === 0 && opts?.mode === undefined ? ">" : ">>";
       await this.exec(`printf '%s' ${sq(chunk)} | base64 -d ${redirect} ${sq(path)}`);
     }
   }

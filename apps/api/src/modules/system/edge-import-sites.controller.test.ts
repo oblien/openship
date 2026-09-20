@@ -95,3 +95,14 @@ describe("edgeImportSites", () => {
     expect(H.platform!.ssl.installCert).toHaveBeenCalledWith("a.com", { certPem: "CERT", keyPem: "KEY" });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/controller-helpers")>();
+  return { ...actual, platform: () => H.platform };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/controller-helpers")>();
+  return { ...actual, platform: () => H.platform };
+});

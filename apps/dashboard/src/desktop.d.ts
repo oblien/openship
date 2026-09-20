@@ -1,4 +1,10 @@
 declare global {
+  type DesktopConfigKey =
+    | "autoUpdate"
+    | "updateNotifications"
+    | "dismissedAdvisoryIds"
+    | "lastSeenVersion";
+
   type DesktopCloudAuthResult = {
     ok?: boolean;
     nonce?: string;
@@ -16,13 +22,15 @@ declare global {
       version: () => Promise<string>;
       platform?: string;
     };
+    /** Update preferences only. The desktop config store also holds SSH
+     *  credentials and tunnel tokens, which the bridge refuses to serve —
+     *  see RENDERER_CONFIG_KEYS in apps/desktop/src/main/security.ts. */
     config?: {
-      get: <T = unknown>(key: string) => Promise<T>;
-      set: (key: string, value: unknown) => Promise<unknown>;
-      getAll: () => Promise<Record<string, unknown>>;
+      get: <T = unknown>(key: DesktopConfigKey) => Promise<T>;
+      set: (key: DesktopConfigKey, value: unknown) => Promise<unknown>;
     };
     updates?: {
-      check: () => Promise<{ available: boolean; version?: string }>;
+      check: (force?: boolean) => Promise<import("@repo/core").DesktopUpdateSnapshot>;
       start: () => Promise<boolean>;
       open: () => Promise<boolean>;
       dismiss: () => Promise<boolean>;

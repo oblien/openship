@@ -1,6 +1,10 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
+/** Cross-card refresh signal for Settings → Git. Source management and the
+ * generic credential card intentionally own different API calls. */
+export const GITHUB_SOURCES_CHANGED_EVENT = "openship:github-sources-changed";
+
 /** Query for the server-paginated repo list (all optional). */
 export interface RepoListQuery {
   page?: number;
@@ -22,6 +26,77 @@ export interface RepoPageResponse<TRepo = unknown> {
   publicCount: number;
   privateCount: number;
   totalPages: number;
+}
+
+export interface GitHubSourceInstallation {
+  id: number;
+  owner: string;
+  ownerType: string;
+  avatarUrl: string;
+  suspendedAt: string | null;
+}
+
+export interface GitHubSource {
+  id: string;
+  name: string;
+  provider: "github";
+  appId: number;
+  slug: string;
+  clientId: string | null;
+  appName: string | null;
+  avatarUrl: string | null;
+  apiBaseUrl: string;
+  webBaseUrl: string;
+  webhookUrl: string;
+  setupUrl: string;
+  appUrl: string;
+  managementUrl: string;
+  isDefault: boolean;
+  status: string;
+  lastVerifiedAt: string | null;
+  lastError: string | null;
+  installations: GitHubSourceInstallation[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubSourceConfiguration {
+  publicReady: boolean;
+  publicUrl: string | null;
+  webhookUrl: string;
+  setupUrl: string;
+}
+
+export interface ManualGitHubSourceInput {
+  name: string;
+  appId: number;
+  clientId?: string;
+  clientSecret?: string;
+  privateKeyPem: string;
+  webhookSecret: string;
+  apiBaseUrl?: string;
+  webBaseUrl?: string;
+  isDefault?: boolean;
+}
+
+export interface UpdateGitHubSourceInput {
+  name?: string;
+  appId?: number;
+  clientId?: string | null;
+  clientSecret?: string;
+  privateKeyPem?: string;
+  webhookSecret?: string;
+  apiBaseUrl?: string;
+  webBaseUrl?: string;
+}
+
+export interface BranchPageResponse {
+  data: Array<{ name: string; sha?: string; protected?: boolean }>;
+  pagination: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -71,12 +146,12 @@ export const githubApi = {
    */
   getRepoTree: (owner: string, repo: string, branch?: string) =>
     api.get<{ data: RepoTreeEntry[] }>(
-      endpoints.github.repoTree(owner, repo) + (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
+      endpoints.github.repoTree(owner, repo) +
+        (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
     ),
 
   /** Repos for a specific GitHub org */
-  getOrgRepos: (owner: string) =>
-    api.get<any>(endpoints.github.orgRepos(owner)),
+  getOrgRepos: (owner: string) => api.get<any>(endpoints.github.orgRepos(owner)),
 
   /** Repos for a specific GitHub user. Server-paginated: pass page/perPage/
    *  search/visibility/sort and read the authoritative `count`/`total` back
@@ -88,10 +163,10 @@ export const githubApi = {
 
   /** List a repo's branches (used before a project exists — e.g. the migration
    *  wizard's link-repo step, which can't use projectsApi.getBranches). */
-  listBranches: (owner: string, repo: string) =>
-    api.get<{ data: Array<{ name: string }> }>(
-      endpoints.github.repoBranches(owner, repo),
-    ),
+  listBranches: (owner: string, repo: string, page = 1) =>
+    api.get<BranchPageResponse>(endpoints.github.repoBranches(owner, repo), {
+      params: { page },
+    }),
 
   /**
    * Mint a short-lived GitHub App installation token for cloning a repo and
@@ -141,6 +216,14 @@ export const githubApi = {
   /** Poll device flow status */
   pollConnect: () => api.get<any>(endpoints.github.connectPoll),
 
+  /** Finalize a workspace-bound GitHub App installation callback. */
+  claimInstallation: (input: { state: string; installationId: string; setupAction?: string }) =>
+    api.post<{
+      ok: boolean;
+      pendingApproval?: boolean;
+      installation?: { login?: string };
+    }>(endpoints.github.installationClaim, input),
+
   /**
    * Disconnect a GitHub source.
    *   - "oauth" → remove the Openship App / OAuth account row
@@ -149,4 +232,38 @@ export const githubApi = {
    */
   disconnect: (source: "oauth" | "cli" | "all" = "all") =>
     api.post<{ success: boolean; source: string }>(endpoints.github.disconnect, { source }),
+
+  /** Organization-owned GitHub Apps. All endpoints are self-hosted + owner-only. */
+  listSources: () =>
+    api.get<{ data: GitHubSource[]; configuration: GitHubSourceConfiguration }>(
+      endpoints.github.sources,
+    ),
+
+  beginSourceManifest: (name: string) =>
+    api.post<{ url: string; manifest: Record<string, unknown> }>(endpoints.github.sourceManifest, {
+      name,
+    }),
+
+  convertSourceManifest: (state: string, code: string) =>
+    api.post<{ data: GitHubSource; installUrl: string }>(endpoints.github.sourceManifestConvert, {
+      state,
+      code,
+    }),
+
+  createSourceManual: (input: ManualGitHubSourceInput) =>
+    api.post<{ data: GitHubSource; installUrl: string }>(endpoints.github.sourceManual, input),
+
+  updateSource: (id: string, input: UpdateGitHubSourceInput) =>
+    api.patch<{ data: GitHubSource }>(endpoints.github.source(id), input),
+
+  removeSource: (id: string) => api.delete<{ success: boolean }>(endpoints.github.source(id)),
+
+  verifySource: (id: string) =>
+    api.post<{ data: GitHubSource }>(endpoints.github.sourceVerify(id), {}),
+
+  setDefaultSource: (id: string) =>
+    api.post<{ data: GitHubSource }>(endpoints.github.sourceDefault(id), {}),
+
+  createSourceInstallUrl: (id: string) =>
+    api.post<{ url: string; state: string }>(endpoints.github.sourceInstall(id), {}),
 };

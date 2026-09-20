@@ -1,0 +1,51 @@
+name: Improvement proposal
+description: Propose an improvement to existing OpenShip behavior
+title: "[Improvement]: "
+labels: ["enhancement"]
+type: feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to suggest a better version of existing behavior. Use the feature request form for entirely new functionality.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Existing issue
+      description: Search the existing issues before submitting a new proposal.
+      options:
+        - label: I have searched the existing issues and found no duplicate.
+          required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior
+      description: What existing behavior, workflow, or interface could be improved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-improvement
+    attributes:
+      label: Proposed improvement
+      description: Describe the desired behavior and why it would be better.
+    validations:
+      required: true
+
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: Who benefits from this change, and what measurable improvement would it provide?
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, mockups, benchmarks, or any other useful context.
+    validations:
+      required: false

@@ -7,11 +7,12 @@ import {
 } from "@repo/adapters";
 import { isDevWatchReload } from "@repo/db";
 import { app } from "./app";
-import { cloudRuntimeTarget, cloudRuntimeTargetId, env, runtimeTargetId } from "./config/env";
-import { getAuthMode } from "./lib/auth-mode";
-import { edgeBuildSpec, pinnedEdgeImage } from "./lib/edge-image";
-import { mailBuildSpec, pinnedMailImage } from "./lib/mail-image";
-import { getJobRunner } from "./lib/job-runner";
+import { cloudRuntimeTarget, cloudRuntimeTargetId, env, runtimeTargetId } from "@repo/platform/engine/config/env";
+import { getAuthMode } from "@repo/platform/engine/lib/auth-mode";
+import { edgeBuildSpec, pinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
+import { reportHostChannelAtBoot } from "./lib/host-channel-banner";
+import { mailBuildSpec, pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 import { enforceRouteScanAtBoot } from "./lib/route-scanner";
 import { attachTunnelingLifecycle, type TunnelingLifecycle } from "./modules/tunneling";
 
@@ -81,6 +82,12 @@ void (async () => {
   console.error("!!! Loopback-only guard is in authMiddleware.");
   console.error("");
 })();
+
+// Same shape, for the container→host SSH channel (#490) — silent unless the channel
+// is actually broken. At boot and not only at install: `openship up` probes it now,
+// but a box provisioned before that existed never saw the check, and a firewall can
+// change under a running install.
+void reportHostChannelAtBoot().catch(() => {});
 
 // Attach the tunnel agent lifecycle if this instance has been migrated
 // via Path C (teamMode === "tunneled"). Local-API-only by design —
@@ -155,6 +162,17 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.log("[shutdown] dev hot-reload — skipping drains to release the database lock");
   }
 
+  // Fence this controller's network work even on hot reload. Otherwise its
+  // still-valid lease makes a stopped setup look active after the successor boots.
+  if (!env.CLOUD_MODE) {
+    try {
+      const { stopNetworkSetups } = await import("@repo/platform/engine/modules/system/network-setup-lifecycle");
+      await stopNetworkSetups();
+    } catch (err) {
+      console.warn("[shutdown] network setup interruption failed:", err);
+    }
+  }
+
   // Close any live SSH port-forward tunnels (desktop-only feature; the
   // manager is RAM-only, so this Map is empty on SaaS/VPS and the import
   // is cheap). Dynamic import keeps it off the cloud startup path.
@@ -162,7 +180,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   // boot anyway, and the OS reclaims the sockets when we exit.
   if (!fastReload) {
     try {
-      const { stopAllTunnels } = await import("./lib/ssh-tunnel-manager");
+      const { stopAllTunnels } = await import("@repo/platform/engine/lib/ssh-tunnel-manager");
       await stopAllTunnels();
     } catch (err) {
       console.warn("[shutdown] port-forward close failed:", err);
@@ -175,7 +193,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     // the tunnels: the successor's first poll tick re-subscribes.
     try {
       const { stopAllContainerEventWatchers } = await import(
-        "./modules/monitoring/container-events"
+        "@repo/platform/engine/modules/monitoring/container-events"
       );
       await stopAllContainerEventWatchers();
     } catch (err) {
@@ -203,6 +221,12 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   // For embedded PGlite this frees the single-instance lock so the next start
   // opens the data dir cleanly instead of racing a not-yet-released lock.
   try {
+    const { closeDeviceFlows } = await import("@repo/platform/engine/modules/github/github.local-auth");
+    await closeDeviceFlows();
+  } catch (err) {
+    console.warn("[shutdown] GitHub device authorization close failed:", err);
+  }
+  try {
     const { closeDb } = await import("@repo/db");
     await closeDb();
   } catch (err) {
@@ -215,7 +239,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   // daemonized process that would otherwise linger on the remote host past
   // this process's exit. Bounded internally, so it can't outrun the deadline.
   try {
-    const { sshManager } = await import("./lib/ssh-manager");
+    const { sshManager } = await import("@repo/platform/engine/lib/ssh-manager");
     await sshManager.destroy();
   } catch (err) {
     console.warn("[shutdown] ssh pool close failed:", err);

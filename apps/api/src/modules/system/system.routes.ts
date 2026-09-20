@@ -1,3 +1,4 @@
+import { systemManagementRoutes } from "./system-management.routes";
 /**
  * System routes - mounted at /api/system in app.ts.
  *
@@ -12,30 +13,40 @@
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { internalAuth, localOnly, requireRole } from "../../middleware";
-import { rateLimiterFor } from "../../middleware/rate-limiter";
+import { internalAuth, requireInstanceAdmin } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
-import * as fs from "./filesystem.controller";
 import * as setup from "./setup.controller";
+import {
+  invitationSignupBodyLimit,
+  inviteSignup,
+} from "../auth/invitation-signup.controller";
 import * as selfApp from "./self-app.controller";
 import * as serverCheck from "./server-check.controller";
-import * as serversCtrl from "./servers.controller";
-import * as rateLimit from "./rate-limit.controller";
-import * as tunnels from "./tunnels.controller";
+import { serverManagementRoutes } from "./server-management.routes";
 import * as serverGithub from "../github/server-github.controller";
-import * as serverModules from "./server-modules.controller";
-import * as serverContainers from "./server-containers.controller";
 import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
+import {
+  TRANSFER_CHUNK_BYTES,
+  TRANSFER_CONTROL_BODY_BYTES,
+} from "./data-transfer/chunk-store";
 import * as systemHealth from "./system-health.controller";
-import * as edgeOrphans from "./edge-orphans.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
   basePath: "/api/system",
+  localOnly: true,
 });
 
-r.use("*", localOnly);
+const transferControlBodyLimit = bodyLimit({
+  maxSize: TRANSFER_CONTROL_BODY_BYTES,
+  onError: (c) =>
+    c.json(
+      { error: "Transfer control request exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" },
+      413,
+    ),
+});
+
 
 /* ── Onboarding (first-run only, no auth) ───────────────────────── */
 r.public("get", "/onboarding", { reason: "First-run onboarding status check - no user exists yet" }, setup.onboardingStatus);
@@ -44,11 +55,20 @@ r.public("post", "/onboarding/test-connection", { reason: "First-run SSH reachab
 
 /* ── Internal routes (Electron → API with shared token) ─────────── */
 r.public("post", "/setup", { reason: "Electron desktop client setup - protected by internalAuth shared token" }, internalAuth, setup.setup);
-r.public("get", "/setup", { reason: "Electron desktop client setup read - protected by internalAuth shared token" }, internalAuth, setup.getSetup);
+r.public("get", "/setup", { reason: "Electron desktop client setup read - protected by internalAuth shared token" }, internalAuth, setup.getInternalSetup);
 r.public("get", "/health", { reason: "CLI `openship doctor` — internal-token gated deep health rollup (DB liveness/migrations + project/service counts); the public /api/health is only a liveness stub" }, internalAuth, systemHealth.systemHealth);
 r.public("post", "/bootstrap-admin", { reason: "CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup)" }, internalAuth, setup.bootstrapAdmin);
 r.public("post", "/reset-admin-password", { reason: "CLI password recovery — internal-token gated; resets the local admin login for a locked-out operator (openship reset-admin-password)" }, internalAuth, setup.resetAdminPassword);
-r.public("post", "/invite-signup", { reason: "Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email. Public + rate-limited because the invitee isn't logged in yet." }, rateLimiterFor("auth-tight"), setup.inviteSignup);
+r.public(
+  "post",
+  "/invite-signup",
+  {
+    reason: "Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email.",
+    rateLimit: "auth-tight",
+  },
+  invitationSignupBodyLimit,
+  inviteSignup,
+);
 
 /* ── Control-plane self-registration (CLI setup wizard) ─────────────
  * After bootstrap-admin, the wizard registers Openship itself as an app
@@ -61,42 +81,7 @@ r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress f
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
 r.public("post", "/edge/import-sites", { reason: "CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated" }, internalAuth, selfApp.edgeImportSites);
 
-/* ── Untracked edge vhosts ──────────────────────────────────────────
- * Edge config lives on the host and outlives its DB rows by design (record-only
- * delete keeps the workload AND its route running). A leftover PROXY vhost 502s
- * and announces itself; a leftover STATIC one keeps serving the removed project's
- * files with a 200. This finds them, and removes them one named hostname at a
- * time — never as a sweep, which would break record-only's guarantee. */
-r.get("/edge/untracked", { tag: "settings:read" }, edgeOrphans.listUntrackedEdgeSites);
-// Stops serving a hostname → owner-only, like the other destructive system routes.
-r.post(
-  "/edge/untracked/remove",
-  { tag: "settings:admin" },
-  requireRole("owner"),
-  edgeOrphans.removeUntrackedEdgeSite,
-);
-
-/* ── Authenticated routes (dashboard settings page) ─────────────── */
-r.get("/settings", { tag: "settings:read" }, setup.getSetup);
-r.patch("/settings", { tag: "settings:write" }, setup.updateSettings);
-// Destructive reset — owner-only (like the other destructive settings routes),
-// and the handler is org-scoped (it only clears the CALLER's-org servers, never
-// every org's — see deleteSettings).
-r.delete("/settings", { tag: "settings:admin" }, requireRole("owner"), setup.deleteSettings);
-
-// Instance SMTP (Settings → Email) — self-hosted operator transport for all
-// system mail (password reset, verification, invites, notifications).
-//
-// WRITE + TEST are owner-only via requireRole("owner"): the `settings:*` tag
-// alone also admits admins/members (see lib/permission.ts), and this row is
-// the transport for every password-reset/verification email — a member who
-// could repoint it to their own SMTP relay could harvest reset tokens and take
-// over the owner's account (same reasoning as the data-transfer routes below).
-// GET returns only a MASKED config (no password) so it stays settings:read —
-// that keeps the "no email transport → set up SMTP" hint readable everywhere.
-r.get("/settings/email", { tag: "settings:read" }, setup.getEmailSettings);
-r.put("/settings/email", { tag: "settings:write" }, requireRole("owner"), setup.updateEmailSettings);
-r.post("/settings/email/test", { tag: "settings:write" }, requireRole("owner"), setup.sendTestEmail);
+r.hono.route("/", systemManagementRoutes);
 
 /* ── Zero-auth → local-auth upgrade (no session yet) ────────────── */
 r.public(
@@ -110,72 +95,18 @@ r.public(
 );
 
 /* ── Servers CRUD ───────────────────────────────────────────────── */
-r.get("/servers", { tag: "server:list" }, serversCtrl.listServers);
-r.get("/servers/:id", { tag: "server:read" }, serversCtrl.getServer);
-r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReachability);
-// Create has no :id in the URL — org scope comes from the request and the
-// row is created in the active org. collection:true keeps the permission
-// middleware from demanding a (nonexistent) :id param.
-r.post("/servers", { tag: "server:write", collection: true }, serversCtrl.createServer);
-r.patch("/servers/:id", { tag: "server:write" }, serversCtrl.updateServer);
-r.delete("/servers/:id", { tag: "server:admin" }, serversCtrl.deleteServer);
-
-/* ── Per-server rate limiting (OpenResty level) ─────────────────── */
-r.get("/servers/:id/rate-limit", { tag: "server:read" }, rateLimit.getRateLimit);
-r.patch("/servers/:id/rate-limit", { tag: "server:write" }, rateLimit.updateRateLimit);
-r.post("/servers/:id/ports/scan", { tag: "server:read", readOnly: true }, serverCheck.scanExposedPorts);
-
-// ── Native-module versioning + migration (OpenResty, …). The `:id` server is
-//    the permission resource; handlers hard-guard cloud + org-scope. ──
-r.get("/servers/:id/modules", { tag: "server:read" }, serverModules.listServerModules);
-r.post("/servers/:id/modules/scan", { tag: "server:write" }, serverModules.scanServerModules);
-r.post("/servers/:id/modules/:module/apply", { tag: "server:write" }, serverModules.applyServerModuleUpdate);
-
-// ── Managed CONTAINER versioning (edge / mail images pinned to APP_VERSION).
-//    Same `:id`-server permission resource + cloud/org guards as modules; apply
-//    STREAMS the rollback-guarded image swap. ──
-// Org-wide drift count for the home nudge — no :id, so collection:true scopes
-// the permission check to the active org (like /install/stream, /monitor/stream)
-// instead of demanding a server param.
-r.get("/containers/behind", { tag: "server:read", collection: true }, serverContainers.containersBehind);
-r.get("/containers/issues", { tag: "server:read", collection: true }, serverContainers.containerIssues);
-// Global infra view — every server × component. No :id, so collection:true scopes
-// the check to the active org (same as /containers/behind). Scan is detect-only.
-r.get("/containers", { tag: "server:read", collection: true }, serverContainers.listAllContainers);
-r.post("/containers/scan", { tag: "server:write", collection: true }, serverContainers.scanAllContainers);
-// Fleet bulk apply — targets are derived from the cache server-side, so the body
-// only carries which intents to run ("update" swaps, "repair" restarts).
-r.post("/containers/apply-all", { tag: "server:write", collection: true }, serverContainers.applyAllContainers);
-r.get("/servers/:id/containers", { tag: "server:read" }, serverContainers.listServerContainers);
-r.post("/servers/:id/containers/scan", { tag: "server:write" }, serverContainers.scanServerContainers);
-r.post("/servers/:id/containers/:component/apply/stream", { tag: "server:write" }, serverContainers.applyServerContainerStream);
-// Read-only siblings of the POST apply stream, for page reloads: /session hands
-// back a running swap's id, /stream (GET) re-attaches to it. Neither can start a
-// run, so they stay on server:read while the POST keeps server:write.
-r.get("/servers/:id/containers/:component/apply/session", { tag: "server:read" }, serverContainers.getServerContainerApplySession);
-r.get("/servers/:id/containers/:component/apply/stream", { tag: "server:read" }, serverContainers.attachServerContainerStream);
+r.hono.route("/", serverManagementRoutes);
 
 // ── Per-server GitHub auth (self-hosted): device-login token / PAT / SSH
 //    server-key / per-repo deploy-key. The `:id` server is the permission
 //    resource; handlers hard-guard cloud + org-scope the server. ──
-r.get("/servers/:id/github", { tag: "server:read" }, serverGithub.getStatus);
-r.post("/servers/:id/github/connect", { tag: "server:write" }, serverGithub.startConnect);
-r.get("/servers/:id/github/connect/poll", { tag: "server:read" }, serverGithub.pollConnect);
-r.put("/servers/:id/github/token", { tag: "server:write" }, serverGithub.putToken);
-r.post("/servers/:id/github/ssh-key", { tag: "server:write" }, serverGithub.generateSshKey);
-r.put("/servers/:id/github/deploy-key-mode", { tag: "server:write" }, serverGithub.useDeployKeyMode);
-r.delete("/servers/:id/github", { tag: "server:write" }, serverGithub.disconnect);
-
-/* ── Port-forward tunnels (DESKTOP-only; handlers add assertDesktop) ─
- * VS Code-style forwarding of a remote server port to localhost. Config
- * persists in server_tunnels; live sockets live in ssh-tunnel-manager.
- * `:id` is the server resource the permission middleware resolves on.
- */
-r.get("/servers/:id/tunnels", { tag: "server:read" }, tunnels.listTunnels);
-r.post("/servers/:id/tunnels", { tag: "server:write" }, tunnels.saveTunnel);
-r.post("/servers/:id/tunnels/:tunnelId/start", { tag: "server:write" }, tunnels.startTunnelHandler);
-r.post("/servers/:id/tunnels/:tunnelId/stop", { tag: "server:write" }, tunnels.stopTunnelHandler);
-r.delete("/servers/:id/tunnels/:tunnelId", { tag: "server:write" }, tunnels.deleteTunnel);
+r.get("/servers/:id/github", { tag: "server:read", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.getStatus);
+r.post("/servers/:id/github/connect", { tag: "server:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.startConnect);
+r.get("/servers/:id/github/connect/poll", { tag: "server:read", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.pollConnect);
+r.put("/servers/:id/github/token", { tag: "server:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.putToken);
+r.post("/servers/:id/github/ssh-key", { tag: "server:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.generateSshKey);
+r.put("/servers/:id/github/deploy-key-mode", { tag: "server:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.useDeployKeyMode);
+r.delete("/servers/:id/github", { tag: "server:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, serverGithub.disconnect);
 
 /* ── Server check & install (dashboard setup wizard) ─────────────
  * These endpoints target a server identified by `serverId` in the
@@ -187,38 +118,119 @@ r.delete("/servers/:id/tunnels/:tunnelId", { tag: "server:write" }, tunnels.dele
  * for the precise per-server authorization. Without this flag the
  * middleware 400s with "Missing route param :id" before the handler runs.
  */
-r.post("/test-connection", { tag: "server:write", collection: true }, serverCheck.testConnection);
-r.post("/check", { tag: "server:write", collection: true }, serverCheck.checkServer);
-r.post("/install", { tag: "server:admin", collection: true }, serverCheck.installComponent);
-r.post("/remove", { tag: "server:admin", collection: true }, serverCheck.removeComponent);
-r.post("/install/stream", { tag: "server:admin", collection: true }, serverCheck.installStream);
-r.post("/install/respond", { tag: "server:admin", collection: true }, serverCheck.installRespond);
-r.get("/install/stream", { tag: "server:read", collection: true }, serverCheck.attachInstallStream);
-r.get("/install/session", { tag: "server:read", collection: true }, serverCheck.getInstallSession);
 
 /* ── Server monitoring (live stats via SSE) ─────────────────────── */
-r.get("/monitor/stream", { tag: "server:read", collection: true }, serverCheck.monitorStream);
 
 /* ── Filesystem browse ──────────────────────────────────────────── */
-r.get("/browse", { tag: "settings:read" }, fs.browse);
 
 /* ── Team-mode migration ─────────────────────────────────────────
  * Path A (single_user → self_hosted_remote): preflight + start
  * Path B (single_user → cloud_hosted):       start-cloud
  * Path C (single_user → tunneled):           start-tunnel
  */
-r.post("/migration/preflight", { tag: "settings:admin" }, migration.preflight);
-r.post("/migration/start", { tag: "settings:admin" }, migration.start);
-r.post("/migration/start-cloud", { tag: "settings:admin" }, migration.startCloud);
-r.post("/migration/start-tunnel", { tag: "settings:admin" }, migration.startTunnel);
-r.post("/migration/switch-back", { tag: "settings:admin" }, migration.switchBack);
+// requireInstanceAdmin() is mandatory: migrating the instance exports every
+// org's data with all secrets DECRYPTED and ships it to a caller-named server.
+// The `settings:*` tag admits plain members (lib/permission.ts discards the
+// action half), and requireRole("owner") would NOT help — see the middleware's
+// header for why an org-scoped role can't gate a whole-instance operation.
+r.post("/migration/preflight", { tag: "settings:admin" }, requireInstanceAdmin(), migration.preflight);
+r.post("/migration/start", { tag: "settings:admin" }, requireInstanceAdmin(), migration.start);
+r.post("/migration/start-cloud", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startCloud);
+r.post("/migration/start-tunnel", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startTunnel);
+r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin(), migration.switchBack);
 
-/* ── Whole-instance data export / import (owner-only) ─────────────
- * requireRole("owner") is mandatory — the `settings:*` tag alone also
- * admits admins/members (see lib/permission.ts), and this moves the
- * entire database including every org's data.
+/* ── Instance and project data export / import (instance-admin only) ─────
+ * This moves the entire database including every org's data, and export
+ * returns every secret DECRYPTED in the response body under a passphrase the
+ * CALLER chooses. requireInstanceAdmin() is mandatory.
+ *
+ * This previously used requireRole("owner"), which did not gate it at all:
+ * that check resolves a caller-selected org and every user is owner of their
+ * own personal org (GHSA-rwq6-r63g-3c8h). Do not "restore" it here.
  */
-r.post("/data-transfer/export", { tag: "settings:admin" }, requireRole("owner"), dataTransfer.exportInstanceHandler);
+r.get("/data-transfer/preview", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.previewInstanceExportHandler);
+r.post("/data-transfer/preview", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.previewInstanceExportHandler);
+r.post("/data-transfer/direct/session", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.createDirectReceiveSessionHandler);
+r.post("/data-transfer/direct/send", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.sendDirectTransferHandler);
+r.post("/data-transfer/direct/send/stream", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.sendDirectTransferStreamHandler);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/init",
+  {
+    reason: "Initializes an encrypted upload using the one-time receive capability.",
+    rateLimit: "auth-tight",
+  },
+  transferControlBodyLimit,
+  dataTransfer.initializeDirectChunkUploadHandler,
+);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/:sessionId/heartbeat",
+  {
+    reason: "Extends an authenticated in-progress direct-transfer lease.",
+    rateLimit: "transfer-chunk",
+  },
+  transferControlBodyLimit,
+  dataTransfer.heartbeatDirectChunkUploadHandler,
+);
+r.public(
+  "put",
+  "/data-transfer/direct/chunk/:sessionId/:index",
+  {
+    reason: "Accepts one bounded, encrypted, signed direct-transfer chunk.",
+    rateLimit: "transfer-chunk",
+  },
+  bodyLimit({
+    maxSize: TRANSFER_CHUNK_BYTES + 64,
+    onError: (c) =>
+      c.json({ error: "Transfer chunk exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.receiveDirectChunkHandler,
+);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/:sessionId/finalize/stream",
+  {
+    reason: "Keeps an authenticated direct-transfer restore alive through proxy timeouts.",
+    rateLimit: "auth-tight",
+  },
+  transferControlBodyLimit,
+  dataTransfer.finalizeDirectChunkUploadStreamHandler,
+);
+r.public(
+  "post",
+  "/data-transfer/direct/receive",
+  {
+    reason: "One-time instance receive capability — payload is ECDH-encrypted and authorized by the expiring token inside it.",
+    rateLimit: "auth-tight",
+  },
+  bodyLimit({
+    maxSize: 700_000_000,
+    onError: (c) => c.json({ error: "Direct transfer exceeds the 700MB limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.receiveDirectTransferHandler,
+);
+r.post("/data-transfer/export", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.exportInstanceHandler);
+r.post("/data-transfer/import/session", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.createFileUploadHandler);
+r.post("/data-transfer/import/session/:sessionId/preview", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.previewFileUploadHandler);
+r.put(
+  "/data-transfer/import/session/:sessionId/chunk/:index",
+  { tag: "settings:admin" },
+  requireInstanceAdmin(),
+  bodyLimit({
+    maxSize: TRANSFER_CHUNK_BYTES,
+    onError: (c) =>
+      c.json({ error: "Import chunk exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.uploadFileChunkHandler,
+);
+r.post(
+  "/data-transfer/import/session/:sessionId/finalize/stream",
+  { tag: "settings:admin" },
+  requireInstanceAdmin(),
+  transferControlBodyLimit,
+  dataTransfer.finalizeFileUploadStreamHandler,
+);
 r.use(
   "/data-transfer/import",
   bodyLimit({
@@ -226,7 +238,6 @@ r.use(
     onError: (c) => c.json({ error: "Import file exceeds the 500MB limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
   }),
 );
-r.post("/data-transfer/import", { tag: "settings:admin" }, requireRole("owner"), dataTransfer.importInstanceHandler);
+r.post("/data-transfer/import", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.importInstanceHandler);
 
 export const systemRoutes = r.hono;
-

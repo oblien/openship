@@ -39,6 +39,7 @@ export default async function NotFound() {
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
       authMode={deploymentInfo.authMode}
+      version={deploymentInfo.version}
       cloudAuthUrl={deploymentInfo.cloudAuthUrl}
       cloudApiUrl={deploymentInfo.cloudApiUrl}
       machineName={deploymentInfo.machineName}
@@ -47,9 +48,7 @@ export default async function NotFound() {
       <div className="flex h-dvh">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center px-6 py-10">
-            {body}
-          </div>
+          <div className="flex min-h-full items-center justify-center px-6 py-10">{body}</div>
         </main>
       </div>
     </DashboardProviders>

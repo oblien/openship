@@ -1,200 +1,210 @@
-# Backups + restore — what's guaranteed, and what isn't
+# Backups + restore — open work
 
-State as of 2026-08-05, written alongside the pass that closed
-[#434](https://github.com/oblien/openship/issues/434). It lives next to the
-orchestrators so the limits are visible before anyone builds on them. The rollback
-half has its own file: `../deployments/rollback/PENDING.md`.
+Only what is NOT done. Anything fixed in the tree is gone from this file; the
+reasoning for a shipped fix lives in the code it landed in, and in git history.
+The rollback half has its own file: `../deployments/rollback/PENDING.md`.
 
----
-
-## What a restore now guarantees
-
-**It cannot hang.** `receiveStream` (`packages/adapters/src/backup/executors/docker.ts`)
-used to `await helper.wait()` with no bound — a long-poll against a container the
-daemon had already reaped under `AutoRemove: true`, which is the `404 no such
-container` in #434. It now races four outcomes: the wait, an **exit-via-inspect
-poll** (the same "don't trust the attach stream" backstop `demuxContainerStream`
-already had), an **inactivity watchdog** (`idleTimeoutMs`, default 10 min, fed by
-bytes in both directions), and an **absolute ceiling** (`timeoutMs`, default 6h).
-Idle rather than wall-clock on purpose: a legitimate 50 GB extract has continuous
-traffic and the hang has none, so the idle timer separates them where a wall-clock
-bound would either strangle the first or miss the second. The helper is reaped in
-`finally` with `AutoRemove: false`, which also closes a leak that predated the
-issue — a throw between `createContainer` and `start()` used to leave the helper
-behind forever.
-
-**It fails in prepare, not halfway through.** Target resolution, source probing and
-integrity verification all happen in `prepare` — the only phase that runs before
-anything is stopped or written. A service whose container is deployment-managed
-resolves through `dep.containerId`; one with no container but recorded volumes
-restores fine (the volume is bind-mounted into a separate helper, so nothing needs
-stopping); only "no container **and** no recorded volumes" fails, naming both facts.
-`isRunning()` now gates the stop, and we start only what we stopped.
-
-**Integrity is real.** Prepare streams every artifact through `HashingPassthrough`
-and compares against the recorded sha256, normalizing `sha256:` prefixes and case.
-The comment used to claim this while the code compared byte sizes only. `meta.integrity`
-records which check actually ran — `sha256`, `size-only` (no digest on record: older
-runs), or `deferred` — and `validateManifest` is wired against the destination's
-`manifest.json`, so "the DB's artifact list disagrees with what the destination
-holds" is a hard failure instead of a surprise mid-apply. The apply download is
-wrapped in the same hasher for free, catching bit-rot between the two phases.
-
-**Cancel is honest, and says which kind it was.** `cancel()` never throws and never
-lies: it sets `cancel_requested`, fires the in-process `AbortController`, and
-publishes SSE. Two outcomes, deliberately worded differently — before the first
-destructive write, `cancelled` with `meta.destructive: false` and the service
-restarted if we stopped it; after a `receiveStream` began, `cancelled` with
-`meta.partialWrite` and a fixed sentence saying that volume holds partial data. The
-service is then **left stopped on purpose**: we never start a service on a
-half-written volume. A second cancel on a row whose `cancel_requested_at` is older
-than ~2 min force-terminals it with `meta.forced` and *identical* partial-data
-wording, which is also what unblocks project deletion on a wedged row.
-
-**Capture is bounded exactly like restore.** The #434 fix initially landed on the
-restore half only, which left `streamPath` on a flat 1h wall clock — so a volume whose
-*restore* was allowed six hours could not be *backed up* at all, and a wedged `tar -c`
-still burned the full hour before anyone heard. Both directions now go through one
-`awaitHelperExit` and one pair of defaults (`DEFAULT_HELPER_IDLE_MS` 10 min,
-`DEFAULT_HELPER_TIMEOUT_MS` 6h); `StreamPathOpts` declares `idleTimeoutMs` and
-`timeoutMs` instead of the old `as ExecuteCommandOpts` cast, which was reading an
-option nothing declared — the same shape as the D5 bug in this pass. `bare.ts`
-forwards `timeoutMs` and has no idle equivalent on purpose: its channel closes when
-the SSH connection dies, which is the bound the docker helper had to build itself.
-
-**One reap, not four.** `withHelper` (create → run → always remove) and
-`handOffHelper` (remove only if the hand-off throws, for helpers whose output
-outlives the call, i.e. `streamPath` → `demuxContainerStream`) replace four
-hand-copied create/`finally`-remove scaffolds. `AutoRemove` is off deliberately — it
-races `/wait` and never fires for a container that failed before starting — so every
-helper must be reaped by us, and four independent copies of that reap is exactly how
-one of them came to be the one that didn't.
+Every item was re-verified against the working tree on 2026-08-20, after the
+critical-defect pass. Line numbers are from that check.
 
 ---
 
-## Deliberate omissions — decided, not forgotten
+## Capture
 
-- **`startupTimeoutMs` is gone** from `RestoreOpts`, not implemented. It was
-  dropped by `producers/volume.ts` and read by no executor; honoring it means
-  building a post-restore start probe, which is a feature. `OpenshipReadiness` is
-  its home when it lands.
-- **`verifyOnPrepare` is policy-level, not per-request.** `payloadConfig.verifyOnPrepare`
-  (default `true`) downgrades verification to apply-time-only and stamps
-  `integrity: "deferred"`. A per-request flag would be the one an operator clicks
-  past on the run that matters. The cost it buys out of is one extra full read, so
-  the run reports `verifiedBytes` and elapsed — visible rather than mysterious.
-- **`PutOpts.sha256` is populated only where the bytes are buffered** (the manifest
-  put), plus a `local.put` digest gate before the atomic rename and a `PutResult.etag`
-  cross-check when the etag is sha256-shaped. A streaming upload can't know its digest
-  before it finishes, so a general pre-declared hash isn't available. S3's
-  `ChecksumSHA256` was deliberately NOT added — it would tie the contract to one
-  provider's trailer support while the end-to-end check already runs on our side.
-- **`custom_command` backfill can't rescue every run.** `restore-command-backfill.ts`
-  re-derives `metadata.restoreCommand` from the owning policy at boot, idempotently.
-  A run whose policy was deleted (`SET NULL`, so history outlives the schedule) is
-  unrecoverable; those ids are logged every boot rather than swallowed, because the
-  alternative is the operator discovering it at the one moment it matters.
-- **Mail policy retention still stores null-on-omission** (`mail.controller.ts`,
-  ~1339, comment-flagged there). It's inert today because `prunePolicy` skips
-  mail-server policies outright, but omitted and explicit-null have to be told apart
-  before mail retention can run.
+### The image is not captured
 
-## Retention, and what NULL means now
+`serviceImage` in the manifest is a tag STRING (`common/manifest.ts:20`, `:33`;
+`types.ts:548`), read off the service row (`backup.orchestrator.ts:370`, `:496-501`).
+Nothing calls `docker save`, and `PayloadKind` has no entry for it
+(`types.ts:274-280`). A locally built image that was never pushed is therefore
+unrestorable even with perfect volumes.
 
-`createPolicy` wrote `retainCount: null, retainDays: null` — the only two fields on
-that insert with neither an API nor a column default — so `prunePolicy` short-circuited
-on "no retention configured" and every API- or MCP-created policy kept everything
-forever, while the same policy created in the dashboard (whose form defaults to 7)
-pruned normally. Now: `DEFAULT_RETAIN_COUNT` (7, shared with the form) is a **column**
-default plus an API default, and migration `0096` backfilled rows where both were
-NULL. `retainDays` alone is still a complete config and does not get a count bolted on.
+The native primitive already exists outside this module — `runtime/docker.ts:3540-3554`
+and `runtime/image-transfer.ts`, used by `migration/direct-transfer.ts:366` — so this
+is a producer wrapping `docker save` / `docker load`, not new plumbing. Needs an
+`image` payload kind, the producer, registration in `backup/index.ts`, restore
+wiring, and 9 locale strings. The dialog no longer needs touching to OFFER it —
+`PolicyEditor.tsx` derives its cards from `operatorSelectableKinds()`, so a new kind
+appears with its catalog label and its own `configKeys` as controls; the locale keys
+are what turn that into translated copy.
 
-That backfill is what makes both-NULL unambiguous: it can only mean *the operator
-asked for unlimited*. So there is deliberately **no** `DEFAULT_RETAIN_COUNT` fallback
-inside `prunePolicy` — it would override an explicit choice, and it is unreachable
-from the sweep anyway, because `iterateEnabledForRetention` filters those rows out
-(they aren't visited, so there's no daily warning about a deliberate choice).
+### Capture cannot be cancelled
 
-The sweep used to walk `listEnabledScheduled()` (`cron_expression IS NOT NULL`) on
-the theory that a cron-less policy is manual-only. But `trigger_on_pre_deploy` and
-the inbound webhook both produce runs automatically with no cron, so those policies
-grew without a ceiling *even with `retain_count` explicitly set* — the one case where
-the operator had asked for one. Retention now selects on "enabled + retention
-configured", cron irrelevant; `listEnabledScheduled` stays the scheduler's query.
-Every skip is logged.
+There is no `POST /backup-runs/:runId/cancel`. `backup.routes.ts:30-51` is the whole
+route table and line 49 is the only cancel, for restores. `createAbortWatch`
+(`executors/docker.ts:124`) has exactly ONE call site — inside `receiveStream`, the
+restore extract.
 
----
+Capture has no signal to join: `StreamPathOpts` and `ProducerOpts`
+(`types.ts:337-374`) carry no `signal`; the only `AbortSignal` fields in the module
+are restore-side. `backup_run` has no cancel columns at all (`schema/backup.ts:216-295`;
+the trio is on `backupRestore` at `:358-360`). The only thing that "cancels" a run
+today is a DB-only status flip in `project-teardown.ts:542-552`, whose own comment
+says there is no worker-side abort signal. (The RESTORE half of that loop now goes
+through `restoreOrchestrator.cancel`, which does have one — capture is what is left.)
 
-## What the tests actually prove
+Needs: cancel columns on `backup_run`, the route + controller + an orchestrator
+`cancel()`, a `signal` on `StreamPathOpts`/`ProducerOpts` threaded into `streamPath`
+so capture joins `createAbortWatch`, and a UI entry point.
 
-Unit suites under `../../test/modules/backups/` fake the storage backend and the
-executor, which is precisely why #434 survived a green run: neither fake could hang,
-and neither had a container to miss. So the guarantees above are pinned by one
-real-daemon test, `../../test/e2e/backup-volume-roundtrip.e2e.test.ts` — capture a
-volume, empty the volume, restore, assert the tree and the bytes. It runs in the
-opt-in suite (`bun run --cwd apps/api test:e2e`, `RUN_DOCKER_E2E=1` in CI's
-`e2e-docker` job) and it is the only test that drives `backupOrchestrator.execute`
-and `restoreOrchestrator.beginPrepare`/`apply` through real archives, a real
-`alpine:3` helper and a real destination on disk. It asserts the sha256 recorded at
-capture is the one prepare recomputes from the destination's bytes
-(`meta.integrity === "sha256"`), restores #434's exact shape (a service row with no
-container: nothing stopped, nothing started), and diffs `listContainers({all:true})`
-across the run so a leaked helper fails the test.
+### No upload progress, and `uploading` stays out of the idle sweep
 
-It initializes the real global platform (`initPlatform(resolvePlatformConfig())`),
-unlike the rollback E2Es beside it which fake that seam — the orchestrators resolve
-their executor through it, and a stand-in would decide the thing under test. Its
-destination is a tmpdir rather than the default `BACKUP_LOCAL_ROOT`; the root and
-deny-list rules are create-time gates in `destination.service.ts`, covered by
-`test/modules/backups/local-destination-path.test.ts`.
+The idle predicate is `preparing | snapshotting | verifying`
+(`packages/db/src/repos/backup.repo.ts`); `uploading` is reachable only through the 6h
+absolute ceiling. Deliberate, because nothing heartbeats mid-stream:
+`HashingPassthrough` (`common/sha256-stream.ts:16-47`) has no progress callback and
+its byte count is readable only via `summary()`, which throws before the stream ends;
+`PutOpts` (`types.ts:450-464`) has no `onProgress`, so a destination cannot report
+upward (S3 tracks `httpUploadProgress` into a local counter only); and the
+orchestrator writes `bytesTransferred` only at artifact boundaries.
 
-The timeout behaviour itself can't be proven against a real daemon — you cannot ask
-one to hang on demand — so it is pinned by a matched pair of fake-timer suites in
-`packages/adapters/test/`: `backup-receive-stream-timeout.test.ts` (restore, 11 cases)
-and `backup-stream-path-timeout.test.ts` (capture, 10 cases), over one shared
-scriptable helper double (`test/helpers/docker-helper-harness.ts`). Both assert the
-same four properties from their own direction — silence bounded at the caller's
-window *and* at the shared 10-minute default, traffic explicitly **not** bounded (a
-40s transfer against a 5s idle window must survive), the ceiling still enforced while
-bytes flow, and the helper reaped on every path including a throw before hand-off.
-That the capture suite passes `idleTimeoutMs`/`timeoutMs` as plain `StreamPathOpts` is
-itself the regression test for the removed cast.
+One change buys both halves: a throttled progress signal that writes
+`bytesTransferred` and bumps `lastEventAt` mid-upload, which lets `uploading` back
+into the idle branch and gives the UI real progress at the same time.
 
-**CI triggers, split by cost.** `e2e-docker` is a two-scope matrix (`E2E_SCOPE` in
-`apps/api/vitest.e2e.config.ts`): `fast` — every daemon-level and full-cycle case,
-~5 min — runs on every PR and push; `heavy` — `rollback-build-restore` alone, ~225s
-cold because it pulls a Node base image and runs a real build, with
-`fileParallelism: false` holding the suite up meanwhile — runs on `workflow_dispatch`,
-the nightly `schedule`, and `v*` tags, so a release is proven restorable before it
-ships. `ci.yml` also gained a `concurrency` group (PR pushes cancel their
-predecessor; main and tags run to completion) and a Docker Hub login guarded on a
-secret that does not exist yet — hosted runners share outbound IPs, so anonymous
-pulls hit `toomanyrequests` as a function of strangers' traffic and it reads as a
-flaky rollback test. There is deliberately **no** `paths:` filter: these are required
-checks, and a path-filtered required check never reports on a PR it excluded, leaving
-it unmergeable with no visible reason.
+### A single artifact past ~281 GiB still cannot complete on S3
+
+`partSizeFor(undefined)` returns the 32 MiB unknown-size part size
+(`destinations/s3.ts`), and against the 9,000-part budget that is a ~281 GiB ceiling
+for any stream whose size we do not know — which is every database dump. It is now
+ENFORCED EARLY (`partLimitCeiling` + the abort in `put`) with a message naming the
+limit, instead of failing at `CompleteMultipartUpload` after transferring every byte,
+and the reach was doubled from ~140 GiB at unchanged in-flight memory.
+
+Going further trades resident memory for reach, which this module refuses — an
+unbounded byte plane is what OOM'd the API in #633. Raising it properly means getting
+a size estimate for dumps (S3 needs a uniform part size, so it cannot be renegotiated
+mid-upload) or splitting a capture across multiple objects, which changes the artifact
+shape and wants a decision before code.
 
 ---
 
-## Migrations from this pass
+## Restore
 
-- `0094_backup_restore_meta`
-- `0095_backup_restore_cancel` — `cancel_requested`, `cancel_requested_at`, `cancelled_at`
-- `0096_backup_policy_retention_defaults` — column default + both-NULL backfill
+### Atomic restore — into a new volume, then swap
 
-`bun run db:generate` is unusable in this repo (the drizzle snapshots stop at
-`0060_snapshot.json`), so these are hand-authored SQL with a hand-edited
-`_journal.json`, and every statement is separated by `--> statement-breakpoint` —
-PGlite rejects multi-command prepared statements (`42601`), which is how the test
-suite catches a missing breakpoint immediately.
+Scoped down to the FILESYSTEM kinds. `clearTarget` destroys in place on every
+executor: `executors/docker.ts` (a prelude in the SAME helper that then extracts into
+the bind-mounted volume), `executors/bare.ts` (`rm -rf` then `tar -x`), and
+`executors/cloud.ts`, which forwards it to Oblien's `transfer.upload` against the live
+destination. Whether it is asked for at all is now the policy's decision per artifact
+(`shouldClearTarget`), so a `path` restore merges by default and only a `volume`
+replaces — but when it IS asked for, the delete still precedes the extract.
+
+The wipe-and-lie window is closed on BOTH executors — each proves its decompressor
+exists before clearing anything (exit 90, "your data is untouched") — and a failed
+extract no longer restarts the service on the emptied volume. But that is not
+atomicity: a mid-extract failure leaves partial data. The module is honest about it
+(`PartialWriteError`, `partialWrite`, `serviceLeftStopped`).
+
+Real atomicity for those kinds means restoring into a fresh volume and swapping it into
+the service, which touches the deploy path — a feature, deliberately not smuggled in
+here.
+
+**Postgres is no longer part of this item.** An earlier draft of this file claimed
+`pg_restore --clean` was already transactional; the flags said otherwise, and the
+measured behaviour was worse than "not atomic". With `--clean --if-exists --no-owner`
+alone, a `DROP TABLE` blocked by a dependent view was skipped and the archive's rows
+were loaded ON TOP of the live ones — one table holding a merge of two points in time,
+reported as `errors ignored on restore: 3`. `producers/pg-dump.ts` now restores under
+`--single-transaction --no-acl`, so that same failure aborts with the database bit-for-bit
+unchanged. See the comment there for why this cannot regress a restore that used to
+work, and why `--no-acl` is required rather than incidental.
+
+What remains, per engine, is engine-limited rather than a flag we are not passing:
+`mysql` replaying a dump commits each DDL statement as it goes (MySQL has no
+transactional DDL), and `mongorestore --drop` drops and reloads per collection. Neither
+can be made all-or-nothing from the client side; both would need the restore-into-a-copy
+shape above.
+
+### Pre-restore safety capture
+
+Nothing implemented; the restore FSM has no such phase, and `backup_restore` carries
+no safety-run column (`schema/backup.ts:300-365`).
+
+The natural shape reuses the capture path, which means it needs the source run's
+policy — and the design blocker is still live: the destination FK is
+`onDelete: "set null"` (`schema/backup.ts:56-60`) and policies are soft-deletable
+(`:183`), so a historical run can outlive the policy that would be reused. Design
+questions first: does a restore block on a fresh backup, what happens when the
+destination is full, what happens when the policy is gone.
+
+### No post-restore start probe
+
+`startupTimeoutMs` appears exactly once in the repo and it is prose — the doc comment
+above `RestoreOpts` (`types.ts:330`), whose interface declares only `clearTarget` and
+`signal`. Honoring it means building the probe; `OpenshipReadiness` is its home.
+
+## Detection
+
+### mysql detection still requires credentials in env
+
+`producers/mysql-dump.ts` gates on `MYSQL_ROOT_PASSWORD ?? MYSQL_PASSWORD`.
+Deliberate, and the last of its kind: there is no credential-free local path the way
+postgres has the container's unix socket (`trust` in the official image), and relaxing
+it would turn a working volume snapshot into a failing dump. With container env now
+layered in, an adopted MariaDB reaches its password anyway.
+
+*(mongo and redis no longer differ from postgres — all four now require a container
+they can actually exec in, via `common/exec-target.ts`.)*
 
 ---
 
-## Reference
+## Data plane / integrity
 
-- Backup orchestrator: `backup.orchestrator.ts` · restore: `restore.orchestrator.ts`
-- Retention sweep: `retention-prune.ts` · D5 backfill: `restore-command-backfill.ts`
-- Executors: `packages/adapters/src/backup/executors/{docker,bare}.ts`
-- Producers: `packages/adapters/src/backup/producers/{volume,custom-command,...}.ts`
-- Destination path rules: `../backup-destinations/destination.service.ts`
-- Schema: `packages/db/src/schema/backup.ts`
+### A same-host source and destination could skip the API entirely
+
+The one narrow case the architecture review left open. When a source host and an
+`sftp` / `openship_server` destination resolve to the SAME server, the dump could run
+there writing to that host's own filesystem — no credential travels, because the host
+writes to its own disk — recorded with a new `integrity: "host-reported"` value
+alongside the existing `sha256` / `size-only` / `deferred` vocabulary.
+
+Nothing exists. `host-reported` appears nowhere in code; the vocabulary is one ternary
+in `restore.orchestrator.ts`. `openship_server` resolves to the plain SFTP
+implementation with no locality check, and no source-vs-destination server comparison
+exists anywhere in the module. The `resolvePlan` worth imitating
+(`volume-transfer.ts`) keys off executor reference identity, not destination rows.
+
+One cell, opt-in, not a refactor. Explicitly **not** the general "move the byte plane
+out of the API" proposal — that was reviewed and rejected: `presignPut` signs S3's
+single 5 GB PUT and cannot carry a 110 GB dump, it reaches one destination kind of
+four (`local` is impossible, `sftp`/`openship_server` would ship a root-equivalent
+private key to every source box), and a host-computed digest loses INDEPENDENCE, since
+a truncating upload downstream of a tee is invisible to a digest computed upstream.
+
+---
+
+## Deferred, with the reason
+
+### `docker-edge-executor.ts` is the last `modem.demuxStream` consumer
+
+`packages/adapters/src/system/docker-edge-executor.ts:144`. The blocker is still
+literally true: `outStream`/`errStream` are bare PassThroughs with only `data`
+listeners and `run()`'s only error listener is on the SOURCE stream, while the
+replacement's failure path destroys `stdout` with the cause and takes `onError` as an
+optional 4th parameter that nothing here would supply. Converting today would destroy
+`outStream` with an Error no one listens for, on a path that runs during every deploy.
+
+It has no backpressure problem of its own — the output is a few lines of
+`openresty -t` fully consumed into strings. Give that path an error channel first, then
+convert.
+
+### Mail policies with both retention columns NULL are never pruned
+
+`prunePolicy` reads both-NULL as "the operator asked for unlimited" and skips, with no
+`DEFAULT_RETAIN_COUNT` fallback (`retention-prune.ts:82-88`) — correct for project
+policies, because migration 0096 backfilled them and made that reading unambiguous.
+0096 is still the only retention backfill (the journal now ends at 0108), and there is
+no boot repair.
+
+The affected set is narrower than an earlier draft of this file claimed: 0096's
+`UPDATE` was table-wide and `mail_server_id` has been on `backup_policy` since
+`0026_mail_backup_source.sql`, so pre-0096 mail rows WERE caught. What remains is mail
+policies written through the mail endpoint AFTER 0096 but BEFORE the null-on-omission
+fix, because that endpoint passed `retainCount` explicitly and so bypassed the column
+default.
+
+Not backfilled on purpose: unlike 0096 this would start deleting backups on rows an
+operator may have left alone deliberately, so it wants an explicit call rather than a
+migration.

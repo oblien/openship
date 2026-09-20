@@ -23,11 +23,15 @@ const mocks = vi.hoisted(() => ({
   resolveTargetPlatform: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // The orchestrator releases the runtime it resolved when the run ends; these
+  // stubs hold no transport, so the release is a no-op here.
+  disposeRuntime: () => {},
+  disposePlatform: () => {},
   resolveTargetPlatform: mocks.resolveTargetPlatform,
 }));
 
-import { stepRequestSSL } from "../../../src/modules/mail/mail.service";
+import { stepRequestSSL } from "@repo/platform/engine/modules/mail/mail.service";
 
 function fakeExecutor() {
   const commands: string[] = [];

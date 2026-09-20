@@ -51,6 +51,9 @@ export interface AuditEventFilters {
   resourceId?: string;
   /** Call surface: "dashboard" | "mcp" | "cli" | "api" | "webhook" | "system". */
   source?: string;
+  /** One client of that surface — `oauth:<clientId>` / `pat:<tokenId>`. The
+   *  per-agent feed: "everything THIS assistant did", not just "an assistant". */
+  sourceClientId?: string;
   from?: Date;
   to?: Date;
   /** Free text over event type, resource id/name and actor name/email. */
@@ -73,6 +76,7 @@ export function createAuditEventRepo(db: Database, settings?: AuditRecordingSwit
     if (f?.resourceType) filters.push(eq(auditEvent.resourceType, f.resourceType));
     if (f?.resourceId) filters.push(eq(auditEvent.resourceId, f.resourceId));
     if (f?.source) filters.push(eq(auditEvent.source, f.source));
+    if (f?.sourceClientId) filters.push(eq(auditEvent.sourceClientId, f.sourceClientId));
     if (f?.from) filters.push(gte(auditEvent.createdAt, f.from));
     if (f?.to) filters.push(lte(auditEvent.createdAt, f.to));
     if (f?.q) {
@@ -229,6 +233,37 @@ export function createAuditEventRepo(db: Database, settings?: AuditRecordingSwit
         .where(where)
         .groupBy(auditEvent.source);
       return rows.map((r) => ({ source: r.source, count: Number(r.count) }));
+    },
+
+    /**
+     * Row count per source client — the option list for "which agent". NULLs are
+     * dropped rather than grouped: an unattributed row is not a client, and the
+     * partial index only covers the non-null rows anyway.
+     *
+     * Bounded by `limit` because the group-by is over an unbounded key space (a
+     * dynamically-registered OAuth client is a new value), and the filter bar
+     * cannot render an unbounded list. Busiest first, so the cut drops the
+     * quietest clients rather than an arbitrary set.
+     */
+    async countBySourceClient(
+      organizationId: string,
+      filters?: AuditEventFilters,
+      limit = 20,
+    ): Promise<{ sourceClientId: string; count: number }[]> {
+      const where = and(
+        ...buildFilters(organizationId, filters),
+        sql`${auditEvent.sourceClientId} IS NOT NULL`,
+      );
+      const rows = await db
+        .select({ sourceClientId: auditEvent.sourceClientId, count: sql<number>`count(*)` })
+        .from(auditEvent)
+        .where(where)
+        .groupBy(auditEvent.sourceClientId)
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit);
+      return rows
+        .filter((r): r is { sourceClientId: string; count: number } => !!r.sourceClientId)
+        .map((r) => ({ sourceClientId: r.sourceClientId, count: Number(r.count) }));
     },
 
     /**

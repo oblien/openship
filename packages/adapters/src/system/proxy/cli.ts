@@ -28,6 +28,7 @@ export {
   // The edge container's name + the one parse of "why isn't it running" — the CLI
   // needs both so it stops hardcoding the name and re-implementing the parse.
   EDGE_CONTAINER_NAME,
+  isOurEdgeContainer,
   edgeFailureReason,
   edgeIsBroken,
   edgeCrashReason,

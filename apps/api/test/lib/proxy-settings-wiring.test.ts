@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import { PROXY_DIRECTIVES, sanitizeProxySettings, type ProxyDirectiveSpec } from "@repo/core";
-import { UpdateProjectBody } from "../../src/modules/projects/project.schema";
+import { UpdateProjectBody } from "@repo/contracts";
 
 /**
  * OpenResty inherits nginx's defaults, so an upload over 1 MB is a 413 and anything
@@ -16,8 +16,7 @@ import { UpdateProjectBody } from "../../src/modules/projects/project.schema";
  * would save successfully and then silently do nothing.
  */
 
-const validate = (proxy: unknown) =>
-  Value.Check(UpdateProjectBody, { routingConfig: { proxy } });
+const validate = (proxy: unknown) => Value.Check(UpdateProjectBody, { routingConfig: { proxy } });
 
 describe("ProxySettings — the API schema and the renderer agree", () => {
   const GOOD = [
@@ -35,19 +34,21 @@ describe("ProxySettings — the API schema and the renderer agree", () => {
   it("accepts every valid shape, and the renderer keeps it", () => {
     for (const proxy of GOOD) {
       expect(validate(proxy), `schema rejected ${JSON.stringify(proxy)}`).toBe(true);
-      expect(sanitizeProxySettings(proxy), `renderer dropped ${JSON.stringify(proxy)}`).toEqual(proxy);
+      expect(sanitizeProxySettings(proxy), `renderer dropped ${JSON.stringify(proxy)}`).toEqual(
+        proxy,
+      );
     }
   });
 
   const BAD = [
-    { clientMaxBodySize: "25" },        // no unit — nginx would read it as bytes
-    { clientMaxBodySize: "25mb" },      // not an nginx size suffix
-    { clientMaxBodySize: "0m" },        // leading zero excluded by the regex
+    { clientMaxBodySize: "25" }, // no unit — nginx would read it as bytes
+    { clientMaxBodySize: "25mb" }, // not an nginx size suffix
+    { clientMaxBodySize: "0m" }, // leading zero excluded by the regex
     { clientMaxBodySize: "-5m" },
     { clientMaxBodySize: "25m; root /etc" }, // the injection this guards against
-    { proxyReadTimeout: "300" },        // no unit
-    { proxyReadTimeout: "300ms" },      // not one of the accepted time forms
-    { clientMaxBodySize: 25 },          // wrong type
+    { proxyReadTimeout: "300" }, // no unit
+    { proxyReadTimeout: "300ms" }, // not one of the accepted time forms
+    { clientMaxBodySize: 25 }, // wrong type
   ];
 
   it("rejects malformed values at the API, and the renderer drops them too", () => {
@@ -55,7 +56,8 @@ describe("ProxySettings — the API schema and the renderer agree", () => {
       expect(validate(proxy), `schema accepted ${JSON.stringify(proxy)}`).toBe(false);
       // Belt and braces: even if one slipped past the schema, nothing reaches config.
       expect(
-        sanitizeProxySettings(proxy)?.clientMaxBodySize ?? sanitizeProxySettings(proxy)?.proxyReadTimeout,
+        sanitizeProxySettings(proxy)?.clientMaxBodySize ??
+          sanitizeProxySettings(proxy)?.proxyReadTimeout,
       ).toBeUndefined();
     }
   });
@@ -131,7 +133,9 @@ describe("ProxySettings — every directive in the table is wired end to end", (
       const proxy = { [spec.key]: badFor(spec) };
       expect(validate(proxy), `schema accepted bad ${spec.directive}`).toBe(false);
       expect(
-        sanitizeProxySettings(proxy)?.[spec.key as keyof ReturnType<typeof sanitizeProxySettings> & string],
+        sanitizeProxySettings(proxy)?.[
+          spec.key as keyof ReturnType<typeof sanitizeProxySettings> & string
+        ],
         `renderer kept bad ${spec.directive}`,
       ).toBeUndefined();
     }
@@ -145,7 +149,10 @@ describe("ProxySettings — every directive in the table is wired end to end", (
       for (const attack of attacks) {
         const proxy = { [spec.key]: attack };
         expect(validate(proxy), `schema accepted ${spec.directive}=${attack}`).toBe(false);
-        expect(sanitizeProxySettings(proxy), `renderer kept ${spec.directive}=${attack}`).toBeUndefined();
+        expect(
+          sanitizeProxySettings(proxy),
+          `renderer kept ${spec.directive}=${attack}`,
+        ).toBeUndefined();
       }
     }
   });
@@ -197,7 +204,7 @@ function registerRoutePayloads(src: string): string[] {
 }
 
 describe("ProxySettings — every project vhost writer carries them", () => {
-  const compose = source("../../src/modules/deployments/compose/deploy.service.ts");
+  const compose = source("../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
 
   it("resolves them ONCE per compose deploy, sanitized, off the project", () => {
     // Sanitized here rather than at the callers, because the row can also carry a
@@ -216,8 +223,130 @@ describe("ProxySettings — every project vhost writer carries them", () => {
   });
 
   it("spreads them on the live apply path too (a save must not need a redeploy)", () => {
-    const payloads = registerRoutePayloads(source("../../src/lib/route-apply.service.ts"));
+    const payloads = registerRoutePayloads(source("../../../../packages/platform/src/engine/lib/route-apply.service.ts"));
     expect(payloads).not.toHaveLength(0);
     for (const p of payloads) expect(p).toMatch(/\.\.\.\(proxy \? \{ proxy \} : \{\}\)/);
+  });
+});
+
+/**
+ * The compiled `vercel.json` rules travel the same way the tunables do, and for the same
+ * reason — `registerRoute` REPLACES the vhost, so a writer that omits them deletes them.
+ * Pinned as a source contract for the same reason as above: driving these paths needs a
+ * runtime and a docker host, and the failure mode is a NEW register site that forgets the
+ * spread. Behaviour is covered in `project-routing-fields.test.ts` (what compiles) and in
+ * the adapters' `route-registration.test.ts` (what reaches `registerRoute`).
+ */
+describe("compiled vercel.json rules — every project vhost writer carries them", () => {
+  const compose = source("../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
+
+  it("compiles them ONCE per compose deploy", () => {
+    // Was recompiled per route, per service, plus again for the fan-out. Identical input
+    // every time, so the only thing the repetition bought was more work.
+    expect(compose.match(/compileProjectRoutingFields\(/g)).toHaveLength(1);
+  });
+
+  // The gap this closes: a containerized compose service routes through runDeployPipeline,
+  // whose `routeOptions` carried webhook + proxy only — so a project's redirects applied on
+  // every deploy mode EXCEPT a proxied compose service.
+  it("carries them in the shared routeOptions, so the PROXIED service path gets them", () => {
+    const options = compose.slice(
+      compose.indexOf("const serviceRouteOptions"),
+      compose.indexOf("let routeContext"),
+    );
+    expect(options).toContain("...routingFields");
+    expect(compose).toContain("{ routeOptions: serviceRouteOptions }");
+  });
+
+  it("spreads them into every direct compose registerRoute payload", () => {
+    const payloads = registerRoutePayloads(compose);
+    expect(payloads.length).toBeGreaterThanOrEqual(3);
+    for (const p of payloads) {
+      // Either the shared compile, or — for the composite — the topology-aware one it does
+      // itself with the backend it resolved, which is the richer superset and must win.
+      expect(p, `a compose registerRoute payload drops the vercel.json rules:\n${p}`).toMatch(
+        /\.\.\.routingFields|r\.redirects/,
+      );
+    }
+  });
+
+  it("carries them on the single-app / static deploy path, and reports what it refused", () => {
+    const pipeline = source("../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts");
+    expect(pipeline).toContain("compileProjectRoutingFields(project.routingConfig");
+    // This is the one path with no topology-aware pass behind it, so a refused rule is
+    // genuinely not live and the deploy log has to say so.
+    expect(pipeline).toContain("vercel.json rule not applied");
+  });
+});
+
+/** The options object of every `reconcileProjectRoutes(` call in `src`, brace-balanced. */
+function reconcileOptions(src: string): string[] {
+  const out: string[] = [];
+  const call = "reconcileProjectRoutes(";
+  for (let at = src.indexOf(call); at !== -1; at = src.indexOf(call, at + 1)) {
+    const open = src.indexOf("{", at);
+    if (open === -1) continue;
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}" && --depth === 0) {
+        out.push(src.slice(open, i + 1));
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The deploy paths write vhosts through `registerRoute`; the LIVE paths write them by
+ * handing `RouteRegister`s to `reconcileProjectRoutes`, which the payload scan above
+ * cannot see. That is how three of them kept rewriting a project's vhost without its
+ * vercel.json rules — a service edit, a webhook-domain toggle and the migration path
+ * fan-out each DELETED on save what a deploy had just installed.
+ *
+ * The writers are discovered from the tree rather than listed, so a new one that forgets
+ * fails here instead of silently becoming the fourth. File-level on purpose:
+ * `project-route.service` also builds CLOUD registers, and those ignore these fields
+ * (Oblien's edge compiles its own table).
+ */
+describe("compiled vercel.json rules — the live reconcile writers carry them too", () => {
+  const roots = [new URL("../../src/", import.meta.url), new URL("../../../../packages/platform/src/engine/", import.meta.url)];
+  const liveWriters = roots.flatMap(SRC => readdirSync(SRC, { recursive: true, encoding: "utf8" })
+    .map((entry) => entry.replaceAll("\\", "/"))
+    .filter((rel) => rel.endsWith(".ts") && !rel.endsWith(".test.ts"))
+    // The dispatcher itself — it receives the registers, it doesn't build them.
+    .filter((rel) => rel !== "lib/route-apply.service.ts")
+    .map((rel) => [rel, readFileSync(new URL(rel, SRC), "utf8")] as const)
+    .filter(([, src]) => reconcileOptions(src).some((opts) => opts.includes("registers"))));
+
+  it("still sees every live writer (a rename must not blind the scan)", () => {
+    const found = liveWriters.map(([rel]) => rel);
+    for (const rel of [
+      "modules/domains/project-route.service.ts",
+      "modules/domains/routing-apply.service.ts",
+      "modules/projects/project-git.operations.ts",
+      "modules/services/service.service.ts",
+    ]) {
+      expect(found, `${rel} no longer matches the live-writer scan`).toContain(rel);
+    }
+  });
+
+  it("compiles the project's rules in each of them", () => {
+    expect(liveWriters.length).toBeGreaterThanOrEqual(4);
+    for (const [rel, src] of liveWriters) {
+      expect(src, `${rel} rewrites a project vhost without its vercel.json rules`).toContain(
+        "compileProjectRoutingFields(",
+      );
+    }
+  });
+
+  it("CONCATENATES the fan-out's own path locations with the compiled ones", () => {
+    // Spreading the compiled fields over a fan-out register would ASSIGN over its
+    // per-path upstreams: the domain keeps serving, with `/v3` quietly pointing at the
+    // root service instead of the API. Same order as the deploy path — fan-out first.
+    expect(
+      source("../../../../packages/platform/src/engine/modules/domains/routing-apply.service.ts").replace(/\s+/g, ""),
+    ).toContain("...(reg.proxyLocations??[]),...(routingFields.proxyLocations??[])");
   });
 });

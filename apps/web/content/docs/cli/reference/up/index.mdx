@@ -1,0 +1,53 @@
+---
+title: up
+description: Commands, arguments, and options for openship up.
+cliGroup: openship up
+---
+
+See the [CLI overview](/docs/cli) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship up
+
+Start Openship as a persistent service (boot + auto-restart); --foreground to run attached
+
+```text
+openship up [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--port <port>` | API port to listen on (default: 4000, or the next free port if it's taken) |
+| `--data-dir <dir>` | Directory for the embedded database |
+| `--dashboard-port <port>` | Dashboard port (default: 3001, or the next free port if it's taken) |
+| `--no-ui` | Run the API only — don't download/serve the dashboard |
+| `--ui-version <tag>` | Dashboard release tag to run (default: this CLI's version) |
+| `--image-version <tag>` | Compose mode: image tag to pull for api/dashboard/edge (default: this CLI's version, or the OPENSHIP_VERSION env var). Use a known-good tag if a release's images aren't in the registry yet. |
+| `-f, --foreground` | Run attached in this terminal instead of as a background service |
+| `--dry-run` | Preview only: print what `up` would install (method, ports, files, commands, the service definition / compose file) and exit WITHOUT changing this machine |
+| `--public-url <url>` | Serve remotely at this public URL (VPS): binds the dashboard to all interfaces, proxies the API same-origin, and requires login |
+| `--trust-proxy` | Trust the X-Real-IP set by a reverse proxy in front (the proxy MUST overwrite X-Real-IP with the real client IP, e.g. `proxy_set_header X-Real-IP $remote_addr`, and the app port MUST be firewalled so only the proxy can reach it; enables per-client rate limiting) |
+| `--host <addr>` | Bind the dashboard to this interface so an upstream reverse proxy (or another LAN host) can reach it — e.g. 0.0.0.0 or a LAN IP like 192.168.1.50. Default 127.0.0.1. The API stays on loopback (the dashboard proxies to it). A concrete IP auto-trusts that browser origin for login; for 0.0.0.0 or a domain also pass --public-url (or set OPENSHIP_EXTRA_TRUSTED_ORIGINS) so login isn't rejected. |
+| `--managed-edge` | Managed edge: install OpenResty + a free Let's Encrypt cert on this box and route --public-url's domain to the dashboard (no reverse proxy needed) |
+| `--acme-email <email>` | Contact email for Let's Encrypt certificates (managed edge) |
+| `--from-source` | Preview: build + run Openship from source (a branch) instead of a published release — runs attached |
+| `--ref <branch>` | Git branch/tag/sha to build with --from-source (default: main) |
+| `--source <path>` | Build from an existing local Openship checkout instead of cloning |
+| `--repo <url>` | Git remote to clone for --from-source (default: oblien/openship) |
+| `--compose` | Install via Docker Compose using the published images (postgres + redis + api + dashboard + edge on :80/:443). Default when Docker is available on Linux. |
+| `--bare` | Install as the bare process service (embedded DB, no Docker) instead of Compose |
+| `--mail` | Install as Openship Mail: the dashboard opens on the mail control plane (mail servers, domains, mailboxes) instead of the full platform. Same install, same binary — a default shell, not a restriction. Anyone can switch back under Settings → General, and an admin can change the box-wide default under Settings → Instance. |
+| `--no-host-control` | Harden: don't give the control plane a channel to this machine's OS. No host SSH key is generated or mounted, host operations refuse, and this box stops being offered as a deploy target. Recommended when this box only manages REMOTE servers — it loses :80/:443 takeover, the host terminal and host port scans. The Docker socket is still mounted (deployments need it), so this is defense in depth, not isolation. |
+| `--host-ssh-host <addr>` | Compose mode: address the api container dials for host operations (default host.docker.internal, mapped to the docker host-gateway). Set this to the box's own LAN/bridge address when host-gateway doesn't reach the host — notably under rootless Docker. Preserved across re-runs. |
+| `--host-ssh-port <port>` | Compose mode: port the host's sshd listens on for host operations (default 22). Preserved across re-runs. |
+| `--host-ssh-user <name>` | Compose mode: the host account the api container logs in as for host operations. Normally left unset — provisioning authorizes a key and DIALS to find an account this host's sshd actually accepts (root when invoked as root, otherwise the invoking user, falling back to $SUDO_USER when a root login is refused). Set this when neither is the account you want, or when sshd's rules mean neither works: the named account is used as-is and never falls back, so it must be able to log in over SSH and should have passwordless sudo (host operations elevate per command). Preserved across re-runs. |
+| `--open-host-firewall` | Compose mode: if the api container can't reach this machine's SSH port, add the host firewall rule that allows it (scoped to the container subnet, ufw/firewalld only). Without this the blocked channel is reported and left alone. Not implied by --yes. |
+| `--edge <action>` | Compose mode: how to handle an existing proxy on :80/:443 — 'migrate' (import its sites into Openship's edge), 'takeover' (stop it; its sites stop serving), or 'cancel'. Default: prompt when interactive, else cancel. |
+| `--reset-secrets` | Compose mode: generate new secrets even though this install's data volume still exists. `up` normally refuses, because the database keeps the password it was created with and every stored environment variable was encrypted with the old BETTER_AUTH_SECRET — the password gets realigned, those variables do not. Use only when the original .env is genuinely gone. |
+| `--non-interactive` | Headless install: after the service starts, create the admin + register the domain from the flags below (no prompts). Alias: --yes. |
+| `--yes` | Alias for --non-interactive. |
+| `--admin-name <name>` | Admin display name (headless install) |
+| `--admin-email <email>` | Admin email — required for a headless install |
+| `--admin-password <password>` | Admin password (min 8). Prefer the OPENSHIP_ADMIN_PASSWORD env var to keep it out of shell history. |
+| `--domain-kind <kind>` | Headless install domain: byo \| custom \| free \| none (default: byo if --public-url set, else none) |
+| `--hostname <host>` | Domain/hostname for --domain-kind byo\|custom (or derived from --public-url) |
+| `--slug <slug>` | Free .opsh.io subdomain for --domain-kind free (box must already be Cloud-connected) |

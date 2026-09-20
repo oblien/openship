@@ -4,9 +4,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Archive, ExternalLink } from "lucide-react";
 import { MAX_ROLLBACK_WINDOW, DEFAULT_ROLLBACK_WINDOW } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useToast } from "@/context/ToastContext";
 import { useDeployment } from "@/context/DeploymentContext";
-import { projectsApi, backupsApi, getApiErrorMessage } from "@/lib/api";
+import { backupsApi } from "@/lib/api";
+import { useRollbackSettings } from "@/components/rollback/useRollbackSettings";
 import type { RollbackCapacityUI } from "@/lib/api/projects";
 import type { BackupPolicy } from "@/lib/api/backups";
 import { RollbackRetentionCards } from "@/components/rollback/RollbackRetentionCards";
@@ -18,7 +18,7 @@ import { PolicyEditor } from "@/components/backup/PolicyEditor";
  * The target step is where an operator decides WHICH MACHINE this project runs
  * on, so it's also where "how much of its history stays restorable on that
  * machine" belongs. The retention controls are the SAME component the project's
- * Backup tab renders — not a second copy — and backups are shown read-only with a
+ * Advanced tab renders — not a second copy — and backups are shown read-only with a
  * button that opens the existing PolicyEditor modal, so backup configuration keeps
  * living in exactly one place.
  *
@@ -44,22 +44,16 @@ export function RollbackBackupPanel({
 }) {
   const { t } = useI18n();
   const ts = t.deploy.targetStep;
-  const { showToast } = useToast();
   const { config, updateConfig } = useDeployment();
 
-  const [capacity, setCapacity] = useState<RollbackCapacityUI | null>(null);
+  const settings = useRollbackSettings(projectId, enabled);
+  const { capacity, togglingStrategy, savingWindow } = settings;
   const [policies, setPolicies] = useState<BackupPolicy[] | null>(null);
-  const [togglingStrategy, setTogglingStrategy] = useState(false);
-  const [savingWindow, setSavingWindow] = useState(false);
   const [editingBackup, setEditingBackup] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    const [cap, pol] = await Promise.all([
-      projectsApi.getRollbackCapacity(projectId).then((r) => r.data).catch(() => null),
-      backupsApi.listPolicies(projectId).then((r) => r.data ?? []).catch(() => []),
-    ]);
-    setCapacity(cap ?? null);
+    const pol = await backupsApi.listPolicies(projectId).then((r) => r.data ?? []).catch(() => []);
     setPolicies(pol);
   }, [projectId]);
 
@@ -71,7 +65,7 @@ export function RollbackBackupPanel({
   // pending choice in the same shape the card renders for a real project.
   const pendingCapacity: RollbackCapacityUI = {
     window: config.rollbackWindow ?? DEFAULT_ROLLBACK_WINDOW,
-    source: config.rollbackWindow == null ? "auto" : "explicit",
+    source: config.rollbackWindow == null ? "instance-default" : "explicit",
     explicit: config.rollbackWindow ?? null,
     snapshotSizeBytes: null,
     measuredAt: null,
@@ -91,15 +85,7 @@ export function RollbackBackupPanel({
       updateConfig({ rollbackStrategy: next });
       return;
     }
-    setTogglingStrategy(true);
-    try {
-      await projectsApi.update(projectId, { defaultRollbackStrategy: next });
-      await load();
-    } catch (err) {
-      showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackStrategyFailed), "error");
-    } finally {
-      setTogglingStrategy(false);
-    }
+    await settings.toggleStrategy();
   };
 
   const changeWindow = async (next: number) => {
@@ -109,15 +95,7 @@ export function RollbackBackupPanel({
       updateConfig({ rollbackWindow: clamped });
       return;
     }
-    setSavingWindow(true);
-    try {
-      await projectsApi.update(projectId, { rollbackWindow: clamped });
-      await load();
-    } catch (err) {
-      showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackHistoryFailed), "error");
-    } finally {
-      setSavingWindow(false);
-    }
+    await settings.changeWindow(clamped);
   };
 
   const preDeployOn = (policies ?? []).some((p) => p.enabled && p.triggerOnPreDeploy);
@@ -136,6 +114,9 @@ export function RollbackBackupPanel({
         <p className="mt-0.5 text-xs text-muted-foreground">{ts.rollbackHint}</p>
       </div>
 
+      {settings.error && <p role="alert" className="text-xs text-danger">{settings.error}{" "}
+        <button type="button" className="underline" onClick={() => void settings.reload()}>{t.deployments.retry}</button>
+      </p>}
       <RollbackRetentionCards
         strategy={strategy}
         capacity={effective}
@@ -144,6 +125,7 @@ export function RollbackBackupPanel({
         onChangeWindow={changeWindow}
         togglingStrategy={togglingStrategy}
         savingWindow={savingWindow}
+        readOnly={Boolean(projectId) && (settings.loading || !capacity)}
       />
 
       {projectId ? (

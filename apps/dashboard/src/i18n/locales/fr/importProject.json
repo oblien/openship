@@ -101,6 +101,10 @@
     "serverOnPort": "Serveur sur le port {port}",
     "serverPortNotSet": "Port du serveur non défini",
     "staticFromEdge": "Statique depuis l'edge",
+    "modeServer": "Serveur",
+    "modeWorker": "Worker",
+    "modeStatic": "Statique",
+    "workerModeDesc": "S'exécute en continu sans port ni URL publique — un consommateur de file, une tâche cron ou un bot.",
     "staticPathHint": "Servi en tant que fichiers statiques depuis l'edge — aucun processus ne s'exécute.",
     "buildSettingsTitle": "Paramètres de compilation"
   },
@@ -120,6 +124,7 @@
     "noneSet": "Aucune définie",
     "pasteEnv": "Coller .env",
     "uploadEnv": "Téléverser .env",
+    "downloadEnv": "Télécharger .env",
     "edit": "Modifier",
     "cancel": "Annuler",
     "saving": "Enregistrement...",
@@ -129,7 +134,7 @@
     "valuePlaceholder": "valeur",
     "dropHere": "Déposez le fichier .env ici",
     "noneTitle": "Aucune variable d'environnement",
-    "emptyHintEditing": "Cliquez sur « Ajouter une variable », utilisez « Coller .env », téléversez un fichier ou collez n'importe où à l'intérieur de cette zone",
+    "emptyHintEditing": "Collez un bloc .env n'importe où dans cette zone ou déposez-y un fichier .env.",
     "emptyHintReadonly": "Cliquez sur « Modifier » pour gérer les variables d'environnement",
     "pasteHint": "Collez un bloc .env complet n'importe où à l'intérieur de cette zone.",
     "addVariable": "Ajouter une variable",
@@ -141,6 +146,7 @@
       "interpolated": "Interpolée"
     },
     "toast": {
+      "downloadFailed": "Impossible de télécharger les variables d’environnement.",
       "title": "Variables d'environnement",
       "added": "{count} ajoutée(s)",
       "updated": "{count} mise(s) à jour",
@@ -204,9 +210,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Service avec état sur le cloud : les données résident sur le disque persistant de l'espace de travail (survivent aux redémarrages) mais ne sont ",
       "statefulWarnBold": "pas transférées d'une recompilation à l'autre",
-      "statefulWarnPart2": " sauf si les sauvegardes sont activées. Les montages de volumes Docker ne s'appliquent pas.",
+      "statefulWarnPart2": ". Sauvegardez et restaurez explicitement les données avant de remplacer l’espace de travail.",
       "volumeHint": "Volume nommé ou chemin de l'hôte → chemin du conteneur.",
-      "volumeCloudNote": "Sur le cloud, ces montages ne s'appliquent pas — les données persistent sur le disque de l'espace de travail (pas d'une recompilation à l'autre sans sauvegardes).",
+      "volumeCloudNote": "Openship Cloud ne prend pas en charge les montages de volumes persistants. Choisissez un serveur pour les charges qui nécessitent des volumes.",
       "sourcePlaceholder": "Source",
       "containerPathPlaceholder": "Chemin du conteneur",
       "readOnlyMount": "Montage en lecture seule",
@@ -365,9 +371,6 @@
       "successful": "Déploiement réussi",
       "deploying": "Déploiement des services…"
     },
-    "running": "en cours d'exécution",
-    "buildingSuffix": "· {count} en compilation",
-    "failedSuffix": "· {count} échoué(s)",
     "decisionBannerTitle": "Action requise — certains services ont échoué",
     "decisionBannerDefaultMsg": "Ce déploiement s'est terminé avec des services en échec. Conservez-le et corrigez-les plus tard, ou rejetez-le pour restaurer la version précédente.",
     "review": "Examiner",
@@ -407,6 +410,12 @@
       "retryOther": "Réessayer {count} services en échec"
     }
   },
+  "composeServiceTally": {
+    "running": "en cours d'exécution",
+    "builtSuffix": "· {count} compilé(s)",
+    "buildingSuffix": "· {count} en compilation",
+    "failedSuffix": "· {count} échoué(s)"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Annulé",
@@ -417,12 +426,20 @@
     },
     "detailsTitle": "Détails du déploiement",
     "rowStatus": "Statut",
+    "rowTarget": "Cible",
+    "rowBuild": "Compilation",
     "rowBuildTime": "Durée de compilation",
     "rowServices": "Services",
     "rowProject": "Projet",
-    "rowType": "Type",
-    "running": "en cours d'exécution",
-    "buildingSuffix": "· {count} en compilation",
-    "failedSuffix": "· {count} échoué(s)"
+    "rowType": "Type"
+  },
+  "configDiagnostics": {
+    "title": "Une partie du openship.json de ce dépôt n'a pas été appliquée",
+    "description": "Les champs listés ci-dessous ont été ignorés ; le reste du fichier a été appliqué. Le déploiement se poursuivra.",
+    "titleWholeFile": "Le openship.json de ce dépôt a été ignoré",
+    "descriptionWholeFile": "Rien n'en a été appliqué. Le déploiement se poursuivra avec les réglages détectés par Openship.",
+    "refused": "Refusé",
+    "unrecognized": "Non reconnu",
+    "hint": "Lancez `openship config validate` dans le dépôt pour vérifier le fichier avant le prochain déploiement."
   }
 }

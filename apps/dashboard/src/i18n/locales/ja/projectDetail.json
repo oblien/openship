@@ -167,6 +167,15 @@
 			"dependsOn": "依存関係",
 			"startShellHint": "シェルを開くにはサービスを起動してください。",
 			"saveEnvironment": "環境を保存",
+			"environmentApply": {
+				"title": "環境の変更を適用",
+        "applying": "変更を適用中…",
+        "applied": "環境変数の変更を適用しました",
+				"hint": "再ビルドせずに保存済みの変数をこのサービスに適用します。サービスは再起動されます。",
+				"saveFirst": "このサービスに適用する前に変更を保存してください。",
+				"restartBlocked": "{name} には、通常の再起動では適用できない環境の変更が保存されています。「環境」タブで確認して適用してください。",
+				"failed": "環境の変更を適用できませんでした"
+			},
 			"stop": "停止",
 			"restart": "再起動",
 			"start": "起動",
@@ -192,7 +201,7 @@
 			"deleteCancel": "キャンセル",
 			"deleteConfirm": "サービスを削除",
 			"toast": {
-				"envUpdated": "環境を更新しました",
+				"envUpdated": "環境を保存しました",
 				"envSaveFailed": "環境の保存に失敗しました",
 				"deployFirstStart": "先にプロジェクトをデプロイすると、このサービスが起動します",
 				"deployFailed": "デプロイに失敗しました",

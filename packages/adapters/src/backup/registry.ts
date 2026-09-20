@@ -37,6 +37,10 @@ export function registerExecutor(
 }
 
 export function resolveExecutor(runtimeName: string, runtime: unknown): BackupExecutor {
+  if (runtimeName === "cloud" &&
+      (runtime as { supports?: (capability: "dockerHost") => boolean })?.supports?.("dockerHost")) {
+    runtimeName = "docker";
+  }
   const factory = executorFactories.get(runtimeName);
   if (!factory) {
     throw new Error(

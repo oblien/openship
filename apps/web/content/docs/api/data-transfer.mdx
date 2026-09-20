@@ -1,0 +1,123 @@
+---
+title: Data transfer
+description: Export, review, and import installation or project data.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+## Team-mode migration
+
+Move a single-user instance into team mode along one of three paths, or reverse it. All four routes require
+org admin/owner and refuse (**409**) unless `teamMode === "single_user"`. See the
+[cloud connect / migration guide](/docs/guides/cloud-connect-migration).
+
+Preflight and start (Path A — your own server) share a body:
+
+```
+POST /api/system/migration/start
+```
+
+<TypeTable
+  type={{
+    serverId: { type: 'string', description: 'The saved server to migrate onto.', required: true },
+    domain: { type: '{ kind: "custom", hostname } | { kind: "free", slug }', description: 'Where the migrated instance will be reachable — a custom hostname or a free subdomain slug.', required: true },
+  }}
+/>
+
+- `POST /api/system/migration/start-cloud` — Path B, migrate to Openship Cloud. Body: `{ allowNonEmptyTarget?: boolean }`.
+- `POST /api/system/migration/start-tunnel` — Path C, expose via an edge tunnel. Body: `{ slug: string }` (required).
+- `POST /api/system/migration/switch-back` — reverse any of them. Body: `{ abandonRemote?: boolean }`.
+
+<Callout title="Switch-back cuts teammates off" type="warn">
+Reversing to single-user mode revokes teammate access. The remote keeps a copy for a 30-day grace period so
+you can recover if you change your mind.
+</Callout>
+
+## Instance and project data transfer
+
+Export the entire instance or a dependency-complete selection of projects and environments. These
+routes require **instance administrator** access (`requireInstanceAdmin()` plus a handler-level check).
+A workspace owner role alone does not grant access to instance credentials.
+
+```
+POST /api/system/data-transfer/export
+```
+
+<TypeTable
+  type={{
+    passphrase: { type: 'string', description: 'Seal secrets (SSH keys, tokens) under this passphrase. Omit to export without secrets.' },
+    selection: { type: 'object', description: 'scope: instance or projects; projectIds for project scope; history: analytics, activity, backups, incidents, migrations. Project options include includeEnvironments, includeLinkedProjects, includeServers, includeSecrets, includeDomains, includeBackups, and includeIntegrations.' },
+  }}
+/>
+
+```
+POST /api/system/data-transfer/import
+```
+
+<TypeTable
+  type={{
+    file: { type: 'object', description: 'A DataTransferFile produced by export.', required: true },
+    passphrase: { type: 'string', description: 'The passphrase used at export time, if secrets were sealed.' },
+    mode: { type: '"wipe" | "merge"', description: 'wipe replaces the entire instance; merge adds records. Project scope requires merge.', default: 'merge' },
+    selection: { type: 'object', description: 'scope, projectIds, history, conflictPolicy (skip or overwrite), per-project projectActions, serverMappings, includeSecrets, includeDomains, includeBackups, includeIntegrations, and overwriteDependencies.' },
+  }}
+/>
+
+Project imports remap ownership to the active request workspace. They omit instance accounts/settings,
+reuse matching server connections, and skip existing projects by default. Overwrite updates matching
+project records while preserving destination-only records; shared dependencies are kept unless
+`overwriteDependencies` is explicitly enabled. Source local hosts require an explicit `serverMappings`
+entry (`local` for a project without a server row). Cloud projects require the same connected cloud
+account. A project archive cannot be used with `wipe`.
+
+Use the chunk-upload endpoints for large files. After uploading, POST `{ selection }` to the session's
+`preview` endpoint. It returns `projects`, `servers`, `availableServers`, row counts, `warnings`, and
+`blockers` without consuming the upload. POST `{ mode, passphrase, selection }` to
+`/api/system/data-transfer/import/session/:sessionId/finalize/stream` to apply. Validation is repeated
+inside the import transaction. A failed review or password attempt retains the uploaded chunks.
+
+Exports use envelope version 2; imports also accept version 1 instance files. Credentials, deployment snapshots, and inline
+Compose configuration are encrypted under the transfer password and re-encrypted for the destination.
+Volume data, source folders, and host TLS files remain on their server.
+
+Loopback server connections require explicit mapping. Backup policies that point at source-local storage
+or a changed backup host are disabled until the operator verifies the destination storage. Direct transfer
+supports whole-instance exports; project selections use the file review and import endpoints.
+
+<Callout title="Import limits & errors" type="error">
+The import body is capped at **500 MB** (**413 `PAYLOAD_TOO_LARGE`** above it). A wrong or missing passphrase
+or a malformed file returns **400**. Project dependency/mapping conflicts return **409
+`PROJECT_IMPORT_REQUIRES_REVIEW`**; whole-instance merge collisions return **409 `PK_COLLISION`**. Select
+project scope and explicit overwrite options to resolve project conflicts. A concurrent migration/import
+returns **503 `BUSY`**.
+</Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Receive one chunk of an authorized direct transfer. | `PUT /api/system/data-transfer/direct/chunk/:sessionId/:index`<br />`Handler authentication` · Self-hosted |
+| Finalize a received direct transfer and stream progress. | `POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream`<br />`Handler authentication` · Self-hosted |
+| Keep a direct chunk-transfer session alive. | `POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat`<br />`Handler authentication` · Self-hosted |
+| Open a direct chunk-transfer upload. | `POST /api/system/data-transfer/direct/chunk/init`<br />`Handler authentication` · Self-hosted |
+| Receive a direct instance transfer. | `POST /api/system/data-transfer/direct/receive`<br />`Handler authentication` · Self-hosted |
+| Send an instance to an authorized destination. | `POST /api/system/data-transfer/direct/send`<br />`settings:admin` · Self-hosted |
+| Send an instance and stream transfer progress. | `POST /api/system/data-transfer/direct/send/stream`<br />`settings:admin` · Self-hosted |
+| Create a direct-transfer session. | `POST /api/system/data-transfer/direct/session`<br />`settings:admin` · Self-hosted |
+| Export the instance or selected projects (instance administrator). | `POST /api/system/data-transfer/export`<br />`settings:admin` · Self-hosted |
+| Import an export file, ≤500 MB, with scope and conflict options (instance administrator). | `POST /api/system/data-transfer/import`<br />`settings:admin` · Self-hosted |
+| Open a chunked file-import session. | `POST /api/system/data-transfer/import/session`<br />`settings:admin` · Self-hosted |
+| Upload one file-import chunk. | `PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index`<br />`settings:admin` · Self-hosted |
+| Apply a reviewed file import and stream progress. | `POST /api/system/data-transfer/import/session/:sessionId/finalize/stream`<br />`settings:admin` · Self-hosted |
+| Preview an uploaded file's selection, conflicts, and server mappings. | `POST /api/system/data-transfer/import/session/:sessionId/preview`<br />`settings:admin` · Self-hosted |
+| List exportable projects and instance row counts (instance administrator). | `GET /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
+| Preview a project selection and its dependencies (instance administrator). | `POST /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
+| Team-migration readiness check (read-only). | `POST /api/system/migration/preflight`<br />`settings:admin` · Self-hosted |
+| Migrate single-user → your own remote server. | `POST /api/system/migration/start`<br />`settings:admin` · Self-hosted |
+| Migrate → Openship Cloud. | `POST /api/system/migration/start-cloud`<br />`settings:admin` · Self-hosted |
+| Expose this instance via an edge tunnel. | `POST /api/system/migration/start-tunnel`<br />`settings:admin` · Self-hosted |
+| Reverse a migration back to single-user. | `POST /api/system/migration/switch-back`<br />`settings:admin` · Self-hosted |
+
+{/* api-operations:end */}

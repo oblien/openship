@@ -46,8 +46,6 @@ From the dashboard, open the project you want to inspect. The project page has a
 This is your live window into the running app. Inside it you'll find two sub-tabs at the top: **Terminal** and
 **Server**. The next two sections explain each one.
 
-<Callout title="Screenshot">The project **Logs** tab, showing the **Terminal** / **Server** sub-tab switcher at the top. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -66,8 +64,6 @@ A few things worth knowing:
   jump between them.
 - **Copy, Download, Clear.** The buttons on the right let you copy the visible logs to your clipboard, save them
   to a `.txt` file, or clear the view.
-
-<Callout title="Screenshot">The **Terminal** sub-tab mid-stream: the live green dot, the **Stop** button, and log lines scrolling in. *(screenshot pending)*</Callout>
 
 <Callout title="More than one service? Pick which one to watch" type="info">
 If your project runs several services (a docker-compose stack, for example), a small **Runtime log target**
@@ -93,8 +89,6 @@ Each line tells you:
 
 Like the Terminal, this view is **live** — new requests appear at the top as they happen.
 
-<Callout title="Screenshot">The **Server** sub-tab: a list of requests each showing method, path, status code, and response time. *(screenshot pending)*</Callout>
-
 <Callout title="Reading status codes" type="info">
 The colour is the quick tell. **Green (2xx)** means success. **Amber (4xx)** means the visitor asked for
 something that isn't there or isn't allowed (a 404, say). **Red (5xx)** means *your app* errored while handling
@@ -117,8 +111,6 @@ Open the project's **Overview** tab and you'll see it:
 This is the same request data as the Server sub-tab, just counted up. Empty at first — it fills in as traffic
 arrives.
 
-<Callout title="Screenshot">The project **Overview** tab: the Server Requests / Unique IPs / Avg Response / Bandwidth Out stat cards above the Traffic chart. *(screenshot pending)*</Callout>
-
 ## Where to look when something is wrong
 
 A quick map so you don't have to guess:
@@ -131,7 +123,7 @@ A quick map so you don't have to guess:
 - **The deployment itself failed** (it never went live) → open that deployment from the **Deployments** tab and
   read its build log — that's a separate stream from the runtime logs above.
 
-## Prefer the terminal?
+## CLI
 
 Everything above is available from the CLI too. First grab your project's ID with `openship project list`, then:
 
@@ -159,7 +151,14 @@ prints the recent entries instead and points you to the dashboard for the live t
 there streams cloud requests fine.
 </Callout>
 
-## If something goes wrong
+<Callout title="Managing the edge itself" type="info">
+The commands above read one project. To manage the reverse proxy those requests pass through — a traffic
+overview and per-domain analytics, route rules, registering domains on a port, or taking over a proxy
+that's already on `:80/:443` — see [The edge](/docs/guides/the-edge) guide (or the
+[`openship edge`](/docs/cli/edge) command reference).
+</Callout>
+
+## Troubleshooting
 
 <Callout title="The Terminal tab is empty or says “Press Start”" type="warn">
 Either the app hasn't printed anything yet, or it isn't running. Make sure the deployment is live (check the
@@ -186,7 +185,7 @@ This means the project isn't running, so there's no live stream to attach to. Co
 again.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Roll back or redeploy" href="/docs/guides/rollback-redeploy" description="Found a bad release in the logs? Get back to a working version fast." />

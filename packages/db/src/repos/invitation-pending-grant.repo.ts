@@ -55,7 +55,7 @@ function rowToGrant(row: InvitationPendingGrantRow): InvitationPendingGrant {
   };
 }
 
-export function createInvitationPendingGrantRepo(db: Database) {
+export function createInvitationPendingGrantRepo(db: Pick<Database, "select" | "insert" | "delete">) {
   return {
     /** List all pending grants for one invitation. */
     async listByInvitation(invitationId: string): Promise<InvitationPendingGrant[]> {

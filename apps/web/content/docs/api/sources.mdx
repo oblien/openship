@@ -1,0 +1,147 @@
+---
+title: Source files
+description: Stage generated files or a directory, inspect the source, and deploy it.
+---
+
+Source sessions hold uploaded application files until deployment. The SDK accepts a directory or an
+in-memory file map. REST accepts a compressed archive through a short-lived upload session.
+
+## Deploy generated files
+
+The SDK's `deploy()` helper combines staging, detection, project selection, and deployment submission.
+Use it when your application or AI workflow produces files:
+
+```ts
+const submitted = await ship.deploy({
+  name: "generated-site",
+  source: {
+    type: "files",
+    files: { "index.html": "<h1>Hello from Openship</h1>" },
+  },
+});
+
+const outcome = await ship.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+```
+
+File keys are relative paths; values may be strings or `Uint8Array` data. Use
+`{ type: "directory", path: "/absolute/path/to/site" }` for a directory. With a remote client, files are
+packed on the calling machine. A native directory must be inside an allowed `policy.sourceRoots` entry.
+
+| `deploy()` option | Use |
+| --- | --- |
+| `source` | Required file map or absolute directory path. |
+| `name` | Suggested project name. |
+| `projectId` | Deploy into an existing authorized project. |
+| `environment` | `production` or `preview`. |
+| `serverId` | Authorized target server; omit to use the configured target. |
+| `serviceIds` | Selected detected services. |
+| `onStep` | Source-workflow progress callback. |
+| `signal` | Abort supported source work; a submitted deployment requires explicit cancellation. |
+
+The result contains `deployment_id`, `project_id`, and optional `configDiagnostics`. Submission and
+readiness are separate. See [deployment outcomes](/docs/api/deployments#wait-decisions-and-cancellation).
+
+## Upload a source folder
+
+For a custom uploader, open a session first:
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const session = await ship.sources.open({ name: "my-site" });
+console.log(session.sessionId, session.upload);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/folder/session" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-site"}'
+```
+
+</Tab>
+</Tabs>
+
+The response includes `sessionId`, `expiresAt`, and `upload` instructions:
+
+| Upload field | Use |
+| --- | --- |
+| `absoluteUrl`, `method` | Destination and HTTP method for the archive. |
+| `headers` | Required upload headers. |
+| `requiresAuth` | Send your bearer credential only when required. |
+| `withCredentials` | Whether a browser upload needs credentials. |
+
+Send a gzip-compressed tar archive to the returned URL. Use the supplied instructions because the upload
+destination can differ by deployment mode. The self-hosted relay is
+`POST /api/projects/folder/upload/:sessionId` and limits uploads to 300 MB.
+
+The SDK can perform both session creation and upload for you:
+
+```ts
+const staged = await ship.sources.stage({
+  name: "my-site",
+  source: { type: "directory", path: "/absolute/path/to/site" },
+});
+console.log(staged.sessionId, staged.expiresAt);
+```
+
+Directory packing excludes `.git`, `node_modules`, and `.DS_Store`. It enforces path, entry, and size
+limits and rejects escaping symlinks and special files. A system `tar` executable is not required by the SDK.
+
+## Inspect an uploaded source
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const scan = await ship.sources.scan("session_123", { includeEnv: true });
+console.log(scan.stack, scan.buildCommand, scan.configDiagnostics);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/folder/scan/session_123" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"includeEnv":true}'
+```
+
+</Tab>
+</Tabs>
+
+Detection returns the stack, package manager, commands, output paths, service definitions, and any
+configuration diagnostics. Inspect errors before submitting a deployment. Environment values are
+masked by default. The example requests editable values in the scan response with `includeEnv: true`;
+see [Reveal environment values](/docs/api/services#reveal-environment-values).
+
+To finish a custom flow, use `projects.ensure()` to record the chosen configuration, then
+`deployments.buildAccess()` with `projectId` and `uploadSessionId`. The shared fields are documented in
+[projects](/docs/api/projects) and [deployments](/docs/api/deployments#deploy-wizard-buildaccess).
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Package and stage generated files or an allowed directory. | `sources.stage(input, options?)` | [Upload workflow](/docs/api/sources#upload-a-source-folder) |
+| Open a folder upload session and return its upload instructions. | `sources.open(input?)` | `POST /api/projects/folder/session`<br />`project:write` |
+| Detect build configuration from a staged source session. | `sources.scan(id, options?)` | `POST /api/projects/folder/scan/:sessionId`<br />`project:write` |
+| Reveal explicitly requested source values after authorization. | `sources.reveal(id, input)` | `POST /api/projects/folder/scan/:sessionId/env-reveal`<br />`project:write` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Upload the gzipped tarball (self-hosted relay, 300 MB limit). | HTTP only | `POST /api/projects/folder/upload/:sessionId`<br />`project:write` · Self-hosted |
+
+{/* api-operations:end */}

@@ -15,13 +15,13 @@ import React from 'react';
 import { useToast as useGlassyToast } from '@/components/toast';
 
 interface ToastContextProps {
-  showToast: (message: string, type: 'success' | 'error', title?: string) => void;
+  showToast: (message: string, type: 'success' | 'error' | 'info', title?: string) => void;
 }
 
 export const useToast = (): ToastContextProps => {
   const { toast } = useGlassyToast();
   const showToast = React.useCallback(
-    (message: string, type: 'success' | 'error', title?: string) => toast(type, message, title),
+    (message: string, type: 'success' | 'error' | 'info', title?: string) => toast(type, message, title),
     [toast],
   );
   return React.useMemo(() => ({ showToast }), [showToast]);

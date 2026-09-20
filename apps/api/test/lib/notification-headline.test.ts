@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import type { NotificationDelivery } from "@repo/db";
 
-import { renderMessage } from "../../src/lib/notification-workers";
+import { renderMessage } from "@repo/platform/engine/lib/notification-workers";
 
 /** The two fields renderMessage reads. The rest of the row is irrelevant here. */
 const delivery = (category: string, payload: Record<string, unknown>) =>
@@ -58,5 +58,99 @@ describe("delivered headline vs the category it was subscribed through", () => {
     // eventType has to fall back to the category, not render "undefined".
     const msg = renderMessage(delivery("service.recovered", { message: "back up" }));
     expect(msg.title).toBe("App recovered");
+  });
+
+  it("renders policy, destination, project, and service names in backup alerts", () => {
+    const msg = renderMessage(
+      delivery("backup.failed", {
+        eventType: "backup_run.failed",
+        policyName: "Nightly Database",
+        destinationName: "S3 Primary",
+        projectName: "Production",
+        serviceName: "postgres",
+        errorMessage: "Docker stream ended mid-frame with 15433 bytes buffered",
+        resourceType: "backup_run",
+        resourceId: "bkr_test_123",
+      }),
+    );
+
+    expect(msg.title).toBe("Backup failed");
+    expect(msg.body).toContain("Policy: Nightly Database");
+    expect(msg.body).toContain("Destination: S3 Primary");
+    expect(msg.body).toContain("Project: Production");
+    expect(msg.body).toContain("Service: postgres");
+    expect(msg.body).toContain("Error: Docker stream ended mid-frame with 15433 bytes buffered");
+    expect(msg.body).toContain("Resource: backup_run (bkr_test_123)");
+  });
+
+  it("renders policy and destination for successful backups", () => {
+    const msg = renderMessage(
+      delivery("backup.succeeded", {
+        eventType: "backup_run.succeeded",
+        policyName: "Weekly Volume",
+        destinationName: "Offsite MinIO",
+        projectName: "App",
+        serviceName: "redis",
+        resourceType: "backup_run",
+        resourceId: "bkr_test_456",
+      }),
+    );
+
+    expect(msg.title).toBe("Backup succeeded");
+    expect(msg.body).toContain("Policy: Weekly Volume");
+    expect(msg.body).toContain("Destination: Offsite MinIO");
+    expect(msg.body).toContain("Project: App");
+    expect(msg.body).toContain("Service: redis");
+  });
+
+  it("keeps durable backup references when names cannot be resolved", () => {
+    const msg = renderMessage(delivery("backup.failed", {
+      policyId: "pol_1",
+      destinationId: "dst_1",
+    }));
+    expect(msg.body).toContain("Policy: pol_1");
+    expect(msg.body).toContain("Destination: dst_1");
+  });
+
+  it("renders job name, exit code, error, duration, resource, and logs in job failure alerts", () => {
+    const msg = renderMessage(
+      delivery("job.run.failed", {
+        eventType: "job_run.failed",
+        jobName: "Audit unconfigured backups",
+        exitCode: 1,
+        errorMessage: "Command exited with code 1",
+        durationMs: 2500,
+        resourceType: "job",
+        resourceId: "custom:BlS_iYp2_kUnHTbj",
+        logExcerpt: "ALERT: Found 1 project(s) without backup configuration!",
+      }),
+    );
+
+    expect(msg.title).toBe("Job failed");
+    expect(msg.body).toContain("Job: Audit unconfigured backups");
+    expect(msg.body).toContain("Exit Code: 1");
+    expect(msg.body).toContain("Error: Command exited with code 1");
+    expect(msg.body).toContain("Duration: 3s");
+    expect(msg.body).toContain("Resource: job (custom:BlS_iYp2_kUnHTbj)");
+    expect(msg.body).toContain("Logs:\nALERT: Found 1 project(s) without backup configuration!");
+  });
+
+  it("renders job name and exit code 0 for successful job runs", () => {
+    const msg = renderMessage(
+      delivery("job.run.succeeded", {
+        eventType: "job_run.succeeded",
+        label: "Audit disk space",
+        exitCode: 0,
+        durationMs: 500,
+        resourceType: "job",
+        resourceId: "custom:t6GN81ItRPW_qAkX",
+      }),
+    );
+
+    expect(msg.title).toBe("Job succeeded");
+    expect(msg.body).toContain("Job: Audit disk space");
+    expect(msg.body).toContain("Exit Code: 0");
+    expect(msg.body).toContain("Duration: 1s");
+    expect(msg.body).toContain("Resource: job (custom:t6GN81ItRPW_qAkX)");
   });
 });

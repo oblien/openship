@@ -7,6 +7,7 @@
     "dev": "bun --watch run src/main.ts",
     "start": "bun run src/main.ts",
     "build": "tsc --noEmit",
+    "test": "bun test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -21,6 +22,7 @@
     "@trpc/client": "^11.4.4",
     "@trpc/server": "^11.4.4",
     "cheerio": "1.1.0",
+    "css-tree": "^3.2.1",
     "date-fns": "^4.1.0",
     "dedent": "^1.6.0",
     "drizzle-orm": "^0.45.1",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
+    "@types/css-tree": "^3.2.0",
     "@types/mailparser": "^3.4.6",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^22.9.0",

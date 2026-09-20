@@ -4,7 +4,7 @@
  * checkable, so a future credential kind can't quietly violate them.
  */
 import { describe, it, expect } from "vitest";
-import { CHAINS, SPECS } from "../../../src/modules/github/github.token";
+import { CHAINS, SPECS } from "@repo/platform/engine/modules/github/github.token";
 
 describe("credential chain — structural invariants", () => {
   it("every remote chain contains only shippable credentials", () => {

@@ -10,8 +10,9 @@ import {
   maskScanService,
   maskServiceEnv,
   maskServicesEnv,
+  mergeServiceEnv,
   unmaskEnv,
-} from "../../src/lib/secret-env";
+} from "@repo/platform/engine/lib/secret-env";
 
 describe("maskEnv", () => {
   test("blanks every value regardless of key", () => {
@@ -69,6 +70,73 @@ describe("unmaskEnv", () => {
   });
 });
 
+/**
+ * The PATCH counterpart (#619). `unmaskEnv` above deletes by omission, which is
+ * right for the whole-set writers but destroys a masked value the caller could
+ * never have read back. Here omission means "keep" and a delete is spelled null.
+ */
+describe("mergeServiceEnv", () => {
+  const stored = { API_TOKEN: "real-token", DB_PASSWORD: "hunter2", NODE_ENV: "production" };
+
+  test("a key absent from the patch keeps its stored value", () => {
+    expect(mergeServiceEnv(stored, { PORT: "8080" })).toEqual({ ...stored, PORT: "8080" });
+  });
+  test("a named key is overwritten, the rest survive", () => {
+    expect(mergeServiceEnv(stored, { NODE_ENV: "staging" })).toEqual({
+      ...stored,
+      NODE_ENV: "staging",
+    });
+  });
+  test("null removes just that key", () => {
+    expect(mergeServiceEnv(stored, { NODE_ENV: null, PORT: "3000" })).toEqual({
+      API_TOKEN: "real-token",
+      DB_PASSWORD: "hunter2",
+      PORT: "3000",
+    });
+  });
+  test("sentinel keeps the stored secret", () => {
+    expect(mergeServiceEnv(stored, { API_TOKEN: ENV_MASK, NEW: "v" })).toEqual({
+      ...stored,
+      NEW: "v",
+    });
+  });
+  test("sentinel with no stored counterpart is dropped (never persists dots)", () => {
+    expect(mergeServiceEnv(stored, { GHOST: ENV_MASK })).toEqual(stored);
+    expect(mergeServiceEnv(undefined, { A: ENV_MASK, B: "real" })).toEqual({ B: "real" });
+  });
+  // #472: maskValue leaves "" alone, so an unset variable reads back as empty and
+  // has to round-trip as empty — masking it would have the merge restore a value
+  // the operator had just cleared.
+  test("an empty value round-trips as empty rather than being treated as a sentinel", () => {
+    expect(mergeServiceEnv({ ...stored, EMPTY: "" }, { EMPTY: "" })).toEqual({
+      ...stored,
+      EMPTY: "",
+    });
+    expect(mergeServiceEnv(stored, { API_TOKEN: "" })).toEqual({ ...stored, API_TOKEN: "" });
+  });
+  test("null for the whole map clears it; undefined and {} leave it alone", () => {
+    expect(mergeServiceEnv(stored, null)).toEqual({});
+    expect(mergeServiceEnv(stored, undefined)).toEqual(stored);
+    expect(mergeServiceEnv(stored, {})).toEqual(stored);
+  });
+  test("a non-string value is dropped rather than written into the map", () => {
+    expect(mergeServiceEnv(stored, { N: 7 as unknown as string })).toEqual(stored);
+  });
+  // The map is attacker-influenced (any PATCH body key), and the sentinel arm asks
+  // whether a key exists in `stored` — a prototype-chain hit there would resurrect
+  // an inherited value under an attacker-chosen name.
+  test("prototype keys neither pollute nor resolve through the chain", () => {
+    const merged = mergeServiceEnv(stored, {
+      ["__proto__"]: "polluted",
+      constructor: ENV_MASK,
+      toString: ENV_MASK,
+    });
+    expect(merged).toEqual(stored);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(merged, "toString")).toBe(false);
+  });
+});
+
 describe("helpers", () => {
   test("isMaskedValue / hasMaskedValue", () => {
     expect(isMaskedValue(ENV_MASK)).toBe(true);
@@ -92,11 +160,13 @@ describe("helpers", () => {
   });
 
   test("maskServicesEnv over a list, null-tolerant", () => {
-    expect(maskServicesEnv([{ environment: { A: "1" } }])).toEqual([{ environment: { A: ENV_MASK } }]);
+    expect(maskServicesEnv([{ environment: { A: "1" } }])).toEqual([
+      { environment: { A: ENV_MASK } },
+    ]);
     expect(maskServicesEnv(null)).toEqual([]);
   });
 
-  test("maskDriftChanges masks only the environment field", () => {
+  test("maskDriftChanges masks environment values and leaves ordinary fields", () => {
     const changes = [
       { field: "image", from: "a", to: "b" },
       { field: "environment", from: { K: "old" }, to: { K: "new" } },
@@ -106,16 +176,73 @@ describe("helpers", () => {
       { field: "environment", from: { K: ENV_MASK }, to: { K: ENV_MASK } },
     ]);
   });
+
+  test("maskDriftChanges hides raw Compose image expressions in advanced changes", () => {
+    const changes = [
+      {
+        field: "advanced",
+        from: {
+          imageTemplate: {
+            expression: "registry.example.com/app:${TAG:-private-old}",
+            unresolvedVariables: [],
+            sourceValue: "registry.example.com/app:private-old",
+          },
+          readiness: { enabled: true },
+        },
+        to: {
+          imageTemplate: {
+            expression: "registry.example.com/app:${TAG:-private-new}",
+            unresolvedVariables: ["TAG"],
+            sourceValue: "registry.example.com/app:private-new",
+          },
+          readiness: { enabled: false },
+        },
+      },
+    ];
+
+    expect(maskDriftChanges(changes)).toEqual([
+      {
+        field: "advanced",
+        from: {
+          imageTemplate: {
+            expression: ENV_MASK,
+            unresolvedVariables: [],
+            sourceValue: ENV_MASK,
+          },
+          readiness: { enabled: true },
+        },
+        to: {
+          imageTemplate: {
+            expression: ENV_MASK,
+            unresolvedVariables: ["TAG"],
+            sourceValue: ENV_MASK,
+          },
+          readiness: { enabled: false },
+        },
+      },
+    ]);
+  });
 });
 
 describe("maskEnvironmentMeta", () => {
   test("keeps source/variable, masks value-bearing fields, drops expression", () => {
     const meta = {
-      DB_PASSWORD: { source: "env-file", variable: "DB_PASSWORD", resolvedValue: "hunter2", defaultValue: "changeme", expression: "${DB_PASSWORD:-changeme}" },
+      DB_PASSWORD: {
+        source: "env-file",
+        variable: "DB_PASSWORD",
+        resolvedValue: "hunter2",
+        defaultValue: "changeme",
+        expression: "${DB_PASSWORD:-changeme}",
+      },
       NODE_ENV: { source: "default", resolvedValue: "production" },
     };
     expect(maskEnvironmentMeta(meta)).toEqual({
-      DB_PASSWORD: { source: "env-file", variable: "DB_PASSWORD", resolvedValue: ENV_MASK, defaultValue: ENV_MASK },
+      DB_PASSWORD: {
+        source: "env-file",
+        variable: "DB_PASSWORD",
+        resolvedValue: ENV_MASK,
+        defaultValue: ENV_MASK,
+      },
       NODE_ENV: { source: "default", resolvedValue: ENV_MASK },
     });
   });
@@ -129,6 +256,7 @@ describe("maskEnvironmentMeta", () => {
           source: "missing",
           variable: "POSTGRES_PASSWORD",
           required: true,
+          unresolvedVariables: ["POSTGRES_PASSWORD"],
           resolvedValue: "",
         },
       }),
@@ -137,6 +265,7 @@ describe("maskEnvironmentMeta", () => {
         source: "missing",
         variable: "POSTGRES_PASSWORD",
         required: true,
+        unresolvedVariables: ["POSTGRES_PASSWORD"],
         resolvedValue: "",
       },
     });
@@ -152,9 +281,59 @@ describe("maskScanService", () => {
     };
     const masked = maskScanService(svc);
     expect(masked.environment).toEqual({ PASSWORD: ENV_MASK });
-    expect(masked.environmentMeta).toEqual({ PASSWORD: { source: "env-file", resolvedValue: ENV_MASK } });
+    expect(masked.environmentMeta).toEqual({
+      PASSWORD: { source: "env-file", resolvedValue: ENV_MASK },
+    });
     // input untouched
     expect(svc.environment.PASSWORD).toBe("secret");
+  });
+
+  test("never returns transient raw environment expressions", () => {
+    const expression = "postgres://user:${PASSWORD:-literal-secret}@db/app";
+    const masked = maskScanService({
+      name: "api",
+      environment: { DATABASE_URL: "postgres://user:literal-secret@db/app" },
+      environmentTemplates: { DATABASE_URL: expression },
+      advanced: {
+        imageTemplate: {
+          expression: "registry.example.com/app:${IMAGE_TAG:-literal-secret}",
+          unresolvedVariables: [],
+          sourceValue: "registry.example.com/app:literal-secret",
+        },
+        environmentTemplateKeys: ["DATABASE_URL"],
+        environmentOverrideKeys: ["PINNED"],
+        readiness: { enabled: true },
+      },
+    });
+
+    expect(masked.environment.DATABASE_URL).toBe(ENV_MASK);
+    expect("environmentTemplates" in masked).toBe(false);
+    expect(masked.advanced).toEqual({ readiness: { enabled: true } });
+    expect(JSON.stringify(masked)).not.toContain(expression);
+    expect(JSON.stringify(masked)).not.toContain("literal-secret");
+  });
+
+  test("removes image provenance even when the service has no environment map", () => {
+    const masked = maskScanService({
+      name: "worker",
+      image: "registry.example.com/worker:1",
+      advanced: {
+        imageTemplate: {
+          expression: "registry.example.com/worker:${TAG:-private-default}",
+          unresolvedVariables: [],
+          sourceValue: "registry.example.com/worker:private-default",
+        },
+      },
+    });
+
+    expect(masked.advanced).toEqual({});
+    expect(JSON.stringify(masked)).not.toContain("private-default");
+  });
+
+  test("keeps removed-key ownership internal even without an environment map (#893)", () => {
+    expect(maskScanService({
+      name: "worker", advanced: { environmentOverrideKeys: ["REMOVED_KEY"] },
+    }).advanced).toEqual({});
   });
 });
 

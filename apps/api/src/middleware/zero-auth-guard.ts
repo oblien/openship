@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import { env } from "../config/env";
-import { getAuthMode } from "../lib/auth-mode";
+import { env } from "@repo/platform/engine/config/env";
+import { getAuthMode } from "@repo/platform/engine/lib/auth-mode";
 import { isLoopbackRequest, peerAddress } from "./loopback-peer";
 
 /**

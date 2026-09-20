@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { AppError } from "@repo/core";
-import { assertBillingEnabled, assertTopupsEnabled } from "./billing.service";
+import { assertBillingEnabled, assertTopupsEnabled } from "@repo/platform/engine/modules/billing/billing.service";
 
 /**
  * The master billing switch (`BILLING_ENABLED`) and the top-ups sub-switch
  * (`BILLING_TOPUPS_ENABLED`) both default to OFF. These guards are the
- * server-side backstop that makes "billing is disabled" real: every
- * Stripe-mutating path calls one of them, so a stale client that still shows a
- * buy button cannot start a real Stripe session while billing is pre-launch.
+ * server-side backstop for new purchases: every checkout path calls one of
+ * them, so a stale client cannot start a purchase while billing is pre-launch.
+ * Existing customer management remains available independently of these flags.
  *
  * The test env inherits the defaults (both flags off), so this pins the
  * shipped-today behavior: mutations fail closed with a typed 403.

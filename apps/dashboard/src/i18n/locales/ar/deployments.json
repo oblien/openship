@@ -32,7 +32,8 @@
       "total": "الإجمالي",
       "successful": "ناجحة",
       "failed": "فاشلة",
-      "inProgress": "قيد التنفيذ"
+      "inProgress": "قيد التنفيذ",
+      "pageTitle": "في هذه الصفحة"
     },
     "autoDeploy": {
       "title": "النشر التلقائي",
@@ -69,6 +70,7 @@
     "actionRequired": "إجراء مطلوب",
     "rejected": "مرفوضة",
     "verifying": "قيد التحقق",
+    "noChanges": "لا تغييرات",
     "pending": "قيد الانتظار"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "فشل إلغاء تثبيت النشر",
     "rollbackModeInstant": "استعادة فورية — يعيد استخدام صورة هذه النسخة المحفوظة دون إعادة بناء.",
     "rollbackModeRebuild": "إعادة بناء — صورة هذه النسخة لم تبقَ على الخادم، لذا سيُعاد بناء الالتزام.",
+    "rollbackModeReacquireImage": "استعادة من السجل — يعيد سحب مرجع الصورة الدقيق المسجل لهذا الإصدار من دون إعادة بناء المصدر.",
     "rollbackModeMixed": "فوري في الأغلب — {count} خدمة فقدت صورتها وسيُعاد بناؤها."
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "تستمر في العمل ولا تُمسّ: {names}",
     "confirm": "تراجع",
     "cancel": "إلغاء"
+  },
+  "loadFailed": "تعذّر تحميل عمليات النشر.",
+  "retry": "حاول مجددًا",
+  "pagination": {
+    "label": "صفحات سجل النشر",
+    "previous": "الصفحة السابقة",
+    "next": "الصفحة التالية",
+    "pageOf": "الصفحة {page} من {total}",
+    "range": "عمليات النشر {from}–{to} من {total}"
   }
 }

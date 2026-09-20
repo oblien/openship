@@ -1,8 +1,9 @@
 {
-  "title": "Problèmes",
+  "title": "Surveillance",
   "subtitle": "Tout ce qu'Openship a trouvé d'anormal dans vos projets, serveurs et domaines.",
   "tabs": {
     "open": "Ouverts",
+    "health": "Santé",
     "resolved": "Résolus"
   },
   "resolvedNote": "L'historique couvre les incidents de conteneurs et de serveurs — les autres vérifications rapportent l'état actuel, un certificat ou un déploiement réparé disparaît donc simplement d'ici.",

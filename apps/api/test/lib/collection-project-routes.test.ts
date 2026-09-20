@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
 import { getRouteRegistry, isPublicSpec } from "../../src/lib/route-permission";
-import { AddDomainBody } from "../../src/modules/domains/domain.schema";
-import { TriggerDeployBody, BuildAccessBody } from "../../src/modules/deployments/deployment.schema";
+import { AddDomainBody } from "@repo/contracts";
+import {
+  TriggerDeployBody,
+  BuildAccessBody,
+} from "@repo/contracts";
 
 /**
  * `collectionProject: true` tells `requirePermission` to SKIP the collection
@@ -41,7 +44,10 @@ describe("collectionProject: the flag's safety precondition", () => {
     for (const route of flagged) {
       const spec = route.spec;
       const body = isPublicSpec(spec) ? undefined : spec.body;
-      expect(body, `${route.method} ${route.path} has collectionProject but no body schema`).toBeDefined();
+      expect(
+        body,
+        `${route.method} ${route.path} has collectionProject but no body schema`,
+      ).toBeDefined();
       expect(
         requiresProjectId(body as TSchema),
         `${route.method} ${route.path}: projectId must be REQUIRED — the handler's per-project assert is the only gate left`,
@@ -51,9 +57,12 @@ describe("collectionProject: the flag's safety precondition", () => {
 
   it("flagged routes are advertised to a project-scoped MCP principal, not treated as org-wide", async () => {
     await import("../../src/modules/deployments/deployment.routes");
-    const { getMcpTools, filterToolsForPrincipal } = await import("../../src/modules/mcp/mcp-tools");
+    const { getMcpTools, filterToolsForPrincipal } =
+      await import("../../src/modules/mcp/mcp-tools");
 
-    const deploy = getMcpTools().find((t) => t.method === "POST" && t.path.endsWith("/deployments/build/access"));
+    const deploy = getMcpTools().find(
+      (t) => t.method === "POST" && t.path.endsWith("/deployments/build/access"),
+    );
     expect(deploy).toBeDefined();
     // Org-wide in shape (no :id), project-scoped in effect.
     expect(deploy!.perm.wildcard).toBe(false);
@@ -87,5 +96,10 @@ describe("collectionProject: the flag's safety precondition", () => {
 
     expect(Value.Check(AddDomainBody, { projectId: "p1", hostname: "app.example.com" })).toBe(true);
     expect(Value.Check(AddDomainBody, { hostname: "app.example.com" })).toBe(false);
+  });
+
+  it("does not expose migration artifact handover on the public build schema", () => {
+    expect(BuildAccessBody.properties).not.toHaveProperty("handoverImages");
+    expect(BuildAccessBody.properties).not.toHaveProperty("handoverAppImage");
   });
 });

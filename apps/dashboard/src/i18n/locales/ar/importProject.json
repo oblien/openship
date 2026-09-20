@@ -101,6 +101,10 @@
     "serverOnPort": "الخادم على المنفذ {port}",
     "serverPortNotSet": "لم يتم تعيين منفذ الخادم",
     "staticFromEdge": "ثابت من الحافة",
+    "modeServer": "خادم",
+    "modeWorker": "عامل",
+    "modeStatic": "ثابت",
+    "workerModeDesc": "يعمل باستمرار بدون منفذ أو رابط عام — مستهلك طابور أو مهمة مجدولة أو روبوت.",
     "staticPathHint": "يُقدَّم كملفات ثابتة من الحافة — لا تعمل أي عملية.",
     "buildSettingsTitle": "إعدادات البناء"
   },
@@ -120,6 +124,7 @@
     "noneSet": "لم يتم تعيين أي منها",
     "pasteEnv": "لصق .env",
     "uploadEnv": "رفع .env",
+    "downloadEnv": "تنزيل .env",
     "edit": "تعديل",
     "cancel": "إلغاء",
     "saving": "جارٍ الحفظ...",
@@ -129,7 +134,7 @@
     "valuePlaceholder": "القيمة",
     "dropHere": "أفلت ملف .env هنا",
     "noneTitle": "لا توجد متغيرات بيئة",
-    "emptyHintEditing": "انقر على \"إضافة متغير\"، أو استخدم \"لصق .env\"، أو ارفع ملفًا، أو الصق في أي مكان داخل هذا المربع",
+    "emptyHintEditing": "الصق كتلة .env في أي مكان داخل هذا المربع، أو أفلت ملف .env هنا.",
     "emptyHintReadonly": "انقر على \"تعديل\" لإدارة متغيرات البيئة",
     "pasteHint": "الصق كتلة .env كاملة في أي مكان داخل هذا المربع.",
     "addVariable": "إضافة متغير",
@@ -141,6 +146,7 @@
       "interpolated": "مُستكمَل"
     },
     "toast": {
+      "downloadFailed": "تعذّر تنزيل متغيرات البيئة.",
       "title": "متغيرات البيئة",
       "added": "{count} مُضاف",
       "updated": "{count} مُحدَّث",
@@ -204,9 +210,9 @@
       "volumes": "وحدات التخزين",
       "statefulWarnPart1": "خدمة ذات حالة في السحابة: تعيش البيانات على القرص الدائم لمساحة العمل (تبقى بعد إعادة التشغيل) لكنها ",
       "statefulWarnBold": "لا تُنقل عبر عمليات إعادة البناء",
-      "statefulWarnPart2": " ما لم تُفعَّل النسخ الاحتياطية. لا تنطبق نقاط تحميل وحدات تخزين Docker.",
+      "statefulWarnPart2": ". انسخ البيانات احتياطيًا واستعدها بشكل صريح قبل استبدال مساحة العمل.",
       "volumeHint": "وحدة تخزين مسماة أو مسار مضيف → مسار الحاوية.",
-      "volumeCloudNote": "في السحابة لا تنطبق نقاط التحميل هذه — تبقى البيانات على قرص مساحة العمل (وليس عبر عمليات إعادة البناء دون نسخ احتياطية).",
+      "volumeCloudNote": "تركيبات وحدات التخزين الدائمة غير مدعومة في Openship Cloud. اختر خادماً لأحمال العمل التي تتطلبها.",
       "sourcePlaceholder": "المصدر",
       "containerPathPlaceholder": "مسار الحاوية",
       "readOnlyMount": "تحميل للقراءة فقط",
@@ -352,9 +358,6 @@
       "successful": "تم النشر بنجاح",
       "deploying": "جارٍ نشر الخدمات…"
     },
-    "running": "قيد التشغيل",
-    "buildingSuffix": "· {count} قيد البناء",
-    "failedSuffix": "· {count} فشل",
     "decisionBannerTitle": "إجراء مطلوب — فشلت بعض الخدمات",
     "decisionBannerDefaultMsg": "انتهى هذا النشر بخدمات فاشلة. احتفظ به وأصلحها لاحقًا، أو ارفضه لاستعادة الإصدار السابق.",
     "review": "مراجعة",
@@ -394,6 +397,12 @@
       "retryOther": "إعادة محاولة {count} خدمات فاشلة"
     }
   },
+  "composeServiceTally": {
+    "running": "قيد التشغيل",
+    "builtSuffix": "· {count} تم بناؤها",
+    "buildingSuffix": "· {count} قيد البناء",
+    "failedSuffix": "· {count} فشل"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "ملغى",
@@ -404,12 +413,20 @@
     },
     "detailsTitle": "تفاصيل النشر",
     "rowStatus": "الحالة",
+    "rowTarget": "الهدف",
+    "rowBuild": "البناء",
     "rowBuildTime": "وقت البناء",
     "rowServices": "الخدمات",
     "rowProject": "المشروع",
-    "rowType": "النوع",
-    "running": "قيد التشغيل",
-    "buildingSuffix": "· {count} قيد البناء",
-    "failedSuffix": "· {count} فشل"
+    "rowType": "النوع"
+  },
+  "configDiagnostics": {
+    "title": "لم يُطبَّق جزء من ملف openship.json في هذا المستودع",
+    "description": "تم تخطي الحقول المذكورة أدناه، وطُبِّق بقية الملف. وسيستمر النشر.",
+    "titleWholeFile": "تم تجاهل ملف openship.json في هذا المستودع",
+    "descriptionWholeFile": "لم يُطبَّق أي جزء منه. سيستمر النشر باستخدام الإعدادات التي اكتشفها Openship.",
+    "refused": "مرفوض",
+    "unrecognized": "غير معروف",
+    "hint": "شغّل `openship config validate` داخل المستودع لفحص الملف قبل النشر القادم."
   }
 }

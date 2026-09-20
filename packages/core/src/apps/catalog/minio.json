@@ -1,6 +1,7 @@
 {
   "available": true,
   "verified": true,
+  "minEngine": "0.6.6",
   "id": "minio",
   "name": "MinIO",
   "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
@@ -17,15 +18,21 @@
     {
       "name": "minio",
       "image": "minio/minio:latest",
-      "command": "server /data --console-address :9001",
-      "ports": [
-        "9000:9000",
-        "9001:9001"
+      "commandArgv": [
+        "server",
+        "/data",
+        "--console-address",
+        ":9001"
       ],
       "exposedPort": 9001,
       "routes": [
-        { "port": 9001 },
-        { "port": 9000, "slugSuffix": "s3" }
+        {
+          "port": 9001
+        },
+        {
+          "port": 9000,
+          "slugSuffix": "s3"
+        }
       ],
       "exposed": true,
       "environment": {
@@ -37,7 +44,11 @@
       "volumes": [
         "minio_data:/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "9001:9001",
+        "9000:9000"
+      ]
     }
   ],
   "configFields": [
@@ -78,19 +89,33 @@
         "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
         "interval": 1000,
         "retries": 30
-      },
-      "once": true
+      }
     }
   ],
   "endpoints": [
-    { "service": "minio", "port": 9001, "label": "Console", "kind": "http" },
-    { "service": "minio", "port": 9000, "label": "S3 API", "kind": "http" }
+    {
+      "service": "minio",
+      "port": 9001,
+      "label": "Console",
+      "kind": "http"
+    },
+    {
+      "service": "minio",
+      "port": 9000,
+      "label": "S3 API",
+      "kind": "http"
+    }
   ],
   "connection": {
     "title": "S3 connection",
     "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
     "outputs": [
-      { "id": "console", "label": "Console", "source": "publicUrl:minio:9001", "kind": "url" },
+      {
+        "id": "console",
+        "label": "Console",
+        "source": "publicUrl:minio:9001",
+        "kind": "url"
+      },
       {
         "id": "endpoint",
         "label": "S3 endpoint",
@@ -133,7 +158,12 @@
   "provides": [
     {
       "id": "s3",
-      "outputRefs": ["endpoint", "accessKey", "secretKey", "bucket"],
+      "outputRefs": [
+        "endpoint",
+        "accessKey",
+        "secretKey",
+        "bucket"
+      ],
       "category": "database"
     }
   ]

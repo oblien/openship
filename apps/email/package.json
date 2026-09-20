@@ -1,6 +1,6 @@
 {
   "name": "@repo/email",
-  "version": "0.6.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Self-hosted email - iRedMail (engine) + Zero Email (server + client). Orchestrator package: install and run server + client together.",
   "scripts": {
@@ -17,6 +17,7 @@
     "start": "bun run server/src/main.ts",
     "start:dist": "cd dist && bun start",
     "lint": "(cd server && bun run lint) && (cd client && bun run lint)",
+    "test": "cd server && bun run test",
     "db:generate": "cd server && bun run db:generate",
     "db:migrate": "cd server && bun run db:migrate",
     "db:studio": "cd server && bun run db:studio"

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { DockerContainerSummary } from "@repo/adapters";
-import { findOwnStack, portSpecs } from "./self-services";
+import { findOwnStack, portSpecs } from "@repo/platform/engine/lib/startup/self-services";
 
 const container = (
   over: Partial<DockerContainerSummary> & { id: string },

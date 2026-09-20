@@ -1,6 +1,6 @@
 /**
- * Raw bidirectional stream for `docker exec` and `docker attach` — a hijack that
- * doesn't go through the HTTP client.
+ * Raw upgraded streams for `docker exec`, `docker attach`, and BuildKit sessions,
+ * without going through the HTTP client.
  *
  * WHY THIS EXISTS
  * An interactive shell needs stdin, and dockerode gets that by asking docker-modem
@@ -8,14 +8,15 @@
  * upgrade, then lifts the raw socket out of the response. Under **Bun** that hangs
  * forever — the daemon answers `101 UPGRADED`, Bun's `node:http` doesn't surface
  * the upgrade the way modem expects, and the start promise simply never settles.
+ * BuildKit's `Upgrade: h2c` variant is rejected as `UnrequestedUpgrade` instead.
  * Measured on Bun 1.3.1 vs Node 22: Node round-trips, Bun never returns.
  *
  * The api ships as a Bun image (and a Bun-compiled desktop binary), so the
  * service terminal could never open there — the WS connected and then sat silent,
  * while the SERVER terminal (ssh2, no HTTP in the path) worked fine. The edge
- * executor dodged the same trap by avoiding hijack entirely, but three callers
- * can't: the service shell, and backup RESTORE (`pipeIntoCommand` +
- * `receiveStream`) which feed the archive to the target's stdin.
+ * executor dodged the same trap by avoiding hijack entirely. The service shell,
+ * backup RESTORE (`pipeIntoCommand` + `receiveStream`), and BuildKit's reverse
+ * gRPC session cannot avoid the upgraded connection.
  *
  * So we speak the upgrade ourselves on a plain socket: write the HTTP request,
  * read the `101` response head, hand back the socket. Same protocol dockerode
@@ -115,18 +116,32 @@ function bridgeSocket(socket: Duplex, leftover: Buffer): Duplex {
 
 /**
  * Perform the `Connection: Upgrade` handshake against one daemon endpoint and
- * hand back the raw duplex. Shared by exec-start and container-attach: both are
- * the same protocol, and both hang (or 101-error) through docker-modem's hijack.
+ * hand back the raw duplex. Shared by exec-start, container-attach, and the
+ * BuildKit session: all hang (or 101-error) through docker-modem's hijack on Bun.
  *
  * The returned stream is not flowing and any output that shared a packet with the
  * `101` head is already buffered in it, so the caller attaches its handlers and
  * then calls `resume()` (or pipes). See {@link bridgeSocket}.
  */
-function upgradeRequest(conn: DaemonConnection, path: string, body: string): Promise<Duplex> {
+interface UpgradeRequestOptions {
+  protocol?: "tcp" | "h2c";
+  contentType?: string;
+  headers?: Record<string, string>;
+  timeoutLabel?: string;
+}
+
+function upgradeRequest(
+  conn: DaemonConnection,
+  path: string,
+  body: string,
+  opts: UpgradeRequestOptions = {},
+): Promise<Duplex> {
   return new Promise<Duplex>((resolve, reject) => {
     const socket = connect(conn);
     let settled = false;
     let head: Buffer = Buffer.alloc(0);
+    const protocol = opts.protocol ?? "tcp";
+    const timeoutLabel = opts.timeoutLabel ?? "docker exec";
 
     const fail = (err: Error) => {
       if (settled) return;
@@ -137,7 +152,7 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
     };
 
     const timer = setTimeout(
-      () => fail(new Error(`docker exec upgrade timed out after ${UPGRADE_TIMEOUT_MS}ms`)),
+      () => fail(new Error(`${timeoutLabel} upgrade timed out after ${UPGRADE_TIMEOUT_MS}ms`)),
       UPGRADE_TIMEOUT_MS,
     );
 
@@ -149,7 +164,8 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
       if (end === -1) {
         // Bound the head we're willing to buffer — a non-daemon listener could
         // otherwise stream forever while we wait for a blank line.
-        if (head.length > 64 * 1024) fail(new Error("docker exec upgrade: response head too large"));
+        if (head.length > 64 * 1024)
+          fail(new Error(`${timeoutLabel} upgrade: response head too large`));
         return;
       }
 
@@ -174,8 +190,7 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
       resolve(bridgeSocket(socket, head.subarray(headBytes)));
     };
 
-    const onEarlyClose = () =>
-      fail(new Error(`docker ${path}: connection closed before upgrade`));
+    const onEarlyClose = () => fail(new Error(`docker ${path}: connection closed before upgrade`));
 
     socket.on("data", onData);
     socket.on("error", fail);
@@ -183,13 +198,19 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
 
     // Unversioned path: the daemon accepts it and we don't have to track which
     // API version the modem negotiated.
+    const extraHeaders = Object.entries(opts.headers ?? {})
+      .map(([name, value]) => `${name}: ${value}\r\n`)
+      .join("");
+    const contentType = opts.contentType ? `Content-Type: ${opts.contentType}\r\n` : "";
     socket.write(
       `POST ${path} HTTP/1.1\r\n` +
         `Host: ${conn.socketPath ? "localhost" : (conn.host ?? "localhost")}\r\n` +
-        `Content-Type: application/json\r\n` +
+        contentType +
         `Content-Length: ${Buffer.byteLength(body)}\r\n` +
         `Connection: Upgrade\r\n` +
-        `Upgrade: tcp\r\n\r\n` +
+        `Upgrade: ${protocol}\r\n` +
+        extraHeaders +
+        `\r\n` +
         body,
     );
   });
@@ -211,6 +232,7 @@ export function startExecStream(
     conn,
     `/exec/${execId}/start`,
     JSON.stringify({ Detach: false, Tty: opts.tty }),
+    { contentType: "application/json" },
   );
 }
 
@@ -234,7 +256,95 @@ export function startAttachStream(
     stdout: opts.stdout ? "1" : "0",
     stderr: opts.stderr ? "1" : "0",
   });
-  return upgradeRequest(conn, `/containers/${containerId}/attach?${q.toString()}`, "");
+  return upgradeRequest(conn, `/containers/${containerId}/attach?${q.toString()}`, "", {
+    contentType: "application/json",
+  });
+}
+
+/**
+ * Open the reverse h2c connection used by Docker's BuildKit session protocol.
+ *
+ * dockerode normally opens this through `node:http`. Bun rejects Docker's 101
+ * response as `UnrequestedUpgrade`, before the real `/build?version=2` request
+ * can start (#745). The raw upgrade path above already exists for the same Bun
+ * incompatibility on exec/attach; BuildKit needs the identical workaround with
+ * `Upgrade: h2c` and its session identity headers.
+ */
+export function startBuildKitSessionStream(
+  conn: DaemonConnection,
+  sessionId: string,
+  sessionName: string,
+): Promise<Duplex> {
+  if (!sessionId || /[\r\n]/.test(sessionId) || /[\r\n]/.test(sessionName)) {
+    return Promise.reject(new Error("Invalid Docker BuildKit session identity"));
+  }
+  return upgradeRequest(conn, "/session", "", {
+    protocol: "h2c",
+    headers: {
+      "X-Docker-Expose-Session-Uuid": sessionId,
+      "X-Docker-Expose-Session-Name": sessionName,
+    },
+    timeoutLabel: "Docker BuildKit session",
+  });
+}
+
+type DockerodeDialOptions = {
+  path?: unknown;
+  hijack?: unknown;
+  headers?: unknown;
+  [key: string]: unknown;
+};
+
+type DockerodeDialCallback = (error: Error | null, result: unknown) => void;
+
+const patchedBuildKitModems = new WeakSet<object>();
+
+function headerValue(headers: unknown, name: string): string {
+  if (!headers || typeof headers !== "object") return "";
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() !== name.toLowerCase()) continue;
+    if (Array.isArray(value)) return value.length > 0 ? String(value[0]) : "";
+    return value == null ? "" : String(value);
+  }
+  return "";
+}
+
+/**
+ * Route only dockerode's BuildKit `/session` upgrade around Bun's `node:http`
+ * implementation. dockerode still owns the gRPC auth server and the subsequent
+ * build request; ordinary API calls keep using its modem unchanged.
+ */
+export function installDockerodeBuildKitSessionWorkaround(docker: { modem?: unknown }): void {
+  if (!docker.modem || typeof docker.modem !== "object") return;
+  const modem = docker.modem as {
+    dial?: (options: DockerodeDialOptions, callback?: DockerodeDialCallback) => unknown;
+  };
+  if (typeof modem.dial !== "function" || patchedBuildKitModems.has(modem)) return;
+
+  const originalDial = modem.dial.bind(modem);
+  modem.dial = (options, callback) => {
+    const upgrade = headerValue(options.headers, "upgrade");
+    if (
+      options.path !== "/session" ||
+      options.hijack !== true ||
+      upgrade.toLowerCase() !== "h2c" ||
+      !callback
+    ) {
+      return originalDial(options, callback);
+    }
+
+    const sessionId = headerValue(options.headers, "x-docker-expose-session-uuid");
+    const sessionName = headerValue(options.headers, "x-docker-expose-session-name");
+    void startBuildKitSessionStream(
+      daemonConnectionFrom(docker),
+      sessionId,
+      sessionName || "openship",
+    ).then(
+      (socket) => callback(null, socket),
+      (error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null),
+    );
+  };
+  patchedBuildKitModems.add(modem);
 }
 
 /**

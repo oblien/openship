@@ -45,7 +45,6 @@ confirmed the move. (Free `.opsh.io` domains are routed for you — no `A` recor
 Open the migration wizard and choose the **source server** (server A). Openship scans it read-only and lists
 what's running — each project/service with its ports and volumes.
 
-<Callout title="Screenshot">The migration wizard's source-server scan, listing the running projects and their volumes. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>
@@ -76,7 +75,6 @@ Openship stops the originals on A for a consistent copy, streams the volumes to 
 there on the same image, and polls it to **ready** (up to ~20 minutes for a large first move). Watch the
 progress live.
 
-<Callout title="Screenshot">Volume transfer A → B with per-service progress, ending in a healthy deploy on the target. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>

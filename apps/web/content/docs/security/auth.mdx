@@ -65,8 +65,6 @@ person's role, unless you narrow it (see below).
 In the dashboard, open **Settings → Tokens** and use the **Personal Access Tokens** section. Copy the
 token when it appears — that's the only time you'll see it.
 
-<Callout title="Screenshot">Settings → Tokens tab, the "Personal Access Tokens" section with the create form and a freshly minted token shown once. *(screenshot pending)*</Callout>
-
 From the terminal:
 
 ```bash
@@ -203,8 +201,10 @@ Openship keeps secrets where they're safest instead of copying them around:
 
 - **PAT secrets** are stored only as a SHA-256 hash; the plaintext exists just once, in your clipboard.
 - **Cloud sessions** are encrypted at rest on the instance and never exposed to the browser.
-- The **GitHub App private key** lives only on Openship Cloud; self-hosted instances mint short-lived App
-  tokens through the cloud rather than holding the key.
+- The managed **Openship GitHub App private key** lives only on Openship Cloud. A self-hosted workspace may
+  instead register one or more Apps in Settings; each private key, client secret, and webhook secret is
+  stored in a versioned AES-256-GCM envelope and is never returned by the API. The legacy process-environment
+  configuration remains supported. Every App path mints short-lived, repository-scoped installation tokens.
 - Per-project git tokens and environment secrets are encrypted at rest.
 
 ## Revocation
@@ -227,7 +227,7 @@ Openship keeps secrets where they're safest instead of copying them around:
 | `401 Unauthorized` | No valid session, or a zero-auth request that failed the mode/loopback gates. |
 | `503 AUTH_UNAVAILABLE` | The session check itself failed — retry; it never silently downgrades to no-auth. |
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Permission model" href="/docs/security/permissions" description="What a logged-in identity is actually allowed to do — roles and resource grants." />

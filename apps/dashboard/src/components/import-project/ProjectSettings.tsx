@@ -18,7 +18,11 @@ const ProjectSettings: React.FC = () => {
   const detectedFw = config.detectedFramework ? getFrameworkConfig(config.detectedFramework) : null;
 
   const currentFwConfig = getFrameworkConfig(config.framework);
-  const [activeTab, setActiveTab] = useState<StackCategory>(currentFwConfig.category);
+  const [activeTab, setActiveTab] = useState<StackCategory>(
+    stackCategories.some((category) => category.id === currentFwConfig.category)
+      ? currentFwConfig.category
+      : stackCategories[0].id,
+  );
 
   const filteredFrameworks = useMemo(
     () => frameworks.filter((fw) => fw.category === activeTab),
@@ -39,6 +43,9 @@ const ProjectSettings: React.FC = () => {
         startCommand: stackDef?.defaultStartCommand ?? "",
         productionPort: String(stackDef?.defaultPort ?? 3000),
         hasServer: !isStatic,
+        // Picking a framework is a web/static decision; clear any stale "worker"
+        // so the resolved workload matches hasServer (#538).
+        workloadType: isStatic ? "static" : "web",
       },
     });
   }, [updateConfig, config.options]);
@@ -110,7 +117,7 @@ const ProjectSettings: React.FC = () => {
           </div>
 
           {/* Category tabs */}
-          <div className="flex gap-1 p-1 bg-muted/50 rounded-lg mb-4 w-fit">
+          <div className="flex flex-wrap gap-1 p-1 bg-muted/50 rounded-lg mb-4 w-fit max-w-full">
             {stackCategories.map((cat) => (
               <button
                 key={cat.id}

@@ -272,3 +272,107 @@ describe("scopeIsSubset — mint-time containment", () => {
     expect(scopeIsSubset(["src/**"], [])).toBe(false);
   });
 });
+
+/**
+ * `**` UNDER A SINGLE-`*` ENVELOPE — GHSA-qv27-39pc-qw9f finding 3.
+ *
+ * `scopeIsSubset` used to synthesize a probe PATH from the candidate, mapping each
+ * `**` to ONE literal segment, then match that path against the envelope. A `*`
+ * envelope segment matches one segment, so it matched the probe — and `**`'s
+ * depth-spanning reach vanished. A minter whose own grant was `src/*` could mint
+ * `src/**`, taking the whole subtree; with `["**"]` the minted scope also cleared
+ * `grantsWholeRepo`, which is the clone-token tier.
+ *
+ * Every row below is asserted against a WITNESS: a concrete path the candidate
+ * matches. If the envelope does not match that witness, containment is false, so
+ * `scopeIsSubset` returning true would be unsound. That ties the expectations to
+ * the actual matcher instead of to hand-computed booleans.
+ */
+describe("scopeIsSubset — soundness against a witness path", () => {
+  /** Every row: candidate, envelope, and a path the candidate reaches. */
+  const ROWS: Array<{ candidate: string; envelope: string; witness: string }> = [
+    // The two the old probe accepted. Envelope grants ONE segment; candidate spans depth.
+    { candidate: "**", envelope: "*", witness: "a/b.ts" },
+    { candidate: "src/**", envelope: "src/*", witness: "src/deep/secret.ts" },
+    // The two a two-segment probe would newly accept — they fail closed today and must stay closed.
+    { candidate: "**", envelope: "*/*", witness: "a/b/c.ts" },
+    { candidate: "src/**", envelope: "src/*/*", witness: "src/a/b/c.ts" },
+    // Legitimate containment, for the same witness treatment.
+    { candidate: "src/**", envelope: WHOLE_REPO, witness: "src/deep/secret.ts" },
+    { candidate: "src/a/**", envelope: "src/**", witness: "src/a/b/c.ts" },
+    { candidate: "src/*", envelope: "src/**", witness: "src/x.ts" },
+    { candidate: "src/x.ts", envelope: "src/*", witness: "src/x.ts" },
+  ];
+
+  it("never reports containment the matcher itself does not honour", () => {
+    for (const { candidate, envelope, witness } of ROWS) {
+      // Sanity: the witness must actually be reachable through the candidate,
+      // otherwise the row proves nothing.
+      expect(matchesAny(witness, [candidate]), `${candidate} must match ${witness}`).toBe(true);
+
+      const envelopeGrantsWitness = matchesAny(witness, [envelope]);
+      const subset = scopeIsSubset([candidate], [envelope]);
+
+      if (!envelopeGrantsWitness) {
+        expect(
+          subset,
+          `${candidate} ⊆ ${envelope} claims containment, but the envelope does not ` +
+            `grant ${witness} — the minted scope would exceed the minter's own`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("pins the four unsound/near-unsound rows explicitly, in both directions", () => {
+    // Was true (the bug). A "src/*" holder must not reach the whole subtree.
+    expect(scopeIsSubset(["**"], ["*"])).toBe(false);
+    expect(scopeIsSubset(["src/**"], ["src/*"])).toBe(false);
+    // Was false, and must STAY false — the two-segment probe "fix" flipped these.
+    expect(scopeIsSubset(["**"], ["*/*"])).toBe(false);
+    expect(scopeIsSubset(["src/**"], ["src/*/*"])).toBe(false);
+  });
+
+  it("still contains the single-segment cases a `*` envelope really does cover", () => {
+    // "*" grants every top-level entry, so a top-level file and "*" itself are in.
+    expect(scopeIsSubset(["README.md"], ["*"])).toBe(true);
+    expect(scopeIsSubset(["*"], ["*"])).toBe(true);
+    // …but not a nested path, which "*" cannot reach.
+    expect(scopeIsSubset(["src/x.ts"], ["*"])).toBe(false);
+  });
+
+  it("keeps `**`-terminated envelopes working — the shapes the picker emits", () => {
+    expect(scopeIsSubset(["src/**"], ["src/**"])).toBe(true);
+    expect(scopeIsSubset(["src/a/b.ts"], ["src/**"])).toBe(true);
+    expect(scopeIsSubset(["src"], ["src/**"])).toBe(true); // "src/**" covers "src" itself
+    expect(scopeIsSubset([WHOLE_REPO], ["**/**"])).toBe(true);
+    expect(scopeIsSubset(["a/**"], ["*/**"])).toBe(true);
+    // A bare "src" envelope names one entry, so a subtree is not inside it.
+    expect(scopeIsSubset(["src/**"], ["src"])).toBe(false);
+  });
+
+  it("refuses a partial glob it cannot decide, rather than guessing", () => {
+    expect(scopeIsSubset(["src/ab.ts"], ["src/a*"])).toBe(true); // literal candidate: decidable
+    expect(scopeIsSubset(["src/a*"], ["src/a*"])).toBe(true); // identical
+    expect(scopeIsSubset(["src/*"], ["src/a*"])).toBe(false); // "src/b" escapes "src/a*"
+  });
+
+  it("a malformed pattern on either side denies instead of widening", () => {
+    expect(scopeIsSubset(["sr**c/**"], [WHOLE_REPO])).toBe(false);
+    expect(scopeIsSubset([WHOLE_REPO], ["sr**c"])).toBe(false);
+    expect(scopeIsSubset(["../etc/passwd"], [WHOLE_REPO])).toBe(false);
+  });
+
+  /**
+   * The reason finding 3 mattered beyond one subtree: `["**"]` is exactly what
+   * `grantsWholeRepo` accepts, and that is the clone-token tier.
+   */
+  it("no longer lets a partial envelope mint the whole-repo scope a clone requires", () => {
+    expect(grantsWholeRepo(["**"])).toBe(true); // unchanged: "**" IS whole-repo
+    for (const envelope of [["*"], ["src/*"], ["src/**"], ["*/*"]]) {
+      expect(
+        scopeIsSubset(["**"], envelope),
+        `envelope ${JSON.stringify(envelope)} must not mint the clone-token scope`,
+      ).toBe(false);
+    }
+  });
+});

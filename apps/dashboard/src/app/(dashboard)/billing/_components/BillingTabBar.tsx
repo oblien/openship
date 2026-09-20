@@ -19,7 +19,7 @@ export function BillingTabBar() {
       : "overview";
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-border/50">
+    <nav aria-label={t.billing.layout.title} className="flex items-center gap-1 overflow-x-auto border-b border-border/50">
       {BILLING_TABS.map((tab) => {
         const Icon = tab.icon;
         const active = activeTab === tab.key;
@@ -28,7 +28,8 @@ export function BillingTabBar() {
           <Link
             key={tab.key}
             href={tab.href}
-            className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            aria-current={active ? "page" : undefined}
+            className={`relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-3 text-sm font-medium transition-colors sm:px-4 ${
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
             }`}
           >
@@ -40,6 +41,6 @@ export function BillingTabBar() {
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

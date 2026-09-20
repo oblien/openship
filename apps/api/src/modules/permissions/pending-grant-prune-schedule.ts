@@ -10,7 +10,7 @@
  */
 
 import { repos } from "@repo/db";
-import { getJobRunner } from "../../lib/job-runner";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 
 const PENDING_GRANT_PRUNE_JOB_ID = "permissions:pending-grant-prune";
 const PENDING_GRANT_PRUNE_CRON = "33 3 * * *";

@@ -1,6 +1,6 @@
 ---
-title: Backups API
-description: Schedule backup policies, run and inspect backups, stage and apply restores, and trigger backups by webhook.
+title: Backups and restores
+description: Create backup policies, inspect runs, and restore data.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -11,46 +11,11 @@ they produce, and the **restores** that put a run's data back. It pairs with the
 is the project's **Backups** tab, and from the terminal it's the [`openship backup`](/docs/cli/projects)
 command.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/backup-runs/<id>`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
 The routes are split across a few prefixes: policy **creation and listing** are project-scoped
 (`/api/projects/:projectId/backup-policies`), while an **existing** policy, run, or restore is addressed by
 its own id (`/api/backup-policies/:id`, `/api/backup-runs/:id`, `/api/backup-restores/:id`). The inbound
 `POST /api/webhooks/backup` trigger lives on its own unauthenticated prefix. Available on both self-hosted
 and cloud instances; the project-scoped policy and run routes proxy to Openship Cloud for cloud projects.
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/projects/:projectId/backup-policies` | `project:write` | List a project's backup policies (schedules/retention). |
-| `POST /api/projects/:projectId/backup-policies` | `project:write` | Create a backup policy for a project. |
-| `PATCH /api/backup-policies/:policyId` | `backup_destination:backup_policy:write` | Update a policy. |
-| `DELETE /api/backup-policies/:policyId` | `backup_destination:backup_policy:write` | Delete a policy. |
-| `POST /api/backup-policies/:policyId/run` | `backup_destination:backup_policy:write` | Trigger the policy's backup now. |
-| `GET /api/projects/:projectId/backup-runs` | `project:write` | List a project's backup runs (history, status). |
-| `GET /api/backup-runs/:runId` | `backup_destination:backup_run:read` | Get one backup run's details/status. |
-| `GET /api/backup-runs/:runId/stream` | `backup_destination:backup_run:read` | SSE stream of a run's live progress. |
-| `POST /api/backup-runs/:runId/protect` | `backup_destination:backup_run:write` | Protect a run from retention pruning (or release it). |
-| `POST /api/backup-runs/:runId/restore/prepare` | `backup_destination:backup_run:write` | Stage a restore from a run; returns a confirmation token. |
-| `POST /api/backup-restores/:restoreId/apply` | `backup_destination:backup_restore:write` | Apply a staged restore (destructive). |
-| `POST /api/backup-restores/:restoreId/cancel` | `backup_destination:backup_restore:write` | Cancel a staged or in-flight restore. |
-| `GET /api/backup-restores/:restoreId` | `backup_destination:backup_restore:read` | Get one restore's status. |
-| `GET /api/backup-restores/:restoreId/stream` | `backup_destination:backup_restore:read` | SSE stream of a restore's live progress. |
-| `POST /api/webhooks/backup` | public | Trigger a backup from an inbound webhook (bearer token is the credential). |
-
-<Callout title="Per-resource routes run a second permission check" type="info">
-Beyond the permission tag shown above, most `:id` routes run an in-handler check too. The policy **update**,
-**delete**, and **manual-run** routes re-check the **parent project** (write to update or run, admin to
-delete). Run and restore routes instead check the run or restore itself: read to view or stream, write to
-protect a run, and **admin** for every destructive restore step (prepare, apply, cancel). A `:id` that isn't
-in your organization returns `404`.
-</Callout>
 
 ## Create a backup policy
 
@@ -58,9 +23,30 @@ A policy binds a project (optionally a single service) to a [destination](/docs/
 plus an optional schedule and retention rules. The request body is read inline (there is no TypeBox schema
 file for this module); `destinationId` is the only required field.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.backups.createPolicy("proj_123", {
+  destinationId: "dst_abc",
+  cronExpression: "0 3 * * *",
+  retainCount: 7,
+});
+console.log(result);
 ```
-POST /api/projects/:projectId/backup-policies
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/backup-policies" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"destinationId":"dst_abc","cronExpression":"0 3 * * *","retainCount":7}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -77,19 +63,6 @@ POST /api/projects/:projectId/backup-policies
     enabled: { type: 'boolean', description: 'Whether the policy is active.', default: 'true' },
   }}
 />
-
-```bash
-curl -X POST https://your-host/api/projects/proj_123/backup-policies \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"destinationId":"dst_abc","cronExpression":"0 3 * * *","retainCount":7}'
-```
-
-```bash
-# Same thing from the CLI:
-openship backup policy create --project proj_123 --destination dst_abc \
-  --cron "0 3 * * *" --retain-count 7
-```
 
 ## Update a policy
 
@@ -121,21 +94,45 @@ PATCH /api/backup-policies/:policyId
 
 ## Trigger a backup manually
 
-Kicks off a run for the policy immediately. Returns `{ data: { runId } }` — follow it with the run stream.
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
 
+```ts
+const run = await ship.backups.run("policy_123");
+console.log(run);
 ```
-POST /api/backup-policies/:policyId/run
-```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -X POST https://your-host/api/backup-policies/bkp_abc/run \
+curl -X POST "$OPENSHIP_URL/api/backup-policies/policy_123/run" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-```bash
-# Trigger and stream to completion:
-openship backup policy run bkp_abc --follow
+</Tab>
+</Tabs>
+
+Kicks off a run for the policy immediately. Returns `{ data: { runId } }` — follow it with the run stream.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.backups.run("bkp_abc");
+console.log(result);
 ```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/backup-policies/bkp_abc/run" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
 
 ## Protect a run from retention
 
@@ -152,12 +149,6 @@ POST /api/backup-runs/:runId/protect
     protected: { type: 'boolean', description: 'true locks the run (indefinitely when no `until` is given); false clears the lock.' },
   }}
 />
-
-```bash
-# Lock indefinitely, or release it:
-openship backup run protect run_xyz
-openship backup run protect run_xyz --release
-```
 
 ## Stage and apply a restore
 
@@ -188,12 +179,6 @@ POST /api/backup-restores/:restoreId/apply
   }}
 />
 
-```bash
-# Prepare, then apply with the returned token:
-openship backup run restore run_xyz
-openship backup restore apply rst_123 --token <confirmationToken>
-```
-
 Cancel a staged or in-flight restore with `POST /api/backup-restores/:restoreId/cancel`
 (`openship backup restore cancel rst_123`).
 
@@ -209,12 +194,6 @@ GET /api/backup-runs/:runId/stream
 GET /api/backup-restores/:restoreId/stream
 ```
 
-```bash
-# The CLI's --follow flag consumes these streams:
-openship backup run get run_xyz --follow
-openship backup restore get rst_123 --follow
-```
-
 ## Trigger a backup by webhook
 
 `POST /api/webhooks/backup` is the one **unauthenticated** route — the per-policy webhook token *is* the
@@ -227,11 +206,11 @@ POST /api/webhooks/backup
 ```
 
 ```bash
-curl -X POST https://your-host/api/webhooks/backup \
+curl -X POST "$OPENSHIP_URL/api/webhooks/backup" \
   -H "Authorization: Bearer $POLICY_WEBHOOK_TOKEN"
 ```
 
-## Errors you might see
+## Errors
 
 <Callout title="400 — invalid cron expression" type="warn">
 `createPolicy` / `updatePolicy` validate the cron up front so an unparseable schedule can't silently disable
@@ -247,3 +226,26 @@ a fresh token if you've lost it.
 The `:id` doesn't belong to your organization (or was deleted) — the same opaque `404` the webhook returns
 for a bad token. List runs with `GET /api/projects/:projectId/backup-runs` to get valid IDs.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream backup execution progress. | `backups.streamRun(id, options?)` | `GET /api/backup-runs/:runId/stream`<br />`backup_destination:backup_run:read` |
+| Stream restore progress. | `backups.streamRestore(id, options?)` | `GET /api/backup-restores/:restoreId/stream`<br />`backup_destination:backup_restore:read` |
+| List backup policies for the requested source. | `backups.listPolicies(id)` | `GET /api/projects/:projectId/backup-policies`<br />`project:write` |
+| Create a backup policy and retention configuration. | `backups.createPolicy(id, input)` | `POST /api/projects/:projectId/backup-policies`<br />`project:write` |
+| List recorded backup runs using typed filters. | `backups.listRuns(id, input?)` | `GET /api/projects/:projectId/backup-runs`<br />`project:write` |
+| Change a backup policy. | `backups.updatePolicy(id, input)` | `PATCH /api/backup-policies/:policyId`<br />`backup_destination:backup_policy:write` |
+| Remove a backup policy. | `backups.removePolicy(id)` | `DELETE /api/backup-policies/:policyId`<br />`backup_destination:backup_policy:write` |
+| Trigger a policy’s backup now. | `backups.run(id)` | `POST /api/backup-policies/:policyId/run`<br />`backup_destination:backup_policy:write` |
+| Read a backup run and its result. | `backups.getRun(id)` | `GET /api/backup-runs/:runId`<br />`backup_destination:backup_run:read` |
+| Protect or unprotect a run from retention pruning. | `backups.protectRun(id, input?)` | `POST /api/backup-runs/:runId/protect`<br />`backup_destination:backup_run:write` |
+| Stage and validate a restore without applying it. | `backups.prepareRestore(id, input?)` | `POST /api/backup-runs/:runId/restore/prepare`<br />`backup_destination:backup_run:admin` |
+| Read a restore session and its confirmation requirements. | `backups.getRestore(id)` | `GET /api/backup-restores/:restoreId`<br />`backup_destination:backup_restore:read` |
+| Apply a prepared restore using the required confirmation. | `backups.applyRestore(id, input)` | `POST /api/backup-restores/:restoreId/apply`<br />`backup_destination:backup_restore:admin` |
+| Request cancellation of a restore. | `backups.cancelRestore(id)` | `POST /api/backup-restores/:restoreId/cancel`<br />`backup_destination:backup_restore:admin` |
+
+{/* api-operations:end */}

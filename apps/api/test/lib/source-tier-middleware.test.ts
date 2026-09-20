@@ -20,7 +20,7 @@ const { canUseGitHubRepo, checkSourceTier } = vi.hoisted(() => ({
   checkSourceTier: vi.fn(),
 }));
 
-vi.mock("../../src/modules/github/github-access", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({
   canUseGitHubRepo,
   checkSourceTier,
 }));

@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "freshrss",
   "name": "FreshRSS",
-  "description": "Self-hosted RSS and Atom feed reader with a first-run setup wizard.",
+  "description": "Self-hosted RSS and Atom feed reader. Your account is created during install.",
   "kind": "template",
   "logo": "freshrss",
   "category": "other",
@@ -16,15 +16,80 @@
     {
       "name": "freshrss",
       "image": "freshrss/freshrss:latest",
-      "ports": [
-        "80:80"
-      ],
       "exposedPort": 80,
       "exposed": true,
       "volumes": [
         "freshrss_data:/var/www/FreshRSS/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "environment": {
+        "FRESHRSS_ADMIN_USERNAME": "admin"
+      },
+      "secretEnv": [
+        "FRESHRSS_ADMIN_PASSWORD"
+      ],
+      "ports": [
+        "8204:80"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "FRESHRSS_ADMIN_PASSWORD",
+      "service": "freshrss",
+      "label": "Admin password",
+      "help": "Auto-generated. Password for the account created during install.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "prepare": [
+    {
+      "service": "freshrss",
+      "title": "Install FreshRSS",
+      "description": "Runs the headless installer and creates your account.",
+      "command": "cd /var/www/FreshRSS && { [ -f ./data/config.php ] || php ./cli/do-install.php --default-user=\"$FRESHRSS_ADMIN_USERNAME\" --auth-type=form --db-type=sqlite --api-enabled; } && { php ./cli/list-users.php 2>/dev/null | grep -qx \"$FRESHRSS_ADMIN_USERNAME\" || php ./cli/create-user.php --user \"$FRESHRSS_ADMIN_USERNAME\" --password \"$FRESHRSS_ADMIN_PASSWORD\" --language en; } && ./cli/access-permissions.sh >/dev/null 2>&1; echo done",
+      "capture": "freshrss_install",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "test -d /var/www/FreshRSS/cli",
+        "interval": 3000,
+        "retries": 30
+      }
+    }
+  ],
+  "connection": {
+    "title": "Sign in to FreshRSS",
+    "description": "FreshRSS is installed headlessly during setup — sign in with the credentials below.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Reader",
+        "source": "publicUrl:freshrss",
+        "kind": "url",
+        "recommended": true,
+        "help": "Sign in with the username and password below."
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:freshrss:FRESHRSS_ADMIN_USERNAME",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:freshrss:FRESHRSS_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Deliberately NOT deployed with the public web installer, so nobody can claim your instance first. Feeds refresh on a schedule only if you set CRON_MIN (e.g. \"*/20\")."
+    }
+  },
+  "verified": true
 }

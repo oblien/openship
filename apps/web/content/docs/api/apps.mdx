@@ -1,6 +1,6 @@
 ---
-title: Apps API
-description: Browse the one-click app catalog, install an app as a project, manage per-organization custom apps, and read an installed app's curated settings and resolved connection details.
+title: App catalog
+description: Browse templates, prepare installations, and configure apps.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -14,33 +14,8 @@ In the dashboard this is the **Apps** tab. The definition format is documented i
 [App catalog JSON reference](/docs/reference/app-catalog), and authoring workflow in
 [Add an app](/docs/guides/add-an-app).
 
-<Callout title="Base path & auth">
-Catalog and install paths sit at **`/api/apps`**; the two per-project paths are nested under
-**`/api/projects/:id`**. Send a personal access token as a bearer header
-(`Authorization: Bearer <token>`), created with [`openship token create`](/docs/cli/access). The
-dashboard uses your session cookie instead. See the [API overview](/docs/api) for the full auth model
-and [security/permissions](/docs/security/permissions) for how tags map to grants.
-</Callout>
-
-<Callout title="Self-hosted and cloud" type="info">
-Apps install as normal services projects, so this module is available on both self-hosted and
-Openship Cloud. For the per-project paths, a cloud project is transparently proxied to Openship
-Cloud while a local project is served by your own instance.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/apps/catalog` | `project:list` | List the app catalog. |
-| `GET /api/apps/catalog/:id` | `project:list` | Get one app's full definition by id. |
-| `GET /api/apps/custom` | `project:list` | List this organization's custom (uploaded, unverified) apps. |
-| `POST /api/apps/custom` | `project:write` | Add a custom app from an uploaded JSON definition. |
-| `DELETE /api/apps/custom/:appId` | `project:write` | Remove a custom app from this organization's catalog. |
-| `POST /api/apps` | `project:write` | Install an app as a project. |
-| `GET /api/projects/:id/app-settings` | `project:read` | Get an installed app's curated settings schema and current values. |
-| `PATCH /api/projects/:id/app-settings` | `project:write` | Update an installed app's curated settings. |
-| `GET /api/projects/:id/app-connection` | `project:write` | Get an installed app's resolved connection details. |
+These operations are available with supported self-hosted and Cloud providers. A fixed organization
+scope requires a direct compatible Cloud connection; see [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 
 ## List the catalog
 
@@ -72,6 +47,11 @@ Because the overlay can be **ahead of your instance**, entries carry compatibili
   }}
 />
 
+Each entry also carries `hosting` (`"experimental"` marks a stack that runs but is heavy or not
+production-grade upstream) and, for the few apps that declare one, `minResources` — the host floor
+you can check with [host-fit](#check-a-destination) before installing. Apps marked `unlisted` are
+absent from this list by design: they stay installable by id, reached through another app's wizard.
+
 ## Get one app
 
 ```
@@ -93,14 +73,92 @@ must render the draft's stored configuration, not the app's defaults — otherwi
 changes what the operator set up last time.
 </Callout>
 
+## Check a destination
+
+```
+GET /api/apps/catalog/:id/host-fit?deployTarget=server&serverId=<id>
+```
+
+Does a machine meet what the app declares in
+[`minResources`](/docs/reference/app-catalog)? Ask before installing, so the operator sees the
+shortfall instead of discovering it from a failed deploy.
+
+<TypeTable
+  type={{
+    minResources: { type: '{ memoryMb?, cpuCores? } | null', description: 'What the app declares. null when it declares nothing — then there is nothing to check.' },
+    capacity: { type: '{ cpuCores, memoryMb, source }', description: 'What the machine reported. source is "docker" | "local" | "unknown"; "unknown" means it could not be measured.' },
+    fit: { type: '{ ok, memory?, cpu? }', description: 'ok:false only on a measured shortfall. Each present dimension carries { needed, available }.' },
+  }}
+/>
+
+```json
+{
+  "data": {
+    "minResources": { "memoryMb": 8192, "cpuCores": 4 },
+    "capacity": { "cpuCores": 2, "memoryMb": 2048, "source": "docker" },
+    "fit": {
+      "ok": false,
+      "memory": { "needed": 8192, "available": 2048 },
+      "cpu": { "needed": 4, "available": 2 }
+    }
+  }
+}
+```
+
+<Callout title="Advisory, not the gate" type="info">
+This endpoint never refuses anything — it reports. The enforcement point is deploy preflight, which
+reads the same declaration through the same comparison and fails a **first** deploy with
+`HOST_RESOURCES_INSUFFICIENT`. Both are described under
+[Host requirements](/docs/reference/app-catalog).
+</Callout>
+
+A server ID must be accessible in the current organization. Cloud targets and machines that cannot be
+probed can report `capacity.source: "unknown"` with `fit.ok: true`; that means no measured capacity
+comparison was available, not that the host capacity was verified.
+
 ## Install an app
 
-```
-POST /api/apps
+For a `template` app, installation creates or updates a project draft and returns `projectId`. Submit a
+[deployment](/docs/api/deployments) for that project to run it. A `flow` app returns `flowHref` for its
+setup wizard.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.apps.install({
+  templateId: "ghost",
+  name: "my-blog",
+  routes: [
+    {
+      service: "ghost",
+      port: 2368,
+      mode: "custom",
+      customDomain: "blog.acme.com",
+    },
+  ],
+});
+console.log(result);
 ```
 
-For a `template` app this creates the project and starts the deploy. For a `flow` app it returns the
-route of that app's bespoke wizard instead of installing anything.
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/apps" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "templateId": "ghost",
+    "name": "my-blog",
+    "routes": [
+      { "service": "ghost", "port": 2368, "mode": "custom", "customDomain": "blog.acme.com" }
+    ]
+  }'
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -128,19 +186,6 @@ Public hostnames come **only** from `routes`. A service with no entry gets **no 
 hostname is never invented on your behalf. Omit `routes` entirely and the app installs port-only,
 which is a perfectly good outcome for a database or an internal tool.
 </Callout>
-
-```bash
-curl -X POST https://your-host/api/apps \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "templateId": "ghost",
-    "name": "my-blog",
-    "routes": [
-      { "service": "ghost", "port": 2368, "mode": "custom", "customDomain": "blog.acme.com" }
-    ]
-  }'
-```
 
 ## Custom apps
 
@@ -218,7 +263,7 @@ the catalog, install an app, and read its settings and connection details. Tool 
 module-level hard-deny list covers only `tokens`, `auth`, and `mcp`. `apps` is not on it.
 
 Every MCP call **re-checks the caller's permissions**, so the tags in the
-[endpoints table](#endpoints) apply unchanged. What that means in practice:
+[operation table](#operations) apply unchanged. What that means in practice:
 
 | Agent token | Can do |
 |---|---|
@@ -231,7 +276,7 @@ read an installed app's database passwords and service-role keys. If you are han
 agent that only needs to inspect things, issue a read-only one.
 </Callout>
 
-## Errors you might see
+## Errors
 
 <Callout title="400 — install refused" type="warn">
 Install validates the app and your routing choices, and returns the reason as the message. Common
@@ -268,9 +313,35 @@ for no public route.
 nor one of your organization's custom apps. List valid ids with `GET /api/apps/catalog`.
 </Callout>
 
-## See also
+## Related guides
 
 - [App catalog JSON](/docs/reference/app-catalog) — every field in an app definition
 - [Add an app](/docs/guides/add-an-app) — submit a curated app, or upload a custom one
 - [Services API](/docs/api/services) — the services an installed app is made of
 - [Projects API](/docs/api/projects) — the project an app installs into
+
+## Operations
+
+{/* api-operations:start */}
+
+### Connections, storage, and apps
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read curated settings for an installed catalog app. | `projects.getAppSettings(id)` | `GET /api/projects/:id/app-settings`<br />`project:read` |
+| Apply curated app setting changes. | `projects.updateAppSettings(id, input)` | `PATCH /api/projects/:id/app-settings`<br />`project:write` |
+| Read app connection details; these may include credentials and require write access. | `projects.getAppConnection(id)` | `GET /api/projects/:id/app-connection`<br />`project:write` |
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List available app templates. | `apps.listCatalog()` | `GET /api/apps/catalog`<br />`project:list` |
+| List the organization’s custom app definitions. | `apps.listCustom()` | `GET /api/apps/custom`<br />`project:list` |
+| Validate and save a custom app definition. | `apps.saveCustom(input)` | `POST /api/apps/custom`<br />`project:write` |
+| Create or update an installation draft and return its project. | `apps.install(input)` | `POST /api/apps`<br />`project:write` |
+| Read a template and its accessible installation draft. | `apps.getCatalogEntry(id)` | `GET /api/apps/catalog/:id`<br />`project:list` |
+| Check template requirements against a destination. | `apps.hostFit(id, input?)` | `GET /api/apps/catalog/:id/host-fit`<br />`project:list` |
+| Remove a custom catalog definition. | `apps.removeCustom(id)` | `DELETE /api/apps/custom/:appId`<br />`project:write` |
+
+{/* api-operations:end */}

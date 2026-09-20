@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "gitea",
   "name": "Gitea",
-  "description": "Self-hosted Git with issues, pull requests, and a first-run setup wizard.",
+  "description": "Self-hosted Git with issues and pull requests. The admin account below is created for you.",
   "kind": "template",
   "logo": "gitea",
   "category": "other",
@@ -16,18 +16,94 @@
     {
       "name": "gitea",
       "image": "gitea/gitea:1",
-      "ports": [
-        "3000:3000"
-      ],
       "exposedPort": 3000,
       "exposed": true,
       "environment": {
-        "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}"
+        "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}",
+        "GITEA__security__INSTALL_LOCK": "true",
+        "GITEA__security__SECRET_KEY": "{{config:GITEA_SECRET_KEY}}",
+        "GITEA__database__DB_TYPE": "sqlite3",
+        "GITEA__service__DISABLE_REGISTRATION": "true",
+        "GITEA_ADMIN_USERNAME": "admin",
+        "GITEA_ADMIN_EMAIL": "admin@example.com"
       },
       "volumes": [
         "gitea_data:/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "secretEnv": [
+        "GITEA_ADMIN_PASSWORD"
+      ],
+      "ports": [
+        "3009:3000"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "GITEA_SECRET_KEY",
+      "service": "gitea",
+      "label": "Secret key",
+      "help": "Auto-generated. Signs Gitea's tokens and locks the installer.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "GITEA_ADMIN_PASSWORD",
+      "service": "gitea",
+      "label": "Admin password",
+      "help": "Auto-generated. Password for the seeded admin account.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "prepare": [
+    {
+      "service": "gitea",
+      "title": "Create the Gitea admin",
+      "description": "Seeds the administrator account so you can sign in immediately.",
+      "command": "su-exec git gitea admin user create --admin --username \"$GITEA_ADMIN_USERNAME\" --password \"$GITEA_ADMIN_PASSWORD\" --email \"$GITEA_ADMIN_EMAIL\" --must-change-password=false 2>&1 || true; echo done",
+      "capture": "gitea_admin",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "su-exec git gitea admin user list >/dev/null 2>&1",
+        "interval": 3000,
+        "retries": 40
+      }
+    }
+  ],
+  "connection": {
+    "title": "Sign in to Gitea",
+    "description": "Your admin account is created during install. New self-registration is disabled — invite users from Site Administration.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Gitea",
+        "source": "publicUrl:gitea",
+        "kind": "url",
+        "recommended": true,
+        "help": "Sign in with the username and password below."
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "env:gitea:GITEA_ADMIN_USERNAME",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:gitea:GITEA_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "INSTALL_LOCK is on, so the public setup wizard is disabled and cannot be used to hijack the instance. The password above works as-is."
+    }
+  },
+  "verified": true
 }

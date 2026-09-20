@@ -45,13 +45,13 @@ vi.mock("@repo/db", () => ({
     server: { listByOrganization: serverListByOrganization },
   },
 }));
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("../../../src/lib/permission", () => ({ checkPermissionOnResource }));
-vi.mock("../../../src/modules/system/server-containers.service", () => ({ loadOrgContainerIssues }));
-vi.mock("../../../src/modules/updates/updates.service", () => ({ listOrganizationUpdates }));
-vi.mock("../../../src/modules/projects/pending-actions.service", () => ({ getOrgPendingActions }));
+vi.mock("@repo/platform/engine/modules/system/server-containers.service", () => ({ loadOrgContainerIssues }));
+vi.mock("@repo/platform/engine/modules/updates/updates.service", () => ({ listOrganizationUpdates }));
+vi.mock("@repo/platform/engine/modules/projects/pending-actions.service", () => ({ getOrgPendingActions }));
 
-import { countIssues, listOrganizationIssues } from "../../../src/modules/issues/issues.service";
+import { countIssues, listOrganizationIssues } from "@repo/platform/engine/modules/issues/issues.service";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ORG = "org-1";
@@ -554,4 +554,10 @@ describe("a broken source degrades to a missing section, never a broken page", (
 
     expect(issues.map((i) => i.kind)).toEqual(["domain_unverified"]);
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({ checkPermissionOnResource }))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

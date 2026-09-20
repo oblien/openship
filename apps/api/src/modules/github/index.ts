@@ -10,7 +10,7 @@ export { githubRoutes } from "./github.routes";
 
 /* ─── Auto-register webhook provider ────────────────────────────────────── */
 
-import { registerWebhookProvider } from "../webhooks/webhook.service";
+import { registerWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
 import { githubWebhookProvider } from "./github.webhook";
 
 registerWebhookProvider(githubWebhookProvider);

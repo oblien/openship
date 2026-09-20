@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Reusable journalctl tail drawer. Slides in from the right, locks body
- * scroll, ESC + backdrop close. Shared by:
+ * Daemon log drawer for the Health tab. Slides in from the right, locks body
+ * scroll, ESC + backdrop close.
  *
- *   - Health tab - "Logs" link on a failed component.
- *   - Advanced tab - every row in the Components panel.
- *
- * Keeping a single implementation means both surfaces stay in sync when
- * we add features (filter, follow, copy-all).
+ * The header prints the read the SERVER performed (`logs.source`) rather than a
+ * command this file composes. It used to hardcode `journalctl -u <unit>`, which on
+ * the container engine named a log that does not exist — the real read is
+ * `docker exec openship-mail tail -n N /var/log/supervisor/<unit>.log`. Re-deriving
+ * it here would only move the guess client-side; only the box knows its topology.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,7 +19,6 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 interface LogsDrawerProps {
   serverId: string;
   componentKey: string;
-  unit: string;
   label: string;
   onClose: () => void;
 }
@@ -27,7 +26,6 @@ interface LogsDrawerProps {
 export function LogsDrawer({
   serverId,
   componentKey,
-  unit,
   label,
   onClose,
 }: LogsDrawerProps) {
@@ -91,8 +89,8 @@ export function LogsDrawer({
             <h2 className="text-sm font-semibold text-foreground">
               {interpolate(t.emailsAdmin.shared.logsTitle, { label })}
             </h2>
-            <p className="text-[11.5px] text-muted-foreground mt-0.5 font-mono">
-              journalctl -u {unit} -n 300
+            <p className="text-[11.5px] text-muted-foreground mt-0.5 font-mono break-all">
+              {logs?.source}
             </p>
           </div>
           <button
@@ -125,7 +123,7 @@ export function LogsDrawer({
             <p className="text-muted-foreground">{t.emailsAdmin.shared.loadingLogs}</p>
           ) : logs && logs.lines.length === 0 ? (
             <p className="text-muted-foreground italic">
-              {t.emailsAdmin.shared.noJournal}
+              {t.emailsAdmin.shared.noLogLines}
             </p>
           ) : (
             logs?.lines.map((line, i) => (

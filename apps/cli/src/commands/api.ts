@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { apiRaw } from "../lib/api-client";
+import { getRemoteClient } from "../lib/ship-client";
 import { err, printJson } from "../lib/output";
 
 /**
@@ -29,7 +29,7 @@ export const apiCommand = new Command("api")
     if (opts.data) init.body = opts.data;
 
     try {
-      const res = await apiRaw(url, init);
+      const res = await getRemoteClient().http.raw(url, init);
       const text = await res.text();
       let body: unknown = text;
       try {

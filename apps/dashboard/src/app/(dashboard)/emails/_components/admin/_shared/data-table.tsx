@@ -19,6 +19,7 @@
 
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { Skeleton } from "./skeleton";
 
 export interface DataTableColumn<T> {
@@ -40,9 +41,9 @@ interface DataTableProps<T> {
   loading?: boolean;
   /** Number of skeleton rows to show during loading. */
   skeletonRows?: number;
-  /** Right-side actions column (Edit / Delete buttons). */
+  /** Right-side actions column — a single `RowActionsMenu` per row. */
   rowActions?: (row: T) => React.ReactNode;
-  /** Width of the actions column. Default 96px. */
+  /** Width of the actions column. Default 56px (one ⋯ trigger). */
   rowActionsWidth?: string;
   /** Click handler for a whole row - turns the row into a button. */
   onRowClick?: (row: T) => void;
@@ -62,7 +63,7 @@ export function DataTable<T>({
   loading,
   skeletonRows = 5,
   rowActions,
-  rowActionsWidth = "96px",
+  rowActionsWidth = "56px",
   onRowClick,
   empty,
 }: DataTableProps<T>) {
@@ -73,10 +74,14 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
-      {/* Header row */}
+    // No overflow-hidden: a row's ⋯ menu renders in-flow, so it would be
+    // clipped on the last row. Corners come from the header + last row instead.
+    <div className="bg-card rounded-2xl border border-border/50">
+      {/* Header row. A hairline and quieter labels, no grey fill strip: the
+          dashboard's other lists head their cards this way, and the filled bar
+          read as a second surface stacked on the card. */}
       <div
-        className="grid items-center gap-4 px-5 py-3 bg-muted/30 border-b border-border/50"
+        className="grid items-center gap-4 px-5 pt-4 pb-2.5 border-b border-border/50 rounded-t-2xl"
         style={{ gridTemplateColumns: gridTemplate }}
         role="row"
       >
@@ -84,7 +89,7 @@ export function DataTable<T>({
           <div
             key={c.key}
             className={cn(
-              "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide",
+              "text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider",
               alignClass(c.align),
               hideBelowClass(c.hideBelow),
             )}
@@ -97,7 +102,7 @@ export function DataTable<T>({
       </div>
 
       {/* Body */}
-      <div className="divide-y divide-border/40">
+      <div className="divide-y divide-border/50">
         {loading
           ? Array.from({ length: skeletonRows }).map((_, i) => (
               <DataTableRowSkeleton
@@ -141,8 +146,8 @@ function DataTableRow<T>({
       role="row"
       onClick={interactive ? () => onRowClick(row) : undefined}
       className={cn(
-        "grid items-center gap-4 px-5 py-3.5 transition-colors",
-        interactive && "cursor-pointer hover:bg-muted/30",
+        "grid items-center gap-4 px-5 py-4 transition-colors last:rounded-b-2xl",
+        interactive && "cursor-pointer hover:bg-foreground/[0.03]",
       )}
       style={{ gridTemplateColumns: gridTemplate }}
     >
@@ -237,46 +242,25 @@ function DataTableEmpty({
   );
 }
 
-// ─── Action button - reused by every row that needs Edit / Delete ────────────
+// ─── Row actions - one ⋯ menu per row ───────────────────────────────────────
 
-interface RowIconButtonProps {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant?: "default" | "danger";
-  disabled?: boolean;
-}
-
-export function RowIconButton({
-  icon: Icon,
-  label,
-  onClick,
-  variant = "default",
-  disabled,
-}: RowIconButtonProps) {
-  const variantCls =
-    variant === "danger"
-      ? "hover:text-danger hover:bg-danger-bg"
-      : "hover:text-foreground hover:bg-muted/50";
+/**
+ * Every row action lives behind this menu, destructive ones included: a bare
+ * trash icon parked at the row's edge sits one stray click away from the row's
+ * own action, and it advertises deletion as the primary thing a row offers.
+ */
+export function RowActionsMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      disabled={disabled}
-      className={cn(
-        "p-2 rounded-lg text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-        variantCls,
-      )}
-      title={label}
-      aria-label={label}
-      type="button"
-    >
-      <Icon className="size-4" strokeWidth={2} />
-    </button>
+    <DropdownMenu
+      align="right"
+      actions={actions}
+      triggerLabel={label}
+      triggerClassName="flex size-8 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+    />
   );
 }
+
+export type { MenuAction };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

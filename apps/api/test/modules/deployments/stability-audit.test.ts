@@ -12,7 +12,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { BuildLogger, type ContainerStabilitySample, type RuntimeAdapter } from "@repo/adapters";
-import { verifyDeployedContainers } from "../../../src/modules/deployments/stability-audit.service";
+import { verifyDeployedContainers } from "@repo/platform/engine/modules/deployments/stability-audit.service";
 
 /** Real timers, tiny window: the audit's own polling is exercised, instantly. */
 const FAST = { windowMs: 60, pollMs: 5 };

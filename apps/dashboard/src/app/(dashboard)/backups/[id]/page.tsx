@@ -271,7 +271,16 @@ function PolicyRow({ p, m }: { p: DestinationUsagePolicy; m: Record<string, stri
     : p.serviceName
       ? `${p.projectName ?? "—"} / ${p.serviceName}`
       : p.projectName ?? "—";
-  const href = isMail ? "/emails" : p.projectId ? `/projects/${p.projectId}/backup` : null;
+  // Land on the tab that edits THIS policy, the way the project link does.
+  // Bare "/emails" dropped an operator on the server list with no hint that the
+  // schedule they clicked is two more clicks away.
+  const href = isMail
+    ? p.mailServerId
+      ? `/emails?serverId=${encodeURIComponent(p.mailServerId)}&tab=backup`
+      : "/emails"
+    : p.projectId
+      ? `/projects/${p.projectId}/backup`
+      : null;
   const schedule = p.cronExpression ?? m.scheduleManual;
   const run = p.lastRun;
   const tone = !run

@@ -23,7 +23,6 @@ function makePgFake(rows: Array<Record<string, unknown>>): PgFake {
       set: (values: Record<string, unknown>) => ({
         where: () => {
           state.updates.push(values);
-          const queuedCutoff = now - 30 * 60 * 1000;
           const idleCutoff = now - 10 * 60 * 1000;
           const ceilingCutoff = now - 6 * 60 * 60 * 1000;
           const swept: Array<Record<string, unknown>> = [];
@@ -34,12 +33,13 @@ function makePgFake(rows: Array<Record<string, unknown>>): PgFake {
             const terminal = ["succeeded", "failed", "cancelled", "server_error"];
             if (terminal.includes(status) || row.finishedAt) continue;
 
-            // Mirror of sweepRunsWithStaleHeartbeat's WHERE. `uploading` is NOT
-            // idle-swept — a single-artifact dump holds (uploading, bytes=NULL,
-            // lastEventAt=frozen) for the whole honest upload — so it is bounded
-            // by the ceiling only (the executor watchdog reaps a real wedge).
+            // Mirror of sweepRunsWithStaleHeartbeat's WHERE. Two states are NOT
+            // idle-swept. `uploading`, because a single-artifact dump holds
+            // (uploading, bytes=NULL, lastEventAt=frozen) for the whole honest
+            // upload. And `queued`, because lastEventAt does not move while a run
+            // waits for a worker, so an idle window there measures queue depth —
+            // both are bounded by the ceiling only.
             const stale =
-              (status === "queued" && last < queuedCutoff) ||
               (["preparing", "snapshotting", "verifying"].includes(status) && last < idleCutoff) ||
               last < ceilingCutoff;
 
@@ -59,7 +59,6 @@ function makePgFake(rows: Array<Record<string, unknown>>): PgFake {
 }
 
 const CUTOFFS = (now: number) => ({
-  queuedCutoff: new Date(now - 30 * 60 * 1000),
   idleCutoff: new Date(now - 10 * 60 * 1000),
   ceilingCutoff: new Date(now - 6 * 60 * 60 * 1000),
   reason: "stale",
@@ -68,12 +67,40 @@ const CUTOFFS = (now: number) => ({
 describe("backupRun.sweepRunsWithStaleHeartbeat", () => {
   const now = Date.now();
 
-  it("fails a queued run nobody picked up", async () => {
+  it("does NOT sweep a run that is merely waiting for a worker slot", async () => {
+    // The regression this replaces. `lastEventAt` is stamped at row creation and
+    // bumped only by transition(), so it does not move while a run sits queued —
+    // an idle window there measures QUEUE DEPTH, not health. Run concurrency is 2,
+    // so a project-level policy fanning out across a few services puts ordinary
+    // runs well past 30 minutes while they are still perfectly claimable.
+    //
+    // And the write is TERMINAL: transition() then refuses every later write and
+    // execute() bails on any row that is no longer `queued`, so sweeping it did not
+    // merely warn early — it silently cancelled the backup forever. Queued rows are
+    // never orphaned anyway (the in-process runner re-lists listQueued() every 30s;
+    // BullMQ holds the job in Redis).
     const pg = makePgFake([
       {
         id: "bkr_q",
         status: "queued",
-        lastEventAt: new Date(now - 31 * 60 * 1000),
+        lastEventAt: new Date(now - 45 * 60 * 1000),
+        finishedAt: null,
+      },
+    ]);
+    const repo = createBackupRunRepo(pg.db as never);
+    const swept = await repo.sweepRunsWithStaleHeartbeat(CUTOFFS(now));
+    expect(swept).toBe(0);
+    expect(pg.rows[0].status).toBe("queued");
+  });
+
+  it("still sweeps a queued run past the 6h ceiling", async () => {
+    // The genuine backstop survives: a row that has sat queued for six hours is a
+    // real anomaly, not a busy queue.
+    const pg = makePgFake([
+      {
+        id: "bkr_q_old",
+        status: "queued",
+        lastEventAt: new Date(now - 7 * 60 * 60 * 1000),
         finishedAt: null,
       },
     ]);

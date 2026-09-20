@@ -135,6 +135,13 @@ export function createNotificationChannelRepo(db: Database) {
       return row;
     },
 
+    /** A test delivery only verifies the exact configuration that was tested. */
+    async verifyIfUnchanged(expected: Pick<NotificationChannel, "id" | "userId" | "kind" | "config">): Promise<NotificationChannel | undefined> {
+      const [row] = await db.update(notificationChannel).set({ verified: true, updatedAt: new Date() })
+        .where(and(eq(notificationChannel.id, expected.id), eq(notificationChannel.userId, expected.userId), eq(notificationChannel.kind, expected.kind), eq(notificationChannel.config, expected.config))).returning();
+      return row;
+    },
+
     async delete(id: string): Promise<void> {
       await db.delete(notificationChannel).where(eq(notificationChannel.id, id));
     },
@@ -337,7 +344,7 @@ export function createNotificationDeliveryRepo(db: Database) {
     async listForUser(
       userId: string,
       organizationId: string,
-      opts?: { limit?: number; unseenOnly?: boolean },
+      opts?: { limit?: number; unseenOnly?: boolean; offset?: number; excludeFailed?: boolean },
     ): Promise<NotificationDelivery[]> {
       const conditions = [
         eq(notificationDelivery.userId, userId),
@@ -346,12 +353,14 @@ export function createNotificationDeliveryRepo(db: Database) {
       if (opts?.unseenOnly) {
         conditions.push(sql`${notificationDelivery.seenAt} IS NULL`);
       }
+      if (opts?.excludeFailed) conditions.push(sql`${notificationDelivery.status} != 'failed'`);
       return db
         .select()
         .from(notificationDelivery)
         .where(and(...conditions))
-        .orderBy(desc(notificationDelivery.createdAt))
-        .limit(opts?.limit ?? 100);
+        .orderBy(desc(notificationDelivery.createdAt), desc(notificationDelivery.id))
+        .limit(opts?.limit ?? 100)
+        .offset(opts?.offset ?? 0);
     },
 
     async findById(id: string): Promise<NotificationDelivery | undefined> {
@@ -374,21 +383,21 @@ export function createNotificationDeliveryRepo(db: Database) {
       return row;
     },
 
-    /** Worker picks up queued deliveries oldest-first. */
+    /** Atomically claim rows; concurrent workers cannot send the same queued row. */
     async claimQueued(limit = 25): Promise<NotificationDelivery[]> {
-      return db
-        .select()
-        .from(notificationDelivery)
-        .where(eq(notificationDelivery.status, "queued"))
-        .orderBy(notificationDelivery.createdAt)
-        .limit(limit);
+      return db.transaction(async tx => {
+        const rows = await tx.select().from(notificationDelivery).where(eq(notificationDelivery.status, "queued"))
+          .orderBy(notificationDelivery.createdAt).limit(limit).for("update", { skipLocked: true });
+        if (rows.length) await tx.update(notificationDelivery)
+          .set({ status: "sending", attempts: sql`${notificationDelivery.attempts} + 1` })
+          .where(inArray(notificationDelivery.id, rows.map(row => row.id)));
+        return rows;
+      });
     },
 
-    async markSending(id: string): Promise<void> {
-      await db
-        .update(notificationDelivery)
-        .set({ status: "sending", attempts: sql`${notificationDelivery.attempts} + 1` })
-        .where(eq(notificationDelivery.id, id));
+    /** Exclusive owner recovery never blindly repeats an uncertain external send. */
+    async failInterrupted(reason: string): Promise<void> {
+      await db.update(notificationDelivery).set({ status: "failed", lastError: reason }).where(eq(notificationDelivery.status, "sending"));
     },
 
     async markSent(id: string): Promise<void> {

@@ -1,0 +1,275 @@
+---
+title: project
+description: Commands, arguments, and options for openship project.
+cliGroup: openship project
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project
+
+Manage Openship projects
+
+```text
+openship project|projects [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list\|ls`](/docs/cli/reference/project#openship-project-list) | List projects in the active organization |
+| [`get <id>`](/docs/cli/reference/project#openship-project-get) | Show a single project |
+| [`rename <id> <name>`](/docs/cli/reference/project#openship-project-rename) | Change a project's display name |
+| [`release-image [options] <id>`](/docs/cli/reference/project#openship-project-release-image) | Track and deploy a versioned prebuilt container image |
+| [`create [options]`](/docs/cli/reference/project#openship-project-create) | Create a project |
+| [`delete\|rm [options] <id>`](/docs/cli/reference/project#openship-project-delete) | Delete a project (tears down all resources) |
+| [`env`](/docs/cli/reference/project#openship-project-env) | Manage project environment variables |
+| [`git`](/docs/cli/reference/project/git#openship-project-git) | Manage git linkage and auto-deploy |
+| [`connect [options] <id> <domain>`](/docs/cli/reference/project#openship-project-connect) | Connect a custom domain to a project |
+| [`enable <id>`](/docs/cli/reference/project#openship-project-enable) | Start a stopped project |
+| [`disable <id>`](/docs/cli/reference/project#openship-project-disable) | Stop a running project |
+| [`sleep-mode <id> <mode>`](/docs/cli/reference/project#openship-project-sleep-mode) | Set the project sleep mode |
+| [`transfer <id> <direction>`](/docs/cli/reference/project#openship-project-transfer) | Promote a project to Openship Cloud, or bring it back (self-hosted only) |
+| [`logs [options] <id>`](/docs/cli/reference/project#openship-project-logs) | Show or stream runtime (container) logs |
+| [`server-logs [options] <id>`](/docs/cli/reference/project#openship-project-server-logs) | Show or stream HTTP request logs (edge/OpenResty) |
+
+## openship project connect
+
+Connect a custom domain to a project
+
+```text
+openship project connect [options] <id> <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `domain` | Custom domain hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `--include-www` | Also connect the www. variant |
+
+## openship project create
+
+Create a project
+
+```text
+openship project create [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Project name |
+| `--slug <slug>` | Free-subdomain slug (slug.opsh.io) |
+| `--git-owner <owner>` | GitHub owner/org |
+| `--git-repo <repo>` | GitHub repository name |
+| `--git-branch <branch>` | Git branch to deploy |
+| `--framework <framework>` | Stack/framework id |
+| `--local-path <path>` | Local source path |
+| `--port <port>` | Container port |
+| `--type <type>` | Project type: app \| docker \| services \| monorepo |
+| `--server <id>` | Registered server ID (see `openship server list`) |
+
+## openship project delete
+
+Delete a project (tears down all resources)
+
+```text
+openship project delete|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Cancel active work and delete anyway |
+| `--force-orphan` | Orphan resources that won't destroy, then drop the row |
+| `--wipe-volumes` | Also destroy persistent volumes |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship project disable
+
+Stop a running project
+
+```text
+openship project disable [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project enable
+
+Start a stopped project
+
+```text
+openship project enable [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project env
+
+Manage project environment variables
+
+```text
+openship project env [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get [options] <id>`](/docs/cli/reference/project#openship-project-env-get) | List env vars (secret values are masked by the API) |
+| [`set [options] <id>`](/docs/cli/reference/project#openship-project-env-set) | Merge env vars: upsert KEY=VALUE pairs and/or delete keys |
+
+## openship project env get
+
+List env vars (secret values are masked by the API)
+
+```text
+openship project env get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--environment <env>` | Filter by environment (production\|preview\|development) |
+
+## openship project env set
+
+Merge env vars: upsert KEY=VALUE pairs and/or delete keys
+
+```text
+openship project env set [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--environment <env>` | Target environment (default: "production") |
+| `--set <pair>` | KEY=VALUE to upsert (repeatable) (default: []) |
+| `--unset <key>` | KEY to delete (repeatable) (default: []) |
+| `--secret` | Mark every --set value as a secret |
+
+## openship project get
+
+Show a single project
+
+```text
+openship project get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project list
+
+List projects in the active organization
+
+```text
+openship project list|ls [options]
+```
+
+## openship project logs
+
+Show or stream runtime (container) logs
+
+```text
+openship project logs [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--tail <n>` | Number of recent lines |
+| `-f, --follow` | Stream logs until interrupted |
+
+## openship project release-image
+
+Track and deploy a versioned prebuilt container image
+
+```text
+openship project release-image [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--image-template <reference>` | Image reference with &#123;tag&#125; or &#123;version&#125;, e.g. ghcr.io/acme/api:&#123;tag&#125; |
+| `--github-repo <owner/repo>` | Resolve versions from GitHub Releases |
+| `--version-url <https-url>` | HTTPS endpoint returning a version or tag |
+| `--pin <version>` | Deploy a fixed version instead of the discovered latest release |
+
+## openship project rename
+
+Change a project's display name
+
+```text
+openship project rename [options] <id> <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `name` | New display name |
+
+## openship project server-logs
+
+Show or stream HTTP request logs (edge/OpenResty)
+
+```text
+openship project server-logs [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--limit <n>` | Number of recent entries (max 200) |
+| `--domain <domain>` | Restrict to a specific domain |
+| `-f, --follow` | Stream request logs until interrupted |
+
+## openship project sleep-mode
+
+Set the project sleep mode
+
+```text
+openship project sleep-mode [options] <id> <mode>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `mode` | One of: auto_sleep, always_on |
+
+## openship project transfer
+
+Promote a project to Openship Cloud, or bring it back (self-hosted only)
+
+```text
+openship project transfer [options] <id> <direction>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `direction` | One of: to-cloud, to-self-hosted |

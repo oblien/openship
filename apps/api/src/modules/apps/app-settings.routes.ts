@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./app.controller";
-import { AppSettingsPatchBody } from "./app.schema";
+import { AppSettingsPatchBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "apps",
@@ -25,7 +25,7 @@ r.get(
 );
 r.patch(
   "/",
-  { tag: "project:write", body: AppSettingsPatchBody, mcp: { description: "Update an installed app's curated settings (safe env merge)." } },
+  { tag: "project:write", body: AppSettingsPatchBody, auditHandledByOperation: true, mcp: { description: "Update an installed app's curated settings (safe env merge)." } },
   cloudProjectProxy,
   ctrl.patchSettings,
 );

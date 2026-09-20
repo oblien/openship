@@ -1,4 +1,13 @@
-import { pgTable, text, timestamp, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, timestamp, index, jsonb } from "drizzle-orm/pg-core";
+import { gitSource } from "./git-source";
+
+export interface GithubInstallStatePayload {
+  /** Operator-facing label retained through the external manifest round-trip. */
+  name?: string;
+  apiBaseUrl?: string;
+  webBaseUrl?: string;
+}
 
 /**
  * One-time, session-bound nonce minted when a user kicks off the GitHub
@@ -37,6 +46,15 @@ export const githubInstallState = pgTable(
     userId: text("user_id").notNull(),
     /** Org id resolved for the user at request time (nullable when no org). */
     organizationId: text("organization_id"),
+    /** Source being installed. Null for legacy env/Cloud App flows and manifests. */
+    sourceId: text("source_id").references(() => gitSource.id, { onDelete: "cascade" }),
+    /** `install` or `manifest`; text keeps future setup flows migration-free. */
+    flow: text("flow").notNull().default("install"),
+    /** Non-secret manifest setup inputs. Never stores conversion credentials. */
+    payload: jsonb("payload")
+      .$type<GithubInstallStatePayload>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

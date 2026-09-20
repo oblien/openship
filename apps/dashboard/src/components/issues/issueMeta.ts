@@ -39,6 +39,17 @@ export const SEVERITY_TONE: Record<IssueSeverity, AlertTone> = {
   advisory: "neutral",
 };
 
+/**
+ * The tone a scope PANEL wears. An advisory is muted while something louder shares
+ * the page — so "a new version exists" can't be mistaken for "down" at a glance —
+ * but amber when advisories stand alone, the same identity the home Updates card
+ * carries. `standAlone` is true when nothing on the page outranks an advisory.
+ */
+export function panelTone(severity: IssueSeverity, standAlone: boolean): AlertTone {
+  const tone = SEVERITY_TONE[severity] ?? "warning";
+  return tone === "neutral" && standAlone ? "warning" : tone;
+}
+
 export const KIND_ICON: Record<IssueKind, ComponentType<{ className?: string }>> = {
   deploy_blocked: XCircle,
   prompt: HelpCircle,

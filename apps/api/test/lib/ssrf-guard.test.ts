@@ -6,7 +6,7 @@ import {
   assertPublicUrlLiteral,
   isBlockedHostname,
   isPrivateIp,
-} from "../../src/lib/ssrf-guard";
+} from "@repo/platform/engine/lib/ssrf-guard";
 
 // The literal (sync, no-DNS) half of the guard — the create/update-time reject.
 // Fetch-time DNS pinning is covered by safe-fetch.test.ts.

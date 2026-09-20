@@ -1,3 +1,4 @@
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship server` — manage self-hosted SSH servers.
  *
@@ -15,9 +16,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import { apiRequest, ApiError } from "../lib/api-client";
-import { sseRequest } from "../lib/sse";
-import { getToken } from "../lib/config";
+import { getShipClient, ApiError, hasShipCredentials } from "../lib/ship-client";
+import type { CreateServerInput } from "@repo/sdk";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 
@@ -31,31 +31,19 @@ const INSTALLABLE = ["docker", "git", "edge", "rsync"] as const;
  */
 function guard<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => Promise<void> {
   return async (...args: A) => {
-    if (!getToken()) {
+    if (!hasShipCredentials()) {
       err("Not logged in. Run `openship login` first.");
-      process.exit(1);
+      exitCommand(1);
     }
     try {
       requireSelfHost(await fetchCaps());
       await fn(...args);
     } catch (e) {
+      rethrowCommandExit(e);
       err(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e));
-      process.exit(1);
+      exitCommand(1);
     }
   };
-}
-
-interface ServerRow {
-  id: string;
-  name: string | null;
-  sshHost: string;
-  sshPort: number;
-  sshUser: string;
-  sshAuthMethod: string | null;
-  sshKeyPath: string | null;
-  sshJumpHost: string | null;
-  sshArgs: string | null;
-  createdAt: string;
 }
 
 interface ConnOpts {
@@ -63,7 +51,7 @@ interface ConnOpts {
   name?: string;
   port: string;
   user: string;
-  authMethod?: string;
+  authMethod?: CreateServerInput["sshAuthMethod"];
   password?: string;
   keyPath?: string;
   keyPassphrase?: string;
@@ -72,7 +60,7 @@ interface ConnOpts {
 }
 
 /** Map CLI connection flags to the API's ssh* request body. */
-function connBody(o: ConnOpts): Record<string, unknown> {
+function connBody(o: ConnOpts): CreateServerInput {
   return {
     name: o.name,
     sshHost: o.host,
@@ -97,7 +85,7 @@ server
   .description("List servers in the active organization")
   .action(
     guard(async () => {
-      const servers = await apiRequest<ServerRow[]>("/system/servers");
+      const servers = await getShipClient().servers.list();
       if (isJsonMode()) return printJson(servers);
       if (servers.length === 0) return info("  No servers configured.");
       printTable(
@@ -131,10 +119,7 @@ server
   .option("--ssh-args <args>", "Extra raw ssh args")
   .action(
     guard(async (o: ConnOpts) => {
-      const created = await apiRequest<ServerRow>("/system/servers", {
-        method: "POST",
-        body: JSON.stringify(connBody(o)),
-      });
+      const created = await getShipClient().servers.create(connBody(o));
       if (isJsonMode()) return printJson(created);
       ok(`  Added server ${created.name ?? created.sshHost} (${created.id})`);
     }),
@@ -147,7 +132,8 @@ server
   .description("Delete a server")
   .action(
     guard(async (id: string) => {
-      await apiRequest(`/system/servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const result = await getShipClient().servers.remove(id);
+      if (!result.ok) throw new Error(result.error);
       if (isJsonMode()) return printJson({ ok: true, id });
       ok(`  Removed server ${id}`);
     }),
@@ -172,18 +158,15 @@ server
     guard(async (o: ConnOpts) => {
       const spinner = isJsonMode() ? null : ora(`Connecting to ${o.host}…`).start();
       try {
-        // The API returns { ok:false } on a reachable-but-failed handshake and
-        // throws (via ApiError) on 4xx/5xx — surface both as a failed test.
-        const res = await apiRequest<{ ok: boolean; message: string }>("/system/test-connection", {
-          method: "POST",
-          body: JSON.stringify(connBody(o)),
-        });
+        // Failed connectivity is a typed result; invalid requests still throw.
+        const res = await getShipClient().servers.testConnection(connBody(o));
         spinner?.stop();
-        if (isJsonMode()) return printJson(res);
+        if (isJsonMode()) { printJson(res); if (!res.ok) exitCommand(1); return; }
         if (res.ok) return ok(`  ${res.message}`);
         err(`  ${res.message}`);
-        process.exit(1);
+        exitCommand(1);
       } catch (e) {
+      rethrowCommandExit(e);
         spinner?.stop();
         throw e;
       }
@@ -199,14 +182,7 @@ server
   .action(
     guard(async (serverId: string, o: { component?: string[] }) => {
       const spinner = isJsonMode() ? null : ora("Checking components…").start();
-      const res = await apiRequest<{
-        components: Array<{ name: string; installed?: boolean; healthy?: boolean; version?: string; optional?: boolean }>;
-        ready: boolean;
-        missing: string[];
-      }>("/system/check", {
-        method: "POST",
-        body: JSON.stringify({ serverId, components: o.component }),
-      });
+      const res = await getShipClient().servers.check(serverId, { components: o.component });
       spinner?.stop();
       if (isJsonMode()) return printJson(res);
       printTable(
@@ -226,18 +202,6 @@ server
 
 /* ── update (native-module migrations) ──────────────────────────── */
 // --check: report drift only. Default: apply pending migrations (incl. consent).
-interface ModuleRow {
-  moduleName: string;
-  installedVersion: string | null;
-  migrationVersion: string | null;
-  availableVersion: string | null;
-  behind: boolean;
-  detail: { pendingConsent?: { id: string; version: string; warning?: string }[] } | null;
-}
-interface ModuleApplyResult {
-  module: string; fromVersion: string; toVersion: string;
-  appliedSteps: string[]; ok: boolean; error?: string;
-}
 server
   .command("update <serverId>")
   .description("Check for and apply native-module migrations (OpenResty, …)")
@@ -245,10 +209,9 @@ server
   .option("--check", "Only report drift; don't apply")
   .action(
     guard(async (serverId: string, o: { component?: string[]; check?: boolean }) => {
-      const base = `/system/servers/${encodeURIComponent(serverId)}/modules`;
       // Refresh the drift cache from the live box first (best-effort).
-      await apiRequest(`${base}/scan`, { method: "POST", body: "{}" }).catch(() => {});
-      let mods = await apiRequest<ModuleRow[]>(base);
+      await getShipClient().servers.scanModules(serverId).catch(() => {});
+      let mods = await getShipClient().servers.listModules(serverId);
       if (o.component?.length) mods = mods.filter((m) => o.component!.includes(m.moduleName));
 
       if (o.check) {
@@ -275,10 +238,7 @@ server
           info(`  ${m.moduleName}: includes consent migrations — ${consent.map((c) => c.warning ?? c.id).join("; ")}`);
         }
         const spinner = isJsonMode() ? null : ora(`Updating ${m.moduleName}…`).start();
-        const res = await apiRequest<ModuleApplyResult>(`${base}/${encodeURIComponent(m.moduleName)}/apply`, {
-          method: "POST",
-          body: "{}",
-        });
+        const res = await getShipClient().servers.applyModule(serverId, { module: m.moduleName });
         spinner?.stop();
         if (isJsonMode()) { printJson(res); continue; }
         if (res.ok) ok(`  ${m.moduleName}: ${res.fromVersion} → ${res.toVersion} (${res.appliedSteps.length} step(s))`);
@@ -301,18 +261,20 @@ server
       const invalid = components.filter((c) => !INSTALLABLE.includes(c as (typeof INSTALLABLE)[number]));
       if (invalid.length) {
         err(`  Unknown component(s): ${invalid.join(", ")}. Valid: ${INSTALLABLE.join(", ")}`);
-        process.exit(1);
+        exitCommand(1);
       }
 
       if (o.follow) {
         info(`  Installing ${components.join(", ")} on ${serverId}… (Ctrl-C to stop)`);
         let failed = false;
-        for await (const ev of sseRequest("/system/install/stream", {
-          method: "POST",
-          body: JSON.stringify({ serverId, components }),
-        })) {
+        let status: string | undefined;
+        let sessionId: string | undefined;
+        for await (const ev of getShipClient().servers.installComponents(serverId, { components })) {
           if (ev.event === "ping") continue;
           const payload = safeParse(ev.data);
+          if (ev.event === "session" && typeof payload.sessionId === "string") sessionId = payload.sessionId;
+          if (ev.event === "complete") status = typeof payload.status === "string" ? payload.status : undefined;
+          if (ev.event === "error") failed = true;
           if (isJsonMode()) {
             printJson({ event: ev.event, ...payload });
           } else if (ev.event === "log") {
@@ -322,35 +284,55 @@ server
           } else if (ev.event === "progress") {
             const p = payload as { component?: string | null; status?: string };
             if (p.component) info(`  ${p.component}: ${p.status}`);
-          } else if (ev.event === "complete") {
-            failed = (payload as { status?: string }).status !== "completed";
+          } else if (ev.event === "prompt") {
+            info(`  ${String(payload.title ?? "Installation needs a decision")}: ${String(payload.message ?? "")}`);
+            if (sessionId) info(`  Respond with openship server install-respond ${sessionId} --action <action>.`);
           } else if (ev.event === "error") {
-            failed = true;
             err(`  ${(payload as { error?: string }).error ?? "install error"}`);
-          } else if (ev.event === "end") {
-            break;
           }
+          if (ev.event === "end") break;
         }
-        if (failed) process.exit(1);
-        return ok("  Install finished.");
+        if (!status && sessionId) {
+          const session = await getShipClient().servers.getInstallSession({ sessionId });
+          if (session.active) status = session.status;
+        }
+        if (!status || status === "running") throw new Error("Installation stream ended before an outcome was confirmed.");
+        if (failed || status !== "completed") exitCommand(1);
+        if (!isJsonMode()) ok("  Install finished.");
+        return;
       }
 
       // Non-streaming: install each component sequentially.
       const results: unknown[] = [];
+      let failed = false;
       for (const component of components) {
         const spinner = isJsonMode() ? null : ora(`Installing ${component}…`).start();
-        const res = await apiRequest<{ success: boolean; component: string; version?: string; error?: string }>(
-          "/system/install",
-          { method: "POST", body: JSON.stringify({ serverId, component }) },
-        );
+        const res = await getShipClient().servers.installComponent(serverId, { component });
+        failed ||= !res.success;
         results.push(res);
         if (isJsonMode()) spinner?.stop();
         else if (res.success) spinner?.succeed(`${component} installed${res.version ? ` (${res.version})` : ""}`);
         else spinner?.fail(`${component} failed: ${res.error ?? "unknown error"}`);
       }
       if (isJsonMode()) printJson(results);
+      if (failed) exitCommand(1);
     }),
   );
+
+server.command("install-session [sessionId]")
+  .description("Inspect a server installation session")
+  .action(guard(async (sessionId?: string) => {
+    printJson(await getShipClient().servers.getInstallSession({ sessionId }));
+  }));
+
+server.command("install-respond <sessionId>")
+  .description("Respond to an installation prompt")
+  .requiredOption("--action <action>", "Action id offered by the prompt")
+  .action(guard(async (sessionId: string, options: { action: string }) => {
+    const result = await getShipClient().servers.respondToInstall({ sessionId, action: options.action });
+    if (isJsonMode()) printJson(result);
+    else ok("  Installation response sent.");
+  }));
 
 /* ── rate-limit ─────────────────────────────────────────────────── */
 // GET reads the live OpenResty config; any of --rps/--burst/--whitelist PATCHes.
@@ -362,25 +344,20 @@ server
   .option("--whitelist <cidr...>", "CIDRs exempt from limiting")
   .action(
     guard(async (serverId: string, o: { rps?: string; burst?: string; whitelist?: string[] }) => {
-      const path = `/system/servers/${encodeURIComponent(serverId)}/rate-limit`;
       const mutate = o.rps !== undefined || o.burst !== undefined || o.whitelist !== undefined;
 
       if (mutate) {
-        const res = await apiRequest<{ success: boolean; config: unknown; error?: string }>(path, {
-          method: "PATCH",
-          body: JSON.stringify({
+        const res = await getShipClient().servers.updateRateLimit(serverId, {
             rps: o.rps !== undefined ? Number(o.rps) : undefined,
             burst: o.burst !== undefined ? Number(o.burst) : undefined,
             whitelist: o.whitelist,
-          }),
         });
         if (isJsonMode()) return printJson(res);
-        if (!res.success) return err(`  ${res.error ?? "Update failed"}`);
         printRateLimit(res.config);
         return ok("  Rate limit updated.");
       }
 
-      const res = await apiRequest<{ config: unknown }>(path);
+      const res = await getShipClient().servers.getRateLimit(serverId);
       if (isJsonMode()) return printJson(res);
       printRateLimit(res.config);
     }),
@@ -394,7 +371,7 @@ server
   .action(
     guard(async (serverId: string) => {
       info(`  Streaming stats for ${serverId}… (Ctrl-C to stop)`);
-      for await (const ev of sseRequest(`/system/monitor/stream?serverId=${encodeURIComponent(serverId)}`)) {
+      for await (const ev of getShipClient().servers.monitor(serverId)) {
         if (ev.event === "ping") continue;
         const payload = safeParse(ev.data);
         if (isJsonMode()) {
@@ -429,7 +406,7 @@ server
   .action(() => {
     info("  `openship server ssh` is coming soon.");
     info("  Interactive terminals require a WebSocket client that isn't bundled yet.");
-    process.exit(1);
+    exitCommand(1);
   });
 
 // ── helpers ──────────────────────────────────────────────────────

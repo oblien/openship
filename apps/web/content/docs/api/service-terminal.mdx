@@ -1,6 +1,6 @@
 ---
-title: Service terminal API
-description: Open an interactive shell into a running service container over a WebSocket, authenticated by a one-shot ticket.
+title: Service terminal
+description: Issue access tickets and open a service shell.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,28 +10,6 @@ from the dashboard's **Terminal** tab on a service. You first mint a short-lived
 then open a WebSocket that carries the ticket and streams keystrokes and output. It works in both
 deployment modes: on self-hosted instances it's a `docker exec` into the container; on Openship Cloud it's
 a shell in your Oblien workspace. The runtime is chosen automatically from the service's active deployment.
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — the base is `/api/services/terminal`. Mint the
-ticket with a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access); the dashboard uses your session cookie instead. The WebSocket
-upgrade itself carries **no** bearer header — auth happens inside the handshake (see below). See the
-[API overview](/docs/api) and [auth model](/docs/security/auth) for details.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/services/terminal/ticket` | `terminal:write` | Mint a one-shot, short-lived WebSocket auth ticket for a service. |
-| `GET /api/services/terminal/ws/:serviceId` | `public` | WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie). |
-
-<Callout title="Both routes require admin on the project" type="info">
-Opening a service shell is admin-tier: it's full reach into the container. Beyond the `terminal:write` tag
-on the ticket route, both endpoints check that the caller has **admin** permission on the service's parent
-project. A service you can't administer (or that isn't in your active organization) returns `404` — Openship
-never confirms its existence to non-admins.
-</Callout>
 
 ## Mint a ticket
 
@@ -50,7 +28,7 @@ seconds — mint it right before opening the socket. This route resolves the ser
 burn a WebSocket attempt) if it doesn't exist, isn't yours, or has no active deployment yet.
 
 ```bash
-curl -X POST https://your-host/api/services/terminal/ticket \
+curl -X POST "$OPENSHIP_URL/api/services/terminal/ticket" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serviceId":"svc_123"}'
@@ -90,10 +68,10 @@ Once open, the wire protocol is:
 # Mint a ticket, then connect with websocat, passing it as a subprotocol:
 websocat "wss://your-host/api/services/terminal/ws/svc_123" \
   --protocol "openship.terminal.v1+$TICKET" \
-  -H "Origin: https://your-host"
+  -H "Origin: $OPENSHIP_URL"
 ```
 
-## Errors you might see
+## Errors
 
 The WebSocket signals failures by sending an `{"type":"error"}` frame and then closing with a specific code:
 
@@ -119,3 +97,14 @@ You've hit the per-user concurrent-session cap. Close an existing terminal and r
 <Callout title="4403 — origin not allowed" type="error">
 The request `Origin` isn't in the trusted-origins allowlist. Connect from the dashboard's own host.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Mint a one-shot, short-lived WebSocket auth ticket for a service. | `POST /api/services/terminal/ticket`<br />`terminal:write` |
+| WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie). | `GET /api/services/terminal/ws/:serviceId`<br />`Handler authentication` |
+
+{/* api-operations:end */}

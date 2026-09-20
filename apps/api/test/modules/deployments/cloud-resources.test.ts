@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCloudResourceConfig } from "../../../src/modules/deployments/cloud-resources";
+import { resolveCloudResourceConfig } from "@repo/platform/engine/modules/deployments/cloud-resources";
 import { RESOURCE_TIER_SPECS, ALL_RESOURCE_TIERS } from "@repo/core";
 
 /**

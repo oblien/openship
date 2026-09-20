@@ -22,7 +22,9 @@ Add the `$schema` line for editor autocomplete and inline validation:
   "$schema": "https://openship.io/app.schema.json",
   "id": "it-tools",
   "name": "IT-Tools",
+  "description": "A handy collection of developer and sysadmin utilities.",
   "kind": "template",
+  "logo": "it-tools",
   "category": "other"
 }
 ```
@@ -68,7 +70,10 @@ autocomplete field names rather than typing them from memory.
     provides: { type: 'Provides[]', description: 'Connectable bundles this app advertises to other projects.' },
     requires: { type: 'Requires[]', description: 'Connections this app needs from another project.' },
     available: { type: 'boolean', description: 'false or omitted → shown dimmed as "coming soon" and not installable (enforced server-side too).' },
+    unlisted: { type: 'boolean', description: 'Hidden from the catalog grid but fully installable by id — for an app reached through another app\'s wizard. Ignored on custom uploads (the grid is their only entry point).' },
     verified: { type: 'boolean', description: 'Curated-catalog marker. Forced by the server on custom uploads — authoring it has no effect.' },
+    hosting: { type: '"self-hosted" | "experimental"', description: 'experimental → an ⚗ badge on the card and a heads-up in the wizard: it runs, but it is heavy or not production-grade upstream.' },
+    minResources: { type: '{ memoryMb?, cpuCores? }', description: 'What the app needs from the machine. Shown against the chosen destination in the install wizard and enforced by deploy preflight. See Host requirements.' },
     schemaVersion: { type: 'number', description: 'JSON shape revision. Defaults to 1. See Stability and versioning.' },
     minEngine: { type: 'string (semver)', description: 'Minimum Openship version required to install this app.' },
     updatedAt: { type: 'string', description: 'Informational last-updated stamp.' },
@@ -89,7 +94,8 @@ name, never an IP or a localhost address.
 <TypeTable
   type={{
     name: { type: 'string', description: 'Service name, and its hostname on the project network.', required: true },
-    image: { type: 'string', description: 'Container image. Pin a version — unpinned tags are rejected in review.', required: true },
+    image: { type: 'string', description: 'Prebuilt image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image | build per service.' },
+    build: { type: 'ServiceBuild', description: 'Inline Docker build context — for a service Openship must BUILD rather than pull. Mutually exclusive with image. See Building an image.' },
     ports: { type: 'string[]', description: 'Compose-style port strings, e.g. ["2368:2368"].' },
     exposedPort: { type: 'number', description: 'The container port that receives the public route.' },
     exposed: { type: 'boolean', description: 'Marks this service as the one that gets a public route.' },
@@ -103,6 +109,53 @@ name, never an IP or a localhost address.
     command: { type: 'string', description: 'Override the container command.' },
   }}
 />
+
+## Building an image
+
+Most services **pull** a prebuilt `image`. Some can't: the upstream ships a base image that still
+needs extra packages and a provisioning entrypoint baked in — Neon's compute node is the canonical
+case. For those, set `build` instead of `image`. It is an inline Docker build context that Openship
+materializes at deploy time and builds on the deploy host through the normal compose build pipeline.
+Building subsumes an entrypoint override: the Dockerfile sets its own `ENTRYPOINT`.
+
+Set **exactly one** of `image` or `build` per service. Neither (nothing to run) and both (ambiguous)
+are rejected — `service "<name>" must set exactly one of image|build`.
+
+<TypeTable
+  type={{
+    dockerfile: { type: 'string', description: 'Full Dockerfile contents, inline.', required: true },
+    files: { type: '{ path: string, content: string }[]', description: 'Extra build-context files (scripts, config) the Dockerfile COPYs in.' },
+  }}
+/>
+
+### COPY paths are prefixed by the service name
+
+This is the rule authors get wrong first. Every buildable service is materialized under a subdir
+**named after the service**, inside one shared build context, and `docker build` runs with that shared
+root as its context. So COPY/ADD sources are relative to the root, not to the service's own subdir:
+
+```dockerfile
+# service "compute", with files: [{ "path": "compute.sh", ... }]
+COPY compute/compute.sh /shell/compute.sh   # ✅ prefixed with the service name
+COPY compute.sh /shell/compute.sh           # ❌ COPY source not found → build fails
+```
+
+A `files[].path` is relative to the service's own subdir; you COPY it as `<service-name>/<path>`.
+
+### Values and build args
+
+`{{config:KEY}}` placeholders are resolved in `dockerfile` and in every `files[].content` at install
+time, exactly as in `environment` values — so a generated secret or an install-step answer can flow
+into the build.
+
+There is **no `args` map**. A build `ARG` the Dockerfile declares is fed from the project's build env:
+the runtime passes each env var as `--build-arg`. Declare the value as a normal `environment` entry (or
+a `configField`) and reference it with `ARG` in the Dockerfile.
+
+<Callout title="Building happens on the deploy host">
+A large base image builds where it deploys. On a small host a heavy build — Neon's compute node pulls a
+multi-hundred-MB base — can be slow or memory-bound. That cost is inherent to the app, not to Openship.
+</Callout>
 
 ## Two field systems
 
@@ -313,6 +366,50 @@ same-org source picker and wires it in one shot. Same-org only, and always user-
     'requires[].optional': { type: 'boolean', description: 'Install can proceed without it.' },
   }}
 />
+
+## Host requirements
+
+`minResources` is what the app needs from the machine it lands on. Declare it only when the app
+genuinely will not work below a floor — a nine-container analytics stack, a Postgres fork that
+wants 8 GB. Most apps should declare nothing, and an app that declares nothing is never checked.
+
+```json
+{
+  "minResources": { "memoryMb": 8192, "cpuCores": 4 }
+}
+```
+
+<TypeTable
+  type={{
+    memoryMb: { type: 'number', description: 'Total RAM the app needs, in MB.' },
+    cpuCores: { type: 'number', description: 'vCPU the app needs.' },
+  }}
+/>
+
+The declaration is matched against what the destination's Docker daemon reports (`NCPU`,
+`MemTotal`), in two places that share one comparison:
+
+- **The install wizard** shows the floor next to the destination picker, and names the shortfall
+  before anything is created. You can query it directly — see
+  [`GET /apps/catalog/{id}/host-fit`](/docs/api/apps).
+- **Deploy preflight** enforces it: a **first** deploy onto a machine that is short is refused
+  with `HOST_RESOURCES_INSUFFICIENT`.
+
+Three rules keep the check from being a footgun of its own:
+
+<Callout title="A shortfall never blocks a redeploy">
+Refusing a redeploy would strand an app already running on a box that turned out to be
+undersized — the operator's way out of that is a deploy, not a refusal. After the first
+successful deploy a shortfall is a warning only.
+</Callout>
+
+- **An unmeasurable machine never fails.** A box Openship could not probe means it did not look,
+  not that the hardware is too small.
+- **Round numbers pass the box they name.** A "16 GB" machine reports ~15.6 GB once firmware and
+  the kernel take their cut, so a tenth under the declared figure still passes — declare the
+  round number an operator recognises.
+- **Openship Cloud is skipped.** A cloud workspace is sized from the tier table, not from host
+  hardware.
 
 ## Files
 

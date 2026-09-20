@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { GITHUB_CONNECT_ERROR_KEY } from "@/lib/github-connect-error";
+import { storeGitHubConnectError } from "@/lib/github-connect-error";
 
 /**
  * OAuth callback landing page - auto-closes the popup/window.
@@ -17,7 +17,7 @@ export default function OAuthCallbackClose() {
     // connected". Close immediately in that case — no cookies to settle.
     const linkError = new URLSearchParams(window.location.search).get("error");
     if (linkError) {
-      try { localStorage.setItem(GITHUB_CONNECT_ERROR_KEY, linkError); } catch { /* storage unavailable */ }
+      storeGitHubConnectError(linkError);
     }
     // Give a brief moment for cookies to settle on success, then close.
     const timer = setTimeout(() => window.close(), linkError ? 0 : 300);

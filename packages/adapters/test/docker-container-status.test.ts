@@ -4,7 +4,7 @@ import { DockerRuntime } from "../src/runtime/docker";
 describe("DockerRuntime container status normalization", () => {
   it("correctly identifies running status when State.Running is true regardless of State.Status casing", async () => {
     const runtime = await DockerRuntime.create();
-    
+
     // Mock container inspect response
     const mockInspectInfo: any = {
       Id: "container-12345",
@@ -47,6 +47,44 @@ describe("DockerRuntime container status normalization", () => {
 
     const info = await runtime.getContainerInfo("container-67890");
     expect(info.status).toBe("running");
+  });
+
+  it("retains every TCP host-port mapping for a stopped container", async () => {
+    const runtime = await DockerRuntime.create();
+    const mockInspectInfo: any = {
+      Id: "container-stopped",
+      State: {
+        Status: "exited",
+        Running: false,
+        Paused: false,
+        StartedAt: "",
+      },
+      // Docker reports these as null/empty once the container stops.
+      NetworkSettings: {
+        Networks: {},
+        Ports: { "3000/tcp": null, "3001/tcp": null, "5353/udp": null },
+      },
+      // The configured bindings remain authoritative while stopped.
+      HostConfig: {
+        PortBindings: {
+          // Docker does not promise an order. Preserve Openship's loopback route
+          // binding, not the earlier public binding for the same container port.
+          "3000/tcp": [
+            { HostIp: "0.0.0.0", HostPort: "13000" },
+            { HostIp: "127.0.0.1", HostPort: "23000" },
+          ],
+          "3001/tcp": [{ HostIp: "127.0.0.1", HostPort: "23001" }],
+          "5353/udp": [{ HostIp: "127.0.0.1", HostPort: "25353" }],
+        },
+      },
+    };
+
+    runtime.docker.getContainer = (() => ({ inspect: async () => mockInspectInfo })) as any;
+
+    const info = await runtime.getContainerInfo("container-stopped");
+    expect(info.status).toBe("stopped");
+    expect(info.hostPort).toBe(23000);
+    expect(info.hostPortByContainerPort).toEqual({ 3000: 23000, 3001: 23001 });
   });
 
   it("normalizes listDeploymentContainers state string in case-insensitive manner", async () => {

@@ -55,11 +55,12 @@
     "appsEmptyDesc": "一键部署，完全自托管——数据库、自动化、分析、密码库等，都运行在你自己的服务器上。"
   },
   "nav": {
+    "scale": "扩缩容",
     "home": "首页",
     "new-project": "新建项目",
     "projects": "项目",
     "deployments": "部署",
-    "issues": "问题",
+    "issues": "监控",
     "backups": "备份",
     "domains": "域名",
     "monitoring": "监控",
@@ -67,10 +68,18 @@
     "emails": "邮件",
     "settings": "设置",
     "billing": "账单与用量",
+    "audit": "审计日志",
+    "mailSetup": "设置邮件",
+    "mailSetupProgress": "设置进度",
+    "addMailbox": "添加邮箱",
+    "webmail": "网页邮箱",
     "sections": {
       "main": "主要",
       "settings": "设置",
       "infrastructure": "基础设施",
+      "mail": "邮件",
+      "delivery": "投递",
+      "system": "系统",
       "account": "账户"
     },
     "apps": "应用",

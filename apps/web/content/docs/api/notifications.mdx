@@ -1,6 +1,6 @@
 ---
-title: Notifications API
-description: Manage delivery channels, per-event subscriptions, org defaults, and the in-app alert feed.
+title: Notifications
+description: Configure channels, subscriptions, and alert delivery.
 ---
 
 import { TypeTable } from "fumadocs-ui/components/type-table";
@@ -11,40 +11,9 @@ You register **channels** (where alerts go — email, webhook, Slack, Discord, M
 read **deliveries** (the alert feed behind the bell icon). In the dashboard this is the **Settings →
 Notifications** page. Channels, subscriptions, and deliveries are per-user; defaults are per-org.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/notifications/channels`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and the [auth model](/docs/security/auth) for details.
-</Callout>
-
 <Callout title="Available on every instance" type="info">
   This module ships on both self-hosted and cloud instances. There is no dedicated `openship` CLI
   command — manage notifications from the dashboard or these endpoints directly.
-</Callout>
-
-## Endpoints
-
-| Method & path                                    | Permission            | What it does                                                    |
-| ------------------------------------------------ | --------------------- | --------------------------------------------------------------- |
-| `GET /api/notifications/categories`              | `notifications:read`  | List notification categories (the registry of event types).     |
-| `GET /api/notifications/channels`                | `notifications:read`  | List the caller's notification channels (email, webhook, etc.). |
-| `POST /api/notifications/channels`               | `notifications:write` | Create a notification channel.                                  |
-| `PATCH /api/notifications/channels/:id`          | `notifications:write` | Update a notification channel.                                  |
-| `DELETE /api/notifications/channels/:id`         | `notifications:write` | Delete a notification channel.                                  |
-| `GET /api/notifications/subscriptions`           | `notifications:read`  | List the caller's notification subscriptions.                   |
-| `PUT /api/notifications/subscriptions`           | `notifications:write` | Create or update a notification subscription.                   |
-| `DELETE /api/notifications/subscriptions/:id`    | `notifications:write` | Delete a notification subscription.                             |
-| `GET /api/notifications/defaults`                | `notifications:read`  | List org default notification settings.                         |
-| `PUT /api/notifications/defaults`                | `notifications:admin` | Upsert one org default.                                         |
-| `GET /api/notifications/deliveries`              | `notifications:read`  | List notification deliveries (the in-app alert feed).           |
-| `GET /api/notifications/deliveries/unseen-count` | `notifications:read`  | Count unseen notifications (for the bell badge).                |
-| `POST /api/notifications/deliveries/:id/seen`    | `notifications:write` | Mark one delivery as seen.                                      |
-
-<Callout title="Ownership is enforced inside the handlers" type="info">
-  The `notifications:*` tags only check that you're a member of the active org. Beyond that,
-  channels, subscriptions, and deliveries are scoped to **your** user — you can't read or modify
-  another member's. A per-user route for an id you don't own returns `404`.
 </Callout>
 
 ## Categories
@@ -58,19 +27,56 @@ The response also carries a `groups` array (`{ id, label }`, already in display 
 `group` field points into — `deployment`, `app_health`, `backups`, `jobs`, `domains`, `members`, `billing`.
 The `billing` group and its categories are omitted outside Openship Cloud, where nothing can fire them.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.notifications.categories();
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl https://your-host/api/notifications/categories \
+curl "$OPENSHIP_URL/api/notifications/categories" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 ## Create a channel
 
 A channel is a destination. The `config` object is shape-checked per `kind`; secrets in it (webhook signing
 keys, Slack URLs, Telegram bot tokens) are stored encrypted and never returned in full.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.notifications.createChannel({
+  kind: "email",
+  label: "On-call inbox",
+  config: {
+    address: "ops@example.com",
+  },
+});
+console.log(result);
 ```
-POST /api/notifications/channels
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/notifications/channels" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"email","label":"On-call inbox","config":{"address":"ops@example.com"}}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -152,13 +158,6 @@ The `config` shape depends on `kind`:
   are negative. Editing a Telegram channel without resending `botToken` keeps the stored one.
 </Callout>
 
-```bash
-curl -X POST https://your-host/api/notifications/channels \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"kind":"email","label":"On-call inbox","config":{"address":"ops@example.com"}}'
-```
-
 New channels start `enabled: true`. An `in_app` channel is `verified` immediately; every other kind starts
 unverified and must be verified (via a test send) before it will deliver — flip `verified` with `PATCH`.
 
@@ -191,9 +190,30 @@ PATCH /api/notifications/channels/:id
 A subscription is one toggle in the (user, org, category, channel) grid. `PUT` is an idempotent upsert — send
 the same triple again to flip `enabled`. The `channelId` must be a channel you own.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.notifications.upsertSubscription({
+  category: "deploy.failed",
+  channelId: "chan_123",
+  enabled: true,
+});
+console.log(result);
 ```
-PUT /api/notifications/subscriptions
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X PUT "$OPENSHIP_URL/api/notifications/subscriptions" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"category":"deploy.failed","channelId":"chan_123","enabled":true}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -214,13 +234,6 @@ PUT /api/notifications/subscriptions
     },
   }}
 />
-
-```bash
-curl -X PUT https://your-host/api/notifications/subscriptions \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"category":"deploy.failed","channelId":"chan_123","enabled":true}'
-```
 
 ## Org defaults
 
@@ -257,9 +270,27 @@ PUT /api/notifications/defaults
 behind the bell icon. `GET /api/notifications/deliveries/unseen-count` powers the badge, and `POST
 /api/notifications/deliveries/:id/seen` clears one.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.notifications.listDeliveries({
+  unseen: true,
+  limit: 20,
+});
+console.log(result);
 ```
-GET /api/notifications/deliveries
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/notifications/deliveries?unseen=true&limit=20" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -276,12 +307,7 @@ GET /api/notifications/deliveries
   }}
 />
 
-```bash
-curl "https://your-host/api/notifications/deliveries?unseen=true&limit=20" \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN"
-```
-
-## Errors you might see
+## Errors
 
 <Callout title="400 — invalid channel or missing fields" type="warn">
   The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`/`telegram`, `label`
@@ -297,3 +323,26 @@ curl "https://your-host/api/notifications/deliveries?unseen=true&limit=20" \
   The channel, subscription, or delivery `:id` doesn't belong to you (or was deleted). List your own
   with the matching `GET` route to get valid ids.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List supported notification categories and events. | `notifications.categories()` | `GET /api/notifications/categories`<br />`notifications:read` |
+| List configured delivery channels. | `notifications.listChannels()` | `GET /api/notifications/channels`<br />`notifications:read` |
+| Create a delivery channel. | `notifications.createChannel(input)` | `POST /api/notifications/channels`<br />`notifications:write` |
+| Read notification subscriptions. | `notifications.listSubscriptions()` | `GET /api/notifications/subscriptions`<br />`notifications:read` |
+| Create or update a subscription. | `notifications.upsertSubscription(input)` | `PUT /api/notifications/subscriptions`<br />`notifications:write` |
+| Read default notification routing. | `notifications.listDefaults()` | `GET /api/notifications/defaults`<br />`notifications:read` |
+| Set default notification routing for a category. | `notifications.upsertDefault(input)` | `PUT /api/notifications/defaults`<br />`notifications:admin` |
+| Read notification delivery history. | `notifications.listDeliveries(input?)` | `GET /api/notifications/deliveries`<br />`notifications:read` |
+| Count notifications the user has not seen. | `notifications.unseenCount()` | `GET /api/notifications/deliveries/unseen-count`<br />`notifications:read` |
+| Update channel configuration or rotate credentials. | `notifications.updateChannel(id, input)` | `PATCH /api/notifications/channels/:id`<br />`notifications:write` |
+| Test the channel’s delivery configuration. | `notifications.testChannel(id)` | `POST /api/notifications/channels/:id/test`<br />`notifications:write` |
+| Remove a delivery channel. | `notifications.removeChannel(id)` | `DELETE /api/notifications/channels/:id`<br />`notifications:write` |
+| Remove a subscription. | `notifications.removeSubscription(id)` | `DELETE /api/notifications/subscriptions/:id`<br />`notifications:write` |
+| Mark the selected notifications seen. | `notifications.markSeen(id)` | `POST /api/notifications/deliveries/:id/seen`<br />`notifications:write` |
+
+{/* api-operations:end */}

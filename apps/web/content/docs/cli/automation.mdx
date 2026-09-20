@@ -1,0 +1,49 @@
+---
+title: CLI automation
+description: Use contexts, JSON output, and explicit project IDs in scripts and CI.
+---
+
+## Authenticate a runner
+
+Store a personal access token in your CI secret store. Pass it explicitly to login:
+
+```bash
+openship login \
+  --token "$OPENSHIP_TOKEN" \
+  --api-url "$OPENSHIP_API_URL" \
+  --dashboard-url "$OPENSHIP_DASHBOARD_URL" \
+  --context ci
+```
+
+These variables are inputs to your script. The CLI uses the saved context; it does not automatically
+read `OPENSHIP_TOKEN` or `OPENSHIP_API_URL` as connection overrides. Use a token with the resource
+grants needed for the job.
+
+## Use explicit IDs and JSON
+
+```bash
+openship --json project list > projects.json
+openship deploy --project proj_123 --branch main --watch
+```
+
+Put global `--json` before the command. Structured resource commands write JSON to stdout and
+diagnostics to stderr. `OPENSHIP_JSON=1` also enables JSON output. Interactive installation commands
+retain their command-specific behavior; inspect their help before using them unattended.
+
+`--project` avoids depending on a directory link. When using `init` in automation, `--yes` fails if
+it would need to prompt.
+
+## Handle failure
+
+Check the exit status of each command. Operation and argument errors exit nonzero. A deployment
+submission returns an ID before completion; use `--watch` or inspect that deployment before treating
+the job as successful.
+
+If a mutation's response is lost, inspect the saved resource before submitting it again. The client
+does not automatically replay mutations. Stopping observation does not undo a deployment.
+
+## Native automation
+
+Use [native CLI configuration](/docs/cli/native) to select an explicit installation and organization.
+The command drains its owned worker on completion. For a long-running Node application, use
+[the SDK directly](/docs/api/sdk/native) and keep the installation open across calls.

@@ -22,6 +22,7 @@
     "edge:conf": "bun scripts/generate-edge-conf.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "test:bun": "bun test --preload ./test/bun-vitest-shim.ts src/runtime/docker-ssh-agent.test.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
@@ -31,7 +32,7 @@
     "@repo/core": "workspace:*",
     "dockerode": "^4.0.9",
     "ignore": "^7.0.5",
-    "oblien": "^2.2.45",
+    "oblien": "^2.4.0",
     "ssh2": "^1.17.0",
     "tar-fs": "^2.1.4"
   },

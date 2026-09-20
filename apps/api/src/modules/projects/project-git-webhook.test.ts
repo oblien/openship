@@ -12,9 +12,9 @@ const { findByGitRepo, projectUpdate, registerWebhook, updateWebhook } = vi.hois
 vi.mock("@repo/db", () => ({
   repos: { project: { findByGitRepo, update: projectUpdate } },
 }));
-vi.mock("../github/github.service", () => ({ registerWebhook, updateWebhook }));
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({ registerWebhook, updateWebhook }));
 
-import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
+import { ensureSharedWebhook, findSharedWebhookId } from "@repo/platform/engine/modules/projects/project-git-webhook";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ctx = { userId: "u1", organizationId: "o1" } as any;

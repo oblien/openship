@@ -22,6 +22,11 @@ export const openshipMetadataParser: MetadataParser = {
     const raw = fileContents["openship.json"];
     if (!raw) return null;
 
+    // Diagnostics are deliberately dropped HERE, not everywhere: the API's prepare
+    // pipeline parses the ROOT file once and reports its refusals on ProjectInfo
+    // (#641). Reporting again from this parser would double every message for the
+    // root and needs a widened MetadataParser to say anything about a sub-app —
+    // which is the one real gap left, tracked separately.
     const { config } = parseOpenshipConfigJson(raw);
     if (!config) return null;
 

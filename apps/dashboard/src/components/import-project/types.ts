@@ -1,4 +1,5 @@
 import type { StackId } from "@repo/core";
+import type { EditableProjectEnvRow } from "@/lib/project-env-diff";
 
 export interface Framework {
   id: string;
@@ -13,11 +14,7 @@ export interface RepoData {
   private: boolean | false;
 }
 
-export interface EnvironmentVariable {
-  key: string;
-  value: string;
-  visible: boolean;
-}
+export type EnvironmentVariable = EditableProjectEnvRow;
 
 export type StartCommand = string;
 

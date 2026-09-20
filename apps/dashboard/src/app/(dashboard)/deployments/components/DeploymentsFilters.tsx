@@ -66,6 +66,7 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
           type="text"
           placeholder={t.deployments.filters.searchPlaceholder}
           value={localSearchQuery}
+          maxLength={200}
           onChange={(e) => handleSearchChange(e.target.value)}
           className="h-10 w-full rounded-xl border border-border/50 bg-card ps-10 pe-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all"
         />

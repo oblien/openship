@@ -3,9 +3,10 @@ import {
   hasPinnedArtifacts,
   pinnedAppImage,
   pinnedImageForService,
+  refreshAppDeploymentId,
   snapshotNeedsGitSource,
   withoutPinnedArtifacts,
-} from "./pinned-artifacts";
+} from "@repo/platform/engine/modules/deployments/pinned-artifacts";
 
 describe("pinned artifact lookup", () => {
   const snapshot = {
@@ -31,24 +32,70 @@ describe("pinned artifact lookup", () => {
     expect(hasPinnedArtifacts(snapshot)).toBe(true);
     expect(hasPinnedArtifacts({ handoverImages: { web: "  " } })).toBe(false);
     expect(hasPinnedArtifacts({})).toBe(false);
+    expect(hasPinnedArtifacts({ refreshAppDeploymentId: "dep_live" })).toBe(true);
   });
 
-  it("strips both fields and leaves the rest of the snapshot alone", () => {
-    const stripped = withoutPinnedArtifacts({ ...snapshot, hasBuild: true });
+  it("strips pinned artifacts and one-deployment execution intent", () => {
+    const stripped = withoutPinnedArtifacts({
+      ...snapshot,
+      refreshAppDeploymentId: "dep_live",
+      targetServiceIds: ["svc-api"],
+      strictServiceScope: true,
+      refreshServiceIds: ["svc-api"],
+      forcePullImages: true,
+      hasBuild: true,
+    });
     expect(stripped).toEqual({ hasBuild: true });
+  });
+
+  it("normalizes the active deployment marker", () => {
+    expect(refreshAppDeploymentId({ refreshAppDeploymentId: " dep_live " })).toBe("dep_live");
+    expect(refreshAppDeploymentId({ refreshAppDeploymentId: " " })).toBeUndefined();
   });
 });
 
 describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", () => {
-  it("single app: needs source normally, not when its image is pinned", () => {
-    expect(snapshotNeedsGitSource({ hasBuild: true })).toBe(true);
-    expect(snapshotNeedsGitSource({ hasBuild: true, handoverAppImage: "openship/app:1" })).toBe(
-      false,
+  const repo = "https://github.com/acme/app.git";
+
+  it("single app: a git repo needs source normally, not when its image is pinned", () => {
+    expect(snapshotNeedsGitSource({ repoUrl: repo, hasBuild: true })).toBe(true);
+    expect(
+      snapshotNeedsGitSource({ repoUrl: repo, hasBuild: true, handoverAppImage: "openship/app:1" }),
+    ).toBe(false);
+    expect(
+      snapshotNeedsGitSource({
+        repoUrl: repo,
+        hasBuild: true,
+        refreshAppDeploymentId: "dep_live",
+      }),
+    ).toBe(false);
+  });
+
+  it("#538-A: a Dockerfile app (hasBuild=false) STILL clones its git repo for build context", () => {
+    // The bug: `hasBuild !== false` dropped the clone token for a docker stack,
+    // whose detector-assigned hasBuild is false yet still needs the repo. The
+    // clone decision is the SOURCE axis, independent of whether a build runs.
+    expect(snapshotNeedsGitSource({ repoUrl: repo, framework: "docker", hasBuild: false })).toBe(
+      true,
+    );
+    // Explicit source/build overrides reach the same answer.
+    expect(snapshotNeedsGitSource({ source: "git", build: "dockerfile", hasBuild: false })).toBe(
+      true,
     );
   });
 
-  it("single app with the build disabled needs no source either way", () => {
+  it("no git source (upload / local dir / release / image) needs no clone", () => {
+    // A bare hasBuild flag with no repo signal is NOT a git source.
+    expect(snapshotNeedsGitSource({ hasBuild: true })).toBe(false);
     expect(snapshotNeedsGitSource({ hasBuild: false })).toBe(false);
+    // A staged local directory is not cloned.
+    expect(snapshotNeedsGitSource({ localPath: "/srv/app", hasBuild: true })).toBe(false);
+    // A folder upload is not cloned.
+    expect(snapshotNeedsGitSource({ uploadWorkspaceId: "up_1", hasBuild: true })).toBe(false);
+    // A release/dist tarball deploys verbatim.
+    expect(snapshotNeedsGitSource({ releaseVersion: "1.2.3", hasBuild: true })).toBe(false);
+    // An explicit image source is never cloned.
+    expect(snapshotNeedsGitSource({ source: "image", repoUrl: repo })).toBe(false);
   });
 
   it("compose: a registry-image-only stack clones nothing", () => {
@@ -85,10 +132,7 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
   it("compose: disabled services don't force a clone", () => {
     expect(
       snapshotNeedsGitSource({
-        composeServices: [
-          { name: "web", build: "./web", enabled: false },
-          { name: "db" },
-        ],
+        composeServices: [{ name: "web", build: "./web", enabled: false }, { name: "db" }],
       }),
     ).toBe(false);
   });

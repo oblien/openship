@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
-import { establishDirectLink, parseRsyncProgress, rsyncCommand, runRsync, sq, statPath } from "./direct-transfer";
+import { establishDirectLink, parseRsyncProgress, rsyncCommand, runRsync, sq, statPath } from "@repo/platform/engine/modules/migration/direct-transfer";
 
 describe("statPath (file vs dir vs missing)", () => {
   const oneShot = (reply: string): CommandExecutor =>

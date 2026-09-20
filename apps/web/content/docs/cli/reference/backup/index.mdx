@@ -1,0 +1,81 @@
+---
+title: backup
+description: Commands, arguments, and options for openship backup.
+cliGroup: openship backup
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship backup
+
+Manage backups: policies, runs, restores, destinations
+
+```text
+openship backup [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`policy`](/docs/cli/reference/backup/policy#openship-backup-policy) | Backup policies (schedules) for a project |
+| [`run`](/docs/cli/reference/backup/run#openship-backup-run) | Backup runs (executions) |
+| [`restore`](/docs/cli/reference/backup#openship-backup-restore) | Manage staged restores |
+| [`destination`](/docs/cli/reference/backup/destination#openship-backup-destination) | Backup destinations (storage targets) |
+
+## openship backup restore
+
+Manage staged restores
+
+```text
+openship backup restore [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`apply [options] <restoreId>`](/docs/cli/reference/backup#openship-backup-restore-apply) | Apply a staged restore (destructive) |
+| [`cancel <restoreId>`](/docs/cli/reference/backup#openship-backup-restore-cancel) | Cancel a staged or in-flight restore |
+| [`get [options] <restoreId>`](/docs/cli/reference/backup#openship-backup-restore-get) | Show one restore (optionally stream it) |
+
+## openship backup restore apply
+
+Apply a staged restore (destructive)
+
+```text
+openship backup restore apply [options] <restoreId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `restoreId` | Restore ID from `backup run restore` |
+
+| Option | Meaning |
+| --- | --- |
+| `--token <token>` | Confirmation token from prepare |
+| `--follow` | Stream the restore to completion |
+
+## openship backup restore cancel
+
+Cancel a staged or in-flight restore
+
+```text
+openship backup restore cancel [options] <restoreId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `restoreId` | Restore ID |
+
+## openship backup restore get
+
+Show one restore (optionally stream it)
+
+```text
+openship backup restore get [options] <restoreId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `restoreId` | Restore ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--follow` | Stream progress to completion |

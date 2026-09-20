@@ -1,0 +1,233 @@
+---
+title: mail
+description: Commands, arguments, and options for openship mail.
+cliGroup: openship mail
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship mail
+
+Self-hosted mail server (iRedMail) setup and admin [self-host]
+
+```text
+openship mail [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`steps`](/docs/cli/reference/mail#openship-mail-steps) | List the mail setup steps |
+| [`status [serverId]`](/docs/cli/reference/mail#openship-mail-status) | Show the setup progress for a mail server |
+| [`servers`](/docs/cli/reference/mail#openship-mail-servers) | List every server the mail stack is installed on |
+| [`scan <serverId>`](/docs/cli/reference/mail#openship-mail-scan) | Probe a server for an existing mail install (read-only) |
+| [`adopt <serverId>`](/docs/cli/reference/mail#openship-mail-adopt) | Re-adopt an existing mail install whose orchestrator state was lost |
+| [`setup [options] <serverId>`](/docs/cli/reference/mail#openship-mail-setup) | Start or resume the mail setup wizard (streams over SSE) |
+| [`cancel`](/docs/cli/reference/mail#openship-mail-cancel) | Cancel the mail setup currently running |
+| [`dns-ack <serverId>`](/docs/cli/reference/mail#openship-mail-dns-ack) | Acknowledge that DNS records are published (releases the DKIM gate) |
+| [`ptr-ack <serverId>`](/docs/cli/reference/mail#openship-mail-ptr-ack) | Acknowledge that reverse DNS (PTR) is configured |
+| [`reset [options] <serverId>`](/docs/cli/reference/mail#openship-mail-reset) | Wipe the on-server setup state file (does NOT touch installed daemons) |
+| [`forget <serverId>`](/docs/cli/reference/mail#openship-mail-forget) | Stop managing a mail server (drops the DB row; leaves the stack + state intact) |
+| [`health <serverId>`](/docs/cli/reference/mail#openship-mail-health) | Show live status of every mail daemon, and whether mail is leaving the box |
+| [`logs [options] <serverId> <component>`](/docs/cli/reference/mail#openship-mail-logs) | Tail a mail component's journal (snapshot) |
+| [`postmaster`](/docs/cli/reference/mail#openship-mail-postmaster) | Manage the postmaster mailbox |
+| [`build [options]`](/docs/cli/reference/mail#openship-mail-build) | Build the openship-mail engine image locally from a source checkout [dev] |
+
+## openship mail adopt
+
+Re-adopt an existing mail install whose orchestrator state was lost
+
+```text
+openship mail adopt [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Server ID to adopt |
+
+## openship mail build
+
+Build the openship-mail engine image locally from a source checkout [dev]
+
+```text
+openship mail build [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--context <dir>` | Repo root containing apps/email/Dockerfile (default: checkout or cwd) |
+| `--tag <ref>` | Image ref to tag (default: the pinned openship-mail ref) |
+
+## openship mail cancel
+
+Cancel the mail setup currently running
+
+```text
+openship mail cancel [options]
+```
+
+## openship mail dns-ack
+
+Acknowledge that DNS records are published (releases the DKIM gate)
+
+```text
+openship mail dns-ack [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+## openship mail forget
+
+Stop managing a mail server (drops the DB row; leaves the stack + state intact)
+
+```text
+openship mail forget [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+## openship mail health
+
+Show live status of every mail daemon, and whether mail is leaving the box
+
+```text
+openship mail health [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+## openship mail logs
+
+Tail a mail component's journal (snapshot)
+
+```text
+openship mail logs [options] <serverId> <component>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+| `component` | Component key (postfix\|dovecot\|amavis\|clamav\|iredapd\|postgresql\|…) |
+
+| Option | Meaning |
+| --- | --- |
+| `-n, --lines <n>` | Number of lines (max 1000) (default: "200") |
+
+## openship mail postmaster
+
+Manage the postmaster mailbox
+
+```text
+openship mail postmaster [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`set-password [options] <serverId>`](/docs/cli/reference/mail#openship-mail-postmaster-set-password) | Rotate the postmaster password |
+
+## openship mail postmaster set-password
+
+Rotate the postmaster password
+
+```text
+openship mail postmaster set-password [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--password <password>` | New password (min 12 chars); prompted if omitted |
+
+## openship mail ptr-ack
+
+Acknowledge that reverse DNS (PTR) is configured
+
+```text
+openship mail ptr-ack [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+## openship mail reset
+
+Wipe the on-server setup state file (does NOT touch installed daemons)
+
+```text
+openship mail reset [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship mail scan
+
+Probe a server for an existing mail install (read-only)
+
+```text
+openship mail scan [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Server ID to scan |
+
+## openship mail servers
+
+List every server the mail stack is installed on
+
+```text
+openship mail servers [options]
+```
+
+## openship mail setup
+
+Start or resume the mail setup wizard (streams over SSE)
+
+```text
+openship mail setup [options] <serverId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Server ID to install the mail stack on |
+
+| Option | Meaning |
+| --- | --- |
+| `-d, --domain <domain>` | Mail domain (e.g. example.com) |
+| `--start-step <n>` | Resume from a specific step (1-13) |
+| `--config <json>` | iRedMail config overrides as a JSON object |
+
+## openship mail status
+
+Show the setup progress for a mail server
+
+```text
+openship mail status [options] [serverId]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `serverId` | Mail server ID (omit for the empty welcome shell) |
+
+## openship mail steps
+
+List the mail setup steps
+
+```text
+openship mail steps [options]
+```

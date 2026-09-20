@@ -55,11 +55,12 @@
     "appsEmptyDesc": "Un clic, totalmente autoalojado: bases de datos, automatización, analítica, gestores de contraseñas y más, en tus propios servidores."
   },
   "nav": {
+    "scale": "Escalado",
     "home": "Inicio",
     "new-project": "Nuevo proyecto",
     "projects": "Proyectos",
     "deployments": "Despliegues",
-    "issues": "Problemas",
+    "issues": "Monitoreo",
     "backups": "Copias de seguridad",
     "domains": "Dominios",
     "monitoring": "Monitoreo",
@@ -67,10 +68,18 @@
     "emails": "Correos",
     "settings": "Configuración",
     "billing": "Facturación y uso",
+    "audit": "Registro de auditoría",
+    "mailSetup": "Configurar el correo",
+    "mailSetupProgress": "Progreso de la configuración",
+    "addMailbox": "Añadir buzón",
+    "webmail": "Webmail",
     "sections": {
       "main": "Principal",
       "settings": "Configuración",
       "infrastructure": "Infraestructura",
+      "mail": "Correo",
+      "delivery": "Entrega",
+      "system": "Sistema",
       "account": "Cuenta"
     },
     "apps": "Apps",

@@ -8,10 +8,14 @@
   },
   "status": {
     "live": "稼働中",
+    "paused": "一時停止中",
     "attention": "要対応",
     "queued": "待機中",
     "building": "ビルド中",
     "deploying": "デプロイ中",
+    "reconciling": "確認中",
+    "migrating": "移行中",
+    "deploy_failed": "最新のデプロイに失敗",
     "failed": "失敗",
     "cancelled": "キャンセル済み",
     "deleting": "削除中",
@@ -35,6 +39,7 @@
     "services": "サービス",
     "static": "静的",
     "standalone": "スタンドアロン",
+    "worker": "ワーカー",
     "updateAvailable": "Update",
     "appBadge": "アプリ"
   },
@@ -56,8 +61,10 @@
   "env": {
     "productionFallback": "本番環境",
     "switchAria": "環境を切り替える",
-    "addBranchAria": "ブランチを追加",
+    "newEnvironment": "新しい環境",
+    "backToEnvironments": "環境一覧に戻る",
     "searchBranches": "ブランチを検索",
+    "refreshBranches": "ブランチを更新",
     "noBranches": "ブランチが見つかりません",
     "environmentName": "環境名",
     "branchLabel": "ブランチラベル",
@@ -119,6 +126,7 @@
     "noDomain": "ドメインなし",
     "addDomain": "ドメインを追加",
     "tabs": {
+      "topology": "トポロジー",
       "appSettings": "設定",
       "overview": "概要",
       "services": "サービス",
@@ -127,8 +135,10 @@
       "health": "ヘルス",
       "monitoring": "モニタリング",
       "source": "ソース",
+      "sourceAndTriggers": "ソースとトリガー",
       "webhooks": "Webhook",
       "runtime": "設定",
+      "settings": "設定",
       "logs": "ログ",
       "backup": "バックアップ",
       "advanced": "詳細設定"
@@ -156,7 +166,7 @@
     "subtextOther": "このプロジェクトにはまだ稼働中のデプロイがありません。ソースを確認して、もう一度お試しください。",
     "deployNow": "今すぐデプロイ",
     "connectSource": "ソースを接続",
-    "settings": "設定",
+    "settings": "デプロイ設定",
     "attemptsTitle": "デプロイ試行",
     "attemptsDescription": "このプロジェクトのすべてのビルド — クリックして開きます",
     "sourceTitle": "ソース",
@@ -193,6 +203,7 @@
     "modeStatic": "静的サイト",
     "modeStandalone": "スタンドアロン",
     "modeServer": "サーバー",
+    "modeWorker": "ワーカー",
     "infrastructure": "インフラ",
     "platform": "プラットフォーム",
     "mode": "モード",
@@ -230,6 +241,9 @@
     "waitingRequests": "リクエストを待機中",
     "noTransfer": "まだ転送がありません"
   },
+  "analytics": {
+    "loadFailed": "トラフィック分析を読み込めませんでした"
+  },
   "monitoring": {
     "noDataTitle": "まだモニタリングデータがありません",
     "noDataDescription": "デプロイされたアプリがトラフィックを受信し始めると、ここにアナリティクスが表示されます。",
@@ -256,6 +270,7 @@
     "geoUnavailableBody": "エッジプロキシが訪問者の国を解決できないため、マップは空のままです。トラフィックの合計には影響しません。",
     "noCountries": "この期間の国データはまだありません。",
     "statusesTitle": "レスポンス",
+    "statusesOthers": "その他",
     "share": "{pct}%",
     "visitorDays": "訪問者日数",
     "peakDayTooltip": "最も多かった日: {peak}。再訪した訪問者は1日1回として数えるため、合計は上限値です。",
@@ -333,12 +348,12 @@
     "unknown": "不明"
   },
   "routingRetry": {
-    "title": "無料ドメインのルーティングに対応が必要です",
-    "description": "アプリはサーバー上で稼働していますが、無料の .opsh.io URL が Openship Cloud のエッジ経由でルーティングされませんでした。クラウドからサーバーにポート 80 で接続できるようになったら再試行してください。",
+    "title": "ドメインのルーティングに対応が必要です",
+    "description": "アプリはサーバー上で稼働していますが、その前段のルートが同期されませんでした。修復を再試行するか、このサーバーの DNS と edge を確認してください。",
     "retry": "ルーティングを再試行",
     "retrying": "再試行中…",
-    "success": "無料ドメインのルーティングを同期しました。",
-    "failed": "無料ドメインのルーティングを同期できませんでした。"
+    "success": "ドメインのルーティングを同期しました。",
+    "failed": "ドメインのルーティングを同期できませんでした。"
   },
   "deployBlocked": {
     "redeploy": "再デプロイ"
@@ -372,17 +387,18 @@
     "noPublicDomainTitle": "公開ドメインが接続されていません",
     "noPublicDomainDescOne": "このプロジェクトには公開ポートを持つサービスが {count} 件ありますが、到達可能なドメインが設定されているものはありません。今デプロイすると、スタックは内部的に実行できますが、ユーザーは公開 URL からアクセスできません。",
     "noPublicDomainDescOther": "このプロジェクトには公開ポートを持つサービスが {count} 件ありますが、到達可能なドメインが設定されているものはありません。今デプロイすると、スタックは内部的に実行できますが、ユーザーは公開 URL からアクセスできません。",
+    "openDomains": "ドメインを開く",
     "openServices": "サービスを開く",
     "deployAnyway": "このままデプロイ",
     "suggestedFix": "推奨される対処",
-    "fixStep1": "サービスタブを開きます。",
-    "fixStep2": "公開したいサービスを選択します。",
-    "fixStep3": "ドメイン公開を有効にし、公開ポートを選択します。"
+    "fixStep1": "ドメインタブを開きます。",
+    "fixStep2": "サービスポートのルートまたはカスタムドメインを追加します。",
+    "fixStep3": "ドメインを検証してデプロイします。"
   },
   "connections": {
     "useInProject": "プロジェクトで使用",
     "title": "プロジェクトで使用",
-    "subtitle": "このデータベースを別のプロジェクトにすぐ使える接続として連携します。",
+    "subtitle": "接続を通じて、このサービスを別のプロジェクトと共有します。",
     "targetLabel": "プロジェクト",
     "targetPlaceholder": "プロジェクトを選択…",
     "valueLabel": "注入する値",
@@ -417,15 +433,24 @@
     "forwardShort": "転送",
     "usedByTitle": "使用元",
     "usedByOpen": "プロジェクトを開く",
-    "usedByHint": "{count} 件のプロジェクトがこのアプリの接続に依存しています。利用側のプロジェクトからリンクを解除してください。",
-    "linkedCountOne": "リンク済みアプリ {count} 件",
-    "linkedCountOther": "リンク済みアプリ {count} 件",
-    "linkedHint": "このプロジェクトが利用するもので、実行はしません。",
-    "linkedBadge": "リンク済み",
+    "usedByHint": "{count} 個のプロジェクトがこの接続を使用しています。利用側のプロジェクトから接続を解除してください。",
+    "linkedCountOne": "接続されたサービス {count} 件",
+    "linkedCountOther": "接続されたサービス {count} 件",
+    "linkedHint": "これらのサービスは接続元のプロジェクトで管理されます。",
+    "linkedBadge": "共有",
     "unlink": "リンク解除",
-    "openApp": "アプリを開く",
+    "openApp": "接続元を開く",
     "internalTitle": "内部アドレス",
-    "internalDescription": "同じサーバー上の別のサービスから、このプロジェクトにプライベートに接続できます（公開ポート不要）。"
+    "internalDescription": "同じサーバー上の別のサービスから、このプロジェクトにプライベートに接続できます（公開ポート不要）。",
+    "createNew": "新規作成",
+    "connectExisting": "既存のサービスに接続",
+    "existingHint": "別のプロジェクトのサービスやアプリを使用します。データと管理は元のプロジェクトに残ります。",
+    "sourceLabel": "接続元のプロジェクトまたはアプリ",
+    "sourcePlaceholder": "プロジェクトまたはアプリを選択…",
+    "loadingServices": "サービスを読み込み中…",
+    "noConnections": "接続情報が準備されていません。接続元のプロジェクトでサービスのポートと認証情報を確認してください。",
+    "noSources": "別のプロジェクトにサービスを作成すると、ここに接続できます。",
+    "sharedFrom": "{project} から共有"
   },
   "incomingWebhooks": {
     "title": "受信 Webhook",
@@ -453,7 +478,8 @@
       "none": "オープン"
     },
     "summaryDeploy": "このプロジェクトを再デプロイ",
-    "summaryDeployService": "{service} サービスを再デプロイ",
+    "summaryDeployOne": "選択した 1 つのサービスを再デプロイ",
+    "summaryDeployServices": "{count} 個のサービスをまとめて再デプロイ",
     "summaryJob": "{job} ジョブを実行",
     "createTitle": "新しい受信 Webhook",
     "createSubtitle": "動作と呼び出し元の認証方法を選択します。",
@@ -461,7 +487,7 @@
     "namePlaceholder": "例: CI デプロイフック",
     "actionLabel": "アクション",
     "actionDeploy": "デプロイ",
-    "actionDeployDesc": "呼び出し時にこのプロジェクト（または1つのサービス）を再デプロイします。",
+    "actionDeployDesc": "呼び出し時にこのプロジェクトまたは選択したサービスを再デプロイします。",
     "actionJob": "ジョブを実行",
     "actionJobDesc": "呼び出し時にジョブのいずれかを実行します。",
     "serviceLabel": "サービス（任意）",
@@ -507,5 +533,6 @@
       "unhealthy": "異常",
       "server_unreachable": "サーバー到達不可"
     }
-  }
+  },
+  "migrationAwaitingHint": "移行が操作待ちです。プロジェクトの「設定 → 詳細設定」で切り替えを完了するか、ロールバックしてください"
 }

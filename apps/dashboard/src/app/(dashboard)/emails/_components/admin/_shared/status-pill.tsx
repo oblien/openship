@@ -8,6 +8,12 @@
  * of truth so we don't get five subtly different shades of "active green"
  * scattered across the admin panel.
  *
+ * Shape is the dashboard's own badge: a tinted fill carrying the tone's text
+ * colour, and NOTHING else. No outline (the tint already separates it from the
+ * row, and a hairline around a 20px pill reads as a hard border on dark, which
+ * is the same reason cards went borderless), and no leading dot (the fill is
+ * already the colour the dot would repeat).
+ *
  * Tones:
  *   - success   : "active", "running", "healthy" - emerald
  *   - warning   : "starting", "stopping", "missing" - amber
@@ -22,42 +28,21 @@ import type { LucideIcon } from "lucide-react";
 export type PillTone = "success" | "warning" | "danger" | "info" | "neutral";
 
 const TONE_CLASSES: Record<PillTone, string> = {
-  success:
-    "bg-success-bg text-success border border-success-border",
-  warning:
-    "bg-warning-bg text-warning border border-warning-border",
-  danger:
-    "bg-danger-bg text-danger border border-danger-border",
-  info:
-    "bg-info-bg text-info border border-info-border",
-  neutral:
-    "bg-muted text-muted-foreground border border-border/60",
+  success: "bg-success-bg text-success",
+  warning: "bg-warning-bg text-warning",
+  danger: "bg-danger-bg text-danger",
+  info: "bg-info-bg text-info",
+  neutral: "bg-foreground/[0.06] text-muted-foreground",
 };
 
 interface StatusPillProps {
   tone: PillTone;
   icon?: LucideIcon;
-  /** Show an animated dot before the label. Overrides icon. */
-  dot?: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
-const DOT_CLASSES: Record<PillTone, string> = {
-  success: "bg-success-solid",
-  warning: "bg-warning-solid",
-  danger: "bg-danger-solid",
-  info: "bg-info-solid",
-  neutral: "bg-muted-foreground/40",
-};
-
-export function StatusPill({
-  tone,
-  icon: Icon,
-  dot,
-  children,
-  className,
-}: StatusPillProps) {
+export function StatusPill({ tone, icon: Icon, children, className }: StatusPillProps) {
   return (
     <span
       className={cn(
@@ -66,11 +51,7 @@ export function StatusPill({
         className,
       )}
     >
-      {dot ? (
-        <span className={cn("w-1.5 h-1.5 rounded-full", DOT_CLASSES[tone])} />
-      ) : Icon ? (
-        <Icon className="size-3" strokeWidth={2} />
-      ) : null}
+      {Icon && <Icon className="size-3" strokeWidth={2} />}
       {children}
     </span>
   );

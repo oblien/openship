@@ -16,6 +16,7 @@ export type {
   ContainerStatus,
   BuildStrategy,
   BuildConfig,
+  ImageArtifactConfig,
   DeployPublicEndpoint,
   DeployConfig,
   BuildResult,
@@ -33,6 +34,7 @@ export type {
   SslResult,
   ManualCert,
   SshConfig,
+  ExecOnly,
   CommandExecutor,
   ShellOptions,
   ShellSession,
@@ -45,7 +47,9 @@ export type {
 export {
   sq,
   assembleGitClone,
+  gitShellCommand,
   injectGitToken,
+  gitCredentialPair,
   toGitHubSshUrl,
   type GitCloneAuth,
   type GitCloneInvocation,
@@ -75,7 +79,17 @@ export type {
   ContainerLifecycleEvent,
 } from "./runtime/types";
 export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
-export { DockerRuntime, type DockerConnectionOptions } from "./runtime/docker";
+export {
+  DockerRuntime,
+  buildNetworkAliases,
+  ownsBuiltImage,
+  type BuildCachePruneOptions,
+  type BuildCachePruneResult,
+  type DockerConnectionOptions,
+} from "./runtime/docker";
+export { containerInfoFromDockerSummary } from "./runtime/docker-container-info";
+// The pull-auth shape, so the API can type the credential resolver it injects (#581).
+export type { DockerRegistryAuth } from "./runtime/docker-auth";
 export {
   resolveLocalDockerSocketPath,
   DEFAULT_DOCKER_SOCKET_PATH,
@@ -86,6 +100,12 @@ export {
   type ImageTransferResult,
 } from "./runtime/image-transfer";
 export { BareRuntime, STATIC_RELEASE_BASE, type BareRuntimeOptions } from "./runtime/bare";
+export {
+  MANAGED_ARTIFACT_BASE,
+  assertManagedArtifactPath,
+  isArtifactPathRef,
+  removeManagedArtifact,
+} from "./runtime/managed-artifact";
 // The doc-root resolver, exported so the output-check path derives the served
 // location with the SAME confinement rules the deploy used (no reimplementation:
 // this function is what rejects absolute paths and `../` traversal out of the root).
@@ -96,6 +116,9 @@ export {
   PAGE_CONTAINER_PREFIX,
   provisionCloudWorkspace,
 } from "./runtime/cloud";
+export { CloudDockerRuntime, CLOUD_DOCKER_IMAGE, type CloudDockerOptions } from "./runtime/cloud/docker";
+export { cloudWorkspaceStatus, waitForCloudDockerWorkspace } from "./runtime/cloud/workspace-ready";
+export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -124,32 +147,46 @@ export {
 } from "./runtime/stability";
 export {
   type PortOccupant,
+  type PortStopTarget,
   probeListeningPort,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
+// Exported because apps/ consumes them, and only for that: the label keys and the
+// build-helper rule each existed in more than one place before, and both decide whether
+// something is treated as Openship's. The rest of the port-ownership vocabulary stays
+// internal — the two in-package consumers import it from ./system/port-owner directly.
+export { OPENSHIP_LABEL, isBuildHelperMarkers } from "./system/port-owner";
 export {
   allocateHostPort,
   pickHostPort,
   type AllocateHostPortOptions,
+  type HostPortAllocation,
 } from "./runtime/host-port";
 export { type RuntimeMode, type CreateRuntimeOptions, createRuntime } from "./runtime/index";
 export { resolveDockerfileCandidates } from "./runtime/docker-paths";
-export { scopedVolumeName, scopeVolumeBinds, isHostPathSource } from "./runtime/volume-namespace";
+export {
+  scopedVolumeName,
+  ensureScopedVolumeName,
+  scopeVolumeBinds,
+  isHostPathSource,
+} from "./runtime/volume-namespace";
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
-export type { RoutingProvider, SslProvider } from "./infra/types";
+export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
+// For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
+// the string, which could drift from the page it is checking for.
+export { EDGE_UPSTREAM_DOWN_SENTINEL } from "./infra/edge-upstream-down";
 export {
   compileVercelRouting,
   sourceToLocation,
+  sourceToPattern,
+  type SourcePattern,
   type CompiledRouting,
   type CompiledRedirect,
   type CompiledHeaderRule,
 } from "./infra/vercel-routing";
-export {
-  compileRoutingToOblien,
-  type OblienRoutingContext,
-} from "./runtime/oblien-routing";
+export { compileRoutingToOblien, type OblienRoutingContext } from "./runtime/oblien-routing";
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
@@ -183,6 +220,11 @@ export {
   MAIL_DB_USER,
   MAIL_DB_HOST_BIND,
   MAIL_DB_PORT,
+  MAIL_DB_DEFAULT_PORT,
+  MAIL_DB_FALLBACK_PORT,
+  MAIL_DB_PORT_RANGE_MAX,
+  MAIL_DB_INTERNAL_PORT,
+  resolveMailDbPort,
   type MailMount,
 } from "./infra/mail-container";
 
@@ -253,6 +295,9 @@ export {
   detectMailContainer,
   verifyMailEngine,
   buildMailRunCommand,
+  buildDbRunCommand,
+  retainedDbPort,
+  findAvailableMailDbPort,
   MAIL_DB_IMAGE,
   type ContainerMailOptions,
   type ContainerMailResult,
@@ -279,11 +324,22 @@ export {
   completeEdgeTakeover,
 } from "./system/proxy/takeover-journal";
 // The consolidated reverse-proxy / edge facade (single point for the chain).
-export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./system/proxy";
+export {
+  detectEdge,
+  importSites,
+  takeoverOnMigrate,
+  foreignProxyOnEdge,
+  ensureEdge,
+} from "./system/proxy";
 export { unreachableStaticRoots } from "./system/proxy/import";
 export type { UnreachableStaticRoot } from "./system/proxy/import";
 // The reverse-proxy READ api: sites, by-port index, per-host vhost + cert.
-export { edgeProxy, edgeProxyFor, buildProxyRouteIndex, collectProxyCerts } from "./system/proxy/api";
+export {
+  edgeProxy,
+  edgeProxyFor,
+  buildProxyRouteIndex,
+  collectProxyCerts,
+} from "./system/proxy/api";
 export type {
   EdgeProxyApi,
   ProxySiteRoute,
@@ -297,16 +353,40 @@ export type { SetupState, SetupStateStore, ComponentState } from "./system/state
 export { FileStateStore } from "./system/state";
 
 export type {
+  DistroFamily,
   EnvironmentProfile,
   LinuxDistro,
   SystemArch,
+  SystemFirewall,
+  SystemLibc,
   SystemOs,
   SystemPackageManager,
+  SystemSelinux,
   SystemServiceManager,
 } from "./system/environment";
-export { resolveEnvironment } from "./system/environment";
+export {
+  ENVIRONMENT_PROFILE_TTL_MS,
+  invalidateEnvironment,
+  resolveEnvironment,
+} from "./system/environment";
+export type {
+  EnvOps,
+  HostCommands,
+  HostFacts,
+  Op,
+  PackageVariants,
+  ReleaseArch,
+} from "./system/environment-ops";
+export { envOps, HOST_STATE_DIR, opScript } from "./system/environment-ops";
+export {
+  invalidateLocalEnvironment,
+  resolveLocalEnvironmentSync,
+} from "./system/environment-local";
 export { elevatedExecutor, elevateCommand } from "./system/elevated-executor";
-export { systemCatalog } from "./system/catalog";
+export type { Privileged, RootChecked } from "./system/privilege";
+export { privilegedExecutor, rootChecked, rootOrDegrade } from "./system/privilege";
+export { systemCatalog, MIN_DOCKER_VERSION } from "./system/catalog";
+export { SERVER_STATS_COMMAND } from "./system/server-stats";
 // Native-module versioning + migration framework (verify → reconcile).
 export {
   resolveVerifiedCatalog,
@@ -326,14 +406,28 @@ export {
 } from "./system/modules";
 export { SYSTEM_COMPONENTS, getSystemComponentDefinition } from "./system/components";
 export {
+  REMOTE_SERVER_REQUIRED_COMPONENTS,
+  resolveSystemComponentInstallPlan,
+} from "./system/requirements";
+export {
   isRemoteConnectionError,
   isRetryableRemoteConnectionError,
   isSshAuthError,
   isRuntimeNotFoundError,
   isSshDisconnectedError,
   SshDisconnectedError,
+  HostChannelUnavailableError,
+  isHostChannelUnavailableError,
 } from "./system/errors";
-export { probeTcp, probeHttp, waitForReady } from "./system/reachability";
+export {
+  probeTcp,
+  probeTcpDetailed,
+  probeHostedHttp,
+  probeHttp,
+  waitForReady,
+  type TcpProbeFailure,
+  type TcpProbeResult,
+} from "./system/reachability";
 export {
   parseListeningPorts,
   probePortListeningOnce,
@@ -353,9 +447,28 @@ export {
   type PortProto,
   type PortFamily,
 } from "./system/port-scan";
-export { probeStaticOutput, type OutputProbeResult } from "./system/output-exists";
+export {
+  probeStaticOutput,
+  type OutputProbeResult,
+  type StaticProbeOptions,
+} from "./system/output-exists";
 
-export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor, createHostExecutor, hostControlDisabled } from "./system/executor";
+export {
+  LocalExecutor,
+  SshExecutor,
+  SystemSshExecutor,
+  createExecutor,
+  createHostExecutor,
+  unavailableExecutor,
+  hostControlDisabled,
+  setHostControlOverride,
+  hostChannelHealth,
+  invalidateHostChannelAuth,
+  containerBridgeCidr,
+  type HostChannelHealth,
+  type HostChannelCode,
+  type HostChannelForwarding,
+} from "./system/executor";
 export { DockerEdgeExecutor } from "./system/docker-edge-executor";
 export {
   edgeContainerExecutor,
@@ -390,6 +503,7 @@ export {
   checkAll as checkAllComponents,
   checkComponents,
   checkDocker,
+  needsDockerGroupRefresh,
   checkGit,
   checkEdge,
   COMPONENT_CHECKS,
@@ -446,10 +560,17 @@ export {
 
 // ─── Platform (top-level entry point) ────────────────────────────────────────
 export type { PlatformTarget, PlatformConfig, Platform } from "./platform";
-export { createPlatform, initPlatform, getPlatform, resetPlatform } from "./platform";
+export {
+  createPlatform,
+  initPlatform,
+  getPlatform,
+  peekPlatform,
+  resetPlatform,
+  sharedMountExecutor,
+} from "./platform";
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
-export { Oblien } from "oblien";
+export { Oblien } from "./oblien";
 export type {
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
@@ -458,3 +579,13 @@ export type {
 
 // ─── Backup adapters (importing the index seeds all three registries) ───────
 export * from "./backup";
+export {
+  privateNetworkTools,
+  PrivateNetworkError,
+  type PrivateNetworkProbe,
+} from "./network/private-network";
+export {
+  managedNetworkTools,
+  type ManagedHostTransaction,
+  type ManagedHostReceipt,
+} from "./network/managed-network";

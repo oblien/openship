@@ -1,6 +1,6 @@
 ---
-title: GitHub API
-description: Connect a GitHub account or App, browse repos, branches and files, and manage push webhooks.
+title: GitHub
+description: Connect GitHub accounts, repositories, and App sources.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,60 +10,38 @@ or the local `gh` CLI — and then lets you browse the accounts, repositories, b
 deploy from. It also manages the push webhooks that drive [auto-deploy](/docs/guides/deploy-from-github).
 In the dashboard this is the **GitHub** connection card in Settings and the repo picker in the deploy wizard.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/github/home`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model and [Auth](/docs/security/auth) for how GitHub
-credentials are stored.
-</Callout>
-
 <Callout title="Both cloud and self-hosted" type="info">
-This module is mounted on every instance. Two routes — `GET /api/github/local-status` and
-`GET /api/github/connect/poll` — are self-hosted only (they back the local `gh` CLI login flow) and
-return 404 on Openship Cloud.
+This module is mounted on every instance. The local identity routes and every `/api/github/sources` route
+are self-hosted only and return 404 on Openship Cloud. Source management additionally requires the active
+workspace's `owner` role.
 </Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/github/status` | `github:read` | GitHub connection status for the org. |
-| `GET /api/github/home` | `github:read` | Connection state, accounts, and repos in one call. |
-| `GET /api/github/local-status` | `github:read` | Whether the host has `gh` CLI auth available (self-hosted only). |
-| `GET /api/github/connect/poll` | `github:read` | Poll device-flow login status (self-hosted only). |
-| `POST /api/github/connect` | `github:write` | Start or advance the connection flow. |
-| `GET /api/github/connect/redirect` | public | GitHub OAuth callback — browser navigates here, no session yet. |
-| `POST /api/github/disconnect` | `github:admin` | Disconnect one source or all. |
-| `GET /api/github/repos` | `github:list` | List the connected account's repos (optionally `?owner=`). |
-| `POST /api/github/repos` | `github:write` | Create a repository. |
-| `GET /api/github/orgs/:org/repos` | `github:list` | List repositories in an org / account. |
-| `GET /api/github/repos/:owner/:repo` | `github:read` | Get a repository's metadata. |
-| `DELETE /api/github/repos/:owner/:repo` | `github:admin` | Delete a repository. |
-| `GET /api/github/repos/:owner/:repo/branches` | `github:list` | List a repository's branches. |
-| `GET /api/github/repos/:owner/:repo/clone-token` | `github:read` | Mint a short-lived clone token + `git clone` command. |
-| `GET /api/github/repos/:owner/:repo/files` | `github:list` | List files/dirs at a path (query: `path`, `branch`). |
-| `GET /api/github/repos/:owner/:repo/file` | `github:read` | Read a single file's contents (query: `file`, `branch`). |
-| `GET /api/github/repos/:owner/:repo/webhooks` | `github:list` | List a repo's webhooks. |
-| `POST /api/github/repos/:owner/:repo/webhooks` | `github:write` | Register (or reuse) the Openship push webhook. |
-| `DELETE /api/github/repos/:owner/:repo/webhooks` | `github:admin` | Delete a webhook. |
 
 ## Connection state
 
 `GET /api/github/home` is the dashboard's single entry point: it returns `{ state, accounts, repos }` in one
 round trip, filtered to the accounts and repos your member role is allowed to see.
 `GET /api/github/status` is narrower — the Settings card's data source — returning `{ state, accounts,
-installUrl, cloudUnreachable }`.
+installUrl, cloudUnreachable, customSourcesConfigured }`. The last field tells clients that App lifecycle
+controls belong to the workspace source manager rather than the legacy Openship App connection.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.github.getHome();
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl https://your-host/api/github/home \
+curl "$OPENSHIP_URL/api/github/home" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-```bash
-# The CLI has no dedicated `github` command; use the raw-request escape hatch:
-openship api /github/home
-```
+</Tab>
+</Tabs>
 
 ## Connect
 
@@ -75,20 +53,32 @@ reacts to the `flow` field:
 - `{ connected: false, flow: "device_code", userCode, verificationUri, ... }` — self-hosted device login.
 - `{ connected: false, flow: "terminal", command, message }` — run `command` (e.g. `gh auth login`) yourself.
 
-```
-POST /api/github/connect
-```
-
 The optional body field `source` (`"oauth"` | `"cli"`) forces a specific path when the dashboard shows both
 the "Connect Openship App" and "Use gh CLI" buttons; omit it to let the server pick based on the instance's
 auth mode.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.github.connect({
+  source: "oauth",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X POST https://your-host/api/github/connect \
+curl -X POST "$OPENSHIP_URL/api/github/connect" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"source":"oauth"}'
 ```
+
+</Tab>
+</Tabs>
 
 ## Disconnect
 
@@ -100,15 +90,93 @@ Body (or `?source=`): `source` is `"oauth"`, `"cli"`, or `"all"` (default `"all"
 stored credentials for that source; it does **not** uninstall the GitHub App — that happens only when you
 remove it from github.com (Openship reacts to the uninstall webhook).
 
-```bash
-openship api /github/disconnect -X POST -d '{"source":"cli"}'
+This endpoint does not delete a workspace-owned source. Use `DELETE /api/github/sources/:id` for that
+explicit owner-only operation.
+
+## Workspace-owned GitHub App sources
+
+These endpoints are available only on self-hosted instances. All reads are sanitized: private keys, client
+secrets, webhook secrets, and their encrypted envelope are never returned.
+
+### List sources
+
+Returns `{ data, configuration }`. `configuration` contains `publicReady`, `publicUrl`, `setupUrl`, and
+`webhookUrl`. Each source in `data` contains public App metadata, health, default status, and its claimed
+installations.
+
+### One-click manifest
+
+Start the GitHub.com flow with:
+
+The response contains `{ url, manifest }`. Submit `manifest` as a JSON string in a form field named
+`manifest` to `url`; the dashboard does this automatically. GitHub redirects to the configured setup page
+with `code` and `state`, which must be sent to:
+
+```text
+POST /api/github/sources/manifest/convert
+{ "code": "…", "state": "…" }
 ```
+
+Conversion consumes the user/workspace-bound state exactly once, encrypts GitHub's generated credentials,
+and returns `{ data, installUrl }`.
+
+### Manual registration and GitHub Enterprise Server
+
+```text
+POST /api/github/sources/manual
+```
+
+<TypeTable
+  type={{
+    name: { type: 'string', description: 'Workspace-facing source label.', required: true },
+    appId: { type: 'integer', description: 'Numeric GitHub App ID.', required: true },
+    clientId: { type: 'string', description: 'Optional App client ID.' },
+    clientSecret: { type: 'string', description: 'Optional App client secret; stored encrypted.' },
+    privateKeyPem: { type: 'string', description: 'Complete App private key PEM; stored encrypted.', required: true },
+    webhookSecret: { type: 'string', description: 'Matching App webhook secret, at least 16 characters; stored encrypted.', required: true },
+    webBaseUrl: { type: 'string', description: 'GitHub web origin. Defaults to https://github.com.' },
+    apiBaseUrl: { type: 'string', description: 'REST API base. Defaults to https://api.github.com; GHE commonly uses https://host/api/v3.' },
+    isDefault: { type: 'boolean', description: 'Prefer this App when more than one source covers an owner.' },
+  }}
+/>
+
+The API signs an App JWT and verifies `/app` before saving the source. It returns `{ data, installUrl }`.
+
+`PATCH /api/github/sources/:id` accepts the same identity and endpoint fields, all optional. Omitted secret
+fields retain their existing encrypted values. App ID or API URL cannot change while the source has claimed
+installations. `POST .../verify` refreshes public App metadata and marks bad credentials as needing attention.
+
+Making a source default atomically rebinds existing projects for every GitHub owner installed on that source.
+Deleting a source promotes another active source when possible and rebinds affected projects; projects with no
+replacement lose their installation binding and auto-deploy is disabled. Deleting locally does not uninstall
+the GitHub App itself.
 
 ## Create a repository
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.github.createRepo({
+  name: "my-app",
+  private: true,
+  owner: "acme",
+});
+console.log(result);
 ```
-POST /api/github/repos
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/github/repos" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-app","private":true,"owner":"acme"}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -119,34 +187,12 @@ POST /api/github/repos
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/github/repos \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my-app","private":true,"owner":"acme"}'
-```
-
-```bash
-openship api /github/repos -X POST -d '{"name":"my-app","private":true}'
-```
-
 Returns `201` with `{ data }` (the created repository).
 
 ## Browse repos, branches and files
 
 List repos for the connected account (`?owner=` narrows to one account), or for a named org via
 `GET /api/github/orgs/:org/repos`. Both return `{ data: [...] }` filtered to repos your role may see.
-
-```bash
-# Repos for one owner
-openship api /github/repos --query owner=acme
-
-# Branches for a repo
-openship api /github/repos/acme/my-app/branches
-
-# One repo, with its branches inlined
-openship api /github/repos/acme/my-app --query branches=true
-```
 
 File browsing reads directly from GitHub:
 
@@ -155,10 +201,29 @@ File browsing reads directly from GitHub:
 - `GET /api/github/repos/:owner/:repo/file` — one file's contents. Query: `file` (default `package.json`)
   and `branch`. `.json` files are parsed and returned as JSON.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.github.getFile({
+  owner: "acme",
+  repo: "my-app",
+  file: "package.json",
+  branch: "main",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl "https://your-host/api/github/repos/acme/my-app/file?file=package.json&branch=main" \
+curl "$OPENSHIP_URL/api/github/repos/acme/my-app/file?file=package.json&branch=main" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 ## Webhooks
 
@@ -176,17 +241,13 @@ DELETE /api/github/repos/:owner/:repo/webhooks
   }}
 />
 
-```bash
-openship api /github/repos/acme/my-app/webhooks -X DELETE -d '{"hookId":123456}'
-```
-
 ## Clone token
 
 `GET /api/github/repos/:owner/:repo/clone-token` mints a short-lived (under an hour) GitHub App installation
 token and returns `{ token, cloneUrl, command }` — a ready-to-run `git clone`. This is the same credential
 the build pipeline clones with, and is available only when the Openship GitHub App is installed for the owner.
 
-## Errors you might see
+## Errors
 
 <Callout title="400 — Not connected to GitHub" type="warn">
 Returned by the repo-listing routes when no usable GitHub source (App installation, OAuth account, or `gh`
@@ -204,7 +265,73 @@ through openship.io. If the SaaS is unreachable, `connect` returns 503 rather th
 network / the cloud connection in Settings, then retry.
 </Callout>
 
+An instance configured with its [own self-hosted GitHub App](/docs/guides/self-hosted-github-app) does not
+use this cloud proxy; `GITHUB_AUTH_MODE=auto` selects the complete local App configuration first.
+
 <Callout title="404 on a repo route" type="error">
 The `:owner/:repo` isn't visible to the active GitHub source (private, not granted to your member role, or
 does not exist). Confirm the repo appears in `GET /api/github/home` first.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+### Connect
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read GitHub connection status. | `github.getStatus()` | `GET /api/github/status`<br />`github:read` |
+| Read the GitHub overview for the current identity. | `github.getHome()` | `GET /api/github/home`<br />`github:read` |
+| Start a supported GitHub connection flow. | `github.connect(input?)` | `POST /api/github/connect`<br />`github:write` |
+| Claim an authorized GitHub App installation. | `github.claimInstallation(input)` | `POST /api/github/installations/claim`<br />`github:write` · Self-hosted |
+| Read local Git identity availability. | `github.getLocalStatus()` | `GET /api/github/local-status`<br />`github:read` · Self-hosted |
+| Poll an in-progress connection flow. | `github.pollConnect()` | `GET /api/github/connect/poll`<br />`github:read` · Self-hosted |
+| Configure the installation’s GitHub token. | `github.setInstanceToken(input)` | `POST /api/github/instance-token`<br />`github:admin` · Self-hosted |
+| Disconnect a GitHub identity or source association. | `github.disconnect(input?)` | `POST /api/github/disconnect`<br />`github:admin` |
+
+### Repositories and source
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List accessible repositories. | `github.listRepos(input?)` | `GET /api/github/repos`<br />`github:list` |
+| List repositories in a GitHub organization. | `github.listOrgRepos(input)` | `GET /api/github/orgs/:org/repos`<br />`github:list` |
+| Read repository metadata. | `github.getRepo(input)` | `GET /api/github/repos/:owner/:repo`<br />`github:read` |
+| Create a repository through the configured GitHub identity. | `github.createRepo(input)` | `POST /api/github/repos`<br />`github:write` |
+| Delete an authorized repository. | `github.deleteRepo(input)` | `DELETE /api/github/repos/:owner/:repo`<br />`github:admin` |
+| List repository branches. | `github.listBranches(input)` | `GET /api/github/repos/:owner/:repo/branches`<br />`github:list` |
+| Obtain an authorized repository clone credential. | `github.getCloneToken(input)` | `GET /api/github/repos/:owner/:repo/clone-token`<br />`github:read` |
+| Detect build configuration in a repository. | `github.detectStack(input)` | `GET /api/github/repos/:owner/:repo/detect`<br />`github:read` |
+| List repository files at a path. | `github.listFiles(input)` | `GET /api/github/repos/:owner/:repo/files`<br />`github:list` |
+| Read a repository tree. | `github.listTree(input)` | `GET /api/github/repos/:owner/:repo/tree`<br />`github:list` |
+| Read repository file content. | `github.getFile(input)` | `GET /api/github/repos/:owner/:repo/file`<br />`github:read` |
+
+### Webhooks
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List repository webhooks. | `github.listWebhooks(input)` | `GET /api/github/repos/:owner/:repo/webhooks`<br />`github:list` |
+| Register a repository webhook for deployment events. | `github.registerWebhook(input)` | `POST /api/github/repos/:owner/:repo/webhooks`<br />`github:write` |
+| Delete a repository webhook. | `github.deleteWebhook(input)` | `DELETE /api/github/repos/:owner/:repo/webhooks`<br />`github:admin` |
+
+### GitHub App sources
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List configured GitHub App sources. | `github.listSources()` | `GET /api/github/sources`<br />`github:admin` · Self-hosted |
+| Start GitHub App manifest registration. | `github.beginManifest(input)` | `POST /api/github/sources/manifest`<br />`github:admin` · Self-hosted |
+| Convert a completed GitHub App manifest. | `github.convertManifest(input)` | `POST /api/github/sources/manifest/convert`<br />`github:admin` · Self-hosted |
+| Register an existing GitHub App source. | `github.createManualSource(input)` | `POST /api/github/sources/manual`<br />`github:admin` · Self-hosted |
+| Change a GitHub App source’s configuration. | `github.updateSource(id, input)` | `PATCH /api/github/sources/:id`<br />`github:admin` · Self-hosted |
+| Verify source credentials with GitHub. | `github.verifySource(id)` | `POST /api/github/sources/:id/verify`<br />`github:admin` · Self-hosted |
+| Select the default GitHub App source. | `github.setDefaultSource(id)` | `POST /api/github/sources/:id/default`<br />`github:admin` · Self-hosted |
+| Create an installation URL for a GitHub App source. | `github.createInstallUrl(id)` | `POST /api/github/sources/:id/install`<br />`github:admin` · Self-hosted |
+| Remove a GitHub App source. | `github.deleteSource(id)` | `DELETE /api/github/sources/:id`<br />`github:admin` · Self-hosted |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| GitHub OAuth callback — browser navigates here, no session yet. | HTTP only | `GET /api/github/connect/redirect`<br />`Handler authentication` |
+
+{/* api-operations:end */}

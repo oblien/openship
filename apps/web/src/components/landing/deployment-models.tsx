@@ -1,22 +1,19 @@
-/**
- * Deployment models - three big numbered panels. Middle (Hybrid) is the
- * inverted dark panel for visual rhythm. Big "01/02/03" as type-as-design.
- */
+import { cloudFrom, getCloudPricing, UI } from "@/lib/pricing";
 
-const MODELS = [
+function models(from: string | null) { return [
   {
     n: "01",
     tag: "Managed",
     title: "Openship Cloud",
     lead:
-      "Sign up, point at a repository, ship. Zero infrastructure decisions. Multi-region by default. Auto-scaling per service.",
+      "Build and deploy web apps from your repository. Manage deployments, domains, and logs in one place.",
     points: [
-      "Multi-region edge - us, eu, apac, more",
-      "Auto-scaling, zero-downtime rolling deploys",
-      "Backups, monitoring, alerts included",
+      "Managed builds and application runtimes",
+      "HTTPS domains and static site hosting",
+      "Track credit usage in your dashboard",
     ],
-    price: "Coming soon",
-    priceNote: "Plans announced once billing is live",
+    price: from ? `From ${from}${UI.perMonth}` : "See Cloud plans",
+    priceNote: "Monthly or annual billing",
   },
   {
     n: "02",
@@ -44,12 +41,14 @@ const MODELS = [
       "Or production locally, previews managed",
       "One billing, one team, one dashboard",
     ],
-    price: "Coming soon",
-    priceNote: "Available once plans open",
+    price: "Cloud plan + your servers",
+    priceNote: "One Cloud subscription, unlimited self-hosted boxes",
   },
-];
+]; }
 
-export function DeploymentModels() {
+export async function DeploymentModels() {
+  const pricing = await getCloudPricing();
+  const MODELS = models(cloudFrom(pricing));
   return (
     <section className="dm-section">
       <div className="dm-container">

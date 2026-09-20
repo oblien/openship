@@ -43,6 +43,34 @@ r.get(
   ctrl.issuesSummary,
 );
 
+r.get(
+  "/health",
+  {
+    tag: "project:list",
+    localOnly: true,
+    mcp: {
+      description:
+        "Latest health-watch snapshot for every expected workload in the organization. Cached only: this read performs no Docker polling. Includes healthy, unhealthy, crash-looping, down and unknown states plus watcher enabled status.",
+    },
+  },
+  ctrl.healthSnapshot,
+);
+
+r.post(
+  "/health/scan",
+  {
+    tag: "project:list",
+    readOnly: true,
+    collection: true,
+    localOnly: true,
+    mcp: {
+      description:
+        "Check the current container state of every deployed workload in the caller's organization. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions. Available on desktop and self-hosted runtimes while Openship is running.",
+    },
+  },
+  ctrl.scanCurrentHealth,
+);
+
 /**
  * Firing the scheduled checkers early. Tagged `job:write` — NOT `server:write` —
  * because that is literally what this does: it calls the jobs module's run-now, and
@@ -53,6 +81,7 @@ r.post(
   "/rescan",
   {
     tag: "job:write",
+    auditHandledByOperation: true,
     collection: true,
     localOnly: true,
     mcp: {
@@ -61,6 +90,12 @@ r.post(
     },
   },
   ctrl.rescanIssues,
+);
+
+r.get(
+  "/rescan/status",
+  { tag: "job:read", localOnly: true },
+  ctrl.rescanStatus,
 );
 
 export const issuesRoutes = r.hono;

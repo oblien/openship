@@ -39,8 +39,15 @@ export interface MailMount {
   /**
    * The entrypoint must seed this mount from the image's baked defaults when it's
    * empty on first boot, then never overwrite operator edits. True for config dirs
-   * we bind-mount whole (so the baked config isn't hidden by an empty host dir);
-   * false for pure data dirs (maildir, queue, keys, DB).
+   * we bind-mount whole (so the baked config isn't hidden by an empty host dir) AND
+   * for ClamAV's signature database — data, but clamd exits without it; false for
+   * pure data dirs (maildir, queue, keys, DB).
+   *
+   * DECLARATIVE: nothing here reads this flag. The copy lives in the image's
+   * entrypoint (`seed <baked-subdir> <container-path>`), so this is only a claim
+   * about it — pinned by apps/api/test/lib/mail-image-seed-mounts.test.ts. A mount
+   * that needed seeding with nothing seeding it is how the engine shipped a clamd
+   * whose signature database was hidden by its own mount (issue #565).
    */
   seed?: boolean;
 }
@@ -66,8 +73,10 @@ export const MAIL_CONTAINER_MOUNTS: ReadonlyArray<MailMount> = [
   { host: `${MAIL_HOST_STATE_DIR}/config/dovecot`, container: "/etc/dovecot", seed: true },
   { host: `${MAIL_HOST_STATE_DIR}/config/amavis`, container: "/etc/amavis/conf.d", seed: true },
   // ClamAV signatures — bind-mounted so a pull doesn't force a multi-hundred-MB
-  // freshclam re-download and delay readiness.
-  { host: `${MAIL_HOST_STATE_DIR}/clamav`, container: "/var/lib/clamav" },
+  // freshclam re-download and delay readiness. `seed: true` because that same mount
+  // HIDES the database baked into the image: with nothing copying it across, clamd
+  // finds an empty database directory and exits (issue #565).
+  { host: `${MAIL_HOST_STATE_DIR}/clamav`, container: "/var/lib/clamav", seed: true },
   { host: "/etc/letsencrypt", container: "/etc/letsencrypt", readonly: true },
 ];
 
@@ -82,9 +91,32 @@ export const MAIL_DB_CONTAINER_DATA_DIR = "/var/lib/postgresql/data";
 export const MAIL_DB_PGDATA = `${MAIL_DB_CONTAINER_DATA_DIR}/pgdata`;
 export const MAIL_DB_NAME = "vmail";
 export const MAIL_DB_USER = "vmail";
-/** Loopback only — the host-networked engine reaches it at 127.0.0.1:5432. */
+/** Loopback only — the host-networked engine reaches it at 127.0.0.1. */
 export const MAIL_DB_HOST_BIND = "127.0.0.1";
-export const MAIL_DB_PORT = 5432;
+export const MAIL_DB_DEFAULT_PORT = 5432;
+export const MAIL_DB_FALLBACK_PORT = 5433;
+export const MAIL_DB_PORT_RANGE_MAX = 5460;
+export const MAIL_DB_INTERNAL_PORT = 5432;
+
+/**
+ * Resolve the host port the mail database listens on.
+ * Reads `OPENSHIP_MAIL_DB_PORT` at setup time. An invalid explicit setting must
+ * fail instead of silently connecting the mail engine to a different database.
+ */
+export function resolveMailDbPort(
+  raw: string | number | undefined = process.env.OPENSHIP_MAIL_DB_PORT,
+): number {
+  if (raw === undefined || raw === "") return MAIL_DB_DEFAULT_PORT;
+  const value = String(raw).trim();
+  const n = Number(value);
+  if (!/^[0-9]+$/.test(value) || !Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new Error("OPENSHIP_MAIL_DB_PORT must be a decimal port between 1 and 65535.");
+  }
+  return n;
+}
+
+/** Legacy default constant; runtime host bindings use resolveMailDbPort(). */
+export const MAIL_DB_PORT = MAIL_DB_DEFAULT_PORT;
 
 /**
  * Host-side paths for the files the admin layer writes with `exec.writeFile`
@@ -96,5 +128,10 @@ export const MAIL_DB_PORT = 5432;
 export const MAIL_HOST_PATHS = {
   saslPasswd: `${MAIL_HOST_STATE_DIR}/config/postfix/sasl_passwd`,
   senderRelayhost: `${MAIL_HOST_STATE_DIR}/config/postfix/sender_relayhost`,
+  // Per-nexthop TLS policy. Only split ("selected"-scope) relaying writes it: the
+  // relay hop must be `encrypt` so SASL credentials never cross a plaintext
+  // connection, while direct-to-MX delivery for the un-relayed domains stays
+  // opportunistic. A GLOBAL smtp_tls_security_level can't express both.
+  relayTlsPolicy: `${MAIL_HOST_STATE_DIR}/config/postfix/openship_tls_policy`,
   amavisUserConf: `${MAIL_HOST_STATE_DIR}/config/amavis/50-user`,
 } as const;

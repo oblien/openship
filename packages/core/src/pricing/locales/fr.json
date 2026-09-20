@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Déployez des sites statiques sur Openship Cloud, gratuitement."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Pour votre première vraie application — conteneurs, bases de données et tout le reste."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Pour les applications en production qui ont besoin de marge pour grandir."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Pour les équipes qui encaissent un trafic sérieux sur une infrastructure partagée."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Limites sur mesure, infrastructure dédiée et un SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Tout ce que contient {inherited}, plus :",
+    "staticOnly": "Sites statiques uniquement — SSG, SPA et HTML brut",
+    "anyWorkload": "Exécutez tout — conteneurs, Compose, workers, Postgres, Redis",
+    "runningServices": "{runningServices} applications, bases de données ou workers actifs",
+    "computeMinutes": "{computeMinutes} minutes de calcul par mois",
+    "buildMinutes": "{buildMinutes} minutes de build par mois",
+    "power": "Jusqu'à {powerCpu} vCPU et {powerRamGb} GB de RAM par application",
+    "projects": "{maxProjects} projets",
+    "projectsUnlimited": "Projets illimités",
+    "freeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits",
+    "freeSubdomainsUnlimited": "Sous-domaines {freeDomainSuffix} gratuits en illimité",
+    "gitDeploys": "Déployez depuis GitHub, GitLab ou n'importe quel dépôt Git",
+    "customDomains": "Domaines personnalisés illimités, TLS inclus",
+    "deployLogs": "Logs de build et de déploiement en direct",
+    "auditLog": "Journal d'audit de chaque modification",
+    "unlimitedSeats": "Membres d'équipe illimités — jamais de facturation par utilisateur",
+    "sso": "SSO et SAML",
+    "customLimits": "Limites sur mesure, négociées par contrat",
+    "dedicatedInfra": "Infrastructure et régions dédiées",
+    "onboarding": "Mise en route et migration accompagnées",
+    "communitySupport": "Support communautaire",
+    "emailSupport": "Support par e-mail",
+    "prioritySupport": "Support prioritaire",
+    "dedicatedSupport": "Support dédié avec SLA",
+    "selfHostedOpenSource": "Toute la plateforme, en open source (Apache 2.0)",
+    "selfHostedUnlimited": "Déploiements, projets, serveurs et domaines illimités",
+    "selfHostedServices": "Tous les services managés — Postgres, Redis, mail",
+    "selfHostedClients": "CLI, web et desktop — un seul backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits en vous connectant au Cloud"
+  },
+  "selfHosted": {
+    "name": "Auto-hébergé",
+    "tagline": "Faites tourner toute la plateforme sur vos propres machines. N'importe quelle machine Linux, n'importe quel fournisseur, n'importe quelle région. Pas de comptage à l'usage, pas de limite d'utilisateurs, pas de télémétrie.",
+    "priceLabel": "Gratuit",
+    "priceNote": "Apache 2.0 — gratuit à vie, sans carte bancaire",
+    "cta": "Commencer l'auto-hébergement"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} minutes de calcul",
+    "pack_25k": "{computeMinutes} minutes de calcul",
+    "pack_100k": "{computeMinutes} minutes de calcul"
+  },
+  "ui": {
+    "perMonth": "/mois",
+    "perYear": "/an",
+    "custom": "Sur mesure",
+    "free": "Gratuit",
+    "unlimited": "Illimité",
+    "mostPopular": "Le plus populaire",
+    "monthsFree": "{months} mois offerts",
+    "ctaStart": "Commencer gratuitement",
+    "ctaChoose": "Choisir {name}",
+    "ctaContact": "Contacter l'équipe commerciale",
+    "billedMonthly": "facturé mensuellement, résiliable à tout moment",
+    "campaignBadge": "{percentOff} % de remise",
+    "campaignEnds": "L'offre se termine le {date}",
+    "wasPrice": "avant {price}",
+    "standardTitle": "Dans tous les forfaits",
+    "creditPackNote": "≈ {appHours} heures d'une petite application, ou {buildMinutes} minutes de build"
+  }
+}

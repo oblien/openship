@@ -8,10 +8,14 @@
   },
   "status": {
     "live": "En vivo",
+    "paused": "Pausado",
     "attention": "Acción requerida",
     "queued": "En cola",
     "building": "Compilando",
     "deploying": "Desplegando",
+    "reconciling": "Verificando",
+    "migrating": "Migrando",
+    "deploy_failed": "Falló el último despliegue",
     "failed": "Fallido",
     "cancelled": "Cancelado",
     "deleting": "Eliminando",
@@ -35,6 +39,7 @@
     "services": "Servicios",
     "static": "Estático",
     "standalone": "Independiente",
+    "worker": "Worker",
     "updateAvailable": "Update",
     "appBadge": "App"
   },
@@ -56,8 +61,10 @@
   "env": {
     "productionFallback": "Producción",
     "switchAria": "Cambiar de entorno",
-    "addBranchAria": "Agregar rama",
+    "newEnvironment": "Nuevo entorno",
+    "backToEnvironments": "Volver a los entornos",
     "searchBranches": "Buscar ramas",
+    "refreshBranches": "Actualizar ramas",
     "noBranches": "No se encontraron ramas",
     "environmentName": "Nombre del entorno",
     "branchLabel": "Etiqueta de la rama",
@@ -119,6 +126,7 @@
     "noDomain": "Sin dominio",
     "addDomain": "Añadir dominio",
     "tabs": {
+      "topology": "Topología",
       "appSettings": "Ajustes",
       "overview": "Resumen",
       "services": "Servicios",
@@ -127,8 +135,10 @@
       "health": "Estado",
       "monitoring": "Monitorización",
       "source": "Origen",
+      "sourceAndTriggers": "Origen y desencadenadores",
       "webhooks": "Webhooks",
       "runtime": "Configuración",
+      "settings": "Ajustes",
       "logs": "Registros",
       "backup": "Copia de seguridad",
       "advanced": "Avanzado"
@@ -156,7 +166,7 @@
     "subtextOther": "Este proyecto aún no tiene un despliegue en vivo. Revisa el origen e inténtalo de nuevo.",
     "deployNow": "Desplegar ahora",
     "connectSource": "Conectar un origen",
-    "settings": "Configuración",
+    "settings": "Configuración del despliegue",
     "attemptsTitle": "Intentos de despliegue",
     "attemptsDescription": "Cada compilación de este proyecto — haz clic en una para abrirla",
     "sourceTitle": "Origen",
@@ -193,6 +203,7 @@
     "modeStatic": "Sitio estático",
     "modeStandalone": "Independiente",
     "modeServer": "Servidor",
+    "modeWorker": "Worker",
     "infrastructure": "Infraestructura",
     "platform": "Plataforma",
     "mode": "Modo",
@@ -230,6 +241,9 @@
     "waitingRequests": "Esperando solicitudes",
     "noTransfer": "Aún no hay transferencia"
   },
+  "analytics": {
+    "loadFailed": "No se pudieron cargar las analíticas de tráfico"
+  },
   "monitoring": {
     "noDataTitle": "Aún no hay datos de monitoreo",
     "noDataDescription": "Las analíticas aparecerán aquí una vez que la aplicación desplegada comience a recibir tráfico.",
@@ -256,6 +270,7 @@
     "geoUnavailableBody": "El proxy edge no puede resolver los países de los visitantes, así que el mapa queda vacío. Los totales de tráfico no se ven afectados.",
     "noCountries": "Aún no hay datos de país para este período.",
     "statusesTitle": "Respuestas",
+    "statusesOthers": "Otros",
     "share": "{pct} %",
     "visitorDays": "Visitantes-día",
     "peakDayTooltip": "Día más activo: {peak}. Un visitante que regresa cuenta una vez por día, así que el total es un límite superior.",
@@ -333,12 +348,12 @@
     "unknown": "Desconocido"
   },
   "routingRetry": {
-    "title": "El enrutamiento del dominio gratuito necesita atención",
-    "description": "La aplicación está en vivo en el servidor, pero su URL gratuita .opsh.io no se enrutó a través del edge de Openship Cloud. Reintenta cuando el servidor sea accesible desde la nube en el puerto 80.",
+    "title": "El enrutamiento del dominio necesita atención",
+    "description": "La app está activa en el servidor, pero las rutas delante de ella no se sincronizaron. Reintenta la reparación o revisa el DNS y el edge de este servidor.",
     "retry": "Reintentar enrutamiento",
     "retrying": "Reintentando…",
-    "success": "Enrutamiento del dominio gratuito sincronizado.",
-    "failed": "No se pudo sincronizar el enrutamiento del dominio gratuito."
+    "success": "Enrutamiento del dominio sincronizado.",
+    "failed": "No se pudo sincronizar el enrutamiento del dominio."
   },
   "deployBlocked": {
     "redeploy": "Redesplegar"
@@ -372,17 +387,18 @@
     "noPublicDomainTitle": "No hay ningún dominio público conectado",
     "noPublicDomainDescOne": "Este proyecto tiene {count} servicio con puertos expuestos, pero ninguno está configurado con un dominio accesible. Si despliegas ahora, la pila puede ejecutarse internamente, pero los usuarios no podrán acceder a ella desde una URL pública.",
     "noPublicDomainDescOther": "Este proyecto tiene {count} servicios con puertos expuestos, pero ninguno está configurado con un dominio accesible. Si despliegas ahora, la pila puede ejecutarse internamente, pero los usuarios no podrán acceder a ella desde una URL pública.",
+    "openDomains": "Abrir dominios",
     "openServices": "Abrir servicios",
     "deployAnyway": "Desplegar de todos modos",
     "suggestedFix": "Solución sugerida",
-    "fixStep1": "Abre la pestaña Servicios.",
-    "fixStep2": "Elige el servicio que debe ser público.",
-    "fixStep3": "Habilita la exposición del dominio y elige el puerto público."
+    "fixStep1": "Abre la pestaña Dominios.",
+    "fixStep2": "Añade una ruta o dominio personalizado para el puerto del servicio.",
+    "fixStep3": "Verifica el dominio y despliega."
   },
   "connections": {
     "useInProject": "Usar en un proyecto",
     "title": "Usar en un proyecto",
-    "subtitle": "Conecta esta base de datos a otro proyecto como una conexión lista.",
+    "subtitle": "Comparte este servicio con otro proyecto mediante una conexión.",
     "targetLabel": "Proyecto",
     "targetPlaceholder": "Selecciona un proyecto…",
     "valueLabel": "Valor para inyectar",
@@ -417,15 +433,24 @@
     "forwardShort": "Reenviar",
     "usedByTitle": "Usado por",
     "usedByOpen": "Abrir proyecto",
-    "usedByHint": "{count} proyecto(s) dependen de la conexión de esta app. Desvincúlala desde el proyecto que la consume.",
-    "linkedCountOne": "{count} app vinculada",
-    "linkedCountOther": "{count} apps vinculadas",
-    "linkedHint": "Este proyecto las usa, pero no las ejecuta.",
-    "linkedBadge": "Vinculada",
+    "usedByHint": "{count} proyecto(s) usan esta conexión. Desconéctala desde el proyecto que la consume.",
+    "linkedCountOne": "{count} servicio conectado",
+    "linkedCountOther": "{count} servicios conectados",
+    "linkedHint": "Estos servicios se gestionan en sus proyectos de origen.",
+    "linkedBadge": "Compartido",
     "unlink": "Desvincular",
-    "openApp": "Abrir app",
+    "openApp": "Abrir origen",
     "internalTitle": "Dirección interna",
-    "internalDescription": "Accede a este proyecto de forma privada desde otro servicio en el mismo servidor, sin puerto público."
+    "internalDescription": "Accede a este proyecto de forma privada desde otro servicio en el mismo servidor, sin puerto público.",
+    "createNew": "Crear nuevo",
+    "connectExisting": "Conectar existente",
+    "existingHint": "Usa un servicio o una aplicación de otro proyecto. Sus datos y su gestión permanecen allí.",
+    "sourceLabel": "Proyecto o aplicación de origen",
+    "sourcePlaceholder": "Elige un proyecto o aplicación…",
+    "loadingServices": "Cargando servicios…",
+    "noConnections": "No hay valores de conexión disponibles. Revisa el puerto y las credenciales del servicio en el proyecto de origen.",
+    "noSources": "Crea un servicio en otro proyecto para conectarlo aquí.",
+    "sharedFrom": "Compartido desde {project}"
   },
   "incomingWebhooks": {
     "title": "Webhooks entrantes",
@@ -453,7 +478,8 @@
       "none": "Abierto"
     },
     "summaryDeploy": "Vuelve a desplegar este proyecto",
-    "summaryDeployService": "Vuelve a desplegar el servicio {service}",
+    "summaryDeployOne": "Vuelve a desplegar 1 servicio seleccionado",
+    "summaryDeployServices": "Vuelve a desplegar {count} servicios juntos",
     "summaryJob": "Ejecuta el trabajo {job}",
     "createTitle": "Nuevo webhook entrante",
     "createSubtitle": "Elige qué hace y cómo se autentican los llamantes.",
@@ -461,10 +487,10 @@
     "namePlaceholder": "p. ej. hook de despliegue de CI",
     "actionLabel": "Acción",
     "actionDeploy": "Desplegar",
-    "actionDeployDesc": "Vuelve a desplegar este proyecto (o un servicio) al llamarlo.",
+    "actionDeployDesc": "Vuelve a desplegar este proyecto o los servicios seleccionados al llamarlo.",
     "actionJob": "Ejecutar un trabajo",
     "actionJobDesc": "Ejecuta uno de tus trabajos al llamarlo.",
-    "serviceLabel": "Servicio (opcional)",
+    "serviceLabel": "Servicios (opcionales)",
     "serviceAll": "Todo el proyecto",
     "jobLabel": "Trabajo",
     "jobPlaceholder": "Selecciona un trabajo…",
@@ -507,5 +533,6 @@
       "unhealthy": "En mal estado",
       "server_unreachable": "Servidor inaccesible"
     }
-  }
+  },
+  "migrationAwaitingHint": "La migración te espera: completa el cambio o revértela en Ajustes → Avanzado del proyecto"
 }

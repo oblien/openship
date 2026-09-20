@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   summariseBuckets,
   buildHourlyPeriods,
-} from "../../../src/modules/analytics/analytics.service";
+} from "@repo/platform/engine/modules/analytics/analytics.service";
 
 interface Bucket {
   minute: number;

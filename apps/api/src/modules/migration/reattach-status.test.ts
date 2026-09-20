@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveDeploymentStatus } from "./migrate.service";
+import { deriveDeploymentStatus } from "@repo/platform/engine/modules/migration/migrate.service";
 
 // The re-import live re-attach derives the deployment badge from the live
 // per-container states (docker inspect). This is the one piece of fabricated

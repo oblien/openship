@@ -3,6 +3,7 @@ import { Inbox, Layers, ArrowRight, Pencil, KeyRound, Cpu } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { isServicesFramework } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { workloadOf } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
 import { EnvVarsEditor } from "./EnvVarsEditor";
@@ -10,12 +11,9 @@ import { StorageSettings } from "./StorageSettings";
 import { ResourceSettings } from "./ResourceSettings";
 
 /**
- * Project → Runtime tab. READ-ONLY by design.
- *
- * Config (build/runtime/env) has a single edit owner: the deploy wizard. This
- * tab only DISPLAYS the project's current configuration and links to the wizard
- * (opened with ?projectId) for any change — so editing never lives in two
- * places and every change goes through the create-a-new-version flow.
+ * Project → Configuration. Build settings link to the deploy wizard; project
+ * environment, resources and storage use their existing focused editors.
+ * Shared project environment remains available for every workload type.
  *
  * Visual shell (SectionCard + ICON_TONES) mirrors the sibling settings tabs
  * (GitSettings / BackupSettings / DomainSettings) so the tab fills the same
@@ -90,7 +88,6 @@ export const BuildSettings = () => {
   const { buildData, projectData, servicesData, id } = useProjectSettings();
   const { t } = useI18n();
   const router = useRouter();
-  const [envOpen, setEnvOpen] = useState(false);
 
   const isWebmail = projectData?.framework === "webmail";
   const services = servicesData.services;
@@ -179,6 +176,7 @@ export const BuildSettings = () => {
             </button>
           }
         />
+        <ProjectEnvironmentSettings />
       </div>
     );
   }
@@ -189,7 +187,11 @@ export const BuildSettings = () => {
   // BUILT in a Docker sandbox, so reporting "Sandboxed (container)" here mislabels a
   // build detail as a runtime one and contradicts the Start command row's "Static
   // (no server)". Say plainly there is no runtime instead.
-  const runtimeModeLabel = !buildData.hasServer
+  // A worker shares hasServer=false with a static site but DOES run a process
+  // (sandboxed like a web app), so classify via the resolved workload — only a
+  // static site has "no runtime" (#538).
+  const workload = workloadOf(buildData);
+  const runtimeModeLabel = workload === "static"
     ? t.projectSettings.build.runtime.modeStatic
     : projectData?.runtimeMode === "docker"
       ? t.projectSettings.build.runtime.modeSandboxed
@@ -229,8 +231,8 @@ export const BuildSettings = () => {
           )}
           <Row
             label={t.projectSettings.build.runtime.startCommand}
-            value={buildData.hasServer ? buildData.startCommand : t.projectSettings.build.runtime.staticNoServer}
-            mono={buildData.hasServer}
+            value={workload !== "static" ? buildData.startCommand : t.projectSettings.build.runtime.staticNoServer}
+            mono={workload !== "static"}
           />
         </div>
       </SectionCard>
@@ -239,13 +241,25 @@ export const BuildSettings = () => {
           reach for it BECAUSE a container just got OOM-killed, and routing that
           through the full re-deploy wizard is the wrong shape. Only meaningful
           for a project that actually runs a container. */}
-      {buildData.hasServer && <ResourceSettings />}
+      {workload !== "static" && <ResourceSettings />}
 
       {/* Storage — persistent paths + object storage. Editable in place (see the
           component's own note on why it doesn't route through the wizard). Only
           meaningful for a project with a running container. */}
-      {buildData.hasServer && <StorageSettings />}
+      {workload !== "static" && <StorageSettings />}
 
+      <ProjectEnvironmentSettings />
+    </div>
+  );
+};
+
+/** Shared project inputs remain editable for single apps, Compose and monorepos. */
+export function ProjectEnvironmentSettings() {
+  const { id } = useProjectSettings();
+  const { t } = useI18n();
+  const [envOpen, setEnvOpen] = useState(false);
+  return (
+    <>
       {/* Environment variables — edited in place via a safe per-variable editor
           (diff-merge; untouched secrets are never re-sent), NOT the wizard. */}
       <SectionCard
@@ -265,7 +279,7 @@ export const BuildSettings = () => {
         }
       />
 
-      <EnvVarsEditor projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
-    </div>
+      <EnvVarsEditor key={id} projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
+    </>
   );
-};
+}

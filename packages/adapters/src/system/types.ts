@@ -141,6 +141,17 @@ export interface InstallerConfig {
    * policy → the installer throws EdgeConflictError rather than guessing.
    */
   promptUser?: PromptUserFn;
+  /**
+   * Run the installer even when the component is already installed and working.
+   *
+   * The one way past `installDocker`'s skip (#491), and it exists because the thing
+   * it authorizes is destructive: the official installer pulls the CURRENT engine, so
+   * on an up-to-date box this is a major upgrade whose daemon restart bounces every
+   * container on the host. Only ever set from an explicit, per-component operator
+   * action ("Reinstall" on the Components tab, behind a confirm) — never inferred by
+   * a flow that merely needs Docker present.
+   */
+  reinstall?: boolean;
 }
 
 // ─── Edge (port 80/443) ownership ──────────────────────────────────────────────
@@ -165,6 +176,19 @@ export interface EdgeOccupant {
   systemdDescription?: string;
   isDocker?: boolean;
   containerName?: string;
+  /**
+   * The container that actually holds the port, when one was resolved — including a
+   * HOST-NETWORKED one, which publishes nothing and so has no `containerName` from the
+   * publish filter. Carried so a takeover stops the container rather than SIGKILLing a
+   * process inside it.
+   */
+  containerId?: string;
+  /**
+   * The listener is a container runtime's port FORWARDER (docker-proxy and friends).
+   * Neither its pid nor the unit its cgroup names is the port's owner, so a takeover
+   * that cannot resolve the container must refuse rather than act on either.
+   */
+  dockerPublished?: boolean;
   proxy?: ProxyKind;
   /** true when this is our own OpenResty (never counted as a conflict) */
   managedByOpenship: boolean;
@@ -216,10 +240,11 @@ export interface ImportedSite {
     | { kind: "proxy"; url: string }
     | { kind: "static"; root: string };
   /** Every reverse-proxy upstream this vhost serves, in source order, one per
-   *  location path (e.g. `/ → :1010`, `/v3 → :1020`). Absent for a static site.
+   *  location (e.g. `/ → :1010`, `/v3 → :1020`). `exact` preserves nginx's
+   *  `location = <path>` match mode. Absent for a static site.
    *  Lets an importer keep a path-fan-out domain instead of collapsing to the
    *  primary. `routes[].url` is the resolved `http://host:port` upstream. */
-  routes?: { path: string; url: string }[];
+  routes?: { path: string; url: string; exact?: boolean }[];
   /** Existing certificate paths, if the source terminated TLS itself (reusable). */
   tls?: { certPath: string; keyPath: string };
   /**
@@ -265,4 +290,13 @@ export type EdgeConflictDetails = {
 
 // ─── Runtime mode ────────────────────────────────────────────────────────────
 
-export type RuntimeMode = "docker" | "bare";
+/**
+ * Re-exported, not redeclared: this was a second `"docker" | "bare"` that happened to
+ * agree with core's. Two identical unions type-check against each other, so nothing
+ * would have caught them drifting until a third member existed on one side only.
+ *
+ * Distinct from `runtime/index.ts`'s same-named type, which adds `"cloud"` — that one is
+ * a genuine superset for choosing a runtime adapter, which is why the barrel exports this
+ * one as `SystemRuntimeMode`.
+ */
+export type { RuntimeMode } from "@repo/core";

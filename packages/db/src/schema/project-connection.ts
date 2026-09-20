@@ -1,6 +1,7 @@
-import { pgTable, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 import { project } from "./project";
+import { service } from "./service";
 
 // ─── Service connections (app → project wiring) ─────────────────────────────
 
@@ -27,6 +28,9 @@ export const projectConnection = pgTable(
     sourceProjectId: text("source_project_id")
       .notNull()
       .references(() => project.id, { onDelete: "restrict" }),
+    /** Stable service identity; null for legacy/project-level app outputs. */
+    sourceServiceId: text("source_service_id")
+      .references(() => service.id, { onDelete: "restrict" }),
     /** The consumer project the env var is injected into. */
     targetProjectId: text("target_project_id")
       .notNull()
@@ -38,6 +42,8 @@ export const projectConnection = pgTable(
     /** "internal" = shared docker network + service alias (no public port);
      *  "public" = the published host:port URL. */
     mode: text("mode").notNull().default("public"),
+    /** Tokens and passwords can be shared without granting network access. */
+    usesPrivateNetwork: boolean("uses_private_network").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -46,5 +52,6 @@ export const projectConnection = pgTable(
     uniqueIndex("uq_project_connection_target_env").on(t.targetProjectId, t.envKey),
     index("idx_project_connection_target").on(t.targetProjectId),
     index("idx_project_connection_source").on(t.sourceProjectId),
+    index("idx_project_connection_source_service").on(t.sourceServiceId),
   ],
 );

@@ -50,7 +50,7 @@ const CONTENT_PATH_MARKERS: RegExp[] = [
   /\/raw\b/,
   /\/download\b/,
   /\/export\b/,
-  /\/source\b/,
+  /\/repos\/[^/]+\/[^/]+\/source\b/,
 ];
 
 /** The tier each content route must carry. Update deliberately, never casually. */
@@ -78,8 +78,20 @@ const METADATA_ROUTES: ReadonlySet<string> = new Set([
   "GET /api/github/connect/redirect",
   "GET /api/github/home",
   "POST /api/github/connect",
+  "POST /api/github/installations/claim",
   "POST /api/github/disconnect",
   "POST /api/github/instance-token",
+  // Workspace-owned App configuration — integration metadata and secret
+  // mutation only; none of these returns repository content.
+  "GET /api/github/sources",
+  "POST /api/github/sources/manifest",
+  "POST /api/github/sources/manifest/convert",
+  "POST /api/github/sources/manual",
+  "PATCH /api/github/sources/:id",
+  "DELETE /api/github/sources/:id",
+  "POST /api/github/sources/:id/verify",
+  "POST /api/github/sources/:id/default",
+  "POST /api/github/sources/:id/install",
   // Repo discovery + metadata. `detect` returns DERIVED build config only — it is
   // what makes a deploy-only grant usable, and is asserted separately below.
   "GET /api/github/orgs/:org/repos",
@@ -110,6 +122,22 @@ function tierOf(spec: unknown): string | undefined {
 }
 
 describe("every content-serving github route declares a source tier", () => {
+  it("keeps every workspace App management route local-only and admin-scoped", async () => {
+    const sourceRoutes = (await githubRoutes()).filter((route) =>
+      route.path.startsWith("/api/github/sources"),
+    );
+
+    expect(sourceRoutes).toHaveLength(9);
+    for (const route of sourceRoutes) {
+      expect(route.spec.localOnly, `${routeKey(route)} must not exist on Openship Cloud`).toBe(
+        true,
+      );
+      expect(route.spec.tag, `${routeKey(route)} must require GitHub administration`).toBe(
+        "github:admin",
+      );
+    }
+  });
+
   it("classifies EVERY github route as content or metadata — none may be neither", async () => {
     const routes = await githubRoutes();
     // Guard the guard: an empty registry would make this vacuously pass.
@@ -133,8 +161,10 @@ describe("every content-serving github route declares a source tier", () => {
     // stops describing anything — that would be a hole waiting for a name reuse.
     const live = new Set((await githubRoutes()).map(routeKey));
     const stale = [...METADATA_ROUTES].filter((k) => !live.has(k));
-    expect(stale, `METADATA_ROUTES lists routes that no longer exist:\n  ${stale.join("\n  ")}`)
-      .toEqual([]);
+    expect(
+      stale,
+      `METADATA_ROUTES lists routes that no longer exist:\n  ${stale.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("never lets a content-LOOKING route sit on the metadata allowlist", async () => {

@@ -6,7 +6,7 @@ import {
   BLOCKING_ERROR_CODES,
   failureStatusFor,
   isBlockingErrorCode,
-} from "../../../src/modules/deployments/blocking-errors";
+} from "@repo/platform/engine/modules/deployments/blocking-errors";
 
 /**
  * Two things are pinned here.
@@ -47,19 +47,20 @@ const SETTLED_STATUS_GUARDS: Array<{
 }> = [
   {
     what: "startBuild idempotency guard",
-    file: "apps/api/src/modules/deployments/build.service.ts",
-    anchor: '"building", "deploying", "ready", "failed", "cancelled", "action_required"',
+    file: "packages/platform/src/engine/modules/deployments/build.service.ts",
+    anchor:
+      '[\n      "building",\n      "deploying",\n      "ready",\n      "failed",\n      "cancelled",\n      "action_required",',
     breaks: "POST /:id/build re-runs the build on an already-settled row",
   },
   {
     what: "markDeploymentFailedFromOutside already-settled guard",
-    file: "apps/api/src/modules/deployments/build-pipeline.ts",
-    anchor: '["failed", "ready", "cancelled", "action_required"]',
+    file: "packages/platform/src/engine/modules/deployments/build-pipeline.ts",
+    anchor: '["failed", "ready", "cancelled", "action_required"',
     breaks: "an outer throw overwrites the recorded blocker with a bare `failed`",
   },
   {
     what: "migration orchestrator TERMINAL_DEPLOY",
-    file: "apps/api/src/modules/migration/migration.orchestrator.ts",
+    file: "packages/platform/src/engine/modules/migration/migration.orchestrator.ts",
     anchor: "TERMINAL_DEPLOY",
     breaks: "waitForDeployment polls for the full VERIFY_TIMEOUT_MS (20 min)",
   },
@@ -98,7 +99,7 @@ const SETTLED_STATUS_GUARDS: Array<{
 const IN_FLIGHT_SITES = [
   "packages/db/src/schema/deployment.ts",
   "packages/db/src/repos/deployment.repo.ts",
-  "apps/api/src/modules/projects/deployment-flags.ts",
+  "packages/platform/src/engine/modules/projects/deployment-flags.ts",
 ];
 
 describe("blocking error codes — the promotion rule", () => {
@@ -146,9 +147,8 @@ describe("the in-flight vocabulary stays one vocabulary", () => {
     // `action_required` is settled — the artifact is gone and clearing the blocker
     // starts a NEW deploy. If it leaked into this set, the row would hold the
     // one-in-flight-per-project slot forever and block every future deploy.
-    const { IN_FLIGHT_DEPLOY_STATUSES, deploymentIsInFlight } = await import(
-      "../../../src/modules/projects/deployment-flags"
-    );
+    const { IN_FLIGHT_DEPLOY_STATUSES, deploymentIsInFlight } =
+      await import("@repo/platform/engine/modules/projects/deployment-flags");
     expect(IN_FLIGHT_DEPLOY_STATUSES.has("action_required")).toBe(false);
     expect(deploymentIsInFlight({ status: "action_required" } as never)).toBe(false);
     expect(deploymentIsInFlight({ status: "deploying" } as never)).toBe(true);
@@ -156,14 +156,21 @@ describe("the in-flight vocabulary stays one vocabulary", () => {
   });
 });
 
-describe("settled-status guards know about action_required", () => {
+/**
+ * Every settled status a guard list has to name. Parameterized rather than
+ * hardcoded so adding the NEXT value is one line here and then seven failing
+ * tests naming exactly what to teach — the mistake this ratchet exists to catch.
+ */
+const SETTLED_STATUSES = ["action_required", "no_changes"] as const;
+
+describe("settled-status guards know about every settled status", () => {
   for (const guard of SETTLED_STATUS_GUARDS) {
     it(`${guard.what} — else ${guard.breaks}`, () => {
       const source = readFileSync(join(REPO_ROOT, guard.file), "utf8");
       expect(source, `${guard.file}: guard moved or was rewritten`).toContain(guard.anchor);
-      expect(source, `${guard.file}: guard no longer handles action_required`).toContain(
-        "action_required",
-      );
+      for (const status of SETTLED_STATUSES) {
+        expect(source, `${guard.file}: guard no longer handles ${status}`).toContain(status);
+      }
     });
   }
 });

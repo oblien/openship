@@ -1,6 +1,7 @@
 "use client";
 
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useProjectTabNavigation } from "@/hooks/useProjectTabNavigation";
 import { generateIcon } from "@/utils/icons";
 import { useEffect } from "react";
 
@@ -8,23 +9,19 @@ export const ProjectsBottomNavigation = () => {
 
     const {
         projectNotFound,
-        activeTab,
+        activeTabGroup,
         tabs,
         setActiveTab,
         projectData
     } = useProjectSettings();
+    const handleTabChange = useProjectTabNavigation();
 
     // Validate active tab in useEffect to avoid setState during render
     useEffect(() => {
-        if(!tabs.some((tab) => tab.id === activeTab)) {
+        if(!tabs.some((tab) => tab.id === activeTabGroup)) {
             setActiveTab(tabs[0].id);
         }
-    }, [tabs, activeTab, setActiveTab]);
-
-    const handleTabChange = (tabId: string) => {
-        setActiveTab(tabId);
-        window.history.replaceState({}, '', `/projects/${projectData.id}/${tabId}`);
-    };
+    }, [tabs, activeTabGroup, setActiveTab]);
 
     if(!projectData.id || !projectData.activeDeploymentId) {
         return null;
@@ -38,7 +35,7 @@ export const ProjectsBottomNavigation = () => {
                     <div className="w-[95vw] mx-auto lg:max-w-[calc(100vw-20vw)] lg:ms-auto lg:me-0 flex justify-center">
                         <div className="flex items-center justify-center gap-2 p-2 mb-6 bg-foreground overflow-x-auto backdrop-blur-sm rounded-full">
                             {tabs.map((tab) => {
-                                const isActive = activeTab === tab.id;
+                                const isActive = activeTabGroup === tab.id;
                                 return (
                                     <button
                                         key={tab.id}

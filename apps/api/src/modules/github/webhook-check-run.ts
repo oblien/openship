@@ -3,11 +3,11 @@
  */
 
 import { repos } from "@repo/db";
-import { triggerDeployment } from "../deployments/build.service";
+import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import { webhookActorCtx } from "./webhook-shared";
-import { resolveOrgOwner } from "../../lib/org-actor";
-import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubCheckRunPayload } from "./github.types";
+import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
+import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
+import type { GitHubCheckRunPayload } from "@repo/contracts";
 
 // ─── check_run events ────────────────────────────────────────────────────────
 

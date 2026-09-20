@@ -1,305 +1,61 @@
 ---
-title: Running & updating
-description: Start, stop, update, and health-check the Openship server itself from the terminal — up, stop, reset-admin-password, update, install, open, status, and doctor.
+title: Run and maintain Openship
+description: Start a local installation, inspect it, and manage its lifecycle.
 ---
 
-These commands run and maintain **Openship itself** — the server that everything else talks to — rather than
-your deployed apps. Start the server, keep it up to date, and check that it's healthy.
+Use these commands on the machine that runs Openship. To manage an existing remote installation,
+[configure a connection context](/docs/cli/access) instead.
 
-<Callout title="Two different things called “install”" type="info">
-There are two ways to run Openship, and they don't overlap:
-
-- **`openship`** (no arguments) is how most self-hosters run the **server** (API + dashboard) — a guided setup
-  that creates your admin and installs it as a service. `openship up` is the same install *without* the prompts
-  (headless / CI); `openship update` keeps either current.
-- **`openship install`** downloads the desktop **app** (a `.dmg` / `.AppImage` / `.zip`) — a packaged,
-  double-click version for a single machine. It's a separate artifact from the CLI.
-</Callout>
-
-The reporting commands — `status`, `doctor`, `update`, `install`, and `install cache` — also accept the
-global `--json` flag for machine-readable output:
-
-```bash
-openship status --json
-```
-
-## Command summary
-
-| Command | Purpose |
-|---|---|
-| `openship` (no args) | Guided first-run setup: deploy Openship, create your admin, print the login URL. |
-| `openship up` | Start the server as a persistent, auto-restarting service. |
-| `openship stop` | Stop that service (and clear a stale database lock). |
-| `openship reset-admin-password` | Reset the local admin login on this machine, without signing in. |
-| `openship update` | Update the CLI + bundled server to the latest release. |
-| `openship install` | Download and install the Openship desktop app. |
-| `openship install cache` | Inspect and clean the desktop-app download cache. |
-| `openship open` | Open the dashboard in your browser. |
-| `openship status` | Show the local service (running? ports) and the active context's API health. |
-| `openship doctor` | Diagnose the CLI setup (config, context, runtime). |
-
-## `openship` — guided setup
-
-Run `openship` with **no arguments** for the interactive first-run setup. It first asks for your **admin name,
-email, and password** — this is your instance login, created before anything else. Then it configures the
-settings that hang off that account: whether the instance is private (this machine only) or public (a domain +
-HTTPS, reachable from anywhere), and — on the public path — the domain and whether an HTTPS reverse proxy is in
-front. It then deploys via the same pipeline as `openship up`, creates your admin account, and prints the URL
-to sign in. Connecting Openship Cloud (for a free `.opsh.io` domain + mail) is a separate link step that never
-becomes your sign-in. This is the recommended way to stand up a new instance.
+## Start
 
 ```bash
 openship
 ```
 
-## `openship up`
+On a fresh machine, the interactive command guides setup. On an installed machine, it opens the
+control panel or resumes an interrupted setup.
 
-Starts Openship as a **persistent service** that starts on boot and auto-restarts if it crashes, then keeps
-running until you `openship stop`. The API is served at `/api` (default port `4000`) and the dashboard on
-port `3001`.
-
-<Callout title="Ports are dynamic — there's no fixed port">
-`4000`/`3001` are only preferences. If a port is already taken (a second instance, another app, a leftover
-process), Openship automatically picks a free one instead, keeps the API and dashboard distinct, and
-**remembers the chosen pair** in `~/.openship/ports.json` so restarts reuse the same origin (that's what keeps
-you logged in across restarts). `openship status` shows the resolved ports. Pass `--port` / `--dashboard-port`
-to state a preference; it's still moved if occupied.
-</Callout>
-
-<Callout title="CLI instances always require login" type="info">
-Unlike the desktop app (which uses loopback zero-auth), an instance started from the CLI **always requires an
-email + password login**. Create the first admin with the `openship` guided setup above (or
-`openship system upgrade-to-auth`). Zero-auth is desktop-only.
-</Callout>
+For direct startup:
 
 ```bash
-# Start the service (API on :4000, dashboard on :3001)
 openship up
-
-# Run attached in this terminal instead (Ctrl-C to stop)
-openship up --foreground
-
-# Preview the service definition without installing it
-openship up --dry-run
+openship status
+openship open
 ```
 
-| Flag | Purpose | Default |
-|---|---|---|
-| `--compose` | Install via Docker Compose (published images: postgres + redis + api + dashboard + edge on `:80/:443`). | default when Docker is present on Linux |
-| `--bare` | Install as the bare process service (embedded DB, no Docker). Required today for a fully headless **custom**-domain install. | default off Linux / without Docker |
-| `--port <port>` | API port to listen on. | `4000` |
-| `--data-dir <dir>` | Directory for the embedded database. | `~/.openship/data` |
-| `--dashboard-port <port>` | Dashboard port. | `3001` |
-| `--host <addr>` | Bind the dashboard to this interface so an upstream reverse proxy or another LAN host can reach it (e.g. `0.0.0.0` or a LAN IP). The API stays on loopback. A concrete IP auto-trusts that browser origin for login; for `0.0.0.0` or a domain also pass `--public-url` (or set `OPENSHIP_EXTRA_TRUSTED_ORIGINS`). | `127.0.0.1` |
-| `--no-ui` | Run the API only — don't download or serve the dashboard. | — |
-| `--ui-version <tag>` | Dashboard release tag to run. | this CLI's version |
-| `-f`, `--foreground` | Run attached in this terminal instead of as a background service. | — |
-| `--dry-run` | Print the service definition that would be installed, then exit. | — |
-| `--public-url <url>` | Serve to the internet at this URL: binds the dashboard to all interfaces, proxies the API same-origin, and requires login. | — |
-| `--trust-proxy` | Trust the `X-Real-IP` set by a reverse proxy in front (the proxy MUST overwrite it with the real client IP, e.g. `proxy_set_header X-Real-IP $remote_addr`) — enables per-client rate limiting. | — |
-| `--managed-edge` | Install OpenResty + a free Let's Encrypt cert on this box and route `--public-url`'s domain to the dashboard — no separate reverse proxy needed. | — |
-| `--acme-email <email>` | Contact email for the Let's Encrypt certificates (managed edge). | — |
-| `--non-interactive`, `--yes` | Headless install: after the service starts, create the admin + register the domain from the flags below — no prompts. Missing/invalid flags exit non-zero. | — |
-| `--admin-email <email>` | Admin email — **required** for a headless install. | — |
-| `--admin-name <name>` | Admin display name. | email local-part |
-| `--admin-password <pw>` | Admin password (min 8). Prefer the `OPENSHIP_ADMIN_PASSWORD` env var (keeps it out of shell history). | — |
-| `--domain-kind <kind>` | Headless domain: `byo` · `custom` · `free` · `none`. | `byo` if `--public-url`, else `none` |
-| `--hostname <host>` | Hostname for `byo`/`custom` (or derived from `--public-url`). | — |
-| `--slug <slug>` | Free `.opsh.io` subdomain for `--domain-kind free` (box must already be Cloud-connected). | — |
-| `--edge <action>` | `migrate` · `takeover` · `cancel` — pre-answer the `:80/:443` takeover (custom domain / Compose). | prompt, else cancel |
+`up` installs or starts a persistent service. `status` reports local service state and the active
+context's API health. `open` opens the dashboard. Use `openship up --foreground` for an attached process.
+See [all startup options](/docs/cli/reference/up), including Docker Compose configuration.
 
-<Callout title="The dashboard is downloaded on first run">
-Unless you pass `--no-ui`, the dashboard bundle is lazy-downloaded from GitHub releases the first time you run
-`openship up` and pinned to match the CLI version. If it can't be fetched, the API keeps serving on its own —
-retry `openship up`, pass `--no-ui`, or use `openship install` for the desktop app.
-</Callout>
-
-<Callout title="Serving to the internet" type="info">
-`--public-url https://ops.example.com` makes the dashboard reachable from other machines while keeping the API
-bound to loopback (only the dashboard's same-origin proxy reaches it — nothing but the dashboard is exposed).
-Put an HTTPS reverse proxy (Caddy, nginx, Cloudflare) in front of the dashboard port and add `--trust-proxy`.
-The guided `openship` setup walks you through all of this.
-</Callout>
-
-<Callout title="Login rejected after binding remotely?" type="warn">
-Openship checks the browser's `Origin` against a trusted list. When you bind to `0.0.0.0` or a domain **without**
-`--public-url`, the login `POST` is rejected (403) because that origin isn't trusted. Fix it by passing
-`--public-url` (its origin is trusted automatically), binding `--host` to a **concrete** LAN IP (that exact
-`http://IP:port` origin is trusted automatically), or setting `OPENSHIP_EXTRA_TRUSTED_ORIGINS` to the exact
-browser origin(s) you use, comma-separated.
-</Callout>
-
-## `openship stop`
-
-Stops the service started by `openship up`. Once stopped it will **not** auto-restart or come back on reboot.
-Takes no flags. It also **clears a stale database lock** left behind by the stopped service (only when no live
-process still holds it) so a later `openship up` — or a `bun dev` against the same `~/.openship/data` — isn't
-blocked by a phantom "locked by another process".
+## Stop and update
 
 ```bash
 openship stop
-```
-
-## `openship reset-admin-password`
-
-Resets the **local admin login on this machine without signing in** — the recovery path when you've forgotten
-the password (or a cloud login got stuck). It talks to the loopback API using the local internal token the
-running service holds, so it needs no session. It rotates the password, **revokes all existing sessions** for
-that account (so a leftover login can't survive the reset), and switches the box back to local (email +
-password) login.
-
-```bash
-# Prompts for the new password (twice)
-openship reset-admin-password
-
-# Non-interactive; optionally also correct the email / name
-openship reset-admin-password --password 'new-strong-pass' --email you@example.com
-```
-
-| Flag | Purpose | Default |
-|---|---|---|
-| `--password <password>` | New password (prompted if omitted). Must be 8–128 chars. | — |
-| `--email <email>` | Also set the admin email. | unchanged |
-| `--name <name>` | Also set the admin display name. | unchanged |
-| `--port <port>` | API port of the running service. | `4000` |
-
-<Callout title="Runs from the machine itself" type="info">
-This is deliberately local-only: the reset endpoint is gated by the loopback internal token, so it can only be
-driven from the box running Openship — not over the network. If the service is on a non-default port, pass
-`--port` (see `openship status`).
-</Callout>
-
-## `openship update`
-
-Updates the globally-installed CLI — which bundles the self-hosted server — to the latest published release,
-then **restarts the running service** so you're immediately on the new version. It checks GitHub releases
-(not your Openship API) and re-installs the global package with your package manager.
-
-```bash
-# Update to the latest release
 openship update
-
-# Just report current vs. latest — install nothing
-openship update --check
-
-# Force a package manager
-openship update --via npm
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--check` | Only report the current + latest version; don't install. |
-| `--via <manager>` | Package manager to update with: `bun` or `npm` (default: `bun` if present, else `npm`). |
+`stop` disables the service so it stays stopped across reboot. `update` updates the CLI and bundled
+server. Read [updating Openship](/docs/guides/updating) before updating a production installation.
 
-<Callout title="Automatic restart">
-`openship update` restarts the installed service for you after updating, so you land on the new version
-immediately. If you're running attached with `openship up --foreground` (no service installed), it can't
-restart you — relaunch it yourself.
-</Callout>
-
-## `openship install`
-
-Downloads the Openship **desktop app** for your OS and architecture (macOS `.dmg`, Linux `.AppImage`, or
-Windows `.zip`), verifies it against its published `.sha256` checksum, installs it, and launches it. This is
-separate from the CLI/server — see the callout at the top of this page.
-
-```bash
-# Install the latest desktop release and launch it
-openship install
-
-# Pin a specific release, and don't open it after installing
-openship install --version v1.2.3 --no-launch
-```
-
-| Flag | Purpose |
-|---|---|
-| `--version <tag>` | Release tag to install (e.g. `v1.2.3`). |
-| `--latest` | Install the latest release (this is the default). |
-| `--force` | Re-download even if a verified copy is already cached. |
-| `--no-verify` | Skip SHA-256 verification (only allowed when no checksum sidecar exists). |
-| `--no-launch` | Install without launching the app. |
-
-<Callout title="Checksums are enforced by default" type="warn">
-Downloads are verified against a published `.sha256` sidecar and the install is **fail-closed**: if the
-sidecar is missing, Openship refuses to install unless you pass `--no-verify`. A checksum mismatch always
-aborts — the download may be corrupt or tampered with.
-</Callout>
-
-### `openship install cache`
-
-Manages `~/.openship/cache`, where `openship install` stores downloaded release assets and their checksum
-sidecars. Runs entirely offline — no API calls. Call it with a subcommand:
-
-| Subcommand | Purpose |
-|---|---|
-| `path` | Print the cache directory path. |
-| `list` (alias `ls`) | List cached release assets. |
-| `verify [tag]` | Re-hash cached assets and compare to their `.sha256` sidecar (optionally one tag). |
-| `clean [tag]` | Delete cached assets (one tag, or all if omitted). |
-
-```bash
-openship install cache list
-openship install cache verify v1.2.3
-openship install cache clean          # remove everything
-```
-
-## `openship open`
-
-Opens the Openship dashboard in your default browser. For a local dashboard it first checks that the API is
-responding, and warns (without blocking) if it isn't yet.
-
-```bash
-# Open the active context's dashboard
-openship open
-
-# Open a specific page on the hosted cloud dashboard
-openship open --cloud --path /settings
-```
-
-| Flag | Purpose |
-|---|---|
-| `--cloud` | Open the hosted cloud dashboard (`app.openship.io`). |
-| `--dashboard-url <url>` | Dashboard base URL to open. |
-| `--context <name>` | Context whose dashboard URL to open. |
-| `--path <path>` | Path to open on the dashboard (e.g. `/settings`). |
-
-## `openship status`
-
-Shows two things: the **local Openship service** on this machine — whether it's installed and running, which
-service manager runs it, and the resolved API/dashboard ports (from `~/.openship/ports.json`) — and the
-**active context's** API health and config (self-hosted vs. cloud, deploy/auth/team mode, host/machine when
-present). The service section is shown even when the API is down, so you can tell "stopped" from "up but
-unreachable". Exits non-zero if the API can't be reached.
-
-```bash
-openship status
-openship status --json
-```
-
-Contexts and which one is active are managed with `openship context`; sign-in lives under
-[the auth commands](/docs/cli/access).
-
-## `openship doctor`
-
-Runs preflight checks so you can confirm the CLI is set up before relying on it — handy in scripts, which can
-gate on its exit code (non-zero if any check fails). Takes no flags.
-
-It checks:
-
-| Check | What it confirms |
-|---|---|
-| `config` | The CLI config file exists. |
-| `context` | The active context has a token. |
-| `api` | That context's API is reachable (`GET /api/health`). |
-| `node` | The Node.js runtime version. |
-| `bun` | The Bun runtime version (optional). |
+## Diagnose a problem
 
 ```bash
 openship doctor
-openship doctor --json
 ```
 
-<Callout title="Fixing failed checks">
-If `context` or `api` don't pass, you usually just need to sign in or point at a running server —
-see [the auth commands](/docs/cli/access) and `openship up` above.
-</Callout>
+The [doctor reference](/docs/cli/reference/doctor) describes health and repair options. Local admin
+account recovery uses [reset-admin-password](/docs/cli/reference/reset-admin-password).
+
+## Installation commands compared
+
+| Command | Purpose |
+| --- | --- |
+| `npm install -g openship` | Install the CLI globally. |
+| `npm install openship` | Add the package to a Node project; SDK imports require an SDK-enabled release. |
+| `openship install` | Download and install the desktop application. |
+| `openship install cache` | Inspect or manage cached installation downloads. |
+| `openship up` | Start the Openship API and dashboard as a local service. |
+| `openship uninstall` | Remove local installation state and data; deployed apps are left running. |
+
+See [installation](/docs/getting-started/installation) for platform requirements and
+[command options](/docs/cli/reference#local-installation) before removing or repairing an installation.

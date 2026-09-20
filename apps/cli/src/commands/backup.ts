@@ -8,22 +8,21 @@
 import { Command } from "commander";
 import ora from "ora";
 import { readFileSync } from "node:fs";
-import { ApiError, apiRequest } from "../lib/api-client";
-import { sseRequest } from "../lib/sse";
+import { getShipClient, ApiError } from "../lib/ship-client";
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
+import type { CreateBackupDestinationInput, UpdateBackupDestinationInput, PreflightBackupDestinationInput, UpdateBackupPolicyInput, PrepareBackupRestoreInput } from "@repo/sdk";
 import { err, info, isJsonMode, ok, printJson, printTable } from "../lib/output";
 
 type Row = Record<string, unknown>;
-interface Envelope<T> {
-  data: T;
-}
 
 async function guard(fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
   } catch (e) {
+    rethrowCommandExit(e);
     const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
     err(`\n  ${msg}\n`);
-    process.exit(1);
+    exitCommand(1);
   }
 }
 
@@ -70,11 +69,13 @@ function fmtBytes(n: number | null | undefined): string {
  * (backup.controller.ts streamRun / streamRestore). Returns the final
  * status; the caller decides the exit code.
  */
-async function followStream(path: string, label: string): Promise<string> {
+async function followStream(id: string, label: "backup" | "restore", untilPrepared = false): Promise<string> {
   const spinner = isJsonMode() ? null : ora(`${label}: connecting…`).start();
   let status = "unknown";
   try {
-    for await (const ev of sseRequest(path)) {
+    const operations = getShipClient().backups;
+    const events = label === "backup" ? operations.streamRun(id) : operations.streamRestore(id);
+    for await (const ev of events) {
       let payload: Record<string, unknown>;
       try {
         payload = JSON.parse(ev.data) as Record<string, unknown>;
@@ -103,6 +104,10 @@ async function followStream(path: string, label: string): Promise<string> {
         else spinner?.fail(`${label} ${status}${errMsg ? `: ${errMsg}` : ""}`);
         break;
       }
+      if (untilPrepared && status === "prepared") {
+        spinner?.succeed("Restore prepared; waiting for apply confirmation");
+        break;
+      }
     }
   } catch (e) {
     spinner?.stop();
@@ -123,9 +128,7 @@ policyCmd
   .requiredOption("--project <id>", "Project ID")
   .action((opts) =>
     guard(async () => {
-      const { data } = await apiRequest<Envelope<Row[]>>(
-        `/projects/${encodeURIComponent(opts.project)}/backup-policies`,
-      );
+      const data = await getShipClient().backups.listPolicies(opts.project);
       show(data, [
         "id",
         "enabled",
@@ -177,10 +180,7 @@ policyCmd
         postHook: opts.postHook,
         enabled: opts.disabled ? false : undefined,
       };
-      const { data } = await apiRequest<Envelope<Row>>(
-        `/projects/${encodeURIComponent(opts.project)}/backup-policies`,
-        { method: "POST", body: JSON.stringify(body) },
-      );
+      const data = await getShipClient().backups.createPolicy(opts.project, body);
       ok(`\n  Policy created: ${data.id}\n`);
       show(data, ["id", "enabled", "cronExpression", "triggerOnPreDeploy", "destinationId"]);
     }),
@@ -194,14 +194,11 @@ policyCmd
   .option("--follow", "Stream the run to completion")
   .action((policyId, opts) =>
     guard(async () => {
-      const { data } = await apiRequest<Envelope<{ runId: string }>>(
-        `/backup-policies/${encodeURIComponent(policyId)}/run`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
+      const data = await getShipClient().backups.run(policyId);
       ok(`\n  Backup started: run ${data.runId}\n`);
       if (opts.follow) {
-        const status = await followStream(`/backup-runs/${data.runId}/stream`, "backup");
-        if (status !== "succeeded") process.exit(1);
+        const status = await followStream(data.runId, "backup");
+        if (status !== "succeeded") exitCommand(1);
       } else if (isJsonMode()) {
         printJson(data);
       } else {
@@ -209,6 +206,17 @@ policyCmd
       }
     }),
   );
+
+policyCmd.command("update").description("Update a backup policy from a JSON file")
+  .argument("<policyId>").argument("<file>").action((policyId, file) => guard(async () => {
+    const input = JSON.parse(readFileSync(file, "utf8")) as UpdateBackupPolicyInput;
+    show(await getShipClient().backups.updatePolicy(policyId, input));
+  }));
+policyCmd.command("remove").alias("rm").description("Remove a backup policy")
+  .argument("<policyId>").action(policyId => guard(async () => {
+    const output = await getShipClient().backups.removePolicy(policyId);
+    if (isJsonMode()) printJson(output); else ok(`\n  Backup policy removed: ${policyId}\n`);
+  }));
 
 // ─── run ─────────────────────────────────────────────────────────────────────
 
@@ -223,13 +231,7 @@ runCmd
   .option("--limit <n>", "Max rows (default 50)")
   .action((opts) =>
     guard(async () => {
-      const qs = new URLSearchParams();
-      if (opts.service) qs.set("serviceId", opts.service);
-      if (opts.limit) qs.set("limit", String(toInt(opts.limit, "--limit")));
-      const suffix = qs.toString() ? `?${qs}` : "";
-      const { data } = await apiRequest<Envelope<Row[]>>(
-        `/projects/${encodeURIComponent(opts.project)}/backup-runs${suffix}`,
-      );
+      const data = await getShipClient().backups.listRuns(opts.project, { serviceId: opts.service, limit: toInt(opts.limit, "--limit") });
       show(data, [
         "id",
         "status",
@@ -252,11 +254,11 @@ runCmd
   .action((runId, opts) =>
     guard(async () => {
       if (opts.follow) {
-        const status = await followStream(`/backup-runs/${encodeURIComponent(runId)}/stream`, "backup");
-        if (status !== "succeeded") process.exit(1);
+        const status = await followStream(runId, "backup");
+        if (status !== "succeeded") exitCommand(1);
         return;
       }
-      const { data } = await apiRequest<Envelope<Row>>(`/backup-runs/${encodeURIComponent(runId)}`);
+      const data = await getShipClient().backups.getRun(runId);
       show(data);
     }),
   );
@@ -275,10 +277,7 @@ runCmd
         : opts.until
           ? { until: opts.until }
           : { protected: true };
-      const { data } = await apiRequest<Envelope<{ ok: boolean; retentionLockedUntil: string | null }>>(
-        `/backup-runs/${encodeURIComponent(runId)}/protect`,
-        { method: "POST", body: JSON.stringify(body) },
-      );
+      const data = await getShipClient().backups.protectRun(runId, body);
       if (isJsonMode()) printJson(data);
       else if (data.retentionLockedUntil) ok(`\n  Protected until ${data.retentionLockedUntil}\n`);
       else ok(`\n  Protection cleared\n`);
@@ -298,22 +297,20 @@ runCmd
       if (opts.mode !== "in_place" && opts.mode !== "to_fork") {
         throw new Error("--mode must be 'in_place' or 'to_fork'");
       }
-      const body: Record<string, unknown> = { mode: opts.mode };
+      const body: PrepareBackupRestoreInput = { mode: opts.mode };
       if (opts.mode === "to_fork") body.forkMailServerId = opts.forkServer ?? null;
-      const { data } = await apiRequest<Envelope<{ restoreId: string; confirmationToken: string }>>(
-        `/backup-runs/${encodeURIComponent(runId)}/restore/prepare`,
-        { method: "POST", body: JSON.stringify(body) },
-      );
+      const data = await getShipClient().backups.prepareRestore(runId, body);
       if (isJsonMode()) printJson(data);
       else {
-        ok(`\n  Restore staged: ${data.restoreId}\n`);
+        ok(`\n  Restore preparation started: ${data.restoreId}\n`);
         info(`  Confirmation token: ${data.confirmationToken}`);
         info(
           `  Apply it with:  openship backup restore apply ${data.restoreId} --token ${data.confirmationToken}\n`,
         );
       }
       if (opts.follow) {
-        await followStream(`/backup-restores/${data.restoreId}/stream`, "restore");
+        const status = await followStream(data.restoreId, "restore", true);
+        if (status !== "prepared" && status !== "succeeded") exitCommand(1);
       }
     }),
   );
@@ -331,15 +328,12 @@ restoreCmd
   .option("--follow", "Stream the restore to completion")
   .action((restoreId, opts) =>
     guard(async () => {
-      await apiRequest<Envelope<{ ok: boolean }>>(
-        `/backup-restores/${encodeURIComponent(restoreId)}/apply`,
-        { method: "POST", body: JSON.stringify({ confirmationToken: opts.token }) },
-      );
+      const data = await getShipClient().backups.applyRestore(restoreId, { confirmationToken: opts.token });
       ok(`\n  Restore applying: ${restoreId}\n`);
       if (opts.follow) {
-        const status = await followStream(`/backup-restores/${restoreId}/stream`, "restore");
-        if (status !== "succeeded") process.exit(1);
-      }
+        const status = await followStream(restoreId, "restore");
+        if (status !== "succeeded") exitCommand(1);
+      } else if (isJsonMode()) printJson(data);
     }),
   );
 
@@ -350,18 +344,8 @@ restoreCmd
   .argument("<restoreId>", "Restore ID")
   .action((restoreId) =>
     guard(async () => {
-      const { data } = await apiRequest<
-        Envelope<{
-          ok: boolean;
-          accepted: boolean;
-          status: string;
-          destructive: boolean;
-          forced: boolean;
-        }>
-      >(`/backup-restores/${encodeURIComponent(restoreId)}/cancel`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      const data = await getShipClient().backups.cancelRestore(restoreId);
+      if (isJsonMode()) { printJson(data); return; }
       // A cancel during `applying` is a request the running phase honors at its
       // next checkpoint — printing "cancelled" there would be a lie, and the
       // partial-data warning is the whole reason the operator needs the
@@ -395,16 +379,11 @@ restoreCmd
   .action((restoreId, opts) =>
     guard(async () => {
       if (opts.follow) {
-        const status = await followStream(
-          `/backup-restores/${encodeURIComponent(restoreId)}/stream`,
-          "restore",
-        );
-        if (status !== "succeeded") process.exit(1);
+        const status = await followStream(restoreId, "restore");
+        if (status !== "succeeded") exitCommand(1);
         return;
       }
-      const { data } = await apiRequest<Envelope<Row>>(
-        `/backup-restores/${encodeURIComponent(restoreId)}`,
-      );
+      const data = await getShipClient().backups.getRestore(restoreId);
       show(data);
     }),
   );
@@ -419,7 +398,7 @@ destinationCmd
   // GET /api/backup-destinations
   .action(() =>
     guard(async () => {
-      const { data } = await apiRequest<Envelope<Row[]>>("/backup-destinations");
+      const data = await getShipClient().backupDestinations.list();
       show(data, [
         "id",
         "name",
@@ -464,7 +443,7 @@ destinationCmd
           throw new Error(`Cannot read key file: ${opts.sftpPrivateKeyFile}`);
         }
       }
-      const body = {
+      const body: CreateBackupDestinationInput = {
         name: opts.name,
         kind: opts.kind,
         endpoint: opts.endpoint,
@@ -482,10 +461,7 @@ destinationCmd
         sftpKeyPassphrase: opts.sftpKeyPassphrase,
         isDefault: opts.default || undefined,
       };
-      const { data } = await apiRequest<Envelope<Row>>("/backup-destinations", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const data = await getShipClient().backupDestinations.create(body);
       ok(`\n  Destination created: ${data.id}\n`);
       show(data, ["id", "name", "kind", "bucket", "endpoint", "isDefault"]);
     }),
@@ -499,21 +475,39 @@ destinationCmd
   .action((destinationId) =>
     guard(async () => {
       const spinner = isJsonMode() ? null : ora("Running preflight…").start();
-      const { data } = await apiRequest<Envelope<{ ok: boolean; reason?: string }>>(
-        `/backup-destinations/${encodeURIComponent(destinationId)}/preflight`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      if (isJsonMode()) {
-        printJson(data);
-        return;
-      }
-      if (data.ok) spinner?.succeed("Destination reachable");
-      else {
-        spinner?.fail(`Preflight failed: ${data.reason ?? "unknown"}`);
-        process.exit(1);
-      }
+      try {
+        const data = await getShipClient().backupDestinations.preflight(destinationId);
+        if (isJsonMode()) printJson(data);
+        else if (data.ok) spinner?.succeed("Destination reachable");
+        else spinner?.fail(`Preflight failed: ${data.reason ?? "unknown"}`);
+        if (!data.ok) exitCommand(1);
+      } finally { spinner?.stop(); }
     }),
   );
+
+destinationCmd.command("get").argument("<id>", "Destination ID")
+  .description("Show a destination without revealing its credentials")
+  .action((id: string) => guard(async () => { show(await getShipClient().backupDestinations.get(id)); }));
+destinationCmd.command("usage").argument("<id>", "Destination ID")
+  .description("Show policies and stored backup usage for a destination")
+  .action((id: string) => guard(async () => { printJson(await getShipClient().backupDestinations.usage(id)); }));
+destinationCmd.command("update").argument("<id>", "Destination ID").argument("<file>", "JSON destination patch")
+  .description("Update selected destination fields; omitted credentials stay unchanged")
+  .action((id: string, file: string) => guard(async () => {
+    const input = JSON.parse(readFileSync(file, "utf8")) as UpdateBackupDestinationInput;
+    show(await getShipClient().backupDestinations.update(id, input));
+  }));
+destinationCmd.command("remove").alias("rm").argument("<id>", "Destination ID")
+  .description("Remove a destination that has no active policies")
+  .action((id: string) => guard(async () => { printJson(await getShipClient().backupDestinations.remove(id)); }));
+destinationCmd.command("preflight-draft").argument("<file>", "JSON destination input; include id to reuse saved credentials")
+  .description("Test destination settings before saving them")
+  .action((file: string) => guard(async () => {
+    const input = JSON.parse(readFileSync(file, "utf8")) as PreflightBackupDestinationInput;
+    const result = await getShipClient().backupDestinations.preflightDraft(input);
+    printJson(result);
+    if (!result.ok) exitCommand(1);
+  }));
 
 // ─── parent ────────────────────────────────────────────────────────────────
 

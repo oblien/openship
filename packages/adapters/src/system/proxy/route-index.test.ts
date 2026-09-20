@@ -65,6 +65,29 @@ describe("buildProxyRouteIndex", () => {
     ]);
   });
 
+  it("keeps exact and prefix matches for the same path as distinct routes", () => {
+    const idx = buildProxyRouteIndex([
+      proxySite({
+        url: "http://localhost:1010",
+        routes: [
+          { path: "/mcp", url: "http://localhost:1010" },
+          { path: "/mcp", url: "http://localhost:1010", exact: true },
+        ],
+      }),
+    ]);
+
+    expect(idx.get(1010)).toEqual([
+      { port: 1010, path: "/mcp", domains: ["app.example.com"], ssl: { enabled: false } },
+      {
+        port: 1010,
+        path: "/mcp",
+        exact: true,
+        domains: ["app.example.com"],
+        ssl: { enabled: false },
+      },
+    ]);
+  });
+
   it("skips static docroots (no upstream port)", () => {
     const idx = buildProxyRouteIndex([
       { serverNames: ["static.example.com"], ssl: true, target: { kind: "static", root: "/var/www" } },

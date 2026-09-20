@@ -21,6 +21,7 @@
       "cloud": "السحابة",
       "defaults": "الإعدادات الافتراضية",
       "settings": "الإعدادات",
+      "dns": "DNS",
       "notifications": "الإشعارات",
       "team": "الفريق",
       "members": "الأعضاء",
@@ -47,11 +48,12 @@
     "title": "الإعدادات",
     "tabs": {
       "general": "عام",
-      "tokens": "الرموز",
+      "git": "Git",
+      "tokens": "رموز واجهة البرمجة",
       "mcp": "MCP",
       "team": "الفريق",
       "notifications": "الإشعارات",
-      "audit": "سجل التدقيق",
+      "credentials": "بيانات الاعتماد",
       "cloud": "السحابة",
       "infrastructure": "البنية التحتية",
       "instance": "النسخة"
@@ -113,10 +115,6 @@
     "noServers": "لا توجد خوادم مهيّأة بعد - أضف واحدًا من منتقي النشر.",
     "clearDefault": "مسح الافتراضي (اسأل في كل مرة)",
     "targets": {
-      "local": {
-        "label": "هذا الجهاز",
-        "desc": "Docker / بيئة تشغيل محلية"
-      },
       "server": {
         "label": "خادمي",
         "desc": "خادم SSH مهيّأ"
@@ -128,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "خادمك",
-      "cloud": "Openship Cloud",
-      "local": "هذا الجهاز"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "اختر خادمًا أولًا",
@@ -160,6 +157,64 @@
     "toast": {
       "setTo": "تم تعيين وضع البناء إلى {mode}",
       "failed": "تعذّر تحديث وضع البناء"
+    }
+  },
+  "githubSources": {
+    "title": "تطبيقات GitHub ذاتية الاستضافة",
+    "description": "أدِر اتصال GitHub على هذا المثيل باستخدام بيانات تطبيق مشفّرة وخطافات ويب مباشرة ورموز تثبيت قصيرة العمر.",
+    "publicUrlRequired": "اضبط أولاً عنوان HTTPS عامًا لمثيل Openship كي يتمكن GitHub من الوصول إلى رد الإعداد وخطاف الويب.",
+    "createWithGithub": "إنشاء عبر GitHub",
+    "registerExisting": "تسجيل تطبيق موجود",
+    "manifestHelp": "سيرسل Openship بيان تطبيق بأقل الصلاحيات إلى GitHub، ثم يحفظ بيانات الاعتماد التي ينشئها ويفتح تثبيت المستودعات.",
+    "nameLabel": "اسم المصدر",
+    "namePlaceholder": "GitHub لشركة Acme",
+    "continueOnGithub": "المتابعة على GitHub",
+    "empty": "لا توجد تطبيقات GitHub مملوكة لمساحة العمل بعد.",
+    "defaultBadge": "افتراضي",
+    "activeBadge": "نشط",
+    "invalidBadge": "يتطلب الانتباه",
+    "webhookChanged": "سُجّل هذا التطبيق بعنوان خطاف ويب قديم. حدّث عنوان خطاف الويب وعنوان الإعداد في GitHub ثم احفظ المصدر مجددًا.",
+    "installations": "الحسابات المثبّتة",
+    "noInstallations": "لم يُثبّت على أي حساب بعد.",
+    "suspended": "معلّق",
+    "installAccount": "تثبيت على حساب",
+    "verify": "تحقق",
+    "edit": "تعديل",
+    "makeDefault": "تعيين افتراضي",
+    "manage": "الإدارة على GitHub",
+    "delete": "حذف",
+    "confirmDelete": "هل تريد حذف {name} من Openship؟ ستُحذف بياناته المحلية وارتباطات التثبيت، لكن التطبيق سيبقى مثبّتًا على GitHub حتى تزيله هناك.",
+    "editHelp": "اترك حقول الأسرار فارغة للاحتفاظ بالقيم المشفّرة المخزنة.",
+    "manualHelp": "أدخل بيانات تطبيق GitHub موجود. يتحقق Openship من المفتاح الخاص قبل تخزين أي شيء.",
+    "appIdLabel": "معرّف التطبيق",
+    "clientIdLabel": "معرّف العميل",
+    "clientSecretLabel": "سر العميل",
+    "optionalHelp": "اختياري للمصادقة برمز التثبيت.",
+    "leaveBlank": "اتركه فارغًا للاحتفاظ بالقيمة المخزنة.",
+    "privateKeyLabel": "المفتاح الخاص (PEM)",
+    "privateKeyHelp": "أنشئ مفتاحًا خاصًا في إعدادات تطبيق GitHub والصق ملف PEM كاملاً.",
+    "webhookSecretLabel": "سر خطاف الويب",
+    "webhookSecretHelp": "استخدم السر القوي نفسه في إعدادات خطاف ويب التطبيق (16 محرفًا على الأقل).",
+    "enterpriseSettings": "إعدادات GitHub Enterprise",
+    "webUrlLabel": "عنوان ويب GitHub",
+    "apiUrlLabel": "عنوان API لـ GitHub",
+    "defaultLabel": "استخدام هذا التطبيق كمصدر افتراضي",
+    "setupUrlLabel": "عنوان الإعداد",
+    "webhookUrlLabel": "عنوان خطاف الويب",
+    "registerAndInstall": "تسجيل وتثبيت",
+    "toast": {
+      "loadFailed": "تعذر تحميل مصادر تطبيق GitHub.",
+      "createFailed": "تعذر بدء إنشاء تطبيق GitHub.",
+      "installFailed": "تعذر فتح تثبيت تطبيق GitHub.",
+      "verified": "تم التحقق من تطبيق GitHub.",
+      "verifyFailed": "فشل التحقق من تطبيق GitHub.",
+      "defaultChanged": "تم تغيير تطبيق GitHub الافتراضي.",
+      "defaultFailed": "تعذر تغيير تطبيق GitHub الافتراضي.",
+      "deleted": "تم حذف مصدر تطبيق GitHub.",
+      "deleteFailed": "تعذر حذف مصدر تطبيق GitHub.",
+      "updated": "تم تحديث مصدر تطبيق GitHub.",
+      "created": "تم تسجيل تطبيق GitHub.",
+      "saveFailed": "تعذر حفظ مصدر تطبيق GitHub."
     }
   },
   "cloneCredentials": {
@@ -286,6 +341,7 @@
     "you": "(أنت)",
     "removeMember": "إزالة العضو",
     "pendingInvitations": "الدعوات المعلّقة ({count})",
+    "copyInviteLink": "نسخ رابط الدعوة",
     "invitedAs": "مدعوّ بصفة {role} - تنتهي {date}",
     "roles": {
       "owner": "مالك",
@@ -329,6 +385,7 @@
       "updateRoleFailed": "تعذّر تحديث الدور",
       "removeFailed": "تعذّرت الإزالة",
       "cancelFailed": "تعذّر الإلغاء",
+      "copyInviteFailed": "تعذّر نسخ رابط الدعوة",
       "accessUpdated": "تم تحديث الوصول",
       "loadGrantsFailed": "تعذّر تحميل المنح",
       "deleteFailed": "تعذّر حذف مساحة العمل",
@@ -359,9 +416,11 @@
     "pickerTitle": "وصول الموارد الأولي",
     "pickerDesc": "يبدأ الأعضاء المقيّدون بلا وصول. اختر ما تتيحه هذه الدعوة بمجرد قبولها — يمكنك منح المزيد لاحقًا من صف العضو.",
     "sendInvite": "إرسال الدعوة",
+    "createInviteLink": "إنشاء رابط دعوة",
     "toast": {
       "failedSend": "تعذّر إرسال الدعوة",
       "invitationSent": "تم إرسال الدعوة إلى {email}",
+      "invitationLinkCreated": "تم إنشاء رابط الدعوة — انسخه من الدعوات المعلّقة",
       "personalOrgBlocked": "لا يمكن دعوة الأعضاء من مساحة العمل الشخصية. أنشئ مؤسسة فريق أولاً، ثم أرسل الدعوات.",
       "updateMailSourceFailed": "تعذّر تحديث مصدر البريد"
     }
@@ -591,13 +650,31 @@
     "updatesOne": "تحديث واحد متاح",
     "updatesMany": "{n} تحديثات متاحة",
     "allHealthy": "جميع مكوّنات المنصّة محدَّثة",
-    "manageLink": "الإدارة في الخوادم"
+    "manageLink": "الإدارة في الخوادم",
+    "hostControlLabel": "النشر على هذا الجهاز",
+    "hostControlDesc": "اسمح لـ OpenShip بنشر التطبيقات على الخادم الذي يعمل عليه، إلى جانب خوادمك المتصلة. يكون مُعطّلاً إذا تم التثبيت باستخدام --no-host-control (مستوى التحكم فقط) — فعّله لإضافة هذا الجهاز كوجهة نشر.",
+    "hostControlEnvNote": "تم ضبط هذا الجهاز على وضع مستوى التحكم فقط أثناء التثبيت (--no-host-control). تفعيل هذا الخيار يتجاوز ذلك ليتمكّن OpenShip من النشر هنا.",
+    "hostControlError": "تعذّر تغيير التحكم بالمضيف — لا يمكن ذلك إلا لمالك مساحة عمل هذا الجهاز."
   },
   "dataTransfer": {
     "export": {
       "title": "تصدير البيانات",
       "description": "نزّل قاعدة بيانات النسخة بأكملها كملف.",
       "intro": "ينشئ لقطة قابلة للنقل لكل شيء — المشاريع والخوادم وعمليات النشر والإعدادات. عيّن عبارة مرور لتضمين أسرارك (متغيرات البيئة والرموز وبيانات اعتماد SSH)؛ يُعاد تشفيرها بها، لذا يكون الملف آمنًا للنقل. اتركها فارغة للتصدير دون أسرار.",
+      "filterTitle": "السجل الاختياري",
+      "filterDescription": "يتم دائمًا تضمين الإعدادات والمشاريع والخوادم والمستخدمين وبيانات الاعتماد. ألغِ تحديد السجل غير المطلوب لتقليل حجم التصدير.",
+      "filterAnalytics": "التحليلات وعينات الاستخدام",
+      "filterActivity": "سجل التدقيق والإشعارات",
+      "filterBackups": "سجل النسخ الاحتياطي والاستعادة",
+      "filterIncidents": "سجل حوادث الصحة",
+      "filterMigrations": "سجل ترحيل Docker",
+      "coreRows": "الصفوف المضمّنة دائمًا",
+      "selectedRows": "صفوف التصدير المحددة",
+      "countUnavailable": "غير متاح",
+      "transferSecretNotice": "لنقل بيانات الاعتماد بشكل صحيح، بما فيها كلمات مرور ومفاتيح SSH ومتغيرات البيئة والرموز وبيانات النسخ الاحتياطي، أنشئ سر نقل أو أدخله أدناه. احفظه منفصلًا وأدخل السر نفسه عند الاستيراد. لا تنسخ BETTER_AUTH_SECRET الخاص بالنسخة إلى الوجهة.",
+      "generateTransferSecret": "إنشاء سر نقل",
+      "copyTransferSecret": "نسخ سر النقل",
+      "copiedTransferSecret": "تم نسخ سر النقل. احفظه بأمان لاستخدامه عند الاستيراد.",
       "passphraseLabel": "عبارة المرور (اختيارية)",
       "passphrasePlaceholder": "تحمي أسرارك",
       "confirmLabel": "تأكيد عبارة المرور",
@@ -779,6 +856,36 @@
     "toast": {
       "setTo": "تم ضبط أسلوب التوجيه إلى {mode}",
       "failed": "تعذّر تحديث أسلوب التوجيه"
+    }
+  },
+  "credentials": {
+    "title": "بيانات الاعتماد",
+    "description": "الرموز وبيانات الدخول التي يستخدمها Openship بالنيابة عنك — سحب الصور الخاصة، وكتابة سجلات DNS. تُخزَّن مشفّرة ولا تُعرض مرة أخرى بعد الحفظ.",
+    "noProviders": "لا يوجد مزوّدو بيانات اعتماد متاحون في هذا المثيل.",
+    "noneForProvider": "لم تُضف أي بيانات بعد.",
+    "add": "إضافة",
+    "edit": "تعديل",
+    "save": "حفظ التغييرات",
+    "connect": "إضافة بيانات اعتماد",
+    "delete": "حذف",
+    "verify": "إعادة التحقق مع المزوّد",
+    "badgeActive": "تعمل",
+    "badgeInvalid": "تحتاج انتباهًا",
+    "fieldName": "التسمية",
+    "namePlaceholder": "مثال: GHCR للقراءة فقط",
+    "secretKeptPlaceholder": "•••••••• (محفوظ — اتركه فارغًا للإبقاء عليه)",
+    "selectPlaceholder": "اختر…",
+    "verifyNote": "يتحقق Openship من بيانات الاعتماد مع المزوّد قبل حفظها.",
+    "confirmDelete": "حذف \"{name}\"؟ سيتوقف كل ما يعتمد عليها عن العمل.",
+    "toast": {
+      "loadFailed": "تعذّر تحميل بيانات الاعتماد",
+      "created": "تمت إضافة بيانات الاعتماد",
+      "updated": "تم تحديث بيانات الاعتماد",
+      "deleted": "تم حذف بيانات الاعتماد",
+      "saveFailed": "تعذّر حفظ بيانات الاعتماد",
+      "deleteFailed": "تعذّر حذف بيانات الاعتماد",
+      "verifyOk": "قَبِل المزوّد بيانات الاعتماد",
+      "verifyFailed": "رفض المزوّد بيانات الاعتماد"
     }
   }
 }

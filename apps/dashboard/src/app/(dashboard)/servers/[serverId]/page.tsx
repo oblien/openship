@@ -34,7 +34,7 @@ import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { useServerTunnels } from "@/hooks/useServerTunnels";
 import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
-import { ServerForm } from "../_components/server-form";
+import { ServerForm } from "@/components/servers/server-form";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { ServerModuleUpdates } from "./_components/module-updates";
@@ -43,6 +43,8 @@ import { TerminalTab } from "./_components/terminal-tab";
 import {
   ConnectionBanner,
   classifyConnectionError,
+  readConnectionDiagnosis,
+  type ConnectionDiagnosis,
   type ConnectionErrorKind,
 } from "./_components/connection-banner";
 
@@ -52,7 +54,10 @@ import { PortForwardingCard } from "./_components/port-forwarding-card";
 import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
 import { MigrationsTab } from "@/components/migration/MigrationsTab";
 import { ServerConnectionCard } from "./_components/connection-card";
+import { ServerDeletionModal } from "./_components/ServerDeletionModal";
+import { serverRemovalSummary, type ServerRemovalResult, type ServerRemovalWorkloadResult } from "@/lib/server-removal";
 import { usePlatform } from "@/context/PlatformContext";
+import { ServerInfrastructure } from "@/components/servers/ServerInfrastructure";
 
 
 type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal";
@@ -111,6 +116,8 @@ export default function ServerDetailPage({
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkErrorKind, setCheckErrorKind] = useState<ConnectionErrorKind | null>(null);
+  /** Endpoint + remedy the API attached to the failure (host-channel case). */
+  const [checkDiagnosis, setCheckDiagnosis] = useState<ConnectionDiagnosis | undefined>(undefined);
   const [installLogs, setInstallLogs] = useState<SetupLogEvent[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   // Deep-link support: honour ?tab= once on mount (e.g. ?tab=github to land
@@ -257,6 +264,7 @@ export default function ServerDetailPage({
     setChecking(true);
     setCheckError(null);
     setCheckErrorKind(null);
+    setCheckDiagnosis(undefined);
     try {
       const result = await systemApi.checkServer(serverId);
       setComponents(result.components);
@@ -267,6 +275,7 @@ export default function ServerDetailPage({
       setComponents([]);
       setCheckError(message);
       setCheckErrorKind(kind);
+      setCheckDiagnosis(readConnectionDiagnosis(body));
       // The inline banner is the primary surface - only toast for unexpected
       // shapes so the user isn't getting both a toast and a banner for the
       // same problem.
@@ -311,7 +320,7 @@ export default function ServerDetailPage({
     }
   }, [components, serverId, showToast, setupStream, t]);
 
-  const runComponentAction = useCallback(async (component: ComponentStatus) => {
+  const startComponentAction = useCallback(async (component: ComponentStatus) => {
     if (!serverId) {
       showToast(t.servers.detail.toastServerMissing, "error", t.servers.toastTitles.serverSetup);
       return;
@@ -327,13 +336,54 @@ export default function ServerDetailPage({
     setActiveTab("components");
 
     try {
-      await setupStream.startInstall(serverId, [component.name]);
+      // This button reads "Reinstall"/"Update" on an installed component, so it
+      // means it: installers that skip an already-working component (Docker, #491)
+      // need the explicit opt-in to run at all. Install-missing and the setup flow
+      // never send it, which is the point — they get the skip.
+      await setupStream.startInstall(
+        serverId,
+        [component.name],
+        component.installed ? { reinstall: true } : undefined,
+      );
     } catch (err) {
       const message = getApiErrorMessage(err, interpolate(t.servers.detail.toastFailedRun, { label: component.label }));
       setCheckError(message);
       showToast(message, "error", t.servers.toastTitles.serverSetup);
     }
   }, [serverId, setupStream, showToast, t]);
+
+  const runComponentAction = useCallback(async (component: ComponentStatus) => {
+    // Reinstalling Docker restarts the daemon, which restarts every container on
+    // the box — Openship's own stack included. That used to happen as an invisible
+    // side effect of steps that merely needed Docker present (#491); now it happens
+    // only here, and only after the operator is told what it costs.
+    if (component.name === "docker" && component.installed) {
+      const modalId = showModal({
+        title: t.servers.detail.reinstallDockerTitle,
+        message: t.servers.detail.reinstallDockerMessage,
+        icon: "warning",
+        width: "100%",
+        maxWidth: "32rem",
+        buttons: [
+          {
+            label: t.servers.detail.cancel,
+            variant: "secondary",
+            onClick: () => hideModal(modalId),
+          },
+          {
+            label: t.servers.components.reinstall,
+            variant: "danger",
+            onClick: () => {
+              hideModal(modalId);
+              void startComponentAction(component);
+            },
+          },
+        ],
+      });
+      return;
+    }
+    await startComponentAction(component);
+  }, [hideModal, showModal, startComponentAction, t]);
 
   const removeComponentAction = useCallback((component: ComponentStatus) => {
     const modalId = showModal({
@@ -471,38 +521,71 @@ export default function ServerDetailPage({
     })();
   }, [serverId, fetchData, runHealthCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Removal is its own modal, not a one-line confirm: the row being deleted is the
+  // deploy target of every project on the box, so the operator has to see the list and
+  // choose what happens to those workloads. `showModal` can't render either.
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeFailures, setRemoveFailures] = useState<ServerRemovalWorkloadResult[] | null>(null);
+
   const handleDelete = useCallback(() => {
-    const modalId = showModal({
-      title: t.servers.detail.removeServer,
-      message: t.servers.detail.removeServerMessage,
-      icon: "warning",
-      buttons: [
-        {
-          label: t.servers.detail.cancel,
-          variant: "secondary",
-          onClick: () => hideModal(modalId),
-        },
-        {
-          label: t.servers.detail.remove,
-          variant: "danger",
-          onClick: async () => {
-            try {
-              await systemApi.deleteServerEntry(serverId);
-              hideModal(modalId);
-              showToast(t.servers.detail.toastServerRemoved, "success", t.servers.toastTitles.server);
-              router.push("/servers");
-            } catch (err) {
-              showToast(
-                getApiErrorMessage(err, t.servers.detail.toastFailedRemoveServer),
-                "error",
-                t.servers.toastTitles.server,
-              );
-            }
-          },
-        },
-      ],
-    });
-  }, [serverId, router, showToast, showModal, hideModal, t]);
+    setRemoveFailures(null);
+    setRemoveOpen(true);
+  }, []);
+
+  const handleRemoveConfirm = useCallback(
+    async (destroyOnSource: boolean, workloadCount: number) => {
+      setRemoveBusy(true);
+      try {
+        const res = await systemApi.deleteServerEntry(serverId, { destroyOnSource, workloadCount });
+        // Every message below is derived from the RESPONSE. Reporting the flag we sent
+        // is how a delete once claimed a cascade the server never performed.
+        const summary = serverRemovalSummary(res);
+        if (summary.kind === "partial") {
+          setRemoveFailures(summary.failed);
+          showToast(
+            res.error ?? t.servers.detail.toastFailedRemoveServer,
+            "error",
+            t.servers.toastTitles.server,
+          );
+          return;
+        }
+        setRemoveOpen(false);
+        showToast(
+          summary.count === 0
+            ? t.servers.detail.toastServerRemoved
+            : interpolate(
+                summary.destroyed
+                  ? summary.count === 1
+                    ? t.servers.detail.removal.toastRemovedDestroyedOne
+                    : t.servers.detail.removal.toastRemovedDestroyedOther
+                  : summary.count === 1
+                    ? t.servers.detail.removal.toastRemovedKeptOne
+                    : t.servers.detail.removal.toastRemovedKeptOther,
+                { count: String(summary.count) },
+              ),
+          "success",
+          t.servers.toastTitles.server,
+        );
+        router.push("/servers");
+      } catch (err) {
+        // A 409 carries the per-workload reasons; render them in the modal so the
+        // retry is aimed rather than blind.
+        const body = err instanceof ApiError ? (err.body as ServerRemovalResult | undefined) : undefined;
+        if (body?.workloads?.length) {
+          setRemoveFailures(body.workloads.filter((w) => !w.ok || (w.orphaned ?? 0) > 0));
+        }
+        showToast(
+          getApiErrorMessage(err, t.servers.detail.toastFailedRemoveServer),
+          "error",
+          t.servers.toastTitles.server,
+        );
+      } finally {
+        setRemoveBusy(false);
+      }
+    },
+    [serverId, router, showToast, t],
+  );
 
   if (loading) {
     return (
@@ -681,6 +764,7 @@ export default function ServerDetailPage({
             message={checkError}
             retrying={checking}
             onRetry={runHealthCheck}
+            diagnosis={checkDiagnosis}
           />
         )}
 
@@ -795,9 +879,22 @@ export default function ServerDetailPage({
           {activeTab !== "migrations" && (
             <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
               <ServerConnectionCard server={server} />
+              <ServerInfrastructure serverId={serverId} />
             </div>
           )}
         </div>
+
+        {/* Removal confirm. The only removal entry point in the app — the fleet list
+            has no delete action. */}
+        <ServerDeletionModal
+          isOpen={removeOpen}
+          onClose={() => setRemoveOpen(false)}
+          onConfirm={handleRemoveConfirm}
+          serverId={serverId}
+          serverName={server?.name ?? ""}
+          failures={removeFailures}
+          busy={removeBusy}
+        />
     </PageContainer>
   );
 }

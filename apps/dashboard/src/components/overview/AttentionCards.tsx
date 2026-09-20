@@ -106,7 +106,7 @@ function AttentionCard({
       // anything overflowed — a card that only became clickable at four rows read as
       // "there is more" rather than "here is the full list".
       footer={
-        <Link href="/issues" className={FOOTER_LINK}>
+        <Link href="/monitoring" className={FOOTER_LINK}>
           {hidden > 0 ? interpolate(c.more, { n: String(hidden) }) : t.dashboard.home.viewAll}
           <ArrowRight className="size-3.5 rtl:rotate-180" />
         </Link>

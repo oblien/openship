@@ -11,7 +11,7 @@
  *      `sendInput(data)` and surfaced to `onBytes(chunk)`.
  *   4. JSON text frames are control messages - `{type:"ready"}` flips
  *      isConnected, `{type:"exit"}` and `{type:"error"}` are terminal,
- *      `{type:"pong"}` resets the heartbeat watchdog, `resize` is
+ *      `{type:"pong"}` acknowledges keepalive, `resize` is
  *      client→server (sent via `sendResize`).
  *
  * Reconnect policy:
@@ -41,9 +41,7 @@ import {
  * The hook dispatches to the right ticket endpoint and WS URL based
  * on this kind.
  */
-export type PtyTarget =
-  | { kind: "server"; id: string }
-  | { kind: "service"; id: string };
+export type PtyTarget = { kind: "server"; id: string } | { kind: "service"; id: string };
 
 function pickTransport(target: PtyTarget) {
   if (target.kind === "service") {
@@ -59,6 +57,7 @@ function pickTransport(target: PtyTarget) {
 }
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
+const CONNECT_TIMEOUT_MS = 60_000;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 interface UsePtyConnectionArgs {
@@ -150,6 +149,9 @@ export function usePtyConnection({
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationRef = useRef(0);
+  const connectRef = useRef<(() => Promise<void>) | null>(null);
   const attemptsRef = useRef(0);
   // Set to true when the user (or the hook teardown) explicitly killed
   // the connection — never reconnect in that case.
@@ -158,7 +160,15 @@ export function usePtyConnection({
   // the close handler from kicking off a reconnect after a clean exit.
   const terminalRef = useRef(false);
 
+  const clearHandshakeTimer = useCallback(() => {
+    if (handshakeTimerRef.current) {
+      clearTimeout(handshakeTimerRef.current);
+      handshakeTimerRef.current = null;
+    }
+  }, []);
+
   const clearTimers = useCallback(() => {
+    clearHandshakeTimer();
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
@@ -167,14 +177,21 @@ export function usePtyConnection({
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-  }, []);
+  }, [clearHandshakeTimer]);
 
   const teardownSocket = useCallback(() => {
+    // A ticket can still be pending, and close events arrive asynchronously.
+    // Neither may take ownership after this connection has been replaced.
+    generationRef.current += 1;
     clearTimers();
     const ws = wsRef.current;
     wsRef.current = null;
     if (ws) {
-      try { ws.close(1000, "client_close"); } catch { /* already closing */ }
+      try {
+        ws.close(1000, "client_close");
+      } catch {
+        /* already closing */
+      }
     }
     setIsConnected(false);
     setIsConnecting(false);
@@ -192,9 +209,8 @@ export function usePtyConnection({
     // 1s → 2s → 4s
     const delay = 1000 * Math.pow(2, attempt - 1);
     reconnectTimerRef.current = setTimeout(() => {
-      void connect();
+      void connectRef.current?.();
     }, delay);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = useCallback(async () => {
@@ -202,16 +218,34 @@ export function usePtyConnection({
     if (manualStopRef.current) return;
     if (wsRef.current) return; // already connected / connecting
 
+    const generation = ++generationRef.current;
+    const isCurrent = () => generationRef.current === generation && !manualStopRef.current;
+
     setIsConnecting(true);
     setLastError(null);
 
     const transport = pickTransport(target);
+
+    // Covers both ticket acquisition and the remote PTY opening after upgrade.
+    // A reachable WebSocket without a ready frame must not spin indefinitely.
+    handshakeTimerRef.current = setTimeout(() => {
+      if (!isCurrent()) return;
+      terminalRef.current = true;
+      teardownSocket();
+      setLastError("ssh_connect");
+      onErrorRef.current?.(
+        "ssh_connect",
+        "Opening the terminal timed out. Check the server connection and try again.",
+      );
+    }, CONNECT_TIMEOUT_MS);
 
     let token: string;
     try {
       const t = await transport.requestTicket();
       token = t.token;
     } catch (err: any) {
+      if (!isCurrent()) return;
+      clearHandshakeTimer();
       setIsConnecting(false);
       const code: TerminalErrorCode = err?.status === 404 ? "server_not_found" : "ssh_auth";
       setLastError(code);
@@ -221,17 +255,17 @@ export function usePtyConnection({
       return;
     }
 
-    if (manualStopRef.current) return;
+    if (!isCurrent()) return;
 
-    const url = transport.buildWsUrl();
     const protocols = [TERMINAL_SUBPROTOCOL_PREFIX + token];
     const rt = resumeTokenRef.current;
     if (rt) protocols.push(TERMINAL_RESUME_SUBPROTOCOL_PREFIX + rt);
 
     let ws: WebSocket;
     try {
-      ws = new WebSocket(url, protocols);
+      ws = new WebSocket(transport.buildWsUrl(), protocols);
     } catch (err: any) {
+      clearHandshakeTimer();
       setIsConnecting(false);
       setLastError("transport");
       scheduleReconnect();
@@ -239,19 +273,26 @@ export function usePtyConnection({
     }
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
+    const ownsSocket = () => isCurrent() && wsRef.current === ws;
 
     ws.onopen = () => {
+      if (!ownsSocket()) return;
       // Don't flip isConnected here — wait for {type:"ready"} from the
       // server (which confirms the remote PTY actually opened). The
       // open event just means TCP/TLS is up.
       heartbeatRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          try { ws.send(JSON.stringify({ type: "ping" })); } catch { /* peer gone */ }
+          try {
+            ws.send(JSON.stringify({ type: "ping" }));
+          } catch {
+            /* peer gone */
+          }
         }
       }, HEARTBEAT_INTERVAL_MS);
     };
 
     ws.onmessage = (evt) => {
+      if (!ownsSocket()) return;
       const data = evt.data;
       if (data instanceof ArrayBuffer) {
         onBytesRef.current(new Uint8Array(data));
@@ -259,8 +300,13 @@ export function usePtyConnection({
       }
       if (typeof data === "string") {
         let msg: ServerControlMsg;
-        try { msg = JSON.parse(data); } catch { return; }
+        try {
+          msg = JSON.parse(data);
+        } catch {
+          return;
+        }
         if (msg.type === "ready") {
+          clearHandshakeTimer();
           setIsConnecting(false);
           setIsConnected(true);
           attemptsRef.current = 0;
@@ -308,6 +354,7 @@ export function usePtyConnection({
     };
 
     ws.onclose = (evt) => {
+      if (!ownsSocket()) return;
       wsRef.current = null;
       clearTimers();
       setIsConnected(false);
@@ -323,12 +370,20 @@ export function usePtyConnection({
     };
 
     ws.onerror = () => {
+      if (!ownsSocket()) return;
       // onclose will follow with a close code; defer logic to there so
       // we don't double-count attempts. Just record the symptom.
       setLastError("transport");
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target?.kind, target?.id]);
+  }, [
+    target?.kind,
+    target?.id,
+    clearHandshakeTimer,
+    clearTimers,
+    scheduleReconnect,
+    teardownSocket,
+  ]);
+  connectRef.current = connect;
 
   // ── Effect: lifecycle bound to (target, enabled) ────────────────────────
   // Key the effect on a stringified target so changing kind/id triggers
@@ -347,7 +402,7 @@ export function usePtyConnection({
       manualStopRef.current = true;
       teardownSocket();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, targetKey, connect, teardownSocket]);
 
   const sendInput = useCallback((data: string | Uint8Array) => {
@@ -361,13 +416,19 @@ export function usePtyConnection({
       } else {
         ws.send(data);
       }
-    } catch { /* peer gone */ }
+    } catch {
+      /* peer gone */
+    }
   }, []);
 
   const sendResize = useCallback((cols: number, rows: number) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    try { ws.send(JSON.stringify({ type: "resize", cols, rows })); } catch { /* peer gone */ }
+    try {
+      ws.send(JSON.stringify({ type: "resize", cols, rows }));
+    } catch {
+      /* peer gone */
+    }
   }, []);
 
   const disconnect = useCallback(() => {
@@ -382,7 +443,11 @@ export function usePtyConnection({
     // our onclose handler observes.
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: "close" })); } catch { /* peer gone */ }
+      try {
+        ws.send(JSON.stringify({ type: "close" }));
+      } catch {
+        /* peer gone */
+      }
     }
     manualStopRef.current = true;
     terminalRef.current = true;

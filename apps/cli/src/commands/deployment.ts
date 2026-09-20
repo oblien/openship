@@ -1,3 +1,4 @@
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship deployment …` — manage existing deployments.
  *
@@ -20,7 +21,7 @@
  */
 import { Command } from "commander";
 import { createInterface } from "node:readline";
-import { apiRequest, ApiError } from "../lib/api-client";
+import { getShipClient, assertLinkedProjectConnection, ApiError } from "../lib/ship-client";
 import { readProjectLink } from "../lib/project-link";
 import { isJsonMode, printJson, printTable, ok, err } from "../lib/output";
 
@@ -30,8 +31,9 @@ function run<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
     try {
       await fn(...args);
     } catch (e) {
+      rethrowCommandExit(e);
       err(e instanceof ApiError ? e.message : String(e));
-      process.exit(1);
+      exitCommand(1);
     }
   };
 }
@@ -61,15 +63,12 @@ const list = new Command("list")
   .option("--limit <n>", "Max rows to fetch", "50")
   .action(
     run(async (opts) => {
-      const projectId: string | undefined = opts.project || readProjectLink()?.projectId;
-      const params = new URLSearchParams();
-      if (projectId) params.set("projectId", projectId);
-      if (opts.env) params.set("environment", opts.env);
-      params.set("perPage", String(Math.min(Number(opts.limit) || 50, 100)));
-      const qs = params.toString();
-      const res = await apiRequest<{ data?: Record<string, unknown>[] }>(
-        `/deployments${qs ? `?${qs}` : ""}`,
-      );
+      const link = opts.project ? null : readProjectLink();
+      assertLinkedProjectConnection(link);
+      const projectId: string | undefined = opts.project || link?.projectId;
+      const res = await getShipClient().deployments.list({
+        projectId, environment: opts.env, perPage: Math.min(Number(opts.limit) || 50, 100),
+      });
       const rows = (res.data ?? []).map((d) => ({
         id: d.id,
         status: d.status,
@@ -88,8 +87,7 @@ const get = new Command("get")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest<{ data?: Record<string, unknown> }>(`/deployments/${id}`);
-      const d = res.data ?? {};
+      const d = await getShipClient().deployments.get(id);
       if (isJsonMode()) return printJson(d);
       printTable(
         [
@@ -113,8 +111,7 @@ const info = new Command("info")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest<{ data?: unknown }>(`/deployments/${id}/info`);
-      printJson(res.data ?? res);
+      printJson(await getShipClient().deployments.containerInfo(id));
     }),
   );
 
@@ -123,8 +120,7 @@ const usage = new Command("usage")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest<{ data?: unknown }>(`/deployments/${id}/usage`);
-      printJson(res.data ?? res);
+      printJson(await getShipClient().deployments.containerUsage(id));
     }),
   );
 
@@ -134,11 +130,8 @@ const redeploy = new Command("redeploy")
   .option("--use-existing-commit", "Rebuild the same commit instead of the latest on the branch")
   .action(
     run(async (id: string, opts) => {
-      const res = await apiRequest(`/deployments/${id}/redeploy`, {
-        method: "POST",
-        body: JSON.stringify({ useExistingCommit: opts.useExistingCommit === true }),
-      });
-      report(res, `Redeploy triggered for ${id}`);
+      const res = await getShipClient().deployments.redeploy(id, { useExistingCommit: opts.useExistingCommit === true });
+      report({ success: true, ...res }, `Redeploy triggered for ${id}`);
     }),
   );
 
@@ -147,7 +140,7 @@ const rollback = new Command("rollback")
   .argument("<id>", "Deployment ID to roll back to")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest(`/deployments/${id}/rollback`, { method: "POST" });
+      const res = { data: await getShipClient().deployments.rollback(id) };
       report(res, `Rolled back to ${id}`);
     }),
   );
@@ -159,10 +152,7 @@ const pin = new Command("pin")
   .action(
     run(async (id: string, opts) => {
       const pinned = !opts.off;
-      const res = await apiRequest(`/deployments/${id}/pin`, {
-        method: "POST",
-        body: JSON.stringify({ pinned }),
-      });
+      const res = { data: await getShipClient().deployments.pin(id, { pinned }) };
       report(res, `${pinned ? "Pinned" : "Unpinned"} ${id}`);
     }),
   );
@@ -172,7 +162,13 @@ const cancel = new Command("cancel")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest(`/deployments/${id}/cancel`, { method: "POST" });
+      const res = await getShipClient().deployments.cancel(id);
+      if (res.pending || !res.success) {
+        throw new Error(
+          res.message ||
+            "Cancellation is still pending; wait for the deployment worker to stop before redeploying.",
+        );
+      }
       report(res, `Cancelled ${id}`);
     }),
   );
@@ -182,7 +178,7 @@ const restart = new Command("restart")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest(`/deployments/${id}/restart`, { method: "POST" });
+      const res = { data: await getShipClient().deployments.restart(id) };
       report(res, `Restarted ${id}`);
     }),
   );
@@ -192,7 +188,7 @@ const reject = new Command("reject")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest(`/deployments/${id}/reject`, { method: "POST" });
+      const res = await getShipClient().deployments.reject(id);
       report(res, `Rejected ${id}`);
     }),
   );
@@ -202,7 +198,7 @@ const keep = new Command("keep")
   .argument("<id>", "Deployment ID")
   .action(
     run(async (id: string) => {
-      const res = await apiRequest(`/deployments/${id}/keep`, { method: "POST" });
+      const res = await getShipClient().deployments.keep(id);
       report(res, `Kept ${id}`);
     }),
   );
@@ -215,9 +211,9 @@ const rm = new Command("rm")
     run(async (id: string, opts) => {
       if (!opts.yes && !isJsonMode() && !(await confirm(`Delete deployment ${id}?`))) {
         err("Aborted.");
-        process.exit(1);
+        exitCommand(1);
       }
-      const res = await apiRequest(`/deployments/${id}`, { method: "DELETE" });
+      const res = await getShipClient().deployments.remove(id);
       report(res, `Deleted ${id}`);
     }),
   );
@@ -228,10 +224,7 @@ const sslStatus = new Command("status")
   .argument("<domain>", "Domain to probe")
   .action(
     run(async (domain: string) => {
-      const res = await apiRequest("/deployments/ssl/status", {
-        method: "POST",
-        body: JSON.stringify({ domain }),
-      });
+      const res = await getShipClient().deployments.sslStatus({ domain });
       printJson(res);
     }),
   );
@@ -242,12 +235,7 @@ const sslRenew = new Command("renew")
   .option("--www", "Also renew the www subdomain (separately — its own certificate)")
   .action(
     run(async (domain: string, opts) => {
-      const res = await apiRequest<{
-        results?: Array<{ domain: string; status: string; success: boolean; message?: string }>;
-      }>("/deployments/ssl/renew", {
-        method: "POST",
-        body: JSON.stringify({ domain, includeWww: opts.www === true }),
-      });
+      const res = await getShipClient().deployments.renewSsl({ domain, includeWww: opts.www === true });
       // `--www` renews TWO independent certificates, so report both. Collapsing
       // them into one line hid the case where the apex succeeded and the sibling
       // (not pointed here yet) didn't.
@@ -267,6 +255,24 @@ const ssl = new Command("ssl")
   .addCommand(sslStatus)
   .addCommand(sslRenew);
 
+const pending = new Command("pending")
+  .description("Show a deployment's current prompt and pending decisions")
+  .argument("<id>", "Deployment ID")
+  .action(run(async (id: string) => {
+    const status = await getShipClient().deployments.buildStatus(id);
+    printJson({ status: status.deploymentStatus, pendingPrompt: status.pendingPrompt, decisionPending: status.decisionPending });
+  }));
+
+const respond = new Command("respond")
+  .description("Answer a pending deployment prompt")
+  .argument("<id>", "Deployment ID")
+  .requiredOption("--action <action>", "An action ID offered by the pending prompt")
+  .action(run(async (id: string, opts) => {
+    const result = await getShipClient().deployments.respond(id, { action: opts.action });
+    if (!result.success) throw new Error("The prompt expired or was already answered");
+    report(result, `Response accepted for ${id}`);
+  }));
+
 export const deploymentCommand = new Command("deployment")
   .alias("deployments")
   .description("Manage deployments (list, inspect, redeploy, rollback, …)")
@@ -281,5 +287,7 @@ export const deploymentCommand = new Command("deployment")
   .addCommand(restart)
   .addCommand(reject)
   .addCommand(keep)
+  .addCommand(pending)
+  .addCommand(respond)
   .addCommand(rm)
   .addCommand(ssl);

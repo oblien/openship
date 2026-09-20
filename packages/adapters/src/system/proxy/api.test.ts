@@ -35,6 +35,306 @@ function exec(opts: { conf?: string; files?: Record<string, string> } = {}): Com
 }
 
 describe("edgeProxyFor", () => {
+  it("strictly inventories every loopback port dialled by our edge", async () => {
+    const ownEdge = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return `server {
+              listen 80;
+              server_name app.example.com;
+              location / { proxy_pass http://127.0.0.1:23000; }
+              location /api { proxy_pass http://127.0.0.2:24000; }
+              location /remote { proxy_pass http://10.0.0.9:25000; }
+            }
+            server {
+              listen 80 default_server;
+              server_name _;
+              location / { proxy_pass http://127.0.0.1:26000; }
+            }
+            server {
+              listen 80;
+              server_name ~^tenant-[0-9]+\\.example\\.com$;
+              location / { proxy_pass http://127.0.0.1:27000; }
+            }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(ownEdge, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(
+      new Set([23_000, 24_000, 26_000, 27_000]),
+    );
+  });
+
+  it("can replace the memoized strict inventory with a fresh post-write scan", async () => {
+    let configDump = 0;
+    const ownEdge = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          configDump += 1;
+          const port = configDump === 1 ? 23_000 : 24_000;
+          return `server {
+            listen 80;
+            server_name app.example.com;
+            location / { proxy_pass http://127.0.0.1:${port}; }
+          }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(ownEdge, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([23_000]));
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([23_000]));
+    expect(configDump).toBe(1);
+
+    expect(await api.listLoopbackUpstreamPortsStrict({ refresh: true })).toEqual(new Set([24_000]));
+    expect(configDump).toBe(2);
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([24_000]));
+  });
+
+  it("never falls back to a stale strict inventory when a forced refresh fails", async () => {
+    let rejectDump = false;
+    const ownEdge = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          if (rejectDump) throw new Error("edge config unreadable");
+          return `server {
+            listen 80;
+            server_name app.example.com;
+            location / { proxy_pass http://127.0.0.1:23000; }
+          }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(ownEdge, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([23_000]));
+    rejectDump = true;
+    await expect(api.listLoopbackUpstreamPortsStrict({ refresh: true })).rejects.toThrow(
+      "edge config unreadable",
+    );
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow("edge config unreadable");
+  });
+
+  it("inventories every loopback member of a named upstream group", async () => {
+    const ownEdge = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return `upstream app_pool {
+              server 127.0.0.1:23000;
+              server 127.0.0.2:24000 backup;
+              server 10.0.0.9:25000;
+            }
+            server {
+              listen 80;
+              server_name app.example.com;
+              location / { proxy_pass http://app_pool; }
+            }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(ownEdge, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([23_000, 24_000]));
+  });
+
+  it("rejects an inconclusive own-edge inventory while normal reads stay fail-soft", async () => {
+    const dead = {
+      exec: vi.fn(async () => {
+        throw new Error("ssh timeout");
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(dead, "openresty", { ours: true });
+
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
+      "neither Docker nor bare OpenResty inventory",
+    );
+    expect((await api.listSites()).sites).toEqual([]);
+  });
+
+  it("refuses to treat a host with no Openship edge as an empty inventory", async () => {
+    const emptyHost = { exec: vi.fn(async () => "") } as unknown as CommandExecutor;
+    const api = edgeProxyFor(emptyHost, "openresty", { ours: true });
+
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
+      "no running Openship edge or bare OpenResty inventory",
+    );
+    expect(
+      (emptyHost.exec as ReturnType<typeof vi.fn>).mock.calls.some(([cmd]) =>
+        String(cmd).includes("docker ps -a"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not trust leftover Openship vhosts when no Openship edge is running", async () => {
+    const staleFiles = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("if [ -e")) return NGINX_CONF("/c.pem", "/k.pem");
+        if (cmd.includes("docker ps -a")) return "";
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(staleFiles, "openresty", { ours: true });
+
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
+      "no running Openship edge or bare OpenResty inventory",
+    );
+  });
+
+  it("rejects a dynamic proxy_pass instead of silently omitting a possible loopback route", async () => {
+    const dynamic = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return (
+            "server { listen 80; server_name app.example.com; " +
+            "location / { proxy_pass http://$backend; } }"
+          );
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(dynamic, "openresty", { ours: true });
+
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow("uses an nginx variable");
+  });
+
+  it("keeps a variable port fail-closed even when the request URI is concrete", async () => {
+    const dynamicPort = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return `server {
+            listen 80;
+            server_name dashboard.example.com;
+            location /terminal/ {
+              proxy_pass http://127.0.0.1:$backend_port/terminal/;
+            }
+          }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(dynamicPort, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    await expect(api.listLoopbackUpstreamPortsStrict()).rejects.toThrow("uses an nginx variable");
+  });
+
+  it("inventories a concrete loopback upstream when only its request URI uses variables", async () => {
+    const uriVariables = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return `server {
+            listen 80;
+            server_name dashboard.example.com;
+            location ~ ^/terminal/(.*)$ {
+              proxy_pass http://127.0.0.1:4000/$1$is_args$args;
+            }
+          }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(uriVariables, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([4_000]));
+  });
+
+  it("inventories a concrete loopback upstream when a query-only URI uses variables", async () => {
+    const queryVariables = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("openresty -T")) {
+          return `server {
+            listen 80;
+            server_name dashboard.example.com;
+            location /terminal/ {
+              proxy_pass http://127.0.0.1:4100?next=$request_uri;
+            }
+          }`;
+        }
+        if (cmd.includes("docker ps -a")) {
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(queryVariables, "openresty", {
+      ours: true,
+      container: "openship-edge",
+    });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([4_100]));
+  });
+
+  it("strictly scans a bare OpenResty edge when Docker inventory is unavailable", async () => {
+    const bare = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("if [ -e")) return "";
+        if (cmd.includes("docker ps -a")) throw new Error("docker: command not found");
+        if (cmd.includes("openresty -T")) return NGINX_CONF("/c.pem", "/k.pem");
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(bare, "openresty", { ours: true });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([3_000, 4_000]));
+  });
+
+  it("strictly scans bare OpenResty when Docker proves there is no edge container", async () => {
+    const bare = {
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes("if [ -e")) return "";
+        if (cmd.includes("docker ps -a")) return "";
+        if (cmd.includes("openresty -T")) return NGINX_CONF("/c.pem", "/k.pem");
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    const api = edgeProxyFor(bare, "openresty", { ours: true });
+
+    expect(await api.listLoopbackUpstreamPortsStrict()).toEqual(new Set([3_000, 4_000]));
+  });
+
   it("finds the vhost answering for a host, by any of its server_names", async () => {
     const api = edgeProxyFor(exec({ conf: NGINX_CONF("/c.pem", "/k.pem") }), "nginx");
     expect((await api.siteFor("a.com"))?.serverNames).toContain("a.com");
@@ -172,7 +472,8 @@ describe("collectProxyCerts", () => {
     const api = { certCandidateFor: vi.fn() } as never;
     const { certPems } = await collectProxyCerts(api, [site(["a.com"], false)]);
     expect(certPems).toEqual({});
-    expect((api as { certCandidateFor: ReturnType<typeof vi.fn> }).certCandidateFor)
-      .not.toHaveBeenCalled();
+    expect(
+      (api as { certCandidateFor: ReturnType<typeof vi.fn> }).certCandidateFor,
+    ).not.toHaveBeenCalled();
   });
 });

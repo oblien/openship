@@ -1,0 +1,313 @@
+---
+title: service
+description: Commands, arguments, and options for openship service.
+cliGroup: openship service
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship service
+
+Manage the services in a compose stack (a multi-service project)
+
+```text
+openship service|services [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/service#openship-service-list) | List the services in a stack |
+| [`get [options] <service>`](/docs/cli/reference/service#openship-service-get) | Show one service's configuration |
+| [`create [options] <name>`](/docs/cli/reference/service#openship-service-create) | Add a service to a stack |
+| [`delete\|rm [options] <service>`](/docs/cli/reference/service#openship-service-delete) | Remove a service from a stack |
+| [`sync [options] <compose-file>`](/docs/cli/reference/service#openship-service-sync) | Sync a stack's services from a docker-compose file (services not in the file are removed) |
+| [`start [options] <service>`](/docs/cli/reference/service#openship-service-start) | Start a service's container |
+| [`stop [options] <service>`](/docs/cli/reference/service#openship-service-stop) | Stop a service's container |
+| [`restart [options] <service>`](/docs/cli/reference/service#openship-service-restart) | Bounce a service's container (does NOT apply changed env — use `deploy --refresh` for that) |
+| [`containers [options]`](/docs/cli/reference/service#openship-service-containers) | List the stack's active-deployment containers |
+| [`drift`](/docs/cli/reference/service#openship-service-drift) | Resolve compose drift on a service (upstream compose changed a value you edited) |
+| [`env`](/docs/cli/reference/service#openship-service-env) | Read and write a service's environment variables |
+| [`logs [options] <service>`](/docs/cli/reference/service#openship-service-logs) | Show or stream a service's runtime logs |
+| [`exec [options] <service> <command>`](/docs/cli/reference/service#openship-service-exec) | Run a shell command inside a service's isolated container |
+
+## openship service containers
+
+List the stack's active-deployment containers
+
+```text
+openship service containers [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service create
+
+Add a service to a stack
+
+```text
+openship service create [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Service name (unique within the stack) |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `--image <image>` | Container image (e.g. postgres:16) |
+| `--build <context>` | Build context path (relative to repo root) |
+| `--dockerfile <path>` | Dockerfile path (relative to build context) |
+| `--port <mapping>` | Port mapping, e.g. 8080:80 (repeatable) (default: []) |
+| `--depends-on <service>` | Service this depends on (repeatable) (default: []) |
+| `--env <KEY=VALUE>` | Compose environment default (repeatable) (default: []) |
+| `--command <command>` | Override the container command |
+| `--restart <policy>` | Restart policy: no \| always \| on-failure \| unless-stopped |
+| `--expose` | Expose the service publicly through managed routing |
+| `--exposed-port <port>` | Container port to expose publicly |
+| `--domain <label>` | Free subdomain label (with --expose) |
+
+## openship service delete
+
+Remove a service from a stack
+
+```text
+openship service delete|rm [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship service drift
+
+Resolve compose drift on a service (upstream compose changed a value you edited)
+
+```text
+openship service drift [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`accept [options] <service>`](/docs/cli/reference/service#openship-service-drift-accept) | Apply the upstream compose values, discarding your edits |
+| [`keep [options] <service>`](/docs/cli/reference/service#openship-service-drift-keep) | Keep your edits and stop flagging the upstream change |
+
+## openship service drift accept
+
+Apply the upstream compose values, discarding your edits
+
+```text
+openship service drift accept [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service drift keep
+
+Keep your edits and stop flagging the upstream change
+
+```text
+openship service drift keep [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service env
+
+Read and write a service's environment variables
+
+```text
+openship service env [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get [options] <service>`](/docs/cli/reference/service#openship-service-env-get) | List a service's environment variables (secrets masked) |
+| [`set [options] <service> <pairs...>`](/docs/cli/reference/service#openship-service-env-set) | Set a service's environment variables for one environment |
+
+## openship service env get
+
+List a service's environment variables (secrets masked)
+
+```text
+openship service env get [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development |
+
+## openship service env set
+
+Set a service's environment variables for one environment
+
+```text
+openship service env set [options] <service> <pairs...>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+| `pairs` | KEY=VALUE pairs |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development (default: "production") |
+| `--secret` | Mark the provided variables as secret |
+| `--replace` | Replace ALL variables for this environment with only the given pairs |
+
+## openship service exec
+
+Run a shell command inside a service's isolated container
+
+```text
+openship service exec [options] <service> <command>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+| `command` | Shell command (quote it as one argument) |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `--cwd <path>` | Working directory inside the container |
+| `--timeout <ms>` | Command timeout in milliseconds (default: "30000") |
+
+## openship service get
+
+Show one service's configuration
+
+```text
+openship service get [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service list
+
+List the services in a stack
+
+```text
+openship service list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service logs
+
+Show or stream a service's runtime logs
+
+```text
+openship service logs [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-f, --follow` | Stream new log lines as they arrive (SSE) |
+| `--tail <n>` | Number of lines to show from the end (default: "200") |
+
+## openship service restart
+
+Bounce a service's container (does NOT apply changed env — use `deploy --refresh` for that)
+
+```text
+openship service restart [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `--force` | Bounce even with pending env changes (they will NOT be applied) |
+
+## openship service start
+
+Start a service's container
+
+```text
+openship service start [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service stop
+
+Stop a service's container
+
+```text
+openship service stop [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service sync
+
+Sync a stack's services from a docker-compose file (services not in the file are removed)
+
+```text
+openship service sync [options] <compose-file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `compose-file` | Path to docker-compose.yml / compose.yaml |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-y, --yes` | Skip the confirmation prompt |

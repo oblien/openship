@@ -6,34 +6,82 @@
  * (bare pipeline, docker clone-on-server, orchestrator context). It now lives
  * here so the token / relay / ssh / ambient modes can't drift apart.
  *
- * Every mode is emitted in two equivalent shapes so both call styles share this
- * one definition: `gitEnv`/`credFlag` for shell-string invocations (remote
- * `exec`) and `env`/`credArgs` for argv invocations (local `spawn`). File IO for
- * the SSH key + known_hosts lives in `git-ssh-material.ts` (the IO backend
- * differs per site; the layout does not).
+ * Every mode emits both shell (`gitEnv`/`credFlag`) and argv
+ * (`env`/`credArgs`) shapes. Relay mode additionally carries a shell-only
+ * pre-authentication step; relay credentials are only used by remote shell
+ * clones. File IO for the SSH key + known_hosts lives in
+ * `git-ssh-material.ts` (the IO backend differs per site; the layout does not).
  */
 
 import type { AmbientGitVia } from "../types";
+import { shellQuote } from "@repo/core";
 
 export type { AmbientGitVia };
 
-/** POSIX single-quote a value for safe interpolation into a shell command. */
-export function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
+// Initialize only after selecting the parent commit. --checkout honors the
+// recorded gitlink instead of following a submodule branch or merge strategy.
+export const GIT_SUBMODULE_UPDATE_ARGS = [
+  "submodule",
+  "update",
+  "--init",
+  "--recursive",
+  "--checkout",
+  "--depth",
+  "1",
+  "--progress",
+] as const;
+
+/** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
+ *  this package read `sq(...)`; there is one implementation, in core. */
+export const sq = shellQuote;
+
+/**
+ * The Basic-auth pair for a git HTTPS credential.
+ *
+ * Both slots are ALWAYS filled. `https://<token>@host` is not a complete
+ * credential to git: it sends an empty password, and on the 401 goes looking for
+ * the real one — GIT_ASKPASS, then the credential helper, then the tty. Every
+ * clone path here sets `GIT_ASKPASS=/bin/echo`, so today that detour ends in a
+ * retry with garbage; a path that forgets to set it fails with git's "unable to
+ * get password from user" before it ever authenticates, hiding GitHub's actual
+ * reason. Filling both slots keeps the URL self-contained on success AND failure.
+ *
+ * Which slot holds the token does not matter to GitHub — it reads the token from
+ * either and ignores the other value. So each token type gets the pair GitHub
+ * itself documents: `x-access-token:<token>` for App installation tokens,
+ * `<token>:x-oauth-basic` for user tokens (PAT classic, fine-grained, OAuth).
+ */
+export function gitCredentialPair(
+  hostname: string,
+  token: string,
+): { username: string; password: string } {
+  // Exact host, not a suffix match. Every other host — GitHub Enterprise on its
+  // own domain, GitLab, Gitea — takes the x-access-token form, which works
+  // wherever an arbitrary username is accepted. Narrowing this test can only
+  // route a host to the general form, never strand one without a credential.
+  if (hostname === "github.com" && !token.startsWith("ghs_")) {
+    return { username: token, password: "x-oauth-basic" };
+  }
+  return { username: "x-access-token", password: token };
 }
 
 /**
  * Inject a token into an HTTPS git URL for private repo access:
- *   https://github.com/owner/repo.git → https://x-access-token:<token>@github.com/owner/repo.git
- * Unchanged when no token or the URL isn't HTTPS.
+ *   https://github.com/owner/repo.git
+ *     → https://<token>:x-oauth-basic@github.com/owner/repo.git
+ * Unchanged when there is no token or the URL isn't HTTPS.
  */
 export function injectGitToken(repoUrl: string, token?: string): string {
-  if (!token) return repoUrl;
+  // Trim first: a token pasted with surrounding whitespace percent-encodes into
+  // the URL (%20…%20) and fails auth for a reason no log makes visible.
+  const secret = token?.trim();
+  if (!secret) return repoUrl;
   try {
     const url = new URL(repoUrl);
     if (url.protocol !== "https:") return repoUrl;
-    url.username = "x-access-token";
-    url.password = token;
+    const { username, password } = gitCredentialPair(url.hostname, secret);
+    url.username = username;
+    url.password = password;
     return url.toString();
   } catch {
     return repoUrl;
@@ -77,10 +125,20 @@ export interface GitCloneInvocation {
   gitEnv: string;
   /** `-c` flag string placed right after `git` (empty in relay/ssh/ambient modes). */
   credFlag: string;
-  /** Same env as `gitEnv`, for callers that pass an env map to spawn(). */
+  /** Static counterpart of `gitEnv` for callers that pass an env map to spawn(). */
   env: Record<string, string>;
   /** Same flag as `credFlag`, pre-split for argv callers (empty array when none). */
   credArgs: string[];
+  /**
+   * Shell-only setup which must run immediately before a networked git command.
+   *
+   * The desktop relay uses this to fetch a short-lived Authorization header
+   * through its tunnel before Git's first HTTP request. Git otherwise starts a
+   * public-repository clone anonymously and only consults credential helpers
+   * after a 401 challenge; GitHub's anonymous-download throttle is a terminal
+   * response, not a challenge, so the helper would never be called.
+   */
+  shellPrelude?: string;
 }
 
 /** One env entry: name, value, and whether the shell form needs quoting. */
@@ -144,18 +202,61 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
   // >=2.31, no ~/.gitconfig write). Do NOT disable credential.helper — it IS
   // the auth.
   if (auth.gitCredentialHelperPath) {
-    return invocation(
+    const base = invocation(
       auth.repoUrl,
       [
         TERMINAL_PROMPT,
-        ["GIT_CONFIG_COUNT", "2", false],
+        // An empty helper value resets helpers inherited from the host before
+        // adding the deployment-scoped relay. Without the reset, a server's
+        // stale/global helper can answer first and silently override the
+        // forwarded identity named in the deployment log.
+        ["GIT_CONFIG_COUNT", "3", false],
         ["GIT_CONFIG_KEY_0", "credential.helper", false],
-        ["GIT_CONFIG_VALUE_0", auth.gitCredentialHelperPath, true],
-        ["GIT_CONFIG_KEY_1", "credential.useHttpPath", false],
-        ["GIT_CONFIG_VALUE_1", "true", false],
+        ["GIT_CONFIG_VALUE_0", "", true],
+        ["GIT_CONFIG_KEY_1", "credential.helper", false],
+        ["GIT_CONFIG_VALUE_1", auth.gitCredentialHelperPath, true],
+        ["GIT_CONFIG_KEY_2", "credential.useHttpPath", false],
+        ["GIT_CONFIG_VALUE_2", "true", false],
       ],
       false,
     );
+
+    let url: URL;
+    try {
+      url = new URL(auth.repoUrl);
+    } catch {
+      throw new Error("Git credential forwarding requires an absolute HTTPS repository URL");
+    }
+    if (url.protocol !== "https:") {
+      throw new Error("Git credential forwarding requires an HTTPS repository URL");
+    }
+    const protocol = url.protocol.slice(0, -1);
+    const path = url.pathname.replace(/^\/+/, "");
+    const headerUrl = new URL(url);
+    headerUrl.username = "";
+    headerUrl.password = "";
+    headerUrl.search = "";
+    headerUrl.hash = "";
+    const headerVar = "OPENSHIP_GIT_AUTH_HEADER";
+    const headerCommand =
+      `${sq(auth.gitCredentialHelperPath)} auth-header ` +
+      `${sq(protocol)} ${sq(url.hostname)} ${sq(path)}`;
+
+    return {
+      ...base,
+      // `auth-header` returns only the Basic header, never prints it to the
+      // build log, and keeps the token out of the command text and filesystem.
+      // The value exists only in the remote shell/git process for this command.
+      shellPrelude: `${headerVar}="$(${headerCommand})" && ` + `test -n "$${headerVar}"`,
+      // The argv representation above remains a valid challenge-based helper
+      // invocation for local spawn users. Remote shell users call
+      // gitShellCommand(), which adds the preemptive header as config slot 3.
+      gitEnv:
+        `${base.gitEnv.replace("GIT_CONFIG_COUNT=3", "GIT_CONFIG_COUNT=4")} ` +
+        // A submodule may name another host/repository. Its authentication must
+        // go through the scoped relay helper, never inherit the parent's header.
+        `GIT_CONFIG_KEY_3=${sq(`http.${headerUrl.href}.extraHeader`)} GIT_CONFIG_VALUE_3="$${headerVar}"`,
+    };
   }
 
   // Ambient: the host's own credentials are the auth, so we must NOT disable its
@@ -187,4 +288,18 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]],
     true,
   );
+}
+
+/**
+ * Render one networked git command for a shell executor.
+ *
+ * Keep this centralized: relay mode has a security-sensitive prelude which
+ * obtains an in-memory Authorization header. Hand-assembling `gitEnv + git` at
+ * a call site would silently fall back to an anonymous first request.
+ */
+export function gitShellCommand(invocation: GitCloneInvocation, args: string): string {
+  const env = invocation.gitEnv ? `${invocation.gitEnv} ` : "";
+  const flags = invocation.credFlag ? `${invocation.credFlag} ` : "";
+  const command = `${env}git ${flags}${args}`;
+  return invocation.shellPrelude ? `${invocation.shellPrelude} && ${command}` : command;
 }

@@ -1,5 +1,8 @@
-import { Command } from "commander";
-import { setJsonMode } from "./lib/output";
+import { Command, CommanderError } from "commander";
+import { err, setJsonMode } from "./lib/output";
+import { initializeNativeClient } from "./lib/native-client";
+import { closeNativeClient, cliUserAgent } from "./lib/ship-client";
+import { CommandExit } from "./lib/command-exit";
 
 // Auth & session
 import { loginCommand } from "./commands/login";
@@ -23,8 +26,10 @@ import { logsCommand } from "./commands/logs";
 
 // Resources
 import { projectCommand } from "./commands/project";
+import { appCommand } from "./commands/app";
 import { serviceCommand } from "./commands/service";
 import { domainCommand } from "./commands/domain";
+import { edgeCommand } from "./commands/edge";
 
 // Self-host infrastructure
 import { serverCommand } from "./commands/server";
@@ -59,9 +64,19 @@ program
   .name("openship")
   .description("Openship CLI — install, run, and manage Openship from your terminal")
   .version(__CLI_VERSION__)
+  .exitOverride()
   .option("--json", "Machine-readable JSON output (stdout data only)")
-  .hook("preAction", (thisCommand) => {
+  .option("--native-config <file>", "Run SDK commands using an explicitly trusted JavaScript configuration")
+  .hook("preAction", async (thisCommand, actionCommand) => {
     if (thisCommand.opts().json) setJsonMode(true);
+    const file = thisCommand.opts().nativeConfig as string | undefined;
+    if (file) {
+      let top = actionCommand;
+      while (top.parent && top.parent !== thisCommand) top = top.parent;
+      if (!["project", "app", "service", "domain", "deploy", "deployment", "logs", "init", "server", "system", "backup", "status", "doctor"].includes(top.name()))
+        throw new Error("Choose an SDK resource command with --native-config; installation and remote-login commands use a remote context.");
+      await initializeNativeClient(file, cliUserAgent);
+    }
   })
   // Bare `openship` (no subcommand): setup wizard on a fresh box, or the control
   // panel once a service is already installed (manage instead of starting over).
@@ -102,8 +117,10 @@ program.addCommand(logsCommand);
 
 // Resources
 program.addCommand(projectCommand);
+program.addCommand(appCommand);
 program.addCommand(serviceCommand);
 program.addCommand(domainCommand);
+program.addCommand(edgeCommand);
 
 // Self-host infrastructure (secondary)
 program.addCommand(serverCommand);
@@ -122,4 +139,31 @@ installCommand.addCommand(cacheCommand);
 // for autocomplete
 attachCompletion(program);
 
-program.parse();
+async function main() {
+  let interrupted = false;
+  const onSignal = (signal: "SIGINT" | "SIGTERM") => {
+    interrupted = true;
+    process.exitCode = signal === "SIGINT" ? 130 : 143;
+    void closeNativeClient().catch(error => err(error instanceof Error ? error.message : String(error)));
+  };
+  const interrupt = () => onSignal("SIGINT");
+  const terminate = () => onSignal("SIGTERM");
+  // Only an explicit native invocation owns a worker to drain. Other commands
+  // keep their existing OS/service signal behavior.
+  const native = process.argv.some(arg => arg === "--native-config" || arg.startsWith("--native-config="));
+  if (native) { process.on("SIGINT", interrupt); process.on("SIGTERM", terminate); }
+  try {
+    await program.parseAsync();
+  } catch (error) {
+    if (interrupted) return;
+    if (error instanceof CommandExit) process.exitCode = error.code;
+    else if (error instanceof CommanderError) process.exitCode = error.exitCode;
+    else { err(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+  } finally {
+    try { await closeNativeClient(); }
+    catch (error) { err(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+    if (native) { process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", terminate); }
+  }
+}
+
+void main();

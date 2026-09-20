@@ -38,8 +38,6 @@ Server** button and four cards under "What gets configured":
 | **Monitoring** | Health checks |
 | **Git** | Source deployments |
 
-<Callout title="Screenshot">Servers list with one or more server cards and the **Quick Info** panel; plus the empty state with the four "What gets configured" cards. *(screenshot pending)*</Callout>
-
 ## Adding a server
 
 Press **Add Server** to reach **`/servers/new`**. The page title is **Add Server** with the subtitle "Enter
@@ -73,8 +71,6 @@ Two buttons finish the form:
 - **Save & Continue to Setup** — saves the server and moves straight into the component setup flow. (When
   you're editing an existing server, this button reads **Save Changes** instead.)
 
-<Callout title="Screenshot">The **SSH Connection** card with the Password / SSH Key / Agent toggle, the **Advanced** section expanded, and the **Test Connection** / **Save & Continue to Setup** buttons. *(screenshot pending)*</Callout>
-
 ### The setup flow
 
 After you save a new server, Openship walks you through installing its prerequisites. You first choose how to
@@ -94,8 +90,6 @@ You don't have to get setup perfect here. Every check, install, reinstall, and r
 from the server's **Components** tab.
 </Callout>
 
-<Callout title="Screenshot">The setup mode picker (**Automatic** vs **Step-by-Step**) and the install progress view with the Connect / Check / Install steps and streaming logs. *(screenshot pending)*</Callout>
-
 ## The server detail screen
 
 Opening a server (**`/servers/<serverId>`**) shows its name with a **Healthy** or **Issues** badge and the
@@ -110,8 +104,6 @@ If Openship can't reach the server, a banner appears above the tabs explaining w
 the credentials were rejected, or the config is incomplete — with a **Retry** and an **Edit** shortcut. A
 **Connection** panel on the right always shows the current **Host**, **User**, and **Auth** method.
 
-<Callout title="Screenshot">The server detail header with the **Healthy** badge, the **Migrate Docker** / **Edit** / **⋯** buttons, and the tab bar. *(screenshot pending)*</Callout>
-
 The screen is organized into tabs. **Overview**, **Components**, **Security**, and **Terminal** always show;
 **Ports** appears only in the desktop app.
 
@@ -122,8 +114,6 @@ A live dashboard for the server. Four stat cards show **CPU** (with load average
 **Components** card lists each installed component with a **Healthy** / **Unhealthy** marker and version. The
 header summary reads "All systems operational" or "\{n} of \{m} unhealthy". See
 [Logs & monitoring](/docs/guides/logs-monitoring) for more on reading these signals.
-
-<Callout title="Screenshot">Overview tab with the CPU / Memory / Disk / Uptime stat cards and the Components health list. *(screenshot pending)*</Callout>
 
 ### Components tab
 
@@ -146,8 +136,6 @@ Removing a component is destructive and can disable related deployment features 
 Removing **OpenResty** takes down the reverse proxy and its managed config; use **Reinstall** if you only need
 to refresh its scripts or settings.
 </Callout>
-
-<Callout title="Screenshot">Components tab showing the System Health list with per-row Install / Reinstall / Remove actions and the Detected Infrastructure divider. *(screenshot pending)*</Callout>
 
 ### Security tab (rate limiting)
 
@@ -176,8 +164,6 @@ and classifies each as **exposed** (bound to a public/all-interfaces address) or
 internet — a database that should be loopback-only, a debug port left open — so you can lock it down. It's a
 read-only probe (it changes nothing); re-run it after a deploy to confirm only what you expect is exposed.
 
-<Callout title="Screenshot">Security tab with the Requests / second field, the automatic-burst hint, the Advanced burst controls, the Whitelisted IPs input, and the Scan ports card. *(screenshot pending)*</Callout>
-
 ### Ports tab (port forwarding)
 
 Desktop-only. Port forwarding exposes a remote server port as `localhost:<port>` on your own machine — like VS
@@ -192,14 +178,10 @@ This tab is hidden on hosted instances — port forwarding only makes sense when
 your own machine.
 </Callout>
 
-<Callout title="Screenshot">Ports tab listing active forwards with Start / Stop / Remove controls and the add-forward row. *(screenshot pending)*</Callout>
-
 ### Terminal tab
 
 A live SSH shell to the server, right in the browser, running over WebSocket. You can open **up to 3
 concurrent** shells in tabs, and text is copied on select. The shell only stays open while this tab is active.
-
-<Callout title="Screenshot">Terminal tab with a live shell session and the multi-shell tab strip. *(screenshot pending)*</Callout>
 
 ## Editing and removing a server
 
@@ -210,7 +192,7 @@ or key blank keeps the stored secret; you only re-enter it when switching auth m
 To disconnect a server, use **Remove Server** from the **⋯** menu. This clears the SSH credentials and
 connection settings for that entry.
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy to your own server" href="/docs/guides/custom-servers" description="The full walkthrough for connecting a server and deploying to it." />

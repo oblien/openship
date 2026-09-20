@@ -58,11 +58,8 @@ import {
   type ScopeAction,
   type TemplateContext,
 } from "@/components/permissions/mcp-access-templates";
-import { TemplatePicker } from "./_components/TemplatePicker";
-import { ScopeEditor } from "./_components/ScopeEditor";
-import { ScopeSummary } from "./_components/ScopeSummary";
+import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
 import { ActionBar } from "./_components/ActionBar";
-import { RailScroll } from "./_components/RailScroll";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 
 interface Org {
@@ -448,18 +445,6 @@ function McpAuthorizeInner() {
       </span>
     );
 
-  const summary = (
-    <ScopeSummary
-      selection={selection}
-      orgName={orgName}
-      labels={labels}
-      disabled={busy}
-      onRemove={onRemove}
-      onRemoveType={onRemoveType}
-      onReadOnly={onReadOnly}
-    />
-  );
-
   return (
     <>
       {/* Header spans both columns — it's the question being asked. The identity
@@ -496,38 +481,22 @@ function McpAuthorizeInner() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_380px]">
-        {/* ── Left: what the client gets to do ── */}
-        <div className="min-w-0 space-y-5">
-          <TemplatePicker
-            active={selection.template}
-            orgName={orgName}
-            disabled={busy}
-            onPick={onPickTemplate}
-            onReset={onReset}
-          />
-
-          {/* The editor only exists for a scoped template — the unscoped ones
-              have nothing to list, so rendering it would be a dead panel. */}
-          {scoped && (
-            <ScopeEditor
-              selection={selection}
-              availableTypes={availableTypes}
-              orgKey={orgId ?? "none"}
-              disabled={busy}
-              onPickerChange={onPickerChange}
-              onCreateChange={onCreateChange}
-            />
-          )}
-        </div>
-
-        {/* ── Right: the summary + the decision ──
-            Capped to the viewport on lg so the buttons below RailScroll are always
-            on screen; plain stacked flow below lg, where the fixed bar takes over. */}
-        <div className="space-y-4 lg:sticky lg:top-6 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:flex-col lg:gap-4 lg:space-y-0 lg:self-start">
-          <RailScroll>
-            {summary}
-
+      {/* One editor, shared with the settings MCP tab, token creation and member
+          grants. The reducer stays HERE on purpose: the component must not be able
+          to default a selection, because the edit surface prefills from the server
+          and a component-owned default would silently replace a live scope. */}
+      <AccessControlEditor
+        selection={selection}
+        dispatch={dispatch}
+        availableTypes={availableTypes}
+        ctx={ctx}
+        orgKey={orgId ?? "none"}
+        orgName={orgName}
+        labels={labels}
+        onCatalogLoaded={onCatalogLoaded}
+        disabled={busy}
+        notice={
+          <>
             {rejected && (
               <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
                 <p className="flex items-start gap-2 font-medium">
@@ -546,8 +515,9 @@ function McpAuthorizeInner() {
                 {error}
               </div>
             )}
-          </RailScroll>
-
+          </>
+        }
+        footer={
           <ActionBar
             variant="rail"
             busy={busy}
@@ -556,8 +526,8 @@ function McpAuthorizeInner() {
             onDeny={() => act(false)}
             onAuthorize={() => act(true)}
           />
-        </div>
-      </div>
+        }
+      />
 
       {/* Below lg the decision lives in a fixed bar; this keeps the last card
           clear of it. */}

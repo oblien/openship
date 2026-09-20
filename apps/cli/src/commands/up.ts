@@ -15,8 +15,13 @@ import {
   composePrefetch,
   ensureDocker,
   composeInternalToken,
+  composePgDataRisk,
+  composeSecretRotationRisk,
   composeTrustedOriginUrls,
   hasDockerCompose,
+  pinnedImagesReady,
+  renderPgDataRefusal,
+  renderSecretRotationRefusal,
   resolveComposePorts,
   sourceBuildDir,
 } from "../lib/compose";
@@ -31,15 +36,17 @@ import {
   type EdgeAction,
 } from "../lib/edge-preflight";
 import { importMigratedSites } from "../lib/edge-import";
-import { edgeIsBroken, edgeCrashReason } from "@repo/adapters/proxy";
+import { verifyHostChannel } from "../lib/host-channel-preflight";
+import { edgeIsBroken, edgeCrashReason, EDGE_CONTAINER_NAME } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
 import {
   resolveInstallInputs,
   headlessProvision,
   HeadlessInputError,
 } from "../lib/instance-provision";
-import { ensureInternalToken } from "../lib/loopback-api";
+import { mintBareInternalToken } from "../lib/internal-token";
 import { AUTH_SECRET_FILE, DATA_DIR, LOG_DIR, OS_DIR } from "../lib/paths";
+import { startUnitHint } from "../lib/this-host";
 import type { ImportedSite } from "@repo/adapters/proxy";
 
 const EDGE_ACTIONS: EdgeAction[] = ["migrate", "takeover", "cancel"];
@@ -50,6 +57,9 @@ interface UpOpts {
   dashboardPort?: string;
   ui?: boolean;
   uiVersion?: string;
+  /** Compose image tag to pull, overriding this CLI's version — the way out of the
+   *  #486 release-ordering race (also honoured via the OPENSHIP_VERSION env var). */
+  imageVersion?: string;
   foreground?: boolean;
   dryRun?: boolean;
   publicUrl?: string;
@@ -73,10 +83,26 @@ interface UpOpts {
   compose?: boolean;
   /** Force the bare process service (the pre-compose install). */
   bare?: boolean;
+  /** Install as Openship Mail: the dashboard's default shell is the mail control
+   *  plane instead of the full platform (OPENSHIP_PRODUCT=mail). */
+  mail?: boolean;
   /** Non-interactive answer for the compose edge preflight when a foreign proxy holds :80/:443. */
   edge?: string;
   /** Withhold the api's channel to the HOST OS (hardening; see --no-host-control). */
   hostControl?: boolean;
+  /** Non-interactive consent to add the host firewall rule the container→host SSH
+   *  channel needs. Never implied by --yes: it mutates the host's firewall. */
+  openHostFirewall?: boolean;
+  /** Waive the #488 refusal and mint new secrets over a surviving data volume. Never
+   *  implied by --yes: it makes stored environment variables unreadable. */
+  resetSecrets?: boolean;
+  /** Override the address/port the api container dials for host ops (default
+   *  host.docker.internal:22) — rootless Docker, or a non-standard sshd. */
+  hostSshHost?: string;
+  hostSshPort?: string;
+  /** Pin the host account the channel logs in as, instead of letting provisioning settle
+   *  on one by dialing (#527: a box with `PermitRootLogin no` had no way to say so). */
+  hostSshUser?: string;
   /** Headless install: after the service is up, create the admin + register the
    *  domain from flags instead of prompting. Requires --admin-email + password. */
   nonInteractive?: boolean;
@@ -145,10 +171,10 @@ declare const __CLI_VERSION__: string;
 const DIST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = join(DIST_DIR, "server");
 
-// ensureInternalToken lives in lib/loopback-api (shared with the wizard + headless
-// installer — single copy, imported above). Re-exported so existing importers of
-// `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
-export { ensureInternalToken };
+// NOTE: startService below is the ONLY caller of mintBareInternalToken, and that is
+// deliberate — booting the service with the token is what makes the file authoritative.
+// Commands that TALK to a running API resolve the token instead (lib/internal-token);
+// minting one to authenticate is a guaranteed 401 (see that module's header).
 
 /** Persist a stable auth secret so sessions survive restarts. */
 function ensureAuthSecret(): string {
@@ -173,6 +199,10 @@ export const upCommand = new Command("up")
   .option("--dashboard-port <port>", "Dashboard port (default: 3001, or the next free port if it's taken)")
   .option("--no-ui", "Run the API only — don't download/serve the dashboard")
   .option("--ui-version <tag>", "Dashboard release tag to run (default: this CLI's version)")
+  .option(
+    "--image-version <tag>",
+    "Compose mode: image tag to pull for api/dashboard/edge (default: this CLI's version, or the OPENSHIP_VERSION env var). Use a known-good tag if a release's images aren't in the registry yet.",
+  )
   .option("-f, --foreground", "Run attached in this terminal instead of as a background service")
   .option(
     "--dry-run",
@@ -202,10 +232,34 @@ export const upCommand = new Command("up")
   .option("--compose", "Install via Docker Compose using the published images (postgres + redis + api + dashboard + edge on :80/:443). Default when Docker is available on Linux.")
   .option("--bare", "Install as the bare process service (embedded DB, no Docker) instead of Compose")
   .option(
+    "--mail",
+    "Install as Openship Mail: the dashboard opens on the mail control plane (mail servers, domains, mailboxes) instead of the full platform. Same install, same binary — a default shell, not a restriction. Anyone can switch back under Settings → General, and an admin can change the box-wide default under Settings → Instance.",
+  )
+  .option(
     "--no-host-control",
     "Harden: don't give the control plane a channel to this machine's OS. No host SSH key is generated or mounted, host operations refuse, and this box stops being offered as a deploy target. Recommended when this box only manages REMOTE servers — it loses :80/:443 takeover, the host terminal and host port scans. The Docker socket is still mounted (deployments need it), so this is defense in depth, not isolation.",
   )
+  .option(
+    "--host-ssh-host <addr>",
+    "Compose mode: address the api container dials for host operations (default host.docker.internal, mapped to the docker host-gateway). Set this to the box's own LAN/bridge address when host-gateway doesn't reach the host — notably under rootless Docker. Preserved across re-runs.",
+  )
+  .option(
+    "--host-ssh-port <port>",
+    "Compose mode: port the host's sshd listens on for host operations (default 22). Preserved across re-runs.",
+  )
+  .option(
+    "--host-ssh-user <name>",
+    "Compose mode: the host account the api container logs in as for host operations. Normally left unset — provisioning authorizes a key and DIALS to find an account this host's sshd actually accepts (root when invoked as root, otherwise the invoking user, falling back to $SUDO_USER when a root login is refused). Set this when neither is the account you want, or when sshd's rules mean neither works: the named account is used as-is and never falls back, so it must be able to log in over SSH and should have passwordless sudo (host operations elevate per command). Preserved across re-runs.",
+  )
+  .option(
+    "--open-host-firewall",
+    "Compose mode: if the api container can't reach this machine's SSH port, add the host firewall rule that allows it (scoped to the container subnet, ufw/firewalld only). Without this the blocked channel is reported and left alone. Not implied by --yes.",
+  )
   .option("--edge <action>", "Compose mode: how to handle an existing proxy on :80/:443 — 'migrate' (import its sites into Openship's edge), 'takeover' (stop it; its sites stop serving), or 'cancel'. Default: prompt when interactive, else cancel.")
+  .option(
+    "--reset-secrets",
+    "Compose mode: generate new secrets even though this install's data volume still exists. `up` normally refuses, because the database keeps the password it was created with and every stored environment variable was encrypted with the old BETTER_AUTH_SECRET — the password gets realigned, those variables do not. Use only when the original .env is genuinely gone.",
+  )
   .option("--non-interactive", "Headless install: after the service starts, create the admin + register the domain from the flags below (no prompts). Alias: --yes.")
   .option("--yes", "Alias for --non-interactive.")
   .option("--admin-name <name>", "Admin display name (headless install)")
@@ -233,7 +287,7 @@ export const upCommand = new Command("up")
     // owns the decision so `--dry-run` predicts the same one.
     //
     // Docker is INSTALLED if missing, the same way the interactive wizard does it
-    // (ensureDocker → systemCatalog.installs.docker → get.docker.com). Without
+    // (ensureDocker → systemCatalog.installs.docker, per package manager). Without
     // this, `openship up` on a fresh Linux box silently degraded to the bare
     // install — a different topology than the docs promise — and `--compose` died
     // on a raw "docker: not found" instead of just installing it.
@@ -286,7 +340,7 @@ export const upCommand = new Command("up")
  * can be provisioned end-to-end without a TTY (the args-driven counterpart to the
  * interactive wizard). Secrets come from flags/env and are never logged.
  */
-async function runHeadlessProvision(
+export async function runHeadlessProvision(
   opts: UpOpts,
   started: { port: string; dashPort: string },
   extra?: { token?: string; method?: "bare" | "compose" },
@@ -377,6 +431,29 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     console.log("\n" + portNotice.map((l) => chalk.yellow(`  ${l}`)).join("\n"));
   }
 
+  // #486: refuse a pinned image tag the registry doesn't have yet — here, before the
+  // spinner and before a single file is written, with the missing images named and a
+  // way forward, not docker's opaque `manifest unknown` mid-pull.
+  if (!pinnedImagesReady({ version: opts.imageVersion })) process.exit(1);
+
+  // #488: same idea for an install whose `.env` no longer yields the secrets its data
+  // volume was created with. The prefetch below already replaces `.env`, so this has to
+  // come first — once it's replaced, the real values are gone and the failure that follows
+  // (an api that can't authenticate to its own database) names nothing useful.
+  const rotation = composeSecretRotationRisk({ resetSecrets: opts.resetSecrets });
+  if (rotation) {
+    console.error(chalk.yellow(renderSecretRotationRefusal(rotation)));
+    process.exit(1);
+  }
+
+  // #487: same idea for a data volume whose cluster we can't locate — the prefetch below
+  // writes `.env`, so a guessed OPENSHIP_PGDATA has to be refused before that, not after.
+  const pgData = composePgDataRisk({ resetSecrets: opts.resetSecrets });
+  if (pgData) {
+    console.error(chalk.yellow(renderPgDataRefusal(pgData)));
+    process.exit(1);
+  }
+
   // Fetch the images BEFORE the preflight can stop anyone's proxy. A takeover that
   // pulls afterwards keeps the box dark for the whole download, and a pull that
   // fails takes their sites down for a problem we could have hit while they were
@@ -388,10 +465,20 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     apiPort,
     dashboardPort,
     publicUrl,
+    version: opts.imageVersion,
     trustProxy: opts.trustProxy,
     noHostControl: opts.hostControl === false ? true : undefined,
+    // The prefetch writes the same `.env` `composeUp` will, so every knob has to be
+    // given to BOTH. A knob passed only to `composeUp` would change `.env` after the
+    // recreate decision was already taken here (see ComposePrefetchResult.envChanged),
+    // so the containers would keep an environment the file no longer shows.
+    hostSshHost: opts.hostSshHost,
+    hostSshPort: opts.hostSshPort,
+    hostSshUser: opts.hostSshUser,
+    resetSecrets: opts.resetSecrets,
+    mail: opts.mail,
   });
-  if (!fetched) {
+  if (!fetched.ok) {
     prefetch.fail("Couldn't fetch the stack's images — nothing was changed on this box.");
     console.error(
       chalk.dim("\n  Your current proxy is untouched and still serving. Fix the pull/build error above and re-run.\n"),
@@ -433,14 +520,28 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   const res = await composeUp({
     // Prefetched above, before the preflight stopped anything.
     alreadyFetched: true,
+    // ...which also means the prefetch's materialize is the only one that could still
+    // see what the running containers were created with. Passing its verdict is what
+    // makes a changed `.env` reach them (see ComposePrefetchResult.envChanged).
+    envChanged: fetched.envChanged,
     apiPort,
     dashboardPort,
     publicUrl,
+    version: opts.imageVersion,
     trustProxy: opts.trustProxy,
     // commander maps `--no-host-control` to hostControl === false. `undefined` when
     // the flag is absent, so a plain re-run keeps the install's original choice
     // instead of silently re-granting host control (see resolveEnvConfig).
     noHostControl: opts.hostControl === false ? true : undefined,
+    // Absent on a plain re-run, so `keepConfig` carries whatever the install was
+    // configured with rather than resetting it to host.docker.internal:22.
+    hostSshHost: opts.hostSshHost,
+    hostSshPort: opts.hostSshPort,
+    hostSshUser: opts.hostSshUser,
+    resetSecrets: opts.resetSecrets,
+    // Absent on a re-run keeps the install's mode (resolveEnvConfig), so this
+    // never flips a mail box back to the platform shell.
+    mail: opts.mail,
   });
   if (!res.ok) {
     spinner.fail("docker compose failed to start the stack");
@@ -475,6 +576,9 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
       chalk.red(`\n  Openship's edge container is not running${reason ? ` — ${reason}` : "."}`),
     );
     const restored = await rollbackHostEdge();
+    // The same "put your proxy back" hint `edge-import` and `uninstall` print, from the
+    // same place: an Alpine or OpenRC box was being handed a systemctl command here.
+    const back = startUnitHint("nginx");
     console.error(
       restored
         ? chalk.yellow(
@@ -484,7 +588,9 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
         : chalk.red(
             `  AND your previous proxy could NOT be restarted automatically — the box is\n` +
               `  serving nothing right now. Start it by hand:\n` +
-              `    docker stop openship-edge && sudo systemctl enable --now nginx\n`,
+              (back
+                ? `    docker stop ${EDGE_CONTAINER_NAME} && ${back}\n`
+                : `    stop ${EDGE_CONTAINER_NAME} and start your proxy the way this host starts services\n`),
           ),
     );
     process.exit(1);
@@ -514,6 +620,14 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // Edge is serving — close the takeover journal so the next run's recovery
   // doesn't mistake it for an interrupted one and restart the old proxy.
   if (edgePlan.action && importedOk) await completeHostEdge();
+
+  // The container→host SSH channel was provisioned without ever being dialed, so
+  // this is the first and only moment anything checks that it works. On a
+  // default-deny host it doesn't, and every host operation then fails identically
+  // to a bad key (#490). Diagnose it here, where the operator is still watching,
+  // and offer the rule. Deliberately after the edge work: the takeover uses the
+  // HOST executor, not this channel, so a blocked channel must not gate it.
+  await verifyHostChannel({ openFirewall: opts.openHostFirewall }).catch(() => {});
 
   const dashboardUrl = publicUrl ?? `http://localhost:${res.dashPort}`;
   console.log(
@@ -585,6 +699,7 @@ export async function startService(
     host: opts.host,
     managedEdge: opts.managedEdge,
     acmeEmail: opts.acmeEmail,
+    mail: opts.mail,
   };
   try {
     const res = installAndStart(flags);
@@ -708,7 +823,11 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     // The admin is created by `openship` setup via the internal-token-gated
     // bootstrap endpoint; both processes share this token file.
     env.OPENSHIP_REQUIRE_AUTH = "true";
-    env.INTERNAL_TOKEN = ensureInternalToken();
+    env.INTERNAL_TOKEN = mintBareInternalToken();
+    // Openship Mail. Only the DEFAULT shell: the instance setting (Settings →
+    // Instance) is stored in the database and wins over this, so an operator who
+    // has switched the box back isn't overridden on the next boot.
+    if (opts.mail) env.OPENSHIP_PRODUCT = "mail";
     // DEPLOY_MODE is "desktop" here (in-process job runner), and the server no
     // longer INFERS the auth mode from it — it exits at boot unless the launcher
     // DECLARES OPENSHIP_AUTH_MODE (see apps/api/src/config/env.ts). Declare

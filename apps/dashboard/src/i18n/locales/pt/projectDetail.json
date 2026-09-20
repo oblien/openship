@@ -167,6 +167,15 @@
 			"dependsOn": "Depende de",
 			"startShellHint": "Inicie o serviço para abrir um shell.",
 			"saveEnvironment": "Salvar ambiente",
+			"environmentApply": {
+				"title": "Aplicar alterações de ambiente",
+        "applying": "Aplicando alterações…",
+        "applied": "Alterações de ambiente aplicadas",
+				"hint": "Aplique as variáveis salvas a este serviço sem recompilar. O serviço será reiniciado.",
+				"saveFirst": "Salve as alterações antes de aplicá-las a este serviço.",
+				"restartBlocked": "{name} tem alterações de ambiente salvas que uma reinicialização normal não pode aplicar. Revise e aplique as alterações na aba Ambiente.",
+				"failed": "Não foi possível aplicar as alterações de ambiente"
+			},
 			"stop": "Parar",
 			"restart": "Reiniciar",
 			"start": "Iniciar",
@@ -192,7 +201,7 @@
 			"deleteCancel": "Cancelar",
 			"deleteConfirm": "Excluir serviço",
 			"toast": {
-				"envUpdated": "Ambiente atualizado",
+				"envUpdated": "Ambiente salvo",
 				"envSaveFailed": "Falha ao salvar o ambiente",
 				"deployFirstStart": "Implante o projeto primeiro, então este serviço será iniciado",
 				"deployFailed": "Falha no deploy",

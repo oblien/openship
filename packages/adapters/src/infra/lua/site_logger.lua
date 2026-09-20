@@ -127,6 +127,23 @@ local function normalize_path(u)
     return path
 end
 
+-- Raw request telemetry must never retain credentials from a URL. Query
+-- strings routinely carry OAuth codes, signed URLs and tokens, so exclude them
+-- completely. Invitation claim ids are bearer credentials in the path itself;
+-- collapse those two known routes before either top-path aggregation or the
+-- one-hour request ring can observe them.
+local function telemetry_uri(u)
+    local path = u:match("^([^?#]*)") or "/"
+    if path == "" then return "/" end
+    if path:match("^/accept%-invite/[^/]+") then
+        return "/accept-invite/:token"
+    end
+    if path:match("^/api/auth/invitation%-preview/[^/]+") then
+        return "/api/auth/invitation-preview/:token"
+    end
+    return path
+end
+
 -- ── Enumerable sets, without a zone scan ─────────────────────────────────────
 --
 -- Reading these counters back used to need key DISCOVERY, and a shared dict offers exactly
@@ -183,7 +200,7 @@ if not host then return end
 local ip      = ngx.var.remote_addr    or "0.0.0.0"
 local ts      = ngx.now()
 local ua      = ngx.var.http_user_agent or ""
-local uri     = ngx.var.request_uri    or "/"
+local uri     = telemetry_uri(ngx.var.request_uri or "/")
 local req_len = tonumber(ngx.var.request_length) or 0
 local bytes   = tonumber(ngx.var.bytes_sent)     or 0
 local rt      = tonumber(ngx.var.request_time)   or 0  -- seconds (float)

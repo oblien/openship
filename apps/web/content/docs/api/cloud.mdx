@@ -1,25 +1,18 @@
 ---
-title: Cloud API
-description: Connect a self-hosted instance to Openship Cloud, and the cloud control-plane endpoints (handoff, edge proxy, pages, subgraph transfer, GitHub App proxy) that back it.
+title: Cloud
+description: Connect installations to Cloud and use its HTTP control endpoints.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-The Cloud API links a self-hosted Openship instance to **Openship Cloud** (the managed control plane) so it can deploy to cloud runtimes, use managed domains and pages, and borrow the central GitHub App. It has **two disjoint halves** and which one is mounted depends on the process mode:
+Cloud endpoints connect a self-hosted installation to Openship Cloud and support browser handoffs,
+managed routing, and transfers. The self-hosted connection routes and Cloud control-plane routes share
+`/api/cloud`; the process mode determines which are available.
 
-- **Self-hosted set** (`cloud-local`) — connect/disconnect, status, and the workspaces/drift listing. Mounted only when the instance is *not* in cloud mode. This is what you call on your own box.
-- **Cloud control-plane set** (`cloud-saas`) — handoff/OAuth, namespace token minting, edge-proxy/pages/analytics proxies, subgraph transfer, and the GitHub App proxy. Mounted only in cloud mode (`CLOUD_MODE`). Your self-hosted instance calls these machine-to-machine over its stored cloud session; you rarely call them by hand.
-
-Both halves share the base path `/api/cloud`, but only one is present in any given process.
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/cloud/status`.
-The self-hosted endpoints take a personal access token as a bearer header (`Authorization: Bearer <token>`,
-from [`openship token create`](/docs/cli/access)); the dashboard uses your session cookie. The cloud
-control-plane endpoints authenticate with the **cloud session bearer** minted during connect (or a signed
-one-time token in the URL for the public handoff routes) — not a self-hosted PAT. See the
-[API overview](/docs/api) and [auth model](/docs/security/auth).
-</Callout>
+There is no named native `cloud` group. To manage Cloud projects through the SDK, use the
+[remote client](/docs/api/sdk/client) with the canonical Cloud API and Cloud organization ID.
+A local owner's Cloud link does not provide verified mapping for a fixed SDK scope; see
+[Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 
 ## Self-hosted endpoints
 
@@ -27,12 +20,6 @@ Present only on a self-hosted instance (not in `CLOUD_MODE`). The cloud connecti
 belongs to the organization owner, so every member sees the same verdict. Disconnect and connect-finalize
 require the `owner` role, not merely a `cloud:admin` grant.
 
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/cloud/status` | `cloud:read` | Openship Cloud connection status for this instance. |
-| `GET /api/cloud/workspaces` | `cloud:read` | List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local). |
-| `POST /api/cloud/connect-finalize` | `cloud:admin` + owner | Complete the connect popup: exchange the PKCE code and store the cloud bearer. |
-| `POST /api/cloud/disconnect` | `cloud:admin` + owner | Clear the org's stored cloud session and prune member GitHub grants. |
 
 ### Check connection status
 
@@ -41,13 +28,8 @@ GET /api/cloud/status
 ```
 
 ```bash
-curl https://your-host/api/cloud/status \
+curl "$OPENSHIP_URL/api/cloud/status" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
-```
-
-```bash
-# The CLI surfaces the same connection state in its status readout:
-openship status
 ```
 
 Connecting itself is a browser flow started from the dashboard (**Settings → Cloud**): a popup runs the
@@ -82,34 +64,6 @@ All tenant-scoped operations forward to Oblien through the **caller's namespace 
 namespace boundary natively, so there is no SaaS-side ownership ledger. The `public` routes carry no session
 — they are reached by browser redirects and authenticated by a signed, single-use token in the URL.
 
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/cloud/desktop-handoff` | public | OAuth → one-time code → redirect to the desktop app callback. |
-| `GET /api/cloud/connect-handoff` | public | Validate connect params, then 302 to the dashboard consent page. |
-| `POST /api/cloud/connect-authorize` | public | Consent page mints a one-time handoff code (cookie session checked inline). |
-| `POST /api/cloud/exchange-code` | public | Exchange a one-time code for user + session (rate-limited). |
-| `POST /api/cloud/token` | `cloud:write` | Mint a namespace-scoped Oblien token for the caller's org. |
-| `GET /api/cloud/account` | `cloud:read` | The connected cloud account (name, email, avatar). |
-| `POST /api/cloud/disconnect` | `cloud:admin` | Revoke the current cloud session server-side (idempotent). |
-| `POST /api/cloud/preflight` | `cloud:write` | Cloud deployment preflight — slug / custom-domain availability. |
-| `POST /api/cloud/edge-proxy` | `cloud:write` | Sync the managed edge proxy (bind a slug to a target). |
-| `POST /api/cloud/analytics` | `cloud:write` | Proxy Oblien analytics for a hostname in the caller's namespace. |
-| `POST /api/cloud/pages` | `cloud:write` | Create a Cloud Page (proxy Oblien `pages.create`). |
-| `POST /api/cloud/pages/enable` | `cloud:write` | Enable a Cloud Page by slug. |
-| `POST /api/cloud/pages/disable` | `cloud:write` | Disable a Cloud Page by slug. |
-| `POST /api/cloud/pages/delete` | `cloud:write` | Delete a Cloud Page by slug. |
-| `POST /api/cloud/send-invitation` | `cloud:write` | Relay an invitation email via the SaaS mail infrastructure. |
-| `POST /api/cloud/ingest-subgraph` | `cloud:admin` | Ingest an org- or project-scope subgraph dump (rate-limited, 50MB cap). |
-| `POST /api/cloud/export-subgraph` | `cloud:admin` | Export an org- or project-scope subgraph dump (rate-limited). |
-| `POST /api/cloud/teardown-project` | `cloud:admin` | Delete a project's rows on the SaaS (bring-home / reconcile). |
-| `POST /api/cloud/github/oauth-handoff` | `cloud:write` | Start GitHub OAuth: return a one-time bridge URL. |
-| `GET /api/cloud/github/oauth-bridge` | public | Consume the bridge token and redirect the browser into GitHub OAuth. |
-| `GET /api/cloud/github/oauth-success` | public | Friendly "GitHub connected" close-window page. |
-| `POST /api/cloud/github/install-url` | `cloud:write` | Build the App install URL with a one-time state token. |
-| `GET /api/cloud/github/install-callback` | public | GitHub install callback — attribute the install to the starting user. |
-| `GET /api/cloud/github/installations` | `cloud:read` | List the org owner's GitHub App installations. |
-| `POST /api/cloud/github/installation-token` | `cloud:write` | Mint a short-lived (~60min) installation access token. |
-| `GET /api/cloud/github/user-status` | `cloud:read` | Cloud-resolved GitHub OAuth identity (login, avatar) for the caller. |
 
 <Callout title="These are mostly internal">
 Your self-hosted instance calls the control-plane endpoints for you via its cloud client — you don't wire
@@ -289,7 +243,7 @@ POST /api/cloud/github/installation-token
 one has no effect. This prevents a caller from minting a token for an installation it doesn't own.
 </Callout>
 
-## Errors you might see
+## Errors
 
 <Callout title="403 — owner required (self-hosted connect/disconnect)" type="error">
 `connect-finalize` and `disconnect` require the org `owner` role. A member with only a `cloud:admin` grant is
@@ -315,3 +269,47 @@ Handoff codes are single-use and time-bound; `exchange-code` returns `401` once 
 control-plane `cloud:*` endpoints return `401` when the cloud session bearer is missing or revoked — reconnect
 from the dashboard.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| The connected cloud account (name, email, avatar). | `GET /api/cloud/account`<br />`cloud:read` |
+| Proxy Oblien analytics for a hostname in the caller's namespace. | `POST /api/cloud/analytics`<br />`cloud:write` |
+| Consent page mints a one-time handoff code (cookie session checked inline). | `POST /api/cloud/connect-authorize`<br />`Handler authentication` |
+| Complete the connect popup: exchange the PKCE code and store the cloud bearer. | `POST /api/cloud/connect-finalize`<br />`cloud:admin` |
+| Validate connect params, then 302 to the dashboard consent page. | `GET /api/cloud/connect-handoff`<br />`Handler authentication` |
+| Poll the local Cloud connection handoff. | `GET /api/cloud/connect-poll`<br />`Handler authentication` |
+| OAuth → one-time code → redirect to the desktop app callback. | `GET /api/cloud/desktop-handoff`<br />`Handler authentication` |
+| Revoke the current cloud session server-side (idempotent). | `POST /api/cloud/disconnect`<br />`cloud:admin` |
+| Sync the managed edge proxy (bind a slug to a target). | `POST /api/cloud/edge-proxy`<br />`cloud:write` |
+| Remove an authorized Cloud edge-proxy route. | `POST /api/cloud/edge-proxy/delete`<br />`cloud:write` |
+| Begin verification for an edge-proxy domain. | `POST /api/cloud/edge-proxy/verify`<br />`cloud:write` |
+| Check edge-proxy domain verification. | `POST /api/cloud/edge-proxy/verify-check`<br />`cloud:write` |
+| Exchange a one-time code for user + session (rate-limited). | `POST /api/cloud/exchange-code`<br />`Handler authentication` |
+| Export an org- or project-scope subgraph dump (rate-limited). | `POST /api/cloud/export-subgraph`<br />`cloud:admin` |
+| GitHub install callback — atomically claim a durable user/workspace nonce after matching user-token and Openship App-JWT verification. | `GET /api/cloud/github/install-callback`<br />`Handler authentication` |
+| Build the App install URL with a one-time state token. | `POST /api/cloud/github/install-url`<br />`cloud:write` |
+| Mint a short-lived (~60min) installation access token. | `POST /api/cloud/github/installation-token`<br />`cloud:write` |
+| List the org owner's GitHub App installations. | `GET /api/cloud/github/installations`<br />`cloud:read` |
+| Consume the bridge token and redirect the browser into GitHub OAuth. | `GET /api/cloud/github/oauth-bridge`<br />`Handler authentication` |
+| Start GitHub OAuth: return a one-time bridge URL. | `POST /api/cloud/github/oauth-handoff`<br />`cloud:write` |
+| Friendly "GitHub connected" close-window page. | `GET /api/cloud/github/oauth-success`<br />`Handler authentication` |
+| Cloud-resolved GitHub OAuth identity (login, avatar) for the caller. | `GET /api/cloud/github/user-status`<br />`cloud:read` |
+| Ingest an org- or project-scope subgraph dump (rate-limited, 50MB cap). | `POST /api/cloud/ingest-subgraph`<br />`cloud:admin` |
+| Create a Cloud Page (proxy Oblien `pages.create`). | `POST /api/cloud/pages`<br />`cloud:write` |
+| Delete a Cloud Page by slug. | `POST /api/cloud/pages/delete`<br />`cloud:write` |
+| Disable a Cloud Page by slug. | `POST /api/cloud/pages/disable`<br />`cloud:write` |
+| Enable a Cloud Page by slug. | `POST /api/cloud/pages/enable`<br />`cloud:write` |
+| Cloud deployment preflight — slug / custom-domain availability. | `POST /api/cloud/preflight`<br />`cloud:write` |
+| Run an allowed Pages or routing action after verifying customer namespace ownership. | `POST /api/cloud/resource-proxy`<br />`cloud:write` |
+| Read routes or certificates belonging to the caller's Cloud namespace. | `GET /api/cloud/route-registry`<br />`cloud:read` |
+| Relay an invitation email via the SaaS mail infrastructure. | `POST /api/cloud/send-invitation`<br />`cloud:write` |
+| Openship Cloud connection status for this instance. | `GET /api/cloud/status`<br />`cloud:read` |
+| Delete a project's rows on the SaaS (bring-home / reconcile). | `POST /api/cloud/teardown-project`<br />`cloud:admin` |
+| Mint a namespace-scoped Oblien token for the caller's org. | `POST /api/cloud/token`<br />`cloud:write` |
+| List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local). | `GET /api/cloud/workspaces`<br />`cloud:read` |
+
+{/* api-operations:end */}

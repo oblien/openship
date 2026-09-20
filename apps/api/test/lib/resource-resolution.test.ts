@@ -6,7 +6,7 @@ import {
   resolveBuildResources,
   resolveRuntimeResources,
   withDefaults,
-} from "../../src/lib/resources";
+} from "@repo/platform/engine/lib/resources";
 import type { HostCapacity } from "@repo/core";
 
 const box64: HostCapacity = { cpuCores: 16, memoryMb: 65536, source: "docker" };

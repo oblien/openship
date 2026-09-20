@@ -146,6 +146,14 @@ export async function seedServiceDeployment(
 
 /* ── Backups ─────────────────────────────────────────────────────────────── */
 
+/**
+ * `kind` defaults to "s3", NOT "local". A local destination is gated on
+ * BACKUP_ALLOW_LOCAL_DESTINATION + BACKUP_LOCAL_ROOT containment every time it is
+ * USED (see src/modules/backup-destinations/local-gate.ts), so a "local" default
+ * silently made every caller of this helper depend on that policy — none of them
+ * asked for a local destination, they just needed a destination row. Local-destination
+ * policy is covered on purpose in backup-local-destination-gate.test.ts.
+ */
 export async function seedBackupDestination(
   organizationId: string,
   over: Partial<typeof schema.backupDestination.$inferInsert> = {},
@@ -153,7 +161,7 @@ export async function seedBackupDestination(
   const id = uid("bkd");
   const [row] = await db
     .insert(schema.backupDestination)
-    .values({ id, organizationId, name: over.name ?? id, kind: over.kind ?? "local", ...over })
+    .values({ id, organizationId, name: over.name ?? id, kind: over.kind ?? "s3", ...over })
     .returning();
   return row!;
 }

@@ -16,30 +16,32 @@
   // fetches end up POSTing to `/undefined/api/trpc/...` - same-origin
   // on :3000, which routes into the 404 catch-all.
   // The per-env blocks below override these for `wrangler deploy --env ...`.
+  //
+  // APP_URL is absent on purpose: the app's own origin is never a
+  // build-time fact. Internal redirects are relative and react-router
+  // resolves them against the live origin, so a value here could only be
+  // wrong - which is exactly how GH-567 shipped `http://localhost:3000`
+  // into the published image's session guards.
   "vars": {
     "VITE_PUBLIC_BACKEND_URL": "http://localhost:3030",
-    "VITE_PUBLIC_APP_URL": "http://localhost:3000",
   },
   "env": {
     "local": {
       "name": "zero-local",
       "vars": {
         "VITE_PUBLIC_BACKEND_URL": "http://localhost:3030",
-        "VITE_PUBLIC_APP_URL": "http://localhost:3000",
       },
     },
     "staging": {
       "name": "zero-staging",
       "vars": {
         "VITE_PUBLIC_BACKEND_URL": "https://sapi.0.email",
-        "VITE_PUBLIC_APP_URL": "https://staging.0.email",
       },
     },
     "production": {
       "name": "zero-production",
       "vars": {
         "VITE_PUBLIC_BACKEND_URL": "https://api.0.email",
-        "VITE_PUBLIC_APP_URL": "https://0.email",
       },
     },
   },

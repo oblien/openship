@@ -1,6 +1,9 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
+import type { ApiPlan } from "@/components/billing/PricingCards";
+import type { BillingSubscription, BillingResources } from "@repo/contracts";
+export type { BillingResources } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -8,7 +11,7 @@ import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 
 /**
  * Per-org billing snapshot rendered on the dashboard's billing overview.
- * Mirrors `BillingState` in `apps/api/src/modules/billing/billing.repository.ts`
+ * Mirrors `BillingState` in `packages/platform/src/engine/modules/billing/billing.repository.ts`
  * — keep the shapes in sync when the API contract changes.
  *
  * Period dates arrive over JSON as ISO strings (not `Date`).
@@ -22,22 +25,31 @@ export interface BillingState {
   };
   balance: {
     /** Convenience alias for `quotaRemaining` — kept for back-compat. */
-    total: number;
-    quotaLimit: number;
+    total: number | null;
+    quotaLimit: number | null;
     quotaUsed: number;
-    quotaRemaining: number;
+    quotaRemaining: number | null;
+    /** Explicitly verified uncapped customer entitlement. A missing limit alone is not unlimited. */
+    unlimited?: boolean;
   };
-  /** Tier's monthly allowance in milli-credits, or `null` for enterprise. */
+  plan?: ApiPlan | null;
+  subscription?: BillingSubscription | null;
+  capabilities?: { portal: boolean; cancellation: boolean; resumption?: boolean; subscriptionChange: boolean };
+  /** Included milli-credits: zero without a plan; null for unknown or custom allowances. */
   monthlyCreditLimit: number | null;
   /** Display-only: out of credits (Oblien is the real enforcer). */
   overQuota: boolean;
   /** Build time this period in minutes (openship-derived; Oblien has no build meter). */
   buildTimeMinutes: number;
+  /** Build allowance resets monthly, even for an annual subscription. */
+  buildMinutesResetAt?: string;
+  maxServiceMachine?: { tier: string; cpuCores: number; memoryMb: number } | null;
   /**
    * Live resource capacity + consumption, sourced from Openship Cloud. Optional
    * and additive: the self-hosted billing proxy forwards it verbatim when the
    * SaaS provides it, and the dashboard's Capacity panel falls back to the
-   * tier's static `oblienLimits` for any ceiling the cloud hasn't sent yet.
+   * tier's `limits` from the pricing catalog for any ceiling the cloud hasn't
+   * sent yet.
    *
    * Each meter is `{ used, max }` where either side may be `null`:
    *   - `used === null` → cloud hasn't reported consumption yet ("syncing").
@@ -46,11 +58,8 @@ export interface BillingState {
   capacity?: BillingCapacity;
   /**
    * MASTER billing-feature availability, decided by Openship Cloud
-   * (`BILLING_ENABLED`). When `enabled` is false the whole billing feature is
-   * pre-launch: the UI shows a "coming soon" surface and every Stripe-mutating
-   * endpoint is refused server-side. Optional/defensive: treated as NOT enabled
-   * when absent, so billing stays gated until the cloud turns it on — no
-   * dashboard release needed to launch.
+   * (`BILLING_ENABLED`). When false, new purchases are disabled. Existing
+   * customers can still manage their payment details and stop renewal.
    */
   billing?: BillingFeature;
   /**
@@ -80,17 +89,32 @@ export interface CapacityMeter {
 
 /**
  * Per-resource capacity snapshot. All fields optional so the cloud can grow the
- * set without a dashboard release. Units:
- *   routes/workspaces/vcpus → whole counts · ramMb → MB · diskGb/bandwidthGb → GB.
+ * set without a dashboard release. Every meter here is a whole count except
+ * `buildMinutes` (minutes) and `credits` (which the panel reads off the balance,
+ * not this block).
+ *
+ * The vCPU / RAM / disk / bandwidth meters that used to live here are GONE on
+ * purpose. Three of them were Oblien's PER-WORKSPACE ceilings, not a namespace
+ * pool, so a used/max bar was the wrong shape for them at any value — and their
+ * `used` was never populated, so the panel rendered four permanently-empty rows.
+ * Compute traffic draws from the shared allowance. Edge requests and bandwidth
+ * are measured separately by `getResources`, with namespace traffic allowances
+ * from the Cloud catalog. Per-service machine size is shown as a plain value.
  */
 export interface BillingCapacity {
   /** Free *.opsh.io edge routes the org is using vs its allowed maximum. */
   routes?: CapacityMeter;
-  workspaces?: CapacityMeter;
-  vcpus?: CapacityMeter;
-  ramMb?: CapacityMeter;
-  diskGb?: CapacityMeter;
-  bandwidthGb?: CapacityMeter;
+  /** Concurrently running services, including services sharing a Docker workspace. */
+  services?: CapacityMeter;
+  /** Projects vs `limits.maxProjects`. Openship-enforced; Oblien has no project
+   *  concept, so this ceiling exists only on our side. */
+  projects?: CapacityMeter;
+  /**
+   * Build minutes used this period vs the plan's monthly allowance. Together
+   * with `routes` these are the only two meters the server ENFORCES on (a deploy
+   * is refused at the max), so they are the two that must never read as blank.
+   */
+  buildMinutes?: CapacityMeter;
 }
 
 /**
@@ -140,8 +164,18 @@ export interface UsageResponse {
   usage: UsageUnits | null;
 }
 
-/** Subscription tiers eligible for self-serve Stripe Checkout. */
-export type SubscriptionPlanTierId = "pro" | "team";
+/**
+ * Tiers eligible for self-serve Stripe Checkout.
+ *
+ * Derived from `PlanTierId` rather than listed, because the hardcoded
+ * `"pro" | "team"` silently excluded every tier added to the catalog afterwards —
+ * `starter` ($10) could not be passed to checkout at all, so the cheapest paid
+ * plan was unbuyable from the dashboard. `free` has no checkout (it's the
+ * default) and `enterprise` is contract sales, so those two are excluded by name;
+ * a new PURCHASABLE tier is now included automatically, and the server rejects
+ * anything genuinely unpurchasable with `BILLING_PLAN_NOT_PURCHASABLE`.
+ */
+export type SubscriptionPlanTierId = Exclude<PlanTierId, "free" | "enterprise">;
 export type SubscriptionInterval = "monthly" | "annual";
 
 /* ------------------------------------------------------------------ */
@@ -168,6 +202,11 @@ export const billingApi = {
     return res.data;
   },
 
+  getResources: async (): Promise<BillingResources> => {
+    const res = await api.get<Envelope<BillingResources>>(endpoints.billing.resources);
+    return res.data;
+  },
+
   /**
    * Raw metered usage buckets + totals for the chart. All params are
    * optional — the API defaults to the last 30 days, day buckets.
@@ -190,9 +229,7 @@ export const billingApi = {
   },
 
   /**
-   * Start a Stripe Checkout session to upgrade the org to a paid tier.
-   * The `customer.subscription.*` webhooks finalize the local row when
-   * the user completes payment.
+   * Start an Oblien-hosted checkout. Provider events confirm the paid plan.
    */
   createSubscriptionCheckout: async (
     planTierId: SubscriptionPlanTierId,
@@ -200,20 +237,18 @@ export const billingApi = {
   ): Promise<{ checkoutUrl: string }> => {
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.subscription,
-      { planTierId, interval },
+      { planTierId, interval, idempotencyKey: crypto.randomUUID() },
     );
     return res.data;
   },
 
   /**
-   * Start a Stripe Checkout session for a one-shot credit pack top-up.
-   * The `checkout.session.completed` webhook applies the credits to the
-   * org's Oblien quota.
+   * Start an Oblien-hosted top-up. Oblien applies credits after payment.
    */
   createTopupCheckout: async (packId: string): Promise<{ checkoutUrl: string }> => {
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.topup,
-      { packId },
+      { packId, idempotencyKey: crypto.randomUUID() },
     );
     return res.data;
   },
@@ -229,5 +264,14 @@ export const billingApi = {
     );
     return res.data;
   },
-};
 
+  cancelSubscription: async (): Promise<{ cancelAt: string | null; subscription: BillingSubscription }> => {
+    const res = await api.post<Envelope<{ cancelAt: string | null; subscription: BillingSubscription }>>(endpoints.billing.cancel);
+    return res.data;
+  },
+
+  resumeSubscription: async (): Promise<{ subscription: BillingSubscription }> => {
+    const res = await api.post<Envelope<{ subscription: BillingSubscription }>>(endpoints.billing.resume);
+    return res.data;
+  },
+};

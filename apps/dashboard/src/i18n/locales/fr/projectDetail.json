@@ -170,6 +170,15 @@
 			"dependsOn": "Dépend de",
 			"startShellHint": "Démarrez le service pour ouvrir un shell.",
 			"saveEnvironment": "Enregistrer l'environnement",
+			"environmentApply": {
+				"title": "Appliquer les modifications d’environnement",
+        "applying": "Application des modifications…",
+        "applied": "Modifications d’environnement appliquées",
+				"hint": "Appliquez les variables enregistrées à ce service sans recompilation. Le service redémarrera.",
+				"saveFirst": "Enregistrez vos modifications avant de les appliquer à ce service.",
+				"restartBlocked": "{name} a des modifications d’environnement enregistrées qu’un simple redémarrage ne peut pas appliquer. Vérifiez-les et appliquez-les dans l’onglet Environnement.",
+				"failed": "Impossible d’appliquer les modifications d’environnement"
+			},
 			"stop": "Arrêter",
 			"restart": "Redémarrer",
 			"start": "Démarrer",
@@ -195,7 +204,7 @@
 			"deleteCancel": "Annuler",
 			"deleteConfirm": "Supprimer le service",
 			"toast": {
-				"envUpdated": "Environnement mis à jour",
+				"envUpdated": "Environnement enregistré",
 				"envSaveFailed": "Échec de l'enregistrement de l'environnement",
 				"deployFirstStart": "Déployez d'abord le projet, puis ce service démarrera",
 				"deployFailed": "Échec du déploiement",

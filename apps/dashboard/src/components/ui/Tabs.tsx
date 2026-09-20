@@ -69,6 +69,7 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "" }
             <a
               key={key}
               href={href}
+              aria-current={active ? "page" : undefined}
               className={className}
               onClick={(e) => {
                 // Let the browser handle modified clicks (new tab / window);

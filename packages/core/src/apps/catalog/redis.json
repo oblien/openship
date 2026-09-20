@@ -1,0 +1,179 @@
+{
+  "available": true,
+  "verified": false,
+  "minEngine": "0.6.6",
+  "id": "redis",
+  "name": "Valkey (Redis)",
+  "description": "In-memory data store for caching, sessions, rate limits, and queues — Valkey, the open-source Redis fork. Drop-in Redis-compatible: point any redis client at it. Ships with RedisInsight, a browser UI that arrives already connected to this instance.",
+  "repository": "https://github.com/valkey-io/valkey",
+  "kind": "template",
+  "logo": "valkey",
+  "category": "database",
+  "tags": [
+    "cache",
+    "redis",
+    "valkey",
+    "key-value",
+    "queue",
+    "gui"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "valkey",
+      "image": "valkey/valkey:8.1-alpine",
+      "commandArgv": [
+        "valkey-server"
+      ],
+      "environment": {
+        "VALKEY_EXTRA_FLAGS": "--requirepass {{config:VALKEY_PASSWORD}} --appendonly yes --appendfsync everysec --save 300 100"
+      },
+      "secretEnv": [
+        "VALKEY_EXTRA_FLAGS"
+      ],
+      "volumes": [
+        "valkey_data:/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "valkey-cli ping 2>&1 | grep -q NOAUTH && valkey-cli --no-auth-warning -a \"$VALKEY_PASSWORD\" ping | grep -q PONG"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "redisinsight",
+      "image": "redis/redisinsight:3.8.0",
+      "exposedPort": 5540,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 5540
+        }
+      ],
+      "dependsOn": [
+        "valkey"
+      ],
+      "environment": {
+        "RI_ACCEPT_TERMS_AND_CONDITIONS": "true",
+        "RI_REDIS_HOST": "valkey",
+        "RI_REDIS_PORT": "6379",
+        "RI_REDIS_DB": "0",
+        "RI_REDIS_ALIAS": "Valkey (this app)",
+        "RI_REDIS_PASSWORD": "{{config:VALKEY_PASSWORD}}"
+      },
+      "secretEnv": [
+        "RI_REDIS_PASSWORD"
+      ],
+      "volumes": [
+        "redisinsight_data:/data"
+      ],
+      "restart": "unless-stopped",
+      "ports": [
+        "8219:5540"
+      ]
+    }
+  ],
+  "configFields": [
+    {
+      "key": "VALKEY_PASSWORD",
+      "service": "valkey",
+      "label": "Password",
+      "help": "Auto-generated. Required by every client (Valkey's `requirepass` auth). The bundled browser UI is pre-loaded with it.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Valkey",
+    "description": "A Redis-compatible endpoint on your project's private network. Point any redis client at the URL below — it already carries the password.",
+    "guide": {
+      "intro": "Your project gets a Redis-compatible cache plus a browser UI that is already connected to it.",
+      "useHint": "Read `process.env.REDIS_URL` in your code — it's set the next time your project deploys.",
+      "defaultMode": "internal"
+    },
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "Browser UI",
+        "source": "publicUrl:redisinsight",
+        "kind": "url",
+        "recommended": true,
+        "help": "RedisInsight, already pointed at this instance — no connection details to enter. It has NO login of its own, so anyone who can reach this address can read and write your data: keep it on the published port (reachable through an SSH tunnel) unless you deliberately put it on a domain you protect.",
+        "width": "full"
+      },
+      {
+        "id": "url",
+        "label": "Connection URL",
+        "source": "template:redis://:{{env:valkey:VALKEY_PASSWORD}}@valkey:6379",
+        "sourceLabel": "Internal",
+        "service": "valkey",
+        "secret": true,
+        "envKey": "REDIS_URL",
+        "recommended": true,
+        "help": "Redis-protocol URL with the password embedded, on the project's private network. Port 6379 is not published to the internet — bind this app into another project to use it, or reach it from the server with `docker exec`."
+      },
+      {
+        "id": "host",
+        "label": "Host",
+        "source": "template:valkey",
+        "service": "valkey",
+        "envKey": "REDIS_HOST",
+        "width": "half"
+      },
+      {
+        "id": "port",
+        "label": "Port",
+        "source": "template:6379",
+        "service": "valkey",
+        "envKey": "REDIS_PORT",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:valkey:VALKEY_PASSWORD",
+        "secret": true,
+        "envKey": "REDIS_PASSWORD",
+        "width": "half"
+      }
+    ]
+  },
+  "provides": [
+    {
+      "id": "redis",
+      "outputRefs": [
+        "url"
+      ],
+      "category": "database"
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "redisinsight",
+      "port": 5540,
+      "label": "Browser UI",
+      "kind": "http",
+      "scope": "public"
+    },
+    {
+      "service": "valkey",
+      "port": 6379,
+      "label": "Redis / Valkey (private)",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ]
+}

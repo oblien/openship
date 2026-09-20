@@ -74,6 +74,7 @@ export interface Service {
   image: string | null;
   build: string | null;
   dockerfile: string | null;
+  buildArgs: Record<string, string | null> | null;
   ports: string[] | null;
   dependsOn: string[] | null;
   environment: Record<string, string> | null;
@@ -173,9 +174,17 @@ export type ServiceInput = {
   image?: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   ports?: string[];
   dependsOn?: string[];
-  environment?: Record<string, string>;
+  /**
+   * Nulls are UPDATE-only — a key set to null removes it, and `null` clears the
+   * map (#619). Create and sync own the whole set and take `Record<string,string>`,
+   * so a null there is rejected by the API validator. Widened on the shared input
+   * for the same reason `advanced` carries the nullable `ComposeAdvancedPatch`:
+   * one payload shape for both verbs beats two near-identical types.
+   */
+  environment?: Record<string, string | null> | null;
   volumes?: string[];
   command?: string;
   restart?: string;
@@ -281,10 +290,17 @@ export const servicesApi = {
       `${endpoints.services.envGet(projectId, serviceId)}${environment ? `?environment=${environment}` : ""}`,
     ),
 
-  /** #336: real (unmasked) compose `environment` map — write-gated on the API. */
-  revealEnv: (projectId: string | number, serviceId: string) =>
-    api.get<{ success: boolean; environment: Record<string, string> }>(
+  /** Real values for named keys only. Pass environment for service-scoped
+   * env_var rows; omit it for compose-inline values. */
+  revealEnv: (
+    projectId: string | number,
+    serviceId: string,
+    keys: string[],
+    environment?: "production" | "preview" | "development",
+  ) =>
+    api.post<{ success: boolean; environment: Record<string, string> }>(
       endpoints.services.envReveal(projectId, serviceId),
+      { keys, ...(environment ? { environment } : {}) },
     ),
 
   /** Set environment variables for a service */
@@ -293,7 +309,7 @@ export const servicesApi = {
     serviceId: string,
     data: {
       environment: string;
-      vars: Array<{ key: string; value: string; isSecret?: boolean }>;
+      vars: Array<{ sourceId?: string; key: string; value: string; isSecret?: boolean }>;
     },
   ) =>
     api.put<{ success: boolean; count: number }>(
@@ -318,6 +334,12 @@ export const servicesApi = {
   /** Restart a service container */
   restart: (projectId: string | number, serviceId: string) =>
     api.post<{ success: boolean }>(endpoints.services.restart(projectId, serviceId)),
+
+  /** Apply saved runtime env and wait for the service replacement to start. */
+  applyEnvironment: (projectId: string | number, serviceId: string) =>
+    api.post<{ success: boolean; containerId: string; warning?: string }>(
+      endpoints.services.applyEnvironment(projectId, serviceId), undefined, { timeout: 120_000 },
+    ),
 
   /** Accept the pending upstream compose change (apply repo values, clear drift) */
   acceptDrift: (projectId: string | number, serviceId: string) =>

@@ -10,8 +10,8 @@
  *
  * Why this exists:
  *
- * The migration wizard streams this dist to the operator's target
- * server. Pre-building it locally means the target does NOT need a
+ * The source release can run on an operator's server. Pre-building it locally
+ * means the target does NOT need a
  * monorepo, turbo, the workspace catalog, or any build toolchain — it
  * just needs bun + a lockfile-locked install. The webmail dist
  * (`apps/email/scripts/build-release.ts`) follows the same pattern;
@@ -28,7 +28,7 @@
  *     api/
  *       package.json      ← workspace-free, file: refs to /packages/*
  *       src/              ← TS source (bun runs it directly)
- *       drizzle/          ← migrations, ran on first boot
+ *       scripts/import-instance.ts ← headless sealed import
  *     dashboard/
  *       server.js         ← Next standalone entry
  *       .next/            ← standalone build output (already minified)
@@ -37,6 +37,8 @@
  *       core/             ← @repo/core source (workspace dep)
  *       db/               ← @repo/db source + drizzle/ migrations
  *       adapters/         ← @repo/adapters source (workspace dep)
+ *       contracts/        ← shared SDK/API contracts
+ *       platform/         ← shared authorization/application operations
  *
  * Workspace packages are copied verbatim and referenced via `file:`
  * paths in api/package.json. They are not on npm — shipping the
@@ -66,7 +68,7 @@ const PACKAGES_DIR = join(REPO_ROOT, "packages");
  * (db-email, ui, onboarding) aren't included — they're either dashboard-
  * only or webmail-only.
  */
-const API_WORKSPACE_DEPS = ["core", "db", "adapters"] as const;
+const API_WORKSPACE_DEPS = ["core", "db", "adapters", "contracts", "platform"] as const;
 
 /**
  * Output directory. Defaults to `apps/api/release-dist/` (the canonical
@@ -271,7 +273,19 @@ function buildRootPackageJson(version: string): Record<string, unknown> {
   };
 }
 
-const START_TS = `#!/usr/bin/env bun
+/** Headless transfer commands use the same flat api/packages layout as start.ts. */
+export async function copyReleaseTransferScripts(dist: string): Promise<void> {
+  for (const [source, target] of [
+    [join(API_DIR, "scripts/import-instance.ts"), join(dist, "api/scripts/import-instance.ts")],
+    [join(PACKAGES_DIR, "db/scripts/dump.ts"), join(dist, "packages/db/scripts/dump.ts")],
+    [join(PACKAGES_DIR, "db/scripts/restore.ts"), join(dist, "packages/db/scripts/restore.ts")],
+  ] as const) {
+    await mkdir(dirname(target), { recursive: true });
+    await cp(source, target);
+  }
+}
+
+export const START_TS = `#!/usr/bin/env bun
 /**
  * Release-dist supervisor. Boots the API and the dashboard as two
  * child processes under one parent, propagates signals, and exits
@@ -290,6 +304,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+// This source release installs its own PGlite package. CLI-bundled WASM assets
+// belong to a different build and must not override that package (issue #869).
+const { OPENSHIP_PGLITE_ASSETS_DIR: _cliAssets, ...sourceEnv } = process.env;
 
 const apiPort = process.env.API_PORT ?? process.env.PORT ?? "4000";
 const dashboardPort = process.env.DASHBOARD_PORT ?? "3000";
@@ -301,7 +318,7 @@ function start(name: string, cmd: string, args: string[], cwd: string, env: Reco
   const child = spawn(cmd, args, {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, ...env },
+    env: { ...sourceEnv, ...env },
   });
   child.on("exit", (code, signal) => {
     console.log(\`[\${name}] exited code=\${code} signal=\${signal ?? ""}\`);
@@ -355,8 +372,8 @@ start(
 const README = (version: string) => `# Openship release dist (v${version})
 
 Self-contained release of the Openship platform (API + dashboard).
-Designed to be streamed to a target server by the migration wizard,
-or extracted manually for a fresh install.
+Extract on a target server for a fresh install. After starting it, use
+Settings → Data Transfer to import an existing installation.
 
 ## Run
 
@@ -388,8 +405,8 @@ port automatically.
 
 ## Layout
 
-- \`api/\` — TS source, bun runs it directly. \`api/drizzle/\` migrations
-  run on first boot via the API's normal migration path.
+- \`api/\` — TS source and \`scripts/import-instance.ts\` for headless sealed imports.
+  Schema migrations live in \`packages/db/drizzle/\` and run on first boot.
 - \`dashboard/\` — Next standalone bundle. \`server.js\` is the entry.
 - \`packages/\` — workspace packages the API depends on, linked into
   \`api/node_modules/@repo/*\` by bun via \`file:\` paths in api/package.json.
@@ -508,6 +525,8 @@ async function main(): Promise<void> {
     }
   });
 
+  await copyReleaseTransferScripts(DIST);
+
   // 4. Copy each workspace package source + (for db) drizzle/. We
   //    drop dist/, node_modules/, .turbo/ if any leaked into the
   //    source tree.
@@ -607,7 +626,9 @@ async function main(): Promise<void> {
   log("  bun run start.ts");
 }
 
-main().catch((err) => {
-  console.error("[release] FAILED:", err);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("[release] FAILED:", err);
+    process.exit(1);
+  });
+}

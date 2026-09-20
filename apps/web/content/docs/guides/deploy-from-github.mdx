@@ -15,7 +15,7 @@ the kitchen that cooks it and serves the meal. You point Openship at the recipe 
 - That's it. You do **not** need Docker, a server, or any config files — Openship figures those out.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -25,17 +25,17 @@ the kitchen that cooks it and serves the meal. You point Openship at the recipe 
 
 Openship needs permission to read your repository. You only do this one time.
 
-Go to **Settings → General** and press **Connect GitHub**. A GitHub window pops up asking "do you allow
+Go to **Settings → Git** and choose a GitHub connection method. A GitHub window may open asking "do you allow
 this?" — say yes. When it closes, you're connected.
 
-<Callout title="Screenshot">Settings → General tab, the "GitHub" card with a **Connect GitHub** button. *(screenshot pending)*</Callout>
-
 <Callout title="Self-hosted: two ways to connect (no Openship account required)" type="info">
-On a self-hosted instance you're never forced through Openship Cloud. The **GitHub** card in
-**Settings → General** offers:
+On a self-hosted instance you're never forced through Openship Cloud. **Settings → Git** offers:
 
 - **Openship Cloud GitHub App** — the managed App (short-lived tokens, great for remote-server deploys).
   Optional; it needs an Openship Cloud connection.
+- **Your own self-hosted GitHub Apps** — use the one-click manifest flow or register one or more existing
+  GitHub/GitHub Enterprise Apps in the dashboard, then use installation tokens without Openship Cloud or PATs. See
+  [Self-hosted GitHub App](/docs/guides/self-hosted-github-app).
 - **Manual** — connect with your **own** GitHub identity, no Openship in the middle:
   - **`gh` CLI on the instance** — press **Log in with GitHub**; if the instance has `gh` authenticated
     it's picked up immediately, otherwise run the shown `gh auth login` on the box and the page detects it
@@ -56,8 +56,6 @@ Pick whichever fits; Openship never substitutes its own GitHub identity for your
 
 Open the **Library** page (the "New project" button takes you here too). Choose the **Repositories** tab —
 you'll see a list of your GitHub repos. Click the one you want.
-
-<Callout title="Screenshot">Library page, **Repositories** tab, list of GitHub repos each with an "Import"/select action. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -98,8 +96,6 @@ of apps — you only override things when you have a specific reason.
 You land on the build screen, which streams the logs live — like watching the oven through the glass door.
 When it finishes, you get a link. Click it, and your app is online. 🎉
 
-<Callout title="Screenshot">The live build screen showing streamed build steps and, at the end, the live URL. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -112,7 +108,7 @@ GitHub**, turn on auto-deploy:
 Open your project → **Source** tab → switch on **Auto-deploy**. From now on, every `git push` to your
 deploy branch rebuilds and ships automatically.
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI too:
 
@@ -127,7 +123,7 @@ openship deploy
 openship project git auto-deploy my-app --enable
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“Connect GitHub” does nothing / no repos show up" type="warn">
 Your GitHub connection didn't finish, or Openship has no permission for that repo. Go back to
@@ -141,7 +137,7 @@ are one of: a missing build command, a missing environment variable, or the app 
 port. See [Troubleshooting → Deployments](/docs/troubleshooting/deployments) for the fixes.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Add a custom domain" href="/docs/guides/custom-domains" description="Put your app on your own yourname.com address with automatic HTTPS." />

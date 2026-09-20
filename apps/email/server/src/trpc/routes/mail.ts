@@ -30,7 +30,7 @@ import {
 function withFolder<T extends { folder?: string }>(input: T) {
   return { ...input, folder: normalizeFolderSlug(input.folder) };
 }
-import { sanitizeMailHtml } from '../../lib/sanitize';
+import { sanitizeMailHtml, blockRemoteContent } from '../../lib/sanitize';
 
 // Recipients arrive from the client as `{email, name}` objects (Sender).
 // We accept either that or a bare email string for backward compat.
@@ -54,6 +54,12 @@ export function formatFromAddress(
   const name = sessionName?.replace(/[<>"]/g, '').trim();
   return name ? `"${name}" <${raw.trim()}>` : raw;
 }
+
+/** Injectable seam for route-level tests; production uses the real IMAP/SMTP drivers. */
+export const mailRouteInternals = {
+  getThread,
+  send: driverSend,
+};
 
 // Folder comes in as a loose string (client uses `bin`/`draft`/`snoozed`
 // while the canonical enum is `trash`/`drafts`). Normalize on the way in
@@ -127,7 +133,7 @@ export const mailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const detail = await getThread(
+      const detail = await mailRouteInternals.getThread(
         ctx.imap,
         input.id,
         normalizeFolderSlug(input.folder),
@@ -156,24 +162,59 @@ export const mailRouter = router({
         threadId: z.string().nullable().optional(),
         isForward: z.boolean().optional(),
         originalMessage: z.string().optional(),
+        originalMessageId: z.string().optional(),
+        originalFolder: folderInput,
         scheduleAt: z.string().optional(),
         headers: z.record(z.string(), z.string()).optional(),
         inReplyTo: z.string().optional(),
         references: z.array(z.string()).optional(),
       }),
     )
-    .mutation(({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const refsHeader = input.headers?.References;
       const inReplyToHeader = input.headers?.['In-Reply-To'];
       const fromAddress = formatFromAddress(input.fromEmail, ctx.session.email, ctx.session.name);
-      return driverSend(ctx.smtp, ctx.imap, fromAddress, {
+
+      let originalHtml = input.originalMessage;
+      let forwardedAttachments: typeof input.attachments;
+      if (input.isForward && input.originalMessageId) {
+        const original = await mailRouteInternals.getThread(
+          ctx.imap,
+          input.originalMessageId,
+          normalizeFolderSlug(input.originalFolder),
+          undefined,
+          { includeAttachmentBytes: true },
+        );
+        if (!original?.latest) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Original message could not be loaded for forwarding',
+          });
+        }
+        originalHtml = original.latest.decodedBody ?? originalHtml;
+        forwardedAttachments = original.latest.attachments.map((attachment) => ({
+          name: attachment.filename,
+          type: attachment.contentType,
+          base64: attachment.body,
+        }));
+      }
+
+      const outgoingHtml = input.isForward
+        ? `${input.message ?? input.html ?? input.body ?? ''}${originalHtml ?? ''}`
+        : input.message ?? input.html ?? input.body ?? undefined;
+      const attachments =
+        forwardedAttachments?.length || input.attachments?.length
+          ? [...(forwardedAttachments ?? []), ...(input.attachments ?? [])]
+          : undefined;
+
+      return mailRouteInternals.send(ctx.smtp, ctx.imap, fromAddress, {
         to: input.to.map(senderToAddress),
         cc: input.cc?.map(senderToAddress),
         bcc: input.bcc?.map(senderToAddress),
         subject: input.subject,
-        html: input.message ?? input.html ?? input.body ?? undefined,
+        html: outgoingHtml,
         text: input.text,
-        attachments: input.attachments,
+        attachments,
         inReplyTo: input.inReplyTo ?? inReplyToHeader ?? undefined,
         references:
           input.references ??
@@ -248,15 +289,22 @@ export const mailRouter = router({
   ]),
 
   getMessageAttachments: protectedProcedure
-    .input(z.object({ messageId: z.string() }))
+    .input(z.object({ messageId: z.string().min(1), folder: folderInput }))
     .query(async ({ ctx, input }) => {
-      const thread = await getThread(ctx.imap, input.messageId);
+      const thread = await mailRouteInternals.getThread(
+        ctx.imap,
+        input.messageId,
+        normalizeFolderSlug(input.folder),
+        undefined,
+        { includeAttachmentBytes: true },
+      );
       return thread?.latest.attachments ?? [];
     }),
 
-  // Server-side HTML sanitize used by the read-pane preview. Remote-image
-  // blocking is best-effort: when `shouldLoadImages` is false we rewrite
-  // <img src=> to a 1×1 transparent gif and flag the result.
+  // Server-side HTML sanitize used by the read-pane preview. When
+  // `shouldLoadImages` is false every remote fetch in the body is
+  // neutralized (src, srcset, CSS url()) and the result is flagged so the
+  // client can show the "images hidden" banner.
   processEmailContent: protectedProcedure
     .input(
       z.object({
@@ -270,12 +318,8 @@ export const mailRouter = router({
       if (input.shouldLoadImages) {
         return { processedHtml: clean, hasBlockedImages: false };
       }
-      let hasBlockedImages = false;
-      const blocked = clean.replace(/<img\b([^>]*?)\bsrc\s*=\s*("[^"]*"|'[^']*')/gi, (_m, pre) => {
-        hasBlockedImages = true;
-        return `<img${pre}src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="`;
-      });
-      return { processedHtml: blocked, hasBlockedImages };
+      const { html, blocked } = blockRemoteContent(clean);
+      return { processedHtml: html, hasBlockedImages: blocked };
     }),
 
   // Autocomplete recipients out of the Sent envelope cache. Stub

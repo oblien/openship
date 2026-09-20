@@ -11,8 +11,8 @@
  */
 
 import type { PromptPayload } from "@repo/adapters";
-import { PromptRegistry } from "../../lib/prompt-gateway";
-import { TtlCache } from "../../lib/cache";
+import { PromptRegistry } from "@repo/platform/engine/lib/prompt-gateway";
+import { TtlCache } from "@repo/platform/engine/lib/cache";
 
 export type SseWriter = (event: string, data: string) => boolean;
 export type EdgeSessionStatus = "running" | "completed" | "failed";

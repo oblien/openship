@@ -1,0 +1,22 @@
+---
+title: login
+description: Commands, arguments, and options for openship login.
+cliGroup: openship login
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship login
+
+Authenticate with a Personal Access Token (create one in dashboard Settings)
+
+```text
+openship login [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--token <token>` | Personal Access Token (opsh_pat_...) for non-interactive login |
+| `--api-url <url>` | API base URL (defaults to the saved context or local installation) |
+| `--dashboard-url <url>` | Dashboard base URL (defaults to the saved context or local installation) |
+| `--context <name>` | Name of the context to store this login under (default: "default") |

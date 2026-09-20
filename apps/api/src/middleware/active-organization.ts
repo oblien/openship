@@ -49,43 +49,50 @@ export async function resolveActiveOrganizationId(
     return sessionOrgId;
   }
 
-  // TODO: is this clean way ? isnt resolve active org id shouldn't have fallbacks or what
   // Prefer a team org over an empty personal workspace. Batch lookup —
   // every authenticated request hits this resolver, an N+1 per
-  // membership would be unacceptable. Sort the team-org candidates
-  // deterministically by member.createdAt so the "first team org"
-  // pick is stable across nodes (MEDIUM cleanup).
+  // membership would be unacceptable.
   const orgs = await repos.organization
     .findManyById(Array.from(memberOrgIds))
     .catch(() => []);
   const teamOrgIds = new Set(
     orgs.filter((o) => o?.isTeam === true).map((o) => o!.id),
   );
-  if (teamOrgIds.size > 0) {
-    const teamMemberships = memberships
-      .filter((m) => teamOrgIds.has(m.organizationId))
-      .sort((a, b) => {
-        const ta =
-          a.createdAt instanceof Date
-            ? a.createdAt.getTime()
-            : new Date(a.createdAt ?? 0).getTime();
-        const tb =
-          b.createdAt instanceof Date
-            ? b.createdAt.getTime()
-            : new Date(b.createdAt ?? 0).getTime();
-        if (ta !== tb) return ta - tb;
-        return a.organizationId.localeCompare(b.organizationId);
-      });
-    if (teamMemberships.length > 0) return teamMemberships[0].organizationId;
-  }
 
-  // not ctx-scoped: middleware boundary. This IS the canonical resolver
-  // that BUILDS the per-request active org. The "memberships[0]"
-  // fallback is acceptable HERE because no ctx exists yet — it's the
-  // source from which ctx.organizationId gets populated. Foreground
-  // services downstream must read ctx.organizationId rather than re-
-  // running this fallback.
-  return memberships[0].organizationId;
+  // Sorted ONCE, and both picks below read from it. `listByUser` already orders by
+  // createdAt, but that is not a total order: memberships written in one transaction
+  // (onboarding creates the personal workspace and a team org together) share a
+  // timestamp, and row order among equals is then whatever the planner returns. The
+  // org id breaks the tie so two API nodes resolve the same user to the same org.
+  // This used to be applied to the team-org pick only, which left the branch WITHOUT
+  // a tiebreaker as the unstable one — the reverse of what you'd want.
+  const ordered = [...memberships].sort((a, b) => {
+    const at = new Date(a.createdAt ?? 0).getTime();
+    const bt = new Date(b.createdAt ?? 0).getTime();
+    if (at !== bt) return at - bt;
+    return a.organizationId.localeCompare(b.organizationId);
+  });
+
+  const team = ordered.find((m) => teamOrgIds.has(m.organizationId));
+  if (team) return team.organizationId;
+
+  /**
+   * The fallbacks are the point of this function, not a shortcut in it.
+   *
+   * "Shouldn't the resolver have no fallbacks?" — the opposite: it is BECAUSE this is
+   * the one place allowed to guess that everywhere else is forbidden to. This resolver
+   * BUILDS `ctx.organizationId`; there is no ctx yet to read, so someone has to decide,
+   * and centralizing that decision is what stops each controller inventing its own
+   * `memberships[0]`. Downstream services read `ctx.organizationId` — see
+   * `controller-helpers.ts`, which names this function as the sole exception.
+   *
+   * What makes the guessing safe is not the absence of fallbacks but the invariant that
+   * every candidate comes from `memberOrgIds`, which is built from this user's own
+   * memberships. No arm of this function can return an org the user is not a member of,
+   * so the worst outcome is landing in the wrong org the user already belongs to — a
+   * scoping annoyance, never a cross-tenant read.
+   */
+  return ordered[0].organizationId;
 }
 
 /**
@@ -169,8 +176,12 @@ export function requireRole(
     if (!m) {
       return c.json({ error: "Not a member of this organization" }, 403);
     }
-    const role = (m.role as "member" | "admin" | "owner") ?? "member";
-    if (RANK[role] < RANK[min]) {
+    // Deny any role not in RANK rather than comparing `undefined`. A member row
+    // with role "restricted" used to make `RANK[role] < RANK[min]` evaluate
+    // `undefined < n` → false, so requireRole FAILED OPEN for exactly the
+    // least-trusted role.
+    const rank = RANK[m.role as keyof typeof RANK];
+    if (rank === undefined || rank < RANK[min]) {
       return c.json(
         { error: `Requires ${min} role`, code: "INSUFFICIENT_ROLE" },
         403,

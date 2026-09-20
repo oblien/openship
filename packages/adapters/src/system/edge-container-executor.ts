@@ -1,4 +1,5 @@
 import type { CommandExecutor, LogEntry } from "../types";
+import { EXECUTOR_DELEGATE } from "./elevated-executor";
 import { logEntry, sq } from "./local-shell";
 import { edgeFailureReason, resolveOurEdgeContainer } from "./proxy/detect";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
@@ -106,8 +107,10 @@ async function writeEdgeFileIn(
   container: string | null,
   path: string,
   content: string,
+  opts?: { mode?: number },
 ): Promise<void> {
-  await inner.writeFile(path, content);
+  if (opts === undefined) await inner.writeFile(path, content);
+  else await inner.writeFile(path, content, opts);
   if (!container) return;
   const visible = await inner
     .exec(containerCommand(container, `test -e ${sq(path)} && echo visible`))
@@ -158,16 +161,19 @@ export async function writeEdgeFile(
  *
  * Privilege is the caller's problem, exactly as with `probeEdge`'s own
  * `docker ps`: pass an already-elevated inner executor if the SSH user needs
- * sudo to reach the daemon.
+ * sudo to reach the daemon. Generic in the inner executor so that problem stays
+ * *solved* once it is — a `RootChecked` inner yields a `RootChecked` wrapper, which is
+ * what `NginxProviderOptions.executor` demands, so the composition carries the proof
+ * instead of dropping it here and re-raising the question at the provider.
  *
  * A Proxy forwards every other (optional) executor method — rawExec, forwardPort,
  * openShell, onDisconnect, dispose — transparently to the inner executor.
  */
-export function edgeContainerExecutor(
-  inner: CommandExecutor,
+export function edgeContainerExecutor<E extends CommandExecutor>(
+  inner: E,
   container: string,
   opts?: { files?: EdgeFilesAt },
-): CommandExecutor {
+): E {
   const inContainer = (command: string) => containerCommand(container, command);
 
   const overrides: Partial<CommandExecutor> = {
@@ -214,8 +220,8 @@ export function edgeContainerExecutor(
     // with one probe saved.
     Object.assign(overrides, {
       readFile: (path: string) => readMaybeInContainer(inner, path, container),
-      writeFile: (path: string, content: string) =>
-        writeEdgeFileIn(inner, container, path, content),
+      writeFile: (path: string, content: string, writeOpts?: { mode?: number }) =>
+        writeEdgeFileIn(inner, container, path, content, writeOpts),
       exists: async (path: string) => {
         if (await inner.exists(path).catch(() => false)) return true;
         // `test` reports absence via exit code — an answer, not a failure.
@@ -248,6 +254,16 @@ export function edgeContainerExecutor(
 
   return new Proxy(inner, {
     get(target, prop) {
+      // The one thing that must NOT pass through. `EXECUTOR_DELEGATE` means "a different
+      // view of the same machine", which is true of `elevatedExecutor` and false here: this
+      // wrapper composes `exec`/`streamExec` into `docker exec`, so a probe run through it
+      // measures the OpenResty container, not the box. Left transparent, the lookup reaches
+      // an elevated `inner` (which is what the only call site passes) and answers with the
+      // raw host executor — so `resolveEnvironment` would file the container's os-release,
+      // uid and init system under the HOST's cache key and serve it to every host caller.
+      // Answering `undefined` costs a second probe in the case that does not exist yet, and
+      // that is the right trade against publishing an alpine image as the operator's server.
+      if (prop === EXECUTOR_DELEGATE) return undefined;
       if (Object.prototype.hasOwnProperty.call(overrides, prop)) {
         return (overrides as Record<string | symbol, unknown>)[prop];
       }

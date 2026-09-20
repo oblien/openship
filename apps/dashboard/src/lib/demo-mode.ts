@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Demo mode — a per-browser toggle that blurs IPs / hosts across the dashboard
+ * Demo mode — a per-browser toggle that blurs IPs, hosts and env values across the dashboard
  * for screen-shares, recordings, and live demos. Purely cosmetic + client-side
  * (localStorage), so it's off by default and never touches the server. Consumed
  * by <BlurIp> and toggled from Settings → General → Demo mode.

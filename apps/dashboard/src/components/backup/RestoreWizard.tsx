@@ -542,14 +542,30 @@ function DoneStep({
       </div>
 
       {/* The row already carries the sentence in errorMessage; this repeats the
-          consequence as a standing banner because "the service is still down and
-          that was deliberate" is the part an operator otherwise misreads as a
-          second failure. */}
-      {restore?.meta?.partialWrite && (
-        <div className="rounded-xl border border-warning-border bg-warning-bg p-3 text-xs text-warning">
-          {m.partialDataNotice}
+          consequence as a standing banner because what the operator must DO next is the
+          part they otherwise misread as a second failure.
+
+          Two independent flags, so three distinct outcomes — the server stamps them
+          separately (see restore.orchestrator's runApply) and collapsing them here would
+          undo that. The dangerous one is partial data on a service still RUNNING: that
+          only happens for kinds restored through their own container, so nothing was
+          stopped and an app is serving half-written data right now. It gets the danger
+          styling; the other two are warnings about a service that is merely down. */}
+      {restore?.meta?.partialWrite ? (
+        <div
+          className={`rounded-xl border p-3 text-xs ${
+            restore.meta.serviceLeftStopped
+              ? "border-warning-border bg-warning-bg text-warning"
+              : "border-danger-border bg-danger-bg text-danger"
+          }`}
+        >
+          {restore.meta.serviceLeftStopped ? m.partialDataNotice : m.partialDataRunningNotice}
         </div>
-      )}
+      ) : restore?.meta?.serviceLeftStopped ? (
+        <div className="rounded-xl border border-warning-border bg-warning-bg p-3 text-xs text-warning">
+          {m.serviceDownNotice}
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-end">
         <button

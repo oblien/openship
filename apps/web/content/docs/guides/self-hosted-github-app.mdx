@@ -1,0 +1,141 @@
+---
+title: Self-hosted GitHub Apps
+description: Create and manage workspace-owned GitHub Apps for private repositories, direct webhooks, and short-lived clone tokens without Openship Cloud.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+A self-hosted Openship workspace can own one or more GitHub Apps end to end. App private keys and webhook
+secrets are encrypted in the local database, GitHub sends webhooks directly to your instance, and builds use
+short-lived installation tokens instead of a long-lived personal access token.
+
+Use the dashboard's **Settings → Git → Self-hosted GitHub Apps** section. You can create a GitHub.com App
+with the one-click manifest flow or register an existing GitHub.com/GitHub Enterprise Server App manually.
+Neither flow requires an Openship Cloud connection or a separate GitHub OAuth login.
+
+<Callout type="info" title="Workspace-owned and multi-source">
+Each source belongs to the active Openship workspace. A workspace may register several Apps and install each
+one on several GitHub users or organizations. The same GitHub owner can be covered by more than one source;
+the source marked **Default** wins for new and existing project bindings when it has an active installation.
+</Callout>
+
+## Before you start
+
+You must be a workspace owner and the instance must have a public HTTPS URL. Configure
+`OPENSHIP_PUBLIC_URL=https://openship.example.com` (or the equivalent public URL setting) and restart the
+instance. GitHub must be able to reach both URLs shown in the source form:
+
+- Setup callback: `https://openship.example.com/auth/callback/github-app`
+- Webhook endpoint: `https://openship.example.com/api/proxy/api/webhooks/github`
+
+The dashboard disables App registration until Openship can resolve a configured public URL.
+
+## One-click manifest setup (GitHub.com)
+
+<Steps>
+
+<Step>
+
+### Start in the dashboard
+
+Open **Settings → Git**, choose **Create with GitHub**, give the source a recognizable workspace label, and
+select **Continue on GitHub**.
+
+</Step>
+
+<Step>
+
+### Review and create the App
+
+Openship submits a private GitHub App manifest with these repository permissions:
+
+- **Contents:** read
+- **Metadata:** read
+- **Pull requests:** read
+- **Checks:** read and write
+- **Commit statuses:** read and write
+
+It subscribes to `push`, `pull_request`, `check_run`, and installation lifecycle events. Review the values on
+GitHub and create the App. GitHub returns the generated private key, client secret, and webhook secret once;
+the callback immediately encrypts them and never returns them to the dashboard.
+
+</Step>
+
+<Step>
+
+### Choose repository access
+
+After conversion, Openship opens the new App's installation page. Choose the GitHub user or organization and
+either all repositories or selected repositories. The setup callback verifies the installation with that
+specific App's private key before binding it to the originating Openship user and workspace.
+
+</Step>
+
+</Steps>
+
+The creation and installation links each use a separate, ten-minute, one-time state value. Replaying a state,
+using it from another workspace, or substituting another App's `installation_id` is rejected.
+
+## Register an existing App or GitHub Enterprise Server
+
+Choose **Register existing App** and enter the values from the App's settings. For GitHub Enterprise Server,
+also expand **GitHub Enterprise settings** and set both origins, for example:
+
+```text
+GitHub web URL: https://github.acme.example
+GitHub API URL: https://github.acme.example/api/v3
+```
+
+Configure the App itself with the Setup URL and Webhook URL displayed by Openship. Give it the same permissions
+and event subscriptions listed above, create a private key, and set a high-entropy webhook secret of at least
+16 characters. Then provide:
+
+- a workspace label and numeric App ID;
+- the complete PEM private key;
+- the matching webhook secret;
+- the Client ID and client secret, if your App also uses them (installation-token auth does not require them).
+
+Openship calls the selected GitHub API's `/app` endpoint with a signed App JWT before storing anything. A bad
+App ID, key, or Enterprise API URL is rejected, and upstream error details are redacted from the response.
+
+## Manage sources and installations
+
+Each source card shows its App identity, health, installed accounts, endpoint, and whether it is the default.
+From the card, a workspace owner can:
+
+- install the App on another GitHub account or change its repository selection;
+- verify the stored key and refresh App metadata;
+- edit endpoints or rotate credentials (leave secret fields blank to keep their encrypted values);
+- make the source the default; or
+- delete the local source.
+
+Deleting a source removes its encrypted credentials and installation bindings from Openship, but cannot
+uninstall the App on GitHub. Use **Manage on GitHub** to uninstall it there. Projects are atomically rebound to
+another active installation for the same owner when one exists; otherwise their App binding is cleared and
+auto-deploy is disabled. GitHub access grants are retained only when another installation still covers that
+owner.
+
+GitHub suspension is reversible: Openship retains the binding but excludes it from token resolution until an
+`installation.unsuspend` delivery restores it. Uninstall permanently removes the affected binding.
+
+## Runtime behavior
+
+- Repository browsing merges App-visible repositories with an optional local `gh`/token identity without
+  duplicating repositories.
+- Every private clone token is minted directly from the App that owns the selected installation, limited to
+  the requested repository, and refreshed before GitHub's expiry.
+- GitHub Enterprise REST requests and HTTPS clone URLs use that source's configured API and web origins.
+- App-level push and check webhooks are verified against that source's secret. Push fan-out is additionally
+  restricted by the delivering installation id, preventing cross-workspace deployment.
+- App-backed projects use the shared App webhook; Openship does not create duplicate repository webhooks.
+- Commit statuses and check runs are written with the custom App's GitHub identity and branding.
+
+## Legacy environment-based App
+
+The process-wide `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_PRIVATE_KEY_BASE64`, and
+`GITHUB_WEBHOOK_SECRET` configuration remains supported for existing installations. Dashboard-managed sources
+take precedence for the workspace and are the recommended setup for new self-hosted Apps because they support
+multiple Apps, rotation and health checks without restarting Openship.
+
+Personal access tokens, per-server SSH keys, and `gh` remain optional fallbacks for repositories not covered by
+an App. They are not required for a workspace-owned App installation.

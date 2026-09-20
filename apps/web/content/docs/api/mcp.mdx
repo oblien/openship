@@ -1,6 +1,6 @@
 ---
-title: MCP API
-description: The Streamable-HTTP JSON-RPC endpoint that exposes Openship's API to AI clients as tools, re-authenticating every call.
+title: MCP
+description: Call Openship tools through Model Context Protocol.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,26 +10,7 @@ MCP-compatible client) drive Openship as a set of tools. Each tool maps onto a p
 and every call re-runs the full auth and permission stack — so an agent only ever sees and does what its
 token allows. For client setup (OAuth flow, config snippets), see the [MCP overview](/docs/mcp).
 
-<Callout title="Base path & auth">
-The endpoint lives at **`/api/mcp`** on your instance — e.g. `https://your-host/api/mcp`. It accepts
-**either** a personal access token (`Authorization: Bearer <token>`, created with
-[`openship token create`](/docs/cli/access)) **or** an OAuth 2.1 access token that an MCP client obtains for
-you. There is no separate MCP credential. See the [API overview](/docs/api) and
-[auth model](/docs/security/auth) for details.
-</Callout>
-
 Available on both self-hosted and Openship Cloud (mounted in the shared route set).
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/mcp` | public | Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`. |
-| `GET /api/mcp` | public | Returns `405` — this server never pushes messages, so there is no SSE stream to open. |
-
-Both routes are declared `public` (no auto-injected auth middleware): the `POST` handler authenticates the
-bearer credential itself, and each `tools/call` dispatches an internal request that re-authenticates through
-the real permission stack.
 
 ## How authentication works
 
@@ -79,16 +60,10 @@ POST /api/mcp
 ```
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-```bash
-# Register the same endpoint with an MCP client (Claude Code):
-claude mcp add --transport http openship https://your-host/api/mcp \
-  --header "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
 The tool set is derived from Openship's permission-tagged routes that opt in with an `mcp` block; the
@@ -101,7 +76,7 @@ credential/auth surfaces (`tokens`, `auth`, `mcp` itself) are never exposed.
 `organizationId` (sent as the `x-organization-id` header).
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
@@ -119,7 +94,7 @@ workflow, referencing the exact tool names to call in sequence. MCP clients surf
 starters, so they also serve as the discoverable entry points into a flow.
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":3,"method":"prompts/get",
@@ -136,7 +111,7 @@ curl -s https://your-host/api/mcp \
 Prompt text resolves tool references against the live registry, so a renamed route never leaves a prompt
 pointing at a stale tool name.
 
-## Errors you might see
+## Errors
 
 <Callout title="401 — missing or invalid access token" type="error">
 No bearer, or one that's expired/revoked. The response carries a `WWW-Authenticate` header so OAuth clients
@@ -158,3 +133,14 @@ does not accept. `-32601` means the JSON-RPC method is unknown, and `-32602` mea
 `tools/list` succeeded but a specific `tools/call` reports `404` — that's the token's scope working as
 intended: it wasn't granted that project, server, or repository.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Returns `405` — this server never pushes messages, so there is no SSE stream to open. | `GET /api/mcp`<br />`Handler authentication` |
+| Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`. | `POST /api/mcp`<br />`Handler authentication` |
+
+{/* api-operations:end */}

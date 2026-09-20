@@ -7,6 +7,12 @@
  * `CustomCommandProducer.restore` consults. On any instance with a mail server,
  * every run in that history currently reads `restoreCommand: null`.
  *
+ * A SECOND shape lands in the same hook: runs whose recorded command was
+ * credential-SCRUBBED on the way into jsonb (the metadata used to go through the
+ * build-log redactor, which rewrites URL userinfo to `***@`). That one is worse than
+ * the null case — the command is present, so nothing flagged it, and the restore dies
+ * on authentication after the artifact has already streamed.
+ *
  * These run against the real PGlite database (separate file from
  * custom-command-config.test.ts, which mocks `@repo/db` file-scoped) because the
  * behavior under test IS the SQL predicate that decides which rows are broken.
@@ -15,7 +21,7 @@
 import { db, repos, schema } from "@repo/db";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { backfillCustomCommandRestoreCommands } from "../../../src/modules/backups/restore-command-backfill";
+import { backfillCustomCommandRestoreCommands } from "@repo/platform/engine/modules/backups/restore-command-backfill";
 import { seedBackupDestination, seedBackupPolicy, seedBackupRun, seedOrg } from "../../helpers/seed";
 
 /** What mail/admin/backup-plan.ts writes onto the policy. */
@@ -24,6 +30,20 @@ const MAIL_PAYLOAD = {
   restoreCommand: "tar -C /var/vmail -xf -",
   artifactName: "mail.tar.zst",
 };
+
+/**
+ * A policy whose commands carry a DSN, and the same two AS THE SCRUBBER STORED THEM.
+ * `://***@` is the redactor's own output — a real DSN has credentials in that position
+ * and a credential-less one has no `@` at all — which is why it is safe to key on.
+ */
+const DSN_PAYLOAD = {
+  produceCommand: 'mongodump --uri "mongodb://root:s3cr3t@db:27017/?authSource=admin" --archive',
+  restoreCommand:
+    'mongorestore --uri "mongodb://root:s3cr3t@db:27017/?authSource=admin" --archive',
+};
+const SCRUBBED_DUMP = 'mongodump --uri "mongodb://***@db:27017/?authSource=admin" --archive';
+const SCRUBBED_RESTORE =
+  'mongorestore --uri "mongodb://***@db:27017/?authSource=admin" --archive';
 
 /** An artifact as the broken orchestrator recorded it. */
 const brokenArtifact = (over: Record<string, unknown> = {}) => ({
@@ -201,6 +221,76 @@ describe("custom_command restoreCommand backfill", () => {
       repaired: 3,
       unrecoverable: [],
     });
+  });
+
+  it("repairs a command whose credentials were scrubbed at capture time", async () => {
+    // The stored shape: present, plausible, and guaranteed to fail auth. The null
+    // check that found the D5 rows cannot see this one.
+    const policy = await seedBackupPolicy(destinationId, { payloadConfig: DSN_PAYLOAD });
+    const run = await seedBackupRun(organizationId, {
+      policyId: policy.id,
+      artifacts: [
+        brokenArtifact({
+          metadata: {
+            produceCommand: SCRUBBED_DUMP,
+            restoreCommand: SCRUBBED_RESTORE,
+          },
+        }),
+      ],
+    });
+
+    expect(await backfillCustomCommandRestoreCommands()).toEqual({
+      repaired: 1,
+      unrecoverable: [],
+    });
+
+    const [entry] = await artifactsOf(run.id);
+    expect(entry!.metadata!.restoreCommand).toBe(DSN_PAYLOAD.restoreCommand);
+    expect(entry!.metadata!.restoreCommand).toContain("s3cr3t");
+    // The provenance half was scrubbed too, and a hand-restore reads it. The null
+    // check would have left it, because it is a non-empty string.
+    expect(entry!.metadata!.produceCommand).toBe(DSN_PAYLOAD.produceCommand);
+  });
+
+  it("reports a scrubbed command with no surviving policy as unrestorable", async () => {
+    // The case an operator has to hear about at boot rather than at 3am: the archive
+    // exists, the DB says it is a restore point, and the only usable copy of the
+    // command went with the policy.
+    const run = await seedBackupRun(organizationId, {
+      policyId: null,
+      artifacts: [brokenArtifact({ metadata: { restoreCommand: SCRUBBED_RESTORE } })],
+    });
+
+    const result = await backfillCustomCommandRestoreCommands();
+    expect(result.repaired).toBe(0);
+    expect(result.unrecoverable).toEqual([run.id]);
+    // Not rewritten with a guess.
+    const [entry] = await artifactsOf(run.id);
+    expect(entry!.metadata!.restoreCommand).toBe(SCRUBBED_RESTORE);
+  });
+
+  it("refuses to touch a real command that merely contains ***", async () => {
+    // The SQL candidate filter matches any `***` so the scrubbed rows are cheap to
+    // find; the narrow re-check is what keeps this from rewriting — or announcing as
+    // unrestorable — an operator's own banner. Both halves are asserted, because a
+    // false "CANNOT be restored" at boot is its own failure.
+    const banner = "echo '*** restoring mail ***'; tar -C /var/vmail -xf -";
+    const run = await seedBackupRun(organizationId, {
+      policyId: null,
+      artifacts: [brokenArtifact({ metadata: { restoreCommand: banner } })],
+    });
+
+    // Proven broad, so the skip below is the thing under test and not a vacuous pass:
+    // the SQL DOES hand this run to the backfill.
+    const candidates = await repos.backupRun.listCustomCommandMissingRestoreCommand();
+    expect(candidates.map((r) => r.id)).toContain(run.id);
+
+    expect(await backfillCustomCommandRestoreCommands()).toEqual({
+      repaired: 0,
+      unrecoverable: [],
+    });
+    const [entry] = await artifactsOf(run.id);
+    expect(entry!.metadata!.restoreCommand).toBe(banner);
   });
 
   it("skips soft-deleted runs", async () => {

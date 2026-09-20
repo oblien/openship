@@ -8,10 +8,11 @@
  *   restore      — restore history (sibling of run)
  */
 
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { backupDestination, backupPolicy, backupRestore, backupRun } from "../schema";
 import { detailOf } from "./storable-detail";
+import { withProjectWorkAdmission } from "./project-work-admission";
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
@@ -35,17 +36,26 @@ export type BackupRunStatus =
   | "cancelled"
   | "server_error";
 
+export interface PolicyLastRunSummary {
+  id: string;
+  status: string;
+  startedAt: Date;
+  finishedAt: Date | null;
+  bytesTransferred: number | null;
+}
+
+/** Result of atomically admitting one queued backup worker. */
+export type BackupRunExecutionClaim = "claimed" | "project_unavailable" | "state_changed";
+
 /**
  * Restore FSM: queued → preparing → prepared → applying → terminal.
  *
- *   preparing  Downloading artifact + verifying sha256 into a staging
- *              area (Docker named volume or Cloud workspace sub-path).
- *              Service stays running, untouched.
- *   prepared   Staging complete. Waiting for user to confirm + apply.
- *              Can sit indefinitely. User can also cancel here and
- *              the staging area gets cleaned up.
- *   applying   Destructive phase: stop service → swap volume contents
- *              from staging → start service → verify health.
+ *   preparing  Verifies the remote artifact and target while leaving the
+ *              service untouched. Nothing is staged locally today.
+ *   prepared   Verification complete. Waiting for user confirmation; this
+ *              state may sit indefinitely and is safe to cancel immediately.
+ *   applying   Destructive phase: stop service → stream into the target →
+ *              start service → verify health.
  */
 export type BackupRestoreStatus =
   | "queued"
@@ -56,6 +66,9 @@ export type BackupRestoreStatus =
   | "failed"
   | "cancelled"
   | "server_error";
+
+/** Result of atomically admitting the destructive half of a restore. */
+export type BackupRestoreApplyClaim = "claimed" | "project_unavailable" | "state_changed";
 
 export const IN_FLIGHT_RUN_STATUSES: BackupRunStatus[] = [
   "queued",
@@ -73,6 +86,12 @@ export const IN_FLIGHT_RESTORE_STATUSES: BackupRestoreStatus[] = [
 // Note: `prepared` is INTENTIONALLY not in-flight — it's a quiescent
 // waiting state. Boot sweep doesn't kill prepared restores, the user
 // gets to apply them after a restart.
+
+/** A terminal-looking outcome is still active until its winning worker exits. */
+const liveBackupExecution = and(
+  isNotNull(backupRun.executionStartedAt),
+  isNull(backupRun.executionFinishedAt),
+);
 
 // ─── Transition durability ───────────────────────────────────────────────────
 
@@ -100,9 +119,29 @@ async function persistTransition(
   status: string,
   core: Record<string, unknown>,
   patch: Record<string, unknown> | undefined,
-  write: (values: Record<string, unknown>) => Promise<unknown>,
+  /**
+   * `guarded` is true ONLY for the status write.
+   *
+   * The terminal guard must not cover the payload writes below. The core write flips the
+   * row to `succeeded`, so a guard applied to every write would then reject the very next
+   * one — silently dropping `manifestKey`, `artifacts`, `bytesTransferred` on success and
+   * `errorMessage` on failure. Caught by the payload-matrix E2E: a run reported
+   * `succeeded` with `manifest_key` still null.
+   */
+  write: (values: Record<string, unknown>, guarded: boolean) => Promise<unknown>,
 ): Promise<void> {
-  await write(core);
+  const core_result = await write(core, true);
+  // An empty `returning()` means the guarded WHERE matched nothing: the row is already
+  // terminal and this transition lost the race. Logged, never swallowed — the write being
+  // dropped is exactly the information someone debugging a disagreeing run needs, and the
+  // payload writes below are pointless once the core one did not land.
+  if (Array.isArray(core_result) && core_result.length === 0) {
+    console.warn(
+      `[db] ${label} ${id}: refused transition to "${status}" — the row is already in a ` +
+        `terminal state. Whoever finished it first owns the verdict; this write was dropped.`,
+    );
+    return;
+  }
   if (!patch) return;
   // `status` never rides the payload — the core write above owns it.
   const rest: Record<string, unknown> = {};
@@ -113,7 +152,7 @@ async function persistTransition(
   if (keys.length === 0) return;
 
   try {
-    await write(rest);
+    await write(rest, false);
     return;
   } catch (err) {
     console.error(
@@ -123,13 +162,13 @@ async function persistTransition(
 
   for (const key of keys) {
     try {
-      await write({ [key]: rest[key] });
+      await write({ [key]: rest[key] }, false);
       continue;
     } catch (err) {
       const detail = detailOf(err);
       if (typeof rest[key] === "string") {
         try {
-          await write({ [key]: `[unstorable: ${detail}]` });
+          await write({ [key]: `[unstorable: ${detail}]` }, false);
           continue;
         } catch {
           // fall through to the log below
@@ -484,21 +523,90 @@ export function createBackupRunRepo(db: Database) {
       });
     },
 
-    /** Most recent run for a policy (any status), newest first. Used by the
-     *  read-only backup-schedule view in the Jobs tab to show last-run state. */
-    async latestByPolicy(policyId: string): Promise<BackupRun | undefined> {
-      return db.query.backupRun.findFirst({
+    /**
+     * Most recent run (or aggregated batch summary for multi-service project policies)
+     * for a policy, newest first. Used by the read-only backup-schedule view in the Jobs tab
+     * and the Destination detail page to show last-run state.
+     *
+     * When a policy targets an entire project, triggering it fans out into multiple child
+     * runs with the same batchId. This method finds the newest run, gathers only its exact
+     * siblings, and returns a consolidated summary with total transferred bytes and batch
+     * status. Legacy rows have no batchId and retain the former single-run behavior because
+     * timestamp proximity cannot safely distinguish concurrent triggers.
+     */
+    async latestByPolicy(policyId: string): Promise<PolicyLastRunSummary | undefined> {
+      const latest = await db.query.backupRun.findFirst({
         where: and(eq(backupRun.policyId, policyId), isNull(backupRun.deletedAt)),
-        orderBy: (t, { desc }) => [desc(t.startedAt)],
+        orderBy: (t, { desc }) => [desc(t.startedAt), desc(t.id)],
       });
+      if (!latest) return undefined;
+
+      const singleRunSummary = (): PolicyLastRunSummary => ({
+        id: latest.id,
+        status: latest.status,
+        startedAt: latest.startedAt,
+        finishedAt: latest.finishedAt,
+        bytesTransferred: latest.bytesTransferred,
+      });
+      const batchId = latest.batchId;
+      if (!batchId) return singleRunSummary();
+
+      const batchRuns = await db.query.backupRun.findMany({
+        where: and(
+          eq(backupRun.policyId, policyId),
+          eq(backupRun.batchId, batchId),
+          isNull(backupRun.deletedAt),
+        ),
+      });
+
+      if (batchRuns.length <= 1) return singleRunSummary();
+
+      const earliestStartedAt = new Date(Math.min(...batchRuns.map((r) => r.startedAt.getTime())));
+
+      // Pick the least-advanced live child so the summary does not imply that
+      // the whole batch has progressed farther than its slowest member.
+      const inFlightStatus = IN_FLIGHT_RUN_STATUSES.find((status) =>
+        batchRuns.some((r) => r.status === status),
+      );
+      const hasUnfinishedRun = !!inFlightStatus || batchRuns.some((r) => !r.finishedAt);
+
+      const latestFinishedAt = hasUnfinishedRun
+        ? null
+        : new Date(Math.max(...batchRuns.map((r) => r.finishedAt!.getTime())));
+
+      let batchStatus: string;
+      if (inFlightStatus) {
+        batchStatus = inFlightStatus;
+      } else if (batchRuns.every((r) => r.status === "succeeded")) {
+        batchStatus = "succeeded";
+      } else {
+        batchStatus =
+          (["server_error", "failed", "cancelled"] as const).find((status) =>
+            batchRuns.some((r) => r.status === status),
+          ) ?? latest.status;
+      }
+
+      const knownByteCounts = batchRuns
+        .map((r) => r.bytesTransferred)
+        .filter((bytes): bytes is number => bytes !== null);
+      const totalBytes =
+        knownByteCounts.length > 0
+          ? knownByteCounts.reduce((sum, bytes) => sum + Number(bytes), 0)
+          : null;
+
+      return {
+        id: latest.id,
+        status: batchStatus,
+        startedAt: earliestStartedAt,
+        finishedAt: latestFinishedAt,
+        bytesTransferred: totalBytes,
+      };
     },
 
     /** Storage rollup per destination for one org: bytes actually stored
      *  (succeeded, non-deleted runs), total run count, and the most recent run
      *  time. Powers the Backups page's per-destination size monitoring. */
-    async statsByDestination(
-      organizationId: string,
-    ): Promise<
+    async statsByDestination(organizationId: string): Promise<
       Array<{
         destinationId: string | null;
         storedBytes: number;
@@ -524,13 +632,19 @@ export function createBackupRunRepo(db: Database) {
       }));
     },
 
-    /** Every run for a project still in a non-terminal state. Used by the
-     *  atomic project-teardown gate to decide whether to reject or force. */
+    /**
+     * Every run that can still mutate project resources.
+     *
+     * The execution lease intentionally outlives a terminal FSM outcome. A
+     * heartbeat sweep may record `server_error` while the original upload is
+     * still unwinding; teardown must continue to see that worker until its
+     * outermost finally acknowledges completion.
+     */
     async listInFlightByProject(projectId: string): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
         where: and(
           eq(backupRun.projectId, projectId),
-          inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES),
+          or(inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES), liveBackupExecution),
           isNull(backupRun.deletedAt),
         ),
       });
@@ -542,15 +656,117 @@ export function createBackupRunRepo(db: Database) {
      *  through the backlog in FIFO order. */
     async listQueued(limit = 50): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
-        where: eq(backupRun.status, "queued"),
+        where: and(eq(backupRun.status, "queued"), isNull(backupRun.executionStartedAt)),
         orderBy: (t, { asc }) => [asc(t.startedAt)],
         limit,
       });
     },
 
     async create(data: NewBackupRun): Promise<BackupRun> {
-      const [row] = await db.insert(backupRun).values(data).returning();
+      const row = await withProjectWorkAdmission(
+        db,
+        data.projectId,
+        data.organizationId,
+        async (tx) => (await tx.insert(backupRun).values(data).returning())[0]!,
+      );
+      if (!row) {
+        throw new Error("Cannot start backup: project is being deleted or no longer exists");
+      }
       return row;
+    },
+
+    /**
+     * Atomically give exactly one worker ownership of a queued run.
+     *
+     * The project row is locked through the same admission gate used by run
+     * creation. If execution wins, project deletion waits and then observes the
+     * newly-opened lease. If deletion wins, its predicate is re-evaluated after
+     * the wait and no worker starts. The backup-row predicates also make an
+     * in-process fast path, poller, BullMQ retry, and inline enqueue fallback all
+     * converge on one owner.
+     */
+    async claimExecution(
+      id: string,
+      projectId: string | null,
+      organizationId: string,
+    ): Promise<BackupRunExecutionClaim> {
+      const claimed = await withProjectWorkAdmission(db, projectId, organizationId, async (tx) => {
+        const now = new Date();
+        const projectMatches = projectId
+          ? eq(backupRun.projectId, projectId)
+          : isNull(backupRun.projectId);
+        const [row] = await tx
+          .update(backupRun)
+          .set({
+            status: "preparing",
+            executionStartedAt: now,
+            executionFinishedAt: null,
+            lastEventAt: now,
+          })
+          .where(
+            and(
+              eq(backupRun.id, id),
+              eq(backupRun.organizationId, organizationId),
+              projectMatches,
+              eq(backupRun.status, "queued"),
+              isNull(backupRun.executionStartedAt),
+              isNull(backupRun.executionFinishedAt),
+              isNull(backupRun.deletedAt),
+            ),
+          )
+          .returning();
+        return Boolean(row);
+      });
+      if (claimed === undefined) return "project_unavailable";
+      return claimed ? "claimed" : "state_changed";
+    },
+
+    /**
+     * Cancel a queued run before any worker owns it.
+     *
+     * Project teardown has already closed work admission when it calls this.
+     * This CAS races safely with `claimExecution`: exactly one side can change
+     * the queued/unclaimed row. A claimed capture is deliberately untouched;
+     * teardown must wait for that worker's execution lease to close.
+     */
+    async cancelQueuedBeforeExecution(
+      id: string,
+      projectId: string,
+      organizationId: string,
+    ): Promise<boolean> {
+      const now = new Date();
+      const [cancelled] = await db
+        .update(backupRun)
+        .set({
+          status: "cancelled",
+          finishedAt: now,
+          lastEventAt: now,
+        })
+        .where(
+          and(
+            eq(backupRun.id, id),
+            eq(backupRun.projectId, projectId),
+            eq(backupRun.organizationId, organizationId),
+            eq(backupRun.status, "queued"),
+            isNull(backupRun.executionStartedAt),
+            isNull(backupRun.executionFinishedAt),
+            isNull(backupRun.deletedAt),
+          ),
+        )
+        .returning();
+      return Boolean(cancelled);
+    },
+
+    /**
+     * Close the durable execution lease. This is intentionally separate from
+     * every status transition and is called only by the worker's outermost
+     * finally, after all source/destination cleanup and notifications return.
+     */
+    async acknowledgeExecutionFinished(id: string): Promise<void> {
+      await db
+        .update(backupRun)
+        .set({ executionFinishedAt: new Date() })
+        .where(and(eq(backupRun.id, id), liveBackupExecution));
     },
 
     /** FSM state transition. Always bumps lastEventAt; sets finishedAt
@@ -559,7 +775,9 @@ export function createBackupRunRepo(db: Database) {
     async transition(
       id: string,
       status: BackupRunStatus,
-      patch?: Partial<Omit<NewBackupRun, "id" | "startedAt">>,
+      patch?: Partial<
+        Omit<NewBackupRun, "id" | "startedAt" | "executionStartedAt" | "executionFinishedAt">
+      >,
     ): Promise<void> {
       const TERMINAL: BackupRunStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
       const finishing = TERMINAL.includes(status);
@@ -570,37 +788,101 @@ export function createBackupRunRepo(db: Database) {
         status,
         { status, lastEventAt: now, ...(finishing ? { finishedAt: now } : {}) },
         patch as Record<string, unknown> | undefined,
-        (values) =>
+        (values, guarded) =>
           db
             .update(backupRun)
             .set(values as Partial<NewBackupRun>)
-            .where(eq(backupRun.id, id)),
+            // A terminal status is FINAL, and the guard is atomic rather than a
+            // read-then-check because the writers genuinely race: the stale-heartbeat
+            // sweep's ceiling can stamp `server_error` on a legitimately long upload
+            // while `execute()` is still running, and the unguarded write then let
+            // `succeeded` land on top of it — a run the system had already decided had
+            // failed becoming a green restore point. One owner per verdict: whoever
+            // reaches terminal first.
+            .where(
+              guarded
+                ? and(eq(backupRun.id, id), notInArray(backupRun.status, TERMINAL))
+                : eq(backupRun.id, id),
+            )
+            .returning(),
       );
     },
 
-    /** Mark every in-flight run as server_error. Called at boot to
-     *  reconcile after a crash. */
+    /**
+     * Mark every RUNNING run as server_error. Called at boot to reconcile after a
+     * crash: a run that was mid-execution has no worker any more, and its in-process
+     * state died with the process, so it cannot be resumed.
+     *
+     * `queued` is excluded, because a queued row lost nothing when the process died —
+     * it had not started. Both runners recover it: the in-process one calls
+     * `requeueOrphanedRuns()` at boot and polls `listQueued()` every 30s, and BullMQ
+     * holds the job in Redis. Terminalizing it here destroyed durable work and, since
+     * the write is terminal and `transition()` guards terminal states, did so
+     * permanently — an API restart during a backup window meant those backups never
+     * ran and reported a crash that had not touched them.
+     */
     async sweepStaleRuns(reason: string): Promise<number> {
-      const result = await db
-        .update(backupRun)
-        .set({
-          status: "server_error",
-          finishedAt: new Date(),
-          lastEventAt: new Date(),
-          errorMessage: reason,
-        })
-        .where(and(inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES), isNull(backupRun.finishedAt)))
-        .returning();
-      return result.length;
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const terminalized = await tx
+          .update(backupRun)
+          .set({
+            status: "server_error",
+            finishedAt: now,
+            lastEventAt: now,
+            errorMessage: reason,
+          })
+          .where(
+            and(
+              inArray(
+                backupRun.status,
+                IN_FLIGHT_RUN_STATUSES.filter((s) => s !== "queued"),
+              ),
+              isNull(backupRun.finishedAt),
+            ),
+          )
+          .returning();
+
+        // This method is boot-only and only called for a self-hosted,
+        // single-process installation. Process start is therefore proof that
+        // the previous in-process worker is gone. Unlike heartbeat sweeps, this
+        // is allowed to close an orphaned execution lease. Preserve any terminal
+        // verdict that landed just before the crash by keeping this a separate
+        // lease-only write.
+        const acknowledged = await tx
+          .update(backupRun)
+          .set({ executionFinishedAt: now })
+          .where(liveBackupExecution)
+          .returning();
+
+        return new Set([...terminalized, ...acknowledged].map((row) => row.id)).size;
+      });
     },
 
     /**
      * Fail in-flight runs whose `lastEventAt` heartbeat has gone stale. Unlike
      * `sweepStaleRuns` (boot-only, marks everything in-flight), this is selective:
-     *   - queued rows nobody picked up within `queuedCutoff`
      *   - preparing/snapshotting/verifying with no transition within `idleCutoff`
      *     (brief hops between states — a stall there is genuinely stuck)
      *   - any in-flight row past the absolute `ceilingCutoff`
+     *
+     * `queued` is deliberately NOT swept on the idle window, and this is the whole
+     * point of the state. `lastEventAt` is stamped once at row creation and bumped
+     * only by `transition()`, so while a run WAITS for a worker slot the column does
+     * not move — meaning an idle window applied to `queued` measures QUEUE DEPTH, not
+     * health. Run concurrency is 2, so a project-level policy fanning out across a
+     * handful of services, or a set of policies sharing one cron minute, puts ordinary
+     * runs past any such window while they are still perfectly claimable.
+     *
+     * Sweeping them was unrecoverable, not merely early: the write is TERMINAL, the
+     * guard in `transition()` then refuses every later write, and `execute()` bails on
+     * any row that is no longer `queued`. So the nightly backups quietly stopped
+     * happening and reported a timeout that had not occurred.
+     *
+     * A queued row also does not NEED this: it is never orphaned. The in-process
+     * runner re-lists `listQueued()` every 30s (and at boot), and the BullMQ queue is
+     * durable in Redis. The 6h `ceilingCutoff` still applies as the genuine backstop —
+     * a row that has sat queued that long is a real anomaly, not a busy queue.
      *
      * `uploading` is deliberately NOT idle-swept. A single-artifact dump
      * (pg_dump/mysqldump/mongodump) streams the whole payload through one
@@ -615,12 +897,11 @@ export function createBackupRunRepo(db: Database) {
      * only backstops `uploading` via the 6h `ceilingCutoff`.
      */
     async sweepRunsWithStaleHeartbeat(params: {
-      queuedCutoff: Date;
       idleCutoff: Date;
       ceilingCutoff: Date;
       reason: string;
     }): Promise<number> {
-      const { queuedCutoff, idleCutoff, ceilingCutoff, reason } = params;
+      const { idleCutoff, ceilingCutoff, reason } = params;
       const result = await db
         .update(backupRun)
         .set({
@@ -634,7 +915,6 @@ export function createBackupRunRepo(db: Database) {
             inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES),
             isNull(backupRun.finishedAt),
             or(
-              and(eq(backupRun.status, "queued"), lt(backupRun.lastEventAt, queuedCutoff)),
               and(
                 inArray(backupRun.status, ["preparing", "snapshotting", "verifying"]),
                 lt(backupRun.lastEventAt, idleCutoff),
@@ -660,12 +940,24 @@ export function createBackupRunRepo(db: Database) {
     },
 
     /**
-     * Runs holding a `custom_command` artifact with no `restoreCommand` — i.e.
-     * an artifact that cannot be put back (D5). Filtered in SQL so an instance
+     * Runs holding a `custom_command` artifact whose `restoreCommand` is unusable —
+     * i.e. an artifact that cannot be put back (D5). Filtered in SQL so an instance
      * with years of history doesn't page every row in to find a handful, and
      * matched on the ARTIFACT rather than the policy so runs whose policy was
      * since deleted still surface (those are unrecoverable, and the operator
      * needs to hear about them before they need the restore).
+     *
+     * Two shapes, because there are two ways the command went missing. EMPTY is the
+     * original D5 defect (the orchestrator hand-picked payload keys and dropped it).
+     * A `***` is the second: the recorded metadata was run through the build-log
+     * credential scrubber, so a command carrying a DSN was stored with its userinfo
+     * redacted — present, plausible, and guaranteed to fail authentication. New runs
+     * no longer go through that path; this finds the ones already captured.
+     *
+     * The `***` match is deliberately BROAD (any occurrence) because this is only a
+     * candidate list — the caller re-checks each entry against the narrow
+     * `isRedactedCommand` shape before touching anything, so an operator's own `***`
+     * costs one skipped row rather than a rewritten command.
      */
     async listCustomCommandMissingRestoreCommand(limit = 1000): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
@@ -675,7 +967,10 @@ export function createBackupRunRepo(db: Database) {
           sql`exists (
             select 1 from jsonb_array_elements(${backupRun.artifacts}) as entry
             where entry->>'payloadKind' = 'custom_command'
-              and coalesce(entry->'metadata'->>'restoreCommand', '') = ''
+              and (
+                coalesce(entry->'metadata'->>'restoreCommand', '') = ''
+                or entry->'metadata'->>'restoreCommand' like '%***%'
+              )
           )`,
         ),
         orderBy: (t, { asc }) => [asc(t.startedAt)],
@@ -751,8 +1046,40 @@ export function createBackupRestoreRepo(db: Database) {
     },
 
     async create(data: NewBackupRestore): Promise<BackupRestore> {
-      const [row] = await db.insert(backupRestore).values(data).returning();
+      const row = await withProjectWorkAdmission(
+        db,
+        data.projectId,
+        data.organizationId,
+        async (tx) => (await tx.insert(backupRestore).values(data).returning())[0]!,
+      );
+      if (!row) {
+        throw new Error("Cannot start restore: project is being deleted or no longer exists");
+      }
       return row;
+    },
+
+    /**
+     * Give a restore row a confirmation token IF it has none, and report the token
+     * that is actually in force.
+     *
+     * A null token there means apply can NEVER succeed: the compare demands an exact
+     * match against the stored value and the route rejects an empty one before it gets
+     * that far, so the row is prepared and unappliable. The update is conditional on
+     * the column still being null, so a concurrent prepare cannot swap the token out
+     * from under a client already holding one — hence the read-back for the losing
+     * caller, which needs the winner's value, not its own.
+     */
+    async adoptConfirmationToken(id: string, token: string): Promise<string | null> {
+      const [row] = await db
+        .update(backupRestore)
+        .set({ confirmationToken: token })
+        .where(and(eq(backupRestore.id, id), isNull(backupRestore.confirmationToken)))
+        .returning();
+      if (row) return row.confirmationToken;
+      const current = await db.query.backupRestore.findFirst({
+        where: eq(backupRestore.id, id),
+      });
+      return current?.confirmationToken ?? null;
     },
 
     /**
@@ -774,6 +1101,44 @@ export function createBackupRestoreRepo(db: Database) {
       return row;
     },
 
+    /**
+     * Atomically move a prepared restore into its destructive phase while
+     * serializing with project deletion.
+     *
+     * A restore row is created during prepare, potentially hours before the
+     * operator applies it, so creation-time work admission is not enough. This
+     * update must take the same project-row lock as `project.claimDeletion()`:
+     * if apply wins, teardown's in-lock active query sees `applying`; if delete
+     * wins, apply is refused. The cancel predicate also prevents a durable
+     * cancel request from being crossed by a late apply transition.
+     */
+    async claimApply(
+      id: string,
+      projectId: string | null,
+      organizationId: string,
+    ): Promise<BackupRestoreApplyClaim> {
+      const projectMatches = projectId
+        ? eq(backupRestore.projectId, projectId)
+        : isNull(backupRestore.projectId);
+      const rows = await withProjectWorkAdmission(db, projectId, organizationId, (tx) =>
+        tx
+          .update(backupRestore)
+          .set({ status: "applying", lastEventAt: new Date() })
+          .where(
+            and(
+              eq(backupRestore.id, id),
+              eq(backupRestore.organizationId, organizationId),
+              projectMatches,
+              eq(backupRestore.status, "prepared"),
+              eq(backupRestore.cancelRequested, false),
+            ),
+          )
+          .returning(),
+      );
+      if (!rows) return "project_unavailable";
+      return rows.length === 1 ? "claimed" : "state_changed";
+    },
+
     async transition(
       id: string,
       status: BackupRestoreStatus,
@@ -793,11 +1158,20 @@ export function createBackupRestoreRepo(db: Database) {
           ...(status === "cancelled" ? { cancelledAt: now } : {}),
         },
         patch as Record<string, unknown> | undefined,
-        (values) =>
+        (values, guarded) =>
           db
             .update(backupRestore)
             .set(values as Partial<NewBackupRestore>)
-            .where(eq(backupRestore.id, id)),
+            // Same rule as backup_run above. This table is where it was first observed:
+            // "the operator watched a cancel undo itself" (restore.orchestrator.ts) was
+            // patched with a read-then-check in the ORCHESTRATOR, leaving the repo write
+            // unguarded — so the race stayed reachable from any other writer.
+            .where(
+              guarded
+                ? and(eq(backupRestore.id, id), notInArray(backupRestore.status, TERMINAL))
+                : eq(backupRestore.id, id),
+            )
+            .returning(),
       );
     },
 

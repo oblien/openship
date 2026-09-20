@@ -21,6 +21,7 @@
       "cloud": "Bulut",
       "defaults": "Varsayılanlar",
       "settings": "Ayarlar",
+      "dns": "DNS",
       "notifications": "Bildirimler",
       "team": "Ekip",
       "members": "Üyeler",
@@ -47,12 +48,13 @@
     "title": "Ayarlar",
     "tabs": {
       "general": "Genel",
-      "tokens": "Jetonlar",
+      "git": "Git",
+      "tokens": "API jetonları",
       "mcp": "MCP",
       "team": "Ekip",
       "notifications": "Bildirimler",
       "email": "E-posta",
-      "audit": "Denetim günlüğü",
+      "credentials": "Kimlik bilgileri",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
       "instance": "Kurulum"
@@ -153,10 +155,6 @@
     "noServers": "Henüz yapılandırılmış sunucu yok - dağıtım seçiciden bir tane ekleyin.",
     "clearDefault": "Varsayılanı temizle (her seferinde sor)",
     "targets": {
-      "local": {
-        "label": "Bu Bilgisayar",
-        "desc": "Yerel Docker / çalışma zamanı"
-      },
       "server": {
         "label": "Sunucum",
         "desc": "Yapılandırılmış bir SSH sunucusu"
@@ -168,8 +166,7 @@
     },
     "labelFor": {
       "yourServer": "sunucunuz",
-      "cloud": "Openship Bulut",
-      "local": "Bu Bilgisayar"
+      "cloud": "Openship Bulut"
     },
     "toast": {
       "pickServer": "Önce bir sunucu seçin",
@@ -200,6 +197,64 @@
     "toast": {
       "setTo": "Derleme modu {mode} olarak ayarlandı",
       "failed": "Derleme modu güncellenemedi"
+    }
+  },
+  "githubSources": {
+    "title": "Kendi sunucunuzdaki GitHub Uygulamaları",
+    "description": "Şifreli uygulama kimlik bilgileri, doğrudan webhook'lar ve kısa ömürlü kurulum belirteçleriyle bu örneğin GitHub bağlantısını yönetin.",
+    "publicUrlRequired": "Önce bu Openship örneği için herkese açık bir HTTPS adresi yapılandırın. GitHub kurulum geri çağrısına ve webhook'a erişebilmelidir.",
+    "createWithGithub": "GitHub ile oluştur",
+    "registerExisting": "Mevcut uygulamayı kaydet",
+    "manifestHelp": "Openship en az yetkili uygulama bildirimini GitHub'a gönderir. GitHub uygulamayı oluşturur, kimlik bilgilerini bir kez döndürür ve depo kurulumunu açar.",
+    "nameLabel": "Kaynak adı",
+    "namePlaceholder": "Acme GitHub kaynağı",
+    "continueOnGithub": "GitHub'da devam et",
+    "empty": "Henüz çalışma alanına ait bir GitHub Uygulaması yok.",
+    "defaultBadge": "Varsayılan",
+    "activeBadge": "Etkin",
+    "invalidBadge": "İlgilenilmeli",
+    "webhookChanged": "Bu uygulama eski bir webhook adresiyle kaydedilmiş. GitHub'daki Webhook ve Kurulum URL'lerini güncelleyip kaynağı yeniden kaydedin.",
+    "installations": "Kurulu hesaplar",
+    "noInstallations": "Henüz bir hesaba kurulmadı.",
+    "suspended": "askıya alındı",
+    "installAccount": "Hesaba kur",
+    "verify": "Doğrula",
+    "edit": "Düzenle",
+    "makeDefault": "Varsayılan yap",
+    "manage": "GitHub'da yönet",
+    "delete": "Sil",
+    "confirmDelete": "{name} Openship'ten silinsin mi? Yerel kimlik bilgileri ve kurulum bağları kaldırılır; uygulama siz GitHub'dan kaldırana kadar orada kurulu kalır.",
+    "editHelp": "Kayıtlı şifreli değerleri korumak için gizli alanları boş bırakın.",
+    "manualHelp": "Mevcut bir GitHub Uygulamasının kimlik bilgilerini girin. Openship hiçbir şey kaydetmeden önce özel anahtarı doğrular.",
+    "appIdLabel": "Uygulama kimliği",
+    "clientIdLabel": "İstemci kimliği",
+    "clientSecretLabel": "İstemci sırrı",
+    "optionalHelp": "Kurulum belirteciyle kimlik doğrulama için isteğe bağlıdır.",
+    "leaveBlank": "Kayıtlı değeri korumak için boş bırakın.",
+    "privateKeyLabel": "Özel anahtar (PEM)",
+    "privateKeyHelp": "GitHub Uygulaması ayarlarında özel anahtar oluşturup PEM dosyasının tamamını yapıştırın.",
+    "webhookSecretLabel": "Webhook sırrı",
+    "webhookSecretHelp": "Uygulamanın webhook ayarlarında aynı güçlü sırrı kullanın (en az 16 karakter).",
+    "enterpriseSettings": "GitHub Enterprise ayarları",
+    "webUrlLabel": "GitHub web adresi",
+    "apiUrlLabel": "GitHub API adresi",
+    "defaultLabel": "Bu uygulamayı varsayılan kaynak olarak kullan",
+    "setupUrlLabel": "Kurulum URL'si",
+    "webhookUrlLabel": "Webhook URL'si",
+    "registerAndInstall": "Kaydet ve kur",
+    "toast": {
+      "loadFailed": "GitHub Uygulaması kaynakları yüklenemedi.",
+      "createFailed": "GitHub Uygulaması oluşturma işlemi başlatılamadı.",
+      "installFailed": "GitHub Uygulaması kurulumu açılamadı.",
+      "verified": "GitHub Uygulaması doğrulandı.",
+      "verifyFailed": "GitHub Uygulaması doğrulanamadı.",
+      "defaultChanged": "Varsayılan GitHub Uygulaması değiştirildi.",
+      "defaultFailed": "Varsayılan GitHub Uygulaması değiştirilemedi.",
+      "deleted": "GitHub Uygulaması kaynağı silindi.",
+      "deleteFailed": "GitHub Uygulaması kaynağı silinemedi.",
+      "updated": "GitHub Uygulaması kaynağı güncellendi.",
+      "created": "GitHub Uygulaması kaydedildi.",
+      "saveFailed": "GitHub Uygulaması kaynağı kaydedilemedi."
     }
   },
   "cloneCredentials": {
@@ -337,6 +392,7 @@
     "you": "(siz)",
     "removeMember": "Üyeyi kaldır",
     "pendingInvitations": "Bekleyen davetler ({count})",
+    "copyInviteLink": "Davet bağlantısını kopyala",
     "invitedAs": "{role} olarak davet edildi — süresi {date} tarihinde dolar",
     "roles": {
       "owner": "Sahip (Owner)",
@@ -396,6 +452,7 @@
       "updateRoleFailed": "Rol güncellenemedi",
       "removeFailed": "Kaldırma işlemi başarısız oldu",
       "cancelFailed": "İptal işlemi başarısız oldu",
+      "copyInviteFailed": "Davet bağlantısı kopyalanamadı",
       "accessUpdated": "Erişim güncellendi",
       "loadGrantsFailed": "Yetkiler yüklenemedi",
       "deleteFailed": "Çalışma alanı silinemedi",
@@ -434,9 +491,11 @@
     "pickerTitle": "Başlangıç kaynak erişimi",
     "pickerDesc": "Kısıtlı üyeler erişim olmadan başlar. Davet kabul edildiğinde hangi kaynakların kilidinin açılacağını seçin — daha sonra üyenin satırından daha fazla yetki verebilirsiniz.",
     "sendInvite": "Davet gönder",
+    "createInviteLink": "Davet bağlantısı oluştur",
     "toast": {
       "failedSend": "Davet gönderilemedi",
       "invitationSent": "Davet {email} adresine gönderildi",
+      "invitationLinkCreated": "Davet bağlantısı oluşturuldu — Bekleyen davetlerden kopyalayın",
       "personalOrgBlocked": "Kişisel çalışma alanları üye davet edemez. Önce bir ekip organizasyonu oluşturun, ardından davet gönderin.",
       "updateMailSourceFailed": "E-posta kaynağı güncellenemedi"
     }
@@ -661,13 +720,31 @@
     "updatesOne": "1 güncelleme mevcut",
     "updatesMany": "{n} güncelleme mevcut",
     "allHealthy": "Tüm platform bileşenleri güncel",
-    "manageLink": "Sunucular'da yönet"
+    "manageLink": "Sunucular'da yönet",
+    "hostControlLabel": "Bu makineye dağıt",
+    "hostControlDesc": "OpenShip'in, bağlı sunucularınızın yanı sıra çalıştığı sunucuya da uygulama dağıtmasına izin verin. --no-host-control (yalnızca kontrol düzlemi) ile kurulduysa kapalıdır — bu makineyi dağıtım hedefi olarak eklemek için açın.",
+    "hostControlEnvNote": "Bu makine kurulumda yalnızca kontrol düzlemi (--no-host-control) olarak ayarlandı. Bunu açmak bu ayarı geçersiz kılar ve OpenShip'in buraya dağıtım yapmasına olanak tanır.",
+    "hostControlError": "Ana makine denetimi değiştirilemedi — bunu yalnızca bu makinenin çalışma alanının sahibi yapabilir."
   },
   "dataTransfer": {
     "export": {
       "title": "Verileri dışa aktar",
       "description": "Bu kurulumun tüm veritabanını dosya olarak indirin.",
       "intro": "Her şeyin taşınabilir bir anlık görüntüsünü oluşturur — projeler, sunucular, dağıtımlar, ayarlar. Gizli verilerinizi (ortam değişkenleri, jetonlar, SSH kimlik bilgileri) dahil etmek için bir parola belirleyin; bunların şifresi bu parola ile tekrar şifrelenir, böylece dosya güvenle taşınabilir. Gizli veriler olmadan dışa aktarmak için boş bırakın.",
+      "filterTitle": "İsteğe bağlı geçmiş",
+      "filterDescription": "Yapılandırma, projeler, sunucular, kullanıcılar ve kimlik bilgileri her zaman dahil edilir. Büyük dışa aktarımları küçültmek için gereksiz geçmişlerin seçimini kaldırın.",
+      "filterAnalytics": "Analiz ve kullanım örnekleri",
+      "filterActivity": "Denetim ve bildirim geçmişi",
+      "filterBackups": "Yedekleme ve geri yükleme geçmişi",
+      "filterIncidents": "Sağlık olayı geçmişi",
+      "filterMigrations": "Docker taşıma geçmişi",
+      "coreRows": "Her zaman dahil edilen satırlar",
+      "selectedRows": "Seçilen dışa aktarma satırları",
+      "countUnavailable": "kullanılamıyor",
+      "transferSecretNotice": "Sunucu SSH parolaları ve anahtarları, ortam değişkenleri, belirteçler ve yedekleme kimlik bilgilerini doğru taşımak için aşağıda bir aktarım sırrı oluşturun veya girin. Ayrı olarak saklayın ve içe aktarırken aynı sırrı girin. Kurulumun BETTER_AUTH_SECRET değerini hedefe kopyalamayın.",
+      "generateTransferSecret": "Aktarım sırrı oluştur",
+      "copyTransferSecret": "Aktarım sırrını kopyala",
+      "copiedTransferSecret": "Aktarım sırrı kopyalandı. İçe aktarma için güvenle saklayın.",
       "passphraseLabel": "Parola (isteğe bağlı)",
       "passphrasePlaceholder": "Gizli verilerinizi korur",
       "confirmLabel": "Parolayı onayla",
@@ -849,6 +926,36 @@
     "toast": {
       "setTo": "Yönlendirme stratejisi {mode} olarak ayarlandı",
       "failed": "Yönlendirme stratejisi güncellenemedi"
+    }
+  },
+  "credentials": {
+    "title": "Kimlik bilgileri",
+    "description": "Openship'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
+    "noProviders": "Bu örnekte kullanılabilir sağlayıcı yok.",
+    "noneForProvider": "Henüz eklenmedi.",
+    "add": "Ekle",
+    "edit": "Düzenle",
+    "save": "Değişiklikleri kaydet",
+    "connect": "Kimlik bilgisi ekle",
+    "delete": "Sil",
+    "verify": "Sağlayıcıyla yeniden denetle",
+    "badgeActive": "Çalışıyor",
+    "badgeInvalid": "İlgilenilmesi gerekiyor",
+    "fieldName": "Etiket",
+    "namePlaceholder": "örn. GHCR salt okunur",
+    "secretKeptPlaceholder": "•••••••• (kayıtlı — korumak için boş bırakın)",
+    "selectPlaceholder": "Seçin…",
+    "verifyNote": "Openship, kaydetmeden önce kimlik bilgisini sağlayıcıyla denetler.",
+    "confirmDelete": "\"{name}\" silinsin mi? Buna dayanan her şey çalışmayı bırakır.",
+    "toast": {
+      "loadFailed": "Kimlik bilgileri yüklenemedi",
+      "created": "Kimlik bilgisi eklendi",
+      "updated": "Kimlik bilgisi güncellendi",
+      "deleted": "Kimlik bilgisi silindi",
+      "saveFailed": "Kimlik bilgisi kaydedilemedi",
+      "deleteFailed": "Kimlik bilgisi silinemedi",
+      "verifyOk": "Sağlayıcı kimlik bilgisini kabul etti",
+      "verifyFailed": "Sağlayıcı kimlik bilgisini reddetti"
     }
   }
 }

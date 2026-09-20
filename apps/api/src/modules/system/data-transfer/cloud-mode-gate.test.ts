@@ -3,8 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 // GATE 1: whole-instance export/import must refuse on a multi-tenant (CLOUD_MODE)
 // instance — defense-in-depth beyond the route-mount gate. Flip only CLOUD_MODE,
 // keep every other real env field so the module graph still loads.
-vi.mock("../../../config/env", async (orig) => {
-  const actual = await orig<typeof import("../../../config/env")>();
+vi.mock("@repo/platform/engine/config/env", async (orig) => {
+  const actual = await orig<typeof import("@repo/platform/engine/config/env")>();
   return { ...actual, env: { ...actual.env, CLOUD_MODE: true } };
 });
 

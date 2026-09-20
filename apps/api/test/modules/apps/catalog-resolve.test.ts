@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveCatalog, type ResolvedAppTemplate } from "../../../src/modules/apps/catalog-source";
+import { resolveCatalog, type ResolvedAppTemplate } from "@repo/platform/engine/modules/apps/catalog-source";
 import type { AppTemplate } from "@repo/core";
 
 /** Minimal AppTemplate — resolveCatalog only reads id/minEngine/identity fields. */

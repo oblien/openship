@@ -17,8 +17,10 @@
  */
 
 import { Readable } from "node:stream";
+import { shellQuote } from "@repo/core";
 import { randomBytes } from "node:crypto";
 import { CloudRuntime } from "../../runtime/cloud";
+import { safeDumpCommand } from "../common/dump-pipeline";
 import { registerExecutor } from "../registry";
 import type {
   BackupExecutor,
@@ -77,7 +79,34 @@ export class CloudBackupExecutor implements BackupExecutor {
     // rt.exec.stream returns an AsyncGenerator<ExecStreamEvent>. Drive
     // it from a background pump that pushes stdout bytes into our
     // Readable and resolves awaitExit on the `exit` event.
-    const stdout = new Readable({ read() {} });
+    //
+    // The pump HONOURS BACKPRESSURE, and that is #633 on this executor. The Docker
+    // executor's demuxer got the fix; this one is the third byte plane and kept the
+    // original bug: `new Readable({ read() {} })` with `stdout.push(...)`'s return value
+    // discarded is the same unbounded firehose docker-modem had — a dump produced faster
+    // than the destination accepts it accumulates in this Readable until the process
+    // dies. Worse here, because each event's payload is base64, so the transport hands us
+    // ~4/3 the bytes to hold.
+    //
+    // `for await` below is what makes the fix work: awaiting inside the loop suspends
+    // consumption of the event stream, so the pressure reaches the cloud transport
+    // instead of this heap.
+    let resumeRead: (() => void) | null = null;
+    const stdout = new Readable({
+      read() {
+        const resume = resumeRead;
+        resumeRead = null;
+        resume?.();
+      },
+    });
+    /** Push, and if the buffer is full, wait for the consumer to ask for more. */
+    const pushWithBackpressure = async (chunk: Buffer): Promise<void> => {
+      if (stdout.push(chunk)) return;
+      if (stdout.destroyed) return;
+      await new Promise<void>((resolve) => {
+        resumeRead = resolve;
+      });
+    };
     let stderrBuf = "";
 
     const awaitExit = new Promise<ExecExitInfo>((resolve, reject) => {
@@ -98,7 +127,7 @@ export class CloudBackupExecutor implements BackupExecutor {
           for await (const ev of stream) {
             switch (ev.event) {
               case "stdout":
-                stdout.push(Buffer.from(ev.data, "base64"));
+                await pushWithBackpressure(Buffer.from(ev.data, "base64"));
                 break;
               case "stderr": {
                 const decoded = Buffer.from(ev.data, "base64").toString("utf8");
@@ -123,6 +152,13 @@ export class CloudBackupExecutor implements BackupExecutor {
           if (timer) clearTimeout(timer);
           stdout.destroy(err as Error);
           reject(err);
+        } finally {
+          // Release a pump parked on the resume promise. Without this, a consumer that
+          // stops reading leaves the loop suspended forever, so the async generator is
+          // never finalized and the remote exec is never torn down.
+          const resume = resumeRead;
+          resumeRead = null;
+          resume?.();
         }
       };
       void pump();
@@ -136,11 +172,11 @@ export class CloudBackupExecutor implements BackupExecutor {
   private composeShellCommand(cmd: string[], opts?: ExecuteCommandOpts): string[] {
     const envPrefix = opts?.env
       ? Object.entries(opts.env)
-          .map(([k, v]) => `${k}=${shellEscape(v)}`)
+          .map(([k, v]) => `${k}=${shellQuote(v)}`)
           .join(" ") + " "
       : "";
-    const cwdPrefix = opts?.cwd ? `cd ${shellEscape(opts.cwd)} && ` : "";
-    const quotedCmd = cmd.map((arg) => shellEscape(arg)).join(" ");
+    const cwdPrefix = opts?.cwd ? `cd ${shellQuote(opts.cwd)} && ` : "";
+    const quotedCmd = cmd.map((arg) => shellQuote(arg)).join(" ");
     return ["sh", "-c", `${cwdPrefix}${envPrefix}${quotedCmd}`];
   }
 
@@ -160,15 +196,20 @@ export class CloudBackupExecutor implements BackupExecutor {
     // the literal pattern bytes after the shell strips quotes.
     const excludeArgs = (opts?.exclude ?? []).flatMap((p) => [
       "--exclude",
-      shellEscape(p),
+      shellQuote(p),
     ]);
+    // Built by the shared helper so tar's exit status cannot hide behind the
+    // compressor's — the same masking closed for the DB producers and the Docker volume
+    // path. `gzip` needs no pipeline (tar compresses in-process via -z), so it passes
+    // "none" and keeps tar's own status directly.
     const tarCmd =
-      compression === "zstd"
-        ? `tar -c -C ${shellEscape(path)} ${excludeArgs.join(" ")} . | zstd -c -3`
-        : compression === "gzip"
-          ? `tar -cz -C ${shellEscape(path)} ${excludeArgs.join(" ")} .`
-          : `tar -c -C ${shellEscape(path)} ${excludeArgs.join(" ")} .`;
-    return this.execStream(service, ["sh", "-c", tarCmd]);
+      compression === "gzip"
+        ? `tar -cz -C ${shellQuote(path)} ${excludeArgs.join(" ")} .`
+        : `tar -c -C ${shellQuote(path)} ${excludeArgs.join(" ")} .`;
+    return this.execStream(
+      service,
+      safeDumpCommand(tarCmd, compression === "zstd" ? "zstd" : "none"),
+    );
   }
 
   async receiveStream(
@@ -240,7 +281,7 @@ export class CloudBackupExecutor implements BackupExecutor {
 
     // Wrap the user's command so its stdin reads from the tmp file,
     // then unlink the file afterward.
-    const wrapped = `${this.composeShellCommand(cmd, opts).slice(2).join(" ")} < ${shellEscape(tmpPath)}; ec=$?; rm -f ${shellEscape(tmpPath)}; exit $ec`;
+    const wrapped = `${this.composeShellCommand(cmd, opts).slice(2).join(" ")} < ${shellQuote(tmpPath)}; ec=$?; rm -f ${shellQuote(tmpPath)}; exit $ec`;
     const result = await this.execStream(service, ["sh", "-c", wrapped]);
     // Drain stdout to /dev/null — caller doesn't read it (the dump is
     // already on disk; commands like pg_restore log to stderr anyway).
@@ -274,11 +315,6 @@ export class CloudBackupExecutor implements BackupExecutor {
     }
   }
 }
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
 registerExecutor("cloud", (runtime) => {
   if (!(runtime instanceof CloudRuntime)) {
     throw new Error(

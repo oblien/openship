@@ -1,5 +1,6 @@
 import { getMcpTools, toClientTool, filterToolsForPrincipal, type McpPrincipal } from "./mcp-tools";
-import { dispatchTool } from "./mcp-dispatch";
+import { dispatchTool, type DispatchOrigin } from "./mcp-dispatch";
+import type { ToolCallRecord } from "./mcp-audit";
 import { listPrompts, getPrompt } from "./mcp-prompts";
 
 /**
@@ -30,15 +31,24 @@ export function jsonRpcError(id: JsonRpcRequest["id"], code: number, message: st
   return { jsonrpc: "2.0" as const, id: id ?? null, error: { code, message } };
 }
 
+export interface McpMessageContext {
+  /** The caller's credential, forwarded to dispatch so sub-requests re-auth. */
+  bearerToken: string;
+  /** Effective capability, for `tools/list` filtering. */
+  principal: McpPrincipal;
+  /** Facts only the outer HTTP request knows — see DispatchOrigin. */
+  origin: DispatchOrigin;
+  /** Called once per executed tool call, after it returns. */
+  onToolCall?: (record: ToolCallRecord) => void;
+}
+
 /**
  * Handle one JSON-RPC message. Returns the response object, or null for
- * notifications (no `id` → no reply). `bearerToken` is the caller's PAT,
- * forwarded to tool dispatch so sub-requests re-authenticate.
+ * notifications (no `id` → no reply).
  */
 export async function handleMcpMessage(
   msg: JsonRpcRequest,
-  bearerToken: string,
-  principal: McpPrincipal,
+  { bearerToken, principal, origin, onToolCall }: McpMessageContext,
 ): Promise<object | null> {
   const isNotification = msg.id === undefined || msg.id === null;
 
@@ -83,7 +93,15 @@ export async function handleMcpMessage(
       const tool = getMcpTools().find((t) => t.name === name);
       if (!tool) return jsonRpcError(msg.id, -32602, `Unknown tool: ${name}`);
 
-      const dispatched = await dispatchTool(tool, args, bearerToken);
+      const dispatched = await dispatchTool(tool, args, bearerToken, origin);
+      onToolCall?.({
+        tool: tool.name,
+        method: tool.method,
+        path: tool.path,
+        action: tool.perm.action,
+        status: dispatched.status,
+        ok: dispatched.ok,
+      });
       return result(msg.id, {
         content: [{ type: "text", text: JSON.stringify(dispatched.data, null, 2) }],
         isError: !dispatched.ok,

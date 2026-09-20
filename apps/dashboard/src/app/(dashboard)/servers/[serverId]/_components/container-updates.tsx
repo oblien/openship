@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, RefreshCw } from "lucide-react";
 import { systemApi, type ServerContainerStatus } from "@/lib/api/system";
 import { ContainerStatusRow, EdgeInstallRow } from "@/components/infra/ContainerStatusRow";
@@ -21,6 +21,10 @@ import { useReattachActiveFix } from "@/hooks/useReattachActiveFix";
  * to the drift cache the operator can trigger by hand; the roll-up in Settings →
  * Infrastructure does the same across the whole fleet.
  */
+/** Settle cadence + a stall bound (~4 min) while a swap on this box is in flight. */
+const SETTLE_MS = 3000;
+const SETTLE_BUDGET = 80;
+
 export function ServerContainerUpdates({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<ServerContainerStatus[]>([]);
@@ -41,6 +45,26 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Settle-watch: a row renders "Updating…" from the cached in-progress flag, and
+  // nothing else on this page re-reads it — so dismissing the streamed modal used to
+  // leave the row disabled at "Updating…" until a manual Scan, long after the swap
+  // landed. Chains off `rows` (every load sets them) and stops as soon as nothing is
+  // in flight, so there is no interval to clear. Bounded, because a flag can outlive
+  // its run if the API dies mid-swap; the next boot clears those.
+  const inFlight = rows.some((r) => r.latestInProgress);
+  const polls = useRef(0);
+  useEffect(() => {
+    if (!inFlight) polls.current = 0;
+  }, [inFlight]);
+  useEffect(() => {
+    if (!inFlight || polls.current >= SETTLE_BUDGET) return;
+    const timer = setTimeout(() => {
+      polls.current += 1;
+      void load();
+    }, SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [inFlight, rows, load]);
 
   // Refresh recovery for an in-flight image swap (edge/mail update or mail
   // repair). Container-apply ONLY — NOT install: the parent server page already
@@ -83,7 +107,9 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
   // never-scanned box with an edge already present (nothing else) stays hidden.
   if (loading || (rows.length === 0 && hasEdge)) return null;
 
-  const behindCount = rows.filter((r) => r.behind).length;
+  // Work still to do — a component mid-swap is reported by its own row, so counting
+  // it here too would keep announcing an update that is already being applied.
+  const behindCount = rows.filter((r) => r.behind && !r.latestInProgress).length;
   const c = t.servers.containers;
 
   return (
@@ -119,11 +145,23 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
           <ContainerStatusRow key={r.id} serverId={serverId} row={r} onApplied={() => void load()} />
         ))}
         {!hasEdge && (
-          <EdgeInstallRow
-            serverId={serverId}
-            emphasize={projectCount > 0}
-            onInstalled={() => void load()}
-          />
+          <>
+            <EdgeInstallRow
+              serverId={serverId}
+              emphasize={projectCount > 0}
+              onInstalled={() => void load()}
+            />
+            {/* Says WHY the row is emphasized — the colour alone doesn't tell an
+                operator that live projects are the reason. */}
+            {projectCount > 0 && (
+              <p className="px-3.5 text-xs text-warning">
+                {interpolate(
+                  projectCount === 1 ? c.edgeAbsentImpactOne : c.edgeAbsentImpactMany,
+                  { n: String(projectCount) },
+                )}
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

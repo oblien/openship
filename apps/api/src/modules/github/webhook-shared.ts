@@ -7,7 +7,8 @@
  * handlers can import these helpers without a cycle.
  */
 
-import { buildBackgroundContext, type RequestContext } from "../../lib/request-context";
+import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
+import type { ExecutionContext as RequestContext } from "@repo/platform";
 
 /** Background ctx for webhook-triggered work — webhooks have no human
  *  session, so the caller resolves the org OWNER (via resolveOrgOwner)

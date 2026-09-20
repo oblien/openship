@@ -11,9 +11,11 @@ import { useSelectedLayoutSegment } from "next/navigation";
 export function BillingContent({
   children,
   sidebar,
+  promotePlan = false,
 }: {
   children: React.ReactNode;
   sidebar: React.ReactNode | null;
+  promotePlan?: boolean;
 }) {
   const segment = useSelectedLayoutSegment();
   const showSidebar = sidebar !== null && segment !== "plans";
@@ -23,9 +25,9 @@ export function BillingContent({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
+    <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0">{children}</div>
-      {sidebar}
+      <aside className={`min-w-0 lg:sticky lg:top-6 ${promotePlan ? "order-first lg:order-last" : ""}`}>{sidebar}</aside>
     </div>
   );
 }

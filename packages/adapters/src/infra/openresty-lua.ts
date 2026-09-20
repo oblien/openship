@@ -30,16 +30,19 @@
  *   GET /health                        - 200 ok
  */
 
-import { safeErrorMessage } from "@repo/core";
+import { answered, refused, safeErrorMessage } from "@repo/core";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_LUA } from "./lua-embedded";
+import { resolveEnvironment } from "../system/environment";
+import { envOps, opScript } from "../system/environment-ops";
 import type { CommandExecutor } from "../types";
 import { EDGE_REAL_IP_CONF_NAME, edgeRealIpConf } from "./edge-real-ip";
 import { EDGE_NOT_FOUND_LOCATION } from "./edge-not-found";
 import { sq } from "../system/local-shell";
+import { reloadBareOpenResty } from "./openresty-reload";
 
 // ── Paths & constants ────────────────────────────────────────────────────────
 
@@ -73,6 +76,27 @@ export const EDGE_LUA_PACKAGE_PATH = `${OPENRESTY_SITE_LUALIB}/?.lua;;`;
  * otherwise wedge routing for every site on the box, not just its own.
  */
 export const EDGE_SERVER_NAMES_HASH_BUCKET_SIZE = 128;
+
+/**
+ * Upload ceiling every vhost inherits, unless the project overrides it.
+ *
+ * nginx's built-in default is 1 MB, and it is not a soft limit — a larger request is
+ * refused with 413 before it reaches the app, so a form upload, an avatar or a CSV import
+ * fails with no application log to explain it. Openship exposed
+ * `client_max_body_size` as a per-project tunable (PROXY_DIRECTIVES) but shipped no
+ * DEFAULT, which meant every project that had never opened that panel was still on 1 MB.
+ *
+ * Set at HTTP level on purpose rather than written into each vhost: nginx resolves
+ * `server` over `http`, so one line here raises the floor for every site — including the
+ * ones Openship generates for mail, webmail and the default server — while a project's own
+ * value continues to win. Writing it per-vhost would also mean regenerating every vhost on
+ * every box to change the floor.
+ *
+ * 50m, not larger: it is generous for the uploads a web app actually does, and the ceiling
+ * is what stops a single unbounded request from filling the disk of a box whose whole job
+ * is proxying. A project that needs more sets its own.
+ */
+export const EDGE_CLIENT_MAX_BODY_SIZE = "50m";
 
 /**
  * Shared-memory zones the openship Lua depends on, and the ONE definition of
@@ -134,6 +158,10 @@ export const EDGE_SHARED_DICTS: ReadonlyArray<{ name: string; size: string }> = 
 export interface OpenRestyPaths {
   /** Path to the openresty binary (e.g. /usr/local/openresty/bin/openresty) */
   bin: string;
+  /** The binary's compiled `--conf-path`, retained even when `confPath` falls
+   *  back to another existing tree. A master started without `-c` reloads this
+   *  path, so bare-host signaling is safe only when it resolves to `confPath`. */
+  compiledConfPath: string;
   /** Path to nginx.conf (e.g. /etc/openresty/nginx.conf) */
   confPath: string;
   /** Directory containing nginx.conf (e.g. /etc/openresty) */
@@ -167,6 +195,7 @@ export function parseNginxVersion(raw: string): readonly [number, number, number
 /** Fallback paths when `openresty -V` is unavailable (e.g. not yet installed). */
 export const OPENRESTY_DEFAULT_PATHS: OpenRestyPaths = {
   bin: "/usr/local/openresty/bin/openresty",
+  compiledConfPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confDir: "/usr/local/openresty/nginx/conf",
   sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled",
@@ -231,6 +260,22 @@ export const EDGE_CONTAINER_MOUNTS: ReadonlyArray<{ host: string; container: str
 ];
 
 /**
+ * The subset of {@link EDGE_CONTAINER_MOUNTS} whose host and container names are the
+ * SAME string — today `/etc/letsencrypt` and `/opt/openship/static`.
+ *
+ * Two unrelated rules need exactly this set, which is why it lives next to the table
+ * rather than being re-filtered at each: a container edge runs commands INSIDE the
+ * container while file ops land on the host, so only a same-path mount lets a `chmod`
+ * aim at the bytes a `writeFile` just produced (`NginxProvider._chmod`); and on the
+ * local box only a same-path mount can be read without the host channel
+ * (`sharedMountExecutor`). Derived, so a new mount can't be forgotten here — and
+ * shared, so the two rules can't come to disagree about which paths qualify.
+ */
+export const EDGE_SAME_PATH_MOUNTS: readonly string[] = EDGE_CONTAINER_MOUNTS.filter(
+  (m) => m.host === m.container,
+).map((m) => m.host.replace(/\/+$/, ""));
+
+/**
  * Paths for driving a containerized edge from OUTSIDE the container — i.e. over
  * SSH to the box it runs on.
  *
@@ -242,6 +287,7 @@ export const EDGE_CONTAINER_MOUNTS: ReadonlyArray<{ host: string; container: str
  */
 export const EDGE_HOST_PATHS: OpenRestyPaths = {
   bin: OPENRESTY_DEFAULT_PATHS.bin,
+  compiledConfPath: OPENRESTY_DEFAULT_PATHS.compiledConfPath,
   confPath: OPENRESTY_DEFAULT_PATHS.confPath,
   confDir: OPENRESTY_DEFAULT_PATHS.confDir,
   sitesDir: `${EDGE_HOST_STATE_DIR}/sites-enabled`,
@@ -262,9 +308,7 @@ const KNOWN_CONF_PATHS = [
  * If not, probes known alternative locations. This handles scenarios
  * where OpenResty was reinstalled and the config directory changed.
  */
-export async function detectOpenRestyPaths(
-  executor: CommandExecutor,
-): Promise<OpenRestyPaths> {
+export async function detectOpenRestyPaths(executor: CommandExecutor): Promise<OpenRestyPaths> {
   const raw = await executor.exec("openresty -V 2>&1 || true");
 
   const parseFlag = (flag: string): string | null => {
@@ -273,7 +317,8 @@ export async function detectOpenRestyPaths(
   };
 
   const bin = parseFlag("sbin-path") ?? OPENRESTY_DEFAULT_PATHS.bin;
-  let confPath = parseFlag("conf-path") ?? OPENRESTY_DEFAULT_PATHS.confPath;
+  const compiledConfPath = parseFlag("conf-path") ?? OPENRESTY_DEFAULT_PATHS.compiledConfPath;
+  let confPath = compiledConfPath;
   const pidPath = parseFlag("pid-path") ?? OPENRESTY_DEFAULT_PATHS.pidPath;
 
   // Verify the detected confPath actually exists on disk.
@@ -281,7 +326,7 @@ export async function detectOpenRestyPaths(
   if (!(await executor.exists(confPath))) {
     let found = false;
     for (const candidate of KNOWN_CONF_PATHS) {
-      if (candidate !== confPath && await executor.exists(candidate)) {
+      if (candidate !== confPath && (await executor.exists(candidate))) {
         confPath = candidate;
         found = true;
         break;
@@ -298,6 +343,7 @@ export async function detectOpenRestyPaths(
 
   return {
     bin,
+    compiledConfPath,
     confPath,
     confDir,
     sitesDir: `${confDir}/sites-enabled`,
@@ -311,55 +357,19 @@ export async function detectOpenRestyPaths(
 /**
  * Build the OpenResty reload command from detected paths.
  *
- * Primary (both modes): `openresty -t` then `-s reload` — graceful, zero-downtime.
+ * Container-confined reload only: validate the complete config, then ask that
+ * container's nginx CLI to signal its own master. It must never start or kill a
+ * daemon. Starting in the old fallback caused #700 by launching a second master.
  *
- * What happens when reload FAILS is where this gets dangerous, because the wrong
- * recovery takes every site on the box down. Three layers, in order:
- *
- *   1. `opts.containerEdge` — set by the two container-edge providers, so for the
- *      paths we control the command CONTAINS no kill at all. Nothing to reason
- *      about at runtime.
- *   2. `/proc/1/comm` — a runtime backstop for any path that reaches the bare
- *      command while actually running inside the edge container (a caller that
- *      forgot the flag, `ensureLuaScripts` on a containerized box). The master IS
- *      pid 1 there, so `pkill` kills the container's init: the `docker exec`
- *      returns non-zero, registerRoute's self-rollback restores the PREVIOUS
- *      vhost, and the deploy reports "Routing failed" while every site blips.
- *      Restarting a dead master is the supervisor's job in that mode — fail
- *      loudly, surfacing the reload's real stderr.
- *   3. BARE host — a failed reload usually does mean "not running", so starting it
- *      is right. But recover WITHOUT a pattern kill: `pkill -f openresty` also
- *      matches a host-networked edge CONTAINER's master (see edge-check.test.ts),
- *      so the blind kill could take down the very edge it was recovering. Only
- *      start when no live master holds the pid file; otherwise report it rather
- *      than killing a process we can't identify.
+ * Bare hosts MUST use `reloadBareOpenResty` instead. `nginx -s reload` trusts a
+ * mutable PID file, so a stale file can HUP an unrelated PID before any fallback
+ * gets a chance to verify it.
  */
-export function buildReloadCommand(
-  paths: OpenRestyPaths,
-  opts: { containerEdge?: boolean } = {},
-): string {
-  if (opts.containerEdge) {
-    return `${paths.bin} -t 2>&1 || exit 1
-${paths.bin} -s reload 2>&1 || exit 1`;
-  }
-
-  return `${paths.bin} -t 2>&1 || exit 1
-
-reload_err=$(${paths.bin} -s reload 2>&1) && exit 0
-
-if [ "$(cat /proc/1/comm 2>/dev/null)" = "openresty" ] || [ "$(cat /proc/1/comm 2>/dev/null)" = "nginx" ]; then
-  echo "openresty reload failed and openresty is PID 1 (containerized edge) — not killing it; the container supervisor owns restarts." >&2
-  echo "$reload_err" >&2
-  exit 1
-fi
-
-if [ -f ${paths.pidPath} ] && kill -0 "$(cat ${paths.pidPath} 2>/dev/null)" 2>/dev/null; then
-  echo "openresty (pid $(cat ${paths.pidPath})) is running but refused -s reload" >&2
-  exit 1
-fi
-
-rm -f ${paths.pidPath}
-${paths.bin}`;
+export function buildReloadCommand(paths: OpenRestyPaths): string {
+  const bin = sq(paths?.bin || "openresty");
+  const config = sq(paths?.confPath || "/etc/openresty/nginx.conf");
+  return `${bin} -t -c ${config} 2>&1 || exit 1
+${bin} -s reload -c ${config} 2>&1 || exit 1`;
 }
 
 /**
@@ -477,10 +487,7 @@ export async function ensureOpenRestyConfig(
   // removed the old config), write a minimal working config.
   if (!(await executor.exists(paths.confPath))) {
     await executor.mkdir(paths.confDir);
-    await executor.writeFile(
-      paths.confPath,
-      MINIMAL_NGINX_CONF(paths.confDir, paths.sitesDir),
-    );
+    await executor.writeFile(paths.confPath, MINIMAL_NGINX_CONF(paths.confDir, paths.sitesDir));
     return; // Fresh config already has the include - no sed needed.
   }
 
@@ -509,6 +516,26 @@ export async function ensureOpenRestyConfig(
       );
     }
   }
+
+  // Raise the upload ceiling on a box whose nginx.conf predates the default.
+  //
+  // MINIMAL_NGINX_CONF only runs on a FRESH install, so without this every box installed
+  // before EDGE_CLIENT_MAX_BODY_SIZE existed stays on nginx's 1 MB — the exact silent 413
+  // the constant exists to prevent, and one an operator cannot fix from the dashboard
+  // because the project panel writes SERVER scope, not this.
+  //
+  // Idempotent by grep, and it only ADDS: an operator who tuned this line themselves keeps
+  // their value, because rewriting an existing directive would quietly overrule a
+  // deliberate choice on their own machine.
+  const hasBodySize = await executor
+    .exec(`grep -qE '^[[:space:]]*client_max_body_size' ${paths.confPath}`)
+    .then(() => true)
+    .catch(() => false);
+  if (!hasBodySize) {
+    await executor.exec(
+      `sed -i '/http *{/a \\    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};' ${paths.confPath}`,
+    );
+  }
 }
 
 /** Minimal nginx.conf that OpenResty can boot with. */
@@ -527,6 +554,9 @@ http {
     # \`nginx -t\` outright for any server_name past ~63 chars, refusing the reload
     # and wedging every route on the box, not just the long one.
     server_names_hash_bucket_size ${EDGE_SERVER_NAMES_HASH_BUCKET_SIZE};
+    # See EDGE_CLIENT_MAX_BODY_SIZE — nginx's 1 MB default 413s an upload before the app
+    # ever sees it. A project's own value overrides this (server beats http).
+    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};
     include ${sitesDir}/*.conf;
 }
 `;
@@ -645,9 +675,15 @@ export const ACME_HTTP01_PORT = 49180;
  * The `/.well-known/acme-challenge/` location block — proxies the HTTP-01
  * challenge to certbot's transient standalone server. SHARED by the default
  * catch-all here and the per-vhost templates in nginx.ts so all three agree.
+ *
+ * `^~` is load-bearing, not decoration: a REGEX location outranks a plain prefix one
+ * however specific the prefix is, so a `vercel.json` catch-all (`"source": "/(.*)"`)
+ * compiled to `location ~ ^/(.*)$` would otherwise swallow the challenge and every
+ * certificate for that host would fail to issue. `^~` tells nginx to stop at this
+ * prefix and never try the regexes.
  */
 export const ACME_CHALLENGE_LOCATION = `\
-    location /.well-known/acme-challenge/ {
+    location ^~ /.well-known/acme-challenge/ {
         proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT};
         proxy_set_header Host $host;
     }`;
@@ -676,7 +712,10 @@ export const EDGE_CHALLENGE_URL_PREFIX = "/.well-known/oblien-proxy-challenge/";
  * recreate with the old list and lose the tokens.
  */
 export const EDGE_CHALLENGE_ROOT = "/var/www/acme/oblien";
-export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PREFIX}`.replace(/\/$/, "");
+export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PREFIX}`.replace(
+  /\/$/,
+  "",
+);
 
 /**
  * The same directory as seen from the HOST, for the one provider whose file ops
@@ -687,10 +726,8 @@ export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PR
  * (`/var/lib/openship/edge/acme` → `/var/www/acme`). Forgetting that is a mistake
  * with history here — see the mail-SSL webroot note.
  */
-export const EDGE_CHALLENGE_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE_CHALLENGE_URL_PREFIX}`.replace(
-  /\/$/,
-  "",
-);
+export const EDGE_CHALLENGE_HOST_DIR =
+  `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE_CHALLENGE_URL_PREFIX}`.replace(/\/$/, "");
 
 /**
  * The location that serves those tokens. SHARED by the per-vhost templates in
@@ -724,7 +761,7 @@ export const EDGE_CHALLENGE_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE
  * reply, and point their slug at us.
  */
 export const EDGE_CHALLENGE_LOCATION = `\
-    location ${EDGE_CHALLENGE_URL_PREFIX} {
+    location ^~ ${EDGE_CHALLENGE_URL_PREFIX} {
         root ${EDGE_CHALLENGE_ROOT};
         default_type text/plain;
         try_files $uri =404;
@@ -832,9 +869,7 @@ server {
  * hostname that once had a real cert hard-fails on the placeholder with no
  * click-through. (Which is why this block must never send HSTS itself.)
  */
-export function edgeHttpsDefaultBlock(
-  cert?: { certPath: string; keyPath: string } | null,
-): string {
+export function edgeHttpsDefaultBlock(cert?: { certPath: string; keyPath: string } | null): string {
   if (!cert) return EDGE_HTTPS_REJECT_BLOCK;
   return `\
 # HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
@@ -973,7 +1008,12 @@ export async function ensureLuaScripts(
     const listing = await executor
       .exec(`ls -1 '${OPENRESTY_LUA_DIR}' 2>/dev/null || true`)
       .catch(() => "");
-    const present = new Set(listing.split("\n").map((s) => s.trim()).filter(Boolean));
+    const present = new Set(
+      listing
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
     const missing = LUA_SCRIPTS.filter((name) => !present.has(name));
     // Read the marker directly (it's a dotfile, so `ls -1` won't list it).
     const onBoxVersion = (await executor.readFile(LUA_VERSION_MARKER).catch(() => "")).trim();
@@ -994,14 +1034,16 @@ export async function ensureLuaScripts(
     console.warn(`[openresty] (re)installed Lua (${reason}) — reloading edge.`);
     // Reload so OpenResty picks up the scripts (a vhost that had been 500ing on
     // a missing file recovers; fresh workers get a fresh Lua VM). Best-effort.
-    await executor.exec(buildReloadCommand(paths)).catch((err) => {
+    await reloadBareOpenResty(executor, paths).catch((err) => {
       console.error(`[openresty] reload after Lua (re)install failed: ${safeErrorMessage(err)}`);
     });
 
     return { repaired: missing.length ? missing : [...LUA_SCRIPTS], available: true };
   } catch (err) {
     // Contract: never throw. A repair failure must not abort the deploy.
-    console.error(`[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`);
+    console.error(
+      `[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`,
+    );
     return { repaired: [], available: false };
   }
 }
@@ -1020,28 +1062,33 @@ export async function ensureLuaScripts(
  */
 async function installGeoDeps(executor: CommandExecutor): Promise<void> {
   // ── 1. libmaxminddb (C library) ───────────────────────────────────────
-  // Detect package manager on the remote server and install accordingly.
-  try {
-    const hasPkg = async (cmd: string) => {
-      try { await executor.exec(`command -v ${cmd}`); return true; }
-      catch { return false; }
-    };
+  //
+  // This used to be its own package-manager ladder (`command -v apt-get`, then dnf,
+  // then yum, then apk) that simply RAN OUT on anything else: nothing installed,
+  // nothing logged, and geo_country then returned nil for every lookup with no trace
+  // of why. The host answers which package it wants; a host that can't answer says so.
+  const profile = await resolveEnvironment(executor).catch((err) => safeErrorMessage(err));
+  const install =
+    typeof profile === "string"
+      ? refused(`the host profile could not be read: ${profile}`)
+      : envOps(profile).pkgInstallVariants({
+          apt: answered(["libmaxminddb0", "libmaxminddb-dev"]),
+          dnf: answered(["libmaxminddb", "libmaxminddb-devel"]),
+          yum: answered(["libmaxminddb", "libmaxminddb-devel"]),
+          apk: answered(["libmaxminddb"]),
+          brew: refused("the bare edge is Linux-only, so Openship has no macOS package for it."),
+        });
 
-    if (await hasPkg("apt-get")) {
-      await executor.exec(
-        "apt-get update -qq && apt-get install -y -qq libmaxminddb0 libmaxminddb-dev",
+  if (install.supported) {
+    await executor.exec(opScript(install.value)).catch((err) => {
+      console.warn(
+        `[openresty] libmaxminddb install failed — geo lookups return nil: ${safeErrorMessage(err)}`,
       );
-    } else if (await hasPkg("dnf")) {
-      await executor.exec("dnf install -y libmaxminddb libmaxminddb-devel");
-    } else if (await hasPkg("yum")) {
-      await executor.exec("yum install -y libmaxminddb libmaxminddb-devel");
-    } else if (await hasPkg("apk")) {
-      // Alpine — the openresty base image's distro, and the branch whose absence
-      // meant geo could never initialise on a containerized edge.
-      await executor.exec("apk add --no-cache libmaxminddb");
-    }
-  } catch {
-    // Non-fatal - geo just won't work
+    });
+  } else {
+    console.warn(
+      `[openresty] libmaxminddb not installed — geo lookups return nil: ${install.reason}`,
+    );
   }
 
   // ── 2. GeoLite2-Country database ──────────────────────────────────────
@@ -1049,9 +1096,7 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
     const exists = await executor.exists(GEOIP_DB_PATH);
     if (!exists) {
       await executor.mkdir(GEOIP_DIR);
-      await executor.exec(
-        `curl -fsSL -o ${GEOIP_DB_PATH} "${GEOIP_DB_URL}"`,
-      );
+      await executor.exec(`curl -fsSL -o ${GEOIP_DB_PATH} "${GEOIP_DB_URL}"`);
     }
   } catch {
     // Non-fatal
@@ -1089,10 +1134,7 @@ export async function deployLuaScripts(
   await executor.mkdir(OPENRESTY_LUA_DIR);
 
   for (const name of LUA_SCRIPTS) {
-    await executor.writeFile(
-      `${OPENRESTY_LUA_DIR}/${name}`,
-      readLua(name),
-    );
+    await executor.writeFile(`${OPENRESTY_LUA_DIR}/${name}`, readLua(name));
   }
 
   // ── Ensure nginx.conf + sites-enabled directory ───────────────────────
@@ -1138,5 +1180,5 @@ export async function deployLuaScripts(
   // ensureOpenRestyConfig above - single writer, so they self-heal every deploy.
 
   // ── Validate + reload ────────────────────────────────────────────────
-  await executor.exec(buildReloadCommand(paths));
+  await reloadBareOpenResty(executor, paths);
 }

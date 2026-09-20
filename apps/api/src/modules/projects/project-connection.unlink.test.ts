@@ -1,3 +1,4 @@
+import type { ExecutionContext } from "@repo/platform";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
@@ -22,12 +23,12 @@ vi.mock("@repo/db", () => ({
     projectConnection: { delete: h.deleteLink },
   },
 }));
-vi.mock("./project-env.service", () => ({ mergeEnvVars: h.mergeEnvVars }));
-vi.mock("../apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
-vi.mock("../apps/app-settings.service", () => ({ getAppConnectionView: vi.fn(async () => ({ outputs: [] })) }));
+vi.mock("@repo/platform/engine/modules/projects/project-env.service", () => ({ mergeEnvVars: h.mergeEnvVars }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({ getAppConnectionView: vi.fn(async () => ({ outputs: [] })) }));
 vi.mock("../../lib/permission", () => ({ permission: { assert: vi.fn(async () => {}) } }));
 
-import { unlinkConsumersOfSource } from "./project-connection.service";
+import { unlinkConsumersOfSource } from "@repo/platform/engine/modules/projects/project-connection.service";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -88,3 +89,8 @@ describe("unlinkConsumersOfSource", () => {
     expect(h.deleteLink).not.toHaveBeenCalledWith("conn_a");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext) => ctx },
+}));

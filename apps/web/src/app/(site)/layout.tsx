@@ -6,7 +6,7 @@ const SITE_NAME = "Openship";
 const TITLE_DEFAULT = "Openship - Open Source, Self-Hostable Deployment Platform";
 const TITLE_TEMPLATE = "%s - Openship";
 const DESCRIPTION =
-  "Deploy anything, own everything. Self-hostable, AI-powered deployment platform with free SSL, unlimited domains, instant rollbacks, and CLI/MCP support. Open source and free forever.";
+  "Deploy anything, own everything. Self-hostable, AI-powered deployment platform with free SSL, unlimited domains, instant rollbacks, and CLI/MCP support. Open source and free to self-host, forever.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

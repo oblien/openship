@@ -8,10 +8,14 @@
   },
   "status": {
     "live": "Yayında",
+    "paused": "Duraklatıldı",
     "attention": "İşlem Gerekiyor",
     "queued": "Sıraya Alındı",
     "building": "Derleniyor",
     "deploying": "Dağıtılıyor",
+    "reconciling": "Doğrulanıyor",
+    "migrating": "Taşınıyor",
+    "deploy_failed": "Son dağıtım başarısız",
     "failed": "Başarısız",
     "cancelled": "İptal Edildi",
     "deleting": "Siliniyor",
@@ -36,6 +40,7 @@
     "services": "Servisler",
     "static": "Statik",
     "standalone": "Bağımsız",
+    "worker": "Worker",
     "updateAvailable": "Güncelle"
   },
   "hosting": {
@@ -56,8 +61,10 @@
   "env": {
     "productionFallback": "Canlı ortam",
     "switchAria": "Ortamı değiştir",
-    "addBranchAria": "Dal ekle",
+    "newEnvironment": "Yeni ortam",
+    "backToEnvironments": "Ortamlara dön",
     "searchBranches": "Dallarda ara",
+    "refreshBranches": "Dalları yenile",
     "noBranches": "Dal bulunamadı",
     "environmentName": "Ortam adı",
     "branchLabel": "Dal etiketi",
@@ -117,6 +124,7 @@
     "production": "Canlı ortam",
     "lastDeploy": "Son Dağıtım",
     "tabs": {
+      "topology": "Topoloji",
       "appSettings": "Ayarlar",
       "overview": "Genel Bakış",
       "services": "Uygulamalar ve Servisler",
@@ -125,8 +133,10 @@
       "health": "Sağlık",
       "monitoring": "İzleme",
       "source": "Kaynak",
+      "sourceAndTriggers": "Kaynak ve Tetikleyiciler",
       "webhooks": "Webhook'lar",
       "runtime": "Yapılandırma",
+      "settings": "Ayarlar",
       "logs": "Günlükler",
       "backup": "Yedekleme",
       "advanced": "Gelişmiş"
@@ -156,7 +166,7 @@
     "subtextOther": "Bu projenin henüz canlı bir dağıtımı yok. Kaynağı inceleyip tekrar deneyin.",
     "deployNow": "Şimdi dağıt",
     "connectSource": "Bir kaynak bağla",
-    "settings": "Ayarlar",
+    "settings": "Dağıtım ayarları",
     "detailsTitle": "Detaylar",
     "detailsDescription": "Bu projenin neyi ve nereye dağıttığı",
     "type": "Tür",
@@ -193,6 +203,7 @@
     "modeStatic": "Statik Site",
     "modeStandalone": "Bağımsız",
     "modeServer": "Sunucu",
+    "modeWorker": "Worker",
     "infrastructure": "Altyapı",
     "platform": "Platform",
     "mode": "Mod",
@@ -230,6 +241,9 @@
     "waitingRequests": "İstekler bekleniyor",
     "noTransfer": "Henüz veri transferi yok"
   },
+  "analytics": {
+    "loadFailed": "Trafik analitiği yüklenemedi"
+  },
   "monitoring": {
     "noDataTitle": "Henüz izleme verisi yok",
     "noDataDescription": "Analiz verileri, dağıtılan uygulama trafik almaya başladıktan sonra burada görünecektir.",
@@ -256,6 +270,7 @@
     "geoUnavailableBody": "Edge proxy ziyaretçi ülkelerini çözümleyemiyor, bu yüzden harita boş kalıyor. Trafik toplamları etkilenmez.",
     "noCountries": "Bu dönem için henüz ülke verisi yok.",
     "statusesTitle": "Yanıtlar",
+    "statusesOthers": "Diğerleri",
     "share": "%{pct}",
     "visitorDays": "Ziyaretçi-gün",
     "peakDayTooltip": "En yoğun gün: {peak}. Geri dönen ziyaretçi günde bir sayılır, bu nedenle toplam bir üst sınırdır.",
@@ -333,12 +348,12 @@
     "unknown": "Bilinmiyor"
   },
   "routingRetry": {
-    "title": "Ücretsiz alan adı yönlendirmesinin müdahaleye ihtiyacı var",
-    "description": "Uygulama sunucuda yayında ancak ücretsiz .opsh.io URL'si Openship Bulut'un edge servisi üzerinden yönlendirilmedi. Sunucuya buluttan 80 numaralı port üzerinden erişilebildiğinde tekrar deneyin.",
+    "title": "Alan adı yönlendirmesi ilgi bekliyor",
+    "description": "Uygulama sunucuda çalışıyor, ancak önündeki yönlendirmeler eşitlenmedi. Onarımı yeniden deneyin ya da bu sunucudaki DNS ve edge'i kontrol edin.",
     "retry": "Yönlendirmeyi tekrar dene",
     "retrying": "Tekrar deneniyor…",
-    "success": "Ücretsiz alan adı yönlendirmesi senkronize edildi.",
-    "failed": "Ücretsiz alan adı yönlendirmesi senkronize edilemedi."
+    "success": "Alan adı yönlendirmesi eşitlendi.",
+    "failed": "Alan adı yönlendirmesi eşitlenemedi."
   },
   "deployBlocked": {
     "redeploy": "Yeniden dağıt"
@@ -372,12 +387,13 @@
     "noPublicDomainTitle": "Bağlı herkese açık alan adı yok",
     "noPublicDomainDescOne": "Bu projenin dışa açık portları olan {count} servisi var ancak hiçbiri erişilebilir bir alan adı ile yapılandırılmamış. Şimdi dağıtırsanız yığın dahili olarak çalışabilir ancak kullanıcılar buna herkese açık bir URL'den erişemez.",
     "noPublicDomainDescOther": "Bu projenin dışa açık portları olan {count} servisi var ancak hiçbiri erişilebilir bir alan adı ile yapılandırılmamış. Şimdi dağıtırsanız yığın dahili olarak çalışabilir ancak kullanıcılar buna herkese açık bir URL'den erişemez.",
+    "openDomains": "Alan Adlarını Aç",
     "openServices": "Servisleri Aç",
     "deployAnyway": "Yine de dağıt",
     "suggestedFix": "Önerilen çözüm",
-    "fixStep1": "Servisler sekmesini açın.",
-    "fixStep2": "Herkese açık hâle getirilecek servisi seçin.",
-    "fixStep3": "Alan adı dışa açmayı etkinleştirin ve herkese açılacak portu seçin."
+    "fixStep1": "Alan Adları sekmesini açın.",
+    "fixStep2": "Servis portu için bir rota veya özel alan adı ekleyin.",
+    "fixStep3": "Alan adını doğrulayın ve dağıtın."
   },
   "incomingWebhooks": {
     "title": "Gelen webhook'lar",
@@ -405,7 +421,8 @@
       "none": "Açık"
     },
     "summaryDeploy": "Bu projeyi yeniden dağıtır",
-    "summaryDeployService": "{service} hizmetini yeniden dağıtır",
+    "summaryDeployOne": "Seçilen 1 hizmeti yeniden dağıtır",
+    "summaryDeployServices": "{count} hizmeti birlikte yeniden dağıtır",
     "summaryJob": "{job} işini çalıştırır",
     "createTitle": "Yeni gelen webhook",
     "createSubtitle": "Ne yapacağını ve çağıranların nasıl kimlik doğrulayacağını seçin.",
@@ -413,10 +430,10 @@
     "namePlaceholder": "örn. CI dağıtım kancası",
     "actionLabel": "Eylem",
     "actionDeploy": "Dağıt",
-    "actionDeployDesc": "Çağrıldığında bu projeyi (veya bir hizmeti) yeniden dağıtır.",
+    "actionDeployDesc": "Çağrıldığında bu projeyi veya seçilen hizmetleri yeniden dağıtır.",
     "actionJob": "Bir iş çalıştır",
     "actionJobDesc": "Çağrıldığında işlerinizden birini çalıştırır.",
-    "serviceLabel": "Hizmet (isteğe bağlı)",
+    "serviceLabel": "Hizmetler (isteğe bağlı)",
     "serviceAll": "Tüm proje",
     "jobLabel": "İş",
     "jobPlaceholder": "Bir iş seçin…",
@@ -432,7 +449,7 @@
   "connections": {
     "useInProject": "Bir projede kullan",
     "title": "Bir projede kullan",
-    "subtitle": "Bu veritabanını başka bir projeye hazır bir bağlantı olarak bağlayın.",
+    "subtitle": "Bu hizmeti bir bağlantıyla başka bir projeyle paylaşın.",
     "targetLabel": "Proje",
     "targetPlaceholder": "Bir proje seç…",
     "valueLabel": "Aktarılacak değer",
@@ -467,15 +484,24 @@
     "forwardShort": "Yönlendir",
     "usedByTitle": "Kullanan",
     "usedByOpen": "Projeyi aç",
-    "usedByHint": "{count} proje bu uygulamanın bağlantısına bağımlı. Bağlantıyı kullanan projeden kaldırın.",
-    "linkedCountOne": "{count} bağlı uygulama",
-    "linkedCountOther": "{count} bağlı uygulama",
-    "linkedHint": "Bu projenin kullandığı, ama çalıştırmadığı uygulamalar.",
-    "linkedBadge": "Bağlı",
+    "usedByHint": "{count} proje bu bağlantıyı kullanıyor. Bağlantıyı kullanan projeden kaldırın.",
+    "linkedCountOne": "{count} bağlı hizmet",
+    "linkedCountOther": "{count} bağlı hizmet",
+    "linkedHint": "Bu hizmetler kaynak projelerinde yönetilir.",
+    "linkedBadge": "Paylaşılan",
     "unlink": "Bağlantıyı kaldır",
-    "openApp": "Uygulamayı aç",
+    "openApp": "Kaynağı aç",
     "internalTitle": "Dahili adres",
-    "internalDescription": "Bu projeye aynı sunucudaki başka bir servisten özel olarak, genel bağlantı noktası olmadan erişin."
+    "internalDescription": "Bu projeye aynı sunucudaki başka bir servisten özel olarak, genel bağlantı noktası olmadan erişin.",
+    "createNew": "Yeni oluştur",
+    "connectExisting": "Mevcut olanı bağla",
+    "existingHint": "Başka bir projedeki hizmeti veya uygulamayı kullanın. Verileri ve yönetimi o projede kalır.",
+    "sourceLabel": "Kaynak proje veya uygulama",
+    "sourcePlaceholder": "Proje veya uygulama seçin…",
+    "loadingServices": "Hizmetler yükleniyor…",
+    "noConnections": "Bağlantı değerleri hazır değil. Kaynak projedeki hizmetin bağlantı noktasını ve kimlik bilgilerini kontrol edin.",
+    "noSources": "Buraya bağlamak için başka bir projede hizmet oluşturun.",
+    "sharedFrom": "{project} projesinden paylaşılıyor"
   },
   "health": {
     "title": "Sağlık",
@@ -507,5 +533,6 @@
       "unhealthy": "Sağlıksız",
       "server_unreachable": "Sunucuya erişilemiyor"
     }
-  }
+  },
+  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Ayarlar → Gelişmiş bölümünden geçişi tamamlayın ya da geri alın"
 }

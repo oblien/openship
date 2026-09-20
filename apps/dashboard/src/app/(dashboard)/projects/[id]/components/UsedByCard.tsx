@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Globe, Network, Share2 } from "lucide-react";
-import { connectionsApi, type ConnectionConsumer } from "@/lib/api/connections";
+import { type ConnectionConsumer } from "@/lib/api/connections";
+import { useProjectConnections } from "@/hooks/use-project-connections";
 import { useI18n } from "@/components/i18n-provider";
 
 /**
@@ -17,25 +17,11 @@ import { useI18n } from "@/components/i18n-provider";
  *
  * Renders nothing when nothing consumes it.
  */
-export function UsedByCard({ projectId }: { projectId: string }) {
+export function UsedByCard({ projectId, serviceId }: { projectId: string; serviceId?: string }) {
   const { t } = useI18n();
   const c = t.projects.connections;
-  const [consumers, setConsumers] = useState<ConnectionConsumer[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    connectionsApi
-      .consumers(projectId)
-      .then((res) => {
-        if (!cancelled) setConsumers(res?.data ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setConsumers([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+  const allConsumers = useProjectConnections(projectId, "consumers");
+  const consumers = allConsumers?.filter(link => !serviceId || link.sourceServiceId === serviceId);
 
   if (!consumers || consumers.length === 0) return null;
 

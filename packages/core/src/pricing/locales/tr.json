@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Statik sitelerinizi Openship Cloud'da ücretsiz yayına alın."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "İlk gerçek uygulamanız için — container'lar, veritabanları, hepsi."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Büyümek için yer isteyen üretim uygulamaları için."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Paylaşımlı altyapıda ciddi trafik yöneten ekipler için."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Özel limitler, size ayrılmış altyapı ve SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "{inherited} planındaki her şey, ayrıca:",
+    "staticOnly": "Yalnızca statik siteler — SSG, SPA ve düz HTML",
+    "anyWorkload": "Her şeyi çalıştırın — container, Compose, worker, Postgres, Redis",
+    "runningServices": "{runningServices} çalışan uygulama, veritabanı veya worker",
+    "computeMinutes": "Ayda {computeMinutes} hesaplama dakikası",
+    "buildMinutes": "Ayda {buildMinutes} build dakikası",
+    "power": "Uygulama başına en fazla {powerCpu} vCPU ve {powerRamGb} GB RAM",
+    "projects": "{maxProjects} proje",
+    "projectsUnlimited": "Sınırsız proje",
+    "freeSubdomains": "{freeSubdomains} ücretsiz {freeDomainSuffix} alt alan adı",
+    "freeSubdomainsUnlimited": "Sınırsız ücretsiz {freeDomainSuffix} alt alan adı",
+    "gitDeploys": "GitHub, GitLab veya herhangi bir Git uzak deposundan dağıtın",
+    "customDomains": "Sınırsız özel alan adı, TLS dahil",
+    "deployLogs": "Canlı derleme ve dağıtım logları",
+    "auditLog": "Her değişikliğin denetim kaydı",
+    "unlimitedSeats": "Sınırsız ekip üyesi — kullanıcı başına ödeme yok",
+    "sso": "SSO ve SAML",
+    "customLimits": "Sözleşmeye göre belirlenen özel limitler",
+    "dedicatedInfra": "Size ayrılmış altyapı ve bölgeler",
+    "onboarding": "Uçtan uca kurulum ve geçiş desteği",
+    "communitySupport": "Topluluk desteği",
+    "emailSupport": "E-posta desteği",
+    "prioritySupport": "Öncelikli destek",
+    "dedicatedSupport": "SLA garantili özel destek",
+    "selfHostedOpenSource": "Platformun tamamı, açık kaynak (Apache 2.0)",
+    "selfHostedUnlimited": "Sınırsız dağıtım, proje, sunucu ve alan adı",
+    "selfHostedServices": "Tüm yönetilen servisler — Postgres, Redis, posta",
+    "selfHostedClients": "CLI, web ve masaüstü — tek backend",
+    "selfHostedFreeSubdomains": "Cloud'a bağlandığınızda {freeSubdomains} ücretsiz {freeDomainSuffix} alt alan adı"
+  },
+  "selfHosted": {
+    "name": "Kendi sunucunuzda",
+    "tagline": "Platformun tamamını kendi makinelerinizde çalıştırın. Her Linux makinesi, her sağlayıcı, her bölge. Kullanım ölçümü yok, kullanıcı sınırı yok, telemetri yok.",
+    "priceLabel": "Ücretsiz",
+    "priceNote": "Apache 2.0 — her zaman ücretsiz, kredi kartı gerekmez",
+    "cta": "Kendi sunucunuzda başlayın"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} hesaplama dakikası",
+    "pack_25k": "{computeMinutes} hesaplama dakikası",
+    "pack_100k": "{computeMinutes} hesaplama dakikası"
+  },
+  "ui": {
+    "perMonth": "/ay",
+    "perYear": "/yıl",
+    "custom": "Özel",
+    "free": "Ücretsiz",
+    "unlimited": "Sınırsız",
+    "mostPopular": "En popüler",
+    "monthsFree": "{months} ay ücretsiz",
+    "ctaStart": "Ücretsiz başlayın",
+    "ctaChoose": "{name} planını seçin",
+    "ctaContact": "Satış ekibiyle görüşün",
+    "billedMonthly": "aylık faturalanır, istediğiniz zaman iptal edin",
+    "campaignBadge": "%{percentOff} indirim",
+    "campaignEnds": "Kampanya {date} tarihinde sona eriyor",
+    "wasPrice": "eski fiyat {price}",
+    "standardTitle": "Tüm planlarda",
+    "creditPackNote": "≈ Küçük bir uygulama için {appHours} saat veya {buildMinutes} derleme dakikası"
+  }
+}

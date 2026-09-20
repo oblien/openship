@@ -1,7 +1,7 @@
 import "../mail/_setup-env";
 import { describe, expect, it } from "vitest";
 
-import { relativeSubdomain, dnsRecordHosts } from "../../../src/modules/domains/domain.service";
+import { relativeSubdomain, dnsRecordHosts } from "@repo/platform/engine/modules/domains/domain.service";
 
 describe("relativeSubdomain", () => {
   it("returns null for an apex (2 labels)", () => {

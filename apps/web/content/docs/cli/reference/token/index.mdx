@@ -1,0 +1,60 @@
+---
+title: token
+description: Commands, arguments, and options for openship token.
+cliGroup: openship token
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship token
+
+Manage personal access tokens
+
+```text
+openship token [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/token#openship-token-list) | List your personal access tokens |
+| [`create [options] <name>`](/docs/cli/reference/token#openship-token-create) | Mint a new personal access token (the secret is shown once) |
+| [`revoke <id>`](/docs/cli/reference/token#openship-token-revoke) | Revoke one of your tokens |
+
+## openship token create
+
+Mint a new personal access token (the secret is shown once)
+
+```text
+openship token create [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Human-readable token name |
+
+| Option | Meaning |
+| --- | --- |
+| `--read-only` | Reject mutation methods (POST/PUT/PATCH/DELETE) (default: false) |
+| `--expires <days>` | Expire after N days (1–365); omit for non-expiring |
+| `--grant <type:id:perms>` | Scope the token to a resource (repeatable), e.g. project:abc123:read,write (default: []) |
+| `--full-access` | Mint an UNSCOPED token with your own full access (required when no --grant is given) (default: false) |
+
+## openship token list
+
+List your personal access tokens
+
+```text
+openship token list [options]
+```
+
+## openship token revoke
+
+Revoke one of your tokens
+
+```text
+openship token revoke [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Token ID |

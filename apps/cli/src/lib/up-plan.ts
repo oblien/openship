@@ -14,13 +14,13 @@
  * resolution with `persist: false`. Probing a port and reading a proxy's config is
  * as far as it goes; nothing is created, downloaded, stopped or enabled.
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
 import chalk from "chalk";
 
 import {
   composePlan,
   dockerInstallPreview,
+  renderPgDataRefusal,
+  renderSecretRotationRefusal,
   resolveComposePorts,
   type ComposePlan,
   type DockerInstallPreview,
@@ -53,8 +53,15 @@ export interface UpPlanOpts {
   managedEdge?: boolean;
   acmeEmail?: string;
   hostControl?: boolean;
+  hostSshHost?: string;
+  hostSshPort?: string;
+  hostSshUser?: string;
+  /** Openship Mail install (OPENSHIP_PRODUCT=mail / `--mail` in the unit's argv). */
+  mail?: boolean;
   /** Already normalized + merged with the install's saved URL by the caller. */
   publicUrl?: string;
+  /** Previewing `--reset-secrets`, so the plan shouldn't show the refusal it waives. */
+  resetSecrets?: boolean;
 }
 
 export interface UpPlan {
@@ -151,6 +158,11 @@ export async function planUp(opts: UpPlanOpts): Promise<UpPlan> {
       ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
       ...(opts.trustProxy ? { trustProxy: true } : {}),
       ...(opts.hostControl === false ? { noHostControl: true } : {}),
+      ...(opts.hostSshHost ? { hostSshHost: opts.hostSshHost } : {}),
+      ...(opts.hostSshPort ? { hostSshPort: opts.hostSshPort } : {}),
+      ...(opts.hostSshUser ? { hostSshUser: opts.hostSshUser } : {}),
+      ...(opts.resetSecrets ? { resetSecrets: true } : {}),
+      ...(opts.mail ? { mail: true } : {}),
     });
     plan.compose = stack;
     // Only where the probe means something: the host-net edge (and the :80/:443
@@ -164,7 +176,30 @@ export async function planUp(opts: UpPlanOpts): Promise<UpPlan> {
       ...(stack.hostChannel
         ? [
             stack.hostChannel.keyPath,
-            `${join(homedir(), ".ssh/authorized_keys")}  (authorizes that key for ${stack.hostChannel.user}'s host ops; --no-host-control skips it)`,
+            `${stack.hostChannel.authKeysPath}  (authorizes that key for ${stack.hostChannel.user}'s host ops; --no-host-control skips it)`,
+            // Say which route to root this channel will take, rather than repeating a root
+            // warning at a box that reaches root perfectly well via sudo. `sudo` is a
+            // supported shape now, not a degradation, and the preview is where an operator
+            // decides whether that is what they wanted.
+            ...(stack.hostChannel.elevation === "sudo"
+              ? [
+                  `logs in as ${stack.hostChannel.user} and elevates with sudo for root host ops (no root login is created)`,
+                ]
+              : []),
+            ...(stack.hostChannel.rootUnavailable
+              ? [
+                  "⚠ host control needs root — this user isn't root and passwordless sudo isn't available, so mail/edge host ops will fail (re-run as root, or enable passwordless sudo, to fix)",
+                ]
+              : []),
+            // A plan that named one account and then settled on another would read as the
+            // plan being wrong, and this run genuinely cannot know which: only a dial can
+            // establish whether sshd accepts the first account, and dialing means writing
+            // the key a dry run exists not to write (#527, previewHostChannel).
+            ...(stack.hostChannel.fallbacks?.length
+              ? [
+                  `if this host's sshd refuses that account, falls back to ${stack.hostChannel.fallbacks.join(", ")} (pin one with --host-ssh-user)`,
+                ]
+              : []),
           ]
         : []),
       ...stack.mountDirs.map((d) => `${d}/  (edge routing state + certs)`),
@@ -190,6 +225,7 @@ export async function planUp(opts: UpPlanOpts): Promise<UpPlan> {
         host: opts.host,
         managedEdge: opts.managedEdge,
         acmeEmail: opts.acmeEmail,
+        mail: opts.mail,
       });
       plan.service = svc;
       if (svc.path) plan.writes.push(svc.path);
@@ -262,8 +298,33 @@ export function renderUpPlan(plan: UpPlan): string {
 
   if (plan.compose) {
     head("Compose stack");
-    item(plan.compose.existing ? "re-runs an existing install (secrets preserved)" : "fresh install");
+    // "secrets preserved" used to be printed for ANY existing `.env`, while whether a
+    // given secret was actually preserved is a per-key question — so a re-run that was
+    // about to regenerate the database password announced the opposite (#488). Both lines
+    // now come from newSecrets, which is derived from the values that would be written.
+    const { existing, newSecrets, secretRotation, pgDataRisk } = plan.compose;
+    item(
+      !existing
+        ? "fresh install"
+        : newSecrets.length === 0
+          ? "re-runs an existing install (secrets preserved)"
+          : chalk.yellow(
+              `re-runs an existing install, but its .env no longer holds ${newSecrets.join(", ")} —` +
+                ` a real run would GENERATE ${newSecrets.length > 1 ? "those" : "that"}, not preserve` +
+                ` ${newSecrets.length > 1 ? "them" : "it"}.`,
+            ),
+    );
     for (const { key, value } of plan.compose.settings) item(`${key}=${value}`);
+    // A real run refuses here, so the preview must not read as "this is what it would
+    // write" — it would write nothing.
+    if (secretRotation) {
+      L.push(chalk.yellow(renderSecretRotationRefusal(secretRotation, { dryRun: true })));
+    }
+    // #487: same for a data volume whose cluster we can't place — a real run refuses
+    // rather than write a guessed OPENSHIP_PGDATA, so say so instead of implying a write.
+    if (pgDataRisk) {
+      L.push(chalk.yellow(renderPgDataRefusal(pgDataRisk, { dryRun: true })));
+    }
   }
 
   if (plan.edge) {

@@ -11,6 +11,7 @@
  * Detection: image matches ^(mongo|percona/percona-server-mongodb):.*
  */
 
+import { isDbImage, payloadSpec, shellQuote } from "@repo/core";
 import { registerProducer } from "../registry";
 import type {
   Artifact,
@@ -21,18 +22,16 @@ import type {
   RestoreOpts,
   ServiceHandle,
 } from "../types";
-
-const MONGO_IMAGE_RE = /^(mongo|percona\/percona-server-mongodb):/i;
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
+import { canExecInService } from "../common/exec-target";
 class MongoDumpProducerImpl implements BackupProducer {
   readonly kind = "mongo_dump" as const;
 
   detects(service: ServiceHandle): boolean {
-    return !!service.image && MONGO_IMAGE_RE.test(service.image);
+    if (!isDbImage(service.image, "mongo_dump")) return false;
+    // mongodump runs inside the container. Image alone used to be the whole test,
+    // so a mongo service that had never deployed selected this producer over the
+    // volume fallback and the run failed at the exec. See canExecInService.
+    return canExecInService(service);
   }
 
   private authArgs(service: ServiceHandle): string {
@@ -41,7 +40,7 @@ class MongoDumpProducerImpl implements BackupProducer {
     const pass =
       service.env.MONGO_INITDB_ROOT_PASSWORD ?? service.env.MONGODB_ROOT_PASSWORD ?? "";
     if (!user || !pass) return "";
-    return `-u ${shellEscape(user)} -p ${shellEscape(pass)} --authenticationDatabase admin`;
+    return `-u ${shellQuote(user)} -p ${shellQuote(pass)} --authenticationDatabase admin`;
   }
 
   async *produce(
@@ -81,7 +80,8 @@ class MongoDumpProducerImpl implements BackupProducer {
 
     const body = await artifact.open();
     const exit = await executor.pipeIntoCommand(service, cmd, body, {
-      timeoutMs: 60 * 60 * 1000,
+      // Ceiling from the catalog, so the number is not a per-producer literal.
+      timeoutMs: payloadSpec("mongo_dump").restoreTimeoutMs,
     });
     if (exit.code !== 0) {
       throw new Error(`mongorestore exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);

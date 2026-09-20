@@ -11,7 +11,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { syncComposeServices } from "../../../src/modules/services/service.service";
+import { syncComposeServices } from "@repo/platform/engine/modules/services/service.service";
 
 /**
  * #342 follow-through: the create/update service editors have always shape-checked a

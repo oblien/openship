@@ -6,8 +6,9 @@ import {
   getBuildCommand,
   getInstallCommand,
   getStartCommand,
+  resolvePackageJson,
   type RepoFile,
-} from "../../src/lib/stack-detector";
+} from "@repo/platform/engine/lib/stack-detector";
 
 /**
  * Helper: build a RepoFile[] from a flat string[] of filenames.
@@ -1359,5 +1360,89 @@ describe("detectStack - productionPaths reflect the stack registry", () => {
       dependencies: { next: "^15.0.0" },
     });
     expect(result.productionPaths).toEqual([]);
+  });
+});
+
+// ─── The parsed manifest is recoverable from its own text (#623) ─────────────
+
+/**
+ * A snapshot reads package.json twice — `readJson` for the parsed object and
+ * `readText` for the contents map — and every reader swallows a failure of either
+ * into `undefined`. When only the parsed half is lost, dependency matching still
+ * identifies the framework (it reads the text) while command derivation used to
+ * fall through to the registry's bare `next build` / `next start`. That pairing is
+ * openship#623: a `bun install` that succeeded followed by `next: not found`.
+ */
+const NEXT_PACKAGE_JSON = JSON.stringify({
+  name: "my-next-app",
+  dependencies: { next: "16.0.0", react: "19.0.0" },
+  scripts: { dev: "next dev", build: "next build", start: "next start" },
+});
+
+describe("resolvePackageJson", () => {
+  it("prefers the already-parsed manifest and never re-parses", () => {
+    const parsed = { name: "parsed" };
+    expect(resolvePackageJson(parsed, { "package.json": NEXT_PACKAGE_JSON })).toBe(parsed);
+  });
+
+  it("parses the raw text when the parsed manifest is missing", () => {
+    const recovered = resolvePackageJson(undefined, { "package.json": NEXT_PACKAGE_JSON });
+    expect((recovered?.scripts as Record<string, string>)?.build).toBe("next build");
+  });
+
+  it("matches the manifest key case-insensitively", () => {
+    expect(resolvePackageJson(undefined, { "Package.JSON": NEXT_PACKAGE_JSON })).toBeTruthy();
+  });
+
+  it("returns undefined for malformed, non-object, or absent text", () => {
+    expect(resolvePackageJson(undefined, { "package.json": "{ not json" })).toBeUndefined();
+    expect(resolvePackageJson(undefined, { "package.json": "[1,2]" })).toBeUndefined();
+    expect(resolvePackageJson(undefined, { "package.json": "null" })).toBeUndefined();
+    expect(resolvePackageJson(undefined, {})).toBeUndefined();
+    expect(resolvePackageJson(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("detectStack - recovers scripts when only the manifest text survives (#623)", () => {
+  const nextBunFiles = files("package.json", "next.config.ts", "bun.lock");
+
+  it("runs build and start through the package manager, not as bare binaries", () => {
+    const result = detectStack(nextBunFiles, undefined, { "package.json": NEXT_PACKAGE_JSON });
+    expect(result.stack).toBe("nextjs");
+    expect(result.packageManager).toBe("bun");
+    expect(result.installCommand).toBe("bun install");
+    // Was "next build" / "next start" — unresolvable under a bare `sh -c`.
+    expect(result.buildCommand).toBe("bun run build");
+    expect(result.startCommand).toBe("bun run start");
+  });
+
+  it("agrees with the same input passed as a parsed manifest", () => {
+    const fromText = detectStack(nextBunFiles, undefined, { "package.json": NEXT_PACKAGE_JSON });
+    const fromParsed = detectStack(nextBunFiles, JSON.parse(NEXT_PACKAGE_JSON), {
+      "package.json": NEXT_PACKAGE_JSON,
+    });
+    expect(fromText.buildCommand).toBe(fromParsed.buildCommand);
+    expect(fromText.startCommand).toBe(fromParsed.startCommand);
+    expect(fromText.buildImage).toBe(fromParsed.buildImage);
+  });
+
+  it("still falls back to the registry default when the manifest really has no scripts", () => {
+    // The default is a legitimate command now that the recipe puts
+    // node_modules/.bin on PATH — it just must not be chosen over a real script.
+    const result = detectStack(nextBunFiles, undefined, {
+      "package.json": JSON.stringify({ dependencies: { next: "16.0.0" } }),
+    });
+    expect(result.stack).toBe("nextjs");
+    expect(result.buildCommand).toBe("next build");
+  });
+
+  it("recovers the port from scripts too", () => {
+    const result = detectStack(files("package.json"), undefined, {
+      "package.json": JSON.stringify({
+        dependencies: { express: "^4" },
+        scripts: { start: "node index.js --port 4321" },
+      }),
+    });
+    expect(result.port).toBe(4321);
   });
 });

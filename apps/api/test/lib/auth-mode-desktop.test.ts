@@ -38,10 +38,10 @@ vi.mock("@repo/db", () => ({
 }));
 
 const envMock: Record<string, unknown> = {};
-vi.mock("../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 
 async function resolve(): Promise<string> {
-  const mod = await import("../../src/lib/auth-mode");
+  const mod = await import("@repo/platform/engine/lib/auth-mode");
   mod.clearAuthModeCache();
   return mod.getAuthMode();
 }
@@ -54,7 +54,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  const { clearAuthModeCache } = await import("../../src/lib/auth-mode");
+  const { clearAuthModeCache } = await import("@repo/platform/engine/lib/auth-mode");
   clearAuthModeCache();
 });
 
@@ -122,7 +122,7 @@ describe("getAuthMode() — undeclared (DB-backed)", () => {
 
   it("caches so authMiddleware doesn't query per request", async () => {
     settings.authMode = "local";
-    const { clearAuthModeCache, getAuthMode } = await import("../../src/lib/auth-mode");
+    const { clearAuthModeCache, getAuthMode } = await import("@repo/platform/engine/lib/auth-mode");
     clearAuthModeCache();
     await getAuthMode();
     await getAuthMode();
@@ -133,13 +133,13 @@ describe("getAuthMode() — undeclared (DB-backed)", () => {
 describe("pin helpers", () => {
   it("reports the declared mode", async () => {
     envMock.OPENSHIP_AUTH_MODE = "none";
-    const { isAuthModePinned, pinnedAuthMode } = await import("../../src/lib/auth-mode");
+    const { isAuthModePinned, pinnedAuthMode } = await import("@repo/platform/engine/lib/auth-mode");
     expect(isAuthModePinned()).toBe(true);
     expect(pinnedAuthMode()).toBe("none");
   });
 
   it("reports unpinned when nothing was declared", async () => {
-    const { isAuthModePinned, pinnedAuthMode } = await import("../../src/lib/auth-mode");
+    const { isAuthModePinned, pinnedAuthMode } = await import("@repo/platform/engine/lib/auth-mode");
     expect(isAuthModePinned()).toBe(false);
     expect(pinnedAuthMode()).toBeNull();
   });

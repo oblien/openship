@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { buildReloadCommand } from "./openresty-lua";
-import { containerEdgeProvider, localContainerEdgeProvider } from "../system/proxy/ensure-container-edge";
+import { buildReloadCommand, detectOpenRestyPaths } from "./openresty-lua";
+import {
+  containerEdgeProvider,
+  localContainerEdgeProvider,
+} from "../system/proxy/ensure-container-edge";
 import type { CommandExecutor } from "../types";
 
 /**
  * The reload command's FAILURE path, which is where it could take a whole box
- * offline (#292: "opening project logs causes openship-edge to crash/restart").
+ * offline (#292) or start a second master that spends ~30 seconds trying to bind
+ * ports already owned by the real one (#700).
  *
  * The old fallback was `pkill -f '[o]penresty'`. Inside the edge container that
  * pattern matches the container's own master — which is pid 1 — so a single failed
@@ -17,60 +21,53 @@ import type { CommandExecutor } from "../types";
 
 const paths = {
   bin: "/usr/local/openresty/bin/openresty",
+  compiledConfPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confDir: "/usr/local/openresty/nginx/conf",
   sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled",
   pidPath: "/usr/local/openresty/nginx/logs/nginx.pid",
 };
 
-describe("buildReloadCommand — container edge", () => {
-  const cmd = buildReloadCommand(paths, { containerEdge: true });
+describe("detectOpenRestyPaths", () => {
+  it("retains the compiled config when file management falls back to another tree", async () => {
+    const compiled = "/usr/local/openresty/nginx/conf/nginx.conf";
+    const fallback = "/etc/openresty/nginx.conf";
+    const executor = {
+      exec: async () =>
+        `nginx version: openresty/1.27.1.1 --sbin-path=${paths.bin} --conf-path=${compiled} --pid-path=${paths.pidPath}`,
+      exists: async (path: string) => path === fallback,
+    } as unknown as CommandExecutor;
 
-  it("never kills anything: the master is pid 1", () => {
+    await expect(detectOpenRestyPaths(executor)).resolves.toMatchObject({
+      compiledConfPath: compiled,
+      confPath: fallback,
+    });
+  });
+});
+
+describe("buildReloadCommand", () => {
+  const cmd = buildReloadCommand(paths);
+
+  it("never starts or kills a daemon", () => {
     expect(cmd).not.toMatch(/pkill/);
     expect(cmd).not.toMatch(/\bkill\b/);
+    expect(cmd).not.toContain(`rm -f ${paths.pidPath}`);
+    const lines = cmd.split("\n").map((line) => line.trim());
+    expect(lines).not.toContain(paths.bin);
   });
 
   it("still validates before reloading, so a bad config can't be loaded", () => {
-    expect(cmd).toContain(`${paths.bin} -t`);
-    expect(cmd).toContain(`${paths.bin} -s reload`);
+    expect(cmd).toContain(`'${paths.bin}' -t -c '${paths.confPath}'`);
+    expect(cmd).toContain(`'${paths.bin}' -s reload -c '${paths.confPath}'`);
   });
 
-  it("fails loudly instead of restarting the process itself", () => {
-    // No bare `<bin>` start line — starting a second master inside a container
-    // whose pid 1 is already the master is never the answer.
-    const lines = cmd.split("\n").map((l) => l.trim());
-    expect(lines.some((l) => l === paths.bin)).toBe(false);
-    // Both steps propagate failure to the caller (who can `docker restart`).
+  it("propagates both validation and reload failures", () => {
     expect(cmd).toMatch(/-t .*\|\| exit 1/);
     expect(cmd).toMatch(/-s reload .*\|\| exit 1/);
   });
 });
 
-describe("buildReloadCommand — bare host", () => {
-  const cmd = buildReloadCommand(paths);
-
-  it("no longer pattern-kills — that also matches a host-networked edge container", () => {
-    expect(cmd).not.toMatch(/pkill/);
-  });
-
-  it("still recovers a stopped OpenResty by starting it", () => {
-    expect(cmd).toContain(`rm -f ${paths.pidPath}`);
-    expect(cmd.trim().endsWith(paths.bin)).toBe(true);
-  });
-
-  it("refuses to kill a master that IS alive but wouldn't reload", () => {
-    // The only way to reach the fallback with a live master is a stale/mismatched
-    // pid file. Killing an unidentified process is worse than reporting it.
-    expect(cmd).toContain(`kill -0`);
-    expect(cmd).toMatch(/refused -s reload/);
-    expect(cmd).toMatch(/exit 1/);
-  });
-});
-
-describe("the container-edge builders opt in", () => {
-  // Both builders are the ONLY places that know commands run inside the edge, so
-  // the flag has to be set there — inferring it elsewhere is how it drifts.
+describe("the container-edge builders use the same strict reload", () => {
   const exec = { exec: async () => "" } as unknown as CommandExecutor;
 
   it("containerEdgeProvider produces a kill-free reload", async () => {

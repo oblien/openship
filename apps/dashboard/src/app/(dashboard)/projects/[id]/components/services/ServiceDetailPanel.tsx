@@ -4,6 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
+import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -11,12 +14,18 @@ import {
   servicesApi,
   type Service,
   type ServiceContainer,
+  type ServiceEnvVar,
   type ServiceInput,
   type ServiceVolumeSizes,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
 import { formatBytes } from "@/lib/formatBytes";
-import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
+import {
+  internalServiceAddress,
+  effectiveServiceAlias,
+  looksLikeSecretKey,
+  type ComposeAdvanced,
+} from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
   Play,
@@ -43,20 +52,25 @@ import {
   Save,
   Pencil,
   MonitorSmartphone,
+  PlugZap,
 } from "lucide-react";
-import { backupsApi, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
+import { backupsApi, getApiErrorCode, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { ServiceTerminal } from "@/components/terminal/ServiceTerminal";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
+import { ServiceEnvironmentScope } from "./ServiceEnvironmentScope";
 import { TerminalLogs } from "../logs/TerminalLogs";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
+import { UseInProjectModal } from "../UseInProjectModal";
+import { UsedByCard } from "../UsedByCard";
 
 type ServiceTab = "overview" | "terminal" | "logs" | "env" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
@@ -68,18 +82,33 @@ const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
   { key: "backup", label: "Backup", icon: DatabaseBackup },
 ];
 const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
+const SERVICE_ENVIRONMENT = "production" as const;
 
-type EnvRow = { key: string; value: string; visible: boolean };
-const envRowsFromRecord = (value?: Record<string, string> | null): EnvRow[] =>
-  Object.entries(value ?? {}).map(([key, val]) => ({ key, value: val, visible: true }));
-const envRecordFromRows = (rows: EnvRow[]): Record<string, string> => {
-  const out: Record<string, string> = {};
-  for (const r of rows) {
-    const k = r.key.trim();
-    if (k) out[k] = r.value;
-  }
-  return out;
+type EnvRow = {
+  sourceId?: string;
+  key: string;
+  value: string;
+  visible: boolean;
+  isSecret?: boolean;
 };
+const envRowsFromVars = (vars: ServiceEnvVar[]): EnvRow[] =>
+  vars.map((v) => ({
+    sourceId: v.id,
+    key: v.key,
+    value: v.value,
+    visible: !v.isSecret,
+    isSecret: v.isSecret,
+  }));
+const comparableEnvRows = (rows: EnvRow[]) =>
+  rows
+    .map((row) => ({
+      sourceId: row.sourceId,
+      key: row.key.trim(),
+      value: row.value,
+      isSecret: row.isSecret ?? looksLikeSecretKey(row.key),
+    }))
+    .filter((row) => row.key)
+    .sort((a, b) => a.key.localeCompare(b.key));
 
 /* ── Props ──────────────────────────────────────────────────────────── */
 
@@ -128,8 +157,11 @@ export function ServiceDetailPanel({
   deepLink = true,
   onSwitchService,
 }: ServiceDetailPanelProps) {
+  const revealEnv = useServiceEnvReveal(projectId, service.id, SERVICE_ENVIRONMENT);
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
+  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh);
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -137,9 +169,16 @@ export function ServiceDetailPanel({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const applyingEnvironment = environmentApply.applyingServiceId !== null;
+  // The API resolves and validates the current deployment. A live container is
+  // enough to offer Apply while the panel's parent metadata is still loading.
+  const hasEnvironmentTarget = Boolean(activeDeploymentId || container?.containerId);
+  const canApplyEnvironment = hasEnvironmentTarget && service.enabled;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
   const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
 
   // Desktop-only "Open": SSH-forward this service's published host port onto
@@ -237,32 +276,77 @@ export function ServiceDetailPanel({
     if (targetId === service.id) return;
     const target = switchableServices.find((s) => s.id === targetId);
     const targetTab =
-      activeTab === "backup" && target && serviceKind(target) !== "compose" ? "overview" : activeTab;
+      activeTab === "backup" && target && serviceKind(target) !== "compose"
+        ? "overview"
+        : activeTab;
     if (onSwitchService) onSwitchService(targetId, targetTab);
     else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
   };
 
-  // ── Env tab state (editable; the panel used to show env read-only) ────
-  const [envRows, setEnvRows] = useState<EnvRow[]>(() => envRowsFromRecord(service.environment));
+  // Compose inline env is the imported/default layer. This editor owns only
+  // service-scoped env_var rows, which deploy after compose and survive reparse.
+  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
+  const [savedEnvRows, setSavedEnvRows] = useState<EnvRow[]>([]);
+  const [envLoading, setEnvLoading] = useState(true);
   const [envSaving, setEnvSaving] = useState(false);
   useEffect(() => {
-    setEnvRows(envRowsFromRecord(service.environment));
-  }, [service.id, service.environment]);
+    let cancelled = false;
+    setEnvLoading(true);
+    servicesApi
+      .getEnv(projectId, service.id, SERVICE_ENVIRONMENT)
+      .then((result) => {
+        if (cancelled) return;
+        const rows = envRowsFromVars(result.vars ?? []);
+        setEnvRows(rows);
+        setSavedEnvRows(rows);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          showToast(
+            err instanceof Error
+              ? err.message
+              : t.projectDetail.services.detail.toast.envSaveFailed,
+            "error",
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setEnvLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, service.id, showToast, t.projectDetail.services.detail.toast.envSaveFailed]);
   const envDirty = useMemo(
-    () => JSON.stringify(envRecordFromRows(envRows)) !== JSON.stringify(service.environment ?? {}),
-    [envRows, service.environment],
+    () =>
+      JSON.stringify(comparableEnvRows(envRows)) !==
+      JSON.stringify(comparableEnvRows(savedEnvRows)),
+    [envRows, savedEnvRows],
   );
+  const applyEnvironmentHint = !service.enabled
+    ? t.projectDetail.services.detail.toast.enableBeforeRedeploy
+    : !hasEnvironmentTarget
+      ? t.projectDetail.services.detail.toast.deployFirstRedeploy
+      : envDirty
+        ? t.projectDetail.services.detail.environmentApply.saveFirst
+        : t.projectDetail.services.detail.environmentApply.hint;
   const handleSaveEnv = async () => {
     setEnvSaving(true);
     try {
-      const result = await servicesApi.update(projectId, service.id, {
-        environment: envRecordFromRows(envRows),
+      const result = await servicesApi.setEnv(projectId, service.id, {
+        environment: SERVICE_ENVIRONMENT,
+        vars: comparableEnvRows(envRows),
       });
       if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
-      await onRefresh();
+      const refreshed = await servicesApi.getEnv(projectId, service.id, SERVICE_ENVIRONMENT);
+      const rows = envRowsFromVars(refreshed.vars ?? []);
+      setEnvRows(rows);
+      setSavedEnvRows(rows);
       showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
+      showToast(
+        err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed,
+        "error",
+      );
     } finally {
       setEnvSaving(false);
     }
@@ -365,6 +449,7 @@ export function ServiceDetailPanel({
   /* ── Handlers ───────────────────────────────────────────────── */
 
   const handleContainerAction = async (action: "start" | "stop" | "restart") => {
+    if (serviceOperationBusy) return;
     setActionLoading(action);
     try {
       if (action === "start") await servicesApi.start(projectId, service.id);
@@ -372,6 +457,18 @@ export function ServiceDetailPanel({
       else await servicesApi.restart(projectId, service.id);
       onRefresh();
     } catch (err) {
+      if (action === "restart" && getApiErrorCode(err) === "SERVICE_CONFIG_STALE") {
+        showToast(
+          envDirty
+            ? t.projectDetail.services.detail.environmentApply.saveFirst
+            : interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, { name: service.name }),
+          "info",
+          service.name,
+        );
+        changeTab("env");
+        return;
+      }
+      if (action !== "stop" && showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -402,21 +499,30 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start = provision + launch THIS service on its own (its own container /
-      // Oblien workspace), DECOUPLED from the project deploy — no build page, no
+      // Start = provision + launch this service, using its project Docker
+      // workspace for Compose. No build page, no
       // one-deploy lock, never touches the main app. servicesApi.start
       // provisions-if-missing server-side (and enables the service first).
       const res = await servicesApi.start(projectId, service.id);
       if ((res as any)?.success === false) {
         setDeploying(false);
-        showToast((res as any)?.error || t.projectDetail.services.detail.toast.deployFailed, "error", service.name);
+        showToast(
+          (res as any)?.error || t.projectDetail.services.detail.toast.deployFailed,
+          "error",
+          service.name,
+        );
         return;
       }
-      showToast(interpolate(t.projectDetail.services.detail.toast.serviceStarting, { name: service.name }), "success", t.projectDetail.services.detail.toast.serviceTitle);
+      showToast(
+        interpolate(t.projectDetail.services.detail.toast.serviceStarting, { name: service.name }),
+        "success",
+        t.projectDetail.services.detail.toast.serviceTitle,
+      );
       setDeploying(false);
       onRefresh();
     } catch (err) {
       setDeploying(false);
+      if (showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -444,13 +550,18 @@ export function ServiceDetailPanel({
       const res = await deployApi.trigger({ projectId, serviceIds: [service.id] });
       if ((res as any)?.success === false) {
         setRedeploying(false);
-        showToast((res as any)?.error || t.projectDetail.services.detail.toast.redeployFailed, "error", service.name);
+        showToast(
+          (res as any)?.error || t.projectDetail.services.detail.toast.redeployFailed,
+          "error",
+          service.name,
+        );
         return;
       }
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
     } catch (err) {
       setRedeploying(false);
+      if (showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
@@ -497,7 +608,11 @@ export function ServiceDetailPanel({
     }
 
     await onRefresh();
-    showToast(t.projectDetail.services.detail.toast.serviceUpdated, "success", data.name ?? service.name);
+    showToast(
+      t.projectDetail.services.detail.toast.serviceUpdated,
+      "success",
+      data.name ?? service.name,
+    );
   };
 
   const handleDeleteService = async () => {
@@ -512,7 +627,10 @@ export function ServiceDetailPanel({
       onDeleted?.();
       await onRefresh();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t.projectDetail.services.detail.toast.deleteFailed, "error");
+      showToast(
+        error instanceof Error ? error.message : t.projectDetail.services.detail.toast.deleteFailed,
+        "error",
+      );
     } finally {
       setDeleting(false);
     }
@@ -522,6 +640,7 @@ export function ServiceDetailPanel({
 
   return (
     <div className="space-y-5">
+      <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
       {/* ── Heading (simple, no card) ──────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2.5">
@@ -531,7 +650,9 @@ export function ServiceDetailPanel({
               triggerClassName="group inline-flex items-center gap-1.5 rounded-lg -ms-1.5 px-1.5 py-0.5 transition-colors hover:bg-muted/50"
               trigger={
                 <>
-                  <span className="text-xl font-semibold tracking-tight text-foreground">{service.name}</span>
+                  <span className="text-xl font-semibold tracking-tight text-foreground">
+                    {service.name}
+                  </span>
                   <ChevronDown className="size-4 text-muted-foreground transition-colors group-hover:text-foreground" />
                 </>
               }
@@ -542,7 +663,9 @@ export function ServiceDetailPanel({
                   s.id === service.id ? (
                     <Check className="size-4 text-primary" />
                   ) : (
-                    <span className={`size-1.5 rounded-full ${s.enabled ? "bg-success-solid" : "bg-muted-foreground/40"}`} />
+                    <span
+                      className={`size-1.5 rounded-full ${s.enabled ? "bg-success-solid" : "bg-muted-foreground/40"}`}
+                    />
                   ),
                 disabled: s.id === service.id,
                 onClick: () => switchService(s.id),
@@ -554,6 +677,12 @@ export function ServiceDetailPanel({
           <StatusBadge status={status} />
         </div>
         <div className="flex min-w-0 items-center gap-3">
+          {service.enabled && (
+            <button type="button" onClick={() => setShareOpen(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50">
+              <PlugZap className="size-3.5" />{t.projects.connections.useInProject}
+            </button>
+          )}
           {canOpenLocal && (
             <button
               type="button"
@@ -607,6 +736,7 @@ export function ServiceDetailPanel({
       {/* ── Overview ───────────────────────────────────────────── */}
       {activeTab === "overview" && (
         <div className="space-y-5">
+          <UsedByCard projectId={projectId} serviceId={service.id} />
           {/* Network */}
           {(container?.containerId || (service.ports && service.ports.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -638,14 +768,32 @@ export function ServiceDetailPanel({
                   />
                 )}
                 {service.ports && service.ports.length > 0 && (
-                  <InfoCard label={t.projectDetail.services.detail.ports} value={service.ports.join(", ")} mono onCopy={() => copy(service.ports!.join(", "), "ports")} copied={copied === "ports"} />
+                  <InfoCard
+                    label={t.projectDetail.services.detail.ports}
+                    value={service.ports.join(", ")}
+                    mono
+                    onCopy={() => copy(service.ports!.join(", "), "ports")}
+                    copied={copied === "ports"}
+                  />
                 )}
                 {container?.hostPort && (
-                  <InfoCard label={t.projectDetail.services.detail.hostPort} value={String(container.hostPort)} mono onCopy={() => copy(String(container.hostPort), "hostPort")} copied={copied === "hostPort"} />
+                  <InfoCard
+                    label={t.projectDetail.services.detail.hostPort}
+                    value={String(container.hostPort)}
+                    mono
+                    onCopy={() => copy(String(container.hostPort), "hostPort")}
+                    copied={copied === "hostPort"}
+                  />
                 )}
                 {container?.ip && (
                   <div>
-                    <InfoCard label={t.projectDetail.services.detail.currentIp} value={container.ip} mono onCopy={() => copy(container.ip!, "ip")} copied={copied === "ip"} />
+                    <InfoCard
+                      label={t.projectDetail.services.detail.currentIp}
+                      value={container.ip}
+                      mono
+                      onCopy={() => copy(container.ip!, "ip")}
+                      copied={copied === "ip"}
+                    />
                     <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">
                       {t.projectDetail.services.detail.currentIpHint}
                     </p>
@@ -653,7 +801,11 @@ export function ServiceDetailPanel({
                 )}
                 {container?.containerId && (
                   <InfoCard
-                    label={deployTarget === "cloud" ? t.projectDetail.services.detail.workspaceId : t.projectDetail.services.detail.containerId}
+                    label={
+                      deployTarget === "cloud"
+                        ? t.projectDetail.services.detail.workspaceId
+                        : t.projectDetail.services.detail.containerId
+                    }
                     // Docker ids are 64 chars — the 12-char short id is enough
                     // to `docker exec`. Cloud workspace ids are short/opaque, so
                     // show them in full (you need the whole thing to find it).
@@ -672,16 +824,35 @@ export function ServiceDetailPanel({
           )}
 
           {/* Configuration */}
-          {(service.restart || service.command || (service.dependsOn && service.dependsOn.length > 0)) && (
+          {(service.restart ||
+            service.command ||
+            (service.dependsOn && service.dependsOn.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader title={t.projectDetail.services.detail.configuration} icon={Settings} />
+              <SectionHeader
+                title={t.projectDetail.services.detail.configuration}
+                icon={Settings}
+              />
               <div className="space-y-3">
-                {service.restart && <InfoCard label={t.projectDetail.services.detail.restartPolicy} value={service.restart} />}
+                {service.restart && (
+                  <InfoCard
+                    label={t.projectDetail.services.detail.restartPolicy}
+                    value={service.restart}
+                  />
+                )}
                 {service.command && (
-                  <InfoCard label={t.projectDetail.services.detail.command} value={service.command} mono onCopy={() => copy(service.command!, "cmd")} copied={copied === "cmd"} />
+                  <InfoCard
+                    label={t.projectDetail.services.detail.command}
+                    value={service.command}
+                    mono
+                    onCopy={() => copy(service.command!, "cmd")}
+                    copied={copied === "cmd"}
+                  />
                 )}
                 {service.dependsOn && service.dependsOn.length > 0 && (
-                  <InfoCard label={t.projectDetail.services.detail.dependsOn} value={service.dependsOn.join(", ")} />
+                  <InfoCard
+                    label={t.projectDetail.services.detail.dependsOn}
+                    value={service.dependsOn.join(", ")}
+                  />
                 )}
               </div>
             </div>
@@ -721,7 +892,11 @@ export function ServiceDetailPanel({
                             {formatBytes(vs.bytes)}
                           </span>
                         ) : null}
-                        <CopyBtn onCopy={() => copy(vol, `vol-${vol}`)} copied={copied === `vol-${vol}`} size="sm" />
+                        <CopyBtn
+                          onCopy={() => copy(vol, `vol-${vol}`)}
+                          copied={copied === `vol-${vol}`}
+                          size="sm"
+                        />
                       </div>
                     </div>
                   );
@@ -759,7 +934,9 @@ export function ServiceDetailPanel({
             projectName={service.name}
             streamTarget={endpoints.services.logsStream(projectId, service.id)}
             historyTarget={endpoints.services.logs(projectId, service.id)}
-            onLogsChange={() => { /* view-only; the panel doesn't need the buffer */ }}
+            onLogsChange={() => {
+              /* view-only; the panel doesn't need the buffer */
+            }}
           />
         </div>
       )}
@@ -770,30 +947,56 @@ export function ServiceDetailPanel({
           {/* No extra padding here — EnvironmentVariables (borderless) brings its
               own px-5/py-4, so a wrapper p-6 would double it. */}
           <div className="bg-card rounded-2xl border border-border/50">
+            <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <ServiceEnvironmentScope projectId={projectId} keys={envRows.map(row => row.key)} />
+                <h3 className="text-sm font-medium text-foreground">{t.importProject.environmentVariables.title}</h3>
+              </div>
+              <div className="ms-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveEnv}
+                  aria-label={t.projectDetail.services.detail.saveEnvironment}
+                  disabled={envLoading || envSaving || applyingEnvironment || !envDirty}
+                  className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
+                >
+                  {envSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                  {t.projectSettings.settingSection.save}
+                </Button>
+                <span className="max-w-full" title={applyEnvironmentHint}>
+                  <Button
+                    size="sm"
+                    onClick={() => void environmentApply.apply(service)}
+                    disabled={!canApplyEnvironment || envLoading || envSaving || envDirty || serviceOperationBusy}
+                    title={applyEnvironmentHint}
+                    className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
+                  >
+                    {applyingEnvironment ? <Loader2 className="animate-spin" /> : <RotateCw />}
+                    {applyingEnvironment
+                      ? t.projectDetail.services.detail.environmentApply.applying
+                      : t.projectDetail.services.detail.environmentApply.title}
+                  </Button>
+                </span>
+              </div>
+            </div>
             <EnvironmentVariables
               mode="settings"
+              hideTitle
               envVars={envRows}
               onEnvVarsChange={setEnvRows}
               isEditingMode={true}
-              setIsEditingMode={() => { /* always editing in the Env tab */ }}
+              setIsEditingMode={() => {
+                /* always editing in the Env tab */
+              }}
               showSettingsActions={false}
-              // #336: env values arrive masked; reveal the real ones on demand
-              // (the endpoint is write-gated, so read-only members can't).
-              onRevealAll={async () =>
-                (await servicesApi.revealEnv(projectId, service.id)).environment
-              }
+              showSecretToggle={true}
+              // #336: env values arrive masked; reveal only the keys the operator
+              // actually opens (the endpoint is write-gated, so read-only members
+              // can't reveal at all).
+              onReveal={revealEnv}
               borderless
             />
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={handleSaveEnv}
-              disabled={envSaving || !envDirty}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {t.projectDetail.services.detail.saveEnvironment}
-            </button>
           </div>
         </div>
       )}
@@ -813,12 +1016,33 @@ export function ServiceDetailPanel({
                         gets Start. */}
                     {status !== "stopped" && status !== "failed" && (
                       <>
-                        <ActionButton icon={Square} label={t.projectDetail.services.detail.stop} loading={actionLoading === "stop"} onClick={() => handleContainerAction("stop")} variant="danger" />
-                        <ActionButton icon={RotateCw} label={t.projectDetail.services.detail.restart} loading={actionLoading === "restart"} onClick={() => handleContainerAction("restart")} variant="warning" />
+                        <ActionButton
+                          icon={Square}
+                          label={t.projectDetail.services.detail.stop}
+                          loading={actionLoading === "stop"}
+                          disabled={serviceOperationBusy}
+                          onClick={() => handleContainerAction("stop")}
+                          variant="danger"
+                        />
+                        <ActionButton
+                          icon={RotateCw}
+                          label={t.projectDetail.services.detail.restart}
+                          loading={actionLoading === "restart"}
+                          disabled={serviceOperationBusy}
+                          onClick={() => handleContainerAction("restart")}
+                          variant="warning"
+                        />
                       </>
                     )}
                     {(status === "stopped" || status === "failed") && (
-                      <ActionButton icon={Play} label={t.projectDetail.services.detail.start} loading={actionLoading === "start"} onClick={() => handleContainerAction("start")} variant="success" />
+                      <ActionButton
+                        icon={Play}
+                        label={t.projectDetail.services.detail.start}
+                        loading={actionLoading === "start"}
+                        disabled={serviceOperationBusy}
+                        onClick={() => handleContainerAction("start")}
+                        variant="success"
+                      />
                     )}
                   </>
                 ) : (
@@ -829,8 +1053,13 @@ export function ServiceDetailPanel({
                   canStartWithoutBuild && (
                     <ActionButton
                       icon={Play}
-                      label={deploying ? t.projectDetail.services.detail.starting : t.projectDetail.services.detail.start}
+                      label={
+                        deploying
+                          ? t.projectDetail.services.detail.starting
+                          : t.projectDetail.services.detail.start
+                      }
                       loading={deploying}
+                      disabled={serviceOperationBusy}
                       onClick={handleDeployStart}
                       variant="success"
                     />
@@ -841,8 +1070,13 @@ export function ServiceDetailPanel({
                 {usesDeployPipeline && service.enabled && activeDeploymentId && (
                   <ActionButton
                     icon={Rocket}
-                    label={redeploying ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}
+                    label={
+                      redeploying
+                        ? t.projectDetail.services.detail.redeploying
+                        : t.projectDetail.services.detail.redeploy
+                    }
                     loading={redeploying}
+                    disabled={serviceOperationBusy}
                     onClick={handleRedeployService}
                     variant="primary"
                   />
@@ -859,8 +1093,14 @@ export function ServiceDetailPanel({
                       : "bg-success-bg text-success hover:bg-success-solid/20"
                   }`}
                 >
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Power className="size-4" />}
-                  {service.enabled ? t.projectDetail.services.detail.disableService : t.projectDetail.services.detail.enableService}
+                  {saving ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Power className="size-4" />
+                  )}
+                  {service.enabled
+                    ? t.projectDetail.services.detail.disableService
+                    : t.projectDetail.services.detail.enableService}
                 </button>
                 <button
                   onClick={() => setConfirmDelete(true)}
@@ -954,7 +1194,9 @@ export function ServiceDetailPanel({
             className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-foreground">{t.projectDetail.services.detail.deleteTitle}</h3>
+            <h3 className="text-base font-semibold text-foreground">
+              {t.projectDetail.services.detail.deleteTitle}
+            </h3>
             <p className="mt-2 text-sm text-muted-foreground">
               {interpolate(t.projectDetail.services.detail.deleteBody, { name: service.name })}
             </p>
@@ -984,7 +1226,17 @@ export function ServiceDetailPanel({
 
 /* ── Primitives ─────────────────────────────────────────────────────── */
 
-function SectionHeader({ title, subtitle, icon: Icon, right }: { title: string; subtitle?: string; icon: React.ComponentType<{ className?: string }>; right?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  subtitle,
+  icon: Icon,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  right?: React.ReactNode;
+}) {
   return (
     <div className="mb-5">
       <div className="flex items-start justify-between gap-3">
@@ -994,7 +1246,9 @@ function SectionHeader({ title, subtitle, icon: Icon, right }: { title: string; 
         </div>
         {right}
       </div>
-      {subtitle && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>}
+      {subtitle && (
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
+      )}
     </div>
   );
 }
@@ -1006,12 +1260,32 @@ function StatusBadge({ status }: { status: string }) {
   const labels = t.projectDetail.services.detail.status;
   const map: Record<string, { ring: string; text: string; label: string }> = {
     running: { ring: "border-success-solid", text: "text-success", label: labels.running },
-    starting: { ring: "border-warning-solid animate-pulse", text: "text-warning", label: labels.starting },
-    restarting: { ring: "border-warning-solid animate-pulse", text: "text-warning", label: labels.restarting },
+    starting: {
+      ring: "border-warning-solid animate-pulse",
+      text: "text-warning",
+      label: labels.starting,
+    },
+    restarting: {
+      ring: "border-warning-solid animate-pulse",
+      text: "text-warning",
+      label: labels.restarting,
+    },
     failed: { ring: "border-danger-solid", text: "text-danger", label: labels.failed },
-    stopped: { ring: "border-muted-foreground/40", text: "text-muted-foreground", label: labels.stopped },
-    disabled: { ring: "border-muted-foreground/30", text: "text-muted-foreground/60", label: labels.disabled },
-    unknown: { ring: "border-muted-foreground/40", text: "text-muted-foreground", label: labels.unknown },
+    stopped: {
+      ring: "border-muted-foreground/40",
+      text: "text-muted-foreground",
+      label: labels.stopped,
+    },
+    disabled: {
+      ring: "border-muted-foreground/30",
+      text: "text-muted-foreground/60",
+      label: labels.disabled,
+    },
+    unknown: {
+      ring: "border-muted-foreground/40",
+      text: "text-muted-foreground",
+      label: labels.unknown,
+    },
   };
   const s = map[status] ?? map.stopped;
   return (
@@ -1022,8 +1296,20 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function ActionButton({ icon: Icon, label, loading, onClick, variant }: {
-  icon: React.ComponentType<{ className?: string }>; label: string; loading: boolean; onClick: () => void; variant: "success" | "danger" | "warning" | "primary";
+function ActionButton({
+  icon: Icon,
+  label,
+  loading,
+  disabled,
+  onClick,
+  variant,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  loading: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  variant: "success" | "danger" | "warning" | "primary";
 }) {
   const colors = {
     success: "bg-success-bg text-success hover:bg-success-solid/20",
@@ -1032,8 +1318,14 @@ function ActionButton({ icon: Icon, label, loading, onClick, variant }: {
     primary: "bg-primary/10 text-primary hover:bg-primary/20",
   };
   return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={loading}
-      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={loading || disabled}
+      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
+    >
       {loading ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}
       {label}
     </button>
@@ -1041,7 +1333,15 @@ function ActionButton({ icon: Icon, label, loading, onClick, variant }: {
 }
 
 /** Persistent icon-only copy affordance (Copy → Check on success). */
-function CopyBtn({ onCopy, copied, size = "sm" }: { onCopy: () => void; copied: boolean; size?: "sm" | "md" }) {
+function CopyBtn({
+  onCopy,
+  copied,
+  size = "sm",
+}: {
+  onCopy: () => void;
+  copied: boolean;
+  size?: "sm" | "md";
+}) {
   const dim = size === "md" ? "h-9 w-9" : "h-8 w-8";
   const glyph = size === "md" ? "size-4" : "size-3.5";
   return (
@@ -1056,14 +1356,32 @@ function CopyBtn({ onCopy, copied, size = "sm" }: { onCopy: () => void; copied: 
 }
 
 /** Prominent labelled value field — mono value in a filled chip with a copy action. */
-function FieldChip({ label, value, mono = true, onCopy, copied, hint }: {
-  label: string; value: string; mono?: boolean; onCopy?: () => void; copied?: boolean; hint?: string;
+function FieldChip({
+  label,
+  value,
+  mono = true,
+  onCopy,
+  copied,
+  hint,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  onCopy?: () => void;
+  copied?: boolean;
+  hint?: string;
 }) {
   return (
     <div>
-      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</label>
+      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
       <div className="mt-2 flex min-h-11 items-center gap-0.5 rounded-xl bg-muted py-1 pe-1 ps-3.5">
-        <code className={`min-w-0 flex-1 truncate text-[13px] text-foreground ${mono ? "font-mono" : ""}`}>{value}</code>
+        <code
+          className={`min-w-0 flex-1 truncate text-[13px] text-foreground ${mono ? "font-mono" : ""}`}
+        >
+          {value}
+        </code>
         {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="md" />}
       </div>
       {hint && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
@@ -1072,14 +1390,29 @@ function FieldChip({ label, value, mono = true, onCopy, copied, hint }: {
 }
 
 /** Compact label → value fact row, with an optional copy action on the value. */
-function InfoCard({ label, value, mono, onCopy, copied }: {
-  icon?: React.ComponentType<{ className?: string }>; label: string; value: string; mono?: boolean; onCopy?: () => void; copied?: boolean;
+function InfoCard({
+  label,
+  value,
+  mono,
+  onCopy,
+  copied,
+}: {
+  icon?: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  mono?: boolean;
+  onCopy?: () => void;
+  copied?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <p className="shrink-0 text-[13px] text-muted-foreground">{label}</p>
       <div className="flex min-w-0 items-center gap-1">
-        <p className={`max-w-[200px] truncate text-[13px] font-medium text-foreground ${mono ? "font-mono" : ""}`}>{value}</p>
+        <p
+          className={`max-w-[200px] truncate text-[13px] font-medium text-foreground ${mono ? "font-mono" : ""}`}
+        >
+          {value}
+        </p>
         {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="sm" />}
       </div>
     </div>

@@ -1,0 +1,94 @@
+{
+  "name": "openship",
+  "version": "0.7.2",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oblien/openship.git",
+    "directory": "packages/openship"
+  },
+  "homepage": "https://github.com/oblien/openship",
+  "keywords": [
+    "openship",
+    "deploy",
+    "deployment",
+    "cli",
+    "self-hosted",
+    "sdk",
+    "node",
+    "multi-tenant"
+  ],
+  "type": "module",
+  "bin": {
+    "openship": "./dist/node-entry.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "Openship SDK and CLI for native and remote deployments",
+  "main": "./dist/sdk/index.cjs",
+  "module": "./dist/sdk/index.js",
+  "types": "./dist/sdk/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/sdk/index.d.ts",
+        "default": "./dist/sdk/index.js"
+      },
+      "require": {
+        "types": "./dist/sdk/index.d.cts",
+        "default": "./dist/sdk/index.cjs"
+      }
+    },
+    "./native": {
+      "import": {
+        "types": "./dist/sdk/native.d.ts",
+        "default": "./dist/sdk/native.js"
+      },
+      "require": {
+        "types": "./dist/sdk/native.d.cts",
+        "default": "./dist/sdk/native.cjs"
+      }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/sdk/client.d.ts",
+        "default": "./dist/sdk/client.js"
+      },
+      "require": {
+        "types": "./dist/sdk/client.d.cts",
+        "default": "./dist/sdk/client.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "bun run build.ts",
+    "check": "bun run build.ts --check",
+    "test:package": "bun run verify-package.ts",
+    "prepack": "bun run build.ts --check"
+  },
+  "dependencies": {
+    "@bomb.sh/tab": "^0.0.22",
+    "@clack/prompts": "^0.11.0",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "dockerode": "^4.0.9",
+    "open": "^10.2.0",
+    "ora": "^9.3.0",
+    "ssh2": "^1.17.0",
+    "@sinclair/typebox": "^0.34.48"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "@types/node": "^22.13.0"
+  }
+}

@@ -4,6 +4,70 @@
     "save": "Guardar",
     "cancel": "Cancelar"
   },
+  "releaseImageSource": {
+    "validationInvalid": "A origem da imagem de lançamento é inválida.",
+    "toast": {
+      "saved": "A origem do lançamento do contentor foi guardada.",
+      "saveFailed": "Não foi possível guardar a origem do lançamento do contentor."
+    },
+    "status": {
+      "notDeployed": "Ainda não implementada",
+      "checking": "A verificar…",
+      "unavailable": "Indisponível"
+    },
+    "switchToImage": {
+      "title": "Mudar para uma origem de imagem pré-criada",
+      "description": "Guardar substitui a origem Git ou local atual em todos os ambientes. As implementações existentes e o histórico de reversão continuam disponíveis.",
+      "keep": "Manter a origem atual"
+    },
+    "switchToGit": {
+      "title": "Mudar para uma origem Git",
+      "description": "Nada muda até ligar um repositório. Ligá-lo substitui a origem de imagem acompanhada em todos os ambientes.",
+      "back": "Voltar à origem de imagem"
+    },
+    "entry": {
+      "shortButton": "Usar imagem pré-criada",
+      "button": "Acompanhar uma imagem de contentor pré-criada",
+      "description": "Implemente diretamente uma imagem de registo versionada, sem clonar nem criar um repositório."
+    },
+    "summary": {
+      "title": "Imagem de contentor acompanhada",
+      "badge": "Pré-criada",
+      "description": "Implementa diretamente uma imagem publicada. Nenhum repositório é clonado e não é executado nenhum comando de criação.",
+      "linkGit": "Ligar repositório Git",
+      "image": "Imagem",
+      "versionSource": "Origem da versão",
+      "githubReleases": "Lançamentos do GitHub",
+      "pinnedVersion": "Versão fixada",
+      "currentVersion": "Versão atual",
+      "targetVersion": "Versão de destino",
+      "latestVersion": "Versão mais recente",
+      "updateAvailable": "Atualização disponível"
+    },
+    "editor": {
+      "trackingTitle": "Acompanhamento de lançamentos",
+      "configureTitle": "Configurar imagem pré-criada",
+      "templateHint": "Use {tag} para preservar a tag exata do publicador ou {version} para a versão normalizada.",
+      "provider": "Fornecedor da versão",
+      "githubTitle": "Lançamentos do GitHub",
+      "githubDescription": "Acompanhar a tag do lançamento publicado mais recente.",
+      "urlTitle": "URL da versão ou versão fixada",
+      "urlDescription": "Leia um ponto de extremidade de versão ou implemente uma versão fixa.",
+      "imageTemplate": "Modelo da imagem",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "Repositório GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "URL da versão",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "Ponto de extremidade HTTPS que devolve texto ou JSON com version/tag_name.",
+      "pinnedVersion": "Versão fixada",
+      "pinnedPlaceholder": "Opcional, por exemplo v2.4.1",
+      "pinnedHint": "Substitui a versão mais recente detectada; deixe em branco para acompanhar atualizações.",
+      "appliesAll": "As alterações aplicam-se a todos os ambientes deste projeto.",
+      "saving": "A guardar…",
+      "save": "Guardar origem"
+    }
+  },
   "appSettings": {
     "modeApp": "Definições da aplicação",
     "modeDeployment": "Implementação",
@@ -34,6 +98,28 @@
       "project": "Projeto",
       "hostedOn": "Alojado em"
     },
+    "projectMenu": {
+      "rename": "Renomear projeto",
+      "copyId": "Copiar ID do projeto",
+      "idCopied": "ID do projeto copiado",
+      "copyFailed": "Não foi possível copiar para a área de transferência",
+      "pause": "Pausar projeto",
+      "resume": "Retomar projeto",
+      "delete": "Excluir projeto"
+    },
+    "rename": {
+      "title": "Renomear projeto",
+      "description": "Altera o nome exibido. Nada é reimplantado.",
+      "label": "Nome do projeto",
+      "placeholder": "Meu projeto",
+      "identityNote": "O projeto mantém a identidade “{slug}” — sua URL, os nomes dos contêineres e os volumes não mudam. Para alterar a URL, edite o domínio em “Domínios e rotas”.",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "toast": {
+        "renamed": "Renomeado para {name}",
+        "failed": "Falha ao renomear o projeto"
+      }
+    },
     "statusActive": "Ativo",
     "statusDisabled": "Desativado",
     "hostedCloud": "Openship Cloud",
@@ -47,15 +133,54 @@
       "liveAccessible": "Ativo e acessível",
       "pausedInaccessible": "Em pausa e inacessível",
       "disable": "Desativar",
-      "enable": "Ativar"
+      "enable": "Ativar",
+      "migrating": "Migrando",
+      "migratingHint": "Está sendo movido para outro servidor"
+    },
+    "migration": {
+      "title": "Migração",
+      "description": "Mova este projeto para outro servidor",
+      "currentServer": "Servidor atual",
+      "migrate": "Migrar",
+      "noOtherServers": "Adicione um segundo servidor para mover este projeto para lá.",
+      "cloudLater": "De servidor para servidor. Mover para ou do Openship Cloud ainda não é suportado.",
+      "startFailed": "Não foi possível iniciar a migração",
+      "confirmTitle": "Mover {project} para {server}",
+      "confirmSubtitle": "Nada muda até você iniciar a mudança.",
+      "svcVolumes": "{count} volume(s) de dados",
+      "downtimeNote": "O projeto fica fora do ar enquanto os dados são copiados e o novo servidor o inicia. Serviços com estado ficam indisponíveis durante toda a transferência.",
+      "dnsNote": "O DNS ainda aponta para o servidor antigo — mude seus registros quando o novo estiver atendendo.",
+      "cancel": "Cancelar",
+      "confirmStart": "Iniciar mudança",
+      "duplicate": "Duplicar",
+      "intentMove": "Mover",
+      "intentCopy": "Duplicar",
+      "intentMoveHint": "O projeto muda de casa. Seus contêineres e volumes são removidos do servidor antigo quando você confirmar.",
+      "intentCopyHint": "O original continua rodando. Um segundo projeto é criado no novo servidor com uma cópia dos dados.",
+      "confirmTitleCopy": "Duplicar {project} no {server}",
+      "confirmStartCopy": "Iniciar duplicação",
+      "downtimeNoteCopy": "O projeto fica brevemente fora do ar enquanto os dados são copiados — os volumes precisam estar parados para copiar corretamente. Ele volta a subir no servidor antigo assim que a cópia terminar.",
+      "copyNoDomainsNote": "A cópia começa sem domínios — os originais ficam com o projeto que os atende.",
+      "fromLabel": "De",
+      "toLabel": "Para",
+      "modeLabel": "Modo",
+      "scopeLabel": "O que duplicar",
+      "scopeAll": "Selecionar tudo",
+      "scopeHintAll": "Todos os serviços, com seus dados.",
+      "scopeHintSome": "{count} serviço(s) — o resto fica apenas no original.",
+      "sourceServices": "{count} serviço(s)",
+      "runningStatus": "Em andamento — {status}"
     },
     "cache": {
-      "title": "Cache",
-      "description": "Limpe os artefactos de compilação e as instalações de dependências em cache",
+      "title": "Cache de compilação do Docker",
+      "description": "A cache de compilação não utilizada é limitada automaticamente a 5 GB por servidor",
       "clearInstall": "Limpar cache de instalação",
       "clearInstallDesc": "Remover node_modules em cache",
       "clearBuild": "Limpar cache de compilação",
-      "clearBuildDesc": "Remover o resultado de compilação em cache"
+      "clearBuildDesc": "Remover a cache não utilizada do servidor Docker deste projeto",
+      "clearBuildConfirm": "Limpar toda a cache de compilação do Docker não utilizada neste servidor? Outros projetos poderão reconstruir dependências na próxima implantação.",
+      "clearBuildSuccess": "Foram recuperados {size} de cache de compilação",
+      "clearBuildEmpty": "Não há cache de compilação não utilizada para limpar"
     },
     "transfer": {
       "title": "Transferir e clonar",
@@ -240,16 +365,16 @@
       "appliesOnDeploy": "Aplicado no próximo deploy."
     },
     "env": {
-      "title": "Variáveis de ambiente",
-      "description": "Encriptadas em repouso. Os segredos permanecem ocultos — apenas os valores que alterar são gravados.",
+      "title": "Ambiente do projeto (compilação e execução compartilhada)",
+      "description": "Usado para compilar imagens e como entrada compartilhada em execução. Os valores do Compose e do serviço têm prioridade em execução. Os segredos permanecem ocultos.",
       "edit": "Editar"
     }
   },
   "envVars": {
     "cancel": "Cancelar",
     "saveChanges": "Guardar alterações",
-    "title": "Variáveis de ambiente",
-    "description": "Produção. Encriptadas em repouso. Os segredos aparecem como definidos — escreva para substituir; deixe em branco para manter.",
+    "title": "Ambiente do projeto (compilação e execução compartilhada)",
+    "description": "Variáveis de produção do projeto. Os segredos permanecem ocultos; deixe um segredo salvo em branco para mantê-lo. Os valores do serviço têm prioridade para a mesma chave.",
     "empty": "Ainda não há variáveis de ambiente.",
     "keyPlaceholder": "CHAVE",
     "secretPlaceholder": "•••••••• (definido — escreva para substituir)",
@@ -267,38 +392,20 @@
       "saved": "Variáveis de ambiente guardadas",
       "savedTitle": "Guardado",
       "saveFailed": "Falha ao guardar as variáveis de ambiente",
-      "saveFailedTitle": "Falha ao guardar"
+      "saveFailedTitle": "Falha ao guardar",
+      "noChanges": "Nenhuma alteração para guardar — os valores guardados foram mantidos.",
+      "noChangesTitle": "Nada para guardar"
     },
     "linkedBadge": "Vinculado",
     "linkedManaged": "via {app}",
     "linkedTitle": "Integração vinculada",
     "linkedBody": "Este valor vem da conexão do {app}. Gerencie-o por esse app — alterações aqui não são mantidas.",
     "unlink": "Remover conexão",
-    "close": "Fechar"
+    "close": "Fechar",
+    "applyText": "Salvo. Reinicie para aplicar alterações de execução. Compile e implante novamente para aplicar valores usados na compilação de uma imagem."
   },
   "gitInfo": {
-    "repository": "Repositório",
-    "autoDeploy": "Implementação automática",
-    "deploysOnPush": "Implementa a cada push",
-    "manualOnly": "Apenas implementações manuais",
-    "branchToDeploy": "Ramo a implementar",
-    "chooseBranch": "Escolha qual ramo do seu repositório implementar",
-    "save": "Guardar",
-    "cancel": "Cancelar",
-    "viewOnGithub": "Ver no GitHub",
-    "recentCommits": "Commits recentes",
-    "totalCommits": "{count} no total",
-    "noCommits": "Ainda não há commits",
-    "toast": {
-      "fetchBranchesFailed": "Falha ao obter os ramos",
-      "errorTitle": "Erro",
-      "branchUpdated": "Ramo atualizado com sucesso",
-      "updatedTitle": "Atualizado",
-      "branchUpdateFailed": "Falha ao atualizar o ramo",
-      "autoDeployEnabled": "Implementação automática ativada",
-      "autoDeployDisabled": "Implementação automática desativada",
-      "autoDeployFailed": "Falha ao atualizar a implementação automática"
-    }
+    "autoDeploy": "Implementação automática"
   },
   "git": {
     "connectFirst": {
@@ -361,13 +468,13 @@
       "title": "Estratégia de reversão",
       "rebuild": "Recompilar (git)",
       "instant": "Instantâneo (snapshot)",
-      "descRebuild": "Reconstrói o commit antigo, a menos que a imagem ainda esteja no host.",
-      "descInstant": "Mantém a imagem de cada versão, então restaurar nunca reconstrói. Usa mais disco.",
+      "descRebuild": "Reconstrói o commit anterior, a menos que sua imagem ainda esteja no host.",
+      "descInstant": "Mantém os artefatos dentro do limite do histórico. Versões mais antigas podem precisar ser reconstruídas.",
       "toggleAria": "Alternar retenção de snapshots",
-      "keepNone": "Sem cópias extra",
-      "keepCopies": "Uma cópia por versão",
-      "descRebuildFiles": "Reconstrói o commit antigo, a menos que os arquivos ainda estejam no host.",
-      "descInstantFiles": "Mantém os arquivos de cada versão, então restaurar nunca reconstrói. Usa mais disco."
+      "keepNone": "Reutilizar imagens ou reconstruir",
+      "keepCopies": "Manter artefatos de reversão",
+      "descRebuildFiles": "Reconstrói o commit anterior, a menos que seus arquivos ainda estejam no host.",
+      "descInstantFiles": "Mantém os arquivos compilados dentro do limite do histórico. Versões mais antigas podem precisar ser reconstruídas."
     },
     "rollbackHistory": {
       "title": "Histórico de reversão",
@@ -377,13 +484,17 @@
       "descGit": "Imagens recentes são mantidas de qualquer forma, então um rollback pode pular a build.",
       "decreaseAria": "Diminuir o histórico de reversão",
       "increaseAria": "Aumentar o histórico de reversão",
-      "sizeEach": "~{size} cada",
+      "sizeEach": "~{size} por imagem, incluindo camadas compartilhadas",
       "diskFree": "{size} livres",
       "autoBadge": "dimensionado automaticamente",
       "manualBadge": "definido manualmente",
       "kindFiles": "arquivos gerados em disco",
       "kindImages": "imagens no host",
-      "descGitFiles": "Os arquivos das versões recentes são mantidos de qualquer forma, então um rollback pode pular a build."
+      "descGitFiles": "Os arquivos das versões recentes são mantidos de qualquer forma, então um rollback pode pular a build.",
+      "retentionHint": "Mantenha os artefatos das implantações recentes para reverter rapidamente.",
+      "retentionDescription": "Número máximo de versões anteriores a manter. As versões ativas e fixadas não contam para esse limite. Os artefatos antigos são removidos, mas o histórico permanece disponível. Use 0 para manter apenas as versões ativas e fixadas.",
+      "defaultBadge": "padrão da instância",
+      "loadFailed": "Não foi possível carregar as configurações de reversão."
     },
     "commits": {
       "title": "Commits recentes",
@@ -448,6 +559,9 @@
     "title": "Potência da máquina",
     "description": "Limites de CPU e memória para os contêineres deste projeto.",
     "loading": "Lendo a máquina de destino…",
+    "unavailable": "Potência da máquina indisponível",
+    "loadFailed": "Não foi possível carregar a potência da máquina",
+    "retry": "Tentar novamente",
     "machineCapacity": "Máquina: {cpu} vCPU · {memory}",
     "exceedsMachine": "Excede esta máquina",
     "appliesOnNextDeploy": "Os limites são aplicados quando o contêiner é recriado — reimplante para a alteração ter efeito.",
@@ -472,6 +586,10 @@
       "high": {
         "name": "Alta",
         "description": "Aplicações de alto tráfego"
+      },
+      "xlarge": {
+        "name": "Extragrande",
+        "description": "Bases de dados e cargas intensivas"
       }
     },
     "custom": {
@@ -526,10 +644,6 @@
     "cannotUndo": "Esta ação não pode ser anulada.",
     "aboutToPrefix": "Está prestes a eliminar ",
     "aboutToSuffix": ".",
-    "deleteAllAria": "Eliminar todos os ambientes",
-    "deleteAll": "Eliminar todos os ambientes",
-    "deleteAllOn": "Remove a aplicação do projeto e todos os ambientes de ramo por baixo dela.",
-    "deleteAllOff": "Remove apenas este ambiente. Os outros ramos permanecem.",
     "scanning": "A analisar os serviços e volumes associados…",
     "wipeAria": "Também apagar os dados dos serviços",
     "wipeLabelOne": "Também apagar os dados dos serviços ({count} volume)",
@@ -544,9 +658,7 @@
     "typePrefix": "Escreva ",
     "typeSuffix": " para confirmar.",
     "cancel": "Cancelar",
-    "confirmDeleteWipe": "Eliminar + apagar dados",
     "confirmDeleteEnvWipe": "Eliminar ambiente + apagar dados",
-    "confirmDelete": "Eliminar projeto",
     "confirmDeleteEnv": "Eliminar ambiente",
     "linkedTitleOne": "{count} projeto está conectado a este app",
     "linkedTitleOther": "{count} projetos estão conectados a este app",
@@ -623,6 +735,9 @@
       "defaultAppName": "minha-app",
       "mapsToPort": "Mapeia para a porta",
       "includeWww": "Incluir www",
+      "dnsChallenge": "Usar desafio DNS-01",
+      "dnsChallengeDesc": "Emita e renove o certificado pelo provedor DNS conectado. Use quando a porta 80 não estiver acessível.",
+      "dnsChallengeWildcardDesc": "Certificados curinga exigem DNS-01 e um provedor DNS conectado.",
       "includeWwwDesc": "Gerar também registos para www.{domain}",
       "includeWwwFallback": "seudominio.com",
       "adding": "A adicionar...",
@@ -734,6 +849,23 @@
       "noneYet": "Nenhuma verificação foi executada ainda, portanto não há resultado. Adicione os registros DNS exibidos e depois clique em Verificar.",
       "attempts": "{count} tentativa(s) com falha até agora.",
       "pillHint": "Ver o motivo"
+    },
+    "records": {
+      "failed": "Não foi possível carregar os registros DNS deste domínio.",
+      "retry": "Tentar novamente"
+    },
+    "outputHint": {
+      "body": "Nenhuma saída de compilação encontrada em {path} — verifique seu diretório de saída e implante novamente.",
+      "noIndex": "Existe saída em {path}, mas não há arquivo index — as solicitações retornarão 404. Verifique seu diretório de saída.",
+      "notServed": "O proxy respondeu HTTP {status} para {path} — este caminho não está sendo servido. Verifique seu diretório de saída e a rota."
     }
+  },
+  "serviceEnvironment": {
+    "title": "Ambiente de execução do serviço",
+    "description": "Estas variáveis se aplicam apenas a este serviço e substituem os valores correspondentes do Compose ou do projeto. Use Aplicar alterações de ambiente para ativar os valores salvos.",
+    "overrides": "Estas chaves têm prioridade sobre os valores do projeto para este serviço: {keys}.",
+    "buildArguments": "Os argumentos de compilação são definidos no arquivo Compose ou na configuração do código-fonte e exigem uma nova compilação.",
+    "projectLink": "Editar ambiente compartilhado do projeto",
+    "loadFailed": "Não foi possível carregar os nomes das variáveis do projeto para verificar substituições."
   }
 }

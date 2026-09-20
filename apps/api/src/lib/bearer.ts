@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { PAT_PREFIX } from "./pat";
+import { PAT_PREFIX } from "@repo/platform/engine/lib/pat";
 
 /**
  * Parse a `Authorization: Bearer <token>` header. Single source of truth for

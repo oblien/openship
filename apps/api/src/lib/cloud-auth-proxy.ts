@@ -12,9 +12,9 @@
 
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { db, schema, repos, eq } from "@repo/db";
-import { encrypt } from "./encryption";
-import { provisionUser } from "./provision-user";
-import { cloudRuntimeTarget, env } from "../config/env";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { provisionUser } from "@repo/platform/engine/lib/provision-user";
+import { cloudRuntimeTarget, env } from "@repo/platform/engine/config/env";
 import { safeErrorMessage } from "@repo/core";
 
 export interface CloudUser {
@@ -85,7 +85,7 @@ async function storeCloudSession(userId: string, cloudSessionToken: string): Pro
       cloudSessionToken: encrypted,
     });
   }
-  const { invalidateCloudCaches } = await import("./cloud/session");
+  const { invalidateCloudCaches } = await import("@repo/platform/engine/lib/cloud/session");
   await invalidateCloudCaches(userId);
 }
 

@@ -3,7 +3,7 @@ title: openship.json
 description: The declarative deploy config for Openship — like vercel.json or railway.toml. Declare framework, build, runtime, env, domains, routes, resources, services and monorepo layout, and Openship deploys the same way every time.
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { TypeTable } from "fumadocs-ui/components/type-table";
 
 `openship.json` is a repo-root file that tells Openship how to build, run, route, and scale a
 project. It mirrors what you'd otherwise set in the [deploy wizard](/docs/guides/deploy-from-github),
@@ -11,9 +11,9 @@ so a repo becomes "ready to ship on Openship" and [auto-deploy on push](/docs/gu
 and `openship deploy` become deterministic — no wizard needed.
 
 <Callout title="Authoritative overlay">
-Openship **auto-detects** your stack first, then applies every field present in `openship.json`
-on top. Fields you omit keep their detected value. So a good `openship.json` is **small** —
-declare only what you want to override or pin, not the whole detected config.
+  Openship **auto-detects** your stack first, then applies every field present in `openship.json` on
+  top. Fields you omit keep their detected value. So a good `openship.json` is **small** — declare
+  only what you want to override or pin, not the whole detected config.
 </Callout>
 
 Add the `$schema` line for editor autocomplete and inline validation:
@@ -39,16 +39,39 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
 
 <TypeTable
   type={{
-    framework: { type: 'string (enum)', description: 'Stack slug — nextjs, vite, django, go, docker, …. Overrides detection.' },
-    packageManager: { type: 'string (enum)', description: 'npm, yarn, pnpm, bun, go, cargo, pip, poetry, pipenv, uv, bundler, composer, maven, gradle, dotnet, mix.' },
-    rootDirectory: { type: 'string', description: 'App directory relative to the repo root (e.g. "./", "apps/web").' },
-    composePath: { type: 'string', description: 'Compose file kept outside the detected root — the file ("deploy/stack.yml") or the folder holding it ("deploy/docker-compose"). Makes this a compose deploy.' },
-    installCommand: { type: 'string', description: 'Command that installs dependencies.' },
-    buildCommand: { type: 'string', description: 'Command that builds the app.' },
-    startCommand: { type: 'string', description: 'Command that starts the server in production.' },
-    outputDirectory: { type: 'string', description: 'Directory the build writes to (dist, .next, build, out).' },
-    buildImage: { type: 'string', description: 'Docker image used for the build (e.g. "node:22").' },
-    productionPaths: { type: 'string[]', description: 'Paths shipped to the runtime as the production artifact.' },
+    framework: {
+      type: "string (enum)",
+      description: "Stack slug — nextjs, vite, django, go, docker, …. Overrides detection.",
+    },
+    packageManager: {
+      type: "string (enum)",
+      description:
+        "npm, yarn, pnpm, bun, go, cargo, pip, poetry, pipenv, uv, bundler, composer, maven, gradle, dotnet, mix.",
+    },
+    rootDirectory: {
+      type: "string",
+      description: 'App directory relative to the repo root (e.g. "./", "apps/web").',
+    },
+    composePath: {
+      type: "string",
+      description:
+        'Compose file kept outside the detected root — the file ("deploy/stack.yml") or the folder holding it ("deploy/docker-compose"). Makes this a compose deploy.',
+    },
+    installCommand: { type: "string", description: "Command that installs dependencies." },
+    buildCommand: { type: "string", description: "Command that builds the app." },
+    startCommand: { type: "string", description: "Command that starts the server in production." },
+    outputDirectory: {
+      type: "string",
+      description: "Directory the build writes to (dist, .next, build, out).",
+    },
+    buildImage: {
+      type: "string",
+      description: 'Docker image used for the build (e.g. "node:22").',
+    },
+    productionPaths: {
+      type: "string[]",
+      description: "Paths shipped to the runtime as the production artifact.",
+    },
   }}
 />
 
@@ -56,10 +79,21 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
 
 <TypeTable
   type={{
-    runtime: { type: '"bare" | "docker"', description: 'Runtime isolation for a single app. Services/docker projects are always "docker".' },
-    productionMode: { type: '"host" | "static" | "standalone"', description: '"static" ⇒ served as files, no server.' },
-    port: { type: 'integer', description: 'Port the server listens on (1–65535).' },
-    volumes: { type: 'string[]', description: 'Paths kept across deploys. Omit to inherit the framework defaults; [] turns persistence off.' },
+    runtime: {
+      type: '"bare" | "docker"',
+      description:
+        'Runtime isolation for a single app. Services/docker projects are always "docker".',
+    },
+    productionMode: {
+      type: '"host" | "static" | "standalone"',
+      description: '"static" ⇒ served as files, no server.',
+    },
+    port: { type: "integer", description: "Port the server listens on (1–65535)." },
+    volumes: {
+      type: "string[]",
+      description:
+        "Paths kept across deploys. Omit to inherit the framework defaults; [] turns persistence off.",
+    },
   }}
 />
 
@@ -86,12 +120,13 @@ share one. On a bare (non-container) deploy the same paths are kept outside the 
 directory and symlinked in. Openship Cloud has no volume primitive: a declared mount is
 reported and skipped there, so use object storage for uploads instead.
 
-Compose services declare their own mounts under [`services[].volumes`](#services).
+Compose services declare their own mounts under [`services[].volumes`](#services-compose).
 
 ## Environment variables
 
 `env` is an object. A value is a plain string, or `{ "value", "secret" }` to mark a secret
-(encrypted at rest — never returned to the client afterward).
+(encrypted at rest — never returned to the client afterward). These declarations are active
+automatically; a value saved in the dashboard or CLI for the same key overrides the repository default.
 
 ```json
 {
@@ -113,10 +148,13 @@ Compose services declare their own mounts under [`services[].volumes`](#services
 
 <TypeTable
   type={{
-    domain: { type: 'string', description: 'Hostname. Bare label = free subdomain; dotted = custom.' },
-    port: { type: 'integer', description: 'Which port this hostname routes to.' },
-    targetPath: { type: 'string', description: 'Path prefix on the target (default "/").' },
-    type: { type: '"free" | "custom"', description: 'Overrides the free/custom inference.' },
+    domain: {
+      type: "string",
+      description: "Hostname. Bare label = free subdomain; dotted = custom.",
+    },
+    port: { type: "integer", description: "Which port this hostname routes to." },
+    targetPath: { type: "string", description: 'Path prefix on the target (default "/").' },
+    type: { type: '"free" | "custom"', description: "Overrides the free/custom inference." },
   }}
 />
 
@@ -126,11 +164,20 @@ Compose services declare their own mounts under [`services[].volumes`](#services
 
 <TypeTable
   type={{
-    rewrites: { type: '{ source, destination }[]', description: 'Internal rewrites (e.g. SPA fallback).' },
-    redirects: { type: '{ source, destination, permanent?, statusCode? }[]', description: '3xx redirects.' },
-    headers: { type: '{ source, headers: { key, value }[] }[]', description: 'Response headers per path.' },
-    cleanUrls: { type: 'boolean', description: 'Strip .html extensions.' },
-    trailingSlash: { type: 'boolean', description: 'Enforce or remove trailing slashes.' },
+    rewrites: {
+      type: "{ source, destination }[]",
+      description: "Internal rewrites (e.g. SPA fallback).",
+    },
+    redirects: {
+      type: "{ source, destination, permanent?, statusCode? }[]",
+      description: "3xx redirects.",
+    },
+    headers: {
+      type: "{ source, headers: { key, value }[] }[]",
+      description: "Response headers per path.",
+    },
+    cleanUrls: { type: "boolean", description: "Strip .html extensions." },
+    trailingSlash: { type: "boolean", description: "Enforce or remove trailing slashes." },
   }}
 />
 
@@ -147,14 +194,18 @@ hand a container 64 GB.
 
 On Openship Cloud a workspace is metered and must be sized, so `unlimited` isn't available there and
 an omitted value falls back to the `low` tier.
+
 </Callout>
 
 <TypeTable
   type={{
-    tier: { type: '"unlimited" | "micro" | "low" | "medium" | "high"', description: 'Named sizing tier. "unlimited" = no caps (self-hosted only).' },
-    cpuCores: { type: 'number', description: 'Fractional vCPU cores. 0 = no limit.' },
-    memoryMb: { type: 'integer', description: 'RAM in MB. 0 = no limit.' },
-    diskMb: { type: 'integer', description: 'Disk in MB (cloud workspaces only). 0 = no limit.' },
+    tier: {
+      type: '"unlimited" | "micro" | "low" | "medium" | "high"',
+      description: 'Named sizing tier. "unlimited" = no caps (self-hosted only).',
+    },
+    cpuCores: { type: "number", description: "Fractional vCPU cores. 0 = no limit." },
+    memoryMb: { type: "integer", description: "RAM in MB. 0 = no limit." },
+    diskMb: { type: "integer", description: "Disk in MB (cloud workspaces only). 0 = no limit." },
   }}
 />
 
@@ -181,32 +232,69 @@ re-read on every deploy, and `build:` contexts resolve relative to it, exactly a
 ```json
 {
   "services": [
-    { "name": "web", "build": ".", "ports": ["3000"], "exposed": true, "domain": "app.acme.com" },
-    { "name": "db", "image": "postgres:17", "volumes": ["pgdata:/var/lib/postgresql/data"],
-      "env": { "POSTGRES_PASSWORD": { "value": "…", "secret": true } }, "restart": "unless-stopped" }
+    {
+      "name": "web",
+      "build": ".",
+      "buildArgs": { "NEXT_PUBLIC_API_URL": null },
+      "ports": ["3000"],
+      "exposed": true,
+      "domain": "app.acme.com"
+    },
+    {
+      "name": "db",
+      "image": "postgres:17",
+      "volumes": ["pgdata:/var/lib/postgresql/data"],
+      "env": { "POSTGRES_PASSWORD": { "value": "…", "secret": true } },
+      "restart": "unless-stopped"
+    }
   ]
 }
 ```
 
 <TypeTable
   type={{
-    name: { type: 'string', description: 'Required. Service name.' },
-    image: { type: 'string', description: 'Prebuilt image (e.g. postgres:17).' },
-    build: { type: 'string', description: 'Build context path.' },
-    dockerfile: { type: 'string', description: 'Dockerfile path.' },
-    ports: { type: 'string[]', description: 'e.g. ["3000"], ["5432:5432"].' },
-    volumes: { type: 'string[]', description: 'e.g. ["pgdata:/var/lib/postgresql/data"].' },
-    dependsOn: { type: 'string[]', description: 'Other service names this one depends on.' },
-    env: { type: 'env object', description: 'Same shape as top-level env.' },
-    command: { type: 'string', description: 'Override the container command.' },
-    restart: { type: '"no" | "always" | "on-failure" | "unless-stopped"', description: 'Restart policy.' },
-    exposed: { type: 'boolean', description: 'Publicly routed.' },
-    exposedPort: { type: 'string', description: 'Which container port is exposed.' },
-    domain: { type: 'string', description: 'Public hostname for this service.' },
-    healthcheck: { type: 'object', description: '{ test, interval, timeout, retries, startPeriod, disable }.' },
-    resources: { type: 'object', description: 'Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.' },
+    name: { type: "string", description: "Required. Service name." },
+    image: { type: "string", description: "Prebuilt image (e.g. postgres:17)." },
+    build: { type: "string", description: "Build context path." },
+    dockerfile: { type: "string", description: "Dockerfile path." },
+    buildArgs: {
+      type: "Record<string, string | null>",
+      description:
+        "Docker build arguments. null inherits the same-named top-level env value; a string overrides it for this service.",
+    },
+    ports: { type: "string[]", description: 'e.g. ["3000"], ["5432:5432"].' },
+    volumes: { type: "string[]", description: 'e.g. ["pgdata:/var/lib/postgresql/data"].' },
+    dependsOn: { type: "string[]", description: "Other service names this one depends on." },
+    env: { type: "env object", description: "Same shape as top-level env." },
+    command: { type: "string", description: "Override the container command." },
+    restart: {
+      type: '"no" | "always" | "on-failure" | "unless-stopped"',
+      description: "Restart policy.",
+    },
+    exposed: { type: "boolean", description: "Publicly routed." },
+    exposedPort: { type: "string", description: "Which container port is exposed." },
+    domain: { type: "string", description: "Public hostname for this service." },
+    healthcheck: {
+      type: "object",
+      description: "{ test, interval, timeout, retries, startPeriod, disable }.",
+    },
+    resources: {
+      type: "object",
+      description:
+        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.",
+    },
   }}
 />
+
+`dependsOn` takes service names such as `["db"]`, without a port. It controls container startup
+order, not database availability during an image build. For `ENOTFOUND db` during `next build`,
+see [Database access during a Next.js build](/docs/guides/compose-multi-service#database-access-during-a-nextjs-build).
+
+Top-level `env` is available to Dockerfile builds as well as running containers. Use
+`buildArgs` when a service needs an explicit override or when you want the config to document
+which Dockerfile arguments it consumes. A service's own `env` is runtime-only and is never shared
+with sibling builds. Keep runtime-only credentials in service `env` where possible: Docker build
+arguments are not a secret-storage mechanism and can be retained in image metadata or build cache.
 
 A compose file's own limits are honored too — Openship reads `mem_limit` / `cpus` and
 `deploy.resources.limits.{memory,cpus}` off each service and applies them over the project-wide
@@ -217,6 +305,18 @@ setting.
 `monorepo` overrides Openship's detected sub-apps. Entries in `apps[]` are matched to detected
 sub-apps by `rootDirectory` and override their build settings — they don't declare apps from
 scratch (the detector finds the apps).
+
+Each override must have a different normalized `rootDirectory`. Declaring a web
+process and a worker at the same root is not a supported multi-app declaration.
+`openship config validate` rejects duplicate roots; source scans report unmatched
+apps and workspace overrides in the configuration diagnostics.
+
+Create a monorepo through the repository import flow, which supplies the detected
+app metadata. The API/SDK also accepts that metadata as `monorepoApps`. Setting
+`projectType: "monorepo"` (or CLI `project create --type monorepo`) without it now
+fails before creating a project. A local CLI import scans the workspace first.
+For independent processes without containers, use separate projects pointed at
+the required roots and start commands.
 
 ```json
 {
@@ -232,33 +332,43 @@ scratch (the detector finds the apps).
 
 <TypeTable
   type={{
-    'workspace.packageManager': { type: 'string', description: 'Root workspace package manager.' },
-    'workspace.prepareCommand': { type: 'string', description: 'Runs once at the repo root before per-app builds.' },
-    'apps[].name': { type: 'string', description: 'Required.' },
-    'apps[].rootDirectory': { type: 'string', description: 'Required. Matches a detected sub-app.' },
-    'apps[]…': { type: 'build fields', description: 'framework, packageManager, installCommand, buildCommand, startCommand, outputDirectory, buildImage, port.' },
+    "workspace.packageManager": { type: "string", description: "Root workspace package manager." },
+    "workspace.prepareCommand": {
+      type: "string",
+      description: "Runs once at the repo root before per-app builds.",
+    },
+    "apps[].name": { type: "string", description: "Required." },
+    "apps[].rootDirectory": {
+      type: "string",
+      description: "Required. Matches a detected sub-app.",
+    },
+    "apps[]…": {
+      type: "build fields",
+      description:
+        "framework, packageManager, installCommand, buildCommand, startCommand, outputDirectory, buildImage, port.",
+    },
   }}
 />
 
 <Callout title="Not supported yet" type="warn">
-`sleepMode`, monorepo `sharedPaths`, and per-app `domain`/`env`/`exposed` are accepted by the
-validator but **not applied** — leave them out. Set sleep mode and per-app domains in the
-dashboard for now.
+  `sleepMode`, monorepo `sharedPaths`, and per-app `domain`/`env`/`exposed` are accepted by the
+  validator but **not applied** — leave them out. Set sleep mode and per-app domains in the
+  dashboard for now.
 </Callout>
 
 ## How it maps
 
-| `openship.json` | Deploy wizard / API |
-|---|---|
-| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `productionPaths`, `rootDirectory` | Build settings |
-| `port`, `productionMode`, `runtime` | Runtime settings (`hasServer`, runtime isolation) |
-| `volumes` | Configuration → Persistent storage |
-| `env` | Environment variables (seeded as editable rows) |
-| `domains` | Public endpoints / custom domains |
-| `routes` | Reverse-proxy routing (`routingConfig`) |
-| `resources` | Cloud resource tier / custom sizing |
-| `services` | Compose services |
-| `monorepo` | Monorepo sub-apps + workspace |
+| `openship.json`                                                                                                | Deploy wizard / API                               |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `productionPaths`, `rootDirectory` | Build settings                                    |
+| `port`, `productionMode`, `runtime`                                                                            | Runtime settings (`hasServer`, runtime isolation) |
+| `volumes`                                                                                                      | Configuration → Persistent storage                |
+| `env`                                                                                                          | Environment variables (seeded as editable rows)   |
+| `domains`                                                                                                      | Public endpoints / custom domains                 |
+| `routes`                                                                                                       | Reverse-proxy routing (`routingConfig`)           |
+| `resources`                                                                                                    | Cloud resource tier / custom sizing               |
+| `services`                                                                                                     | Compose services                                  |
+| `monorepo`                                                                                                     | Monorepo sub-apps + workspace                     |
 
 ## See also
 

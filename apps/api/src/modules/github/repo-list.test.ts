@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { paginateRepoList } from "./repo-list";
-import type { MappedRepository } from "./github.types";
+import { paginateRepoList } from "@repo/platform/engine/modules/github/repo-list";
+import type { MappedRepository } from "@repo/contracts";
 
 function repo(overrides: Partial<MappedRepository>): MappedRepository {
   return {

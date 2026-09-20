@@ -192,7 +192,9 @@
     "editRetry": "Düzenle ve yeniden dene",
     "safetyTitle": "Yıkıcı değil, geri alınabilir.",
     "safetyBody": "Kaynağınız tüm süreç boyunca çalışmaya devam eder — veriler kopyalanır, taşınmaz. Başarılı bir geçişten sonra bile hiçbir şey silinmez: orijinal kapsayıcılarınız, geçiş anında açıkça kaldırana kadar (güvenlik ağı olarak durdurulmuş halde) kalır.",
-    "cleanupTarget": "Hedefe kopyalanan veriyi kaldır"
+    "cleanupTarget": "Hedefe kopyalanan veriyi kaldır",
+    "retryRun": "Yeniden dene",
+    "changeTarget": "Hedefi değiştir"
   },
   "plan": {
     "missing": "bulunamadı"

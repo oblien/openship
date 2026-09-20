@@ -101,6 +101,10 @@
     "serverOnPort": "服务器运行于端口 {port}",
     "serverPortNotSet": "未设置服务器端口",
     "staticFromEdge": "从边缘提供静态内容",
+    "modeServer": "服务器",
+    "modeWorker": "工作进程",
+    "modeStatic": "静态",
+    "workerModeDesc": "持续运行，无端口或公共 URL — 队列消费者、定时任务或机器人。",
     "buildSettingsTitle": "构建设置"
   },
   "projectSettings": {
@@ -119,6 +123,7 @@
     "noneSet": "未设置",
     "pasteEnv": "粘贴 .env",
     "uploadEnv": "上传 .env",
+    "downloadEnv": "下载 .env",
     "edit": "编辑",
     "cancel": "取消",
     "saving": "正在保存……",
@@ -128,7 +133,7 @@
     "valuePlaceholder": "值",
     "dropHere": "将 .env 文件拖放到此处",
     "noneTitle": "没有环境变量",
-    "emptyHintEditing": "点击“添加变量”、使用“粘贴 .env”、上传文件，或在此框内任意位置粘贴",
+    "emptyHintEditing": "在此框内任意位置粘贴 .env 内容块，或将 .env 文件拖放到这里。",
     "emptyHintReadonly": "点击“编辑”以管理环境变量",
     "pasteHint": "在此框内任意位置粘贴完整的 .env 内容块。",
     "addVariable": "添加变量",
@@ -140,6 +145,7 @@
       "interpolated": "已插值"
     },
     "toast": {
+      "downloadFailed": "无法下载环境变量。",
       "title": "环境变量",
       "added": "已添加 {count} 个",
       "updated": "已更新 {count} 个",
@@ -201,9 +207,9 @@
       "volumes": "卷",
       "statefulWarnPart1": "云端上的有状态服务：数据存储在工作区的持久磁盘上（重启后仍保留），但在重新构建时",
       "statefulWarnBold": "不会被保留",
-      "statefulWarnPart2": "，除非启用了备份。Docker 卷挂载不适用。",
+      "statefulWarnPart2": "。替换工作区之前，请明确执行数据备份和恢复。",
       "volumeHint": "命名卷或主机路径 → 容器路径。",
-      "volumeCloudNote": "在云端这些挂载不适用 —— 数据保存在工作区的磁盘上（未启用备份时不会跨重新构建保留）。",
+      "volumeCloudNote": "Openship Cloud 不支持持久卷挂载。需要卷的工作负载请选择服务器。",
       "sourcePlaceholder": "来源",
       "containerPathPlaceholder": "容器路径",
       "readOnlyMount": "只读挂载",
@@ -349,9 +355,6 @@
       "successful": "部署成功",
       "deploying": "正在部署服务……"
     },
-    "running": "运行中",
-    "buildingSuffix": "· {count} 个构建中",
-    "failedSuffix": "· {count} 个失败",
     "decisionBannerTitle": "需要操作 —— 部分服务失败",
     "decisionBannerDefaultMsg": "本次部署完成时存在失败的服务。您可以保留它并稍后修复，或拒绝它以恢复到之前的版本。",
     "review": "审查",
@@ -391,6 +394,12 @@
       "retryOther": "重试 {count} 个失败的服务"
     }
   },
+  "composeServiceTally": {
+    "running": "运行中",
+    "builtSuffix": "· {count} 个已构建",
+    "buildingSuffix": "· {count} 个构建中",
+    "failedSuffix": "· {count} 个失败"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "已取消",
@@ -401,12 +410,20 @@
     },
     "detailsTitle": "部署详情",
     "rowStatus": "状态",
+    "rowTarget": "目标",
+    "rowBuild": "构建",
     "rowBuildTime": "构建时间",
     "rowServices": "服务",
     "rowProject": "项目",
-    "rowType": "类型",
-    "running": "运行中",
-    "buildingSuffix": "· {count} 个构建中",
-    "failedSuffix": "· {count} 个失败"
+    "rowType": "类型"
+  },
+  "configDiagnostics": {
+    "title": "此仓库的 openship.json 有部分未生效",
+    "description": "下列字段被跳过，文件的其余部分已生效。本次部署将继续。",
+    "titleWholeFile": "已忽略此仓库的 openship.json",
+    "descriptionWholeFile": "文件中没有任何内容生效。本次部署将使用 Openship 自动检测到的设置继续。",
+    "refused": "已拒绝",
+    "unrecognized": "无法识别",
+    "hint": "下次部署前，请在仓库中运行 `openship config validate` 检查该文件。"
   }
 }

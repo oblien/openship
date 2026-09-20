@@ -1,0 +1,216 @@
+---
+title: DNS providers
+description: Connect DNS providers and check zones.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+Adding a custom domain normally ends with Openship telling you which records to create and waiting for you
+to create them. Connect a DNS provider and Openship can preview and apply those records for you without
+leaving the page. Applying DNS is always an explicit action: creating a project domain or saving a service
+route never changes the provider's zone silently. In the dashboard, credentials live under
+**Settings → DNS** and each pending domain's records panel contains the apply action.
+
+Cloudflare is the only provider today. The provider list is served by the API rather than hard-coded in the
+dashboard, so `GET /api/dns/providers` is the authoritative answer to "what can I connect?".
+
+## Connect a provider
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.dns.addCredential({
+  provider: "cloudflare",
+  name: "Cloudflare production",
+  apiToken: "cf-...",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/dns/credentials" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"cloudflare","name":"Cloudflare production","apiToken":"cf-..."}'
+```
+
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    provider: { type: '"cloudflare"', description: 'Provider to connect. Must be one of the names returned by GET /api/dns/providers.', required: true },
+    name: { type: 'string', description: 'Your label for this credential, e.g. "Cloudflare production". Unique per provider within the organization.', required: true },
+    apiToken: { type: 'string', description: 'The provider API token. Verified against the provider before it is stored, so a token that does not work is rejected here rather than failing silently later.', required: true },
+  }}
+/>
+
+For Cloudflare, create a token at
+[dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) scoped to
+**Zone:Zone:Read** and **Zone:DNS:Edit**, limited to the zones you want Openship to manage.
+
+<Callout title="The token is write-only from here on" type="warn">
+It is encrypted at rest (AES-256-GCM, key derived from `BETTER_AUTH_SECRET`) and no endpoint returns it —
+not in full and not as a prefix. `tokenMasked` is a fixed `••••••••`. There is no "reveal"; to change a
+token, disconnect the credential and connect a new one.
+
+Rotating `BETTER_AUTH_SECRET` makes stored tokens undecryptable. The credential then reports
+`status: "invalid"` the next time Openship tries to use it, and you re-connect it.
+</Callout>
+
+## Check a zone
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.dns.verifyZone({
+  hostname: "app.example.com",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/dns/verify-zone" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"app.example.com"}'
+```
+
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    hostname: { type: 'string', description: 'The fully-qualified hostname to check, e.g. app.example.com.', required: true },
+  }}
+/>
+
+The response separates four outcomes, because they call for different actions:
+
+| `status` | `matched` | Meaning |
+|---|---|---|
+| `matched` | `true` | A connected provider hosts this zone; the domain's records can be previewed and applied from Openship. |
+| `none` | `false` | We asked, and no connected provider hosts it. You add the records yourself. |
+| `unauthorized` | `false` | A stored token was rejected. Re-connect it — `credentialId` says which. |
+| `unavailable` | `false` | The provider could not be reached (rate limit, outage). Unknown, **not** a sign of misconfiguration. |
+
+## Add, preview, and apply a domain
+
+`POST /api/domains` persists a pending domain and returns the records it needs. It does not call the DNS
+provider. Service-level custom routes follow the same contract: saving the route creates its pending domain
+row, and that row supplies the `:id` used by the shared plan and apply endpoints.
+
+Preview the exact provider changes before writing anything:
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.dnsPlan("dom_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/domains/dom_123/dns/plan" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+```json
+{
+  "data": {
+    "status": "matched",
+    "provider": "cloudflare",
+    "zoneName": "example.com",
+    "records": [
+      { "name": "app.example.com", "type": "A", "action": "create", "desired": "203.0.113.10" }
+    ]
+  }
+}
+```
+
+The plan classifies every record as `create`, `update`, `adopt`, `in-sync`, or `conflict`. A conflict is
+reported rather than overwritten. `status: "none"` means no connected credential manages the zone, so use
+the records returned by `POST /api/domains` (or `GET /api/domains/:id/records`) and add them manually.
+
+Apply the previewed records explicitly:
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.dnsApply("dom_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/domains/dom_123/dns/apply" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The response reports `applied`, `skipped`, or `failed` for every record. `provisioned` is `true` only when
+the matching provider has every actionable record in place; a partial write returns `provisioned: false`
+with a reason and the per-record failures.
+
+No verification is triggered by apply. The records are seconds old, a resolver may still be holding a
+negative answer for the name, and a failed check burns one of Let's Encrypt's per-hostname validation
+failures. The domain stays pending and the `domains:verify-pending` sweep picks it up after its
+ten-minute grace window.
+
+## Removing records
+
+Disconnecting a credential does not touch DNS. Removing a *domain* does — but only records Openship created,
+identified by the `Managed by Openship` comment it writes on every record.
+
+<Callout title="Why ownership is tracked, not inferred" type="info">
+For an apex domain the record name *is* the zone apex, where your `MX`, SPF `TXT` and `CAA` records also
+live. Deleting "every record at this name" would take your mail with it, so Openship deletes only what it
+can prove it wrote.
+
+Connecting a domain does repoint an existing record at that name — that is what connecting it means — but
+repointing is not adoption: Openship leaves such a record's comment untouched, so it never carries the
+`Managed by Openship` marker and removing the domain later will not delete it.
+</Callout>
+
+## Errors
+
+| Code | Status | Meaning |
+|---|---|---|
+| `DNS_UNKNOWN_PROVIDER` | 400 | `provider` is not a name from `GET /api/dns/providers`. |
+| `DNS_PROVIDER_NOT_READY` | 400 | The provider rejected the token during the pre-store check. |
+| `DNS_RECORD_CONFLICT` | 409 | Several records already answer for that name and type and none are Openship's — a round-robin or multi-host set it will not rewrite. |
+| `DNS_API_ERROR` | 502 | The provider's API failed. The upstream status is in the message. |
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List supported DNS providers and their credential fields. | `dns.listProviders()` | `GET /api/dns/providers`<br />`settings:read` |
+| List the organization’s DNS credentials. | `dns.listCredentials()` | `GET /api/dns/credentials`<br />`settings:read` |
+| Read a DNS credential with secrets masked. | `dns.getCredential(input)` | `GET /api/dns/credentials/:id`<br />`settings:read` |
+| Store a DNS provider credential. | `dns.addCredential(input)` | `POST /api/dns/credentials`<br />`settings:admin` |
+| Remove a DNS credential. | `dns.removeCredential(input)` | `DELETE /api/dns/credentials/:id`<br />`settings:admin` |
+| Check access to the requested DNS zone. | `dns.verifyZone(input)` | `POST /api/dns/verify-zone`<br />`settings:read` |
+
+{/* api-operations:end */}

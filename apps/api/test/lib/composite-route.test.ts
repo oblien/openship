@@ -5,7 +5,7 @@ import {
   deriveBackendPrefix,
   buildCompositeProxyLocations,
   buildCompositeRegistration,
-} from "../../src/modules/deployments/compose/composite-route";
+} from "@repo/platform/engine/modules/deployments/compose/composite-route";
 
 const web = { id: "web", name: "web", kind: "monorepo", framework: "vite", startCommand: "", enabled: true };
 const api = { id: "api", name: "api", kind: "monorepo", framework: "express", startCommand: "npm start", enabled: true };

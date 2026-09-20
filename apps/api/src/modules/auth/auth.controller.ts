@@ -25,9 +25,14 @@
  */
 
 import type { Context } from "hono";
-import { auth } from "../../lib/auth";
+import { auth, isSaasDeployment } from "@repo/platform/engine/lib/auth";
+import { repos } from "@repo/db";
+import {
+  invitationAccountCreationMode,
+  resolveInvitationClaim,
+} from "@repo/platform/engine/lib/invitation-claim";
 import { setSessionCookie } from "../../lib/session-cookie";
-import { localDashboardUrl } from "../../config/env";
+import { localDashboardUrl } from "@repo/platform/engine/config/env";
 import { alignLoopbackOrigin } from "@repo/core";
 
 // ─── HTML result page ────────────────────────────────────────────────────────
@@ -46,6 +51,45 @@ function desktopResultPage(title: string, message: string, success = false): str
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/auth/invitation-preview/:id
+ *
+ * Invitation claim pages must load before an invitee has a session. Better
+ * Auth's own get-invitation endpoint is session-bound, so expose only the
+ * token-bound, non-secret projection the page needs. Every invalid lifecycle
+ * state is the same 404 to avoid turning this into an invitation oracle.
+ */
+export async function invitationPreview(c: Context) {
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
+
+  const invitationId = (c.req.param("id") ?? "").trim();
+  const claim = await resolveInvitationClaim(invitationId);
+  if (!claim) {
+    return c.json({ error: "This invitation is invalid or has expired." }, 404);
+  }
+
+  const existingUser = await repos.user.findByEmail(claim.email);
+  const accountCreation = invitationAccountCreationMode({
+    accountExists: !!existingUser,
+    isSaas: isSaasDeployment,
+    inviterIsInstanceAdmin: claim.inviterIsInstanceAdmin,
+  });
+
+  return c.json({
+    data: {
+      invitation: {
+        id: claim.id,
+        email: claim.email,
+        role: claim.role,
+        expiresAt: claim.expiresAt.toISOString(),
+      },
+      organization: claim.organization,
+      accountCreation,
+    },
+  });
+}
 
 /**
  * GET /api/auth/get-session

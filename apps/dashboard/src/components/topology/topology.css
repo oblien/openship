@@ -1,0 +1,110 @@
+.topology-page {
+  container: project-topology / inline-size;
+}
+@container project-topology (max-width: 760px) {
+  .topology-toolbar {
+    width: 100%;
+  }
+  .topology-environment {
+    flex: 1;
+  }
+}
+@container project-topology (max-width: 450px) {
+  .topology-environment {
+    flex-basis: 100%;
+  }
+  .topology-actions {
+    width: 100%;
+  }
+  .topology-add-service {
+    flex: 1;
+  }
+}
+.topology-workspace {
+  min-height: 380px;
+}
+.topology-notice {
+  top: 16px;
+}
+.topology-node {
+  box-shadow: none;
+}
+.topology-node[data-pending="true"] {
+  border-style: dashed;
+}
+.topology-status {
+  color: var(--muted-foreground);
+}
+.topology-status[data-state="running"] {
+  color: var(--success);
+}
+.topology-status[data-state="starting"],
+.topology-status[data-state="restarting"] {
+  color: var(--info);
+}
+.topology-status[data-state="pending"] {
+  color: var(--warning);
+}
+.topology-status[data-state="failed"] {
+  color: var(--danger);
+}
+.topology-input {
+  display: block;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--background);
+  outline: none;
+  font-size: 13px;
+}
+.topology-input:focus {
+  border-color: var(--primary);
+}
+.topology-service-form [class*="grid-cols-"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.topology-service-form > form > div {
+  min-width: 0;
+}
+.topology-service-form input {
+  min-width: 0;
+}
+.topology-workspace[data-inspector="expanded"] .topology-pending,
+.topology-workspace[data-inspector="expanded"] .topology-hint {
+  pointer-events: none;
+}
+@container scale-workspace (max-width: 720px) {
+  .topology-workspace[data-inspector] .topology-notice {
+    top: calc(30px + var(--scale-preview-height, 82px));
+  }
+  .topology-pending {
+    bottom: 68px;
+    inset-inline-start: 16px;
+    justify-content: space-between;
+  }
+  .topology-hint {
+    display: none;
+  }
+}
+@container scale-workspace (max-width: 560px) {
+  .topology-pending {
+    gap: 4px;
+  }
+  .topology-pending > span {
+    font-size: 11px;
+  }
+  .topology-pending button {
+    padding-inline: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topology-page *,
+  .topology-page *::before,
+  .topology-page *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,6 +1,6 @@
 ---
-title: Services API
-description: Manage the services inside a project — compose services and monorepo sub-apps — including CRUD, sync from compose, container actions, drift resolution, and env vars.
+title: Services
+description: Manage project services, containers, and environment variables.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -11,49 +11,89 @@ services, syncing them from a `docker-compose` file, starting/stopping/restartin
 resolving compose drift, and setting per-service environment variables. In the dashboard this is a project's
 **Services** tab; from the terminal it's [`openship service`](/docs/cli/projects).
 
-<Callout title="Base path & auth">
-Every path is nested under a project — relative to your instance, under **`/api/projects/:id/services`**,
-where `:id` is the project id (e.g. `https://your-host/api/projects/proj_123/services`).
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model and [security/auth](/docs/security/auth) for permissions.
-</Callout>
+These operations are available with supported self-hosted and Cloud providers. A fixed organization
+scope requires a direct compatible Cloud connection; see [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 
-<Callout title="Self-hosted and cloud" type="info">
-This module is available on both self-hosted and Openship Cloud. When `:id` is a cloud project the request
-is transparently proxied to Openship Cloud; a local project is served by your own instance.
-</Callout>
+Service and deployment responses mask non-empty `buildArgs` values as `••••••••`, just like
+`environment`. This also covers retained deployment snapshots and Compose drift previews. Empty strings
+stay empty and `null` still means inherit from the build environment. On write, echoing a mask keeps
+that key's stored value; a mask without a stored source is dropped. `buildArgs` remains a whole-map
+replacement: omit a key to remove it, or send `{}` to clear the map.
 
-## Endpoints
+For literal build args, responses also include `buildArgsFingerprints`, keyed by argument name. After
+rotating a literal value, compare the fingerprint in the service write response with the same service's
+fingerprint in deployment history (`meta.composeServices[]`) or build status (`composeServices[]`).
+Equal fingerprints mean the stored literal values match; a rotation changes the fingerprint without
+returning either value. They are HMAC-SHA256 values scoped to the project, service name and argument key,
+so they cannot be computed offline or compared across services. Rotating the instance's auth secret
+also changes them.
 
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/projects/:id/services` | `project:service:list` | List a project's services (compose services / monorepo sub-apps). |
-| `POST /api/projects/:id/services` | `project:service:write` | Add a service to a project. |
-| `GET /api/projects/:id/services/containers` | `project:read` | List the running containers for a project's services. |
-| `POST /api/projects/:id/services/sync` | `project:service:write` | Sync services from the project's docker-compose file into the service table. |
-| `GET /api/projects/:id/services/:serviceId` | `project:service:read` | Get one service by id. |
-| `GET /api/projects/:id/services/:serviceId/logs` | `project:service:read` | Fetch a service's runtime logs (non-streaming). |
-| `GET /api/projects/:id/services/:serviceId/logs/stream` | `project:service:read` | Stream a service's runtime logs. |
-| `PATCH /api/projects/:id/services/:serviceId` | `project:service:write` | Update a service's configuration. |
-| `DELETE /api/projects/:id/services/:serviceId` | `project:service:admin` | Delete a service (tears down its container). |
-| `POST /api/projects/:id/services/:serviceId/drift/accept` | `project:service:write` | Accept upstream docker-compose changes for this service. |
-| `POST /api/projects/:id/services/:serviceId/drift/keep` | `project:service:write` | Keep local edits over upstream docker-compose changes for this service. |
-| `POST /api/projects/:id/services/:serviceId/start` | `project:service:write` | Start this service's container. |
-| `POST /api/projects/:id/services/:serviceId/stop` | `project:service:write` | Stop this service's container. |
-| `POST /api/projects/:id/services/:serviceId/restart` | `project:service:write` | Restart this service's container. |
-| `GET /api/projects/:id/services/:serviceId/env` | `project:service:read` | List a service's environment variables. |
-| `PUT /api/projects/:id/services/:serviceId/env` | `project:service:write` | Replace a service's environment variables. |
+Fingerprints describe the stored build configuration, not a running container. Inherited (`null`) and
+interpolated args have no fingerprint because their effective values depend on the build environment.
+Snapshots remain intact internally for rollback; existing history is masked when read, without a migration.
+
+Source scans also mask build arguments by default. An authorized editing scan with `includeEnv: true`
+includes source values so the deploy form can edit them; it requires write access and, for GitHub sources,
+permission to read the repository's full contents.
+
+## Share a service between projects
+
+A service can stay in its owning project and be connected to several other projects. This reuses the
+existing instance and its data. In the dashboard, open the service and choose **Use in a project**, or
+choose **Add service → Connect existing** from the consuming project's Services tab. Shared services
+appear there with their source project; the owner can see which projects use each service.
+
+Use the existing project connection API to create these links:
+
+```ts
+const { outputs } = await ship.projects.getAppConnection("source_project");
+const output = outputs.find(item => item.sourceServiceId === "svc_database");
+if (!output?.value) throw new Error("Configure and deploy the source database first.");
+
+await ship.projects.connectBundle("consumer_project", {
+  sourceProjectId: "source_project",
+  items: [{ outputId: output.id, envKey: "DATABASE_URL" }],
+  mode: "internal",
+});
+```
+
+The caller needs write access to both projects in the same organization. Private service connections
+require Docker projects on the same server. Credentials are stored as secret environment variables and
+refreshed from the source on normal consumer deployments. Disconnecting removes that project's link;
+the source service and other consumers remain. Disconnect all consumers before deleting a shared service
+or its owning project.
 
 ## Add a service
-
-```
-POST /api/projects/:id/services
-```
 
 A service row is a union: `kind: "compose"` uses the container fields (image, build, ports…), while
 `kind: "monorepo"` uses the sub-app build fields (rootDirectory, framework…). Both field sets are accepted
 and optional; the `kind` decides which subset is the source of truth. Unknown keys are rejected.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.services.create("proj_123", {
+  name: "db",
+  kind: "compose",
+  image: "postgres:16",
+  ports: ["5432:5432"],
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/services" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"db","kind":"compose","image":"postgres:16","ports":["5432:5432"]}'
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -67,11 +107,11 @@ and optional; the `kind` decides which subset is the source of truth. Unknown ke
 <TypeTable
   type={{
     image: { type: 'string', description: 'Container image to run, e.g. postgres:16 (max 500).' },
-    build: { type: 'string', description: 'Build context path, relative to the repo root (max 500).' },
+    build: { type: 'string', description: 'Docker build context — the directory docker builds from. Relative to the compose file\u2019s folder, exactly as compose resolves it (max 500).' },
     dockerfile: { type: 'string', description: 'Dockerfile path relative to the build context (max 500).' },
     ports: { type: 'string[]', description: 'Port mappings like "8080:80" (max 50 entries, each ≤100 chars).' },
     dependsOn: { type: 'string[]', description: 'Names of services this one depends on (max 50).' },
-    environment: { type: 'Record<string, string>', description: 'Compose environment defaults baked into the service.' },
+    environment: { type: 'Record<string, string>', description: 'Compose environment defaults baked into the service. On update this map is merged, not replaced, and accepts nulls — see Update a service.' },
     volumes: { type: 'string[]', description: 'Volume mappings (max 50 entries, each ≤500 chars).' },
     command: { type: 'string', description: 'Override the container command (max 1000).' },
     advanced: { type: 'object', description: 'Extended compose settings. Currently a healthcheck block: { test, interval, timeout, retries, startPeriod, disable }. Unknown keys are rejected.' },
@@ -101,34 +141,53 @@ and optional; the `kind` decides which subset is the source of truth. Unknown ke
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/projects/proj_123/services \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"db","kind":"compose","image":"postgres:16","ports":["5432:5432"]}'
-```
-
-```bash
-# Same thing from the CLI:
-openship service create -p my-stack db --image postgres:16 --port 5432:5432
-```
-
 ## Update a service
-
-```
-PATCH /api/projects/:id/services/:serviceId
-```
 
 Every field is optional — send only what changes. Accepts the same compose and monorepo fields as create,
 **except `kind`**: switching a row's kind is a destructive operation, so delete the service and re-create it
 under the new kind instead.
 
+Two fields are **merged** onto their stored value instead of replacing it — `environment` and `advanced`,
+the endpoint's keyed maps:
+
+| You send | Result |
+| --- | --- |
+| the key is absent | the stored value is kept |
+| `{"KEY": "value"}` | that one key is set; every other key is untouched |
+| `{"KEY": null}` | that one key is removed |
+| `{"environment": null}` | every variable is removed |
+| `{"environment": {}}` | nothing changes |
+
+Env values read back masked as `••••••••` (`GET /:serviceId` never returns plaintext). Echo the sentinel to
+keep a value unchanged, or send a real string to replace it. **Omitting a key never deletes it** — a delete
+has to be spelled `null`. To read a value explicitly, use [reveal](#reveal-environment-values).
+
+Every other field replaces its stored value wholesale, `ports`, `volumes`, `dependsOn` and
+`publicEndpoints` included, so send the complete list for those.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.services.update("proj_123", "svc_456", {
+  restart: "unless-stopped",
+  enabled: true,
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X PATCH https://your-host/api/projects/proj_123/services/svc_456 \
+curl -X PATCH "$OPENSHIP_URL/api/projects/proj_123/services/svc_456" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"restart":"unless-stopped","enabled":true}'
 ```
+
+</Tab>
+</Tabs>
 
 ## Sync from docker-compose
 
@@ -138,10 +197,6 @@ and flagging services. Where your edits diverge from the compose file, the affec
 
 ```
 POST /api/projects/:id/services/sync
-```
-
-```bash
-openship service sync -p my-stack docker-compose.yml
 ```
 
 ## Resolve compose drift
@@ -154,12 +209,25 @@ POST /api/projects/:id/services/:serviceId/drift/accept   # take upstream, disca
 POST /api/projects/:id/services/:serviceId/drift/keep     # keep your edits, stop flagging
 ```
 
-```bash
-openship service drift accept -p my-stack web
-openship service drift keep   -p my-stack web
+## Container actions
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.services.restart("proj_123", "svc_123");
 ```
 
-## Container actions
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/services/svc_123/restart" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
 
 Start, stop, or restart the running container for a single service. These act on the service's
 active-deployment container.
@@ -168,10 +236,6 @@ active-deployment container.
 POST /api/projects/:id/services/:serviceId/start
 POST /api/projects/:id/services/:serviceId/stop
 POST /api/projects/:id/services/:serviceId/restart
-```
-
-```bash
-openship service restart -p my-stack web
 ```
 
 Use `GET /api/projects/:id/services/containers` (`openship service containers -p my-stack`) to list the
@@ -187,6 +251,36 @@ GET /api/projects/:id/services/:serviceId/env
 PUT /api/projects/:id/services/:serviceId/env
 ```
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.services.setEnvVars("proj_123", "svc_456", {
+  environment: "production",
+  vars: [
+    {
+      key: "DATABASE_URL",
+      value: "postgres://…",
+      isSecret: true,
+    },
+  ],
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X PUT "$OPENSHIP_URL/api/projects/proj_123/services/svc_456/env" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"environment":"production","vars":[{"key":"DATABASE_URL","value":"postgres://…","isSecret":true}]}'
+```
+
+</Tab>
+</Tabs>
+
 <TypeTable
   type={{
     environment: { type: '"production" | "preview" | "development"', description: 'Which environment these vars apply to.', required: true },
@@ -194,24 +288,63 @@ PUT /api/projects/:id/services/:serviceId/env
   }}
 />
 
-```bash
-curl -X PUT https://your-host/api/projects/proj_123/services/svc_456/env \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"environment":"production","vars":[{"key":"DATABASE_URL","value":"postgres://…","isSecret":true}]}'
-```
-
-```bash
-# Same thing from the CLI:
-openship service env set -p my-stack web DATABASE_URL=postgres://… --env production
-```
-
 <Callout title="PUT replaces, it doesn't merge" type="warn">
 `PUT .../env` overwrites the environment's variable set with exactly what you send. Fetch the current vars
 with `GET .../env` first if you only mean to change one — anything you omit is removed.
 </Callout>
 
-## Errors you might see
+### Reveal environment values
+
+The dashboard uses one environment editor. Imported Compose values are visible immediately; **Demo mode**
+blurs them like IP addresses. Saved values start masked, and clicking a row's eye reveals only that value.
+**Show values** is the explicit action for revealing all saved rows. Revealing does not save or overwrite
+configuration.
+
+SDK and REST requests name 1–500 keys, each up to 512 characters. Only requested keys that exist are
+returned. Reading masked configuration does not grant permission to reveal it.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const environment = await ship.services.revealEnv("proj_123", "svc_456", {
+  keys: ["POSTGRES_PASSWORD"],
+});
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/services/svc_456/env-reveal" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"keys":["POSTGRES_PASSWORD"]}'
+```
+
+The returned values are under `environment`.
+
+</Tab>
+</Tabs>
+
+This reads saved Compose configuration and requires service write access. Add
+`environment: "production"`, `"preview"`, or `"development"` to read the service's variables for that
+environment instead.
+
+For an import editor, request values with the initial scan. This avoids a second source read when the
+editor opens:
+
+| Source | SDK | REST API |
+| --- | --- | --- |
+| Git or local scan | `deployments.prepare({ ...prepareInput, includeEnv: true })` | `POST /api/deployments/prepare` with `includeEnv: true` |
+| Uploaded snapshot | `sources.scan("session_123", { includeEnv: true })` | `POST /api/projects/folder/scan/session_123` with `{ "includeEnv": true }` |
+| Local directory | `projects.scanLocal({ path: "/srv/app", includeEnv: true })` | `POST /api/projects/scan` with the same body |
+
+Ordinary scans remain masked. `includeEnv: true` requires the scan's write permission and, for Git,
+whole-repository content read access. Local paths are self-hosted only. Demo mode only changes the browser
+display; it does not change API permissions or returned values.
+
+## Errors
 
 <Callout title="400 — invalid body" type="warn">
 The payload failed validation (unknown key, wrong type, or a value over its length limit). Unknown keys are
@@ -223,3 +356,32 @@ carry a `rootDirectory`.
 The `:serviceId` doesn't belong to this project (or was deleted), or the project `:id` isn't in your
 organization. List the project's services with `GET /api/projects/:id/services` to get valid ids.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream log events for a service. | `services.streamLogs(projectId, serviceId, input?, options?)` | `GET /api/projects/:id/services/:serviceId/logs/stream`<br />`project:service:read` |
+| List services belonging to a project. | `services.list(id)` | `GET /api/projects/:id/services`<br />`project:service:list` |
+| Add a service definition to a project. | `services.create(id, input)` | `POST /api/projects/:id/services`<br />`project:service:write` |
+| Synchronize service definitions from Compose source. | `services.sync(id, input)` | `POST /api/projects/:id/services/sync`<br />`project:service:write` |
+| List active project containers. | `services.activeContainers(id)` | `GET /api/projects/:id/services/containers`<br />`project:read` |
+| Read one service definition and state. | `services.get(parentId, id)` | `GET /api/projects/:id/services/:serviceId`<br />`project:service:read` |
+| Update service configuration. | `services.update(parentId, id, input)` | `PATCH /api/projects/:id/services/:serviceId`<br />`project:service:write` |
+| Remove a service and its selected resources. | `services.remove(parentId, id)` | `DELETE /api/projects/:id/services/:serviceId`<br />`project:service:admin` |
+| Accept the source version of a detected configuration drift. | `services.acceptDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/accept`<br />`project:service:write` |
+| Keep the current configuration when resolving drift. | `services.keepDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/keep`<br />`project:service:write` |
+| Read service environment variables with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
+| Apply service environment variable changes. | `services.setEnvVars(parentId, id, input)` | `PUT /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
+| Reveal authorized service environment values. | `services.revealEnv(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/env-reveal`<br />`project:service:write` |
+| Apply saved runtime environment by replacing the service container using its current image, without a build. | `services.applyEnvironment(parentId, id)` | `POST /api/projects/:id/services/:serviceId/apply-env`<br />`project:service:write` |
+| Read persistent-volume sizes for the service. | `services.volumeSizes(parentId, id)` | `GET /api/projects/:id/services/:serviceId/volume-sizes`<br />`project:service:read` |
+| Start the service runtime. | `services.start(parentId, id)` | `POST /api/projects/:id/services/:serviceId/start`<br />`project:service:write` |
+| Stop the service runtime. | `services.stop(parentId, id)` | `POST /api/projects/:id/services/:serviceId/stop`<br />`project:service:write` |
+| Restart the service runtime. | `services.restart(parentId, id, input?)` | `POST /api/projects/:id/services/:serviceId/restart`<br />`project:service:write` |
+| Read recent service runtime logs. | `services.runtimeLogs(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/logs`<br />`project:service:read` |
+| Execute an authorized command in the service runtime. | `services.exec(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/exec`<br />`project:service:write` |
+
+{/* api-operations:end */}

@@ -11,12 +11,13 @@
  * There is NO existing "verify a remote blob before executing" primitive in the
  * repo — every `curl | sh` install today runs unverified over TLS. This module
  * is that missing gate: (1) verify the manifest signature with a baked pubkey,
- * (2) verify each referenced asset's sha256, and only then may bytes be written
- * or executed on a host.
+ * (2) refuse a manifest whose shape isn't the one this engine speaks, (3) verify
+ * each referenced asset's sha256 — and only then may bytes be written or executed
+ * on a host.
  */
 
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
-import type { ModuleCatalog } from "./types";
+import { validateModuleCatalog, validateModuleVersion, type ModuleCatalog } from "./types";
 
 /**
  * Baked ed25519 public keyring — base64 of SPKI DER. A KEYRING (not a single
@@ -72,7 +73,30 @@ export function verifyManifestSignature(
   return false;
 }
 
-/** Every asset key a catalog's steps reference (file + exec steps carry `asset`). */
+/**
+ * Shape gate for a whole catalog, composed from the runner's own validators
+ * (types.ts) so "well-formed catalog" has exactly one definition. `null` = safe to
+ * walk; otherwise a reason naming the offending field and the value observed.
+ *
+ * Whole-catalog, unlike reconcile's per-pending-version check: the walks below visit
+ * EVERY version's steps, so one malformed version anywhere makes the manifest's asset
+ * commitments unreadable — and an unreadable commitment set is a verification
+ * failure, not something to walk past.
+ */
+export function catalogShapeError(raw: unknown): string | null {
+  const catalogError = validateModuleCatalog(raw);
+  if (catalogError) return catalogError;
+  for (const version of (raw as ModuleCatalog).versions) {
+    const versionError = validateModuleVersion(version);
+    if (versionError) return versionError;
+  }
+  return null;
+}
+
+/**
+ * Every asset key a catalog's steps reference (file + exec steps carry `asset`).
+ * Requires a catalog `catalogShapeError` has cleared — the walk is total only then.
+ */
 export function referencedAssets(catalog: ModuleCatalog): Set<string> {
   const out = new Set<string>();
   for (const v of catalog.versions) {
@@ -96,6 +120,9 @@ export interface AssetVerifyResult {
   ok: boolean;
   /** asset key → reason, for the assets that failed (missing / hash mismatch). */
   failures: Record<string, string>;
+  /** Set instead of `failures` when the manifest is too malformed to enumerate its
+   *  own commitments — there is no asset key to file that refusal under. */
+  shapeError?: string;
 }
 
 /**
@@ -108,6 +135,9 @@ export function verifyAssets(
   catalog: ModuleCatalog,
   assets: Map<string, Buffer>,
 ): AssetVerifyResult {
+  const shapeError = catalogShapeError(catalog);
+  if (shapeError) return { ok: false, failures: {}, shapeError };
+
   const failures: Record<string, string> = {};
   for (const [key, expected] of expectedAssetHashes(catalog)) {
     const bytes = assets.get(key);

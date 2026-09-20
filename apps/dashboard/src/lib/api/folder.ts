@@ -44,15 +44,8 @@ export const folderApi = {
 
   /** Authoritative framework detection on the uploaded source (fallback path;
    *  the UI normally seeds from the user-picked stack instead). */
-  scan: (sessionId: string) =>
-    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), {}),
-
-  /** #336: real (unmasked) per-service env for the scan wizard's reveal toggle,
-   *  keyed by service name. Write-gated (project:write) on the API. */
-  reveal: (sessionId: string) =>
-    api.get<{ success: boolean; environments: Record<string, Record<string, string>> }>(
-      endpoints.projects.folderEnvReveal(sessionId),
-    ),
+  scan: (sessionId: string, options: { includeEnv?: boolean } = {}) =>
+    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), options),
 
   /** Upload the gzipped tarball to the session's target. Destination-agnostic. */
   async upload(session: FolderSession, gz: Blob): Promise<void> {

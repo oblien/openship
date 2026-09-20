@@ -1,0 +1,271 @@
+{
+  "available": true,
+  "verified": false,
+  "minEngine": "0.6.6",
+  "id": "clickhouse",
+  "name": "ClickHouse",
+  "description": "The columnar SQL database for analytics — billions of rows scanned per second. Ships with the CH-UI console, so you get a SQL editor, schema browser and dashboards the moment it installs: sign in with the ClickHouse user and password below, no extra setup.",
+  "repository": "https://github.com/ClickHouse/ClickHouse",
+  "kind": "template",
+  "logo": "clickhouse",
+  "category": "database",
+  "tags": [
+    "analytics",
+    "olap",
+    "sql",
+    "columnar",
+    "warehouse",
+    "timeseries"
+  ],
+  "framework": "docker-compose",
+  "minResources": {
+    "memoryMb": 2048
+  },
+  "services": [
+    {
+      "name": "clickhouse",
+      "image": "clickhouse/clickhouse-server:26.3.17.110",
+      "exposedPort": 8123,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 8123
+        }
+      ],
+      "environment": {
+        "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1"
+      },
+      "secretEnv": [
+        "CLICKHOUSE_PASSWORD"
+      ],
+      "volumes": [
+        "clickhouse_data:/var/lib/clickhouse"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8123/ping || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "restart": "unless-stopped",
+      "stopGracePeriod": "60s",
+      "ports": [
+        "8218:8123"
+      ]
+    },
+    {
+      "name": "ch-ui",
+      "image": "ghcr.io/caioricciuti/ch-ui:v2.6.1",
+      "exposedPort": 3488,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 3488
+        }
+      ],
+      "dependsOn": [
+        "clickhouse"
+      ],
+      "environment": {
+        "CLICKHOUSE_URL": "http://clickhouse:8123",
+        "CONNECTION_NAME": "ClickHouse",
+        "APP_URL": "{{publicUrl:ch-ui}}",
+        "DATABASE_PATH": "/app/data/ch-ui.db"
+      },
+      "secretEnv": [
+        "APP_SECRET_KEY"
+      ],
+      "volumes": [
+        "ch_ui_data:/app/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:3488/health || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "15s"
+      },
+      "restart": "unless-stopped",
+      "ports": [
+        "8217:3488"
+      ]
+    }
+  ],
+  "configFields": [
+    {
+      "key": "CLICKHOUSE_USER",
+      "service": "clickhouse",
+      "label": "Database user",
+      "help": "The account the server creates on its first boot. It owns the data and is the sign-in for the console.",
+      "type": "text",
+      "default": "default",
+      "required": true
+    },
+    {
+      "key": "CLICKHOUSE_PASSWORD",
+      "service": "clickhouse",
+      "label": "Password",
+      "help": "Auto-generated. Set on the account at first boot — it is the console sign-in and the credential every SQL client needs. Without it the server would refuse all non-localhost connections.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "CLICKHOUSE_DB",
+      "service": "clickhouse",
+      "label": "First database",
+      "help": "Created on the first boot so you can write a table immediately. More can be added from the console.",
+      "type": "text",
+      "default": "analytics",
+      "required": true
+    },
+    {
+      "key": "APP_SECRET_KEY",
+      "service": "ch-ui",
+      "label": "Console session key",
+      "help": "Auto-generated. Encrypts the ClickHouse credentials the console holds for a signed-in session. Rotating it signs everyone out.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to ClickHouse",
+    "description": "Open the console and sign in with the user and password below — the console talks to ClickHouse over the private project network, so the database itself never has to be public. For your own code, use the DSN.",
+    "guide": {
+      "intro": "Your project gets a ClickHouse server plus a web console for querying it.",
+      "useHint": "Read `process.env.CLICKHOUSE_URL` with `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` (or the single `CLICKHOUSE_DSN`) — set on your next deploy.",
+      "defaultMode": "internal"
+    },
+    "firstLogin": {
+      "username": "default",
+      "note": "The console has no account of its own: sign in with the ClickHouse user above and the generated password from this page. Three wrong tries locks that user out for 15 minutes, so paste the password rather than typing it."
+    },
+    "outputs": [
+      {
+        "id": "console",
+        "label": "Console",
+        "source": "publicUrl:ch-ui",
+        "kind": "url",
+        "recommended": true,
+        "help": "The CH-UI web console — SQL editor, schema browser, saved queries and dashboards. Sign in with the user and password below."
+      },
+      {
+        "id": "httpUrl",
+        "label": "HTTP endpoint",
+        "source": "publicUrl:clickhouse",
+        "sourceLabel": "Public",
+        "variants": [
+          {
+            "id": "internal",
+            "label": "Internal",
+            "source": "template:http://clickhouse:8123"
+          }
+        ],
+        "service": "clickhouse",
+        "envKey": "CLICKHOUSE_URL",
+        "recommended": true,
+        "help": "ClickHouse's HTTP interface (port 8123) — what clickhouse-connect, clickhouse-js, the JDBC/ODBC drivers and plain curl talk to. Send the user and password as basic auth. Switch to Internal for apps on the same project network; Public only resolves if you gave this port a domain."
+      },
+      {
+        "id": "httpDsn",
+        "label": "HTTP DSN",
+        "source": "template:http://{{env:clickhouse:CLICKHOUSE_USER}}:{{env:clickhouse:CLICKHOUSE_PASSWORD}}@clickhouse:8123/{{env:clickhouse:CLICKHOUSE_DB}}",
+        "sourceLabel": "Internal",
+        "service": "clickhouse",
+        "secret": true,
+        "envKey": "CLICKHOUSE_HTTP_DSN",
+        "recommended": true,
+        "help": "One string with the credentials baked in, over the private project network. For a client outside this server, use the public HTTP endpoint above plus the user and password."
+      },
+      {
+        "id": "nativeDsn",
+        "label": "Native TCP DSN",
+        "source": "template:clickhouse://{{env:clickhouse:CLICKHOUSE_USER}}:{{env:clickhouse:CLICKHOUSE_PASSWORD}}@clickhouse:9000/{{env:clickhouse:CLICKHOUSE_DB}}",
+        "sourceLabel": "Internal",
+        "service": "clickhouse",
+        "secret": true,
+        "envKey": "CLICKHOUSE_DSN",
+        "help": "ClickHouse's native protocol (port 9000) — faster and what clickhouse-client, clickhouse-go and clickhouse-driver prefer. Reachable from inside the project only; the port is never published to the host."
+      },
+      {
+        "id": "user",
+        "label": "User",
+        "source": "env:clickhouse:CLICKHOUSE_USER",
+        "service": "clickhouse",
+        "envKey": "CLICKHOUSE_USER",
+        "recommended": true,
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:clickhouse:CLICKHOUSE_PASSWORD",
+        "service": "clickhouse",
+        "envKey": "CLICKHOUSE_PASSWORD",
+        "secret": true,
+        "recommended": true,
+        "width": "half"
+      },
+      {
+        "id": "database",
+        "label": "Database",
+        "source": "env:clickhouse:CLICKHOUSE_DB",
+        "service": "clickhouse",
+        "envKey": "CLICKHOUSE_DATABASE",
+        "width": "half"
+      }
+    ]
+  },
+  "provides": [
+    {
+      "id": "clickhouse",
+      "outputRefs": [
+        "httpUrl",
+        "httpDsn",
+        "user",
+        "password",
+        "database"
+      ],
+      "category": "database"
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "ch-ui",
+      "port": 3488,
+      "label": "Console",
+      "kind": "http",
+      "required": true,
+      "scope": "public",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "clickhouse",
+      "port": 8123,
+      "label": "HTTP API",
+      "kind": "http",
+      "scope": "public",
+      "defaultMode": "port"
+    },
+    {
+      "service": "clickhouse",
+      "port": 9000,
+      "label": "Native protocol",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ]
+}

@@ -30,6 +30,19 @@ const render = (issues = ISSUE_FIXTURES.mixed!) =>
 const groupOrder = (html: string) =>
   [...html.matchAll(/text-\[14px\] font-semibold [^"]*">([^<]+)</g)].map((m) => m[1]);
 
+/**
+ * Each panel header's title → its tone class (`text-danger` / `text-warning` /
+ * `text-foreground`), so one panel's tint is assertable without matching over the
+ * whole page — the "muted beneath something louder" rule is per-panel, not global.
+ */
+const panelTones = (html: string) =>
+  Object.fromEntries(
+    [...html.matchAll(/text-\[14px\] font-semibold (text-[^"]*)">([^<]+)</g)].map((m) => [
+      m[2],
+      m[1],
+    ]),
+  );
+
 describe("grouping", () => {
   it("renders one panel per scope present, outward by blast radius", () => {
     expect(groupOrder(render())).toEqual(["Openship", "Servers", "Projects", "Domains"]);
@@ -81,12 +94,24 @@ describe("tone comes from the worst row in the panel", () => {
     expect(html).not.toContain("bg-danger-solid");
   });
 
-  it("keeps advisories on the muted surface, with no status color anywhere", () => {
+  it("wears amber on a page of pure advisories — the home Updates identity", () => {
+    // Nothing here outranks an advisory, so there's no louder tier to blur into: the
+    // panels carry the same amber the standalone Updates card does, never danger.
     const html = render(ISSUE_FIXTURES.advisory!);
+    expect(html).toContain("bg-warning-bg");
+    expect(html).toContain("text-warning");
     expect(html).not.toContain("bg-danger-bg");
-    expect(html).not.toContain("bg-warning-bg");
-    expect(html).not.toContain("text-warning");
     expect(html).not.toContain("text-danger");
+  });
+
+  it("drops advisories back to the muted surface the moment something louder shares the page", () => {
+    // In the mixed feed an outage is present, so the advisory-only Openship panel must
+    // NOT read amber — "a new version exists" can't look like "down" when both show at
+    // once. The louder panels keep their own tone.
+    const tones = panelTones(render(ISSUE_FIXTURES.mixed!));
+    expect(tones.Openship).toBe("text-foreground"); // advisory, muted beneath louder
+    expect(tones.Servers).toBe("text-danger"); // outage
+    expect(tones.Domains).toBe("text-warning"); // action_required
   });
 
   it("draws the same neutral edge whatever the tone", () => {

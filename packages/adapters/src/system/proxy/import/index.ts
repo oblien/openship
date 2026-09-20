@@ -8,7 +8,7 @@ import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyKind, ProxyScanResult } from "../../types";
 import { EDGE_CONTAINER_MOUNTS } from "../../../infra/openresty-lua";
 import { sq } from "../detect";
-import { scanNginx, scanOpenshipEdge, scanForeignOpenResty } from "./nginx";
+import { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanForeignOpenResty } from "./nginx";
 import { scanCaddy } from "./caddy";
 import { scanApache } from "./apache";
 import { scanTraefik } from "./traefik";
@@ -52,9 +52,7 @@ const INSTALLED_MARKERS: Array<{ proxy: ProxyKind; paths: string[] }> = [
  *
  * Returns null when nothing importable is installed.
  */
-export async function detectInstalledProxy(
-  executor: CommandExecutor,
-): Promise<ProxyKind | null> {
+export async function detectInstalledProxy(executor: CommandExecutor): Promise<ProxyKind | null> {
   const probe = INSTALLED_MARKERS.map(({ proxy, paths }) => {
     const test = paths.map((p) => `[ -f '${p}' ]`).join(" || ");
     return `{ ${test}; } && echo ${proxy}`;
@@ -125,7 +123,7 @@ export function canImportProxy(proxy: ProxyKind | undefined): boolean {
   );
 }
 
-export { scanNginx, scanOpenshipEdge, scanCaddy, scanApache, scanTraefik };
+export { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanCaddy, scanApache, scanTraefik };
 
 /** One adopted static site whose docroot the containerized edge cannot read. */
 export interface UnreachableStaticRoot {

@@ -12,6 +12,7 @@
 
 import type {
   BuildConfig,
+  ImageArtifactConfig,
   DeployConfig,
   BuildResult,
   DeploymentResult,
@@ -39,7 +40,11 @@ import type { ContainerStabilitySample } from "./stability";
  * it actually implements - callers never hit a silent stub.
  */
 export type RuntimeCapability =
+  /** Real Docker container semantics, including a Docker daemon in a cloud workspace. */
+  | "dockerHost"
   | "build"
+  /** Acquire and deploy an already-built application container image verbatim. */
+  | "prebuiltImage"
   | "deploy"
   | "multiServiceDeploy"
   | "stop"
@@ -112,6 +117,21 @@ export type RuntimeCapability =
    */
   | "inContainerExec"
   /**
+   * The in-container executor is genuinely CONFINED to the deployment — a command
+   * run through it cannot see or touch the host.
+   *
+   * Deliberately separate from "inContainerExec", which only promises "runs in the
+   * deployment's context". For Bare that context IS the host (`inContainerExecutor`
+   * returns the host executor, since a bare deployment is a host process), which is
+   * fine for the advisory port probe that capability was added for — and a privilege
+   * escalation for anything that runs an arbitrary command, because a project-tier
+   * grant would reach the whole machine.
+   *
+   * Any consumer running caller-supplied commands must gate on THIS, not on
+   * "inContainerExec". Omitted ⇒ not confined, so a new runtime fails closed.
+   */
+  | "isolatedExec"
+  /**
    * Runtime can report a container's RESTART HISTORY and health, not just a
    * point-in-time status — the readings the post-deploy stabilization watch
    * needs to tell "up" from "bouncing" (`sampleStability`). Docker implements
@@ -180,6 +200,15 @@ export interface RuntimeAdapter {
    * Cloud: delegates to cloud build infrastructure.
    */
   build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult>;
+
+  /**
+   * Turn a registry image into this runtime's native deploy artifact.
+   *
+   * Docker pulls it onto the target daemon and returns an immutable digest when
+   * available. Cloud provisions a temporary workspace from it. Runtimes that
+   * cannot run container images (Bare) omit the method and capability.
+   */
+  prepareImage?(config: ImageArtifactConfig, logger?: BuildLogger): Promise<BuildResult>;
 
   /** Cancel an in-progress build */
   cancelBuild(sessionId: string): Promise<void>;
@@ -309,7 +338,14 @@ export interface RuntimeAdapter {
    * port. Best-effort + idempotent. Optional (docker only; cloud/bare skip —
    * cloud uses public host:port, its private-link mesh is group-scoped).
    */
-  attachToExternalNetworks?(projectId: string, networkNames: string[]): Promise<void>;
+  attachToExternalNetworks?(
+    projectId: string,
+    networkNames: string[],
+    /** Containers to include BEYOND the `openship.project` label match — an adopted
+     *  container keeps its original labels, so the filter cannot see it. */
+    extraContainerIds?: string[],
+    options?: { prunePrefix?: string; retain?: string[]; strict?: boolean },
+  ): Promise<void>;
 
   /**
    * Join already-running containers (migration attach-live reuse) to a project's
@@ -319,8 +355,12 @@ export interface RuntimeAdapter {
    * touch. Best-effort + idempotent. Optional (docker only). */
   joinServiceGroupContainers?(
     slug: string,
-    members: Array<{ containerId: string; alias: string }>,
+    members: Array<{ containerId: string; aliases: string[] }>,
+    options?: { strict?: boolean },
   ): Promise<void>;
+
+  /** Disconnect exact containers from a shared-service network; remove it when empty. */
+  leaveServiceGroupContainers?(slug: string, containerIds: string[]): Promise<void>;
 
   // ── Rollback primitives ──────────────────────────────────────────────
   //
@@ -407,10 +447,7 @@ export interface RuntimeAdapter {
    * Open an interactive shell inside a deployed service. Optional —
    * runtimes without `serviceShell` capability throw if called.
    */
-  openServiceShell?(
-    containerId: string,
-    opts?: ShellOptions,
-  ): Promise<ShellSession>;
+  openServiceShell?(containerId: string, opts?: ShellOptions): Promise<ShellSession>;
 }
 
 // ─── Rollback primitive types ───────────────────────────────────────────────
@@ -482,11 +519,15 @@ export interface MultiServiceDeployConfig {
   restart?: string;
   /**
    * Force a fresh `docker pull` of the image tag even when a local copy exists.
-   * Set only for the "update" trigger — a normal deploy/redeploy stays
-   * pull-if-missing so it never surprise-bumps a `:latest` app or defeats the
-   * unchanged-image carry-forward.
+   * Set for explicit update operations and incoming deploy hooks. A normal
+   * manual redeploy stays pull-if-missing so it never surprise-bumps a
+   * `:latest` app or defeats unchanged-image carry-forward.
    */
   forcePull?: boolean;
+  /** The exact image reference was produced/pinned by the orchestrator or was
+   * already pulled during cohort preparation. Docker must not infer this from
+   * the tag text: a registry image can legitimately use Openship's tag shape. */
+  imageAlreadyPrepared?: boolean;
   /** Extended compose fields (healthcheck, …). Docker honors them; runtimes
    *  that can't (cloud) warn-and-drop. See ComposeAdvanced in @repo/core. */
   advanced?: ComposeAdvanced;
@@ -500,6 +541,10 @@ export interface MultiServiceDeployConfig {
   publicSlug?: string;
   customDomain?: string;
   expose?: boolean;
+  /** All approved Cloud hostnames for this service, including secondary ports. */
+  cloudEndpoints?: Array<{ hostname: string; port: number; custom: boolean }>;
+  /** Ports needed by project/composite edge routes, without a service hostname. */
+  cloudProxyPorts?: number[];
   /** Cloud only: the workspace id this service used in the PREVIOUS deployment.
    *  Reused so its permanent-workspace disk — the only persistence Oblien
    *  offers (no volume primitive) — survives a redeploy. A fresh workspace each
@@ -508,13 +553,40 @@ export interface MultiServiceDeployConfig {
   /** Service names this service depends on (compose `depends_on`). Used for
    *  readiness ordering on runtimes with no native healthcheck. */
   dependsOn?: string[];
+  /**
+   * Namespaces this container SHARES instead of getting its own, already resolved
+   * to values Docker takes verbatim (`container:<id>`, `none`).
+   *
+   * Resolution happens in the API, not here: a compose `service:<name>` has to
+   * become the sibling's LIVE container id, and the deploy loop is the layer that
+   * knows which siblings came up in this deployment (and refuses the dependent
+   * when one didn't). The runtime's job is to apply these and suppress what they
+   * make impossible — see `deployServiceWorkload`. Absent = its own namespaces,
+   * which is every service that doesn't ask otherwise.
+   */
+  namespaces?: {
+    /** `HostConfig.NetworkMode`. Set ⇒ no port publish, no network join, no alias. */
+    network?: string;
+    /** `HostConfig.PidMode`. Costs the container nothing else. */
+    pid?: string;
+  };
 }
 
 export interface MultiServiceDeployResult {
   containerId: string;
   status: string;
+  /** The container is running, but one or more edge routes need a retry. */
+  routeWarnings?: string[];
   ip?: string;
+  /** The FIRST binding the daemon reports — arbitrary for a multi-port container.
+   *  Anything picking a proxy target for a SPECIFIC container port must read
+   *  `hostPortByContainerPort`; this stays for the one scalar `service_deployment`
+   *  can persist. */
   hostPort?: number;
+  /** Every published binding, keyed by CONTAINER port → host port. See
+   *  `ContainerInfo.hostPortByContainerPort`: without it a route for a container's
+   *  second port is dialed at the first port's publish, reaching a different app. */
+  hostPortByContainerPort?: Record<number, number>;
   /**
    * Content-addressable image digest actually running (`repo@sha256:…`), read
    * from the image's RepoDigests after create. The anchor the update scanner
@@ -584,10 +656,7 @@ export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
    * reachable by name. Absent on runtimes with live DNS (Docker) — their real
    * network needs no post-pass.
    */
-  finalizeServiceGroup?(
-    group: MultiServiceGroupHandle,
-    onLog?: LogCallback,
-  ): Promise<void>;
+  finalizeServiceGroup?(group: MultiServiceGroupHandle, onLog?: LogCallback): Promise<void>;
 
   /**
    * Optional: seed an ALREADY-RUNNING service into the group's in-memory mesh

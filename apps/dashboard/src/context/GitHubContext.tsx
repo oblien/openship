@@ -1,27 +1,13 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useRef,
-  useEffect,
-} from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { githubApi } from "@/lib/api";
 import { endpoints } from "@/lib/api/endpoints";
-import {
-  getApiBaseUrl,
-  getApiErrorMessage,
-  isAbortError,
-  isNetworkError,
-} from "@/lib/api/client";
+import { getApiErrorMessage, isAbortError, isNetworkError } from "@/lib/api/client";
+import { resolveApiNavigationUrl } from "@/lib/api/urls";
 import { openAuthWindow } from "@/utils/authWindow";
 import { useToast } from "@/context/ToastContext";
-import {
-  GITHUB_CONNECT_ERROR_KEY,
-  githubConnectErrorMessage,
-} from "@/lib/github-connect-error";
+import { consumeGitHubConnectError, githubConnectErrorMessage } from "@/lib/github-connect-error";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -175,7 +161,13 @@ export type CliAction =
    *  sending the operator to a shell they may not have. `command` is the
    *  secondary `gh auth login` hint for bare installs that do have gh. */
   | { type: "token"; command: string; message: string }
-  | { type: "device_flow"; userCode: string; verificationUri: string; expiresIn: number; interval: number };
+  | {
+      type: "device_flow";
+      userCode: string;
+      verificationUri: string;
+      expiresIn: number;
+      interval: number;
+    };
 
 const GitHubContext = createContext<GitHubContextValue | undefined>(undefined);
 
@@ -200,15 +192,18 @@ const EMPTY_STATE: GitHubConnectionState = {
   primary: null,
 };
 
+// OAuth grants and installation nonces are already bounded server-side. This
+// client deadline is a UX guard: a callback that cannot close its window must
+// never leave every GitHub connect button disabled forever.
+const GITHUB_REDIRECT_TIMEOUT_MS = 10 * 60 * 1000;
+
 export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   // Note: setSelfHosted is no longer driven from this context — the
   // global platform mode is owned by PlatformContext and read from
   // env.CLOUD_MODE during the initial dashboard layout. We deliberately
   // don't shadow it here.
   const { showToast } = useToast();
-  const [state, setState] = useState<GitHubConnectionState>(
-    initialData?.state ?? EMPTY_STATE,
-  );
+  const [state, setState] = useState<GitHubConnectionState>(initialData?.state ?? EMPTY_STATE);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(!initialData);
 
@@ -234,6 +229,9 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   // (user-status, installations, install-url) on the API side, so
   // dedup is load-bearing for the SaaS request rate.
   const inflightRefresh = useRef<Promise<void> | null>(null);
+  // A state update does not synchronously disable every connect trigger. Guard
+  // the operation itself so a double click cannot mint two OAuth/install flows.
+  const connectInFlight = useRef(false);
 
   // Convenience derived from state.primary — every existing call site
   // that read `connected` keeps working.
@@ -243,62 +241,55 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   const refresh = useCallback(async () => {
     if (inflightRefresh.current) return inflightRefresh.current;
     const work = (async () => {
-    // refresh() runs after every connect / disconnect / device-flow completion,
-    // so drop the cached /github/status verdict here — the Settings card and
-    // library App badge will then re-probe the new connection state instead of
-    // serving the stale cached one (covers connect paths that don't go through
-    // the Settings card's own force-refresh).
-    githubApi.invalidateStatus();
-    try {
-      const res = await githubApi.getUserHome();
-      const nextState: GitHubConnectionState = res?.state ?? EMPTY_STATE;
-      setState(nextState);
+      // refresh() runs after every connect / disconnect / device-flow completion,
+      // so drop the cached /github/status verdict here — the Settings card and
+      // library App badge will then re-probe the new connection state instead of
+      // serving the stale cached one (covers connect paths that don't go through
+      // the Settings card's own force-refresh).
+      githubApi.invalidateStatus();
+      try {
+        const res = await githubApi.getUserHome();
+        const nextState: GitHubConnectionState = res?.state ?? EMPTY_STATE;
+        setState(nextState);
 
-      if (res?.installUrl) setInstallUrl(res.installUrl);
-      else setInstallUrl(null);
-      if (res?.capabilities) setCapabilities(res.capabilities as GitHubCapabilities);
+        if (res?.installUrl) setInstallUrl(res.installUrl);
+        else setInstallUrl(null);
+        if (res?.capabilities) setCapabilities(res.capabilities as GitHubCapabilities);
 
-      if (nextState.primary !== null) {
-        setCliAction(null);
-        setAccounts(res.accounts ?? []);
-        const primaryLogin =
-          nextState.sources.openshipApp.login ??
-          nextState.sources.ghCli.login ??
-          "";
-        setUserLogin(primaryLogin);
-        if (!selectedOwner && primaryLogin) {
-          setSelectedOwnerState(primaryLogin);
+        if (nextState.primary !== null) {
+          setAccounts(res.accounts ?? []);
+          const primaryLogin =
+            nextState.sources.openshipApp.login ?? nextState.sources.ghCli.login ?? "";
+          setUserLogin(primaryLogin);
+          if (!selectedOwner && primaryLogin) {
+            setSelectedOwnerState(primaryLogin);
+          }
+          setRepos(res.repos ?? []);
+        } else {
+          setAccounts([]);
+          setRepos([]);
         }
-        setRepos(res.repos ?? []);
-      } else {
-        setAccounts([]);
-        setRepos([]);
-      }
 
-      // Surface partial-failure diagnostics from the server. The request
-      // succeeded overall but one or more upstream fetches failed silently
-      // server-side — show them so the user has a clue why a section is
-      // empty (e.g. "App path failed: …" / "CLI repo merge failed: …").
-      if (res?.errors && typeof res.errors === "object") {
-        const entries = Object.entries(res.errors as Record<string, string>);
-        for (const [key, message] of entries) {
-          if (!message) continue;
-          showToast(`GitHub ${key}: ${message}`, "error", "GitHub");
+        // Surface partial-failure diagnostics from the server. The request
+        // succeeded overall but one or more upstream fetches failed silently
+        // server-side — show them so the user has a clue why a section is
+        // empty (e.g. "App path failed: …" / "CLI repo merge failed: …").
+        if (res?.errors && typeof res.errors === "object") {
+          const entries = Object.entries(res.errors as Record<string, string>);
+          for (const [key, message] of entries) {
+            if (!message) continue;
+            showToast(`GitHub ${key}: ${message}`, "error", "GitHub");
+          }
         }
+      } catch (err) {
+        // Defer transient network/abort errors to the global NetworkErrorHandler;
+        // only surface ApiError-shaped failures here.
+        if (isAbortError(err) || isNetworkError(err)) return;
+        setState(EMPTY_STATE);
+        showToast(getApiErrorMessage(err, "Couldn't load GitHub data"), "error", "GitHub");
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      // Defer transient network/abort errors to the global NetworkErrorHandler;
-      // only surface ApiError-shaped failures here.
-      if (isAbortError(err) || isNetworkError(err)) return;
-      setState(EMPTY_STATE);
-      showToast(
-        getApiErrorMessage(err, "Couldn't load GitHub data"),
-        "error",
-        "GitHub",
-      );
-    } finally {
-      setLoading(false);
-    }
     })();
     inflightRefresh.current = work;
     try {
@@ -319,87 +310,127 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   }, [refresh, initialData]);
 
   /* ── Connect GitHub ─────────────────────────────────────────── */
-  const connect = useCallback(async (source?: "oauth" | "cli") => {
-    setConnecting(true);
-    setCliAction(null);
+  const connect = useCallback(
+    async (source?: "oauth" | "cli") => {
+      if (connectInFlight.current) return;
+      connectInFlight.current = true;
 
-    const finishRedirectFlow = () => {
-      setConnecting(false);
-      // Surface a link failure the callback page stashed (e.g. the GitHub
-      // account is already linked to a different user) — otherwise the flow
-      // just silently reports "not connected".
-      try {
-        const linkError = localStorage.getItem(GITHUB_CONNECT_ERROR_KEY);
+      // Reserve the popup while this call still has a browser user gesture. The
+      // API decides the actual destination asynchronously; opening it afterwards
+      // is routinely blocked by popup protection. Explicit CLI/device flows do
+      // not navigate away, so they do not need a window.
+      let reservedWindow: ReturnType<typeof openAuthWindow> | null = null;
+      setConnecting(true);
+      setCliAction(null);
+
+      const finishConnect = () => {
+        connectInFlight.current = false;
+        setConnecting(false);
+      };
+      let redirectFinished = false;
+      let redirectTimeout: number | null = null;
+      const finishRedirectFlow = () => {
+        if (redirectFinished) return;
+        redirectFinished = true;
+        if (redirectTimeout !== null) window.clearTimeout(redirectTimeout);
+        finishConnect();
+        // Surface a link failure the callback page stashed (e.g. the GitHub
+        // account is already linked to a different user) — otherwise the flow
+        // just silently reports "not connected".
+        const linkError = consumeGitHubConnectError();
         if (linkError) {
-          localStorage.removeItem(GITHUB_CONNECT_ERROR_KEY);
           showToast(githubConnectErrorMessage(linkError), "error", "GitHub");
         }
-      } catch { /* storage unavailable */ }
-      // One immediate + one short follow-up. The immediate call covers
-      // the happy path; the 1500ms follow-up covers the race where the
-      // popup closes before the SaaS-side cookie/DB write is visible.
-      // `refresh()` is in-flight-deduped so a re-entry coalesces.
-      void refresh();
-      window.setTimeout(() => void refresh(), 1500);
-    };
+        // One immediate + one short follow-up. The immediate call covers
+        // the happy path; the 1500ms follow-up covers the race where the
+        // popup closes before the SaaS-side cookie/DB write is visible.
+        // `refresh()` is in-flight-deduped so a re-entry coalesces.
+        void refresh();
+        window.setTimeout(() => void refresh(), 1500);
+      };
 
-    try {
-      const res = await githubApi.connect(source);
+      try {
+        reservedWindow = source === "cli" ? null : openAuthWindow();
+        const res = await githubApi.connect(source);
 
-      // Already connected - just refresh
-      if (res?.connected) {
-        setConnecting(false);
-        refresh();
-        return;
-      }
-
-      switch (res?.flow) {
-        case "redirect": {
-          // Prefer a backend-provided URL when the next step is known
-          // (for example, GitHub App installation after OAuth).
-          const redirectUrl = res.url ?? `${getApiBaseUrl()}${endpoints.github.connectRedirect}`;
-          const handle = openAuthWindow(redirectUrl);
-          handle.onClose(finishRedirectFlow);
+        // Already connected - just refresh
+        if (res?.connected) {
+          reservedWindow?.close();
+          finishConnect();
+          void refresh();
           return;
         }
 
-        case "device_code":
-          // Show verification code inline
-          setCliAction({
-            type: "device_flow",
-            userCode: res.userCode,
-            verificationUri: res.verificationUri,
-            expiresIn: res.expiresIn,
-            interval: res.interval,
-          });
-          setConnecting(false);
-          return;
+        switch (res?.flow) {
+          case "redirect": {
+            const handle = reservedWindow ?? openAuthWindow();
+            reservedWindow = handle;
+            if (handle.blocked) {
+              finishConnect();
+              showToast(
+                "Your browser blocked the GitHub sign-in window. Allow pop-ups and try again.",
+                "error",
+                "GitHub",
+              );
+              return;
+            }
 
-        case "token":
-          // Instance has no device client id — collect a token inline.
-          setCliAction({ type: "token", command: res.command, message: res.message });
-          setConnecting(false);
-          return;
+            // A backend URL may be absolute (github.com / cloud handoff) or an
+            // API-root path. Resolve the latter against the real API mount, not
+            // window.location — app.openship.io/api/... is a dashboard 404.
+            const redirectUrl = resolveApiNavigationUrl(
+              typeof res.url === "string" ? res.url : endpoints.github.connectRedirect,
+            );
+            handle.navigate(redirectUrl);
+            handle.onClose(finishRedirectFlow);
+            redirectTimeout = window.setTimeout(() => {
+              handle.close();
+              finishRedirectFlow();
+              showToast("GitHub connection timed out. Please try again.", "error", "GitHub");
+            }, GITHUB_REDIRECT_TIMEOUT_MS);
+            return;
+          }
 
-        case "terminal":
-          // Show terminal instruction
-          setCliAction({ type: "terminal", command: res.command, message: res.message });
-          setConnecting(false);
-          return;
+          case "device_code":
+            reservedWindow?.close();
+            // Show verification code inline
+            setCliAction({
+              type: "device_flow",
+              userCode: res.userCode,
+              verificationUri: res.verificationUri,
+              expiresIn: res.expiresIn,
+              interval: res.interval,
+            });
+            finishConnect();
+            return;
 
-        default:
-          setConnecting(false);
+          case "token":
+            reservedWindow?.close();
+            // Instance has no device client id — collect a token inline.
+            setCliAction({ type: "token", command: res.command, message: res.message });
+            finishConnect();
+            return;
+
+          case "terminal":
+            reservedWindow?.close();
+            // Show terminal instruction
+            setCliAction({ type: "terminal", command: res.command, message: res.message });
+            finishConnect();
+            return;
+
+          default:
+            reservedWindow?.close();
+            finishConnect();
+        }
+      } catch (err) {
+        reservedWindow?.close();
+        finishConnect();
+        if (isAbortError(err) || isNetworkError(err)) return;
+        showToast(getApiErrorMessage(err, "Failed to connect to GitHub"), "error", "GitHub");
       }
-    } catch (err) {
-      setConnecting(false);
-      if (isAbortError(err) || isNetworkError(err)) return;
-      showToast(
-        getApiErrorMessage(err, "Failed to connect to GitHub"),
-        "error",
-        "GitHub",
-      );
-    }
-  }, [refresh, showToast]);
+    },
+    [refresh, showToast],
+  );
 
   /* ── Connect with a pasted token ────────────────────────────── */
   const connectWithToken = useCallback(
@@ -426,11 +457,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         await refresh();
       } catch (err) {
         if (isAbortError(err) || isNetworkError(err)) return;
-        showToast(
-          getApiErrorMessage(err, "Failed to disconnect from GitHub"),
-          "error",
-          "GitHub",
-        );
+        showToast(getApiErrorMessage(err, "Failed to disconnect from GitHub"), "error", "GitHub");
       }
     },
     [refresh, showToast],
@@ -449,11 +476,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
           refresh();
         } else if (res?.status === "error") {
           setCliAction(null);
-          showToast(
-            res?.message || res?.error || "GitHub device flow failed",
-            "error",
-            "GitHub",
-          );
+          showToast(res?.message || res?.error || "GitHub device flow failed", "error", "GitHub");
         }
       } catch (err) {
         // Keep polling on transient failures. Only surface a non-network
@@ -461,11 +484,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         // instead of an interval that silently spins forever.
         if (isAbortError(err) || isNetworkError(err)) return;
         if (err instanceof Error && (err as any).status) {
-          showToast(
-            getApiErrorMessage(err, "GitHub device flow failed"),
-            "error",
-            "GitHub",
-          );
+          showToast(getApiErrorMessage(err, "GitHub device flow failed"), "error", "GitHub");
         }
       }
     }, interval);
@@ -474,12 +493,12 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   }, [cliAction, refresh, showToast]);
 
   /* ── Auto-detect a completed login ──────────────────────────── */
-  // Any pending CLI action (the device flow OR a `gh auth login` the operator ran
-  // on the instance) clears the moment the connection lands, so the UI never gets
-  // stuck showing a code/command after success.
+  // Only a terminal login completes through a status probe. A device grant has
+  // its own authoritative poll above; a previously connected App or stale CLI
+  // identity must not dismiss the new code before the operator authorizes it.
   useEffect(() => {
-    if (connected && cliAction) setCliAction(null);
-  }, [connected, cliAction]);
+    if (cliAction?.type === "terminal" && state.sources.ghCli.available) setCliAction(null);
+  }, [state.sources.ghCli.available, cliAction]);
 
   // Terminal (`gh auth login`) has no device code to poll — refresh the status
   // periodically so the UI flips to connected as soon as the operator finishes,
@@ -508,16 +527,12 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
           setLoadingRepos(false);
           return;
         }
-        showToast(
-          getApiErrorMessage(err, "Couldn't load repositories"),
-          "error",
-          "GitHub",
-        );
+        showToast(getApiErrorMessage(err, "Couldn't load repositories"), "error", "GitHub");
       } finally {
         setLoadingRepos(false);
       }
     },
-    [connected, showToast]
+    [connected, showToast],
   );
 
   /* ── Owner change → fetch repos ─────────────────────────────── */
@@ -528,7 +543,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         fetchReposForOwner(owner);
       }
     },
-    [selectedOwner, fetchReposForOwner]
+    [selectedOwner, fetchReposForOwner],
   );
 
   return (

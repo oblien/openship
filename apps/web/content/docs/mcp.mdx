@@ -190,7 +190,7 @@ UI can flag a destructive call before it runs.
 | `get_projects_by_projectId_backup_policies`, `post_backup_policies_by_policyId_run` | `/api/backups` | [Backups API](/docs/api/backups) |
 | `get_cloud_status`, `get_cloud_workspaces` | `/api/cloud` | [Cloud API](/docs/api/cloud) |
 | `get_jobs`, `post_jobs_by_key_run` | `/api/jobs` | [Jobs guide](/docs/guides/jobs) |
-| `get_apps_catalog`, `post_apps` | `/api/apps` | *(REST reference pending)* |
+| `get_apps_catalog`, `post_apps` | `/api/apps` | [App catalog](/docs/api/apps) |
 | `get_updates`, `post_updates_scan` | `/api/updates` | [Updating Openship](/docs/guides/updating) |
 
 <Callout title="Credentials and auth are never exposed" type="info">
@@ -221,7 +221,7 @@ curl -s https://<your-host>/api/mcp \
 
 This returns exactly the tools that token is allowed to call.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="401 — Missing or invalid access token" type="error">
 There's no bearer credential, or it's expired or revoked. The response includes a `WWW-Authenticate` header
@@ -246,7 +246,7 @@ access level (read-only or full control) and how many resources it can reach. **
 client's issued tokens immediately and drops its consent, so it has to re-authorize next time. The same list
 and controls are available programmatically via the [Tokens API](/docs/api/tokens).
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="MCP API reference" href="/docs/api/mcp" description="The JSON-RPC methods, protocol negotiation, and error codes behind /api/mcp." />

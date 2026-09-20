@@ -32,20 +32,20 @@ const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGit
     getLocalGhToken: vi.fn(),
   }));
 
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: findProjectById },
     settings: { findByUser: findSettingsByUser },
   },
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decrypt }));
-vi.mock("../../../src/modules/github/github.auth", () => ghAuth);
-vi.mock("../../../src/modules/github/github-access", () => ({ canUseGitHubRepo }));
-vi.mock("../../../src/modules/github/github.local-auth", () => ({ getLocalGhToken }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ghAuth);
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({ canUseGitHubRepo }));
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({ getLocalGhToken }));
 // NOT mocked: @repo/core — requireTokenFor needs the real AppError.
 
-import { tokenFor, canResolveTokenFor, requireTokenFor } from "../../../src/modules/github/github.token";
+import { tokenFor, canResolveTokenFor, requireTokenFor } from "@repo/platform/engine/modules/github/github.token";
 
 const ctxNoOrg = { userId: "u1" } as any; // zero-auth / single-user operator
 const ctxOrg = { userId: "u1", organizationId: "o1" } as any;
@@ -130,6 +130,29 @@ describe("tokenFor — self-hosted local (gh-cli → app → project → user-pa
     setProjectPat("projtok");
     setSettings({ userPat: "usertok" });
     expect(await tokenFor(ctxNoOrg, "local", withOwner)).toEqual({ token: "ghtok", source: "gh-cli" });
+  });
+
+  // `only` exists for endpoints where exactly ONE credential can do the job.
+  // GitHub's Checks API takes App installation tokens only, and the walk above
+  // returns the FIRST token that resolves without ever retrying — so a working
+  // gh CLI silently shadowed a working App installation and every check run
+  // 403'd forever. Pinning is the fix; these two cases are what it must hold.
+  it("`only` pins past a resolvable gh token to the App", async () => {
+    setGh("ghtok");
+    setApp(true);
+    setProjectPat("projtok");
+    expect(
+      await tokenFor(ctxNoOrg, "local", { ...withOwner, only: ["app-installation"] }),
+    ).toEqual({ token: "apptok", source: "app-installation" });
+  });
+
+  it("`only` narrows, never substitutes — no App means null, not the next credential", async () => {
+    setGh("ghtok");
+    setProjectPat("projtok");
+    setSettings({ userPat: "usertok" });
+    expect(
+      await tokenFor(ctxNoOrg, "local", { ...withOwner, only: ["app-installation"] }),
+    ).toBeNull();
   });
 
   it("App wins once gh is absent", async () => {

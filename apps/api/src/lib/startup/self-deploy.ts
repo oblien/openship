@@ -26,22 +26,23 @@
  * a "public" signal into them.
  */
 
-import { repos, db, schema, eq, type Project, type Deployment } from "@repo/db";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { repos, type Project, type Deployment } from "@repo/db";
 import { BareRuntime } from "@repo/adapters";
 import { safeErrorMessage, UNLIMITED_RESOURCES } from "@repo/core";
-import { env } from "../../config/env";
-import { registerStartupHook } from "./index";
+import { env } from "@repo/platform/engine/config/env";
+import { registerStartupHook } from "@repo/platform/engine/lib/startup/index";
 import { ensureSelfEdgeInfra, type SelfEdgeOptions } from "./self-edge";
-import { linkSelfAppServices } from "./self-services";
+import { linkSelfAppServices } from "@repo/platform/engine/lib/startup/self-services";
 import {
   createQueuedDeployment,
   type DeploymentConfigSnapshot,
-} from "../../modules/deployments/build.service";
-import { onSuccess } from "../../modules/deployments/deployment-lifecycle";
-import type { DeploymentMeta } from "../deployment-runtime";
-import { reapplyProjectLiveRoutes } from "../../modules/domains/project-route.service";
-import { describeTlsIssuedElsewhere, manageDomainSsl, tlsIssuedElsewhere } from "../domain-ssl";
-import { refreshSelfAppPublicUrl } from "../public-url";
+} from "@repo/platform/engine/modules/deployments/build.service";
+import { onSuccess } from "@repo/platform/engine/modules/deployments/deployment-lifecycle";
+import type { DeploymentMeta } from "@repo/platform/engine/lib/deployment-runtime";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { describeTlsIssuedElsewhere, manageDomainSsl, tlsIssuedElsewhere } from "@repo/platform/engine/lib/domain-ssl";
+import { refreshSelfAppPublicUrl } from "@repo/platform/engine/lib/public-url";
 
 const APP_SLUG = "openship";
 const APP_TEMPLATE_ID = "openship";
@@ -101,7 +102,7 @@ export async function ensureAdoptDeployment(
 
   // Already adopted + active → done.
   if (project.activeDeploymentId) {
-    const active = await repos.deployment.findById(project.activeDeploymentId);
+    const active = await findActiveDeployment(project);
     if (isAdoptDeployment(active)) return active!;
   }
 
@@ -181,6 +182,8 @@ export interface SelfEdgeStepProgress {
   onStep?: (
     step: "edge" | "route" | "ssl",
     status: "installing" | "installed" | "failed",
+    /** The cause, when `status` is "failed" — see `SelfEdgeInfraResult.detail`. */
+    detail?: string,
   ) => void;
   backoffs?: number[];
 }
@@ -195,10 +198,10 @@ export interface SelfEdgeStepProgress {
  */
 async function foreignProxyBlocksEdge(
   log?: (message: string, level?: "info" | "warn" | "error") => void,
-): Promise<{ blocked: boolean; owner?: string }> {
+): Promise<{ blocked: boolean; owner?: string; detail?: string }> {
   try {
     const { foreignProxyOnEdge } = await import("@repo/adapters");
-    const { sshManager } = await import("../ssh-manager");
+    const { sshManager } = await import("@repo/platform/engine/lib/ssh-manager");
     // Probe the HOST's :80/:443, not the api container's netns — the host channel is
     // LocalExecutor bare, SSH→host when containerized (OPENSHIP_HOST_SSH_*). Pooled,
     // so there's nothing to dispose (see withHostExecutor).
@@ -206,15 +209,44 @@ async function foreignProxyBlocksEdge(
       foreignProxyOnEdge(exec),
     );
     if (!blocked) return { blocked: false };
-    log?.(
+    // Returned as well as logged so the caller's structured failure carries the SAME
+    // sentence the live log shows — not a second wording of it.
+    const detail =
       `Not issuing TLS: ${owner} still owns ports 80/443, so Openship isn't the reverse proxy yet — ` +
-        `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`,
-      "error",
-    );
-    return { blocked: true, owner };
+      `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`;
+    log?.(detail, "error");
+    return { blocked: true, owner, detail };
   } catch {
     return { blocked: false };
   }
+}
+
+export interface SelfAppEdgeResult {
+  verified: boolean;
+  expiresAt?: string;
+  reason?: string;
+  /**
+   * The CAUSE behind `reason`, forwarded from whichever layer diagnosed it (see
+   * `SelfEdgeInfraResult.detail`). `reason` is a code callers branch on, so it can't
+   * carry the diagnosis; dropping `detail` here left the wizard's structured failure
+   * with only the code and put the cause exclusively in the live log — which a
+   * reattaching client, a headless CLI run, or anything reading the finished session
+   * never sees.
+   */
+  detail?: string;
+}
+
+/** One failure shape for every exit: the code, plus the cause on BOTH surfaces —
+ *  the returned payload and the step event the wizard renders — so the two can't
+ *  disagree about how much of the diagnosis they carry. */
+function edgeStepFailed(
+  progress: SelfEdgeStepProgress,
+  step: "edge" | "route" | "ssl",
+  reason: string | undefined,
+  detail?: string,
+): SelfAppEdgeResult {
+  progress.onStep?.(step, "failed", detail);
+  return { verified: false, reason, ...(detail ? { detail } : {}) };
 }
 
 /**
@@ -234,23 +266,22 @@ export async function provisionSelfAppEdge(
   // type describes the INFRA install (takeover/migrate) and is forwarded verbatim to
   // `ensureSelfEdgeInfra`, which has no business knowing about Cloud's edge.
   options?: SelfEdgeOptions & { managedEdgeSyncedByCaller?: boolean },
-): Promise<{ verified: boolean; expiresAt?: string; reason?: string }> {
+): Promise<SelfAppEdgeResult> {
   const log = progress.onLog;
 
   // 1. Toolchain install + optional 80/443 takeover/migrate (no route/cert).
   progress.onStep?.("edge", "installing");
   const infra = await ensureSelfEdgeInfra({ onLog: log }, options);
   if (!infra.ok) {
-    progress.onStep?.("edge", "failed");
-    return { verified: false, reason: infra.reason };
+    return edgeStepFailed(progress, "edge", infra.reason, infra.detail);
   }
   progress.onStep?.("edge", "installed");
 
   // Hard gate: never touch routing/cert unless OUR OpenResty owns 80/443 (takeover
   // skipped / partial / respawned would otherwise 404 the ACME challenge opaquely).
-  if ((await foreignProxyBlocksEdge(log)).blocked) {
-    progress.onStep?.("route", "failed");
-    return { verified: false, reason: "edge_not_owned" };
+  const foreign = await foreignProxyBlocksEdge(log);
+  if (foreign.blocked) {
+    return edgeStepFailed(progress, "route", "edge_not_owned", foreign.detail);
   }
 
   // 2. Route hostname → 127.0.0.1:dashPort via the pipeline (owns the vhost +
@@ -258,8 +289,7 @@ export async function provisionSelfAppEdge(
   progress.onStep?.("route", "installing");
   const project = await repos.project.findById(projectId);
   if (!project) {
-    progress.onStep?.("route", "failed");
-    return { verified: false, reason: "no_project" };
+    return edgeStepFailed(progress, "route", "no_project");
   }
   try {
     await reapplyProjectLiveRoutes(project, [], {
@@ -270,9 +300,9 @@ export async function provisionSelfAppEdge(
       managedEdgeSyncedByCaller: options?.managedEdgeSyncedByCaller,
     });
   } catch (err) {
-    log?.(safeErrorMessage(err), "error");
-    progress.onStep?.("route", "failed");
-    return { verified: false, reason: "route_failed" };
+    const detail = safeErrorMessage(err);
+    log?.(detail, "error");
+    return edgeStepFailed(progress, "route", "route_failed", detail);
   }
   progress.onStep?.("route", "installed");
   log?.(`routing ${hostname} → http://127.0.0.1:${dashPort}`);
@@ -321,14 +351,13 @@ export async function provisionSelfAppEdge(
     }
     if (attempt < backoffs.length) await sleep(backoffs[attempt]);
   }
-  progress.onStep?.("ssl", "failed");
   log?.(
     lastError
       ? `Couldn't issue TLS for ${hostname}: ${lastError} — it serves over HTTP and retries on next boot.`
       : `could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`,
     "warn",
   );
-  return { verified: false, reason: "cert_pending" };
+  return edgeStepFailed(progress, "ssl", "cert_pending", lastError);
 }
 
 /** Locate the self-app project across the cloud-linked / founding-admin org.
@@ -339,12 +368,7 @@ async function findSelfAppProject(): Promise<Project | null> {
     const p = await repos.project.findBySlugInOrg(org, APP_SLUG);
     if (p && p.appTemplateId === APP_TEMPLATE_ID) return p;
   }
-  const [admin] = await db
-    .select({ id: schema.user.id })
-    .from(schema.user)
-    .where(eq(schema.user.autoProvisioned, false))
-    .orderBy(schema.user.createdAt)
-    .limit(1);
+  const admin = await repos.user.findFoundingAdmin();
   if (admin) {
     const p = await repos.project.findBySlugInOrg(`org_${admin.id}`, APP_SLUG);
     if (p && p.appTemplateId === APP_TEMPLATE_ID) return p;
@@ -438,7 +462,7 @@ export function registerSelfAdoptReconcile(): void {
       if (isLinuxRoot()) {
         try {
           const { recoverInterruptedTakeover } = await import("@repo/adapters");
-          const { sshManager } = await import("../ssh-manager");
+          const { sshManager } = await import("@repo/platform/engine/lib/ssh-manager");
           // Recover takeover on the HOST (local bare, SSH→host containerized).
           await sshManager.withHostExecutor((exec) =>
             recoverInterruptedTakeover(exec, (e) => console.log(`[self-deploy] ${e.message}`)),

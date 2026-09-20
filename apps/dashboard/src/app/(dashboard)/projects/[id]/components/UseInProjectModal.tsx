@@ -7,13 +7,11 @@ import { Modal } from "@/components/ui/Modal";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppLogo } from "@/components/AppLogo";
-import { projectsApi } from "@/lib/api";
 import { connectionsApi, type ConnectionMode } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { AppConnectionOutput, AppConnectionGuide } from "@/lib/api/apps";
+import { appsApi, type AppConnectionOutput, type AppConnectionGuide, type AppConnectionView } from "@/lib/api/apps";
 
 /** Fallback env-var name when a catalog output doesn't declare one. Derived
  *  PER OUTPUT (camelCase → SNAKE_CASE) so distinct values get distinct keys —
@@ -49,18 +47,6 @@ function InlineHint({ text }: { text: string }) {
   );
 }
 
-interface RawProject {
-  id: string;
-  name?: string;
-  slug?: string;
-  primaryDomain?: string | null;
-  domain?: string | null;
-  appTemplateId?: string;
-  favicon?: string | null;
-  deployTarget?: string | null;
-  serverName?: string | null;
-}
-
 interface TargetProject {
   id: string;
   name: string;
@@ -69,52 +55,71 @@ interface TargetProject {
   favicon?: string | null;
 }
 
-function hostingLabel(
-  p: RawProject,
-  hosting: { cloud: string; server: string; local: string },
-): string | null {
-  if (p.deployTarget === "cloud") return hosting.cloud;
-  if (p.deployTarget === "server") return p.serverName || hosting.server;
-  if (p.deployTarget === "local") return hosting.local;
-  return null;
+interface ConnectionFormProps {
+  onClose: () => void;
+  hideHeader?: boolean;
+  sourceProjectId?: string;
+  sourceServiceId?: string;
+  sourceAppTemplateId?: string | null;
+  outputs?: AppConnectionOutput[];
+  guide?: AppConnectionGuide;
+  targetProjectId?: string;
 }
 
-/**
- * "Use in a project" — wire this database app into another project. Leads with a
- * plain-language guide ("read `process.env.DATABASE_URL` — nothing else to do"),
- * grids the available values, and puts the reach mode + action on the right rail.
- * Internal mode joins the target to this app's private network (no public port);
- * Public uses the published host:port. Applies on the target's next deploy.
- */
-export function UseInProjectModal({
-  open,
+/** Both entry points share this form: share a service, or connect an existing one. */
+export function UseInProjectModal({ open, ...props }: ConnectionFormProps & { open: boolean }) {
+  return (
+    <Modal isOpen={open} onClose={props.onClose} width="1040px" maxWidth="95vw" showCloseButton>
+      {open && <ProjectConnectionForm {...props} />}
+    </Modal>
+  );
+}
+
+export function ProjectConnectionForm({
   onClose,
-  sourceProjectId,
-  sourceAppTemplateId,
-  outputs,
-  guide,
-}: {
-  open: boolean;
-  onClose: () => void;
-  sourceProjectId: string;
-  sourceAppTemplateId: string | null | undefined;
-  outputs: AppConnectionOutput[];
-  guide?: AppConnectionGuide;
-}) {
+  hideHeader = false,
+  sourceProjectId: fixedSourceId,
+  sourceServiceId,
+  sourceAppTemplateId: fixedTemplateId,
+  outputs: suppliedOutputs,
+  guide: suppliedGuide,
+  targetProjectId: fixedTargetId,
+}: ConnectionFormProps) {
   const { t, locale } = useI18n();
   const c = t.projects.connections;
   const { showToast } = useToast();
-  const { baseDomain } = usePlatform();
-
-  const injectable = useMemo(() => outputs.filter((o) => o.value), [outputs]);
+  const [sourceProjectId, setSourceProjectId] = useState(fixedSourceId ?? "");
+  const [loaded, setLoaded] = useState<{ id: string; view: AppConnectionView } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const view = loaded?.id === sourceProjectId ? loaded.view : null;
+  const guide = suppliedGuide ?? view?.guide;
+  const injectable = useMemo(() => (suppliedOutputs ?? view?.outputs ?? []).filter(
+    output => output.value && (!sourceServiceId || output.sourceServiceId === sourceServiceId),
+  ), [suppliedOutputs, view, sourceServiceId]);
 
   const [targets, setTargets] = useState<TargetProject[]>([]);
-  const [targetId, setTargetId] = useState("");
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [targetId, setTargetId] = useState(fixedTargetId ?? "");
   const [mode, setMode] = useState<ConnectionMode>(guide?.defaultMode ?? "internal");
   const [rows, setRows] = useState<Record<string, { checked: boolean; envKey: string }>>({});
   const [advanced, setAdvanced] = useState(true);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const sourceAppTemplateId = fixedTemplateId ?? targets.find(project => project.id === sourceProjectId)?.appTemplateId;
+
+  useEffect(() => {
+    if (suppliedOutputs || !sourceProjectId) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    appsApi.getConnection(sourceProjectId).then(result => {
+      if (!cancelled) setLoaded({ id: sourceProjectId, view: result.data });
+    }).catch(error => {
+      if (!cancelled) setLoadError(getApiErrorMessage(error, c.failed));
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sourceProjectId, suppliedOutputs, c.failed]);
 
   // The recommended env key to reference in code — catalog `recommended` output
   // first, else the primary URL. Drives the "read process.env.X" hint.
@@ -131,7 +136,6 @@ export function UseInProjectModal({
   // Seed the checklist: catalog-recommended outputs pre-checked (fall back to the
   // primary URL if none flagged); each env name from the catalog (fallback derived).
   useEffect(() => {
-    if (!open) return;
     const hasRecommended = injectable.some((o) => o.recommended);
     const fallbackPrimary =
       injectable.find((o) => o.id === "dbUrl")?.id ??
@@ -147,38 +151,28 @@ export function UseInProjectModal({
     setRows(seeded);
     setMode(guide?.defaultMode ?? "internal");
     setAdvanced(true);
-  }, [open, injectable, sourceAppTemplateId, guide?.defaultMode]);
+  }, [injectable, sourceAppTemplateId, guide?.defaultMode]);
 
   useEffect(() => {
-    if (!open) return;
-    projectsApi
-      .getHome()
-      .then((res) => {
-        const list = (res?.projects ?? [])
-          .filter((p: { id?: string }) => p.id && p.id !== sourceProjectId)
-          .map((p: RawProject): TargetProject => {
-            // A persisted route or the hosting label — never `<slug>.<baseDomain>`,
-            // which labelled every routeless project with a host that doesn't exist.
-            const domain = p.primaryDomain || hostingLabel(p, t.projects.hosting);
-            return {
-              id: p.id,
-              name: p.name ?? p.id,
-              description: domain ?? "",
-              appTemplateId: p.appTemplateId,
-              favicon: p.favicon,
-            };
-          });
-        setTargets(list);
+    let cancelled = false;
+    setLoadingProjects(true);
+    connectionsApi.candidates(fixedSourceId ?? fixedTargetId ?? "")
+      .then(result => {
+        if (!cancelled) setTargets(result.data.map(project => ({ ...project, appTemplateId: project.appTemplateId ?? undefined })));
       })
-      .catch(() => setTargets([]));
-  }, [open, sourceProjectId, baseDomain, t]);
+      .catch(error => { if (!cancelled) setLoadError(getApiErrorMessage(error, c.failed)); })
+      .finally(() => { if (!cancelled) setLoadingProjects(false); });
+    return () => { cancelled = true; };
+  }, [fixedSourceId, fixedTargetId, c.failed]);
 
   const selected = injectable.filter((o) => rows[o.id]?.checked && rows[o.id]?.envKey.trim());
+  const privateOnly = selected.some(output => output.internal);
+  useEffect(() => { if (privateOnly) setMode("internal"); }, [privateOnly]);
   const intro = resolveLocalized(guide?.intro, locale) || c.guideIntroFallback;
   const useHint = resolveLocalized(guide?.useHint, locale);
   // Bare env-var name — language-agnostic. NOT `process.env.X` (JS-only): every
   // runtime reads env vars by name, so show the name the app should read.
-  const usageCode = primaryEnvKey;
+  const usageCode = selected.length ? rows[selected[0].id]?.envKey : primaryEnvKey;
 
   const copyUsage = async () => {
     if (!usageCode) return;
@@ -188,54 +182,43 @@ export function UseInProjectModal({
   };
 
   const submit = async () => {
-    if (!targetId || selected.length === 0 || busy) return;
+    if (!sourceProjectId || !targetId || selected.length === 0 || busy) return;
     setBusy(true);
-    let ok = 0;
-    let firstError: unknown = null;
-    for (const o of selected) {
-      try {
-        await connectionsApi.create(targetId, {
-          sourceProjectId,
-          outputId: o.id,
-          envKey: rows[o.id].envKey.trim(),
-          mode,
-        });
-        ok += 1;
-      } catch (err) {
-        firstError = firstError ?? err;
-      }
-    }
-    setBusy(false);
-    const targetName = targets.find((p) => p.id === targetId)?.name ?? "";
-    if (ok > 0) {
-      showToast(interpolate(c.connectedN, { count: String(ok), project: targetName }), "success");
-    }
-    if (firstError && ok === 0) {
-      showToast(getApiErrorMessage(firstError, c.failed), "error");
-      return;
-    }
-    if (firstError) showToast(getApiErrorMessage(firstError, c.failed), "error");
-    onClose();
+    try {
+      await connectionsApi.bundle(targetId, {
+        sourceProjectId,
+        items: selected.map(output => ({ outputId: output.id, envKey: rows[output.id].envKey.trim() })),
+        mode,
+      });
+      const targetName = targets.find(project => project.id === targetId)?.name;
+      showToast(targetName
+        ? interpolate(c.connectedN, { count: String(selected.length), project: targetName })
+        : c.connected, "success");
+      onClose();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, c.failed), "error");
+    } finally { setBusy(false); }
   };
 
   return (
-    <Modal isOpen={open} onClose={onClose} width="1040px" maxWidth="95vw" showCloseButton>
       <div className="p-6">
-        <div className="mb-5">
-          <h3 className="text-base font-semibold text-foreground">{c.title}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">{c.subtitle}</p>
-        </div>
+        {!hideHeader && <div className="mb-5">
+          <h3 className="text-base font-semibold text-foreground">{fixedTargetId ? c.connectExisting : c.title}</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">{fixedTargetId ? c.existingHint : c.subtitle}</p>
+        </div>}
 
         <div className="grid gap-5 md:grid-cols-[1.5fr_1fr]">
           {/* ── Left: target + values grid ─────────────────────────────── */}
           <div className="space-y-4">
             <div>
               <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {c.targetLabel}
+                {fixedTargetId ? c.sourceLabel : c.targetLabel}
               </label>
               <div className="mt-1.5">
                 <CustomSelect
-                  value={targetId}
+                  searchPlaceholder={t.dashboard.pages.projects.searchPlaceholder}
+                  emptySearchMessage={query => interpolate(t.dashboard.pages.projects.noResultsFound, { query })}
+                  value={fixedTargetId ? sourceProjectId : targetId}
                   options={targets.map((p) => ({
                     value: p.id,
                     label: p.name,
@@ -244,12 +227,21 @@ export function UseInProjectModal({
                       <AppLogo appId={p.appTemplateId} src={p.favicon ?? undefined} className="size-4" />
                     ),
                   }))}
-                  onChange={setTargetId}
-                  placeholder={c.targetPlaceholder}
+                  onChange={fixedTargetId ? setSourceProjectId : setTargetId}
+                  disabled={loadingProjects || busy}
+                  placeholder={fixedTargetId ? c.sourcePlaceholder : c.targetPlaceholder}
                 />
               </div>
             </div>
 
+            {loadError && <p role="alert" className="text-sm text-danger">{loadError}</p>}
+            {(loading || loadingProjects) && <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{c.loadingServices}</div>}
+            {!loading && !loadError && sourceProjectId && injectable.length === 0 && (
+              <p className="rounded-xl border border-border/50 p-4 text-sm text-muted-foreground">{c.noConnections}</p>
+            )}
+            {!loadingProjects && !loading && targets.length === 0 && !loadError && (
+              <p className="text-sm text-muted-foreground">{c.noSources}</p>
+            )}
             <div>
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -354,13 +346,13 @@ export function UseInProjectModal({
                 label={c.modeInternal}
                 desc={c.modeInternalDesc}
               />
-              <ModeCard
+              {!privateOnly && <ModeCard
                 selected={mode === "public"}
                 onSelect={() => setMode("public")}
                 icon={<Globe className="size-4" />}
                 label={c.modePublic}
                 desc={c.modePublicDesc}
-              />
+              />}
             </div>
 
             <div className="mt-auto space-y-2">
@@ -376,7 +368,7 @@ export function UseInProjectModal({
                 <button
                   type="button"
                   onClick={submit}
-                  disabled={!targetId || selected.length === 0 || busy}
+                  disabled={!sourceProjectId || !targetId || selected.length === 0 || busy || loading}
                   className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
                   {busy && <Loader2 className="size-4 animate-spin" />}
@@ -387,7 +379,6 @@ export function UseInProjectModal({
           </div>
         </div>
       </div>
-    </Modal>
   );
 }
 

@@ -23,6 +23,7 @@ vi.mock("@repo/db", () => ({
 
 let platformTarget: "local" | "cloud" = "local";
 const cloudVerifyDomain = vi.fn();
+const resolveSelectedServerHost = vi.fn();
 
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
@@ -35,17 +36,18 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/server-target", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/server-target")>();
+vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>();
   return {
     ...actual,
     resolveProjectServerHost: vi.fn().mockResolvedValue("203.0.113.10"),
     resolveLocalServerHost: vi.fn().mockResolvedValue("203.0.113.10"),
     resolveInstancePublicIp: vi.fn().mockResolvedValue("203.0.113.10"),
+    resolveServerHost: resolveSelectedServerHost,
   };
 });
 
-const { previewRecords } = await import("../../../src/modules/domains/domain.service");
+const { previewRecords } = await import("@repo/platform/engine/modules/domains/domain.service");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,6 +55,7 @@ beforeEach(() => {
   cloudVerifyDomain.mockResolvedValue({
     requiredRecords: { cname: { target: "edge.opsh.io" } },
   });
+  resolveSelectedServerHost.mockResolvedValue("198.51.100.42");
 });
 
 describe("previewRecords — self-hosted", () => {
@@ -61,6 +64,17 @@ describe("previewRecords — self-hosted", () => {
     expect(mode).toBe("selfhosted");
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ type: "A", host: "freshs", name: "freshs.hekai.org" });
+  });
+
+  it("uses the selected remote Docker server for a pre-deploy preview (#663)", async () => {
+    const { records } = await previewRecords(
+      "app.example.com",
+      "org_1",
+      false,
+      "server_remote",
+    );
+    expect(resolveSelectedServerHost).toHaveBeenCalledWith("org_1", "server_remote");
+    expect(records[0]).toMatchObject({ type: "A", value: "198.51.100.42" });
   });
 
   it("adds the www A record when the toggle is on", async () => {
@@ -109,4 +123,27 @@ describe("previewRecords — cloud", () => {
     // Each hostname proves ownership with its OWN token.
     expect(records[3]!.value).not.toBe(records[1]!.value);
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return {
+    ...actual,
+    platform: () => ({
+      target: platformTarget,
+      runtime: { verifyDomain: cloudVerifyDomain },
+    }),
+  };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return {
+    ...actual,
+    platform: () => ({
+      target: platformTarget,
+      runtime: { verifyDomain: cloudVerifyDomain },
+    }),
+  };
 });

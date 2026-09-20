@@ -1,4 +1,4 @@
-import { eq, and, ilike, count, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, asc, ilike, count, desc, inArray, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { user } from "../schema";
 
@@ -93,6 +93,29 @@ export function createUserRepo(db: Database) {
         .from(user)
         .where(eq(user.role, role));
       return result?.count ?? 0;
+    },
+
+    /**
+     * The founding admin — the earliest REAL (non-auto-provisioned) account.
+     *
+     * One definition because it is an IDENTITY, not a convenience lookup: it decides which
+     * org owns this box (and therefore who may run code on the host), where the
+     * control-plane app is registered, and whose credentials the setup reset rewrites.
+     * Five call sites spelled the same select/where/order by hand, so a change to what
+     * "founding" means could have landed on some of them.
+     *
+     * Ordered by id after createdAt: `createdAt` alone is not a total order, and two
+     * accounts created in the same millisecond — a scripted bootstrap does exactly that —
+     * would otherwise let the database's row order pick the box owner.
+     *
+     * `undefined` before onboarding: an auto-provisioned local/desktop user is not an
+     * admin, so a zero-auth box legitimately has no founder.
+     */
+    async findFoundingAdmin(): Promise<User | undefined> {
+      return db.query.user.findFirst({
+        where: eq(user.autoProvisioned, false),
+        orderBy: [asc(user.createdAt), asc(user.id)],
+      });
     },
 
     /** Check if any user exists (useful for initial setup detection) */

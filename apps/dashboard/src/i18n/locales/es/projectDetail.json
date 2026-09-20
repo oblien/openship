@@ -167,6 +167,15 @@
 			"dependsOn": "Depende de",
 			"startShellHint": "Inicia el servicio para abrir una shell.",
 			"saveEnvironment": "Guardar entorno",
+			"environmentApply": {
+				"title": "Aplicar cambios de entorno",
+        "applying": "Aplicando cambios…",
+        "applied": "Cambios de entorno aplicados",
+				"hint": "Aplica las variables guardadas a este servicio sin volver a compilar. El servicio se reiniciará.",
+				"saveFirst": "Guarda los cambios antes de aplicarlos a este servicio.",
+				"restartBlocked": "{name} tiene cambios de entorno guardados que un reinicio normal no puede aplicar. Revísalos y aplícalos en la pestaña Entorno.",
+				"failed": "No se pudieron aplicar los cambios de entorno"
+			},
 			"stop": "Detener",
 			"restart": "Reiniciar",
 			"start": "Iniciar",
@@ -192,7 +201,7 @@
 			"deleteCancel": "Cancelar",
 			"deleteConfirm": "Eliminar servicio",
 			"toast": {
-				"envUpdated": "Entorno actualizado",
+				"envUpdated": "Entorno guardado",
 				"envSaveFailed": "No se pudo guardar el entorno",
 				"deployFirstStart": "Despliega el proyecto primero y luego este servicio se iniciará",
 				"deployFailed": "El despliegue falló",

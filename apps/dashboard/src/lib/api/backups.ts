@@ -225,15 +225,17 @@ export const backupsApi = {
     body: {
       serviceId?: string | null;
       destinationId: string;
-      cronExpression?: string;
+      cronExpression?: string | null;
       triggerOnPreDeploy?: boolean;
       enableWebhook?: boolean;
-      retainCount?: number;
-      retainDays?: number;
+      /** Explicit null = keep every run. Omitted = the instance default (7). The
+       *  two are NOT the same, which is why null is allowed here. */
+      retainCount?: number | null;
+      retainDays?: number | null;
       payloadKind?: string;
       payloadConfig?: Record<string, unknown>;
-      preHook?: string;
-      postHook?: string;
+      preHook?: string | null;
+      postHook?: string | null;
       enabled?: boolean;
     },
   ) =>

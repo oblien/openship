@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { trustedOrigins } from "../config/env";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 
 /**
  * CSRF defence via Origin-header check.

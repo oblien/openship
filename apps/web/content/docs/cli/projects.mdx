@@ -1,402 +1,79 @@
 ---
-title: Projects, services & domains
-description: Link a directory and manage projects, compose services, and custom domains from the terminal with openship init, project, service, and domain.
+title: Projects, services, and domains
+description: Manage application configuration and related resources from the CLI.
 ---
 
-These commands are the terminal side of the dashboard's project screens: they create and inspect
-projects, manage the services inside a compose stack, and attach custom domains. Everything here talks to
-your instance's `/api` under the hood, so the same rules apply as anywhere else in the CLI.
+Resource commands use the active [connection context](/docs/cli/access) or your selected
+[native configuration](/docs/cli/native).
 
-<Callout title="Before you start">
-Log in once with `openship login`, and (optionally) run `openship init` in a project directory so deploy
-commands know which project to act on. Add `--json` to any command for machine-readable output (stdout
-becomes a clean data stream). Where a command wants a project, most accept a `proj_…` id; `openship service`
-also accepts a slug or name.
-</Callout>
-
-## `openship init`
-
-Links the current directory to a project by writing `.openship/project.json`. Later commands (like
-`openship deploy`) read that file so you don't have to pass a project every time. With no `--project`, it
-lists your projects and prompts you to pick one.
+## Projects
 
 ```bash
-# Interactive picker
-openship init
-
-# Link a specific project non-interactively
-openship init --project proj_123 --environment production
+openship project list
+openship project create --name my-app --git-owner my-team --git-repo my-app
+openship project get proj_123
+openship project rename proj_123 "My application"
+openship init --project proj_123
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--project <id>` | Project id to link (skips the picker). |
-| `--environment <name>` | Default deploy environment. Default `production`. |
-| `--dir <path>` | Directory to initialize. Default: current directory. |
-| `--force` | Overwrite an existing project link. |
-| `-y, --yes` | Non-interactive: fail instead of prompting. |
+`project rename` updates the display name through the same operation as the dashboard.
+The project ID, slug, volumes, and live routes keep their existing identities. Manage hostnames
+with the domain commands below.
 
-## `openship project`
-
-Project lifecycle: list, inspect, create, delete, plus environment variables, git linkage, power state,
-sleep mode, cloud transfer, and logs. Alias: `openship projects`.
-
-### Subcommands
-
-| Command | Purpose |
-|---|---|
-| `project list` (alias `ls`) | List projects in the active organization. |
-| `project get <id>` | Show a single project. |
-| `project create` | Create a project. |
-| `project delete <id>` (alias `rm`) | Delete a project and tear down all its resources. |
-| `project env get <id>` | List environment variables (secret values are masked). |
-| `project env set <id>` | Merge env vars — upsert `KEY=VALUE` pairs and/or delete keys. |
-| `project git link <id>` | Link a GitHub repository to a project. |
-| `project git branch <id> <branch>` | Set the deploy branch. |
-| `project git auto-deploy <id>` | Enable or disable push-to-deploy. |
-| `project git webhook-domain <id> [domain]` | Set or clear the domain that receives GitHub webhooks. |
-| `project connect <id> <domain>` | Connect a custom domain to a project. |
-| `project enable <id>` | Start a stopped project. |
-| `project disable <id>` | Stop a running project. |
-| `project sleep-mode <id> <mode>` | Set the project sleep mode. |
-| `project transfer <id> <direction>` | Promote to Openship Cloud or bring it back (self-hosted only). |
-| `project logs <id>` | Show or stream runtime (container) logs. |
-| `project server-logs <id>` | Show or stream HTTP request logs (edge / OpenResty). |
-
-### create
+`init` writes a project link in `.openship/project.json`. This is different from `openship.json`, which
+declares deployment configuration:
 
 ```bash
-openship project create --name "My App" --slug my-app \
-  --git-owner acme --git-repo my-app --git-branch main --framework nextjs
+openship config init
+openship config validate
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--name <name>` | Project name. **Required.** |
-| `--slug <slug>` | Free-subdomain slug (`slug.opsh.io`). |
-| `--git-owner <owner>` | GitHub owner / org. |
-| `--git-repo <repo>` | GitHub repository name. |
-| `--git-branch <branch>` | Git branch to deploy. |
-| `--framework <framework>` | Stack / framework id. |
-| `--local-path <path>` | Local source path. |
-| `--port <port>` | Container port. |
-| `--type <type>` | Project type: `app`, `docker`, `services`, or `monorepo`. |
+See [project commands](/docs/cli/reference/project), [link options](/docs/cli/reference/init), and
+[configuration commands](/docs/cli/reference/config).
 
-### delete
-
-Tears down containers, routes, and (optionally) volumes, then removes the project row. Prompts for
-confirmation unless you pass `-y`.
+## Environment and source settings
 
 ```bash
-openship project delete proj_123 --wipe-volumes -y
+openship project env get proj_123
+openship project git branch proj_123 main
+openship project sleep-mode proj_123 always_on
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--force` | Cancel active work and delete anyway. |
-| `--force-orphan` | Orphan resources that won't destroy, then drop the row. |
-| `--wipe-volumes` | Also destroy persistent volumes. |
-| `-y, --yes` | Skip the confirmation prompt. |
+Use the project reference for environment writes, auto-deploy, release images, logs, and project
+teardown. [Environment variables](/docs/guides/environment-variables) explains secret handling and
+when changes reach a running application.
 
-### env
-
-Read or update a project's environment variables. `set` is a merge: it upserts the pairs you pass and
-deletes the keys you `--unset`, leaving everything else untouched. See the
-[environment variables guide](/docs/guides/environment-variables) for how these flow into builds and runtime.
+## Services
 
 ```bash
-# List production vars
-openship project env get proj_123 --environment production
-
-# Upsert two secret vars and remove another (other keys are left untouched)
-openship project env set proj_123 \
-  --set DATABASE_URL=postgres://… --set API_TOKEN=sk-… --secret \
-  --unset OLD_KEY
+openship service list --project proj_123
+openship service get svc_123 --project proj_123
+openship service logs svc_123 --project proj_123 --follow
 ```
 
-| Flag (on `env get`) | Purpose |
-|---|---|
-| `--environment <env>` | Filter by environment: `production`, `preview`, or `development`. |
+Services belong to a project. Supply `--project` or use a linked directory. The [service reference](/docs/cli/reference/service)
+covers creation, Compose synchronization, drift decisions, environment variables, runtime controls, and execution.
 
-| Flag (on `env set`) | Purpose |
-|---|---|
-| `--environment <env>` | Target environment. Default `production`. |
-| `--set <KEY=VALUE>` | Pair to upsert. Repeatable. |
-| `--unset <key>` | Key to delete. Repeatable. |
-| `--secret` | Mark every `--set` value as a secret. |
-
-### git
-
-Manage the GitHub link and push-to-deploy. After linking a repo, `auto-deploy` turns on redeploy-on-push;
-`webhook-domain` selects which verified project domain receives webhook deliveries. See the
-[auto-deploy guide](/docs/guides/auto-deploy) for the full flow.
+## Domains
 
 ```bash
-openship project git link proj_123 --owner acme --repo my-app --branch main
-openship project git auto-deploy proj_123 --enable
-openship project git branch proj_123 develop
-openship project git webhook-domain proj_123 app.example.com   # or: --clear
+openship domain add app.example.com --project proj_123
+openship domain records dom_123
+openship domain verify dom_123
+openship domain verify-ssl dom_123
 ```
 
-| Flag (on `git link`) | Purpose |
-|---|---|
-| `--owner <owner>` | GitHub owner / org. **Required.** |
-| `--repo <repo>` | Repository name. **Required.** |
-| `--branch <branch>` | Branch. Defaults to the repo's default branch. |
-| `--installation-id <id>` | GitHub App installation id. |
+Follow the returned DNS instructions before verification. See [domain options](/docs/cli/reference/domain)
+and the [custom-domain guide](/docs/guides/custom-domains) for DNS providers, TLS, and primary domains.
 
-| Flag (on `git auto-deploy`) | Purpose |
-|---|---|
-| `--enable` | Enable auto-deploy. |
-| `--disable` | Disable auto-deploy. |
-
-Pass exactly one of `--enable` / `--disable`. `git webhook-domain` takes an optional `[domain]` argument or
-a `--clear` flag to unset it.
-
-### connect
-
-Attaches a custom domain and prints the DNS records to add. Verification then runs automatically once the
-records resolve.
+## Catalog apps
 
 ```bash
-openship project connect proj_123 app.example.com --include-www
+openship app list
+openship app get postgres
+openship app host-fit postgres --server srv_123
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--include-www` | Also connect the `www.` variant. |
-
-<Callout title="Two ways to add a domain">
-`project connect` and [`domain add`](#openship-domain) both attach a custom domain to a project and return
-the records to create. `connect` is the quickest one-liner; the `domain` command group adds verify, renew,
-and primary-selection on top. See the [custom domains guide](/docs/guides/custom-domains).
-</Callout>
-
-### enable / disable
-
-Power a project on or off without deleting it.
-
-```bash
-openship project disable proj_123
-openship project enable proj_123
-```
-
-### sleep-mode
-
-Controls whether the project sleeps when idle. See the
-[sleep mode & resources guide](/docs/guides/sleep-mode-resources).
-
-```bash
-openship project sleep-mode proj_123 auto_sleep   # or: always_on
-```
-
-| Mode | Meaning |
-|---|---|
-| `auto_sleep` | Sleep the container when idle, wake on the next request. |
-| `always_on` | Keep the container running. |
-
-### transfer
-
-Moves a project between your self-hosted instance and Openship Cloud. Only available on a self-hosted
-instance; see the [cloud connect & migration guide](/docs/guides/cloud-connect-migration).
-
-```bash
-openship project transfer proj_123 to-cloud        # or: to-self-hosted
-```
-
-### logs / server-logs
-
-`logs` shows the container's runtime output; `server-logs` shows edge HTTP request logs (OpenResty). Both
-print recent lines by default, or stream with `-f`. More context in the
-[logs & monitoring guide](/docs/guides/logs-monitoring).
-
-```bash
-openship project logs proj_123 --tail 100 -f
-openship project server-logs proj_123 --limit 200 --domain app.example.com
-```
-
-| Flag (on `logs`) | Purpose |
-|---|---|
-| `--tail <n>` | Number of recent lines to show. |
-| `-f, --follow` | Stream logs until interrupted. |
-
-| Flag (on `server-logs`) | Purpose |
-|---|---|
-| `--limit <n>` | Number of recent entries (max 200). |
-| `--domain <domain>` | Restrict to a specific domain. |
-| `-f, --follow` | Stream request logs until interrupted (self-hosted). |
-
-## `openship service`
-
-Manage the services inside a compose **stack** (a multi-service project). Alias: `openship services`. Every
-subcommand targets a stack with `-p, --project <id|slug|name>` and then a service by its name or `svc_…` id.
-For the bigger picture, see the [multi-service compose guide](/docs/guides/compose-multi-service).
-
-<Callout title="Every service command needs -p">
-Because services live under a project, each subcommand below requires `-p, --project <id|slug|name>`. A
-`proj_…` id is used verbatim; a slug or name is resolved against your projects (and must be unambiguous).
-</Callout>
-
-### Subcommands
-
-| Command | Purpose |
-|---|---|
-| `service list -p <stack>` | List the services in a stack. |
-| `service get -p <stack> <service>` | Show one service's configuration. |
-| `service create -p <stack> <name>` | Add a service to a stack. |
-| `service delete -p <stack> <service>` (alias `rm`) | Remove a service (tears down its container). |
-| `service sync -p <stack> <compose-file>` | Sync services from a docker-compose file. |
-| `service start -p <stack> <service>` | Start a service's container. |
-| `service stop -p <stack> <service>` | Stop a service's container. |
-| `service restart -p <stack> <service>` | Restart a service's container. |
-| `service containers -p <stack>` | List the stack's active-deployment containers. |
-| `service drift accept -p <stack> <service>` | Apply upstream compose values, discarding your edits. |
-| `service drift keep -p <stack> <service>` | Keep your edits and stop flagging the upstream change. |
-| `service env get -p <stack> <service>` | List a service's env vars (secrets masked). |
-| `service env set -p <stack> <service> <pairs...>` | Set a service's env vars for one environment. |
-| `service logs -p <stack> <service>` | Show or stream a service's runtime logs. |
-| `service exec -p <stack> [service]` | Open an interactive shell in a container (coming soon). |
-
-### create
-
-```bash
-openship service create -p my-stack db \
-  --image postgres:16 --port 5432:5432 --env POSTGRES_PASSWORD=secret
-
-openship service create -p my-stack web \
-  --build ./web --dockerfile Dockerfile --port 3000:3000 \
-  --depends-on db --expose --exposed-port 3000 --domain my-web
-```
-
-| Flag | Purpose |
-|---|---|
-| `--image <image>` | Container image (e.g. `postgres:16`). |
-| `--build <context>` | Build context path (relative to repo root). |
-| `--dockerfile <path>` | Dockerfile path (relative to the build context). |
-| `--port <mapping>` | Port mapping, e.g. `8080:80`. Repeatable. |
-| `--depends-on <service>` | Service this one depends on. Repeatable. |
-| `--env <KEY=VALUE>` | Compose environment default. Repeatable. |
-| `--command <command>` | Override the container command. |
-| `--restart <policy>` | Restart policy: `no`, `always`, `on-failure`, or `unless-stopped`. |
-| `--expose` | Expose the service publicly through managed routing. |
-| `--exposed-port <port>` | Container port to expose publicly. |
-| `--domain <label>` | Free subdomain label (used with `--expose`). |
-
-### sync
-
-Reconciles the stack against a compose file: services present in the file are created or updated, and
-services **not** in the file are removed. Parsing is delegated to Docker Compose, so `docker` (Compose v2)
-must be installed locally.
-
-```bash
-openship service sync -p my-stack ./docker-compose.yml -y
-```
-
-| Flag | Purpose |
-|---|---|
-| `-y, --yes` | Skip the confirmation prompt. |
-
-### delete
-
-```bash
-openship service delete -p my-stack db -y
-```
-
-| Flag | Purpose |
-|---|---|
-| `-y, --yes` | Skip the confirmation prompt. |
-
-### drift
-
-When an upstream compose change touches a value you edited in the dashboard, the service is flagged with
-pending drift. Resolve it by taking the upstream values (`accept`) or keeping your edits (`keep`).
-
-```bash
-openship service drift accept -p my-stack web
-openship service drift keep   -p my-stack web
-```
-
-### env
-
-Read or set a service's environment variables, scoped to one environment. Unlike `project env`, the service
-`set` command targets a single environment and merges into it by default; `--replace` swaps the whole set.
-
-```bash
-openship service env get -p my-stack web --env production
-openship service env set -p my-stack web LOG_LEVEL=debug FEATURE_X=on --env production
-```
-
-| Flag (on `env get`) | Purpose |
-|---|---|
-| `-e, --env <environment>` | Environment: `production`, `preview`, or `development`. |
-
-| Flag (on `env set`) | Purpose |
-|---|---|
-| `-e, --env <environment>` | Environment. Default `production`. |
-| `--secret` | Mark the provided variables as secret. |
-| `--replace` | Replace **all** variables for this environment with only the given pairs. |
-
-### logs
-
-```bash
-openship service logs -p my-stack web --tail 200 -f
-```
-
-| Flag | Purpose |
-|---|---|
-| `-f, --follow` | Stream new log lines as they arrive (SSE). |
-| `--tail <n>` | Number of lines to show from the end. Default `200`. |
-
-<Callout title="service exec is not available yet" type="info">
-`openship service exec` is stubbed — an interactive terminal needs a WebSocket client the CLI doesn't yet
-ship. Use the dashboard's service terminal for now.
-</Callout>
-
-## `openship domain`
-
-Manage custom domains, DNS verification, and SSL certificates. This is the terminal side of a project's
-**Domains** tab; the same operations are documented as HTTP endpoints in the
-[Domains API reference](/docs/api/domains), and the full walkthrough lives in the
-[custom domains guide](/docs/guides/custom-domains).
-
-### Subcommands
-
-| Command | Purpose |
-|---|---|
-| `domain list -p <id>` | List a project's custom domains. |
-| `domain add <hostname> -p <id>` | Add a custom domain to a project. |
-| `domain preview <hostname>` | Preview the DNS records a hostname would need (nothing saved). |
-| `domain verify <id>` | Run DNS verification for a domain. |
-| `domain primary <id>` | Make a domain the project's primary hostname. |
-| `domain records <id>` | Show the DNS records for an existing domain. |
-| `domain renew <id>` | Renew the SSL certificate for a domain. |
-| `domain verify-ssl <id>` | Recheck that a certificate is issued and valid (no reissue). |
-| `domain renew-all` | Renew SSL for every near-expiry domain in your organization. |
-
-### Typical flow
-
-```bash
-# 1. See the records a hostname will need
-openship domain preview app.example.com
-
-# 2. Attach it to a project (prints the exact records to add)
-openship domain add app.example.com -p proj_123 --primary
-
-# 3. After the DNS records propagate, verify
-openship domain verify <domainId>
-```
-
-| Flag (on `list`) | Purpose |
-|---|---|
-| `-p, --project <id>` | Project id to list domains for. **Required.** |
-
-| Flag (on `add`) | Purpose |
-|---|---|
-| `-p, --project <id>` | Project to attach the domain to. **Required.** |
-| `--primary` | Mark this domain as the project's primary. Default `false`. |
-
-<Callout title="Adding a domain doesn't make it live" type="warn">
-`add` (and `preview`) return the records to create at your DNS provider. The domain only goes live after the
-records resolve and `verify` succeeds — for a domain that isn't propagating, re-check the records against
-`preview` and retry. Certificates are then provisioned automatically.
-</Callout>
+`app install` creates an installation draft. Deploy the returned project ID with `openship deploy`.
+Custom app definitions, curated settings, and connection details are covered in the
+[app reference](/docs/cli/reference/app).

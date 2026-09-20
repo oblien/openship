@@ -20,8 +20,8 @@
 
 import { DEFAULT_PORT } from "@repo/core";
 import { repos } from "@repo/db";
-import { env } from "../../config/env";
-import { systemDebug } from "../../lib/system-debug";
+import { env } from "@repo/platform/engine/config/env";
+import { systemDebug } from "@repo/platform/engine/lib/system-debug";
 import { resolveProvider } from "./registry";
 import {
   isAgentConnected,

@@ -16,7 +16,7 @@
 import "./_env";
 import { Hono } from "hono";
 import { db, eq, schema, repos } from "@repo/db";
-import { mintPatToken } from "../../../src/lib/pat";
+import { mintPatToken } from "@repo/platform/engine/lib/pat";
 import { auditRoutes } from "../../../src/modules/audit/audit.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
@@ -183,6 +183,8 @@ export interface SeedEventInput {
   resourceType?: string | null;
   resourceId?: string | null;
   source?: string | null;
+  /** `oauth:<clientId>` / `pat:<tokenId>` — which agent, for MCP rows. */
+  sourceClientId?: string | null;
   createdAt?: Date;
 }
 
@@ -203,6 +205,7 @@ export async function seedEvent(input: SeedEventInput): Promise<string> {
     resourceType: input.resourceType ?? null,
     resourceId: input.resourceId ?? null,
     source: input.source ?? null,
+    sourceClientId: input.sourceClientId ?? null,
     createdAt: input.createdAt ?? new Date(),
   });
   return id;

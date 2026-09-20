@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AUDIT_CATEGORIES,
@@ -27,36 +27,57 @@ import {
  * The drift that motivated this: the old file mapped `deployment.canceled` while
  * the API emitted `deployment.cancelled`, and ~15 emitted types had no entry at
  * all. That is a class of bug only a coverage test catches, so the emitted types
- * are enumerated FROM apps/api's source and pushed through the real lookup.
+ * are enumerated from the HTTP API and shared engine and pushed through the
+ * real lookup.
  */
 
 const API_SRC = fileURLToPath(new URL("../../../apps/api/src", import.meta.url));
+const ENGINE_SRC = fileURLToPath(new URL("../../platform/src/engine", import.meta.url));
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const SOURCE_ROOTS = [API_SRC, ENGINE_SRC];
 
-/** Every `.ts` file under apps/api/src. */
-function apiSourceFiles(dir: string): string[] {
+/** Every `.ts` file under the HTTP API and its retained shared engine. */
+function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...apiSourceFiles(full));
+    if (entry.isDirectory()) out.push(...sourceFiles(full));
     else if (entry.name.endsWith(".ts")) out.push(full);
   }
   return out;
 }
 
 /**
- * Event types emitted as literals: `eventType: "..."` outside a comment.
+ * Event types emitted as literals: every string in the `eventType:` expression.
  *
  * Deliberately over-inclusive — it also catches the notification dispatcher's
  * literals, which are mostly audit types too. A catalog entry for a type that
  * never reaches audit_event costs nothing; a missing one costs a readable row.
+ *
+ * BOTH branches of a ternary, not just a bare literal: `eventType: ok ? "a" : "b"`
+ * is how ~half the pass/fail pairs are written, and a regex anchored on a quote
+ * right after the colon saw neither. That blind spot is what let
+ * `domain.verify_failed` ship uncatalogued while its `domain.verified` twin —
+ * written on the same line — looked covered.
+ *
+ * Scoped twice, so the scan stays over-inclusive about event types without
+ * inventing ones: to the expression (up to the first comma), so the sibling keys
+ * of a single-line `{ eventType: "x", resourceType: "y" }` aren't read as types;
+ * and past the `?`, so the operand of a `status === "succeeded" ? …` condition
+ * isn't either.
  */
 function emittedEventTypes(): Map<string, string> {
   const found = new Map<string, string>();
-  for (const file of apiSourceFiles(API_SRC)) {
+  for (const file of SOURCE_ROOTS.flatMap(sourceFiles)) {
     for (const line of readFileSync(file, "utf8").split("\n")) {
       if (/^\s*\*/.test(line)) continue; // jsdoc example, not a call site
-      const match = line.match(/eventType:\s*"([^"]+)"/);
-      if (match?.[1] && !found.has(match[1])) found.set(match[1], file);
+      const at = line.indexOf("eventType:");
+      if (at === -1) continue;
+      const expr = line.slice(at + "eventType:".length).split(",")[0]!;
+      const branches = expr.includes("?") ? expr.slice(expr.indexOf("?") + 1) : expr;
+      for (const [, type] of branches.matchAll(/"([^"]+)"/g)) {
+        if (type && !found.has(type)) found.set(type, file);
+      }
     }
   }
   return found;
@@ -70,7 +91,7 @@ function emittedEventTypes(): Map<string, string> {
  * real lookup, same as the literals.
  */
 function incidentEventTypes(): string[] {
-  const file = join(API_SRC, "modules/monitoring/incident.service.ts");
+  const file = join(ENGINE_SRC, "modules/monitoring/incident.service.ts");
   if (!existsSync(file)) return [];
   const src = readFileSync(file, "utf8");
   const start = src.indexOf("const EVENT_TYPE: Record<IncidentKind, string> = {");
@@ -90,12 +111,15 @@ describe("audit categories", () => {
     // These travel in URLs (?category=deployments) and are sent to the API as a
     // filter, so a rename breaks saved links and every bookmarked view. Labels
     // above them are free to change — that's the point of the split.
+    // Adding an id is fine (and is why this list grows); RENAMING one is the
+    // breaking change this pins down.
     expect(CATEGORY_IDS).toEqual([
       "deployments",
       "apps",
       "domains",
       "servers",
       "members",
+      "agent",
       "security",
       "billing",
       "system",
@@ -147,8 +171,10 @@ describe("audit event catalog", () => {
   });
 });
 
-describe("every event type apps/api emits is catalogued", () => {
-  const present = existsSync(API_SRC);
+describe("every event type the HTTP API or shared engine emits is catalogued", () => {
+  // A standalone core checkout may lack both trees. A partially missing
+  // workspace must fail the scan instead of silently skipping coverage.
+  const present = SOURCE_ROOTS.some(existsSync);
 
   it.skipIf(!present)("literal `eventType:` call sites", () => {
     const emitted = emittedEventTypes();
@@ -157,7 +183,7 @@ describe("every event type apps/api emits is catalogued", () => {
     expect(emitted.size).toBeGreaterThan(50);
     const uncatalogued = [...emitted]
       .filter(([type]) => !(type in AUDIT_EVENTS))
-      .map(([type, file]) => `${type}  (${file.slice(API_SRC.length + 1)})`);
+      .map(([type, file]) => `${type}  (${relative(REPO, file)})`);
     expect(
       uncatalogued,
       "New audit event types with no entry in AUDIT_EVENTS — add one so the row " +

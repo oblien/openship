@@ -1,0 +1,72 @@
+---
+title: edge rules
+description: Commands, arguments, and options for openship edge rules.
+cliGroup: openship edge rules
+---
+
+See the [workflow guide](/docs/cli/edge) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship edge rules
+
+Per-route edge rules: rate-limit, ban, access control
+
+```text
+openship edge rules [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/edge/rules#openship-edge-rules-list) | List a project's edge route rules |
+| [`add [options]`](/docs/cli/reference/edge/rules#openship-edge-rules-add) | Add an edge route rule (rate-limit · ban · access · block) |
+| [`rm [options] <ruleId>`](/docs/cli/reference/edge/rules#openship-edge-rules-rm) | Delete an edge route rule |
+
+## openship edge rules add
+
+Add an edge route rule (rate-limit · ban · access · block)
+
+```text
+openship edge rules add [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `--path <prefix>` | Scope the rule to a path prefix (default: whole project) |
+| `--domain <id>` | Scope the rule to one domain of the project |
+| `--rate-limit <rps>` | Requests/second per client IP before throttling |
+| `--burst <n>` | Burst allowance for --rate-limit |
+| `--ban-country <cc>` | Block ISO-2 country code(s) (repeatable/comma-separated) |
+| `--ban-ip <ip>` | Block IP address(es) (repeatable/comma-separated) |
+| `--deny-cidr <cidr>` | Deny CIDR range(s) (repeatable/comma-separated) |
+| `--allow-cidr <cidr>` | Allow-list CIDR range(s) — everything else is denied |
+| `--allow-country <cc>` | Allow-list ISO-2 country code(s) — everything else denied |
+| `--block-status <code>` | HTTP status returned on block (401/403/404/429/444/451/503) |
+| `--disabled` | Create the rule disabled (default: false) |
+
+## openship edge rules list
+
+List a project's edge route rules
+
+```text
+openship edge rules list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+
+## openship edge rules rm
+
+Delete an edge route rule
+
+```text
+openship edge rules rm [options] <ruleId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `ruleId` | Route rule ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |

@@ -3,7 +3,7 @@
 /**
  * Settings → General → Preferences. Personal, per-browser display preferences
  * (nothing sent to the server). Collapsed by default. Currently holds Demo mode
- * (blur IPs/hosts for screen-shares); add future client-side toggles as rows.
+ * (blur IPs, hosts and env values for screen-shares); add future toggles as rows.
  */
 
 import { SlidersHorizontal } from "lucide-react";
@@ -25,7 +25,7 @@ export function PreferencesSetting() {
       <div className="space-y-3">
         <PreferenceRow
           title="Demo mode"
-          hint="Blur IP addresses and hosts across the dashboard — for screen-shares, recordings, and live demos."
+          hint="Blur IP addresses, hosts, and environment values during screen-shares and recordings."
           checked={demoMode}
           onChange={setDemoMode}
         />

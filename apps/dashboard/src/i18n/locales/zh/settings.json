@@ -21,6 +21,7 @@
       "cloud": "云",
       "defaults": "默认设置",
       "settings": "设置",
+      "dns": "DNS",
       "notifications": "通知",
       "team": "团队",
       "members": "成员",
@@ -47,11 +48,12 @@
     "title": "设置",
     "tabs": {
       "general": "常规",
-      "tokens": "令牌",
+      "git": "Git",
+      "tokens": "API 令牌",
       "mcp": "MCP",
       "team": "团队",
       "notifications": "通知",
-      "audit": "审计日志",
+      "credentials": "凭据",
       "cloud": "云",
       "infrastructure": "基础设施",
       "instance": "实例"
@@ -113,10 +115,6 @@
     "noServers": "尚未配置任何服务器 —— 请从部署选择器中添加一个。",
     "clearDefault": "清除默认（每次都询问）",
     "targets": {
-      "local": {
-        "label": "本机",
-        "desc": "本地 Docker / 运行时"
-      },
       "server": {
         "label": "我的服务器",
         "desc": "已配置的 SSH 服务器"
@@ -128,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "你的服务器",
-      "cloud": "Openship Cloud",
-      "local": "本机"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "请先选择一个服务器",
@@ -160,6 +157,64 @@
     "toast": {
       "setTo": "构建模式已设置为 {mode}",
       "failed": "更新构建模式失败"
+    }
+  },
+  "githubSources": {
+    "title": "自托管 GitHub 应用",
+    "description": "使用加密的应用凭据、直连 Webhook 和短期安装令牌管理此实例的 GitHub 连接。",
+    "publicUrlRequired": "请先为此 Openship 实例配置公开 HTTPS 地址。GitHub 必须能够访问设置回调和 Webhook。",
+    "createWithGithub": "通过 GitHub 创建",
+    "registerExisting": "注册现有应用",
+    "manifestHelp": "Openship 会向 GitHub 提交最小权限的应用清单。GitHub 创建应用并仅返回一次生成的凭据，然后打开仓库安装页面。",
+    "nameLabel": "来源名称",
+    "namePlaceholder": "Acme 的 GitHub",
+    "continueOnGithub": "前往 GitHub 继续",
+    "empty": "尚无工作区自有的 GitHub 应用。",
+    "defaultBadge": "默认",
+    "activeBadge": "有效",
+    "invalidBadge": "需要处理",
+    "webhookChanged": "此应用使用旧的 Webhook 地址注册。请在 GitHub 中更新 Webhook 地址和设置地址，然后再次保存此来源。",
+    "installations": "已安装账户",
+    "noInstallations": "尚未安装到任何账户。",
+    "suspended": "已暂停",
+    "installAccount": "安装到账户",
+    "verify": "验证",
+    "edit": "编辑",
+    "makeDefault": "设为默认",
+    "manage": "在 GitHub 管理",
+    "delete": "删除",
+    "confirmDelete": "要从 Openship 删除 {name} 吗？本地凭据和安装绑定将被删除，但在 GitHub 中卸载之前，该应用仍会保留在那里。",
+    "editHelp": "将机密字段留空即可保留已加密存储的值。",
+    "manualHelp": "输入现有 GitHub 应用的凭据。Openship 会先验证私钥，再保存任何内容。",
+    "appIdLabel": "应用 ID",
+    "clientIdLabel": "客户端 ID",
+    "clientSecretLabel": "客户端密钥",
+    "optionalHelp": "使用安装令牌认证时可选。",
+    "leaveBlank": "留空以保留已存储的值。",
+    "privateKeyLabel": "私钥（PEM）",
+    "privateKeyHelp": "在 GitHub 应用设置中生成私钥，并粘贴完整的 PEM 文件。",
+    "webhookSecretLabel": "Webhook 密钥",
+    "webhookSecretHelp": "请在应用的 Webhook 设置中使用相同的高强度密钥（至少 16 个字符）。",
+    "enterpriseSettings": "GitHub Enterprise 设置",
+    "webUrlLabel": "GitHub 网页地址",
+    "apiUrlLabel": "GitHub API 地址",
+    "defaultLabel": "将此应用作为默认来源",
+    "setupUrlLabel": "设置地址",
+    "webhookUrlLabel": "Webhook 地址",
+    "registerAndInstall": "注册并安装",
+    "toast": {
+      "loadFailed": "无法加载 GitHub 应用来源。",
+      "createFailed": "无法开始创建 GitHub 应用。",
+      "installFailed": "无法打开 GitHub 应用安装页面。",
+      "verified": "GitHub 应用已验证。",
+      "verifyFailed": "GitHub 应用验证失败。",
+      "defaultChanged": "默认 GitHub 应用已更改。",
+      "defaultFailed": "无法更改默认 GitHub 应用。",
+      "deleted": "GitHub 应用来源已删除。",
+      "deleteFailed": "无法删除 GitHub 应用来源。",
+      "updated": "GitHub 应用来源已更新。",
+      "created": "GitHub 应用已注册。",
+      "saveFailed": "无法保存 GitHub 应用来源。"
     }
   },
   "cloneCredentials": {
@@ -286,6 +341,7 @@
     "you": "（你）",
     "removeMember": "移除成员",
     "pendingInvitations": "待处理的邀请（{count}）",
+    "copyInviteLink": "复制邀请链接",
     "invitedAs": "以 {role} 身份受邀 —— 于 {date} 过期",
     "roles": {
       "owner": "所有者",
@@ -329,6 +385,7 @@
       "updateRoleFailed": "更新角色失败",
       "removeFailed": "移除失败",
       "cancelFailed": "取消失败",
+      "copyInviteFailed": "无法复制邀请链接",
       "accessUpdated": "访问权限已更新",
       "loadGrantsFailed": "加载授权失败",
       "deleteFailed": "无法删除工作区",
@@ -359,9 +416,11 @@
     "pickerTitle": "初始资源访问权限",
     "pickerDesc": "受限成员起初没有任何访问权限。选择此邀请在被接受后解锁的内容 —— 之后你可以从该成员的行中授予更多权限。",
     "sendInvite": "发送邀请",
+    "createInviteLink": "创建邀请链接",
     "toast": {
       "failedSend": "发送邀请失败",
       "invitationSent": "邀请已发送至 {email}",
+      "invitationLinkCreated": "邀请链接已创建 — 请从待处理邀请中复制",
       "personalOrgBlocked": "个人工作区无法邀请成员。请先创建团队组织，然后再发送邀请。",
       "updateMailSourceFailed": "更新邮件来源失败"
     }
@@ -591,13 +650,31 @@
     "updatesOne": "有 1 项更新",
     "updatesMany": "有 {n} 项更新",
     "allHealthy": "所有平台组件均为最新",
-    "manageLink": "在服务器中管理"
+    "manageLink": "在服务器中管理",
+    "hostControlLabel": "部署到本机",
+    "hostControlDesc": "允许 OpenShip 将应用部署到其自身运行的服务器上，与你已连接的服务器一并使用。若安装时使用了 --no-host-control（仅控制平面）则为关闭 — 打开后即可将本机添加为部署目标。",
+    "hostControlEnvNote": "本机在安装时被设置为仅控制平面（--no-host-control）。打开此项将覆盖该设置，使 OpenShip 可以部署到此处。",
+    "hostControlError": "无法更改主机控制 — 只有本机工作区的所有者才能更改。"
   },
   "dataTransfer": {
     "export": {
       "title": "导出数据",
       "description": "将整个实例数据库下载为一个文件。",
       "intro": "创建一份包含所有内容的可移植快照 —— 项目、服务器、部署、设置。设置一个口令以包含你的机密信息（环境变量、令牌、SSH 凭据）；它们会在该口令下重新加密，因此该文件可安全移动。留空则导出时不包含机密信息。",
+      "filterTitle": "可选历史记录",
+      "filterDescription": "配置、项目、服务器、用户和凭据始终会包含。取消不需要的历史记录可减小大型导出文件。",
+      "filterAnalytics": "分析和用量样本",
+      "filterActivity": "审计和通知历史",
+      "filterBackups": "备份和恢复历史",
+      "filterIncidents": "健康事件历史",
+      "filterMigrations": "Docker 迁移历史",
+      "coreRows": "始终包含的行",
+      "selectedRows": "选中的导出行",
+      "countUnavailable": "不可用",
+      "transferSecretNotice": "要正确迁移服务器 SSH 密码和密钥、环境变量、令牌及备份凭据，请在下方生成或输入迁移密钥。请单独保存，并在导入时输入同一密钥。不要把实例的 BETTER_AUTH_SECRET 复制到目标实例。",
+      "generateTransferSecret": "生成迁移密钥",
+      "copyTransferSecret": "复制迁移密钥",
+      "copiedTransferSecret": "迁移密钥已复制。请妥善保存以供导入时使用。",
       "passphraseLabel": "口令（可选）",
       "passphrasePlaceholder": "保护你的机密信息",
       "confirmLabel": "确认口令",
@@ -779,6 +856,36 @@
     "toast": {
       "setTo": "路由策略已设为 {mode}",
       "failed": "更新路由策略失败"
+    }
+  },
+  "credentials": {
+    "title": "凭据",
+    "description": "Openship 代表你使用的令牌与登录信息——拉取私有镜像、写入 DNS 记录。加密存储，保存后不再显示。",
+    "noProviders": "此实例没有可用的凭据提供方。",
+    "noneForProvider": "尚未添加。",
+    "add": "添加",
+    "edit": "编辑",
+    "save": "保存更改",
+    "connect": "添加凭据",
+    "delete": "删除",
+    "verify": "向提供方重新校验",
+    "badgeActive": "正常",
+    "badgeInvalid": "需要处理",
+    "fieldName": "名称",
+    "namePlaceholder": "例如：GHCR 只读",
+    "secretKeptPlaceholder": "••••••••（已保存——留空即保持不变）",
+    "selectPlaceholder": "请选择…",
+    "verifyNote": "保存前，Openship 会向提供方校验该凭据。",
+    "confirmDelete": "删除“{name}”？依赖它的功能将停止工作。",
+    "toast": {
+      "loadFailed": "无法加载凭据",
+      "created": "已添加凭据",
+      "updated": "已更新凭据",
+      "deleted": "已删除凭据",
+      "saveFailed": "无法保存凭据",
+      "deleteFailed": "无法删除凭据",
+      "verifyOk": "提供方已接受该凭据",
+      "verifyFailed": "提供方拒绝了该凭据"
     }
   }
 }

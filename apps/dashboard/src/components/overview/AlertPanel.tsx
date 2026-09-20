@@ -146,10 +146,14 @@ export function AlertRow({
         <div className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${s.tile}`}>
           <Icon className={`size-3.5 ${s.icon}`} />
         </div>
+        {/* Name and label split the line 50/50 (both `flex-1 min-w-0`), each
+            ellipsizing within its half — so a long label can't squeeze the name
+            down to "G..", and a long name can't push the label off the row. When
+            there's no label the name takes the whole width. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
+          <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{title}</p>
           {label && (
-            <span className="shrink-0 text-[11px] text-muted-foreground">{label}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{label}</span>
           )}
         </div>
         {action}

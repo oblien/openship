@@ -1,0 +1,260 @@
+---
+title: deployment
+description: Commands, arguments, and options for openship deployment.
+cliGroup: openship deployment
+---
+
+See the [workflow guide](/docs/cli/deploy) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship deployment
+
+Manage deployments (list, inspect, redeploy, rollback, …)
+
+```text
+openship deployment|deployments [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/deployment#openship-deployment-list) | List deployments (org-wide, or scoped to a project) |
+| [`get <id>`](/docs/cli/reference/deployment#openship-deployment-get) | Show a single deployment |
+| [`info <id>`](/docs/cli/reference/deployment#openship-deployment-info) | Show container info for a deployment |
+| [`usage <id>`](/docs/cli/reference/deployment#openship-deployment-usage) | Show container resource usage for a deployment |
+| [`redeploy [options] <id>`](/docs/cli/reference/deployment#openship-deployment-redeploy) | Redeploy from an existing deployment |
+| [`rollback <id>`](/docs/cli/reference/deployment#openship-deployment-rollback) | Roll back to a previous deployment |
+| [`pin [options] <id>`](/docs/cli/reference/deployment#openship-deployment-pin) | Pin (or unpin) a deployment's rollback artifact |
+| [`cancel <id>`](/docs/cli/reference/deployment#openship-deployment-cancel) | Cancel an in-progress deployment |
+| [`restart <id>`](/docs/cli/reference/deployment#openship-deployment-restart) | Restart a deployment's container |
+| [`reject <id>`](/docs/cli/reference/deployment#openship-deployment-reject) | Reject a finished deployment awaiting a keep/reject decision |
+| [`keep <id>`](/docs/cli/reference/deployment#openship-deployment-keep) | Keep a finished deployment awaiting a keep/reject decision |
+| [`pending <id>`](/docs/cli/reference/deployment#openship-deployment-pending) | Show a deployment's current prompt and pending decisions |
+| [`respond [options] <id>`](/docs/cli/reference/deployment#openship-deployment-respond) | Answer a pending deployment prompt |
+| [`rm [options] <id>`](/docs/cli/reference/deployment#openship-deployment-rm) | Delete a deployment |
+| [`ssl`](/docs/cli/reference/deployment#openship-deployment-ssl) | SSL certificate operations |
+
+## openship deployment cancel
+
+Cancel an in-progress deployment
+
+```text
+openship deployment cancel [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment get
+
+Show a single deployment
+
+```text
+openship deployment get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment info
+
+Show container info for a deployment
+
+```text
+openship deployment info [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment keep
+
+Keep a finished deployment awaiting a keep/reject decision
+
+```text
+openship deployment keep [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment list
+
+List deployments (org-wide, or scoped to a project)
+
+```text
+openship deployment list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Scope to a project (defaults to the linked project) |
+| `--env <environment>` | Filter by environment: production \| preview |
+| `--limit <n>` | Max rows to fetch (default: "50") |
+
+## openship deployment pending
+
+Show a deployment's current prompt and pending decisions
+
+```text
+openship deployment pending [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment pin
+
+Pin (or unpin) a deployment's rollback artifact
+
+```text
+openship deployment pin [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--off` | Unpin instead of pin |
+
+## openship deployment redeploy
+
+Redeploy from an existing deployment
+
+```text
+openship deployment redeploy [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--use-existing-commit` | Rebuild the same commit instead of the latest on the branch |
+
+## openship deployment reject
+
+Reject a finished deployment awaiting a keep/reject decision
+
+```text
+openship deployment reject [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment respond
+
+Answer a pending deployment prompt
+
+```text
+openship deployment respond [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--action <action>` | An action ID offered by the pending prompt |
+
+## openship deployment restart
+
+Restart a deployment's container
+
+```text
+openship deployment restart [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+## openship deployment rm
+
+Delete a deployment
+
+```text
+openship deployment rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship deployment rollback
+
+Roll back to a previous deployment
+
+```text
+openship deployment rollback [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID to roll back to |
+
+## openship deployment ssl
+
+SSL certificate operations
+
+```text
+openship deployment ssl [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status <domain>`](/docs/cli/reference/deployment#openship-deployment-ssl-status) | Check SSL certificate status for a domain |
+| [`renew [options] <domain>`](/docs/cli/reference/deployment#openship-deployment-ssl-renew) | Renew (issue) an SSL certificate for a domain |
+
+## openship deployment ssl renew
+
+Renew (issue) an SSL certificate for a domain
+
+```text
+openship deployment ssl renew [options] <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `domain` | Domain to renew |
+
+| Option | Meaning |
+| --- | --- |
+| `--www` | Also renew the www subdomain (separately — its own certificate) |
+
+## openship deployment ssl status
+
+Check SSL certificate status for a domain
+
+```text
+openship deployment ssl status [options] <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `domain` | Domain to probe |
+
+## openship deployment usage
+
+Show container resource usage for a deployment
+
+```text
+openship deployment usage [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Deployment ID |

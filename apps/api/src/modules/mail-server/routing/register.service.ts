@@ -31,7 +31,7 @@ import {
   type MailServerRoutePlan,
   safeErrorMessage,
 } from "@repo/core";
-import { platform } from "../../../lib/controller-helpers";
+import { platform } from "@repo/platform/engine/lib/platform-config";
 
 export interface RouteRegistrationResult {
   routeId: MailRoute["id"];

@@ -3,22 +3,27 @@
  *
  * Unlike `reachability.ts` (which dials the target from the API host), this runs
  * INSIDE the deployment (docker container / cloud workspace / bare host) via a
- * CommandExecutor and reads the kernel's own socket table. It exists because a
- * host-side TCP probe can't reach cloud/remote targets, and because the tool the
- * naive approach reaches for — `lsof -i :PORT` — is (a) absent on minimal images
- * and (b) prone to missing IPv6-only (or IPv4-only) listeners.
+ * CommandExecutor and reads the kernel's socket table or host tools. It exists
+ * because a host-side TCP probe can't reach cloud/remote targets.
  *
- * Method: `cat /proc/net/tcp` + `/proc/net/tcp6` (needs only busybox `sh` + `cat`,
- * present on every runtime image incl. Alpine/Oblien) and parse in TypeScript.
- * Reading BOTH files and unioning them is what eliminates the address-family
- * false negative: a process bound to `0.0.0.0:PORT` shows in tcp, one bound to
- * `:::PORT` (or Node's default dual-stack) shows in tcp6 — either counts.
+ * Method:
+ *   1. `/proc/net/tcp` + `/proc/net/tcp6` (needs only busybox `sh` + `cat`,
+ *      present on every Linux runtime image incl. Alpine/Oblien) and parse in TypeScript.
+ *      Reading BOTH files and unioning them is what eliminates the address-family
+ *      false negative: a process bound to `0.0.0.0:PORT` shows in tcp, one bound to
+ *      `:::PORT` (or Node's default dual-stack) shows in tcp6 — either counts.
+ *   2. `lsof -nP -t -iTCP:PORT -sTCP:LISTEN` fallback on macOS / Darwin / BSD
+ *      hosts where `/proc` is absent.
+ *   3. `ss -tln sport = :PORT` fallback on Linux hosts where procfs is unmounted.
+ *   4. An explicit unavailable marker when no probe method is usable, returning
+ *      `null` (`checked: false`) so an unmeasurable host is never falsely reported
+ *      as "not listening".
  */
 
+import type { ExecOnly } from "../types";
+
 /** Minimal command surface this probe needs. A full `CommandExecutor` satisfies it. */
-export interface PortProbeExecutor {
-  exec(command: string, opts?: { timeout?: number }): Promise<string>;
-}
+export type PortProbeExecutor = ExecOnly;
 
 export interface PortProbeResult {
   /** True if a LISTEN socket on the port was found. */
@@ -31,14 +36,48 @@ export interface PortProbeResult {
   checked: boolean;
 }
 
-// Dump both address families; suppress stderr and force exit 0 so a missing
-// file (rare) or an empty family never rejects the exec. Parsing is per-line and
-// family-agnostic, so no separator is needed between the two files.
-const PROC_NET_TCP_CMD = "cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null; true";
+const PROC_NET_TCP_FILES = ["/proc/net/tcp", "/proc/net/tcp6"] as const;
+
+const PROBE_LISTENING = "__OPENSHIP_PORT_LISTENING__";
+const PROBE_FREE = "__OPENSHIP_PORT_FREE__";
+const PROBE_UNAVAILABLE = "__OPENSHIP_PORT_UNAVAILABLE__";
+
+/**
+ * Build the portable fallback used only when neither procfs socket table can be
+ * read. The status/output checks matter: a missing or broken probe must remain
+ * inconclusive instead of becoming the false "free" result that caused #646.
+ */
+export function buildPortProbeCommand(port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new RangeError(`Invalid TCP port: ${port}`);
+  }
+
+  return [
+    `lsof_output="$(lsof -nP -t -iTCP:${port} -sTCP:LISTEN 2>&1)"`,
+    `lsof_status=$?`,
+    `if [ "$lsof_status" -eq 0 ] && [ -n "$lsof_output" ] && printf '%s\\n' "$lsof_output" | grep -Eqv '^[0-9]+$'; then`,
+    `  : # Unexpected lsof output: fall through to ss instead of guessing.`,
+    `elif [ "$lsof_status" -eq 0 ] && [ -n "$lsof_output" ]; then`,
+    `  printf '${PROBE_LISTENING}\\n'`,
+    `  exit 0`,
+    `elif [ "$lsof_status" -eq 1 ] && [ -z "$lsof_output" ]; then`,
+    `  printf '${PROBE_FREE}\\n'`,
+    `  exit 0`,
+    `fi`,
+    `ss_output="$(ss -tln "sport = :${port}" 2>&1)"`,
+    `ss_status=$?`,
+    `if [ "$ss_status" -eq 0 ] && printf '%s\\n' "$ss_output" | grep -q LISTEN; then`,
+    `  printf '${PROBE_LISTENING}\\n'`,
+    `elif [ "$ss_status" -eq 0 ]; then`,
+    `  printf '${PROBE_FREE}\\n'`,
+    `else`,
+    `  printf '${PROBE_UNAVAILABLE}\\n'`,
+    `fi`,
+  ].join("\n");
+}
 
 // procfs socket state column: 0A = TCP_LISTEN.
 const TCP_LISTEN = "0A";
-
 /**
  * Parse the concatenated contents of /proc/net/tcp and /proc/net/tcp6 into the
  * set of ports in LISTEN state. Pure and family-agnostic — feeding it both files
@@ -69,6 +108,22 @@ export function parseListeningPorts(procText: string): Set<number> {
 }
 
 /**
+ * Parse the output of `buildPortProbeCommand`.
+ *
+ * Resolves:
+ *   - `true` when a LISTEN socket was confirmed.
+ *   - `false` when the socket table/tool was read and the port is confirmed NOT listening.
+ *   - `null` when the probe was inconclusive (unknown output, tool missing, or error).
+ */
+export function parsePortProbeOutput(out: string): boolean | null {
+  const trimmed = out.trim();
+  if (trimmed === PROBE_LISTENING) return true;
+  if (trimmed === PROBE_FREE) return false;
+  if (trimmed === PROBE_UNAVAILABLE) return null;
+  return null;
+}
+
+/**
  * One probe. Resolves `true`/`false` for "port is listening", or `null` when the
  * exec itself failed (inconclusive). Never throws.
  */
@@ -76,9 +131,26 @@ export async function probePortListeningOnce(
   executor: PortProbeExecutor,
   port: number,
 ): Promise<boolean | null> {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
+
+  const readable: string[] = [];
+  // Read the families independently and preserve whether each read succeeded.
+  // Appending `; true` to one combined shell command made two permission/read
+  // failures look exactly like a valid empty socket table—a dangerous false
+  // negative for edge ownership checks. One readable family is still useful;
+  // neither readable means the probe is inconclusive.
+  for (const file of PROC_NET_TCP_FILES) {
+    try {
+      readable.push(await executor.exec(`cat ${file} 2>/dev/null`, { timeout: 5_000 }));
+    } catch {
+      // Try the other address family before declaring the probe inconclusive.
+    }
+  }
+  if (readable.length > 0) return parseListeningPorts(readable.join("\n")).has(port);
+
   try {
-    const out = await executor.exec(PROC_NET_TCP_CMD, { timeout: 5_000 });
-    return parseListeningPorts(out).has(port);
+    const out = await executor.exec(buildPortProbeCommand(port), { timeout: 5_000 });
+    return parsePortProbeOutput(out);
   } catch {
     return null;
   }
@@ -123,9 +195,7 @@ export async function waitForPortListening(
     return { listening: false, checked: false };
   }
 
-  return anyConclusive
-    ? { listening: false, checked: true }
-    : { listening: false, checked: false };
+  return anyConclusive ? { listening: false, checked: true } : { listening: false, checked: false };
 }
 
 /** Outcome of {@link waitForPortFree}. `checked:false` = inconclusive, same rule. */

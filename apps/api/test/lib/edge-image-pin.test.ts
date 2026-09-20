@@ -3,9 +3,9 @@ import { join } from "node:path";
 
 import { describe, expect, it, afterEach } from "vitest";
 
-import { edgeBuildSpec, pinnedEdgeImage, withPinnedEdgeImage } from "../../src/lib/edge-image";
-import { detectBuildContext } from "../../src/lib/managed-images";
-import { APP_VERSION } from "../../src/lib/app-version";
+import { edgeBuildSpec, pinnedEdgeImage, withPinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
+import { detectBuildContext } from "@repo/platform/engine/lib/managed-images";
+import { APP_VERSION } from "@repo/platform/engine/lib/app-version";
 
 const EDGE_DOCKERFILE = join("apps", "edge", "Dockerfile");
 const saved = { ...process.env };

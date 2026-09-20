@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Statische Websites kostenlos auf Openship Cloud deployen."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Für die erste echte App – Container, Datenbanken, alles dabei."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Für Produktions-Apps, die Platz zum Wachsen brauchen."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Für Teams mit hohem Traffic auf gemeinsamer Infrastruktur."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Individuelle Limits, dedizierte Infrastruktur und ein SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Alles aus {inherited}, plus:",
+    "staticOnly": "Nur statische Websites – SSG, SPA und reines HTML",
+    "anyWorkload": "Beliebige Workloads – Container, Compose, Worker, Postgres, Redis",
+    "runningServices": "{runningServices} laufende Apps, Datenbanken oder Worker",
+    "computeMinutes": "{computeMinutes} Compute-Minuten pro Monat",
+    "buildMinutes": "{buildMinutes} Build-Minuten pro Monat",
+    "power": "Bis zu {powerCpu} vCPU und {powerRamGb} GB RAM pro App",
+    "projects": "{maxProjects} Projekte",
+    "projectsUnlimited": "Unbegrenzt viele Projekte",
+    "freeSubdomains": "{freeSubdomains} kostenlose Subdomains unter {freeDomainSuffix}",
+    "freeSubdomainsUnlimited": "Unbegrenzt viele kostenlose Subdomains unter {freeDomainSuffix}",
+    "gitDeploys": "Deployen von GitHub, GitLab oder jedem Git-Remote",
+    "customDomains": "Unbegrenzt viele eigene Domains, TLS inklusive",
+    "deployLogs": "Live-Logs für Build und Deployment",
+    "auditLog": "Audit-Log für jede Änderung",
+    "unlimitedSeats": "Unbegrenzt viele Teammitglieder – nie Kosten pro Nutzer",
+    "sso": "SSO und SAML",
+    "customLimits": "Individuelle Limits, vertraglich vereinbart",
+    "dedicatedInfra": "Dedizierte Infrastruktur und Regionen",
+    "onboarding": "Persönlich begleitetes Onboarding und Migration",
+    "communitySupport": "Community-Support",
+    "emailSupport": "E-Mail-Support",
+    "prioritySupport": "Priorisierter Support",
+    "dedicatedSupport": "Dedizierter Support mit SLA",
+    "selfHostedOpenSource": "Die komplette Plattform als Open Source (Apache 2.0)",
+    "selfHostedUnlimited": "Unbegrenzt viele Deploys, Projekte, Server und Domains",
+    "selfHostedServices": "Alle Managed Services – Postgres, Redis, Mail",
+    "selfHostedClients": "CLI, Web und Desktop – ein Backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} kostenlose Subdomains unter {freeDomainSuffix} bei Verbindung mit Openship Cloud"
+  },
+  "selfHosted": {
+    "name": "Selbst gehostet",
+    "tagline": "Die komplette Plattform auf eigenen Maschinen betreiben. Jeder Linux-Server, jeder Anbieter, jede Region. Keine verbrauchsabhängige Abrechnung, keine Nutzerlimits, keine Telemetrie.",
+    "priceLabel": "Kostenlos",
+    "priceNote": "Apache 2.0 – für immer kostenlos, keine Kreditkarte",
+    "cta": "Self-Hosting starten"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} Compute-Minuten",
+    "pack_25k": "{computeMinutes} Compute-Minuten",
+    "pack_100k": "{computeMinutes} Compute-Minuten"
+  },
+  "ui": {
+    "perMonth": "/Mon.",
+    "perYear": "/Jahr",
+    "custom": "Individuell",
+    "free": "Kostenlos",
+    "unlimited": "Unbegrenzt",
+    "mostPopular": "Am beliebtesten",
+    "monthsFree": "{months} Monate kostenlos",
+    "ctaStart": "Kostenlos starten",
+    "ctaChoose": "{name} wählen",
+    "ctaContact": "Vertrieb kontaktieren",
+    "billedMonthly": "monatliche Abrechnung, jederzeit kündbar",
+    "campaignBadge": "{percentOff} % Rabatt",
+    "campaignEnds": "Angebot endet am {date}",
+    "wasPrice": "vorher {price}",
+    "standardTitle": "In jedem Plan enthalten",
+    "creditPackNote": "≈ {appHours} Stunden einer kleinen App oder {buildMinutes} Build-Minuten"
+  }
+}

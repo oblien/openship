@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Padrões",
       "settings": "Configurações",
+      "dns": "DNS",
       "notifications": "Notificações",
       "team": "Equipe",
       "members": "Membros",
@@ -47,11 +48,12 @@
     "title": "Configurações",
     "tabs": {
       "general": "Geral",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "Tokens de API",
       "mcp": "MCP",
       "team": "Equipe",
       "notifications": "Notificações",
-      "audit": "Registro de auditoria",
+      "credentials": "Credenciais",
       "cloud": "Cloud",
       "infrastructure": "Infraestrutura",
       "instance": "Instância"
@@ -113,10 +115,6 @@
     "noServers": "Nenhum servidor configurado ainda - adicione um pelo seletor de implantação.",
     "clearDefault": "Limpar padrão (perguntar sempre)",
     "targets": {
-      "local": {
-        "label": "Esta Máquina",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Meu Servidor",
         "desc": "Um servidor SSH configurado"
@@ -128,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "seu servidor",
-      "cloud": "Openship Cloud",
-      "local": "Esta Máquina"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Escolha um servidor primeiro",
@@ -160,6 +157,64 @@
     "toast": {
       "setTo": "Modo de build definido como {mode}",
       "failed": "Falha ao atualizar o modo de build"
+    }
+  },
+  "githubSources": {
+    "title": "Aplicativos GitHub auto-hospedados",
+    "description": "Controle a conexão do GitHub nesta instância com credenciais criptografadas, webhooks diretos e tokens de instalação de curta duração.",
+    "publicUrlRequired": "Configure primeiro uma URL HTTPS pública para esta instância do Openship. O GitHub precisa alcançar o retorno de configuração e o webhook.",
+    "createWithGithub": "Criar com o GitHub",
+    "registerExisting": "Registrar aplicativo existente",
+    "manifestHelp": "O Openship enviará ao GitHub um manifesto com permissões mínimas. O GitHub criará o aplicativo, devolverá as credenciais uma única vez e abrirá a instalação nos repositórios.",
+    "nameLabel": "Nome da fonte",
+    "namePlaceholder": "GitHub da Acme",
+    "continueOnGithub": "Continuar no GitHub",
+    "empty": "Ainda não há aplicativos GitHub pertencentes ao espaço de trabalho.",
+    "defaultBadge": "Padrão",
+    "activeBadge": "Ativo",
+    "invalidBadge": "Requer atenção",
+    "webhookChanged": "Este aplicativo foi registrado com uma URL de webhook antiga. Atualize as URLs de webhook e configuração no GitHub e salve a fonte novamente.",
+    "installations": "Contas instaladas",
+    "noInstallations": "Ainda não instalado em uma conta.",
+    "suspended": "suspenso",
+    "installAccount": "Instalar em uma conta",
+    "verify": "Verificar",
+    "edit": "Editar",
+    "makeDefault": "Tornar padrão",
+    "manage": "Gerenciar no GitHub",
+    "delete": "Excluir",
+    "confirmDelete": "Excluir {name} do Openship? As credenciais locais e os vínculos de instalação serão removidos, mas o aplicativo continuará instalado no GitHub até ser desinstalado lá.",
+    "editHelp": "Deixe os campos secretos em branco para manter os valores criptografados já armazenados.",
+    "manualHelp": "Informe as credenciais de um aplicativo GitHub existente. O Openship verifica a chave privada antes de armazenar qualquer dado.",
+    "appIdLabel": "ID do aplicativo",
+    "clientIdLabel": "ID do cliente",
+    "clientSecretLabel": "Segredo do cliente",
+    "optionalHelp": "Opcional para autenticação por token de instalação.",
+    "leaveBlank": "Deixe em branco para manter o valor armazenado.",
+    "privateKeyLabel": "Chave privada (PEM)",
+    "privateKeyHelp": "Gere uma chave privada nas configurações do aplicativo GitHub e cole o arquivo PEM completo.",
+    "webhookSecretLabel": "Segredo do webhook",
+    "webhookSecretHelp": "Use o mesmo segredo forte nas configurações de webhook do aplicativo (mínimo de 16 caracteres).",
+    "enterpriseSettings": "Configurações do GitHub Enterprise",
+    "webUrlLabel": "URL web do GitHub",
+    "apiUrlLabel": "URL da API do GitHub",
+    "defaultLabel": "Usar este aplicativo como fonte padrão",
+    "setupUrlLabel": "URL de configuração",
+    "webhookUrlLabel": "URL do webhook",
+    "registerAndInstall": "Registrar e instalar",
+    "toast": {
+      "loadFailed": "Não foi possível carregar as fontes de aplicativos GitHub.",
+      "createFailed": "Não foi possível iniciar a criação do aplicativo GitHub.",
+      "installFailed": "Não foi possível abrir a instalação do aplicativo GitHub.",
+      "verified": "Aplicativo GitHub verificado.",
+      "verifyFailed": "Falha ao verificar o aplicativo GitHub.",
+      "defaultChanged": "Aplicativo GitHub padrão alterado.",
+      "defaultFailed": "Não foi possível alterar o aplicativo GitHub padrão.",
+      "deleted": "Fonte do aplicativo GitHub excluída.",
+      "deleteFailed": "Não foi possível excluir a fonte do aplicativo GitHub.",
+      "updated": "Fonte do aplicativo GitHub atualizada.",
+      "created": "Aplicativo GitHub registrado.",
+      "saveFailed": "Não foi possível salvar a fonte do aplicativo GitHub."
     }
   },
   "cloneCredentials": {
@@ -286,6 +341,7 @@
     "you": "(você)",
     "removeMember": "Remover membro",
     "pendingInvitations": "Convites pendentes ({count})",
+    "copyInviteLink": "Copiar link do convite",
     "invitedAs": "Convidado como {role} - expira {date}",
     "roles": {
       "owner": "Proprietário",
@@ -329,6 +385,7 @@
       "updateRoleFailed": "Falha ao atualizar o perfil",
       "removeFailed": "Falha ao remover",
       "cancelFailed": "Falha ao cancelar",
+      "copyInviteFailed": "Não foi possível copiar o link do convite",
       "accessUpdated": "Acesso atualizado",
       "loadGrantsFailed": "Falha ao carregar as concessões",
       "deleteFailed": "Não foi possível excluir o espaço de trabalho",
@@ -359,9 +416,11 @@
     "pickerTitle": "Acesso inicial a recursos",
     "pickerDesc": "Membros restritos começam sem acesso. Escolha o que este convite libera assim que for aceito — você pode conceder mais depois pela linha do membro.",
     "sendInvite": "Enviar convite",
+    "createInviteLink": "Criar link de convite",
     "toast": {
       "failedSend": "Falha ao enviar o convite",
       "invitationSent": "Convite enviado para {email}",
+      "invitationLinkCreated": "Link de convite criado — copie-o em Convites pendentes",
       "personalOrgBlocked": "Espaços de trabalho pessoais não podem convidar membros. Crie primeiro uma organização de equipe e depois envie os convites.",
       "updateMailSourceFailed": "Falha ao atualizar a fonte de e-mail"
     }
@@ -591,13 +650,31 @@
     "updatesOne": "1 atualização disponível",
     "updatesMany": "{n} atualizações disponíveis",
     "allHealthy": "Todos os componentes da plataforma estão atualizados",
-    "manageLink": "Gerenciar em Servidores"
+    "manageLink": "Gerenciar em Servidores",
+    "hostControlLabel": "Implantar nesta máquina",
+    "hostControlDesc": "Permite que o OpenShip implante aplicativos no servidor em que ele é executado, junto com os seus servidores conectados. Desativado se instalado com --no-host-control (apenas plano de controle) — ative para adicionar esta máquina como destino de implantação.",
+    "hostControlEnvNote": "Esta máquina foi definida como apenas plano de controle na instalação (--no-host-control). Ativar isto substitui essa opção para que o OpenShip possa implantar aqui.",
+    "hostControlError": "Não foi possível alterar o controle do host — apenas o proprietário do espaço de trabalho desta máquina pode."
   },
   "dataTransfer": {
     "export": {
       "title": "Exportar dados",
       "description": "Baixe todo o banco de dados da instância como um arquivo.",
       "intro": "Cria um snapshot portátil de tudo — projetos, servidores, implantações, configurações. Defina uma frase-senha para incluir seus segredos (variáveis de ambiente, tokens, credenciais SSH); eles são recriptografados sob ela, então o arquivo é seguro para mover. Deixe em branco para exportar sem segredos.",
+      "filterTitle": "Histórico opcional",
+      "filterDescription": "Configuração, projetos, servidores, usuários e credenciais são sempre incluídos. Desmarque históricos desnecessários para reduzir exportações grandes.",
+      "filterAnalytics": "Análises e amostras de uso",
+      "filterActivity": "Histórico de auditoria e notificações",
+      "filterBackups": "Histórico de backups e restaurações",
+      "filterIncidents": "Histórico de incidentes de integridade",
+      "filterMigrations": "Histórico de migrações do Docker",
+      "coreRows": "Linhas sempre incluídas",
+      "selectedRows": "Linhas selecionadas para exportação",
+      "countUnavailable": "indisponível",
+      "transferSecretNotice": "Para mover corretamente credenciais como senhas e chaves SSH, variáveis de ambiente, tokens e credenciais de backup, gere ou informe um segredo de transferência abaixo. Guarde-o separadamente e informe o mesmo segredo na importação. Não copie o BETTER_AUTH_SECRET da instância para o destino.",
+      "generateTransferSecret": "Gerar segredo de transferência",
+      "copyTransferSecret": "Copiar segredo de transferência",
+      "copiedTransferSecret": "Segredo de transferência copiado. Guarde-o com segurança para a importação.",
       "passphraseLabel": "Frase-senha (opcional)",
       "passphrasePlaceholder": "Protege seus segredos",
       "confirmLabel": "Confirmar frase-senha",
@@ -779,6 +856,36 @@
     "toast": {
       "setTo": "Estratégia de roteamento definida como {mode}",
       "failed": "Falha ao atualizar a estratégia de roteamento"
+    }
+  },
+  "credentials": {
+    "title": "Credenciais",
+    "description": "Tokens e logins que o Openship usa em seu nome — transferência de imagens privadas e escrita de registos DNS. Guardados cifrados e nunca mostrados de novo.",
+    "noProviders": "Não há fornecedores de credenciais disponíveis nesta instância.",
+    "noneForProvider": "Ainda não adicionou nenhuma.",
+    "add": "Adicionar",
+    "edit": "Editar",
+    "save": "Guardar alterações",
+    "connect": "Adicionar credencial",
+    "delete": "Eliminar",
+    "verify": "Verificar novamente com o fornecedor",
+    "badgeActive": "A funcionar",
+    "badgeInvalid": "Requer atenção",
+    "fieldName": "Etiqueta",
+    "namePlaceholder": "ex.: GHCR só leitura",
+    "secretKeptPlaceholder": "•••••••• (guardado — deixe vazio para manter)",
+    "selectPlaceholder": "Escolher…",
+    "verifyNote": "O Openship verifica a credencial com o fornecedor antes de a guardar.",
+    "confirmDelete": "Eliminar \"{name}\"? Tudo o que depende dela deixa de funcionar.",
+    "toast": {
+      "loadFailed": "Não foi possível carregar as credenciais",
+      "created": "Credencial adicionada",
+      "updated": "Credencial atualizada",
+      "deleted": "Credencial eliminada",
+      "saveFailed": "Não foi possível guardar a credencial",
+      "deleteFailed": "Não foi possível eliminar a credencial",
+      "verifyOk": "O fornecedor aceitou a credencial",
+      "verifyFailed": "O fornecedor rejeitou a credencial"
     }
   }
 }

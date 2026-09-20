@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTRPC } from '@/providers/query-provider';
+import { runtimeBranding } from '@/lib/runtime-branding';
 
 /** OpenShip mark - a hollow ring. Matches packages/dashboard's `<Logo>`. */
 function OpenshipLogo({ size = 44 }: { size?: number }) {
@@ -53,6 +54,11 @@ export function LoginClient() {
   const heading = branding?.loginHeading ?? FALLBACK_BRANDING.loginHeading;
   const subtext = branding?.loginSubtext ?? FALLBACK_BRANDING.loginSubtext;
   const footer = branding?.loginFooter ?? FALLBACK_BRANDING.loginFooter;
+  // Seeded from the value the server embedded in this document, so the row is
+  // right on FIRST paint - the query result would arrive a beat later and flash
+  // the vendor row in or out. The live query still wins once it resolves, so a
+  // PATCH mid-session is picked up. Only an explicit `false` hides it.
+  const showPoweredBy = branding?.showPoweredBy ?? runtimeBranding().showPoweredBy;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -207,58 +213,61 @@ export function LoginClient() {
       </main>
 
       {/* Footer - transparent, no border, no glass. Sits flush over the
-          gradient. */}
-      <footer className="relative z-10">
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-6 py-6 sm:flex-row">
-          <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-            <span>Powered by</span>
-            <a
-              href="https://openship.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-foreground transition-colors hover:text-foreground/70"
-            >
-              OpenShip
-            </a>
+          gradient. Vendor chrome: hidden entirely when the operator has
+          branded this deployment (GH-568). */}
+      {showPoweredBy && (
+        <footer className="relative z-10">
+          <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-6 py-6 sm:flex-row">
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <span>Powered by</span>
+              <a
+                href="https://openship.io"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-foreground transition-colors hover:text-foreground/70"
+              >
+                OpenShip
+              </a>
+            </div>
+            <nav className="flex items-center gap-6 text-[13px] text-muted-foreground">
+              <a
+                href="https://openship.io/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-foreground"
+              >
+                Docs
+              </a>
+              <a
+                href="https://openship.io/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-foreground"
+              >
+                Privacy
+              </a>
+              <a
+                href="https://openship.io/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-foreground"
+              >
+                Terms
+              </a>
+              <a
+                href="https://github.com/oblien/openship"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="GitHub"
+                className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+              >
+                <GitHubMark className="h-4 w-4" />
+                <span className="hidden sm:inline">GitHub</span>
+              </a>
+            </nav>
           </div>
-          <nav className="flex items-center gap-6 text-[13px] text-muted-foreground">
-            <a
-              href="https://openship.io/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-foreground"
-            >
-              Docs
-            </a>
-            <a
-              href="https://openship.io/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-foreground"
-            >
-              Privacy
-            </a>
-            <a
-              href="https://openship.io/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-foreground"
-            >
-              Terms
-            </a>
-            <a
-              href="https://github.com/oblien/openship"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="GitHub"
-              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-            >
-              <GitHubMark className="h-4 w-4" />
-              <span className="hidden sm:inline">GitHub</span>
-            </a>
-          </nav>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

@@ -1,0 +1,47 @@
+---
+title: Runnable examples
+description: Run the installed SDK through a complete local project lifecycle.
+---
+
+The package includes an executable example that uses public imports, real storage, and the shared
+deployment pipeline.
+
+## Run the native lifecycle
+
+After [installing the SDK tarball](/docs/api/sdk/installation) in a Node project:
+
+```bash
+node node_modules/openship/examples/native-lifecycle.mjs
+```
+
+Copy that file into your project to adapt it. The example:
+
+1. Provisions two users and selects their organization scopes.
+2. Deploys generated HTML and waits for a ready release.
+3. Updates configuration and deploys new files into the same project.
+4. Checks deployment history, tenant isolation, and session revocation.
+5. Closes and reopens persistent storage, then checks saved configuration and masked secrets.
+6. Deletes the project, drains the installation, and removes its temporary state.
+
+Assertions fail the process if a step does not behave as expected. The example creates its own
+temporary directory and needs no API credential, Docker daemon, or external database.
+
+## What it verifies
+
+The installed-package checks run this exact file outside the repository on Node 22 and 24 and
+typecheck it against the public declarations. Related package probes check release-file contents,
+reopening, physical cleanup, ESM/CommonJS imports, and the installed CLI.
+
+The example uses the bare runtime with `routing: "none"`, so it does not serve a public URL.
+Live Cloud, Docker, SSH, and public routing are separate integration checks.
+
+## Adapt a smaller workflow
+
+| Task | Example |
+| --- | --- |
+| Connect to your installation | [Remote client](/docs/api/sdk/client#connect) |
+| Embed a persistent installation | [Native setup](/docs/api/sdk/native#create-an-installation-and-deploy) |
+| Create a customer workspace | [Identity provisioning](/docs/api/sdk/identity#provision-a-customer-workspace) |
+| Deploy generated files or a directory | [Deployment workflows](/docs/api/deployments) |
+| Handle errors or stream logs | [Results and errors](/docs/api/sdk/errors) |
+| Use the CLI against native storage | [Native CLI](/docs/cli/native) |

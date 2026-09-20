@@ -16,7 +16,7 @@
  */
 
 /** Cloud-metered tiers + the two self-hosted-only selections. */
-export type ResourceTier = "unlimited" | "micro" | "low" | "medium" | "high" | "custom";
+export type ResourceTier = "unlimited" | "micro" | "low" | "medium" | "high" | "xlarge" | "custom";
 
 /** Tiers that map to a fixed spec (i.e. everything the caller can't type into). */
 export type FixedResourceTier = Exclude<ResourceTier, "custom" | "unlimited">;
@@ -39,11 +39,17 @@ export const RESOURCE_TIER_SPECS: Record<FixedResourceTier, ResourceValues> = {
   low: { cpuCores: 0.5, memoryMb: 512, diskMb: 8192 },
   medium: { cpuCores: 1, memoryMb: 1024, diskMb: 16384 },
   high: { cpuCores: 2, memoryMb: 2048, diskMb: 32768 },
+  // The table stopped at `high` (2 vCPU), which meant the top paid plan could
+  // offer no more POWER per service than the one below it — only more services —
+  // and anything larger was reachable only through `custom`, the one path with no
+  // bounds at all. 4 vCPU / 8 GB matches the build machine and the
+  // resource-schema ceiling, so it needs no new limits anywhere.
+  xlarge: { cpuCores: 4, memoryMb: 8192, diskMb: 65536 },
 };
 
 /** Ordered for pickers (cheapest → largest). `unlimited`/`custom` are appended
  *  by the UI because their placement differs per surface. */
-export const RESOURCE_TIER_ORDER: FixedResourceTier[] = ["micro", "low", "medium", "high"];
+export const RESOURCE_TIER_ORDER: FixedResourceTier[] = ["micro", "low", "medium", "high", "xlarge"];
 
 /** Every selectable tier, self-hosted included. Request validators derive their
  *  accepted set from this so adding a tier can't leave one schema behind. */
@@ -74,6 +80,20 @@ export interface HostCapacity {
   memoryMb: number;
   /** Where the numbers came from, for UI disclosure and debugging. */
   source: "docker" | "local" | "unknown";
+}
+
+/** Project resource settings returned by the API and consumed by the dashboard. */
+export interface ProjectResources {
+  production: ResourceValues;
+  build: ResourceValues;
+  sleepMode: string;
+  port: number;
+  /** Preset matching the saved production values. */
+  tier: ResourceTier;
+  /** Target-machine ceiling; `source: "unknown"` means the probe failed. */
+  capacity?: HostCapacity;
+  /** Cloud targets require limits; self-hosted targets may use the whole machine. */
+  requiresLimit: boolean;
 }
 
 export const UNKNOWN_CAPACITY: HostCapacity = { cpuCores: 0, memoryMb: 0, source: "unknown" };
@@ -152,6 +172,99 @@ export function validateAgainstCapacity(
     }
   }
   return null;
+}
+
+// ─── App requirements vs the machine ────────────────────────────────────────
+
+/**
+ * What an app needs from the machine it runs on, declared in its catalog entry
+ * (`minResources`). Only the two things a host can actually be probed for — disk
+ * isn't readable through the daemon's `/info`, and a number we can't verify would
+ * be a refusal based on a guess.
+ *
+ * A MINIMUM, not a limit: it never sizes a container (that's `ResourceValues`),
+ * it only decides whether this app has any business being installed here.
+ */
+export interface AppMinResources {
+  /** Total RAM the app needs, in MB. */
+  memoryMb?: number;
+  /** vCPU the app needs. */
+  cpuCores?: number;
+}
+
+/** One unmet requirement — declared vs what the machine reported. */
+export interface ResourceShortfall {
+  needed: number;
+  available: number;
+}
+
+export interface ResourceFit {
+  /** False ONLY when a known capacity is measurably short of a declared minimum. */
+  ok: boolean;
+  memory?: ResourceShortfall;
+  cpu?: ResourceShortfall;
+}
+
+/**
+ * A "16 GB" machine reports ~15.6 GB: firmware and the kernel take their cut
+ * before Docker ever sees MemTotal, so an app declaring 16384 MB would be refused
+ * on exactly the box it was written for. Allow a tenth under the declared figure —
+ * far too small to let a 4 GB box pass a 16 GB requirement, big enough that the
+ * declared number can be the round one an operator recognises.
+ */
+const CAPACITY_TOLERANCE = 0.9;
+
+/**
+ * Does this machine meet the app's declared minimum?
+ *
+ * An unknown reading (0 / probe failed) never fails the check — same rule as
+ * `validateAgainstCapacity`, and for the same reason: an unreachable box means we
+ * didn't look, not that the hardware is too small. Pure, so both the install
+ * preflight and the wizard's notice read the identical verdict.
+ */
+export function fitsCapacity(
+  min: AppMinResources | null | undefined,
+  capacity: HostCapacity,
+): ResourceFit {
+  const fit: ResourceFit = { ok: true };
+  if (!min) return fit;
+
+  if (min.memoryMb && min.memoryMb > 0 && capacity.memoryMb > 0) {
+    if (capacity.memoryMb < min.memoryMb * CAPACITY_TOLERANCE) {
+      fit.ok = false;
+      fit.memory = { needed: min.memoryMb, available: capacity.memoryMb };
+    }
+  }
+  if (min.cpuCores && min.cpuCores > 0 && capacity.cpuCores > 0) {
+    if (capacity.cpuCores < min.cpuCores * CAPACITY_TOLERANCE) {
+      fit.ok = false;
+      fit.cpu = { needed: min.cpuCores, available: capacity.cpuCores };
+    }
+  }
+  return fit;
+}
+
+/** True when the app declares something worth checking at all. */
+export function hasMinResources(min?: AppMinResources | null): boolean {
+  return !!min && ((min.memoryMb ?? 0) > 0 || (min.cpuCores ?? 0) > 0);
+}
+
+/** The shortfall as one English sentence — the API's refusal message. The
+ *  dashboard builds its own from the same numbers, translated. */
+export function describeResourceFit(fit: ResourceFit): string | null {
+  if (fit.ok) return null;
+  const parts: string[] = [];
+  if (fit.memory) {
+    parts.push(
+      `${formatMemoryMb(fit.memory.needed)} of RAM (this machine has ${formatMemoryMb(fit.memory.available)})`,
+    );
+  }
+  if (fit.cpu) {
+    parts.push(
+      `${formatCpuCores(fit.cpu.needed)} (this machine has ${formatCpuCores(fit.cpu.available)})`,
+    );
+  }
+  return parts.length > 0 ? parts.join(" and ") : null;
 }
 
 /** "no limit" / "512 MB" / "3 GB" — shared by the API's log lines and the UI. */

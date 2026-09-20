@@ -1,83 +1,36 @@
 ---
-title: Introduction
-description: What Openship is, who it's for, and the three places you can run your apps — your own machine, your own server, or the cloud.
+title: Openship documentation
+description: Deploy applications, operate your infrastructure, and build integrations with Openship.
 ---
 
-Openship is a tool that takes your code and turns it into a real, working website or app with its own web
-address. You point it at your code once, and it does the boring parts — building, wiring up a web address,
-turning on HTTPS — for you.
+Openship builds and deploys applications from Git repositories, local folders, generated files, and app
+templates. Run workloads on your machine, a connected server, or Openship Cloud.
 
-Here's a way to picture it: your code is a recipe, and Openship is the kitchen. You hand it the recipe, and
-it cooks the meal and puts it on the table. You don't have to know how the oven works.
-
-Two things make Openship a little different from other tools like it:
-
-- **It's open source.** The whole thing is free to use, read, and change, under the Apache 2.0 license.
-- **You choose where it lives.** You can run Openship — and the apps you deploy with it — on your own
-  computer, on your own server, or on Openship Cloud. Your stuff stays where you put it.
-
-<Callout title="Screenshot">The Openship dashboard home showing a list of projects with their live status. *(screenshot pending)*</Callout>
-
-## Who it's for
-
-If you have some code and you want it online without becoming a server expert, Openship is for you. That
-covers a lot of people:
-
-- A solo developer shipping a side project from a laptop.
-- A team running real production apps who want one tool for everything.
-- Anyone who'd rather own their setup than rent it from a big provider.
-
-You do **not** need to know Docker, write pipeline files, or hand-edit YAML. Openship looks at your code,
-figures out what kind of app it is, and sets things up for you.
-
-## Where your code comes from
-
-Openship can pick up your app from two places:
-
-- **From GitHub** — connect a repository, and Openship pulls the code and deploys it. It can even redeploy
-  by itself every time you push. See [Deploy from GitHub](/docs/guides/deploy-from-github).
-- **From a folder** — point Openship at a folder on your computer and deploy what's there, no Git required.
-
-Either way, the next part is the same.
-
-## The three ways to run your apps
-
-When you deploy, Openship asks one important question: *where should this app actually run?* There are three
-answers, and you can pick a different one for each project.
+## Start here
 
 <Cards>
-  <Card title="Local — on this machine" description="Runs right on the computer you're using. Perfect for trying things out, or for the desktop app where everything lives in one place." />
-  <Card title="Your server" description="Runs on a Linux server you own and have connected to Openship — a VPS, a dedicated box, or a machine at home. Openship reaches it over SSH." />
-  <Card title="Openship Cloud" description="We run it for you on managed cloud compute. No server to look after — sign up and deploy." />
+  <Card title="Deploy your first app" href="/docs/getting-started/quickstart" description="Choose an installation, connect your code, and follow a deployment." />
+  <Card title="Install Openship" href="/docs/getting-started/installation" description="Set up the desktop app, a server, or a development checkout." />
+  <Card title="Use the CLI" href="/docs/cli" description="Deploy and manage projects from a terminal or CI job." />
+  <Card title="Use the Node.js SDK" href="/docs/api/sdk" description="Connect to an existing API or embed the platform in your application." />
 </Cards>
 
-The same dashboard, CLI, and steps work for all three. Moving an app to a different place later doesn't mean
-learning a new tool.
+## Find a task
 
-<Callout title="One app, one home" type="info">
-A project lives in exactly one of these places at a time — it's either fully local, fully on your server, or
-fully in the cloud, never split across them. If you're curious how that works under the hood, see
-[Architecture overview](/docs/architecture/overview).
-</Callout>
+| Task | Read |
+| --- | --- |
+| Deploy from Git or a folder | [Deployment guides](/docs/guides#deploy) |
+| Configure domains, secrets, and storage | [Application configuration](/docs/guides#configure) |
+| Inspect logs, back up data, or fix a failure | [Operations](/docs/guides#operate) |
+| Move projects or an installation | [Migration guides](/docs/guides#move) |
+| Learn the dashboard | [Dashboard guide](/docs/dashboard) |
+| Call HTTP endpoints | [API reference](/docs/api) |
+| Connect an AI tool | [MCP guide](/docs/mcp) |
 
-## Three ways to drive it
+## Key concepts
 
-However you like to work, there's a way in:
+An **organization** owns projects and grants access to its members. A **project** holds source and
+configuration. A **deployment** is one build and release of that project. A **service** is a workload
+inside a project, such as an application or database.
 
-- **Desktop app** — a full window with buttons, live logs, and one-click everything. Bundles the whole
-  platform, so it's great for deploying straight from a folder.
-- **Web dashboard** — the same screens in your browser, built for teams to share.
-- **CLI** — type commands in your terminal; ideal for scripts and automation.
-
-There's also a REST API and an MCP server (a way for AI tools to drive Openship) for anyone building on top.
-
-## Pick your path
-
-New here? Start with the Quickstart. Setting up a server of your own? Start with Installation.
-
-<Cards>
-  <Card title="Quickstart" href="/docs/getting-started/quickstart" description="Go from zero to a live app in a couple of minutes." />
-  <Card title="Installation" href="/docs/getting-started/installation" description="Set up Openship on your own machine, server, or the cloud." />
-  <Card title="First deployment" href="/docs/getting-started/first-deployment" description="Walk through deploying your first real app, step by step." />
-  <Card title="Core concepts" href="/docs/getting-started/core-concepts" description="The handful of words Openship uses — projects, deployments, servers, domains, and more — in plain language." />
-</Cards>
+See [core concepts](/docs/getting-started/core-concepts) for environments, runtimes, servers, and domains.

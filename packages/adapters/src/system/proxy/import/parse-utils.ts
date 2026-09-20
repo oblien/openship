@@ -1,14 +1,11 @@
 /** Small, dependency-free helpers for reading & parsing proxy configs. */
 
-import type { CommandExecutor } from "../../../types";
-
-export async function tryExec(executor: CommandExecutor, command: string): Promise<string | null> {
-  try {
-    return await executor.exec(command);
-  } catch {
-    return null;
-  }
-}
+/**
+ * Re-exported so the seven parsers here keep one import for "the things I read configs
+ * with", rather than each growing a second import for the executor half. The
+ * implementation — and the `null` vs `""` rule the parsers depend on — lives in one place.
+ */
+export { tryExec } from "../../probe-exec";
 
 /**
  * Strip `#` line comments (nginx / caddy / apache all use them) — but not a `#`
@@ -126,6 +123,6 @@ export function collapseByHost<T>(
   return { kept, dropped };
 }
 
-export function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+/** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
+ *  this package read `sq(...)`; there is one implementation, in core. */
+export { shellQuote as sq } from "@repo/core";

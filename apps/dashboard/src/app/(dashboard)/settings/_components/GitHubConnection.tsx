@@ -23,7 +23,12 @@ import {
 import { useCloud } from "@/context/CloudContext";
 import { useModal } from "@/context/ModalContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { githubApi, settingsApi, getApiErrorMessage } from "@/lib/api";
+import {
+  GITHUB_SOURCES_CHANGED_EVENT,
+  githubApi,
+  settingsApi,
+  getApiErrorMessage,
+} from "@/lib/api";
 
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -35,7 +40,7 @@ const EMPTY_STATE: GitHubConnectionState = {
 
 /**
  * What the backend says is offerable here. Mirrors GitHubCapabilities in
- * apps/api/src/modules/github/github.capabilities.ts.
+ * packages/platform/src/engine/modules/github/github.capabilities.ts.
  *
  * The dashboard deliberately derives NOTHING about availability itself anymore —
  * it used to branch on `selfHosted` / `deployMode` and drifted from the resolver
@@ -71,6 +76,11 @@ export function GitHubConnection() {
   const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  // Workspace-owned Apps are created, installed, edited and removed by the
+  // source manager above this card. This flag prevents the legacy Openship App
+  // controls from impersonating those sources (especially its OAuth-only
+  // "Disconnect", which cannot remove a custom source).
+  const [customSourcesConfigured, setCustomSourcesConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   // "Forward my git identity to build servers" (Settings → Clone credentials).
   // DESKTOP only — `relayConfigEligible` requires isDesktop. When on, the stored
@@ -94,11 +104,13 @@ export function GitHubConnection() {
       setAccounts(res?.accounts ?? []);
       setInstallUrl(res?.installUrl || null);
       setCapabilities((res?.capabilities as Capabilities | undefined) ?? null);
+      setCustomSourcesConfigured(res?.customSourcesConfigured === true);
     } catch {
       setState(EMPTY_STATE);
       setAccounts([]);
       setInstallUrl(null);
       setCapabilities(null);
+      setCustomSourcesConfigured(false);
     } finally {
       setLoading(false);
     }
@@ -111,6 +123,20 @@ export function GitHubConnection() {
       .then((r) => setForwardGit(!!r.forwardGitToServer))
       .catch(() => {});
   }, [loadStatus]);
+
+  useEffect(() => {
+    const refreshForSourceChange = () => void loadStatus(true);
+    window.addEventListener(GITHUB_SOURCES_CHANGED_EVENT, refreshForSourceChange);
+    return () => window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, refreshForSourceChange);
+  }, [loadStatus]);
+
+  // The provider finishes device/token sign-in asynchronously. This card owns
+  // a separate status snapshot, so refresh it when the pending action finishes.
+  const previousActionRef = useRef(cliAction);
+  useEffect(() => {
+    if (previousActionRef.current && !cliAction) void loadStatus(true);
+    previousActionRef.current = cliAction;
+  }, [cliAction, loadStatus]);
 
   // Connect/install opens a separate window (OAuth popup or the GitHub App
   // install tab). The connect call returns as soon as that window opens, so
@@ -153,10 +179,8 @@ export function GitHubConnection() {
     [ctxDisconnect, loadStatus],
   );
 
-  // Self-hosted needs an active Openship Cloud connection to use the
-  // GitHub App at all — the App private key lives in openship.io and
-  // self-hosted instances proxy through it. PAT + gh CLI escape hatches
-  // don't require cloud.
+  // The backend decides whether the App is operator-owned locally or proxied
+  // through Openship Cloud. The dashboard only follows `requiresCloud`.
   const { connected: cloudConnected, startConnect: startCloudConnect } = useCloud();
   const { showModal, hideModal } = useModal();
   const { selfHosted: isSelfHosted, deployMode } = usePlatform();
@@ -170,16 +194,16 @@ export function GitHubConnection() {
     return m ? m.available : true;
   };
 
-  const promptDisconnect = (
-    source: "oauth" | "cli" | "all",
-    label: string,
-    body: string,
-  ) => {
+  const promptDisconnect = (source: "oauth" | "cli" | "all", label: string, body: string) => {
     const modalId = showModal({
       title: interpolate(t.settings.github.disconnectTitle, { label }),
       message: body,
       buttons: [
-        { label: t.settings.common.cancel, variant: "secondary", onClick: () => hideModal(modalId) },
+        {
+          label: t.settings.common.cancel,
+          variant: "secondary",
+          onClick: () => hideModal(modalId),
+        },
         {
           label: t.settings.github.disconnect,
           variant: "danger",
@@ -269,15 +293,19 @@ export function GitHubConnection() {
       iconBg="bg-foreground/5"
       iconColor="text-foreground"
     >
-      {loading ? (
+      {cliAction ? (
+        /* A login is in flight. It's the only actionable thing on the card, so it
+           replaces the chooser entirely instead of appearing underneath it. */
+        <DeviceFlowPanel
+          cliAction={cliAction}
+          onRefresh={() => void loadStatus(true)}
+          isDesktop={isDesktop}
+        />
+      ) : loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
           <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           {t.settings.github.checkingConnection}
         </div>
-      ) : !anyConnected && cliAction ? (
-        /* A login is in flight. It's the only actionable thing on the card, so it
-           replaces the chooser entirely instead of appearing underneath it. */
-        <DeviceFlowPanel cliAction={cliAction} onRefresh={() => void loadStatus(true)} isDesktop={isDesktop} />
       ) : anyConnected ? (
         <div className="space-y-4">
           {/* The identity that is actually authorizing clones, first. */}
@@ -298,7 +326,7 @@ export function GitHubConnection() {
             />
           )}
 
-          {appConnected && (
+          {appConnected && !customSourcesConfigured && (
             <div className="space-y-3">
               <ActiveIdentity
                 icon={Github}
@@ -315,7 +343,11 @@ export function GitHubConnection() {
                       className="flex items-center gap-3 rounded-xl bg-muted/30 px-3.5 py-2.5"
                     >
                       {acct.avatar_url ? (
-                        <img src={acct.avatar_url} alt={acct.login} className="size-7 rounded-full" />
+                        <img
+                          src={acct.avatar_url}
+                          alt={acct.login}
+                          className="size-7 rounded-full"
+                        />
                       ) : (
                         <div className="size-7 rounded-full bg-muted flex items-center justify-center">
                           <Github className="size-3.5 text-muted-foreground" />
@@ -325,7 +357,9 @@ export function GitHubConnection() {
                         <p className="text-sm font-medium text-foreground truncate">{acct.login}</p>
                       </div>
                       <span className="text-[10px] font-medium text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
-                        {acct.type === "Organization" ? t.settings.github.orgBadge : t.settings.github.userBadge}
+                        {acct.type === "Organization"
+                          ? t.settings.github.orgBadge
+                          : t.settings.github.userBadge}
                       </span>
                     </div>
                   ))}
@@ -374,7 +408,9 @@ export function GitHubConnection() {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
               >
                 {t.settings.github.changeMethod}
-                <ChevronDown className={`size-3.5 transition-transform ${showChangeMethod ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  className={`size-3.5 transition-transform ${showChangeMethod ? "rotate-180" : ""}`}
+                />
               </button>
               {/* Revoking is only possible ON GitHub, so the card has to be able
                   to send the operator there. Shown for the ACTIVE identity, same
@@ -390,21 +426,25 @@ export function GitHubConnection() {
                   <ExternalLink className="size-3" />
                 </a>
               )}
-              <button
-                onClick={() =>
-                  promptDisconnect(
-                    activeIsGh ? "cli" : "oauth",
-                    // Name what is being disconnected. This said "GitHub sign-in"
-                    // for every gh-side credential, including a pasted token.
-                    activeIsGh ? ghMethodLabel : t.settings.github.disconnectAppLabel,
-                    activeIsGh ? t.settings.github.ghCli.disconnectBody : t.settings.github.disconnectAppBody,
-                  )
-                }
-                className="ms-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-bg"
-              >
-                <Unplug className="size-3.5" />
-                {t.settings.github.disconnect}
-              </button>
+              {(activeIsGh || !customSourcesConfigured) && (
+                <button
+                  onClick={() =>
+                    promptDisconnect(
+                      activeIsGh ? "cli" : "oauth",
+                      // Name what is being disconnected. This said "GitHub sign-in"
+                      // for every gh-side credential, including a pasted token.
+                      activeIsGh ? ghMethodLabel : t.settings.github.disconnectAppLabel,
+                      activeIsGh
+                        ? t.settings.github.ghCli.disconnectBody
+                        : t.settings.github.disconnectAppBody,
+                    )
+                  }
+                  className="ms-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-bg"
+                >
+                  <Unplug className="size-3.5" />
+                  {t.settings.github.disconnect}
+                </button>
+              )}
             </div>
             {/* What Disconnect actually does. It clears the credential from this
                 instance and sweeps the caches; it cannot and does not revoke
@@ -424,7 +464,7 @@ export function GitHubConnection() {
                 cloudConnected={cloudConnected}
                 connecting={connecting}
                 showSignIn={!ghConnected}
-                showApp={!appConnected}
+                showApp={!appConnected && !customSourcesConfigured}
                 onSignIn={() => connect("cli")}
                 onConnectApp={() => connect("oauth")}
                 onConnectCloud={startCloudConnect}
@@ -460,7 +500,7 @@ export function GitHubConnection() {
             cloudConnected={cloudConnected}
             connecting={connecting}
             showSignIn
-            showApp
+            showApp={!customSourcesConfigured}
             primary
             onSignIn={() => connect("cli")}
             onConnectApp={() => connect("oauth")}
@@ -517,7 +557,9 @@ function CredentialProblem(props: {
       <div className="min-w-0 space-y-1">
         <p className={`text-sm font-medium ${rejected ? "text-danger" : "text-foreground"}`}>
           {interpolate(
-            rejected ? t.settings.github.credentialRejected : t.settings.github.credentialUnreachable,
+            rejected
+              ? t.settings.github.credentialRejected
+              : t.settings.github.credentialUnreachable,
             { method: methodLabel },
           )}
         </p>
@@ -579,8 +621,14 @@ function ActiveIdentity(props: {
   remoteNeedsOwnCredential?: boolean;
 }) {
   const {
-    icon: Icon, label, method, active, avatarUrl,
-    forwardEnabled, onManageForward, remoteNeedsOwnCredential,
+    icon: Icon,
+    label,
+    method,
+    active,
+    avatarUrl,
+    forwardEnabled,
+    onManageForward,
+    remoteNeedsOwnCredential,
   } = props;
   const { t } = useI18n();
   return (
@@ -649,14 +697,24 @@ function ActiveIdentity(props: {
  * device client id at all, and it says "on the server" because that is where the
  * command has to run.
  */
-function DeviceFlowPanel(props: { cliAction: CliAction; onRefresh: () => void; isDesktop: boolean }) {
+function DeviceFlowPanel(props: {
+  cliAction: CliAction;
+  onRefresh: () => void;
+  isDesktop: boolean;
+}) {
   const { cliAction, onRefresh, isDesktop } = props;
   const { t } = useI18n();
 
   if (cliAction.type === "token") {
     // `gh auth login` is a desktop-only hint — a VPS runs the API in a container
     // with no `gh` and no shell, so drop it there and keep the token field clean.
-    return <TokenForm message={cliAction.message} hint={isDesktop ? cliAction.command : undefined} onSaved={onRefresh} />;
+    return (
+      <TokenForm
+        message={cliAction.message}
+        hint={isDesktop ? cliAction.command : undefined}
+        onSaved={onRefresh}
+      />
+    );
   }
 
   if (cliAction.type === "device_flow") {
@@ -668,7 +726,9 @@ function DeviceFlowPanel(props: { cliAction: CliAction; onRefresh: () => void; i
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => void navigator.clipboard?.writeText(cliAction.userCode ?? "").catch(() => {})}
+            onClick={() =>
+              void navigator.clipboard?.writeText(cliAction.userCode ?? "").catch(() => {})
+            }
             title={t.settings.github.copyCode}
             className="rounded-md bg-muted px-3 py-1.5 font-mono text-base font-bold tracking-widest text-foreground hover:bg-muted/70 transition-colors"
           >
@@ -744,8 +804,18 @@ function MethodChooser(props: {
   onToken: () => void;
 }) {
   const {
-    can, appRequiresCloud, cloudConnected, connecting, showSignIn, showApp, primary,
-    onSignIn, onConnectApp, onConnectCloud, onSsh, onToken,
+    can,
+    appRequiresCloud,
+    cloudConnected,
+    connecting,
+    showSignIn,
+    showApp,
+    primary,
+    onSignIn,
+    onConnectApp,
+    onConnectCloud,
+    onSsh,
+    onToken,
   } = props;
   const { t } = useI18n();
 
@@ -770,8 +840,8 @@ function MethodChooser(props: {
     </button>
   );
 
-  // The App needs Openship Cloud on self-hosted (the private key lives in
-  // openship.io), so the row's action is cloud-connect until that's done.
+  // A cloud-backed App needs the cloud link first; an operator-owned local App
+  // reports requiresCloud=false and goes straight to its install flow.
   const needsCloudFirst = appRequiresCloud && !cloudConnected;
   const appRow = row(
     "app",
@@ -786,7 +856,15 @@ function MethodChooser(props: {
   const others = [
     ...(showApp && can("app") ? [appRow] : []),
     ...(can("ssh-key")
-      ? [row("ssh", KeyRound, t.settings.github.useSshPerServer, t.settings.github.methodSshDesc, onSsh)]
+      ? [
+          row(
+            "ssh",
+            KeyRound,
+            t.settings.github.useSshPerServer,
+            t.settings.github.methodSshDesc,
+            onSsh,
+          ),
+        ]
       : []),
     ...(can("token")
       ? [row("pat", Key, t.settings.github.usePat, t.settings.github.methodTokenDesc, onToken)]
@@ -815,7 +893,9 @@ function MethodChooser(props: {
           {connecting ? <Loader2 className="size-4 animate-spin" /> : <Github className="size-4" />}
           {t.settings.github.signIn}
         </button>
-        <p className="text-xs text-muted-foreground leading-relaxed">{t.settings.github.signInDesc}</p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {t.settings.github.signInDesc}
+        </p>
       </div>
       <MethodDisclosure summary={t.settings.github.otherMethods}>
         <div className="space-y-2">{others}</div>

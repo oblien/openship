@@ -11,7 +11,7 @@
  * Gracefully no-ops when the screenshot service is not configured.
  */
 
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

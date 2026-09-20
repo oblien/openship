@@ -7,6 +7,7 @@ import { runResolution, type SystemIssue } from "@/lib/api/issues";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/components/toast";
 import { useInfraFix } from "@/hooks/useInfraFix";
+import type { SystemPreparePresenter } from "@/hooks/useSystemPrepareModal";
 
 /**
  * Running a row's fix — shared by the feed page and the home attention card.
@@ -24,11 +25,12 @@ import { useInfraFix } from "@/hooks/useInfraFix";
 export function useIssueActions(
   /** Re-read the caller's own feed after a fix lands. */
   reload: (opts?: { silent?: boolean }) => void | Promise<void>,
+  present?: SystemPreparePresenter,
 ) {
   const { t } = useI18n();
   const c = t.issues.toast;
   const { toast } = useToast();
-  const openInfraFix = useInfraFix();
+  const openInfraFix = useInfraFix(present);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   /** Apply the item's first carried resolution, then refresh. */

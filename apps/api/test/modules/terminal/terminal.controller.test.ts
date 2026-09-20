@@ -47,18 +47,39 @@ const terminalSession = vi.hoisted(() => {
   };
 });
 
-vi.mock("@repo/db", () => ({ repos: { terminalSession } }));
+const server = vi.hoisted(() => ({
+  getInOrganization: vi.fn(async (_serverId: string, _orgId: string) => null),
+}));
+
+vi.mock("@repo/db", () => ({ repos: { terminalSession, server } }));
 vi.mock("../../../src/lib/ws", () => ({
   upgradeWebSocket: (fn: unknown) => fn,
 }));
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: vi.fn(), release: vi.fn() },
 }));
+vi.mock("../../../src/lib/permission", () => ({
+  permission: { assert: vi.fn() },
+  checkPermission: vi.fn(async () => true),
+}));
+// The user's fallback org — what the WS path used to resolve to, and must
+// no longer, when a ticket minted in a different org is presented.
+vi.mock("../../../src/middleware/active-organization", () => ({
+  resolveActiveOrganizationId: vi.fn(async () => "org_fallback"),
+}));
 
-import { teardown, type ConnState } from "../../../src/modules/terminal/terminal.controller";
+import {
+  teardown,
+  terminalWsHandler,
+  type ConnState,
+} from "../../../src/modules/terminal/terminal.controller";
+import { issueTerminalTicket } from "../../../src/lib/terminal-session-manager";
+import { checkPermission } from "../../../src/lib/permission";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
+import type { RequestContext } from "../../../src/lib/request-context";
 
 function fakeShell(): ShellSession {
   return {
@@ -170,4 +191,61 @@ describe("terminal.controller teardown", () => {
     await teardown(state, "client_close", null, false, true);
     expect(terminalSession.close).toHaveBeenCalledOnce();
   });
+});
+
+/** Minimal Hono-context stand-in for the WS upgrade factory. */
+function fakeUpgradeContext(token: string, serverId: string) {
+  const headers: Record<string, string> = {
+    origin: trustedOrigins[0]!,
+    "sec-websocket-protocol": `openship.terminal.v1+${token}`,
+  };
+  return {
+    req: {
+      header: (name: string) => headers[name.toLowerCase()],
+      param: (name: string) => (name === "serverId" ? serverId : undefined),
+      raw: { headers: new Headers() },
+    },
+    var: { clientIp: null },
+  };
+}
+
+describe("terminal.controller WS upgrade", () => {
+  it("scopes the socket to the ticket's org, not the user's fallback org", async () => {
+    // Ticket minted while the user was acting in org_ticket (the mint
+    // endpoint runs under authMiddleware, so ctx.organizationId is real).
+    const { token } = issueTerminalTicket(
+      { userId: "user_1", organizationId: "org_ticket" } as RequestContext,
+      "server_1",
+    );
+    server.getInOrganization.mockResolvedValue({
+      id: "server_1",
+    } as unknown as null);
+
+    const handler = terminalWsHandler as unknown as (
+      c: unknown,
+    ) => Promise<unknown>;
+    await handler(fakeUpgradeContext(token, "server_1"));
+
+    // Both tenant gates must see the ticket's org. Resolving the org from
+    // the user's memberships instead sends a member of several orgs to
+    // whichever one sorts first, and every server outside it 404s.
+    expect(checkPermission).toHaveBeenCalledWith("user_1", "org_ticket", {
+      resourceType: "server",
+      resourceId: "server_1",
+      action: "admin",
+    });
+    expect(server.getInOrganization).toHaveBeenCalledWith(
+      "server_1",
+      "org_ticket",
+    );
+  });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn() },
+  checkPermission: vi.fn(async () => true),
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

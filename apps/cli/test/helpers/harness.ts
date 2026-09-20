@@ -7,11 +7,38 @@
  *   - interceptExit — turn process.exit(code) into a thrown ExitError so a guard's
  *                     `process.exit(1)` becomes an assertable outcome, not a killed runner.
  *
- * Command modules build their request through the real api-client (URL building,
+ * Command modules build their request through the real SDK HTTP client (URL building,
  * header/auth, ApiError mapping all run for real); only `fetch` and the config/caps
  * seams are mocked, so these are end-to-end minus the socket.
  */
 import { vi } from "vitest";
+import { CommandExit } from "../../src/lib/command-exit";
+
+// ─── @repo/adapters partial mocks ────────────────────────────────────────────
+
+/**
+ * The docker-socket resolver, for the hand-built `vi.mock("@repo/adapters")`
+ * factories. compose.ts imports it to decide the HOST side of the api's socket
+ * mount, and a partial mock without it fails the whole file.
+ *
+ * A STUB, not the real one, and deliberately: the real resolver reads $DOCKER_HOST
+ * and `~/.docker`'s active context, so a case asserting which socket the compose
+ * file mounts would otherwise answer "whichever daemon this developer's machine
+ * happens to run" — Colima, Rancher, rootless — instead of what the case describes.
+ * The real precedence (context files, unix:// forms, tcp/ssh rejection) is covered
+ * where it lives, in packages/adapters/src/runtime/docker-transport.test.ts. This
+ * keeps only the part compose.ts's own logic is layered on: DOCKER_HOST, else the
+ * default.
+ */
+export const dockerSocketMock = {
+  DEFAULT_DOCKER_SOCKET_PATH: "/var/run/docker.sock",
+  resolveLocalDockerSocketPath: (_opts: unknown, env: NodeJS.ProcessEnv = process.env): string => {
+    const host = env.DOCKER_HOST?.trim() ?? "";
+    if (host.startsWith("unix://")) return host.slice("unix://".length).trim();
+    if (host.startsWith("/")) return host;
+    return "/var/run/docker.sock";
+  },
+};
 
 // ─── stdout / stderr capture ─────────────────────────────────────────────────
 
@@ -142,7 +169,10 @@ export async function runCommand(
     // Some actions signal failure via process.exitCode instead of exit().
     code = typeof process.exitCode === "number" ? process.exitCode : 0;
   } catch (e) {
-    if (e instanceof ExitError) code = e.code;
+    // Command factories may deliberately reload modules between runs. Resolve
+    // the current exit class as well as the one imported with this harness.
+    const CurrentCommandExit = (await import("../../src/lib/command-exit")).CommandExit;
+    if (e instanceof ExitError || e instanceof CommandExit || e instanceof CurrentCommandExit) code = e.code;
     else {
       process.exitCode = prevExitCode;
       cap.restore();

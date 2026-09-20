@@ -1,6 +1,6 @@
 ---
-title: Mail API
-description: Install and adopt an iRedMail stack over SSH, run the mail admin panel (domains, mailboxes, stats, backups, DNS, components), and deploy webmail.
+title: Mail
+description: Set up and operate a self-hosted mail server.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -15,88 +15,11 @@ Every route here is gated by `localOnly` and is **never mounted in Openship Clou
 dynamically imported only on self-hosted instances. On a cloud instance these paths return `404`.
 </Callout>
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api/mail`** — e.g. `https://your-host/api/mail/status`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and [auth model](/docs/security/auth) for details.
-</Callout>
-
 <Callout title="Every route is server-scoped" type="info">
 Most paths carry a `:serverId` (or take one in the body / `?serverId=`). Openship checks that the server
 belongs to your organization on every call — a `mail_server` grants SSH-level reach into the box, so a
 `serverId` outside your org returns `404`, indistinguishable from one that doesn't exist.
 </Callout>
-
-## Endpoints
-
-### Setup wizard
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/steps` | `mail_server:read` | List all setup steps and the total count. |
-| `GET /api/mail/status?serverId=` | `mail_server:read` | Current setup progress for a server (rendered from its on-server state file). |
-| `GET /api/mail/servers` | `mail_server:list` | List every server Openship has provisioned (or is provisioning) mail on. |
-| `DELETE /api/mail/servers/:serverId` | `mail_server:admin` | Stop managing a server (drops the DB row only; leaves the stack + state file intact). |
-| `POST /api/mail/scan` | `mail_server:write` | Probe a server for an existing iRedMail install + its on-server state (read-only). |
-| `POST /api/mail/adopt` | `mail_server:write` | Re-adopt a scanned server whose orchestrator state was lost. |
-| `POST /api/mail/setup` | `mail_server:write` | Start or resume the install wizard — returns an SSE stream. |
-| `POST /api/mail/setup/cancel` | `mail_server:write` | Cancel the running setup. |
-| `POST /api/mail/setup/dns-ack` | `mail_server:write` | Mark DNS (DKIM) records as configured, releasing the DNS gate. |
-| `POST /api/mail/setup/ptr-ack` | `mail_server:write` | Mark reverse-DNS (PTR) as configured, releasing the PTR gate. |
-| `POST /api/mail/setup/reset` | `mail_server:admin` | Wipe the on-server state file (does not touch iRedMail). |
-
-### Post-install
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/health/:serverId` | `mail_server:read` | Live systemd status of every mail-core daemon. |
-| `POST /api/mail/credentials/postmaster` | `mail_server:write` | Rotate the postmaster account password. |
-
-### Admin — domains
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/admin/:serverId/domains` | `mail_server:list` | List mail domains on the server. |
-| `POST /api/mail/admin/:serverId/domains` | `mail_server:write` | Add a mail domain. |
-| `GET /api/mail/admin/:serverId/domains/:domain` | `mail_server:read` | Get one domain's config. |
-| `PATCH /api/mail/admin/:serverId/domains/:domain` | `mail_server:write` | Update a domain (quotas, limits, active flag). |
-| `DELETE /api/mail/admin/:serverId/domains/:domain` | `mail_server:admin` | Delete a domain (add `?cascade=true` to remove its mailboxes too). |
-| `GET /api/mail/admin/:serverId/domains/:domain/dependents` | `mail_server:read` | Count mailboxes/aliases that depend on a domain. |
-| `GET /api/mail/admin/:serverId/domains/:domain/dns` | `mail_server:read` | DNS records + publish state for an additional domain. |
-| `POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge` | `mail_server:write` | Confirm a domain's DNS records are published. |
-| `GET /api/mail/admin/:serverId/domains-dns/pending` | `mail_server:read` | List additional domains whose DNS is still pending. |
-
-### Admin — mailboxes
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/admin/:serverId/mailboxes?domain=` | `mail_server:list` | List mailboxes in a domain. |
-| `POST /api/mail/admin/:serverId/mailboxes` | `mail_server:write` | Create a mailbox. |
-| `GET /api/mail/admin/:serverId/mailboxes/:email` | `mail_server:read` | Get one mailbox. |
-| `PATCH /api/mail/admin/:serverId/mailboxes/:email` | `mail_server:write` | Update a mailbox (name, password, quota, active). |
-| `DELETE /api/mail/admin/:serverId/mailboxes/:email` | `mail_server:admin` | Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete). |
-
-### Admin — stats, backups, DNS, components
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/admin/:serverId/stats` | `mail_server:read` | Aggregate counts (domains, mailboxes, storage). |
-| `GET /api/mail/admin/:serverId/backup-policy` | `mail_server:read` | The mail server's backup policy (or `null`). |
-| `POST /api/mail/admin/:serverId/backup-policy` | `mail_server:admin` | Create or update the backup policy. |
-| `GET /api/mail/admin/:serverId/backup-runs` | `mail_server:read` | Recent backup runs for the mail server. |
-| `GET /api/mail/admin/:serverId/dns-scan?domain=` | `mail_server:read` | Live DNS health scan (MX/SPF/DKIM/DMARC/PTR). |
-| `POST /api/mail/admin/:serverId/test-email` | `mail_server:write` | Send a test email from the server. |
-| `POST /api/mail/admin/:serverId/components/restart-all` | `mail_server:admin` | Restart every mail component. |
-| `POST /api/mail/admin/:serverId/components/:key/:action` | `mail_server:admin` | Run an action (`start`/`stop`/`restart`/…) on one component. |
-| `GET /api/mail/admin/:serverId/components/:key/logs?lines=` | `mail_server:read` | Tail a component's logs. |
-
-### Webmail
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/mail/webmail/targets?serverId=` | `mail_server:read` | List deploy-target options (self-hosted servers / cloud). |
-| `POST /api/mail/webmail/deploy-project` | `mail_server:write` | Create a webmail project + deployment and start the build. |
 
 ## Start (or resume) setup
 
@@ -129,7 +52,7 @@ POST /api/mail/setup
 />
 
 ```bash
-curl -N -X POST https://your-host/api/mail/setup \
+curl -N -X POST "$OPENSHIP_URL/api/mail/setup" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123","domain":"example.com"}'
@@ -144,6 +67,16 @@ The stream emits `step_start`, `log`, and `step_done` events per step, plus thes
   at your VPS provider, call `POST /api/mail/setup/ptr-ack`, and resume.
 - `complete` — carries `domain`, `webmailUrl`, and `adminUrl`.
 - `error` — carries `message` and (when resumable) `resumeStep`.
+
+The terminal `verify_reachability` step reads the target's TCP listener table and then connects from the API
+host to the public-DNS address on 25, 465, 587, and 993. Listener failures and off-box failures remain distinct
+in the result. A measured failure blocks completion and points at both the host firewall and the provider-level
+firewall/security group/security list/NSG; an unavailable probe is returned as a non-blocking warning rather
+than being invented as an outage.
+
+`GET /api/mail/health/:serverId` reuses one public-port sweep for 60 seconds. Pass
+`?refreshReachability=1` after changing firewall rules to force an immediate recheck; concurrent requests are
+still coalesced into one bounded four-port probe.
 
 ## Acknowledge DNS / PTR
 
@@ -176,13 +109,13 @@ POST /api/mail/adopt
 
 ```bash
 # 1. Probe for iRedMail + its on-server state
-curl -X POST https://your-host/api/mail/scan \
+curl -X POST "$OPENSHIP_URL/api/mail/scan" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123"}'
 
 # 2. Re-adopt it (idempotent)
-curl -X POST https://your-host/api/mail/adopt \
+curl -X POST "$OPENSHIP_URL/api/mail/adopt" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123"}'
@@ -221,7 +154,7 @@ POST /api/mail/admin/:serverId/domains
 `active` (boolean).
 
 ```bash
-curl -X POST https://your-host/api/mail/admin/srv_123/domains \
+curl -X POST "$OPENSHIP_URL/api/mail/admin/srv_123/domains" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"domain":"example.com","defaultQuotaMB":2048}'
@@ -247,7 +180,7 @@ POST /api/mail/admin/:serverId/mailboxes
 (all optional). `DELETE` soft-deletes by default; add `?hard=true` to purge the maildir.
 
 ```bash
-curl -X POST https://your-host/api/mail/admin/srv_123/mailboxes \
+curl -X POST "$OPENSHIP_URL/api/mail/admin/srv_123/mailboxes" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"localPart":"alice","domain":"example.com","password":"a-strong-password"}'
@@ -288,8 +221,13 @@ POST /api/mail/admin/:serverId/test-email
 
 ## Deploy webmail
 
-Creates (or reuses) a `webmail-<serverId>` project, queues a deployment, and starts the build. Returns
-`{ deploymentId, projectId }` so the dashboard can redirect to `/build/[deploymentId]`.
+Installs the **webmail** app from the app catalog, pointed at this mail server's IMAP/SMTP, then queues a
+deployment and starts it. Returns `{ deploymentId, projectId }` so the dashboard can redirect to
+`/build/[deploymentId]`. Re-deploying an existing webmail reuses its project (and its stored sessions).
+
+The IMAP/SMTP backend is derived from the mail server — `mail.<domain>` on 993/465 — so there is nothing
+to configure here. To point a webmail at a mailbox host you run elsewhere, install the `webmail` app from
+`/apps` (or use `POST /api/mail/webmail/deploy-external`) instead.
 
 ```
 POST /api/mail/webmail/deploy-project
@@ -299,8 +237,11 @@ POST /api/mail/webmail/deploy-project
   type={{
     mailServerId: { type: 'string', description: 'The mail server this webmail fronts.', required: true },
     hostname: { type: 'string', description: 'Fully-qualified hostname to serve webmail at.', required: true },
-    internalPort: { type: 'number', description: 'Internal port for the webmail container.' },
     target: { type: 'object', description: 'Where to deploy — see below.', required: true },
+    replaceLegacy: {
+      type: 'boolean',
+      description: 'Consent to replace a pre-catalog webmail. Only needed after a 409 LEGACY_WEBMAIL.',
+    },
   }}
 />
 
@@ -310,13 +251,25 @@ POST /api/mail/webmail/deploy-project
 - `{ "kind": "cloud" }` — managed by Openship Cloud.
 
 ```bash
-curl -X POST https://your-host/api/mail/webmail/deploy-project \
+curl -X POST "$OPENSHIP_URL/api/mail/webmail/deploy-project" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"mailServerId":"srv_123","hostname":"mail.example.com","target":{"kind":"self","serverId":"srv_123"}}'
 ```
 
-## Errors you might see
+### Replacing a pre-catalog webmail
+
+Openship 0.6.1 and earlier shipped webmail as a prebuilt bundle rather than an image. Those installs can't be
+redeployed — they have to be **replaced** by the catalog app. `GET /api/mail/status` reports one as
+`webmail.legacy: true`, and a deploy over it is refused with `409` and `"code": "LEGACY_WEBMAIL"` until you
+retry the same request with `replaceLegacy: true`.
+
+The replace tears the old project down — container, routes, host state directory, project row — and then
+installs the webmail app at the same hostname. Mailboxes, mail data and every message live on the mail server
+and are untouched; the old webmail's sign-in sessions and per-user settings are not, so everyone signs in
+again. If the old install can't be removed, nothing is installed and the existing webmail keeps running.
+
+## Errors
 
 <Callout title="404 — Not available" type="error">
 You're calling a cloud instance. The Mail API is self-hosted only; run it on an instance where `CLOUD_MODE`
@@ -333,7 +286,76 @@ Only one install runs per instance at a time, and per-server writes (reset, post
 while its setup is active. Wait for it to finish, or cancel it with `POST /api/mail/setup/cancel`.
 </Callout>
 
+<Callout title="409 — LEGACY_WEBMAIL" type="warn">
+The webmail linked to this mail server predates the catalog app, so it can only be replaced. Retry the same
+`deploy-project` call with `replaceLegacy: true` once you've confirmed the operator accepts losing the old
+webmail's sessions and per-user settings.
+</Callout>
+
 <Callout title="502 — Scan / adopt failed" type="warn">
 Openship couldn't reach the server over SSH, or the probe threw. Check the server is online and its SSH
 credentials are valid, then retry.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| List mail aliases on a server. | `GET /api/mail/admin/:serverId/aliases`<br />`mail_server:list` · Self-hosted |
+| Create a mail alias. | `POST /api/mail/admin/:serverId/aliases`<br />`mail_server:write` · Self-hosted |
+| Remove a mail alias. | `DELETE /api/mail/admin/:serverId/aliases/:id`<br />`mail_server:admin` · Self-hosted |
+| Update a mail alias. | `PATCH /api/mail/admin/:serverId/aliases/:id`<br />`mail_server:write` · Self-hosted |
+| The mail server's backup policy (or `null`). | `GET /api/mail/admin/:serverId/backup-policy`<br />`mail_server:read` · Self-hosted |
+| Create or update the backup policy. | `POST /api/mail/admin/:serverId/backup-policy`<br />`mail_server:admin` · Self-hosted |
+| Recent backup runs for the mail server. | `GET /api/mail/admin/:serverId/backup-runs`<br />`mail_server:read` · Self-hosted |
+| Run an action (`start`/`stop`/`restart`/…) on one component. | `POST /api/mail/admin/:serverId/components/:key/:action`<br />`mail_server:admin` · Self-hosted |
+| Tail a component's logs. | `GET /api/mail/admin/:serverId/components/:key/logs`<br />`mail_server:read` · Self-hosted |
+| Restart every mail component. | `POST /api/mail/admin/:serverId/components/restart-all`<br />`mail_server:admin` · Self-hosted |
+| Live DNS health scan (MX/SPF/DKIM/DMARC/PTR). | `GET /api/mail/admin/:serverId/dns-scan`<br />`mail_server:read` · Self-hosted |
+| List mail domains on the server. | `GET /api/mail/admin/:serverId/domains`<br />`mail_server:list` · Self-hosted |
+| Add a mail domain. | `POST /api/mail/admin/:serverId/domains`<br />`mail_server:write` · Self-hosted |
+| List additional domains whose DNS is still pending. | `GET /api/mail/admin/:serverId/domains-dns/pending`<br />`mail_server:read` · Self-hosted |
+| Delete a domain (add `?cascade=true` to remove its mailboxes too). | `DELETE /api/mail/admin/:serverId/domains/:domain`<br />`mail_server:admin` · Self-hosted |
+| Get one domain's config. | `GET /api/mail/admin/:serverId/domains/:domain`<br />`mail_server:read` · Self-hosted |
+| Update a domain (quotas, limits, active flag). | `PATCH /api/mail/admin/:serverId/domains/:domain`<br />`mail_server:write` · Self-hosted |
+| Count mailboxes/aliases that depend on a domain. | `GET /api/mail/admin/:serverId/domains/:domain/dependents`<br />`mail_server:read` · Self-hosted |
+| DNS records + publish state for an additional domain. | `GET /api/mail/admin/:serverId/domains/:domain/dns`<br />`mail_server:read` · Self-hosted |
+| Confirm a domain's DNS records are published. | `POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge`<br />`mail_server:write` · Self-hosted |
+| Apply the mail domain's DNS plan through a configured provider. | `POST /api/mail/admin/:serverId/domains/:domain/dns/apply`<br />`mail_server:write` · Self-hosted |
+| Preview the mail domain's DNS records. | `GET /api/mail/admin/:serverId/domains/:domain/dns/plan`<br />`mail_server:read` · Self-hosted |
+| List inbound mail rules. | `GET /api/mail/admin/:serverId/inbound-rules`<br />`mail_server:read` · Self-hosted |
+| Create an inbound mail rule. | `POST /api/mail/admin/:serverId/inbound-rules`<br />`mail_server:write` · Self-hosted |
+| Remove an inbound mail rule. | `DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId`<br />`mail_server:write` · Self-hosted |
+| Update an inbound mail rule. | `PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId`<br />`mail_server:write` · Self-hosted |
+| Evaluate a message against inbound mail rules. | `POST /api/mail/admin/:serverId/inbound-rules/test`<br />`mail_server:write` · Self-hosted |
+| List mailboxes in a domain. | `GET /api/mail/admin/:serverId/mailboxes`<br />`mail_server:list` · Self-hosted |
+| Create a mailbox. | `POST /api/mail/admin/:serverId/mailboxes`<br />`mail_server:write` · Self-hosted |
+| Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete). | `DELETE /api/mail/admin/:serverId/mailboxes/:email`<br />`mail_server:admin` · Self-hosted |
+| Get one mailbox. | `GET /api/mail/admin/:serverId/mailboxes/:email`<br />`mail_server:read` · Self-hosted |
+| Update a mailbox (name, password, quota, active). | `PATCH /api/mail/admin/:serverId/mailboxes/:email`<br />`mail_server:write` · Self-hosted |
+| Rotate the platform mailbox credential. | `POST /api/mail/admin/:serverId/platform-mailbox/rotate`<br />`mail_server:admin` · Self-hosted |
+| Remove outbound relay configuration. | `DELETE /api/mail/admin/:serverId/relay`<br />`mail_server:admin` · Self-hosted |
+| Read outbound relay configuration. | `GET /api/mail/admin/:serverId/relay`<br />`mail_server:read` · Self-hosted |
+| Configure an outbound relay. | `POST /api/mail/admin/:serverId/relay`<br />`mail_server:admin` · Self-hosted |
+| Aggregate counts (domains, mailboxes, storage). | `GET /api/mail/admin/:serverId/stats`<br />`mail_server:read` · Self-hosted |
+| Send a test email from the server. | `POST /api/mail/admin/:serverId/test-email`<br />`mail_server:write` · Self-hosted |
+| Re-adopt a scanned server whose orchestrator state was lost. | `POST /api/mail/adopt`<br />`mail_server:write` · Self-hosted |
+| Rotate the postmaster account password. | `POST /api/mail/credentials/postmaster`<br />`mail_server:write` · Self-hosted |
+| Mail daemons, outbound delivery, and cached public-port reachability (TCP 25/465/587/993). | `GET /api/mail/health/:serverId`<br />`mail_server:read` · Self-hosted |
+| Probe a server for an existing iRedMail install + its on-server state (read-only). | `POST /api/mail/scan`<br />`mail_server:write` · Self-hosted |
+| List every server Openship has provisioned (or is provisioning) mail on. | `GET /api/mail/servers`<br />`mail_server:list` · Self-hosted |
+| Stop managing a server (drops the DB row only; leaves the stack + state file intact). | `DELETE /api/mail/servers/:serverId`<br />`mail_server:admin` · Self-hosted |
+| Start or resume the install wizard — returns an SSE stream. | `POST /api/mail/setup`<br />`mail_server:write` · Self-hosted |
+| Cancel the running setup. | `POST /api/mail/setup/cancel`<br />`mail_server:write` · Self-hosted |
+| Mark DNS (DKIM) records as configured, releasing the DNS gate. | `POST /api/mail/setup/dns-ack`<br />`mail_server:write` · Self-hosted |
+| Mark reverse-DNS (PTR) as configured, releasing the PTR gate. | `POST /api/mail/setup/ptr-ack`<br />`mail_server:write` · Self-hosted |
+| Wipe the on-server state file (does not touch iRedMail). | `POST /api/mail/setup/reset`<br />`mail_server:admin` · Self-hosted |
+| Current setup progress for a server (rendered from its on-server state file). | `GET /api/mail/status`<br />`mail_server:read` · Self-hosted |
+| List all setup steps and the total count. | `GET /api/mail/steps`<br />`mail_server:read` · Self-hosted |
+| Deploy webmail for an external mail server. | `POST /api/mail/webmail/deploy-external`<br />`mail_server:write` · Self-hosted |
+| Create a webmail project + deployment and start the build. | `POST /api/mail/webmail/deploy-project`<br />`mail_server:write` · Self-hosted |
+| List deploy-target options (self-hosted servers / cloud). | `GET /api/mail/webmail/targets`<br />`mail_server:read` · Self-hosted |
+
+{/* api-operations:end */}

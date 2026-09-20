@@ -32,8 +32,8 @@ export function createSystemNoticeRepo(db: Database) {
     async create(data: Omit<NewSystemNotice, "id">): Promise<SystemNotice> {
       const id = generateId("ntc");
       const row = { id, ...data };
-      await db.insert(systemNotice).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as SystemNotice;
+      const [created] = await db.insert(systemNotice).values(row).returning();
+      return created!;
     },
 
     /** Operators clear a notice by deactivating it (kept for history/audit). */

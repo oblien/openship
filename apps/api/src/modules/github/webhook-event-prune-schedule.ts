@@ -7,7 +7,7 @@
  */
 
 import { repos } from "@repo/db";
-import { getJobRunner } from "../../lib/job-runner";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 
 const PRUNE_JOB_ID = "github:webhook-event-prune";
 const PRUNE_CRON = "47 3 * * *";

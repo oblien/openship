@@ -55,11 +55,12 @@
     "appsEmptyDesc": "Um clique, totalmente auto-hospedado — bancos de dados, automação, analytics, cofres de senhas e mais, rodando nos seus servidores."
   },
   "nav": {
+    "scale": "Escalabilidade",
     "home": "Início",
     "new-project": "Novo Projeto",
     "projects": "Projetos",
     "deployments": "Implantações",
-    "issues": "Problemas",
+    "issues": "Monitoramento",
     "backups": "Backups",
     "domains": "Domínios",
     "monitoring": "Monitoramento",
@@ -67,10 +68,18 @@
     "emails": "E-mails",
     "settings": "Configurações",
     "billing": "Faturamento e uso",
+    "audit": "Registo de auditoria",
+    "mailSetup": "Configurar email",
+    "mailSetupProgress": "Progresso da configuração",
+    "addMailbox": "Adicionar caixa de correio",
+    "webmail": "Webmail",
     "sections": {
       "main": "Principal",
       "settings": "Configurações",
       "infrastructure": "Infraestrutura",
+      "mail": "E-mail",
+      "delivery": "Entrega",
+      "system": "Sistema",
       "account": "Conta"
     },
     "apps": "Apps",

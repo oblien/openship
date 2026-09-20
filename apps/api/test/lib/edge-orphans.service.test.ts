@@ -25,11 +25,12 @@ const h = vi.hoisted(() => ({
   edgePresent: true,
   removeRoute: vi.fn(async (_h: string) => {}),
   publicUrl: undefined as string | undefined,
+  inventoryFailure: false,
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
-    domain: { listAllHostnames: async () => h.hostnames },
+    domain: { listAllHostnames: async () => { if (h.inventoryFailure) throw new Error("database unavailable"); return h.hostnames; } },
     mailServer: { list: async () => h.mailServers },
   },
 }));
@@ -53,7 +54,7 @@ vi.mock("../../src/lib/controller-helpers", () => ({
   platform: () => ({ routing: { removeRoute: h.removeRoute } }),
 }));
 
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
     return { OPENSHIP_PUBLIC_URL: h.publicUrl };
   },
@@ -64,7 +65,7 @@ import {
   removeEdgeOrphan,
   scanEdgeOrphans,
   untrackedSiteFor,
-} from "../../src/lib/edge-orphans.service";
+} from "@repo/platform/engine/lib/edge-orphans.service";
 
 const staticSite = (host: string) => ({
   serverNames: [host],
@@ -84,7 +85,17 @@ beforeEach(() => {
   h.ours = true;
   h.edgePresent = true;
   h.publicUrl = undefined;
+  h.inventoryFailure = false;
   h.removeRoute.mockClear();
+});
+
+it("refuses cleanup when the tracked hostname inventory cannot be read", async () => {
+  h.sites = [staticSite("live.example.com")];
+  h.inventoryFailure = true;
+  expect(await scanEdgeOrphans()).toMatchObject({ scanned: false, orphans: [], reason: "Tracked hostnames could not be read." });
+  expect(await removeEdgeOrphan("live.example.com")).toMatchObject({ removed: false });
+  expect(await untrackedSiteFor("live.example.com")).toBeNull();
+  expect(h.removeRoute).not.toHaveBeenCalled();
 });
 
 describe("collectKnownHostnames", () => {
@@ -225,3 +236,12 @@ describe("removeEdgeOrphan", () => {
     expect((await removeEdgeOrphan("   ")).removed).toBe(false);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ routing: { removeRoute: h.removeRoute } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ routing: { removeRoute: h.removeRoute } }),
+}));

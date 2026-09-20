@@ -102,6 +102,10 @@
     "serverPortNotSet": "Server port not set",
     "staticFromEdge": "Static from edge",
     "staticPathHint": "Served as static files from the edge — nothing runs as a process.",
+    "modeServer": "Server",
+    "modeWorker": "Worker",
+    "modeStatic": "Static",
+    "workerModeDesc": "Runs continuously with no port or public URL — a queue consumer, cron, or bot.",
     "buildSettingsTitle": "Build Settings"
   },
   "projectSettings": {
@@ -120,6 +124,7 @@
     "noneSet": "None set",
     "pasteEnv": "Paste .env",
     "uploadEnv": "Upload .env",
+    "downloadEnv": "Download .env",
     "edit": "Edit",
     "cancel": "Cancel",
     "saving": "Saving...",
@@ -129,7 +134,7 @@
     "valuePlaceholder": "value",
     "dropHere": "Drop .env file here",
     "noneTitle": "No environment variables",
-    "emptyHintEditing": "Click \"Add Variable\", use \"Paste .env\", upload a file, or paste anywhere inside this box",
+    "emptyHintEditing": "Paste a .env block anywhere in this box, or drop a .env file here.",
     "emptyHintReadonly": "Click \"Edit\" to manage environment variables",
     "pasteHint": "Paste a full .env block anywhere inside this box.",
     "addVariable": "Add Variable",
@@ -141,6 +146,7 @@
       "interpolated": "Interpolated"
     },
     "toast": {
+      "downloadFailed": "Couldn’t download environment variables.",
       "title": "Environment Variables",
       "added": "{count} added",
       "updated": "{count} updated",
@@ -204,9 +210,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Stateful service on cloud: data lives on the workspace's persistent disk (survives restarts) but is ",
       "statefulWarnBold": "not carried across rebuilds",
-      "statefulWarnPart2": " unless backups are enabled. Docker volume mounts don't apply.",
+      "statefulWarnPart2": ". Back up and restore data explicitly before replacing the workspace.",
       "volumeHint": "Named volume or host path → container path.",
-      "volumeCloudNote": "On cloud these mounts don't apply — data persists on the workspace's disk (not across rebuilds without backups).",
+      "volumeCloudNote": "Persistent volume mounts are not supported on Openship Cloud. Choose a server for workloads that require volumes.",
       "sourcePlaceholder": "Source",
       "containerPathPlaceholder": "Container path",
       "readOnlyMount": "Read-only mount",
@@ -365,9 +371,6 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying Services…"
     },
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed",
     "decisionBannerTitle": "Action required — some services failed",
     "decisionBannerDefaultMsg": "This deployment finished with failed services. Keep it and fix them later, or reject it to restore the previous version.",
     "review": "Review",
@@ -407,6 +410,12 @@
       "retryOther": "Retry {count} Failed Services"
     }
   },
+  "composeServiceTally": {
+    "running": "running",
+    "builtSuffix": "· {count} built",
+    "buildingSuffix": "· {count} building",
+    "failedSuffix": "· {count} failed"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelled",
@@ -417,12 +426,20 @@
     },
     "detailsTitle": "Deployment Details",
     "rowStatus": "Status",
+    "rowTarget": "Target",
+    "rowBuild": "Build",
     "rowBuildTime": "Build Time",
     "rowServices": "Services",
     "rowProject": "Project",
-    "rowType": "Type",
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed"
+    "rowType": "Type"
+  },
+  "configDiagnostics": {
+    "title": "Some of this repo's openship.json was not applied",
+    "description": "The fields listed below were skipped; the rest of the file was applied. The deploy will still run.",
+    "titleWholeFile": "This repo's openship.json was ignored",
+    "descriptionWholeFile": "None of it was applied. The deploy will still run, using the settings Openship detected.",
+    "refused": "Refused",
+    "unrecognized": "Not recognized",
+    "hint": "Run `openship config validate` in the repo to check the file before your next deploy."
   }
 }

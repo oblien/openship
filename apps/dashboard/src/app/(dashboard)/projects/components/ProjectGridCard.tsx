@@ -6,13 +6,8 @@ import { ArrowRight, FolderOpen, GitBranch, Globe, Server } from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
-import {
-  getProjectStatus,
-  projectDisplayDomain,
-  projectStatusHint,
-  PROJECT_STATUS_META,
-  projectStatusLabel,
-} from "@/utils/project-status";
+import { getProjectStatus, projectDisplayDomain } from "@/utils/project-status";
+import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { timeAgo } from "@/lib/time";
 import { getHostingLabel } from "./ProjectCard";
@@ -35,8 +30,6 @@ const ProjectGridCard: React.FC<{
 }> = ({ project, preferAppLogo }) => {
   const { t } = useI18n();
   const status = getProjectStatus(project);
-  const statusMeta = PROJECT_STATUS_META[status];
-  const statusHint = projectStatusHint(project, t);
   const fw = getFrameworkConfig(project.framework);
   const [faviconError, setFaviconError] = useState(false);
 
@@ -92,15 +85,10 @@ const ProjectGridCard: React.FC<{
           {domain && <p className="mt-0.5 truncate text-xs text-muted-foreground">{domain}</p>}
         </div>
 
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
-          // Amber "Action Required" without a named move is a dead end — some
-          // attention states (rolled back after a failed deploy) have no
-          // clearable pending-action, so the pill has to say what to do.
-          {...(statusHint ? { title: statusHint } : {})}
-        >
-          {projectStatusLabel(status, t)}
-        </span>
+        <ProjectStatusBadge
+          project={project}
+          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+        />
       </div>
 
       {/* Meta — nothing is hidden here, the tile has the room the row didn't */}
@@ -138,6 +126,11 @@ const ProjectGridCard: React.FC<{
           <span className="inline-flex items-center gap-1.5 text-xs">
             <Server className="size-3.5" />
             {t.projects.card.services}
+          </span>
+        ) : project.workloadType === "worker" ? (
+          <span className="inline-flex items-center gap-1.5 text-xs">
+            <Server className="size-3.5" />
+            {t.projects.card.worker}
           </span>
         ) : project.hasServer === false ? (
           <span className="inline-flex items-center gap-1.5 text-xs">

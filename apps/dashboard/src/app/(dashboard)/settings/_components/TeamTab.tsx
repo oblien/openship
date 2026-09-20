@@ -14,7 +14,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Mail, Trash2, UserPlus, Building2, LogOut, Settings2, MoreVertical } from "lucide-react";
+import { Loader2, Mail, Trash2, UserPlus, Building2, LogOut, Settings2, MoreVertical, Copy } from "lucide-react";
+import { grantableTypesForMode } from "@repo/core";
 import { authClient, useSession } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -28,7 +29,7 @@ import {
   type ResourceType,
 } from "@/lib/api";
 import { useModal } from "@/context/ModalContext";
-import { GrantPickerModal } from "./GrantPickerModal";
+import { AccessEditorModal } from "./AccessEditorModal";
 import { InviteMemberInline } from "./InviteMemberInline";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
@@ -38,6 +39,7 @@ import { TeamWorkspaceCard } from "./TeamWorkspaceCard";
 import { TeamReachabilityCard, type TeamReachability } from "./TeamReachabilityCard";
 import { WorkspaceManageModal } from "./WorkspaceManageModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { invitationClaimPath } from "@/lib/invitation-flow";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 
@@ -110,12 +112,9 @@ export function TeamTab() {
   // rendered by the root-level modal host outside the dashboard providers.
   const { connected: cloudConnected, startConnect: connectCloud } = useCloud();
 
-  // Mode-aware grantable types: servers + mail servers are self-hosted-only;
-  // billing exists only in cloud (SaaS). The picker collapses the two GitHub
-  // types into one tab.
-  const availableTypes: ResourceType[] = selfHosted
-    ? ["project", "server", "mail_server", "backup_destination", "audit", "github_installation", "github_repository"]
-    : ["project", "backup_destination", "billing", "audit", "github_installation", "github_repository"];
+  // Mode-aware grantable types: servers + mail servers are self-hosted-only,
+  // billing is cloud-only. The picker collapses the two GitHub types into one tab.
+  const availableTypes: ResourceType[] = grantableTypesForMode(selfHosted);
 
   // Org-meta: drives personal-vs-team UX. Personal workspaces (auto-
   // created on signup) hide the invite UI; clicking "Create team org"
@@ -262,6 +261,24 @@ export function TeamTab() {
     await refresh();
   };
 
+  const handleCopyInvite = async (invitationId: string) => {
+    try {
+      const url = `${window.location.origin}${invitationClaimPath(invitationId)}`;
+      await navigator.clipboard.writeText(url);
+      showToast(
+        t.settings.common.copied,
+        "success",
+        t.settings.common.toast.invitations,
+      );
+    } catch {
+      showToast(
+        t.settings.team.toast.copyInviteFailed,
+        "error",
+        t.settings.common.toast.invitations,
+      );
+    }
+  };
+
   // Delete/leave switch back to the personal workspace first — you can't sit on
   // an org that no longer exists (or that you just left).
   const switchToPersonalAndReload = async () => {
@@ -300,6 +317,11 @@ export function TeamTab() {
           resourceType: g.resourceType,
           resourceId: g.resourceId,
           permissions: g.permissions,
+          // `scope` MUST survive the round trip. It used to be dropped here, and
+          // because `replaceGrants` treats scope as part of its change detection,
+          // simply reopening a member's panel and saving stripped every repo path
+          // restriction they had — a silent widening from a no-op action.
+          ...(g.scope ? { scope: g.scope } : {}),
         }));
       } catch (err) {
         showToast(getApiErrorMessage(err, t.settings.team.toast.loadGrantsFailed), "error", t.settings.common.toast.permissions);
@@ -313,12 +335,18 @@ export function TeamTab() {
         maxWidth: "min(94vw, 900px)",
         showCloseButton: false,
         customContent: (
-          <GrantPickerModal
+          <AccessEditorModal
             title={m.user.name || m.user.email}
             subtitle={t.settings.team.memberPanel.subtitle}
             initial={initial}
             availableTypes={availableTypes}
             saveLabel={t.settings.team.memberPanel.saveLabel}
+            // A MEMBER, not a token: "unscoped" is meaningless, `readOnly` is a token
+            // property, and the grants API's permission whitelist has no `create`.
+            show={{ templates: false, readOnlySwitch: false, createCapability: false }}
+            // "All projects" is a legitimate member grant — only the token mint
+            // refuses a non-create project wildcard.
+            suppressWildcardTypes={[]}
             onSave={async (grants) => {
               // Warn before newly granting server access — it exposes all data,
               // apps, and connected integrations on that server. Throwing keeps
@@ -588,13 +616,24 @@ export function TeamTab() {
                         </p>
                       </div>
                       {isAdminOrOwner && (
-                        <button
-                          type="button"
-                          onClick={() => handleCancelInvite(inv.id)}
-                          className="text-xs font-medium text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          {t.settings.common.cancel}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyInvite(inv.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                            title={t.settings.team.copyInviteLink}
+                          >
+                            <Copy className="size-3.5" />
+                            {t.settings.common.copy}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelInvite(inv.id)}
+                            className="text-xs font-medium text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            {t.settings.common.cancel}
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -698,4 +737,3 @@ export function TeamTab() {
     </div>
   );
 }
-

@@ -88,8 +88,6 @@ Smaller apps and side projects are happy on **Micro** or **Low**. **Medium** sui
 Reach for **High** only for heavy traffic or slow builds. You can change size later, so start small.
 </Callout>
 
-<Callout title="Screenshot">The deploy screen with Openship Cloud selected and the **Power** section showing the Micro / Low / Medium / High / Custom size cards. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -235,7 +233,7 @@ Sleep mode matters for apps with a running process (a server or API). A purely s
 to sleep — it's just files being served — so the setting has no visible effect there.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="A resource value is rejected" type="error">
 A cap larger than the target machine is refused with the real numbers, e.g.
@@ -255,7 +253,7 @@ That's expected — **Always On** keeps the machine running 24/7. If you don't n
 switch back with `openship project sleep-mode PROJECT_ID auto_sleep` and the app will sleep when idle again.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy to your own server" href="/docs/guides/custom-servers" description="Run your app on a machine you control instead of Openship Cloud." />

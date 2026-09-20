@@ -15,6 +15,7 @@ import { m } from '@/paraglide/messages';
 import type { Sender } from '@/types';
 import { useQueryState } from 'nuqs';
 import { useEffect } from 'react';
+import { useParams } from 'react-router';
 import posthog from 'posthog-js';
 import { toast } from 'sonner';
 
@@ -24,6 +25,7 @@ interface ReplyComposeProps {
 
 export default function ReplyCompose({ messageId }: ReplyComposeProps) {
   const [mode, setMode] = useQueryState('mode');
+  const { folder } = useParams<{ folder: string }>();
   const { enableScope, disableScope } = useHotkeysContext();
   const { data: aliases } = useEmailAliases();
 
@@ -198,6 +200,8 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
         threadId: replyToMessage?.threadId,
         isForward: mode === 'forward',
         originalMessage: replyToMessage.decodedBody,
+        originalMessageId: replyToMessage?.id,
+        originalFolder: folder,
         scheduleAt: data.scheduleAt,
       });
 
@@ -206,7 +210,7 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
       // Reset states
       setMode(null);
       await refetch();
-      
+
       handleUndoSend(result, settings, {
         to: data.to,
         cc: data.cc,
@@ -273,7 +277,14 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
         initialTo={ensureEmailArray(draft?.to)}
         initialCc={ensureEmailArray(draft?.cc)}
         initialBcc={ensureEmailArray(draft?.bcc)}
-        initialSubject={draft?.subject}
+        initialSubject={
+          draft?.subject ??
+          (mode === 'forward' && replyToMessage?.subject
+            ? /^fwd:\s/i.test(replyToMessage.subject)
+              ? replyToMessage.subject
+              : `Fwd: ${replyToMessage.subject}`
+            : undefined)
+        }
         autofocus={true}
         settingsLoading={settingsLoading}
         replyingTo={replyToMessage?.sender.email}

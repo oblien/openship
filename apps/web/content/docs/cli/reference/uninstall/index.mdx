@@ -1,0 +1,21 @@
+---
+title: uninstall
+description: Commands, arguments, and options for openship uninstall.
+cliGroup: openship uninstall
+---
+
+See the [CLI overview](/docs/cli) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship uninstall
+
+Remove Openship from this machine: stop it, delete its data (database, certs, edge config), its images, and ~/.openship. Deployed apps are left running.
+
+```text
+openship uninstall [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip the confirmation prompt (for scripts) |
+| `--keep-data` | Keep the database/certs volumes and ~/.openship — remove only the running stack |
+| `--keep-images` | Don't delete the Openship container images |

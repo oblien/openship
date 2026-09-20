@@ -167,6 +167,15 @@
 			"dependsOn": "Abhängig von",
 			"startShellHint": "Starten Sie den Dienst, um eine Shell zu öffnen.",
 			"saveEnvironment": "Umgebung speichern",
+			"environmentApply": {
+				"title": "Umgebungsänderungen anwenden",
+        "applying": "Änderungen werden angewendet…",
+        "applied": "Umgebungsänderungen angewendet",
+				"hint": "Gespeicherte Variablen ohne erneuten Build auf diesen Dienst anwenden. Der Dienst wird neu gestartet.",
+				"saveFirst": "Speichere deine Änderungen, bevor du sie auf diesen Dienst anwendest.",
+				"restartBlocked": "Für {name} sind Umgebungsänderungen gespeichert, die ein normaler Neustart nicht anwenden kann. Prüfe sie im Tab „Umgebung“ und wende sie dort an.",
+				"failed": "Umgebungsänderungen konnten nicht angewendet werden"
+			},
 			"stop": "Stoppen",
 			"restart": "Neu starten",
 			"start": "Starten",
@@ -192,7 +201,7 @@
 			"deleteCancel": "Abbrechen",
 			"deleteConfirm": "Dienst löschen",
 			"toast": {
-				"envUpdated": "Umgebung aktualisiert",
+				"envUpdated": "Umgebung gespeichert",
 				"envSaveFailed": "Umgebung konnte nicht gespeichert werden",
 				"deployFirstStart": "Stellen Sie zuerst das Projekt bereit, dann startet dieser Dienst",
 				"deployFailed": "Deployment fehlgeschlagen",

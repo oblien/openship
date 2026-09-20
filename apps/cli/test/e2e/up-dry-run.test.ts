@@ -32,12 +32,19 @@ const c = vi.hoisted(() => ({
   prepareFromSource: 0,
   /** Options the port resolver was called with (persist:false is the contract). */
   portOpts: [] as Array<{ persist?: boolean } | undefined>,
-  /** Fixture: Docker is missing but installable (a fresh Debian box). */
+  /**
+   * Fixture: Docker is missing but installable, on a fresh Amazon Linux 2023 box.
+   *
+   * A named distro, not "some Linux": `dockerInstallPreview` is mocked here, so a fixture
+   * command the product can no longer produce would keep this test green while the plan
+   * printed something else. AL2023 is the host that made that a real bug — `get.docker.com`
+   * exits 1 on `ID=amzn`, so the command this fixture used to carry was never runnable.
+   */
   docker: {
     state: { binary: false, plugin: false, daemon: false },
     gap: { summary: "Docker isn't installed", installable: true },
     wouldInstall: true,
-    installCommand: "curl -fsSL https://get.docker.com | sh",
+    installCommand: "dnf install -y docker",
     startCommand: "systemctl enable --now docker",
   } as any,
   edge: { owner: null as string | null, blocked: false, sites: [] as any[], warnings: [] as string[] },
@@ -74,7 +81,7 @@ vi.mock("../../src/lib/compose", () => ({
   },
   composePrefetch: () => {
     c.prefetch++;
-    return true;
+    return { ok: true, envChanged: false };
   },
   composeUp: async () => {
     c.composeUp++;
@@ -196,7 +203,7 @@ describe("openship up --dry-run", () => {
     expect(out).toContain("nothing on this machine has been changed");
     // …and it says so instead, with the command it would have run.
     expect(out).toContain("Docker isn't installed");
-    expect(out).toContain("curl -fsSL https://get.docker.com | sh");
+    expect(out).toContain("dnf install -y docker");
   });
 
   it("describes the compose stack without writing or pulling it", async () => {

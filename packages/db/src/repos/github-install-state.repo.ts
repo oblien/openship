@@ -2,6 +2,7 @@ import { lt, eq } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { githubInstallState } from "../schema";
+import type { GithubInstallStatePayload } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,9 @@ export interface CreateInstallStateInput {
   state: string;
   userId: string;
   organizationId: string | null;
+  sourceId?: string | null;
+  flow?: "install" | "manifest";
+  payload?: GithubInstallStatePayload;
   /** Absolute expiry. The flow caller picks the window (typically 10min). */
   expiresAt: Date;
 }
@@ -34,6 +38,9 @@ export function createGithubInstallStateRepo(db: Database) {
           state: input.state,
           userId: input.userId,
           organizationId: input.organizationId,
+          sourceId: input.sourceId ?? null,
+          flow: input.flow ?? "install",
+          payload: input.payload ?? {},
           expiresAt: input.expiresAt,
         })
         .onConflictDoNothing({ target: githubInstallState.state });
@@ -78,9 +85,7 @@ export function createGithubInstallStateRepo(db: Database) {
      * so the offending nonce can't be retried.
      */
     async remove(state: string): Promise<void> {
-      await db
-        .delete(githubInstallState)
-        .where(eq(githubInstallState.state, state));
+      await db.delete(githubInstallState).where(eq(githubInstallState.state, state));
     },
 
     /** Drop expired rows. Called lazily on each create. */

@@ -220,7 +220,11 @@ export const RoutingConfigEditor: React.FC<{
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
               <input
                 type="checkbox"
-                checked={!!rd.permanent}
+                // `permanent` defaults to TRUE, as vercel.json documents and the compiler
+                // implements (absent ⇒ 308). `!!rd.permanent` displayed an imported rule
+                // with no key as "temporary", so a double-toggle wrote `permanent: false`
+                // and silently downgraded a 308 the edge was already serving to a 307.
+                checked={rd.permanent !== false}
                 disabled={disabled}
                 onChange={(e) =>
                   patch({

@@ -26,7 +26,7 @@ import {
   type DatabaseDump,
   type SubgraphScope,
 } from "@repo/db";
-import { cloudRuntimeTarget } from "../../config/env";
+import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
 
 export class IngestValidationError extends Error {
   readonly code = "INGEST_VALIDATION_FAILED" as const;

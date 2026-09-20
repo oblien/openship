@@ -3,6 +3,8 @@
 import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
+import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
+import { domainsApi } from "@/lib/api";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -18,6 +20,11 @@ interface DnsConfigurationProps {
   mode?: "cloud" | "selfhosted";
   /** Hide the internal header when the container already titles the section. */
   showHeader?: boolean;
+  /** A persisted domain's id. When set, the on-demand auto-configure panel is
+   *  shown above the manual records — pre-add previews (no id) stay manual. */
+  domainId?: string;
+  /** Explicit pre-deploy server; it wins over any previous project deployment. */
+  serverId?: string;
 }
 
 const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
@@ -25,14 +32,16 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
   records,
   mode,
   showHeader = true,
+  domainId,
+  serverId,
 }) => {
   const { t } = useI18n();
   const d = t.deploy.dns;
 
   const displayRecords = records ?? [];
-  if (!displayRecords.length) return null;
+  if (!displayRecords.length && !domainId) return null;
 
-  return (
+  const manual = displayRecords.length > 0 && (
     <div className="rounded-xl bg-muted/30">
       {showHeader && (
         <div className="px-4 pt-4">
@@ -65,6 +74,19 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
           )}
         </p>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {domainId && (
+        <AutoDnsPanel
+          plan={() => domainsApi.dnsPlan(domainId, serverId).then((r) => r.data)}
+          apply={() => domainsApi.dnsApply(domainId, serverId).then((r) => r.data)}
+          reloadKey={`${domainId}:${serverId ?? "project"}`}
+        />
+      )}
+      {manual}
     </div>
   );
 };

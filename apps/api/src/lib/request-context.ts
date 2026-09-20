@@ -1,15 +1,16 @@
 import type { Context } from "hono";
+import type {
+  ContextRole,
+  ContextUser,
+  CredentialRestrictions,
+  ExecutionContext,
+  PrincipalKind,
+  SessionKind,
+} from "@repo/platform";
 
-export type RequestContextRole = "owner" | "admin" | "member" | "restricted";
-export type SessionKind = "cookie" | "bearer" | "zero-auth";
-/** Which kind of bearer credential authenticated this request, if any. */
-export type PrincipalKind = "pat" | "oauth";
-
-export interface RequestContextUser {
-  id: string;
-  email: string;
-  name: string | null;
-}
+export type RequestContextRole = ContextRole;
+export type RequestContextUser = ContextUser;
+export type { SessionKind, PrincipalKind };
 
 /**
  * Request-scoped context object. ONE source of truth for who the caller
@@ -25,50 +26,9 @@ export interface RequestContextUser {
  * Do NOT extend this with feature flags, project-id, deployment-id, etc.
  * Resource scoping comes from path params + assertResourceInOrg, not ctx.
  */
-export interface RequestContext {
-  userId: string;
-  user: RequestContextUser;
-
-  // The active org for THIS request. Resolved by authMiddleware via
-  // resolveActiveOrganizationId. After permission.assert succeeds for a
-  // resource-bound route, this is REPLACED with the scoped org id so
-  // services automatically see the right tenant.
-  organizationId: string;
-  role: RequestContextRole;
-  membershipId: string;
-
-  sessionId: string;
-  sessionKind: SessionKind;
-
-  /**
-   * For a bearer request, WHICH credential: a personal access token or an OAuth
-   * (MCP) token. Null for cookie / zero-auth. This is identity, not feature
-   * state — it's what lets the audit log say an action came from an AI assistant
-   * rather than a script, since both arrive as `sessionKind: "bearer"`.
-   */
-  principalKind?: PrincipalKind | null;
-
-  /**
-   * Present ONLY for a scoped personal access token. When set, the caller is a
-   * scoped-token principal: permission checks force `restricted` behavior and
-   * source grants from the token (personal_access_token_grant) instead of the
-   * user's member grants. Absent for sessions and unscoped tokens.
-   */
-  tokenScope?: { tokenId: string } | null;
-
-  clientIp: string | null;
-  userAgent: string | null;
-
-  traceId: string;
-
-  // Escape hatch for the rare case where a CONTROLLER needs the raw
-  // Hono context (streaming responses, raw body access, mid-handler
-  // `c.set` for downstream middleware). Services MUST NOT take this —
-  // services take `ctx: RequestContext` and read fields off it. Reading
-  // typed fields off ctx is always preferred over `c.get("user")` /
-  // `c.get("activeOrganizationId")`, which are now reachable only
-  // through this escape hatch.
-  hono: Context;
+export interface RequestContext extends ExecutionContext {
+  /** HTTP compatibility only. Shared/native operations use ExecutionContext. */
+  readonly hono?: Context;
 }
 
 /**
@@ -100,6 +60,8 @@ export interface BuildRequestContextInput {
   sessionKind: SessionKind;
   principalKind?: PrincipalKind | null;
   tokenScope?: { tokenId: string } | null;
+  credential?: CredentialRestrictions | null;
+  scopeMode?: "fixed" | "resource";
   clientIp: string | null;
   userAgent: string | null;
   traceId: string;
@@ -117,6 +79,8 @@ export function buildRequestContext(input: BuildRequestContextInput): RequestCon
     sessionKind: input.sessionKind,
     principalKind: input.principalKind ?? null,
     tokenScope: input.tokenScope ?? null,
+    credential: input.credential ?? null,
+    scopeMode: input.scopeMode ?? "resource",
     clientIp: input.clientIp,
     userAgent: input.userAgent,
     traceId: input.traceId,
@@ -124,46 +88,11 @@ export function buildRequestContext(input: BuildRequestContextInput): RequestCon
   };
 }
 
-/** Internal helper used by permission.assert to replace ctx.organizationId
- *  with the scoped org id after permission resolution. */
+/** Compatibility helper for internal organization selection. Application
+ *  operations use the shared authorizer's resolved context instead. */
 export function withScopedOrg(ctx: RequestContext, scopedOrganizationId: string): RequestContext {
   if (ctx.organizationId === scopedOrganizationId) return ctx;
   return { ...ctx, organizationId: scopedOrganizationId };
 }
 
-/**
- * Build a RequestContext for BACKGROUND tasks that have no Hono request
- * (webhook deliveries, crons, queue workers, install-callback handlers).
- *
- * Callers MUST already know which user + org they're acting on behalf of —
- * this helper does NOT resolve org from memberships[0] or any other
- * lookup. If you don't know the org, you have a routing bug.
- *
- * The returned ctx has the same shape as a request-built one EXCEPT
- * `hono` is a getter that throws — background work has no Hono ctx and
- * any caller reaching for it is doing something wrong.
- */
-export function buildBackgroundContext(opts: {
-  userId: string;
-  organizationId: string;
-  role?: RequestContextRole;
-  membershipId?: string;
-  traceId?: string;
-  label?: string;   // operator-facing label for traces: "webhook:github", "cron:anniversary"
-}): RequestContext {
-  return {
-    userId: opts.userId,
-    user: { id: opts.userId, email: "", name: null },
-    organizationId: opts.organizationId,
-    role: opts.role ?? "owner",
-    membershipId: opts.membershipId ?? `bg_${opts.userId}_${opts.organizationId}`,
-    sessionId: opts.label ? `bg:${opts.label}` : "background",
-    sessionKind: "bearer" as const,
-    clientIp: null,
-    userAgent: opts.label ? `openship-bg:${opts.label}` : "openship-bg",
-    traceId: opts.traceId ?? `bg_${Math.random().toString(36).slice(2)}`,
-    get hono(): Context {
-      throw new Error("buildBackgroundContext: background ctx has no Hono request");
-    },
-  };
-}
+export { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";

@@ -1,6 +1,6 @@
 ---
-title: Tokens API
-description: Mint, list, and revoke personal access tokens, and manage the MCP clients authorized against your account.
+title: Tokens and MCP clients
+description: Create scoped access tokens and manage MCP client consent.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -11,35 +11,41 @@ OAuth. In the dashboard this is the **Settings → Access** area; from the termi
 [`openship token`](/docs/cli/access) command. Every route is self-scoped — you only ever see and manage your
 own tokens and clients.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/tokens`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and the [auth model](/docs/security/auth) for details.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/tokens` | `settings:read` | List your own tokens (secrets never included). |
-| `POST /api/tokens` | `settings:write` | Mint a token — returns the plaintext secret once. |
-| `DELETE /api/tokens/:id` | `settings:write` | Revoke one of your tokens. |
-| `POST /api/tokens/mcp-authorize` | `settings:write` | Record what an OAuth MCP client may access (consent step). |
-| `GET /api/tokens/mcp-clients` | `settings:read` | List your connected MCP clients. |
-| `DELETE /api/tokens/mcp-clients/:clientId` | `settings:write` | Disconnect an MCP client and revoke its issued tokens. |
-
-The `settings:read` / `settings:write` gate means any organization member can manage their own tokens; the
-handlers then scope every operation to the calling user, so members never see each other's credentials.
-
 ## Create a token
 
 Mints a new PAT and returns the plaintext secret in `data.token` **exactly once** — it is hashed at rest and
 can never be retrieved again. List responses only ever show the short `tokenPrefix`.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.tokens.create({
+  name: "deploy-bot",
+  readOnly: false,
+  grants: [
+    {
+      resourceType: "project",
+      resourceId: "proj_123",
+      permissions: ["read", "write"],
+    },
+  ],
+});
+console.log(result);
 ```
-POST /api/tokens
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/tokens" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"deploy-bot","readOnly":false,"grants":[{"resourceType":"project","resourceId":"proj_123","permissions":["read","write"]}]}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -71,18 +77,6 @@ Each entry in `grants` is a **TokenGrant**:
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/tokens \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"deploy-bot","readOnly":false,"grants":[{"resourceType":"project","resourceId":"proj_123","permissions":["read","write"]}]}'
-```
-
-```bash
-# Same thing from the CLI:
-openship token create "deploy-bot" --grant project:proj_123:read,write
-```
-
 <Callout title="Copy the secret immediately" type="warn">
 The response's `data.token` (an `opsh_pat_…` string) is shown once and never again. `GET /api/tokens` only
 returns the prefix. If you lose it, revoke the token and mint a new one.
@@ -110,26 +104,47 @@ nothing else. In the dashboard this is the **"Only projects it creates"** option
 
 ## List tokens
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const tokens = await ship.tokens.list();
+console.log(tokens);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/tokens" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
 Returns your tokens with no secret material — each row carries `id`, `name`, `tokenPrefix`, `readOnly`,
 `scoped`, `expiresAt`, `lastUsedAt`, `revokedAt`, and `createdAt`.
 
-```
-GET /api/tokens
-```
-
-```bash
-openship token list
-```
-
 ## Revoke a token
 
-```
-DELETE /api/tokens/:id
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.tokens.revoke("pat_123");
 ```
 
+</Tab>
+<Tab value="REST API">
+
 ```bash
-openship token revoke tok_abc123
+curl -X DELETE "$OPENSHIP_URL/api/tokens/pat_123" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 <Callout title="404 — token not found" type="error">
 The `:id` isn't one of your own tokens (or was already removed). List your tokens with `GET /api/tokens`
@@ -181,10 +196,6 @@ GET /api/tokens/mcp-clients
 Returns one entry per OAuth binding with `clientId`, `name`, `organizationId`, `organizationName`,
 `readOnly`, `scoped`, `grantCount`, `authorizedAt`, and `lastUsedAt`.
 
-```bash
-openship api /tokens/mcp-clients
-```
-
 ### Disconnect a client
 
 Revokes the client's issued tokens first (stopping it immediately), then drops the scope binding, its grants,
@@ -195,6 +206,18 @@ for everyone else.
 DELETE /api/tokens/mcp-clients/:clientId
 ```
 
-```bash
-openship api /tokens/mcp-clients/<clientId> -X DELETE
-```
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List your tokens without exposing their secrets. | `tokens.list()` | `GET /api/tokens`<br />`settings:read` |
+| Create a token; its secret is returned once. | `tokens.create(input)` | `POST /api/tokens`<br />`settings:write` |
+| Authorize or explicitly re-scope an MCP client binding. | `tokens.authorizeMcpClient(input)` | `POST /api/tokens/mcp-authorize`<br />`settings:write` |
+| List your authorized MCP clients. | `tokens.listMcpClients()` | `GET /api/tokens/mcp-clients`<br />`settings:read` |
+| Revoke a token by its token ID. | `tokens.revoke(id)` | `DELETE /api/tokens/:id`<br />`settings:write` |
+| Read one MCP client authorization. | `tokens.getMcpClient(id)` | `GET /api/tokens/mcp-clients/:clientId`<br />`settings:read` |
+| Revoke an MCP client authorization. | `tokens.disconnectMcpClient(id)` | `DELETE /api/tokens/mcp-clients/:clientId`<br />`settings:write` |
+
+{/* api-operations:end */}

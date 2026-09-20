@@ -86,8 +86,14 @@ export interface LatestRelease {
   version: string;
   /** Raw tag, e.g. "v0.1.9". */
   tag: string;
-  /** Release notes (markdown/plain) from the GitHub release body. */
+  /** Matching version section from the product changelog (markdown/plain). */
   notes: string;
+}
+
+/** Release metadata shared with the renderer even when no installer is available. */
+export interface ReleaseFeedSnapshot {
+  latest: LatestRelease | null;
+  manifest: AdvisoryManifest | null;
 }
 
 export interface UpdateState {
@@ -96,9 +102,9 @@ export interface UpdateState {
   updateAvailable: boolean;
   /** Advisories that apply to the current version, most severe first. */
   advisories: Advisory[];
-  /** Link to all releases. */
+  /** Link to the public website changelog. */
   changelogUrl: string;
-  /** Link to the latest release's notes (tag-specific), or all releases. */
+  /** Link to the latest version on the website changelog, or the full changelog. */
   latestChangelogUrl: string;
 }
 
@@ -114,11 +120,4 @@ export const RELEASES_LATEST_API = `https://api.github.com/repos/${GITHUB_REPO}/
  */
 export function advisoryManifestUrl(tag: string): string {
   return `https://raw.githubusercontent.com/${GITHUB_REPO}/${encodeURIComponent(tag)}/release-advisories.json`;
-}
-
-/** Human-facing changelog link — a specific tag's notes, or all releases. */
-export function changelogUrl(tag?: string): string {
-  return tag
-    ? `https://github.com/${GITHUB_REPO}/releases/tag/${encodeURIComponent(tag)}`
-    : `https://github.com/${GITHUB_REPO}/releases`;
 }

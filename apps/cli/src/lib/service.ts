@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 import { readCliInstall } from "./cli-install";
 import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
 import { readStoredPorts } from "./ports";
+import { thisHost } from "./this-host";
 
 const HOME = homedir();
 /** Where the tarball install's stable launcher + PATH entry live. */
@@ -49,6 +50,8 @@ export interface UpFlags {
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
   acmeEmail?: string;
+  /** Openship Mail: default the dashboard to the mail control plane. */
+  mail?: boolean;
 }
 
 /** The CLI's own runtime + entry, so the service invokes THIS install. */
@@ -78,6 +81,10 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
+  // Replayed, not carried in the unit's Environment=: the supervised process is
+  // `up --foreground`, which builds its own env from the flags. Without this the
+  // service would boot the platform shell on a box installed as Openship Mail.
+  if (flags.mail) a.push("--mail");
   return a;
 }
 
@@ -127,15 +134,15 @@ export type ServiceKind = "launchd" | "systemd-user" | "systemd-system" | "schta
 export function detectKind(): ServiceKind {
   if (process.platform === "darwin") return "launchd";
   if (process.platform === "linux") {
-    if (!hasSystemd()) return "unsupported";
+    // The resolver's systemd test, not a `command -v systemctl` of our own: systemctl is
+    // installed in plenty of containers where systemd is not the init, and this one asked
+    // only whether the binary existed — so a docker build reported `systemd-user` and then
+    // failed to install a unit. The resolver requires a live /run/systemd/system too.
+    if (thisHost().profile.serviceManager !== "systemd") return "unsupported";
     return isRoot() ? "systemd-system" : "systemd-user";
   }
   if (process.platform === "win32") return "schtasks";
   return "unsupported";
-}
-
-function hasSystemd(): boolean {
-  return spawnSync("sh", ["-c", "command -v systemctl"]).status === 0;
 }
 
 /* ── file builders ──────────────────────────────────────────────────────── */

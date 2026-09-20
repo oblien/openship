@@ -1,93 +1,48 @@
 ---
-title: Projects API
-description: Create and configure projects, link a git repo, manage env vars and resources, read logs, deploy an uploaded folder, and transfer projects to and from Openship Cloud.
+title: Projects
+description: Create and configure projects, source settings, and environments.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-A **project** is the unit Openship builds and runs: a source (a git repo, a local path, or an uploaded
-folder), its build configuration, environment variables, resource limits, domains, and deployment history.
-In the dashboard this is everything under a project's pages; from the terminal it's the
-[`openship projects`](/docs/cli/projects) command.
+A project combines source code, build configuration, environment variables, domains, and deployment
+history. Create a project record first, then [submit a deployment](/docs/api/deployments).
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/projects`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and [auth model](/docs/security/auth) for details.
-</Callout>
-
-<Callout title="Both modes, with a few self-hosted-only routes" type="info">
-The Projects API is served on both self-hosted instances and Openship Cloud. On a self-hosted instance,
-per-project routes transparently proxy to the SaaS for any project that lives in the cloud. Rows marked
-**†** below are **self-hosted only** (local filesystem, edge route rules, folder-upload relay, and
-cloud transfer) and return `404` on the SaaS.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/projects` | `project:list` | List projects in the org. |
-| `POST /api/projects` | `project:write` | Create a project from a git or local source (build config baked in). |
-| `GET /api/projects/home` | `project:list` | Home feed — local + cloud projects merged server-side. |
-| `POST /api/projects/ensure` | `project:write` | Create or update the project carrying build config (folder-upload step 3). |
-| `GET /api/projects/local` † | `project:list` | List local-filesystem projects. |
-| `POST /api/projects/scan` † | `project:write` | Scan a local folder to detect its build config. |
-| `POST /api/projects/import` † | `project:write` | Import a local folder as a project. |
-| `GET /api/projects/:id` | `project:read` | Get a project — config, source, routes, status. |
-| `PATCH /api/projects/:id` | `project:write` | Update a project's configuration. |
-| `DELETE /api/projects/:id` | `project:admin` | Delete a project. |
-| `GET /api/projects/:id/info` | `project:read` | Detailed info (runtime, build, source). |
-| `GET /api/projects/:id/deletion-preview` | `project:read` | Preview what deleting the project would remove. |
-| `GET /api/projects/:id/environments` | `project:read` | List environments (production / previews). |
-| `POST /api/projects/:id/environments` | `project:write` | Create an environment (e.g. a preview). |
-| `POST /api/projects/:id/options` | `project:write` | Set build/deploy options. |
-| `POST /api/projects/:id/enable` | `project:write` | Enable the project (allow deploys / bring online). |
-| `POST /api/projects/:id/disable` | `project:write` | Disable the project (pause deploys / take offline). |
-| `POST /api/projects/:id/routing/retry` | `project:write` | Retry syncing the free `.opsh.io` edge route (no rebuild). |
-| `GET /api/projects/:id/env` | `project:read` | List env vars (secret values masked). |
-| `PATCH /api/projects/:id/env` | `project:write` | Merge env var changes (upserts + deletes). |
-| `GET /api/projects/:id/clone-token` | `project:read` | Get the per-project git clone credential. |
-| `PATCH /api/projects/:id/clone-token` | `project:admin` | Set/replace the per-project clone credential. |
-| `GET /api/projects/:id/git` | `project:read` | Get the linked git repository info. |
-| `GET /api/projects/:id/commit-status` | `project:read` | Compare the deployed commit against remote HEAD. |
-| `POST /api/projects/:id/git/link` | `project:write` | Link a git repository to the project. |
-| `GET /api/projects/:id/branches` | `project:read` | List the linked repository's branches. |
-| `POST /api/projects/:id/auto-deploy` | `project:write` | Enable/disable auto-deploy on push. |
-| `POST /api/projects/:id/webhook-domain` | `project:write` | Set the domain used for git webhook delivery. |
-| `POST /api/projects/:id/branch` | `project:write` | Set the deploy branch. |
-| `GET /api/projects/:id/resources` | `project:read` | Get the CPU/RAM/disk resource config. |
-| `PATCH /api/projects/:id/resources` | `project:write` | Update CPU/RAM/disk, sleep mode, or port. |
-| `POST /api/projects/:id/resources` | `project:write` | Update resources (POST alias of the PATCH). |
-| `POST /api/projects/:id/sleep-mode` | `project:write` | Set sleep mode (`auto_sleep` / `always_on`). |
-| `GET /api/projects/:id/deployments` | `project:deployment:list` | List the project's deployments. |
-| `POST /api/projects/:id/deployment-session` | `project:read` | Open a read-only deployment/build session. |
-| `POST /api/projects/:id/connect` | `project:write` | Connect a custom domain as the primary domain. |
-| `GET /api/projects/:id/logs` | `project:read` | Fetch runtime logs (non-streaming). |
-| `GET /api/projects/:id/logs/stream` | `project:read` | Stream runtime logs. |
-| `GET /api/projects/:id/server-logs/recent` | `project:read` | Recent HTTP request logs. |
-| `GET /api/projects/:id/server-logs/stream-token` | `project:read` | Mint a token for the server-log stream. |
-| `GET /api/projects/:id/server-logs/stream` | `project:read` | Stream HTTP request logs. |
-| `GET /api/projects/:id/route-rules` † | `project:read` | List edge route rules (rate-limit / ban / allow-deny). |
-| `POST /api/projects/:id/route-rules` † | `project:write` | Create an edge route rule. |
-| `PATCH /api/projects/:id/route-rules/:ruleId` † | `project:write` | Update a route rule. |
-| `DELETE /api/projects/:id/route-rules/:ruleId` † | `project:write` | Delete a route rule. |
-| `POST /api/projects/folder/session` | `project:write` | Open a folder-upload session (step 1). |
-| `POST /api/projects/folder/scan/:sessionId` | `project:write` | Detect the uploaded source's build config (step 2). |
-| `POST /api/projects/folder/upload/:sessionId` † | `project:write` | Upload the gzipped tarball (self-hosted relay, 300 MB limit). |
-| `POST /api/projects/:id/transfer/to-cloud` † | `project:admin` | Promote a local project to Openship Cloud. |
-| `POST /api/projects/:id/transfer/to-self-hosted` † | `project:admin` | Bring a cloud project back to this instance. |
+Local filesystem and edge administration operations require self-hosted capabilities. For Cloud, connect
+to the Cloud API directly. [Fixed scopes do not forward through an owner's Cloud link](/docs/api/sdk/compatibility#cloud).
 
 ## Create a project
 
-```
-POST /api/projects
+Create a project from a git repo or a local path, baking the build config into the project row. For an
+uploaded folder, use the [source upload flow](/docs/api/sources) instead. Only `name` is required —
+everything else is auto-detected or defaulted.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.create({
+  name: "marketing-site",
+  gitOwner: "acme",
+  gitRepo: "site",
+  gitBranch: "main",
+  framework: "nextjs",
+});
+console.log(result);
 ```
 
-Create a project from a git repo or a local path, baking the build config into the project row. For an
-uploaded folder, use the [folder-upload flow](#folder-upload-deploy) instead. Only `name` is required —
-everything else is auto-detected or defaulted.
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"marketing-site","gitOwner":"acme","gitRepo":"site","gitBranch":"main","framework":"nextjs"}'
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -124,18 +79,6 @@ everything else is auto-detected or defaulted.
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/projects \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"marketing-site","gitOwner":"acme","gitRepo":"site","gitBranch":"main","framework":"nextjs"}'
-```
-
-```bash
-# Same thing from the CLI:
-openship projects create
-```
-
 <Callout title="Creating a project does not deploy it" type="info">
 `POST /api/projects` only records the project and its config. Trigger the first build with the
 [Deployments API](/docs/api/deployments) (`POST /api/deployments`) or `openship deploy`.
@@ -143,32 +86,62 @@ openship projects create
 
 ## Update a project
 
-```
-PATCH /api/projects/:id
-```
-
 The update body is a **partial** of the [create body](#create-a-project) — send only the fields you want
 to change. Every field above is accepted and optional here.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.update("proj_123", {
+  buildCommand: "pnpm build",
+  gitBranch: "release",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X PATCH https://your-host/api/projects/proj_123 \
+curl -X PATCH "$OPENSHIP_URL/api/projects/proj_123" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"buildCommand":"pnpm build","gitBranch":"release"}'
 ```
 
-```bash
-openship projects update proj_123 --build-command "pnpm build"
-```
+</Tab>
+</Tabs>
 
 ## Link a git repo
 
-```
-POST /api/projects/:id/git/link
-```
-
 Attach (or re-point) a GitHub repository to an existing project. When `branch` is omitted, the repo's
 default branch is used.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.linkRepo("proj_123", {
+  owner: "acme",
+  repo: "site",
+  branch: "main",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/git/link" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"owner":"acme","repo":"site","branch":"main"}'
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -179,13 +152,6 @@ default branch is used.
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/projects/proj_123/git/link \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"owner":"acme","repo":"site","branch":"main"}'
-```
-
 Related git routes: `POST /api/projects/:id/branch` (change the deploy branch),
 `POST /api/projects/:id/auto-deploy` (toggle deploy-on-push), `GET /api/projects/:id/branches`, and
 `GET /api/projects/:id/commit-status` (is the deployed commit behind remote HEAD?). See the
@@ -193,12 +159,31 @@ Related git routes: `POST /api/projects/:id/branch` (change the deploy branch),
 
 ## Connect a custom domain
 
-```
-POST /api/projects/:id/connect
-```
-
 A shortcut that adds a domain to the project and marks it primary in one call. For the full domain
 lifecycle (DNS preview, verification, SSL), use the [Domains API](/docs/api/domains).
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.connectDomain("proj_123", {
+  domain: "app.example.com",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/connect" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain":"app.example.com"}'
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -207,13 +192,6 @@ lifecycle (DNS preview, verification, SSL), use the [Domains API](/docs/api/doma
     externalIngress: { type: 'boolean', description: 'TLS is terminated upstream; verify by TXT only, issue no certificate.', default: 'false' },
   }}
 />
-
-```bash
-curl -X POST https://your-host/api/projects/proj_123/connect \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"domain":"app.example.com"}'
-```
 
 ## Environment variables
 
@@ -226,16 +204,29 @@ PATCH /api/projects/:id/env
 keys you name are touched — `upserts` are inserted/updated, `deletes` are removed, and every other
 variable (including untouched masked secrets) is left intact.
 
-<TypeTable
-  type={{
-    environment: { type: '"production" | "preview" | "development"', description: 'Which environment to edit.', required: true },
-    upserts: { type: '{ key, value, isSecret? }[]', description: 'Variables to insert or update (0–100). isSecret defaults to false.', required: true },
-    deletes: { type: 'string[]', description: 'Variable keys to remove (0–100).', required: true },
-  }}
-/>
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.mergeEnvVars("proj_123", {
+  environment: "production",
+  upserts: [
+    {
+      key: "DATABASE_URL",
+      value: "postgres://…",
+      isSecret: true,
+    },
+  ],
+  deletes: ["OLD_FLAG"],
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -X PATCH https://your-host/api/projects/proj_123/env \
+curl -X PATCH "$OPENSHIP_URL/api/projects/proj_123/env" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -245,9 +236,16 @@ curl -X PATCH https://your-host/api/projects/proj_123/env \
   }'
 ```
 
-```bash
-openship env set DATABASE_URL="postgres://…" --project proj_123 --secret
-```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    environment: { type: '"production" | "preview" | "development"', description: 'Which environment to edit.', required: true },
+    upserts: { type: '{ key, value, isSecret? }[]', description: 'Variables to insert or update (0–100). isSecret defaults to false.', required: true },
+    deletes: { type: 'string[]', description: 'Variable keys to remove (0–100).', required: true },
+  }}
+/>
 
 <Callout title="There is no full-replace endpoint" type="warn">
 The old destructive `PUT /:id/env` was removed — it could wipe or corrupt masked secrets. Always send a
@@ -265,6 +263,33 @@ POST  /api/projects/:id/resources
 Read or update the CPU/RAM/disk allotment (separately for production and build), sleep behavior, and listen
 port. `POST` is an alias of `PATCH`. All fields are optional; send only what you want to change.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.updateResources("proj_123", {
+  production: {
+    cpuCores: 1,
+    memoryMb: 1024,
+  },
+  sleepMode: "always_on",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X PATCH "$OPENSHIP_URL/api/projects/proj_123/resources" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"production":{"cpuCores":1,"memoryMb":1024},"sleepMode":"always_on"}'
+```
+
+</Tab>
+</Tabs>
+
 <TypeTable
   type={{
     production: { type: '{ cpuCores?, memoryMb?, diskMb? }', description: 'Runtime limits. cpuCores 0.25–4, memoryMb 128–8192, diskMb 64–204800.' },
@@ -273,13 +298,6 @@ port. `POST` is an alias of `PATCH`. All fields are optional; send only what you
     port: { type: 'number', description: 'Listen port (1–65535).' },
   }}
 />
-
-```bash
-curl -X PATCH https://your-host/api/projects/proj_123/resources \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"production":{"cpuCores":1,"memoryMb":1024},"sleepMode":"always_on"}'
-```
 
 Sleep mode also has its own shortcut route: `POST /api/projects/:id/sleep-mode`.
 
@@ -299,69 +317,9 @@ POST /api/projects/:id/environments
   }}
 />
 
-## Folder-upload deploy
+## Folder uploads
 
-Deploy a local folder from a browser or client that shares no filesystem with the API. The flow is four
-steps; the binary tarball upload happens out-of-band (raw bytes, not JSON).
-
-<Cards>
-  <Card title="1. Open a session" href="#folder-upload-deploy">
-    `POST /api/projects/folder/session` → returns an `upload` target
-    `{ url, absoluteUrl, method, headers, requiresAuth }`.
-  </Card>
-  <Card title="2. Upload the tarball">
-    POST the gzipped tarball to `upload.absoluteUrl` with `upload.headers` and
-    `Content-Type: application/gzip`. On self-hosted this relays through
-    `POST /api/projects/folder/upload/:sessionId` (300 MB limit).
-  </Card>
-  <Card title="3. Scan">
-    `POST /api/projects/folder/scan/:sessionId` detects stack, package manager, and build/start commands
-    — plus `services` for a docker-compose folder.
-  </Card>
-  <Card title="4. Ensure + deploy">
-    Feed the scan into `POST /api/projects/ensure` (create/update the project), then deploy via
-    `POST /api/deployments/build/access`.
-  </Card>
-</Cards>
-
-The upload target is deliberately opaque — it points at this API's relay on a self-hosted instance and
-straight at a build workspace on Openship Cloud. Use `absoluteUrl` as-is, or resolve the API-relative
-`url` against your own API base. When `requiresAuth` is `true` (the self-hosted relay), send the same
-`Authorization: Bearer <token>` you used to open the session **in addition to** `upload.headers` — the
-relay is permission-checked like every other route. When it's `false`, the target is external and
-carries its own credential in `headers`; never add your Openship token to it.
-
-The session body (`POST /api/projects/folder/session`) is a lightweight hint — all fields optional:
-
-<TypeTable
-  type={{
-    stack: { type: 'string', description: "Stack hint (e.g. 'vite', 'nextjs') to pick the build image." },
-    packageManager: { type: 'string', description: 'npm | pnpm | yarn | bun.' },
-    name: { type: 'string', description: 'Project name.' },
-  }}
-/>
-
-`POST /api/projects/ensure` takes the full [create body](#create-a-project) plus an optional `projectId` to
-update an existing project in place instead of creating a new one. Set `gitProvider: "upload"` for a
-folder-upload project.
-
-### Multi-service folders
-
-When the uploaded folder has a `docker-compose.yml`, the scan returns a `services` array. Pass it through
-to `POST /api/projects/ensure` verbatim and it becomes the project's service set — `ensure` owns those
-rows, so send the whole set (services you leave out are removed, same as
-`POST /api/projects/:id/services/sync`). If you skip it, the deploy step falls back to the services the
-scan parsed for that upload session, so the four-step flow works either way; passing them explicitly is
-what lets you review or edit the set before deploying.
-
-<Callout title="Send uploadSessionId with echoed services" type="warn">
-Compose `environment` values are **masked** on every read (`••••••••`). When you echo a scanned
-`services` array back into `ensure`, include
-`uploadSessionId` so the server can restore the real values from the scan it captured pre-mask. Without
-it, masked values have no source to restore from and are **dropped** rather than persisted as dots (the
-same rule every write path follows). Values you revealed and edited are sent in the clear and pass
-through untouched.
-</Callout>
+See [Source files](/docs/api/sources) to upload a folder or deploy generated code.
 
 ## Transfer to / from cloud
 
@@ -373,12 +331,26 @@ POST /api/projects/:id/transfer/to-self-hosted   † self-hosted only
 Promote a local project to Openship Cloud, or pull a cloud project back to this instance. These are
 meaningless on the SaaS (it *is* the cloud) and return `404` there. Both require `project:admin`.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.projects.transferToCloud("proj_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X POST https://your-host/api/projects/proj_123/transfer/to-cloud \
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/transfer/to-cloud" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-## Errors you might see
+</Tab>
+</Tabs>
+
+## Errors
 
 <Callout title="400 — validation failed" type="warn">
 A field is missing or out of range (e.g. `name` empty, a `cpuCores` above 4, or `git/link` without
@@ -395,3 +367,111 @@ The `:id` doesn't belong to your organization (or was deleted). A self-hosted-on
 also returns `404` when called on Openship Cloud. List your projects with `GET /api/projects` to get valid
 IDs.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+### Lifecycle
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the project overview and summary counts. | `projects.getHome()` | `GET /api/projects/home`<br />`project:list` |
+| Create a project record from explicit configuration. | `projects.create(input)` | `POST /api/projects`<br />`project:write` |
+| Create or select a project during source import. | `projects.ensure(input)` | `POST /api/projects/ensure`<br />`project:write` |
+| Return a page of accessible projects. | `projects.list(input?)` | `GET /api/projects`<br />`project:list` |
+| Read one project and its active deployment ID. | `projects.get(id)` | `GET /api/projects/:id`<br />`project:read` |
+| Update project configuration. | `projects.update(id, input)` | `PATCH /api/projects/:id`<br />`project:write` |
+| Tear down the project and remove its records; inspect the returned steps. | `projects.remove(id, input?)` | `DELETE /api/projects/:id`<br />`project:admin` |
+| Enable the project runtime. | `projects.enable(id)` | `POST /api/projects/:id/enable`<br />`project:write` |
+| Disable the project runtime. | `projects.disable(id)` | `POST /api/projects/:id/disable`<br />`project:write` |
+| Inspect resources that project deletion would affect. | `projects.deletionPreview(id)` | `GET /api/projects/:id/deletion-preview`<br />`project:read` |
+
+### Source and deployment
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the project’s detailed information. | `projects.getInfo(id)` | `GET /api/projects/:id/info`<br />`project:read` |
+| Read linked Git source information. | `projects.getGitInfo(id)` | `GET /api/projects/:id/git`<br />`project:read` |
+| List branches available from the linked source. | `projects.listBranches(id, input?)` | `GET /api/projects/:id/branches`<br />`project:read` |
+| Link a Git repository to the project. | `projects.linkRepo(id, input)` | `POST /api/projects/:id/git/link`<br />`project:write` |
+| Configure a release image as the deployment source. | `projects.setReleaseImageSource(id, input)` | `PUT /api/projects/:id/release-image-source`<br />`project:write` |
+| Enable or disable automatic deployment triggers. | `projects.setAutoDeploy(id, input)` | `POST /api/projects/:id/auto-deploy`<br />`project:write` |
+| Choose the domain used for the project webhook. | `projects.setWebhookDomain(id, input)` | `POST /api/projects/:id/webhook-domain`<br />`project:write` |
+| Read a page of the project’s deployments. | `projects.listDeployments(id, input?)` | `GET /api/projects/:id/deployments`<br />`project:deployment:list` |
+| Read the project’s current deployment session. | `projects.deploymentSession(id)` | `POST /api/projects/:id/deployment-session`<br />`project:read` |
+| Clear authorized build cache for the project. | `projects.clearBuildCache(id)` | `POST /api/projects/:id/clear-build`<br />`project:admin` · Self-hosted |
+| Inspect retained rollback capacity. | `projects.getRollbackCapacity(id)` | `GET /api/projects/:id/rollback-capacity`<br />`project:read` |
+| Check deployment port requirements. | `projects.checkPorts(id)` | `POST /api/projects/:id/port-check`<br />`project:read` |
+| Check the configured build output. | `projects.checkOutput(id)` | `POST /api/projects/:id/output-check`<br />`project:read` |
+| Read actions that need a deployment or routing decision. | `projects.getPendingActions(id)` | `GET /api/projects/:id/pending-actions`<br />`project:read` |
+| Compare source and deployed commit status. | `projects.getCommitStatus(id)` | `GET /api/projects/:id/commit-status`<br />`project:read` |
+| Select the default Git branch. | `projects.setBranch(id, input)` | `POST /api/projects/:id/branch`<br />`project:write` |
+| Scan an allowed local source directory. | `projects.scanLocal(input)` | `POST /api/projects/scan`<br />`project:write` · Self-hosted |
+| Import an allowed local project. | `projects.importLocal(input)` | `POST /api/projects/import`<br />`project:write` · Self-hosted |
+| List discoverable local projects. | `projects.listLocal()` | `GET /api/projects/local`<br />`project:list` · Self-hosted |
+
+### Environments and settings
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the project’s environments. | `projects.listEnvironments(id)` | `GET /api/projects/:id/environments`<br />`project:read` |
+| Create an environment from the supplied configuration. | `projects.createEnvironment(id, input)` | `POST /api/projects/:id/environments`<br />`project:write` |
+| Read environment variables with secrets masked. | `projects.listEnvVars(id, input?)` | `GET /api/projects/:id/env`<br />`project:read` |
+| Upsert and delete named environment variables. | `projects.mergeEnvVars(id, input)` | `PATCH /api/projects/:id/env`<br />`project:write` |
+| Read resource limits and sleep settings. | `projects.getResources(id)` | `GET /api/projects/:id/resources`<br />`project:read` |
+| Change resource allocations. | `projects.updateResources(id, input)` | `PATCH /api/projects/:id/resources`<br />`project:write` |
+| Set the project’s sleep behavior. | `projects.setSleepMode(id, input)` | `POST /api/projects/:id/sleep-mode`<br />`project:write` |
+| Change deployment options. | `projects.setOptions(id, input)` | `POST /api/projects/:id/options`<br />`project:write` |
+| Read whether a project clone token is configured. | `projects.getCloneToken(id)` | `GET /api/projects/:id/clone-token`<br />`project:read` |
+| Set, rotate, or clear the project clone token. | `projects.updateCloneToken(id, input)` | `PATCH /api/projects/:id/clone-token`<br />`project:admin` |
+
+### Routing and monitoring
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Retry applying the project’s routing configuration. | `projects.retryRouting(id)` | `POST /api/projects/:id/routing/retry`<br />`project:write` |
+| Read recent runtime log entries. | `projects.runtimeLogs(id, input?)` | `GET /api/projects/:id/logs`<br />`project:read` |
+| List the project’s edge route rules. | `projects.listRouteRules(id)` | `GET /api/projects/:id/route-rules`<br />`project:read` · Self-hosted |
+| Add an edge route rule. | `projects.createRouteRule(id, input)` | `POST /api/projects/:id/route-rules`<br />`project:write` · Self-hosted |
+| Update an edge route rule using its typed input. | `projects.updateRouteRule(id, input)` | `PATCH /api/projects/:id/route-rules/:ruleId`<br />`project:write` · Self-hosted |
+| Remove the specified edge route rule. | `projects.removeRouteRule(id, input)` | `DELETE /api/projects/:id/route-rules/:ruleId`<br />`project:write` · Self-hosted |
+| Read open and resolved health incidents. | `projects.getIncidents(id)` | `GET /api/projects/:id/incidents`<br />`project:read` · Self-hosted |
+| Attach a domain to the project. | `projects.connectDomain(id, input)` | `POST /api/projects/:id/connect`<br />`project:write` |
+| Read the project’s edge configuration. | `projects.getEdgeConfig(id)` | `GET /api/projects/:id/edge-config`<br />`project:read` · Self-hosted |
+| Obtain an authorized server-log stream token. | `projects.getServerLogStreamToken(id, input?)` | `GET /api/projects/:id/server-logs/stream-token`<br />`project:read` |
+| Read recent request/server logs. | `projects.recentServerLogs(id, input?)` | `GET /api/projects/:id/server-logs/recent`<br />`project:read` |
+| Stream project runtime log events. | `projects.streamRuntimeLogs(id, input?, options?)` | `GET /api/projects/:id/logs/stream`<br />`project:read` |
+| Stream project request/server log events. | `projects.streamServerLogs(id, input?, options?)` | `GET /api/projects/:id/server-logs/stream`<br />`project:read` |
+
+### Connections, storage, and apps
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the project’s outgoing resource connections. | `projects.listConnections(id)` | `GET /api/projects/:id/connections`<br />`project:read` |
+| List accessible projects and apps for a service connection. | `projects.listConnectionCandidates(id)` | `GET /api/projects/:id/connections/candidates`<br />`project:write` |
+| List projects consuming this project’s outputs. | `projects.listConnectionConsumers(id)` | `GET /api/projects/:id/connections/consumers`<br />`project:read` |
+| Connect an output to a target environment variable. | `projects.createConnection(id, input)` | `POST /api/projects/:id/connections`<br />`project:write` |
+| Apply a group of compatible resource connections. | `projects.connectBundle(id, input)` | `POST /api/projects/:id/connections/bundle`<br />`project:write` |
+| Remove a resource connection. | `projects.removeConnection(id, input)` | `DELETE /api/projects/:id/connections/:linkId`<br />`project:admin` |
+| Read the project’s object-storage binding. | `projects.getStorage(id)` | `GET /api/projects/:id/storage`<br />`project:read` |
+| Bind a configured storage bucket. | `projects.bindStorage(id, input)` | `POST /api/projects/:id/storage`<br />`project:write` |
+| Remove the storage binding. | `projects.unbindStorage(id)` | `DELETE /api/projects/:id/storage`<br />`project:admin` |
+
+### Cloud transfer
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Request a Cloud transfer; fixed scopes currently require unavailable tenant mapping. | `projects.transferToCloud(id)` | `POST /api/projects/:id/transfer/to-cloud`<br />`project:admin` · Self-hosted |
+| Request a transfer from Cloud; fixed-scope Cloud mapping limits apply. | `projects.transferToSelfHosted(id)` | `POST /api/projects/:id/transfer/to-self-hosted`<br />`project:admin` · Self-hosted |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Update resources (POST alias of the PATCH). | HTTP only | `POST /api/projects/:id/resources`<br />`project:write` |
+| Read edge readiness for the project. | HTTP only | `GET /api/projects/:id/routing/edge-status`<br />`project:read` |
+| Answer an edge setup prompt for the project. | HTTP only | `POST /api/projects/:id/routing/ensure-edge/respond`<br />`project:write` |
+| Stream edge setup for the project. | HTTP only | `POST /api/projects/:id/routing/ensure-edge/stream`<br />`project:write` |
+
+{/* api-operations:end */}

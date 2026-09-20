@@ -3,6 +3,8 @@
     "title": "Kapazität & Nutzung",
     "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
     "routes": "Kostenlose Routen",
+    "runningServices": "Laufende Dienste",
+    "projects": "Projekte",
     "workspaces": "Workspaces",
     "unlimited": "Unbegrenzt",
     "used": "genutzt",
@@ -12,11 +14,11 @@
   "topupsComingSoon": "Einmalige Guthaben-Aufladungen kommen bald – hier können Sie zusätzlich zu Ihrem monatlichen Kontingent Guthaben hinzufügen.",
   "header": {
     "credits": "Credits",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "creditsSuffix": "von {limit}",
+    "overQuota": "Kontingent überschritten",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "Ein- und Ausgang gesamt",
+    "build": "Build-Zeit",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -33,9 +35,10 @@
     "invoices": "Rechnungen"
   },
   "portal": {
-    "openButton": "Stripe-Portal öffnen",
+    "openButton": "Abrechnungsportal öffnen",
     "errorMissingUrl": "Portal-URL fehlt in der Antwort",
-    "errorOpenFailed": "Stripe-Portal konnte nicht geöffnet werden"
+    "errorOpenFailed": "Stripe-Portal konnte nicht geöffnet werden",
+    "supportButton": "Support kontaktieren"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "Erneut verbinden"
     },
     "notEnabled": {
-      "title": "Für diese Organisation ist die Abrechnung nicht aktiviert",
-      "description": "Die Abrechnung ist konfiguriert, aber für diese Organisation nicht aktiv. Wende dich an deinen Administrator, um sie zu aktivieren."
+      "title": "Cloud-Käufe sind noch nicht verfügbar",
+      "description": "Openship hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
+    },
+    "notConfigured": {
+      "title": "Die Cloud-Abrechnung ist noch nicht vollständig eingerichtet",
+      "description": "Openship muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den Openship-Support."
+    },
+    "forbidden": {
+      "title": "Du hast keinen Zugriff auf die Abrechnung",
+      "description": "Bitte den Inhaber deiner Organisation, dir Zugriff auf die Abrechnung zu gewähren."
+    },
+    "signInRequired": {
+      "title": "Melde dich an, um die Abrechnung anzuzeigen",
+      "description": "Deine Sitzung konnte nicht bestätigt werden. Melde dich erneut an, um fortzufahren.",
+      "signIn": "Anmelden"
+    },
+    "loadFailed": {
+      "title": "Die Abrechnung konnte nicht geladen werden",
+      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den Openship-Support."
     }
   },
   "plansRoute": {
     "loadError": "Tarife konnten nicht geladen werden",
     "genericError": "Etwas ist schiefgelaufen",
     "tryAgain": "Erneut versuchen",
-    "checkoutError": "Bezahlvorgang konnte nicht gestartet werden"
+    "checkoutError": "Bezahlvorgang konnte nicht gestartet werden",
+    "replacementNotice": "Ein Wechsel des Tarifs oder Abrechnungsintervalls startet nach der Zahlung einen neuen Zeitraum zum vollen gewählten Preis. Es gibt keine automatische anteilige Verrechnung.",
+    "changeViaSupport": "Kontaktiere den Support, um dein aktuelles Abonnement zu ändern.",
+    "billingUnavailable": "Käufe sind für dieses Konto noch nicht verfügbar."
   },
   "pricing": {
     "custom": "Individuell",
@@ -73,23 +96,32 @@
     "currentPlan": "Aktueller Tarif",
     "contactSales": "Vertrieb kontaktieren",
     "freeForever": "Für immer kostenlos",
-    "upgrade": "Upgrade"
+    "upgrade": "Upgrade",
+    "comingSoon": "Demnächst",
+    "billingInterval": "Abrechnungsintervall",
+    "monthly": "Monatlich",
+    "annual": "Jährlich",
+    "billedAnnually": "Jährliche Abrechnung"
   },
   "topups": {
     "loadError": "Aufladepakete konnten nicht geladen werden",
-    "title": "Guthaben aufladen",
-    "description": "Einmalige Guthabenpakete, die über Stripe abgerechnet werden. Guthaben verfällt nie und wird zusätzlich zu deinem monatlichen Kontingent gutgeschrieben.",
+    "title": "Cloud-Nutzung hinzufügen",
+    "description": "Einmalige Nutzung für Builds und Apps. Erhöht dein Guthaben, ohne Projekt-, Build-Zeit- oder Dienstlimits zu ändern.",
     "tryAgain": "Erneut versuchen",
     "credits": "Credits",
     "redirecting": "Weiterleitung…",
     "buy": "Kaufen",
     "empty": "Derzeit sind keine Aufladepakete verfügbar.",
     "receiptsTitle": "Letzte Aufladungen",
-    "receiptsDescription": "Belege werden in Stripe verwaltet – öffne das Abrechnungsportal, um deinen Rechnungsverlauf einzusehen und Belege herunterzuladen.",
+    "receiptsDescription": "Belege für zusätzlich gekaufte Nutzung ansehen.",
     "opening": "Wird geöffnet…",
-    "openPortal": "Stripe-Portal öffnen",
+    "openPortal": "Abrechnungsportal öffnen",
     "checkoutError": "Bezahlvorgang konnte nicht gestartet werden",
-    "portalError": "Abrechnungsportal konnte nicht geöffnet werden"
+    "portalError": "Abrechnungsportal konnte nicht geöffnet werden",
+    "extraUsage": "Zusätzliche Nutzung",
+    "prepaidUsage": "Vorausbezahlte Nutzung",
+    "allowanceEquivalent": "der in einem Abrechnungszeitraum enthaltenen Nutzung",
+    "oneTime": "Einmalzahlung"
   },
   "overview": {
     "creditsLeft": "Credits übrig",
@@ -99,7 +131,6 @@
     "resetsInDay": "In {n} Tag",
     "resetsInDays": "In {n} Tagen",
     "none": "—",
-    "upgradeToPro": "Upgrade auf Pro",
     "recentActivity": "Letzte Aktivität",
     "last7Days": "Letzte 7 Tage",
     "viewFullUsage": "Vollständige Nutzung anzeigen",
@@ -133,11 +164,11 @@
     },
     "chart": {
       "title": "Nutzung im Zeitverlauf",
-      "subtitle": "Gestapelte abgerechnete Einheiten pro {unit}."
+      "subtitle": "Cloud-Credits pro {unit}."
     },
     "breakdown": {
       "title": "Ressourcenaufschlüsselung",
-      "subtitle": "Credits werden anteilig der abgerechneten Ressourcennutzung im ausgewählten Zeitraum zugeordnet.",
+      "subtitle": "Tatsächliche Ressourcennutzung im gewählten Zeitraum. Die gesamten Cloud-Credits werden oben angezeigt.",
       "resource": "Ressource",
       "units": "Einheiten",
       "credits": "Credits",
@@ -146,10 +177,22 @@
       "empty": "Keine Nutzung im ausgewählten Zeitraum."
     },
     "resources": {
-      "cpu": { "label": "CPU-Zeit", "units": "vCPU-Stunden" },
-      "memory": { "label": "Arbeitsspeicher", "units": "GB-Stunden" },
-      "disk": { "label": "Festplatten-IO", "units": "GB" },
-      "network": { "label": "Netzwerk", "units": "GB" }
+      "cpu": {
+        "label": "CPU-Zeit",
+        "units": "vCPU-Stunden"
+      },
+      "memory": {
+        "label": "Arbeitsspeicher",
+        "units": "GB-Stunden"
+      },
+      "disk": {
+        "label": "Festplattenaktivität",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Datentransfer",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Arbeitsbereich",
@@ -186,15 +229,177 @@
       "incomplete": "Unvollständig",
       "incomplete_expired": "Abgelaufen",
       "unpaid": "Unbezahlt",
-      "paused": "Pausiert"
-    }
+      "paused": "Pausiert",
+      "credit_exhausted": "Cloud pausiert"
+    },
+    "includedTitle": "Enthaltene Leistungen",
+    "perYear": "${price}/Jahr"
   },
   "paymentPanel": {
     "title": "Zahlungsmethode",
-    "description": "Karten, Bankkonten und Abrechnungsdetails werden im Stripe-Kundenportal verwaltet. Öffne das Portal, um deine Zahlungsmethoden hinzuzufügen, zu entfernen oder zu aktualisieren."
+    "description": "Zahlungsmethoden und Rechnungsdaten verwalten."
   },
   "invoicesPanel": {
     "title": "Rechnungen",
-    "description": "Rechnungen und Belege befinden sich im Stripe-Kundenportal. Öffne das Portal, um deinen Abrechnungsverlauf einzusehen und PDF-Rechnungen herunterzuladen."
+    "description": "Rechnungsverlauf und Rechnungen anzeigen oder anfordern."
+  },
+  "subscription": {
+    "title": "Abonnement",
+    "renewsOn": "Verlängert sich am {date}",
+    "endsOn": "Verlängerung gestoppt. Dein Abonnement endet am {date}.",
+    "endsAtPeriodEnd": "Verlängerung gestoppt. Dein Abonnement endet nach dem bezahlten Zeitraum.",
+    "renewalEnabled": "Automatische Verlängerung ist aktiviert.",
+    "ended": "Abonnement beendet. Wähle einen Tarif, um es erneut abzuschließen.",
+    "billedMonthly": "Monatliche Abrechnung",
+    "cancel": "Abonnement kündigen",
+    "resume": "Verlängerung fortsetzen",
+    "cancelNotice": "Die Verlängerung endet nach dem bezahlten Zeitraum. Dein Abonnement bleibt bis dahin bestehen.",
+    "confirmCancel": "Verlängerung stoppen",
+    "keepPlan": "Abonnement behalten",
+    "error": "Dein Abonnement konnte nicht aktualisiert werden. Bitte versuche es erneut."
+  },
+  "checkout": {
+    "checking": "Dein Cloud-Tarif und Guthaben werden aktualisiert. Die Zahlung kann einen Moment dauern.",
+    "active": "Dein Cloud-Tarif ist aktiv.",
+    "pending": "Deine Zahlung wird möglicherweise noch verarbeitet. Aktualisiere diese Seite, um Tarif und Guthaben zu prüfen. Kontaktiere den Support, wenn eine abgeschlossene Zahlung fehlt.",
+    "support": "Support kontaktieren"
+  },
+  "deployGate": {
+    "title": "Tarif zum Bereitstellen auswählen",
+    "description": "Zum Anlegen von Projekten, Bauen von Code und Ausführen von Apps ist ein kostenpflichtiger Cloud-Tarif erforderlich.",
+    "preserved": "Deine Projekteinstellungen bleiben hier erhalten. Die Zahlung öffnet sich in einem neuen Tab. Kehre nach der Aktivierung deines Tarifs hierher zurück, um fortzufahren.",
+    "close": "Zurück zum Projekt",
+    "checkPlan": "Tarif prüfen",
+    "loading": "Dein Cloud-Tarif wird geladen…",
+    "loadError": "Dein Cloud-Tarif konnte nicht geladen werden. Versuche es erneut.",
+    "ownerRequired": "Bitte den Inhaber deines Arbeitsbereichs, den Cloud-Tarif auszuwählen oder zu verwalten.",
+    "readyTitle": "Kehre zu deinem Projekt zurück",
+    "ready": "Dein Cloud-Tarif wurde aktualisiert. Schließe dieses Fenster und versuche es erneut.",
+    "pending": "Dein Tarif hat sich noch nicht geändert. Schließe die Zahlung ab und prüfe erneut.",
+    "blockedTitle": "Dein Cloud-Tarif erfordert eine Aktion",
+    "creditsTitle": "Cloud-Nutzungskontingent aufgebraucht",
+    "creditsDescription": "Buche weitere Nutzung oder wähle einen größeren Tarif. Zusätzliche Nutzung erhöht keine Projekt-, Build-Zeit- oder Dienstlimits.",
+    "paymentDescription": "Aktualisiere deine Zahlungs- oder Abonnementdaten, um weiter bereitzustellen.",
+    "pausedDescription": "Cloud-Bereitstellungen sind für diesen Arbeitsbereich pausiert. Kontaktiere den Support, um den Zugang wiederherzustellen.",
+    "upgradeTitle": "Dieses Projekt benötigt mehr Kapazität",
+    "upgradeDescription": "Wähle einen Tarif mit ausreichender Kapazität oder passe dein Projekt an und versuche es erneut.",
+    "manageBilling": "Abrechnung verwalten",
+    "topups": "Nutzung hinzufügen",
+    "checkoutOpened": "Die Zahlung ist in einem separaten Tab bereit. Falls er nicht geöffnet wurde, nutze den Link unten.",
+    "continueCheckout": "Weiter zur Zahlung",
+    "reasons": {
+      "static-only": "Dein Tarif enthält diesen Anwendungstyp nicht. Wähle zum Bereitstellen einen geeigneten Tarif.",
+      "build-minutes-exhausted": "Du hast dein monatliches Build-Zeitlimit erreicht. Wähle einen größeren Tarif oder warte, bis dein Build-Kontingent erneuert wird.",
+      "free-subdomain-limit": "Du hast alle Cloud-Subdomains deines Tarifs verwendet. Wähle einen größeren Tarif oder entferne eine ungenutzte Subdomain.",
+      "resource-tier": "Dieses Projekt benötigt mehr CPU oder Arbeitsspeicher als dein Tarif erlaubt. Wähle einen größeren Tarif oder reduziere die Ressourcen in den Projekteinstellungen.",
+      "running-services": "Du hast dein Limit für laufende Dienste erreicht. Wähle einen größeren Tarif oder stoppe einen nicht mehr benötigten Dienst.",
+      "project-limit": "Du hast dein Projektlimit erreicht. Wähle einen größeren Tarif oder lösche ein nicht mehr benötigtes Projekt."
+    }
+  },
+  "resourcesGuide": {
+    "title": "So funktioniert die Cloud-Nutzung",
+    "credits": "Cloud-Credits",
+    "creditsHint": "Builds und laufende Apps verbrauchen Credits für CPU, Arbeitsspeicher, Festplattenzugriffe und Datentransfer. Größere Arbeitslasten verbrauchen Credits schneller.",
+    "creditsPerCycle": "{amount} Credits / Abrechnungszeitraum",
+    "buildTime": "Build-Zeit",
+    "buildMinutes": "{amount} Min. / Monat",
+    "buildHint": "Zeit zum Erstellen deines Codes. Ein 5-minütiger Build verbraucht 5 Minuten deines monatlichen Kontingents.",
+    "apps": "Laufende Dienste",
+    "appsHint": "Gleichzeitig laufende Apps, Datenbanken und Worker. Jeder laufende Compose-Dienst zählt zu diesem Limit.",
+    "machine": "CPU und Arbeitsspeicher pro Dienst",
+    "machineHint": "Die maximale CPU- und Speichergröße für einen Dienst. Dies ist eine Obergrenze und kein gemeinsames Guthaben.",
+    "projects": "Projekte",
+    "projectsHint": "In deinem Arbeitsbereich gespeicherte Projekte, einschließlich Entwürfen.",
+    "routesHint": "Öffentliche Cloud-Adressen für deine Apps.",
+    "unlimited": "Kein festes Limit",
+    "notIncluded": "Nicht enthalten",
+    "noPlan": "Kein Cloud-Tarif",
+    "setupOnly": "Abonnement erforderlich",
+    "setupHint": "Wähle einen Cloud-Tarif, um Projekte anzulegen, Code zu bauen und Apps auszuführen.",
+    "includedTitle": "Deine Ressourcen",
+    "limitsHint": "Projekte, laufende Dienste und monatliche Build-Zeit in deinem Tarif.",
+    "balanceRule": "Apps pausieren, wenn das Nutzungskontingent aufgebraucht ist. Buche weitere Nutzung oder wähle einen höheren Tarif für größere Ressourcenlimits.",
+    "reset": "Build-Kontingent wird am {date} erneuert",
+    "cpuHint": "Rechenleistung über die Zeit. 1 vCPU für 1 Stunde entspricht 1 vCPU-Stunde.",
+    "memoryHint": "Arbeitsspeicher über die Zeit. 1 GB für 1 Stunde entspricht 1 GB-Stunde.",
+    "diskHint": "Von deinen Apps gelesene und geschriebene Daten. Dies misst Festplattenaktivität, nicht die gespeicherte Datenmenge.",
+    "networkHint": "Von deinen Apps gesendete und empfangene Daten.",
+    "usageMeaning": "So liest du den Wert",
+    "selectedRange": "Verbrauchte Credits in diesem Zeitraum",
+    "usageHint": "Tatsächliche CPU-, Arbeitsspeicher-, Festplatten- und Datenübertragungsnutzung im ausgewählten Zeitraum.",
+    "creditsChart": "Cloud-Credits pro {unit}.",
+    "allProjects": "Alle Projekte",
+    "from": "Von (UTC)",
+    "to": "Bis einschließlich (UTC)",
+    "invalidRange": "Wähle ein Enddatum am oder nach dem Startdatum.",
+    "moreFeatures": "Weitere Funktionen",
+    "usageAllowance": "Cloud-Nutzung",
+    "usageIncluded": "Gemeinsames Nutzungskontingent enthalten",
+    "usageSummary": "Builds und laufende Apps teilen sich ein Nutzungskontingent. Größere Maschinen und längere Laufzeiten verbrauchen mehr.",
+    "usageDetails": "Nutzungsdetails",
+    "usagePercent": "{percent} % genutzt"
+  },
+  "onboarding": {
+    "workspaceDescription": "Wähle einen Cloud-Tarif, um Projekte anzulegen, Code zu bauen und Apps auszuführen. Ohne Abonnement sind keine Projekte oder Rechenressourcen enthalten.",
+    "includedCredits": "Enthaltene Cloud-Credits",
+    "noFreeCompute": "Keine kostenlose Cloud-Rechenleistung",
+    "planRequired": "Tarif erforderlich",
+    "savedCredits": "Gespeichertes Nutzungsguthaben",
+    "savedCreditsHint": "Deine vorausbezahlte Nutzung bleibt in diesem Arbeitsbereich. Wähle einen Tarif, um sie für Cloud-Bereitstellungen zu verwenden.",
+    "offerTitle": "Starte auf Openship Cloud",
+    "offerLabel": "Jetzt bereitstellen",
+    "offerDescription": "Ein Zuhause für deine Projekte mit Build-Zeit und Ressourcen für deine Apps.",
+    "startingWith": "Starte mit {name}",
+    "subscribe": "{name} abonnieren",
+    "compare": "Alle Tarife vergleichen",
+    "checkoutNote": "Prüfe deine Zahlungsdetails vor dem Abonnieren.",
+    "choosePlan": "Tarif wählen",
+    "stepsTitle": "Vom Projekt zum Betrieb",
+    "stepPlan": "Wähle deinen Tarif",
+    "stepPlanHint": "Wähle die Projekte, Dienste und Build-Zeit, die du brauchst.",
+    "stepCheckout": "Schließe die Zahlung ab",
+    "stepCheckoutHint": "Dein Cloud-Tarif wird nach der Zahlung aktiviert.",
+    "stepDeploy": "Stelle dein Projekt bereit",
+    "stepDeployHint": "Lege dein Projekt an und klicke auf Bereitstellen.",
+    "usageTitle": "Deine Cloud-Nutzung beginnt hier",
+    "usageDescription": "Stelle ein Projekt mit einem kostenpflichtigen Tarif bereit, um die Build- und App-Nutzung zu sehen.",
+    "paymentTitle": "Noch keine Zahlungsmethode",
+    "paymentDescription": "Füge beim Kauf eine Zahlungsmethode hinzu. Nach dem ersten Kauf kannst du sie hier verwalten.",
+    "invoicesTitle": "Noch keine Rechnungen",
+    "invoicesDescription": "Deine Rechnungen und Belege erscheinen nach der ersten Zahlung.",
+    "topupsTitle": "Starte mit einem Cloud-Tarif",
+    "topupsDescription": "Dein Tarif enthält Nutzung für Builds und Apps. Nach der Aktivierung kannst du weitere Nutzung buchen.",
+    "compareTitle": "Finde den passenden Tarif für deine Projekte",
+    "compareDescription": "Vergleiche Projekte, Dienste, Build-Zeit sowie CPU und Arbeitsspeicher pro App.",
+    "savedProjects": "Gespeicherte Projekte in diesem Arbeitsbereich: {count}. Abonniere einen Tarif, um weitere hinzuzufügen."
+  },
+  "resourceOverview": {
+    "overviewHint": "Verbrauch, verbleibendes Kontingent und Tariflimits deines Arbeitsbereichs.",
+    "remaining": "{amount} verbleibend",
+    "unavailable": "Verbrauch nicht verfügbar",
+    "measuredUsage": "In diesem Zeitraum gemessen",
+    "sharedCompute": "Nutzt dein gemeinsames Rechenkontingent",
+    "computeTitle": "Rechenverbrauch",
+    "computeHint": "CPU, Arbeitsspeicher, Festplattenaktivität und App-Datentransfer teilen sich ein Kontingent. Enthalten sind Builds und laufende Apps.",
+    "cpu": "CPU-Zeit",
+    "cpuHint": "1 vCPU-h entspricht einem CPU-Kern für eine Stunde. Gemessen wird die Rechenarbeit, nicht die App-Laufzeit.",
+    "memory": "Speicherzeit",
+    "memoryHint": "1 GB-h entspricht 1 GB zugewiesenem Arbeitsspeicher für eine Stunde.",
+    "disk": "Festplattenaktivität",
+    "diskHint": "Gelesene und geschriebene App-Daten, nicht der belegte Speicherplatz.",
+    "transfer": "App-Datentransfer",
+    "transferHint": "Ein- und ausgehende Daten deiner Anwendungen. Edge-Traffic wird separat angezeigt.",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Edge-Datentransfer",
+    "bandwidthHint": "Ein- und ausgehender Traffic aller Edge-Routen deines Arbeitsbereichs. Das monatliche Kontingent ist vom Rechenkontingent getrennt. Am Limit pausieren Routen bis zum Reset oder Upgrade.",
+    "requests": "Edge-Anfragen",
+    "requestsHint": "HTTP-Anfragen über die Edge-Routen deines Arbeitsbereichs. Gemeint sind Besucheranfragen, keine Abrechnungseinträge oder API-Aufrufe.",
+    "requestsIncluded": "Im Traffic-Kontingent enthalten",
+    "partialError": "Einige Verbrauchsdaten konnten nicht geladen werden. Bitte aktualisieren.",
+    "refresh": "Ressourcenverbrauch aktualisieren",
+    "period": "{start} – {end}",
+    "currentPeriod": "Aktueller Abrechnungszeitraum",
+    "viewUsage": "Verbrauchsdetails ansehen",
+    "bandwidthPerMonth": "{amount} GB / Monat"
   }
 }

@@ -4,6 +4,70 @@
     "save": "Kaydet",
     "cancel": "İptal"
   },
+  "releaseImageSource": {
+    "validationInvalid": "Sürüm imajı kaynağı geçersiz.",
+    "toast": {
+      "saved": "Konteyner sürüm kaynağı kaydedildi.",
+      "saveFailed": "Konteyner sürüm kaynağı kaydedilemedi."
+    },
+    "status": {
+      "notDeployed": "Henüz dağıtılmadı",
+      "checking": "Kontrol ediliyor…",
+      "unavailable": "Kullanılamıyor"
+    },
+    "switchToImage": {
+      "title": "Hazır imaj kaynağına geç",
+      "description": "Kaydetmek, tüm ortamlardaki mevcut Git veya yerel kaynağı değiştirir. Mevcut dağıtımlar ve geri alma geçmişi kullanılabilir kalır.",
+      "keep": "Mevcut kaynağı koru"
+    },
+    "switchToGit": {
+      "title": "Git kaynağına geç",
+      "description": "Bir depo bağlayana kadar hiçbir şey değişmez. Depoyu bağlamak, tüm ortamlardaki takip edilen imaj kaynağını değiştirir.",
+      "back": "İmaj kaynağına dön"
+    },
+    "entry": {
+      "shortButton": "Hazır imaj kullan",
+      "button": "Hazır konteyner imajını takip et",
+      "description": "Bir depoyu klonlamadan veya derlemeden sürümlü bir kayıt imajını doğrudan dağıtın."
+    },
+    "summary": {
+      "title": "Takip edilen konteyner imajı",
+      "badge": "Hazır",
+      "description": "Yayımlanmış bir imajı doğrudan dağıtır. Depo klonlanmaz ve derleme komutu çalıştırılmaz.",
+      "linkGit": "Git deposunu bağla",
+      "image": "İmaj",
+      "versionSource": "Sürüm kaynağı",
+      "githubReleases": "GitHub sürümleri",
+      "pinnedVersion": "Sabitlenmiş sürüm",
+      "currentVersion": "Geçerli sürüm",
+      "targetVersion": "Hedef sürüm",
+      "latestVersion": "En son sürüm",
+      "updateAvailable": "Güncelleme mevcut"
+    },
+    "editor": {
+      "trackingTitle": "Sürüm takibi",
+      "configureTitle": "Hazır imajı yapılandır",
+      "templateHint": "Yayıncının tam etiketini korumak için {tag}, normalleştirilmiş sürüm için {version} kullanın.",
+      "provider": "Sürüm sağlayıcısı",
+      "githubTitle": "GitHub sürümleri",
+      "githubDescription": "En son yayımlanmış sürüm etiketini takip edin.",
+      "urlTitle": "Sürüm URL'si veya sabitleme",
+      "urlDescription": "Bir sürüm uç noktasını okuyun veya sabit bir sürüm dağıtın.",
+      "imageTemplate": "İmaj şablonu",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub deposu",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "Sürüm URL'si",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "version/tag_name içeren metin veya JSON döndüren HTTPS uç noktası.",
+      "pinnedVersion": "Sabitlenmiş sürüm",
+      "pinnedPlaceholder": "İsteğe bağlı, ör. v2.4.1",
+      "pinnedHint": "Bulunan en son sürümü geçersiz kılar; güncellemeleri izlemek için boş bırakın.",
+      "appliesAll": "Değişiklikler bu projenin tüm ortamlarına uygulanır.",
+      "saving": "Kaydediliyor…",
+      "save": "Kaynağı kaydet"
+    }
+  },
   "appSource": {
     "title": "Kaynak",
     "description": "Bu uygulama bir sürümden (release) dağıtılır — push yapılacak bir repo yoktur; güncellemeler yeni sürümler olarak gelir.",
@@ -75,8 +139,8 @@
     "firstLoginPassword": "Parola",
     "destinationTitle": "Nereye kurulacak",
     "destinationHint": "Bu uygulamanın çalışacağı sunucuyu veya bulutu seçin.",
-    "destLocal": "Bu bilgisayar",
-    "destLocalDesc": "Burada, bu Openship sunucusunda çalıştırın.",
+    "descMore": "Daha fazla",
+    "descLess": "Daha az",
     "statusInstalling": "Yükleniyor",
     "statusLive": "Yayında",
     "statusCancelled": "İptal edildi",
@@ -84,10 +148,21 @@
     "stopInstall": "Yüklemeyi durdur",
     "stopping": "Durduruluyor…",
     "installCancelled": "Yükleme iptal edildi",
+    "installFailedBody": "Her şey çalışmaya başlamadan önce durdu. Tam derleme günlüğü teknik detaylarda yer alıyor.",
+    "installCancelledSelf": "Bu yüklemeyi siz durdurdunuz.",
+    "installCancelledBody": "Oluşturduğu konteynerler ve imajlar kaldırıldı, veri birimleri ise korundu — yeniden yüklediğinizde bunlar tekrar kullanılır. Halihazırda çalışan hiçbir şeye dokunulmadı.",
+    "settledAtPhase": "{phase} adımında durdu",
+    "logsWaiting": "Çıktı bekleniyor…",
+    "logsEmpty": "Hiçbir çıktı kaydedilmedi.",
     "startOver": "Baştan başla",
     "breadcrumbApps": "Uygulamalar",
     "appEyebrow": "Uygulama",
     "stopFailed": "Yükleme durdurulamadı",
+    "progressStep": "Adım {current} / {total}",
+    "progressServicesReady": "{total} servisten {done} tanesi hazır",
+    "summaryTitle": "Yapılandırma",
+    "summaryDestination": "Hedef",
+    "summaryServices": "Servisler",
     "mail": {
       "title": "E-posta kur",
       "subtitle": "Kendi alan adınızda webmail dağıtın veya mevcut bir posta kutusunu bağlayın.",
@@ -102,8 +177,11 @@
         "gmail": "Gmail",
         "fastmail": "Fastmail"
       },
-      "sesNote": "Amazon SES yalnızca e-posta gönderir — IMAP'i e-postalarınızın saklandığı ve okunduğu yere yönlendirin.",
-      "sesSelfHostCta": "Posta kutunuz yok mu? Şimdi kendiniz barındırın ve giden e-postaları SES üzerinden iletin →",
+      "sendOnlyNote": "{provider} yalnızca e-posta gönderir — üzerinde posta kutusu tutmaz. IMAP'i e-postalarınızın gerçekten saklandığı yere yönlendirmeniz gerekir.",
+      "sendOnlyNoInbox": "Henüz posta kutunuz yok mu? Burada bir posta sunucusu kurun, sonra gönderimi {provider} üzerinden iletin →",
+      "imapOnOurServer": "Posta kutuları {host} adresinden okunuyor — bu örneğin kendi posta sunucusu. Yalnızca gönderim {provider} üzerinden gidiyor.",
+      "relayNote": "Bu örnek zaten bir posta sunucusu çalıştırıyor. Posta kutuları onun üzerindeyse, gönderimi onun Teslim → Gönderim sekmesinden iletin: IMAP yerelde kalır, yalnızca gönderim {provider} üzerinden gider — alan adı veya adres bazında — ve kendi webmail'i çalışmaya devam eder.",
+      "relayCta": "Bunun yerine aktarmayı yapılandır →",
       "hostname": "Webmail adresi",
       "hostnameHint": "Kullanıcıların e-postalarını okumak için açtığı herkese açık URL, örn. mail.example.com.",
       "imapHost": "IMAP sunucusu",
@@ -126,6 +204,28 @@
       "project": "Proje",
       "hostedOn": "Barındığı Yer"
     },
+    "projectMenu": {
+      "rename": "Projeyi yeniden adlandır",
+      "copyId": "Proje kimliğini kopyala",
+      "idCopied": "Proje kimliği kopyalandı",
+      "copyFailed": "Panoya kopyalanamadı",
+      "pause": "Projeyi duraklat",
+      "resume": "Projeyi sürdür",
+      "delete": "Projeyi sil"
+    },
+    "rename": {
+      "title": "Projeyi yeniden adlandır",
+      "description": "Yalnızca görünen adı değiştirir. Hiçbir şey yeniden dağıtılmaz.",
+      "label": "Proje adı",
+      "placeholder": "Projem",
+      "identityNote": "Proje “{slug}” kimliğini korur — URL'si, kapsayıcı adları ve birimleri değişmez. URL'yi değiştirmek için “Alan Adları ve Rotalar” bölümünden alan adını düzenleyin.",
+      "save": "Kaydet",
+      "cancel": "İptal",
+      "toast": {
+        "renamed": "{name} olarak yeniden adlandırıldı",
+        "failed": "Proje yeniden adlandırılamadı"
+      }
+    },
     "statusActive": "Aktif",
     "statusDisabled": "Pasif",
     "hostedCloud": "Openship Bulut",
@@ -139,15 +239,54 @@
       "liveAccessible": "Yayında ve erişilebilir",
       "pausedInaccessible": "Duraklatıldı ve erişilemez",
       "disable": "Devre Dışı Bırak",
-      "enable": "Etkinleştir"
+      "enable": "Etkinleştir",
+      "migrating": "Taşınıyor",
+      "migratingHint": "Başka bir sunucuya taşınıyor"
+    },
+    "migration": {
+      "title": "Taşıma",
+      "description": "Bu projeyi başka bir sunucuya taşı",
+      "currentServer": "Mevcut sunucu",
+      "migrate": "Taşı",
+      "noOtherServers": "Bu projeyi taşımak için ikinci bir sunucu ekleyin.",
+      "cloudLater": "Sunucudan sunucuya. Openship Cloud'a veya oradan taşıma henüz desteklenmiyor.",
+      "startFailed": "Taşıma başlatılamadı",
+      "confirmTitle": "{project} projesini {server} sunucusuna taşı",
+      "confirmSubtitle": "Taşımayı başlatana kadar hiçbir şey değişmez.",
+      "svcVolumes": "{count} volume",
+      "downtimeNote": "Veriler kopyalanırken ve yeni sunucu projeyi başlatırken proje çevrimdışı olur. Durum tutan servisler aktarım boyunca kapalı kalır.",
+      "dnsNote": "DNS hâlâ eski sunucuyu gösteriyor — yeni sunucu yanıt vermeye başladığında kayıtlarınızı taşıyın.",
+      "cancel": "İptal",
+      "confirmStart": "Taşımayı başlat",
+      "duplicate": "Çoğalt",
+      "intentMove": "Taşı",
+      "intentCopy": "Çoğalt",
+      "intentMoveHint": "Proje taşınır. Onayladığınızda konteynerleri ve volume'ları eski sunucudan silinir.",
+      "intentCopyHint": "Özgün proje çalışmaya devam eder. Yeni sunucuda, verinin bir kopyasıyla ikinci bir proje oluşur.",
+      "confirmTitleCopy": "{project} projesini {server} sunucusuna çoğalt",
+      "confirmStartCopy": "Çoğaltmayı başlat",
+      "downtimeNoteCopy": "Veriler kopyalanırken proje kısa süre çevrimdışı olur — düzgün kopyalanabilmesi için volume'ların durması gerekir. Kopyalama biter bitmez eski sunucuda yeniden başlar.",
+      "copyNoDomainsNote": "Kopya alan adı olmadan başlar — mevcut alan adları, onları sunan projede kalır.",
+      "fromLabel": "Kaynak",
+      "toLabel": "Hedef",
+      "modeLabel": "Mod",
+      "scopeLabel": "Neler çoğaltılacak",
+      "scopeAll": "Tümünü seç",
+      "scopeHintAll": "Tüm servisler ve verileri.",
+      "scopeHintSome": "{count} servis — gerisi yalnızca özgün projede kalır.",
+      "sourceServices": "{count} servis",
+      "runningStatus": "Sürüyor — {status}"
     },
     "cache": {
-      "title": "Önbellek",
-      "description": "Önbelleğe alınmış derleme çıktılarını ve bağımlılık kurulumlarını temizleyin",
+      "title": "Docker Derleme Önbelleği",
+      "description": "Kullanılmayan derleme önbelleği sunucu başına otomatik olarak 5 GB ile sınırlandırılır",
       "clearInstall": "Kurulum Önbelleğini Temizle",
       "clearInstallDesc": "Önbelleğe alınmış node_modules klasörünü kaldır",
       "clearBuild": "Derleme Önbelleğini Temizle",
-      "clearBuildDesc": "Önbelleğe alınmış derleme çıktısını kaldır"
+      "clearBuildDesc": "Bu projenin Docker sunucusundaki kullanılmayan önbelleği kaldır",
+      "clearBuildConfirm": "Bu sunucudaki tüm kullanılmayan Docker derleme önbelleği temizlensin mi? Diğer projeler bir sonraki dağıtımda bağımlılıkları yeniden derleyebilir.",
+      "clearBuildSuccess": "{size} derleme önbelleği geri kazanıldı",
+      "clearBuildEmpty": "Temizlenecek kullanılmayan derleme önbelleği yok"
     },
     "transfer": {
       "title": "Taşıma ve Klonlama",
@@ -360,8 +499,8 @@
       "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
-      "title": "Ortam değişkenleri",
-      "description": "Depolanırken şifrelenir. Gizli veriler maskeli kalır — yalnızca değiştirdiğiniz değerler yazılır.",
+      "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+      "description": "İmaj derlemelerinde ve ortak çalışma zamanı girdisi olarak kullanılır. Çalışma zamanında Compose ve servise özel değerler önceliklidir. Gizli değerler maskeli kalır.",
       "edit": "Düzenle"
     }
   },
@@ -370,10 +509,10 @@
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
     "applyTitle": "Yeniden derleme olmadan uygula",
-    "applyText": "Kaydedildi. Bunları çalışan servise uygulayın — yeni ortam değişkenleriyle yeniden başlatılır, klonlama veya yeniden derleme yapılmaz.",
+    "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",
-    "title": "Ortam değişkenleri",
-    "description": "Canlı ortam. Depolanırken şifrelenir. Gizli veriler ayarlandı olarak görünür — değiştirmek için yazın; korumak için boş bırakın.",
+    "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+    "description": "Projenin üretim ortamı değişkenleri. Gizli değerler maskeli kalır; kayıtlı bir gizli değeri korumak için boş bırakın. Aynı anahtar için servis değerleri önceliklidir.",
     "empty": "Henüz ortam değişkeni yok.",
     "keyPlaceholder": "ANAHTAR",
     "secretPlaceholder": "•••••••• (ayarlandı — değiştirmek için yazın)",
@@ -392,6 +531,8 @@
       "savedTitle": "Kaydedildi",
       "saveFailed": "Ortam değişkenleri kaydedilemedi",
       "saveFailedTitle": "Kaydetme başarısız oldu",
+      "noChanges": "Kaydedilecek değişiklik yok — kayıtlı değerleriniz korundu.",
+      "noChangesTitle": "Kaydedilecek bir şey yok",
       "applying": "Servis yeni ortam değişkenleriyle yeniden başlatılıyor — derleme yok.",
       "applyingTitle": "Uygulanıyor",
       "applyFailed": "Ortam değişkenleri çalışan servise uygulanamadı",
@@ -404,28 +545,7 @@
     "unlink": "Bağlantıyı kaldır"
   },
   "gitInfo": {
-    "repository": "Depo",
-    "autoDeploy": "Otomatik dağıtım",
-    "deploysOnPush": "Her push işleminde dağıtılır",
-    "manualOnly": "Yalnızca manuel dağıtımlar",
-    "branchToDeploy": "Dağıtılacak dal",
-    "chooseBranch": "Deponuzdan hangi dalın dağıtılacağını seçin",
-    "save": "Kaydet",
-    "cancel": "İptal",
-    "viewOnGithub": "GitHub'da Görüntüle",
-    "recentCommits": "Son commitler",
-    "totalCommits": "toplam {count}",
-    "noCommits": "Henüz commit yok",
-    "toast": {
-      "fetchBranchesFailed": "Dallar çekilemedi",
-      "errorTitle": "Hata",
-      "branchUpdated": "Dal başarıyla güncellendi",
-      "updatedTitle": "Güncellendi",
-      "branchUpdateFailed": "Dal güncellenemedi",
-      "autoDeployEnabled": "Otomatik dağıtım etkinleştirildi",
-      "autoDeployDisabled": "Otomatik dağıtım devre dışı bırakıldı",
-      "autoDeployFailed": "Otomatik dağıtım güncellenemedi"
-    }
+    "autoDeploy": "Otomatik dağıtım"
   },
   "git": {
     "connectFirst": {
@@ -488,13 +608,13 @@
       "title": "Geri alma stratejisi",
       "rebuild": "Yeniden derle (git)",
       "instant": "Anında (anlık görüntü - snapshot)",
-      "descRebuild": "Görüntüsü hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstant": "Her sürümün görüntüsünü saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır.",
+      "descRebuild": "İmajı sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstant": "Çıktıları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir.",
       "toggleAria": "Anlık görüntü saklamayı değiştir",
-      "keepNone": "Ek kopya tutulmaz",
-      "keepCopies": "Sürüm başına bir kopya",
-      "descRebuildFiles": "Dosyaları hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstantFiles": "Her sürümün dosyalarını saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır."
+      "keepNone": "İmajları yeniden kullan veya yeniden derle",
+      "keepCopies": "Geri alma çıktılarını sakla",
+      "descRebuildFiles": "Dosyaları sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstantFiles": "Derlenmiş dosyaları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir."
     },
     "rollbackHistory": {
       "title": "Geri alma geçmişi",
@@ -504,13 +624,17 @@
       "descGit": "Son görüntüler her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
       "decreaseAria": "Geri alma geçmişini azalt",
       "increaseAria": "Geri alma geçmişini artır",
-      "sizeEach": "her biri ~{size}",
+      "sizeEach": "paylaşılan katmanlar dahil imaj başına ~{size}",
       "diskFree": "{size} boş",
       "autoBadge": "otomatik boyutlandırıldı",
       "manualBadge": "elle ayarlandı",
       "kindFiles": "diskteki üretilmiş dosyalar",
       "kindImages": "sunucudaki imajlar",
-      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir."
+      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
+      "retentionHint": "Hızlı geri dönüş için son dağıtımların çıktılarını saklayın.",
+      "retentionDescription": "Saklanacak önceki sürümlerin en yüksek sayısıdır. Etkin ve sabitlenmiş sürümler bu sınıra dahil değildir. Eski çıktılar silinir; dağıtım geçmişi korunur. Yalnızca etkin ve sabitlenmiş sürümleri saklamak için 0 olarak ayarlayın.",
+      "defaultBadge": "örnek varsayılanı",
+      "loadFailed": "Geri alma ayarları yüklenemedi."
     },
     "commits": {
       "title": "Son commitler",
@@ -575,6 +699,9 @@
     "title": "Makine gücü",
     "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
     "loading": "Hedef makine okunuyor…",
+    "unavailable": "Makine gücü kullanılamıyor",
+    "loadFailed": "Makine gücü yüklenemedi",
+    "retry": "Yeniden dene",
     "machineCapacity": "Makine: {cpu} vCPU · {memory}",
     "exceedsMachine": "Bu makineyi aşıyor",
     "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
@@ -599,6 +726,10 @@
       "high": {
         "name": "Yüksek",
         "description": "Yüksek trafikli uygulamalar"
+      },
+      "xlarge": {
+        "name": "Çok büyük",
+        "description": "Veritabanları ve yoğun iş yükleri"
       }
     },
     "custom": {
@@ -653,10 +784,6 @@
     "cannotUndo": "Bu işlem geri alınamaz.",
     "aboutToPrefix": "Şunu silmek üzeresiniz: ",
     "aboutToSuffix": ".",
-    "deleteAllAria": "Tüm ortamları sil",
-    "deleteAll": "Tüm ortamları sil",
-    "deleteAllOn": "Proje uygulamasını ve altındaki her dal ortamını kaldırır.",
-    "deleteAllOff": "Yalnızca bu ortamı kaldırır. Diğer dallar kalır.",
     "scanning": "Bağlı servisler ve disk birimleri taranıyor…",
     "wipeAria": "Ayrıca servis verilerini de sil",
     "wipeLabelOne": "Ayrıca servis verilerini de sil ({count} disk birimi)",
@@ -671,9 +798,7 @@
     "typePrefix": "Onaylamak için ",
     "typeSuffix": " yazın.",
     "cancel": "İptal",
-    "confirmDeleteWipe": "Sil + verileri temizle",
     "confirmDeleteEnvWipe": "Ortamı sil + verileri temizle",
-    "confirmDelete": "Projeyi sil",
     "confirmDeleteEnv": "Ortamı sil",
     "linkedTitleOne": "{count} proje bu uygulamaya bağlı",
     "linkedTitleOther": "{count} proje bu uygulamaya bağlı",
@@ -758,7 +883,10 @@
       "includeWwwDesc": "Ayrıca www.{domain} için de kayıtlar oluştur",
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
-      "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "dnsChallenge": "DNS-01 doğrulamasını kullan",
+      "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
+      "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
       "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
       "adding": "Ekleniyor...",
       "submit": "Alan adı ekle"
@@ -776,7 +904,9 @@
       "toggle": "DNS kayıtları",
       "hint": "Bunları DNS sağlayıcınıza ekleyin, ardından Doğrula'ya tıklayın.",
       "loading": "Kayıtlar yükleniyor…",
-      "none": "Bu alan adı için eklenecek kayıt yok."
+      "none": "Bu alan adı için eklenecek kayıt yok.",
+      "failed": "Bu alan adı için DNS kayıtları yüklenemedi.",
+      "retry": "Yeniden dene"
     },
     "verifyMissing": {
       "both": "Ne CNAME ne de TXT kaydı henüz çözümlenmiyor — aşağıdaki kayıtları ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
@@ -788,7 +918,9 @@
       "bodyService": "\"{service}\" servisi: port {port} üzerinde hiçbir şey yanıt vermedi — orayı dinleyene kadar istekler 502 hatası verebilir."
     },
     "outputHint": {
-      "body": "{path} yolunda derleme çıktısı bulunamadı — Çıktı Dizininizi kontrol edip yeniden dağıtın."
+      "body": "{path} yolunda derleme çıktısı bulunamadı — Çıktı Dizininizi kontrol edip yeniden dağıtın.",
+      "noIndex": "{path} yolunda çıktı var ancak index dosyası yok — istekler 404 dönecek. Çıktı Dizininizi kontrol edin.",
+      "notServed": "Uç sunucu {path} için HTTP {status} yanıtı verdi — bu yol hizmet vermiyor. Çıktı Dizininizi ve yönlendirmeyi kontrol edin."
     },
     "overview": {
       "primary": "Birincil",
@@ -905,5 +1037,13 @@
       "attempts": "Şu ana kadar {count} başarısız deneme.",
       "pillHint": "Nedenini göster"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Servis çalışma zamanı ortamı",
+    "description": "Bu değişkenler yalnızca bu hizmete uygulanır ve Compose veya projedeki aynı adlı değerlerin yerini alır. Kaydedilen değerleri etkinleştirmek için Ortam değişikliklerini uygula seçeneğini kullanın.",
+    "overrides": "Bu serviste şu anahtarlar proje değerlerinden önceliklidir: {keys}.",
+    "buildArguments": "Derleme argümanları Compose dosyasında veya kaynak yapılandırmasında tanımlanır ve yeniden derleme gerektirir.",
+    "projectLink": "Ortak proje ortamını düzenle",
+    "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
   }
 }

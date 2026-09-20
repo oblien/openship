@@ -109,6 +109,23 @@
       "description": "Curated-catalog marker. Forced by the server on custom uploads — authoring it has no effect.",
       "type": "boolean"
     },
+    "minResources": {
+      "description": "What the app needs from its host. Matched against the machine's probed RAM/vCPU before install, and refused if short (a 10% tolerance covers a \"16 GB\" box reporting 15.6). Only declare it for an app that genuinely won't run on a small server — omitted means no check.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "memoryMb": { "description": "Total RAM the app needs, in MB.", "type": "number", "exclusiveMinimum": 0 },
+        "cpuCores": { "description": "vCPU the app needs.", "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "unlisted": {
+      "description": "true → installable by id but not shown in the app grid, for an app whose entry point is another app's wizard. Unlike \"available\": false, install still succeeds. Forced off on custom uploads (the grid is their only entry point).",
+      "type": "boolean"
+    },
+    "hosting": {
+      "description": "How the app is hosted — an honest catalog badge + wizard notice. Omitted ⇒ \"self-hosted\" (runs on the user's server). \"experimental\" = self-host that runs but isn't production-grade.",
+      "enum": ["self-hosted", "experimental"]
+    },
     "schemaVersion": {
       "description": "JSON shape revision. Defaults to 1. Bump only on a genuinely breaking shape change.",
       "type": "number"
@@ -136,15 +153,39 @@
 
     "service": {
       "type": "object",
-      "required": ["name", "image"],
+      "required": ["name"],
+      "oneOf": [{ "required": ["image"] }, { "required": ["build"] }],
       "properties": {
         "name": {
           "description": "Service name, and its hostname on the project network. Other services reach it at this exact name.",
           "type": "string"
         },
         "image": {
-          "description": "Container image. Pin a version — unpinned tags are rejected in review.",
+          "description": "Container image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image|build per service.",
           "type": "string"
+        },
+        "build": {
+          "description": "Inline Docker build context — build the service image instead of pulling it (a base image needing extra packages + a provisioning ENTRYPOINT). Mutually exclusive with image. Built on the deploy host via the normal build pipeline.",
+          "type": "object",
+          "required": ["dockerfile"],
+          "properties": {
+            "dockerfile": {
+              "description": "Full Dockerfile contents. Supports {{config:KEY}} placeholders. COPY/ADD sources are relative to the shared build-context ROOT: every files[] entry lands under a directory named after this service, so copy it as `<service-name>/<path>` (e.g. `COPY compute/compute.sh ...` for a files entry `compute.sh` on service `compute`). Dockerfile ARGs are fed from the service's env (each env var becomes a --build-arg).",
+              "type": "string"
+            },
+            "files": {
+              "description": "Extra build-context files (COPY targets / scripts). path is relative to this service's context subdir; in the Dockerfile, COPY it as `<service-name>/<path>`. content supports {{config:KEY}}.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["path", "content"],
+                "properties": {
+                  "path": { "type": "string" },
+                  "content": { "type": "string" }
+                }
+              }
+            }
+          }
         },
         "ports": {
           "description": "Compose-style port strings, e.g. [\"2368:2368\"].",

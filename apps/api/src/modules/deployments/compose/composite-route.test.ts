@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildDomainFanoutRegistrations } from "./composite-route";
+import { buildDomainFanoutRegistrations } from "@repo/platform/engine/modules/deployments/compose/composite-route";
 import type { ProjectCompositeRoute } from "@repo/core";
 
 const onvo: ProjectCompositeRoute = {
@@ -27,6 +27,21 @@ describe("buildDomainFanoutRegistrations", () => {
         targetUrl: "http://10.0.0.1:1010",
         proxyLocations: [{ pathPrefix: "/v3", targetUrl: "http://10.0.0.2:1020" }],
       },
+    ]);
+  });
+
+  it("preserves exact-match locations in the generated registration", () => {
+    const exact: ProjectCompositeRoute = {
+      ...onvo,
+      locations: [{ pathPrefix: "/mcp", serviceId: "svc-api", exact: true }],
+    };
+    const regs = buildDomainFanoutRegistrations({
+      routes: [exact],
+      resolveTargetUrl: (id) => upstreams[id],
+    });
+
+    expect(regs[0].proxyLocations).toEqual([
+      { pathPrefix: "/mcp", targetUrl: "http://10.0.0.2:1020", exact: true },
     ]);
   });
 

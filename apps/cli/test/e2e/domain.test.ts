@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// domain.ts calls the api-client directly (no local login guard); the config
+// domain.ts uses the named SDK operations (no local login guard); the config
 // seam supplies the base URL + token, caps is stubbed self-hosted.
 const h = vi.hoisted(() => ({ token: "tok" as string | null }));
 vi.mock("../../src/lib/config", () => ({
@@ -15,6 +15,7 @@ vi.mock("../../src/lib/caps", () => ({
 import { domainCommand } from "../../src/commands/domain";
 import { setJsonMode } from "../../src/lib/output";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
+import { domainFixture } from "../../../../packages/contracts/test/fixtures";
 
 const API = "http://api.test/api";
 
@@ -31,8 +32,8 @@ afterEach(() => {
 
 describe("openship domain list", () => {
   const DOMAINS = [
-    { id: "d1", hostname: "app.example.com", domainType: "primary", isPrimary: true, verified: true, status: "active", sslStatus: "issued" },
-    { id: "d2", hostname: "www.example.com", verified: false, status: "pending" },
+    { ...domainFixture("d1"), hostname: "app.example.com", domainType: "primary", isPrimary: true, verified: true, status: "active", sslStatus: "issued" },
+    { ...domainFixture("d2"), hostname: "www.example.com", verified: false, status: "pending" },
   ];
 
   it("GETs /domains for the project and tabulates the rows", async () => {
@@ -65,8 +66,8 @@ describe("openship domain list", () => {
 
 describe("openship domain add", () => {
   const ADDED = {
-    data: { id: "d9", hostname: "app.example.com" },
-    records: { mode: "selfhosted", records: [{ type: "CNAME", host: "app", value: "edge.example.net" }] },
+    data: domainFixture("d9"),
+    records: { mode: "selfhosted", records: [{ type: "CNAME", host: "app", name: "app.example.com", value: "edge.example.net" }] },
   };
 
   it("POSTs the hostname to /domains and points the user at verify", async () => {
@@ -96,7 +97,7 @@ describe("openship domain add", () => {
 // ─── preview (no changes saved) ──────────────────────────────────────────────
 
 describe("openship domain preview", () => {
-  const PREVIEW = { data: { mode: "cloud", records: [{ type: "TXT", host: "_openship", value: "verify=abc" }] } };
+  const PREVIEW = { data: { mode: "cloud", records: [{ type: "TXT", host: "_openship", name: "_openship.example.com", value: "verify=abc" }] } };
 
   it("POSTs the hostname to /domains/preview and prints the record table", async () => {
     fetchStub = stubFetch(() => ({ json: PREVIEW }));
@@ -158,7 +159,7 @@ describe("openship domain verify", () => {
 // ─── primary ─────────────────────────────────────────────────────────────────
 
 describe("openship domain primary", () => {
-  const PRIMARY = { data: { id: "d1", hostname: "app.example.com", isPrimary: true } };
+  const PRIMARY = { data: { ...domainFixture("d1"), isPrimary: true } };
 
   it("POSTs /domains/:id/primary", async () => {
     fetchStub = stubFetch(() => ({ json: PRIMARY }));
@@ -179,7 +180,7 @@ describe("openship domain primary", () => {
 // ─── records ─────────────────────────────────────────────────────────────────
 
 describe("openship domain records", () => {
-  const RECORDS = { data: { mode: "selfhosted", records: [{ type: "A", host: "@", value: "203.0.113.5" }] } };
+  const RECORDS = { data: { mode: "selfhosted", records: [{ type: "A", host: "@", name: "example.com", value: "203.0.113.5" }] } };
 
   it("GETs the existing DNS records for a domain", async () => {
     fetchStub = stubFetch(() => ({ json: RECORDS }));

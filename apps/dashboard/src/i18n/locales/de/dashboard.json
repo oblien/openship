@@ -55,11 +55,12 @@
     "appsEmptyDesc": "Ein Klick, vollständig selbst gehostet — Datenbanken, Automatisierung, Analytics, Passwort-Vaults und mehr, auf deinen eigenen Servern."
   },
   "nav": {
+    "scale": "Skalierung",
     "home": "Startseite",
     "new-project": "Neues Projekt",
     "projects": "Projekte",
     "deployments": "Deployments",
-    "issues": "Probleme",
+    "issues": "Monitoring",
     "backups": "Backups",
     "domains": "Domains",
     "monitoring": "Monitoring",
@@ -67,10 +68,18 @@
     "emails": "E-Mails",
     "settings": "Einstellungen",
     "billing": "Abrechnung & Nutzung",
+    "audit": "Audit-Log",
+    "mailSetup": "Mail einrichten",
+    "mailSetupProgress": "Einrichtungsfortschritt",
+    "addMailbox": "Postfach hinzufügen",
+    "webmail": "Webmail",
     "sections": {
       "main": "Allgemein",
       "settings": "Einstellungen",
       "infrastructure": "Infrastruktur",
+      "mail": "E-Mail",
+      "delivery": "Zustellung",
+      "system": "System",
       "account": "Konto"
     },
     "apps": "Apps",

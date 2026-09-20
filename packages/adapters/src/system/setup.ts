@@ -24,6 +24,10 @@ import type { CommandExecutor, LogEntry, ProvisionLock } from "../types";
 import { checkAll, checkComponents, COMPONENT_CHECKS } from "./checks";
 import { COMPONENT_INSTALLERS } from "./installer";
 import {
+  REMOTE_SERVER_REQUIRED_COMPONENTS,
+  resolveSystemComponentInstallPlan,
+} from "./requirements";
+import {
   type SetupStateStore,
   type SetupState,
   type ComponentState,
@@ -50,9 +54,9 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /**
  * Resolve prerequisite rules for a given runtime mode.
  *
- * The runtime mode deterministically implies everything:
- *   - docker → Docker + Git + Edge
- *   - bare   → Git + Edge
+ * Runtime mode determines how applications run, but the managed Edge is a
+ * container in both modes. Its Docker dependency comes from the shared system
+ * component graph rather than being repeated in these feature rules.
  *
  * "Edge" is ONE component (the openship-edge container: OpenResty + Lua +
  * certbot). It used to be two rows, `openresty` and `certbot`, for one artifact
@@ -75,16 +79,14 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
   // bare mode - language runtimes handled per-stack by toolchain layer
   return [
     { feature: "build", requires: ["git"], message: "Build requires Git" },
-    // Even in bare RUNTIME mode (apps run as host processes) the edge itself is a
-    // container — its installer needs Docker and says so.
     { feature: "routing", requires: ["edge"], message: "Routing requires the edge" },
     { feature: "ssl", requires: ["edge"], message: "SSL requires the edge" },
   ];
 }
 
-/** Resolve which system components must be installed for a given runtime mode. */
-function resolveRequired(mode: RuntimeMode): string[] {
-  return mode === "docker" ? ["docker", "git", "edge"] : ["git", "edge"];
+/** Resolve the complete prerequisite set for a managed deployment target. */
+function resolveRequired(): string[] {
+  return resolveSystemComponentInstallPlan([...REMOTE_SERVER_REQUIRED_COMPONENTS, "edge"]);
 }
 
 // ─── SystemManager ───────────────────────────────────────────────────────────
@@ -127,11 +129,14 @@ export class SystemManager {
   /** In-memory cache to avoid even reading from disk/DB on hot paths. */
   private cachedState: SetupState | null = null;
 
+  /** In-flight background re-verification, if any (see kickBackgroundVerify). */
+  private verifyInFlight: Promise<unknown> | null = null;
+
   constructor(mode: RuntimeMode, opts: SystemManagerOptions) {
     this.mode = mode;
     this.executor = opts.executor;
     this.rules = resolveRules(mode);
-    this.required = resolveRequired(mode);
+    this.required = resolveRequired();
     this.stateStore = opts.stateStore ?? new FileStateStore(opts.executor);
     this.installerConfig = opts.installerConfig ?? {};
     this.provisionLock = opts.provisionLock;
@@ -146,7 +151,9 @@ export class SystemManager {
    * Returns false if:
    *   - No cached state (first boot)
    *   - Cached state says setupComplete = false
-   *   - Cache is stale (> 24h since last verification)
+   *
+   * A stale cache (> 24h) still answers true, with a re-verification kicked behind
+   * the call — this must never block.
    *
    * Use this on hot paths (every request). It's essentially free.
    */
@@ -154,13 +161,8 @@ export class SystemManager {
     const state = await this.loadState();
     if (!state?.setupComplete) return false;
 
-    // If cache is stale, trigger background re-verification
-    if (this.isStale(state)) {
-      // Don't await - let it run in the background
-      this.verify().catch(() => {});
-      // Still return true - stale cache is better than blocking
-      return true;
-    }
+    // Stale cache beats blocking a request: answer from cache, re-verify behind it.
+    if (this.isStale(state)) this.kickBackgroundVerify();
 
     return true;
   }
@@ -222,19 +224,30 @@ export class SystemManager {
       return { feature, ready: true, missing: [], message: `No prerequisites for "${feature}"` };
     }
 
+    const required = resolveSystemComponentInstallPlan(rule.requires);
+
     // Try fast path from cached state
     const state = await this.loadState();
     if (state?.setupComplete) {
-      const allPresent = rule.requires.every(
+      const allPresent = required.every(
         (name) => state.components[name]?.healthy === true,
       );
       if (allPresent) {
+        // Same staleness policy as isReady(): serve the cached answer, kick the 24h
+        // re-verify behind it. Without this the cache is authoritative FOREVER on a
+        // box reached only through ensureFeature/requireFeature — nothing outside
+        // this class calls isReady()/verify(), so a docker that was removed after
+        // provisioning would never be re-probed and ensureFeature would never
+        // self-heal it.
+        if (this.isStale(state)) this.kickBackgroundVerify();
         return { feature, ready: true, missing: [], message: `${feature} is ready` };
       }
     }
 
-    // Slow path: actually check the components
-    const statuses = await checkComponents(this.executor, rule.requires);
+    // Slow path: actually check the components. Deliberately NOT persisted — this
+    // checked one feature's subset, and freshness is one global stamp (see
+    // updateStateFromChecks).
+    const statuses = await checkComponents(this.executor, required);
     const unhealthy = statuses.filter((s) => !s.healthy);
 
     return {
@@ -427,6 +440,23 @@ export class SystemManager {
     return this.cachedState;
   }
 
+  /**
+   * Run the staleness re-verification behind the caller — one at a time.
+   *
+   * The dedup is the point: a single deploy gates several features in a row, and
+   * every request calls isReady(), so an un-guarded kick would stack one full
+   * checkAll per call — each fanning 4 concurrent probes onto the same ssh
+   * connection, against sshd's MaxSessions (see mapWithConcurrency in checks.ts).
+   */
+  private kickBackgroundVerify(): void {
+    if (this.verifyInFlight) return;
+    this.verifyInFlight = this.verify()
+      .catch(() => {})
+      .finally(() => {
+        this.verifyInFlight = null;
+      });
+  }
+
   private isStale(state: SetupState): boolean {
     if (!state.lastVerifiedAt) return true;
     const age = Date.now() - new Date(state.lastVerifiedAt).getTime();
@@ -453,7 +483,19 @@ export class SystemManager {
     );
 
     existing.setupComplete = allRequired;
-    existing.lastVerifiedAt = new Date().toISOString();
+    // lastVerifiedAt is ONE stamp for the whole state, so only a check that covered
+    // every required component may move it. Stamping it from a partial check —
+    // ensureFeature("deploy") probes docker alone — would un-stale components nobody
+    // looked at and permanently silence the 24h re-verify for all of them.
+    // A required component with no registered check can never be covered, so it must
+    // not hold the stamp hostage — that would leave the state stale forever.
+    const checked = new Set(components.map((c) => c.name));
+    const coveredAll = this.required.every(
+      (name) => checked.has(name) || !COMPONENT_CHECKS[name],
+    );
+    if (coveredAll) {
+      existing.lastVerifiedAt = new Date().toISOString();
+    }
     existing.updatedAt = new Date().toISOString();
 
     this.cachedState = existing;
@@ -548,12 +590,13 @@ export class SystemManager {
     heading: string,
     errorMessage: (missingNames: string[]) => string,
   ): Promise<void> {
+    const required = resolveSystemComponentInstallPlan(names);
     // The check→install→revalidate below is a check-then-act on server-global
     // state (apt/dpkg, systemd units, port 80, /etc config, the state file).
     // Serialize the WHOLE section — including the "already healthy, skip" check —
     // so concurrent deploys to the same server can't both install or clobber.
     const critical = async () => {
-      const statuses = await checkComponents(this.executor, names);
+      const statuses = await checkComponents(this.executor, required);
       const missing = statuses.filter((status) => !status.healthy);
       if (missing.length === 0) {
         await this.updateStateFromChecks(statuses);
@@ -574,7 +617,7 @@ export class SystemManager {
         throw new Error(failed[0].error ?? `Failed to install ${failed[0].component}`);
       }
 
-      const recheck = await checkComponents(this.executor, names);
+      const recheck = await checkComponents(this.executor, required);
       await this.updateStateFromChecks(recheck);
 
       const unhealthy = recheck.filter((status) => !status.healthy);

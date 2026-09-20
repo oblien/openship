@@ -3,7 +3,7 @@ title: Environment variables & secrets
 description: Give your app its settings and secrets — add them in the Configuration tab or the CLI, keep the sensitive ones masked, and apply changes without a full rebuild.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Step, Steps } from "fumadocs-ui/components/steps";
 
 Most apps need a few pieces of information to run: a database address, an API key, a "am I in production?"
 flag. Those are **environment variables** — little named settings your app reads when it starts. Think of
@@ -12,9 +12,11 @@ for you, hands them to your app every time it builds and runs, and hides the sen
 read them over your shoulder.
 
 <Callout title="What you need first">
+
 - A project you've already created in Openship (if not, start with [Deploy from GitHub](/docs/guides/deploy-from-github)).
 - The names and values you want to set — for example `DATABASE_URL` and its connection string.
 - Nothing else. Openship encrypts and stores the values for you.
+
 </Callout>
 
 ## Add or edit variables in the dashboard
@@ -28,8 +30,6 @@ read them over your shoulder.
 Go to your project and open the **Configuration** tab. Find the **Environment variables** card and press
 **Edit**. A panel opens showing the variables you already have (empty is fine — a brand-new app often has
 none).
-
-<Callout title="Screenshot">Project → **Configuration** tab, the "Environment variables" card with its **Edit** button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -52,11 +52,22 @@ Some values are sensitive — passwords, API keys, tokens. For each of those, pr
 row to **mark it as secret**. A secret's value is stored the same way, but from then on it shows as dots
 (`••••••••`) instead of plain text, so it stays hidden whenever you reopen the editor.
 
-<Callout title="Everything is encrypted at rest" type="info">
-Whether or not you mark a variable secret, Openship **encrypts every value before saving it**. Marking a
-value secret adds the on-screen masking on top — it controls what *you* can see later, not whether it's
-protected on disk.
+<Callout title="Environment values are encrypted at rest" type="info">
+  Whether or not you mark a variable secret, Openship **encrypts every value before saving it**.
+  Marking a value secret adds the on-screen masking on top — it controls what *you* can see later,
+  not whether it's protected on disk.
 </Callout>
+
+Inline service environment values and build arguments are also encrypted, including their copies in
+saved deployment snapshots and Compose drift baselines. Existing plaintext service configuration is
+converted when the API or native engine starts after upgrading. Keep your `BETTER_AUTH_SECRET` with
+your database backup: it is needed to read these values. To downgrade to a version from before this
+protection, restore its matching database backup as well.
+
+When moving to an installation with a different key, use **Settings → Data Transfer** with secrets
+included. It re-encrypts the configuration for the destination. Transfers or recovery manifests that
+omit secrets also omit inline environment, build arguments and protected service configuration; set
+those values again before deploying.
 
 </Step>
 
@@ -73,21 +84,79 @@ never re-typed it, so it's never re-sent.
 </Steps>
 
 <Callout title="Saving isn't the same as applying" type="warn">
-A saved change is stored right away, but the **running app keeps its old values until the next deploy**. If
-something is already live, Openship offers a shortcut to push the change out immediately — see
-[Apply without a full rebuild](#apply-without-a-full-rebuild) below. Otherwise the new values take effect the
-next time you deploy.
+  A saved change is stored right away, but the **running app keeps its old values until the next
+  deploy**. If something is already live, Openship offers a shortcut to push the change out
+  immediately — see [Apply without a full rebuild](#apply-without-a-full-rebuild) below. Otherwise
+  the new values take effect the next time you deploy.
 </Callout>
 
 ## When your app sees these values
 
-Openship hands your variables to your app at **two moments**:
+Project-level variables are available at **two moments**:
 
 - **During the build** — so a value baked in at build time (for example a `NEXT_PUBLIC_...` setting in a
   frontend) is there when the build runs.
 - **At runtime** — so your running server can read them the normal way (like `process.env.DATABASE_URL`).
 
-You don't do anything special for this. Set the variable, deploy, and it's present in both places.
+For a Dockerfile build, declare every value you consume with `ARG` (and copy it into `ENV` only when the
+running image also needs it):
+
+```dockerfile
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN npm run build
+```
+
+The project environment is the shared build/runtime layer. A multi-service project's `services[].env`
+is different: it belongs only to that service at runtime and is never leaked into an image build. In
+`openship.json`, add `services[].buildArgs` when an image needs an explicit build-only value or when you
+want to document which shared key it inherits:
+
+```json
+{
+  "env": { "NEXT_PUBLIC_API_URL": "https://api.example.com" },
+  "services": [
+    {
+      "name": "web",
+      "build": ".",
+      "buildArgs": { "NEXT_PUBLIC_API_URL": null, "BUILD_FLAVOR": "production" }
+    }
+  ]
+}
+```
+
+Here `null` means “inherit the same-named project variable”; a string is a per-image override. Values
+declared in top-level `openship.json.env` become active project defaults automatically. A generic `.env`
+file is only used after you choose **Import .env**.
+
+<Callout title="Docker build arguments are not secret storage" type="warn">
+  Build arguments can remain visible in image metadata or build cache. Prefer runtime environment
+  variables for credentials. If a build genuinely needs a secret, use a dedicated BuildKit secret
+  flow rather than committing it to `openship.json` or baking it into the image.
+</Callout>
+
+## Service overrides and credential rotation
+
+On a normal service deployment, the highest-priority value wins in this order:
+
+1. A service-scoped variable from its environment editor.
+2. A literal in that service's Compose `environment` or `openship.json` `env` map.
+3. The project's environment, captured when the deployment starts.
+
+Compose expressions such as `TOKEN: ${TOKEN}` resolve against the configured values;
+they do not pin a previous scan's value. A rollback instead replays its captured
+project values, including their precedence over present-day service overrides.
+
+`openship project env set` warns when a changed or deleted key still has a service
+override. The API and SDK return the same `warnings` array, and deployment logs name
+keys whose service values win. These messages contain names only. Saving the project
+value succeeds, but it cannot replace a service-owned credential. Update the service
+value, or remove its override to inherit the project value, then deploy. Deleting a
+project variable does not delete a service's copy.
+
+For example, if `web` pins `TOKEN=old`, setting the project's `TOKEN=new` will warn
+about `web`; a rebuild alone still uses the pinned value. In the service editor,
+remove that override before relying on the project's rotated token.
 
 ## Reveal, hide, and replace a secret
 
@@ -104,20 +173,53 @@ build can point at a test database while `production` points at the real one). T
 The dashboard editor manages your **production** values. To set values for `preview` or `development`, use
 the CLI (below) with the `--environment` flag.
 
+These are variable sets within a project. Runtime isolation comes from selecting a separate
+non-production project environment and deploying its project ID. Passing `--env preview` against
+a production project is rejected; it cannot promote that preview onto the production runtime.
+See [preview deployment](/docs/cli/deploy) for the complete flow.
+
+## Download environment variables
+
+In a service's **Environment** tab, choose **Download .env** beside **Upload .env**.
+The file contains the listed variables and their real saved secret values. Downloading
+does not reveal those secrets in the editor, save edits, or restart the service.
+Unsaved edits shown in the editor are included in the download.
+
+The file uses Compose-compatible `.env` quoting. **Upload .env** restores its literal
+values, including dollar signs, quotes, and multiline values, without expanding variable references.
+
 ## Apply without a full rebuild
 
-Rebuilding an app just to change a setting is slow — nothing about your *code* changed. So when you save an
+Rebuilding an app just to change a setting is slow — nothing about your _code_ changed. So when you save an
 env change and the project is already deployed, the editor shows an **Apply (restart, no rebuild)** button.
 
 Press it and Openship recreates the running container from the image it already built, with the new values
 injected. No git clone, no build — just a quick restart. It's the fastest way to roll out a changed key or a
 rotated secret.
 
-<Callout title="Screenshot">The env editor after saving, showing the "Apply without a rebuild" notice and the **Apply (restart, no rebuild)** button. *(screenshot pending)*</Callout>
+From the terminal, `openship deploy --refresh` (shown below) applies environment
+changes through a deployment without rebuilding.
 
-The same thing from the terminal is `openship deploy --refresh` (shown below).
+For one service, open its **Environment** tab, press **Save**, then
+**Apply environment changes** in the toolbar above the variables. It refreshes only
+that service using the image already running on its target. The editor stays open
+and shows completion after the service starts. This is a dedicated service action
+(`POST /api/projects/:id/services/:serviceId/apply-env`); it creates no deployment or
+build session. Docker gets a graceful stop, and the replacement retains the existing
+ports, project network address, volumes, commands, and resource limits. If startup
+fails, Openship restores the previous container and leaves the changes pending.
+The info icon contains details about variable precedence, build arguments, and shared project values.
 
-## Prefer the terminal?
+This action supports Docker services on a server or an Openship Cloud Docker
+workspace. Legacy cloud workspaces and adopted containers on Docker's default bridge
+require **Redeploy**. Namespace-sharing services must be refreshed together through
+a deployment.
+
+A normal **Restart** keeps the container's existing variables. When saved changes are
+pending, Openship opens the service's **Environment** panel so you can apply them there.
+Variables used during a build still require a rebuild.
+
+## CLI
 
 Everything above works from the CLI. Secret values always come back **masked** when you list them.
 
@@ -167,38 +269,52 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
 ```
 
 <Callout title="Secrets and service env" type="warn">
-The service command writes the whole environment at once, so it first reads the current values and merges
-yours in. Because saved secret values can't be read back, if the service already has a secret you didn't
-re-type, the command stops and asks you to re-specify it — or pass `--replace` to drop every value that
-isn't in your command.
+  The service command writes the whole environment at once, so it first reads the current values and
+  merges yours in. Because saved secret values can't be read back, if the service already has a
+  secret you didn't re-type, the command stops and asks you to re-specify it — or pass `--replace`
+  to drop every value that isn't in your command.
 </Callout>
 
 </Tab>
 
 </Tabs>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="I saved a variable but my app still doesn't see it" type="warn">
-Saving stores the value; the **running app** only picks it up on a deploy. Use **Apply (restart, no
-rebuild)** (or `openship deploy --refresh`) to push it out now, or just redeploy.
+  Saving stores the value; the **running app** only picks it up on a deploy. Use **Apply (restart,
+  no rebuild)** (or `openship deploy --refresh`) to push it out now, or just redeploy.
 </Callout>
 
 <Callout title="A secret shows as dots and I can't read it back" type="info">
-That's on purpose — Openship never reveals a stored secret's value again, in the dashboard or the CLI. If you
-need to change it, type a new value over the dots. If you've lost the original, set a fresh one.
+  That's on purpose — Openship never reveals a stored secret's value again, in the dashboard or the
+  CLI. If you need to change it, type a new value over the dots. If you've lost the original, set a
+  fresh one.
 </Callout>
 
 <Callout title="The build failed with a missing-variable error" type="error">
-Your app expected a variable that isn't set yet. Add it in the **Configuration** tab (or with `openship
-project env set`), make sure the name matches exactly — env names are case-sensitive — then deploy again. See
-[Troubleshooting → Deployments](/docs/troubleshooting/deployments) for more.
+  Your app expected a variable that isn't set yet. Add it in the **Configuration** tab (or with
+  `openship project env set`), make sure the name matches exactly — env names are case-sensitive —
+  then deploy again. See [Troubleshooting → Deployments](/docs/troubleshooting/deployments) for
+  more.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
-  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Connect a repo and put your app online." />
-  <Card title="Add a custom domain" href="/docs/guides/custom-domains" description="Put your app on your own address with automatic HTTPS." />
-  <Card title="Multi-service apps" href="/docs/guides/compose-multi-service" description="Give each service in a docker-compose stack its own variables." />
+  <Card
+    title="Deploy from GitHub"
+    href="/docs/guides/deploy-from-github"
+    description="Connect a repo and put your app online."
+  />
+  <Card
+    title="Add a custom domain"
+    href="/docs/guides/custom-domains"
+    description="Put your app on your own address with automatic HTTPS."
+  />
+  <Card
+    title="Multi-service apps"
+    href="/docs/guides/compose-multi-service"
+    description="Give each service in a docker-compose stack its own variables."
+  />
 </Cards>

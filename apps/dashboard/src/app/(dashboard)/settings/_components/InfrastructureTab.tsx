@@ -21,6 +21,8 @@ import { ArrowRight, Boxes, CheckCircle2 } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { systemApi } from "@/lib/api/system";
 import { authClient, useSession } from "@/lib/auth-client";
+import { usePlatform } from "@/context/PlatformContext";
+import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsToggleRow } from "./SettingsToggleRow";
 
@@ -34,11 +36,18 @@ const orgClient = (authClient as unknown as {
 export function InfrastructureTab() {
   const { t } = useI18n();
   const { data: session } = useSession();
+  const { isServerHost } = usePlatform();
+  const { showToast } = useToast();
   const copy = t.settings.infrastructure;
 
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [autoUpdateInfra, setAutoUpdateInfra] = useState(false);
   const [autoScanInfra, setAutoScanInfra] = useState(true);
+  /** Whether this box is a deploy target for itself (#527). `fromEnv` is set when
+   *  nothing is stored and the OPENSHIP_HOST_CONTROL env is what's holding it off,
+   *  so the note can explain that toggling on pins an override. */
+  const [hostControlOn, setHostControlOn] = useState(false);
+  const [hostControlFromEnv, setHostControlFromEnv] = useState(false);
   /** Cached counts only — this tab never probes a server. */
   const [rollup, setRollup] = useState<{ attention: number; updates: number } | null>(null);
 
@@ -72,10 +81,22 @@ export function InfrastructureTab() {
     });
     void systemApi.getInfraAutoUpdate().then(setAutoUpdateInfra).catch(() => {});
     void systemApi.getInfraAutoScan().then(setAutoScanInfra).catch(() => {});
+    // Host control is server-host only — don't read it on desktop/SaaS where the
+    // toggle never renders.
+    if (isServerHost) {
+      void systemApi
+        .getHostControl()
+        .then(({ stored, effective }) => {
+          if (cancelled) return;
+          setHostControlOn(effective);
+          setHostControlFromEnv(stored === null && !effective);
+        })
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };
-  }, [isOwner]);
+  }, [isOwner, isServerHost]);
 
   const toggleAutoInfra = useCallback((v: boolean) => {
     setAutoUpdateInfra(v);
@@ -86,6 +107,20 @@ export function InfrastructureTab() {
     setAutoScanInfra(v);
     void systemApi.setInfraAutoScan(v).catch(() => setAutoScanInfra(!v));
   }, []);
+
+  const toggleHostControl = useCallback(
+    (v: boolean) => {
+      const prevFromEnv = hostControlFromEnv;
+      setHostControlOn(v);
+      setHostControlFromEnv(false); // an explicit choice now overrides the env
+      void systemApi.setHostControl(v).catch(() => {
+        setHostControlOn(!v);
+        setHostControlFromEnv(prevFromEnv);
+        showToast(copy.hostControlError, "error", copy.hostControlLabel);
+      });
+    },
+    [copy, hostControlFromEnv, showToast],
+  );
 
   // Same rule as the other instance cards: non-owners see nothing, not a denied card.
   if (isOwner !== true) return null;
@@ -108,6 +143,25 @@ export function InfrastructureTab() {
   return (
     <SettingsSection icon={Boxes} title={copy.title} description={copy.description}>
       <div className="space-y-5">
+        {/* #527: let OpenShip deploy to the machine it runs on. Server-host (VPS)
+            only — desktop derives "here" without a row and the SaaS control plane
+            is never its own target, so the toggle would be meaningless there. */}
+        {isServerHost && (
+          <div className="space-y-1.5 border-b border-border/50 pb-5">
+            <SettingsToggleRow
+              checked={hostControlOn}
+              onChange={toggleHostControl}
+              label={copy.hostControlLabel}
+              description={copy.hostControlDesc}
+            />
+            {hostControlFromEnv && (
+              <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+                {copy.hostControlEnvNote}
+              </p>
+            )}
+          </div>
+        )}
+
         <SettingsToggleRow
           checked={autoUpdateInfra}
           onChange={toggleAutoInfra}

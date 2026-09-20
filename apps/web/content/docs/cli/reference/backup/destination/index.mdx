@@ -1,0 +1,135 @@
+---
+title: backup destination
+description: Commands, arguments, and options for openship backup destination.
+cliGroup: openship backup destination
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship backup destination
+
+Backup destinations (storage targets)
+
+```text
+openship backup destination [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/backup/destination#openship-backup-destination-list) | List backup destinations |
+| [`create [options]`](/docs/cli/reference/backup/destination#openship-backup-destination-create) | Create a backup destination |
+| [`preflight <destinationId>`](/docs/cli/reference/backup/destination#openship-backup-destination-preflight) | Verify a destination (write + read + delete a probe object) |
+| [`get <id>`](/docs/cli/reference/backup/destination#openship-backup-destination-get) | Show a destination without revealing its credentials |
+| [`usage <id>`](/docs/cli/reference/backup/destination#openship-backup-destination-usage) | Show policies and stored backup usage for a destination |
+| [`update <id> <file>`](/docs/cli/reference/backup/destination#openship-backup-destination-update) | Update selected destination fields; omitted credentials stay unchanged |
+| [`remove\|rm <id>`](/docs/cli/reference/backup/destination#openship-backup-destination-remove) | Remove a destination that has no active policies |
+| [`preflight-draft <file>`](/docs/cli/reference/backup/destination#openship-backup-destination-preflight-draft) | Test destination settings before saving them |
+
+## openship backup destination create
+
+Create a backup destination
+
+```text
+openship backup destination create [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Display name |
+| `--kind <kind>` | s3_compatible \| sftp \| openship_server \| local |
+| `--endpoint <url>` | Endpoint URL / absolute path (local) |
+| `--region <region>` | S3 region |
+| `--bucket <bucket>` | S3 bucket |
+| `--path-prefix <prefix>` | Key/path prefix |
+| `--ssh-host <host>` | SFTP host |
+| `--ssh-port <port>` | SFTP port |
+| `--ssh-user <user>` | SFTP user |
+| `--server <id>` | Server ID (openship_server kind) |
+| `--access-key-id <id>` | S3 access key ID |
+| `--secret-access-key <key>` | S3 secret access key |
+| `--sftp-password <pw>` | SFTP password |
+| `--sftp-private-key <key>` | SFTP private key (raw) |
+| `--sftp-private-key-file <path>` | Read the SFTP private key from a file |
+| `--sftp-key-passphrase <pw>` | SFTP private key passphrase |
+| `--default` | Mark as the default destination |
+
+## openship backup destination get
+
+Show a destination without revealing its credentials
+
+```text
+openship backup destination get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Destination ID |
+
+## openship backup destination list
+
+List backup destinations
+
+```text
+openship backup destination list [options]
+```
+
+## openship backup destination preflight
+
+Verify a destination (write + read + delete a probe object)
+
+```text
+openship backup destination preflight [options] <destinationId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `destinationId` | Destination ID |
+
+## openship backup destination preflight-draft
+
+Test destination settings before saving them
+
+```text
+openship backup destination preflight-draft [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON destination input; include id to reuse saved credentials |
+
+## openship backup destination remove
+
+Remove a destination that has no active policies
+
+```text
+openship backup destination remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Destination ID |
+
+## openship backup destination update
+
+Update selected destination fields; omitted credentials stay unchanged
+
+```text
+openship backup destination update [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Destination ID |
+| `file` | JSON destination patch |
+
+## openship backup destination usage
+
+Show policies and stored backup usage for a destination
+
+```text
+openship backup destination usage [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Destination ID |

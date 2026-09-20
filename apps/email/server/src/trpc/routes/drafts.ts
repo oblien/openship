@@ -93,7 +93,9 @@ export const draftsRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const thread = await getThread(ctx.imap, input.id, 'drafts');
+      const thread = await getThread(ctx.imap, input.id, 'drafts', undefined, {
+        includeAttachmentBytes: true,
+      });
       if (!thread || !thread.latest) return null;
       const msg = thread.latest;
       const flatten = (arr: Array<{ email?: string }> | undefined) =>

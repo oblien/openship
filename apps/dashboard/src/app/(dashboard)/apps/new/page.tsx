@@ -7,6 +7,8 @@ import { appsApi, type AppCatalogEntry } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppLogo } from "@/components/AppLogo";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
+import { HostingBadge } from "@/components/apps/HostingBadge";
+import { UnverifiedBadge } from "@/components/apps/UnverifiedBadge";
 import { AddCustomAppModal } from "@/components/apps/AddCustomAppModal";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -233,6 +235,7 @@ export default function NewAppPage() {
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground">
                         <span className="truncate">{app.name}</span>
                         {app.verified && <VerifiedBadge className="shrink-0" />}
+                        <HostingBadge hosting={app.hosting} />
                       </span>
                       {needsUpdate ? (
                         <span className="shrink-0 rounded-full border border-warning/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
@@ -243,9 +246,7 @@ export default function NewAppPage() {
                           {ap.comingSoon}
                         </span>
                       ) : app.custom ? (
-                        <span className="shrink-0 rounded-full border border-warning/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
-                          Unverified
-                        </span>
+                        <UnverifiedBadge />
                       ) : busy ? (
                         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                       ) : (

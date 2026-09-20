@@ -6,7 +6,7 @@ import { organization } from "./organization";
  *
  * Written when a project is force-orphan deleted while its server is
  * UNREACHABLE: the DB row is dropped so the user isn't blocked, and the leaked
- * remote resources (containers/images/volumes/networks/cloud workspaces) are
+ * remote resources (containers/images/volumes/networks/routes/cloud workspaces) are
  * recorded here instead of being silently abandoned. A periodic GC sweep probes
  * each `server_id`; once reachable it destroys the resource (idempotently) and
  * deletes this row.
@@ -24,7 +24,9 @@ export const orphanedResource = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     /** SSH server the resource lives on. Null for cloud resources. No FK — see doc. */
     serverId: text("server_id"),
-    /** container | image | volume | network | cloud_workspace */
+    /** Immutable physical bind namespace; unlike serverId, aliases cannot split GC ordering. */
+    targetKey: text("target_key"),
+    /** container | image | volume | network | route | host_port_claims | cloud_workspace */
     resourceType: text("resource_type").notNull(),
     /** The runtime ref to destroy (container id, image tag, volume name, …). */
     ref: text("ref").notNull(),

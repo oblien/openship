@@ -24,9 +24,11 @@
  *
  * Why nodemailer (vs. shelling sendmail on the mail VPS via SSH):
  *   1. The connection itself is the test. A failed AUTH means broken
- *      credentials, a TLS error means broken cert, a connect timeout
- *      means the SMTP daemon is down - all surface as real, distinct
- *      errors the operator can act on. The old sendmail-via-SSH path
+ *      credentials, a TLS error means broken cert, and a connect timeout
+ *      triggers the shared listener + public-port diagnosis. A timeout can
+ *      mean a stopped daemon OR an upstream/provider firewall dropping the
+ *      packets; claiming only the former sent operators to the wrong layer.
+ *      The old sendmail-via-SSH path
  *      could "succeed" with the message stuck in the local queue forever.
  *   2. Reuses the same code path the platform will use for any future
  *      transactional mail (e.g. user-invite emails, alerts), so a working
@@ -43,20 +45,21 @@
  * 465) so DKIM signs and SPF aligns from the first message.
  */
 
-// DEPENDENCY: `ensureOpenshipTestMailbox` is provided by
-// ./test-mailbox.service, which is being introduced in a parallel agent
-// run. Until that file lands, this import will fail typecheck — that's
-// expected. After both agents land the project as a whole typechecks.
 import nodemailer, { type Transporter } from "nodemailer";
-import { decrypt } from "../../../lib/encryption";
-import { sshManager } from "../../../lib/ssh-manager";
-import { readState } from "../mail-state";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { readState } from "@repo/platform/engine/modules/mail/mail-state";
 import { safeErrorMessage } from "@repo/core";
 import {
   ensureOpenshipPlatformMailbox,
   type PlatformMailboxCreds,
-} from "./platform-mailbox.service";
+} from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 import { ensureOpenshipTestMailbox } from "./test-mailbox.service";
+import { isSmtpAuthFailure } from "@repo/platform/engine/modules/mail/smtp-auth-error";
+import {
+  checkMailPortReachability,
+  mailReachabilityFailureMessage,
+  resolvePublicMailAddress,
+} from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
@@ -76,18 +79,10 @@ const SUBMISSION_PORT = 465;
  * Queries public resolvers rather than the system stub for the reason in the
  * comment at the call site: on the mail host, `/etc/hosts` maps the mail
  * hostname to 127.0.1.1, which is useless (and wrong) from inside a container.
- * Falls back to the hostname untouched when public DNS can't answer — a remote
- * mail server reachable by name keeps working exactly as before, and a genuine
- * DNS problem still surfaces as the connect error it is, not as a lookup crash.
+ * Refuses when public DNS has no usable address. Falling back to the system
+ * resolver would reintroduce the `/etc/hosts`/fake-IP false path this lookup is
+ * specifically meant to avoid.
  */
-async function resolveSubmissionAddress(host: string): Promise<string> {
-  const { Resolver } = await import("node:dns/promises");
-  const resolver = new Resolver();
-  resolver.setServers(["1.1.1.1", "8.8.8.8"]);
-  const [v4] = await resolver.resolve4(host).catch(() => [] as string[]);
-  return v4 ?? host;
-}
-
 export class TestEmailError extends Error {}
 
 export interface SendTestEmailInput {
@@ -214,43 +209,19 @@ export async function sendTestEmail(
       );
     }
   } else {
-    // Install-domain path: the shared platform mailbox.
-    // Fast path is a pure state-file read; first-run / drift backfills
-    // via ensureOpenshipPlatformMailbox.
-    const cached = await sshManager.withExecutor(serverId, async (exec) => {
-      const state = await readState(exec);
-      return state?.platformMailbox;
-    });
-    if (cached && cached.email && cached.password) {
-      // Decrypt at-rest password (AES-256-GCM ciphertext on the happy path,
-      // legacy plaintext on pre-encryption installs).
-      let smtpPassword: string;
-      try {
-        smtpPassword = decrypt(cached.password);
-      } catch {
-        console.warn(
-          `[sendTestEmail] serverId=${serverId} platform mailbox password is legacy plaintext — rotate via /mail/admin/${serverId}/platform-mailbox/rotate to encrypt at rest.`,
-        );
-        smtpPassword = cached.password;
-      }
-      creds = {
-        email: cached.email,
-        password: smtpPassword,
-        smtpHost: cached.smtpHost,
-        smtpPort: 465,
-        secure: true,
-      };
-    } else {
-      const minted: PlatformMailboxCreds =
-        await ensureOpenshipPlatformMailbox(serverId);
-      creds = {
-        email: minted.email,
-        password: minted.password,
-        smtpHost: minted.smtpHost,
-        smtpPort: minted.smtpPort,
-        secure: minted.secure,
-      };
-    }
+    // Install-domain path: always go through the single reconciliation
+    // primitive. Reading state.platformMailbox here used to duplicate its fast
+    // path and bypass the live vmail check, which is how a deleted system
+    // mailbox kept producing 535 forever even after ensure* was hardened.
+    const minted: PlatformMailboxCreds =
+      await ensureOpenshipPlatformMailbox(serverId);
+    creds = {
+      email: minted.email,
+      password: minted.password,
+      smtpHost: minted.smtpHost,
+      smtpPort: minted.smtpPort,
+      secure: minted.secure,
+    };
   }
 
   // Auth user == From address — no spoof, no MAIL FROM / SASL mismatch.
@@ -274,7 +245,7 @@ export async function sendTestEmail(
   // listens, and every send fails with `ECONNREFUSED 127.0.1.1:465` while
   // Postfix is healthy on 0.0.0.0:465. `servername` keeps TLS validating
   // against the hostname, so certificate checking is unchanged.
-  const connectHost = await resolveSubmissionAddress(smtpHost);
+  const connectHost = await resolvePublicMailAddress(smtpHost);
   const transporter: Transporter = nodemailer.createTransport({
     host: connectHost,
     tls: { servername: smtpHost },
@@ -293,22 +264,32 @@ export async function sendTestEmail(
   try {
     await transporter.verify();
   } catch (err) {
-    // With the platform-mailbox primitive owning both ends of the
-    // credential, a 535 here should be REALLY rare — it implies the
-    // doveadm hash in `vmail.mailbox` and the plaintext in
-    // `state.platformMailbox` got out of sync via some path that bypassed
-    // ensureOpenshipPlatformMailbox (manual psql update, restored state
-    // file from a different generation, etc.). Tell operators how to
-    // realign both ends in a single call.
-    const message = safeErrorMessage(err);
-    const looksLikeAuthFailure =
-      /\b535\b/.test(message) ||
-      /5\.7\.8/.test(message) ||
-      /authentication\s+failed/i.test(message) ||
-      /invalid\s+credentials/i.test(message);
-    const suffix = looksLikeAuthFailure
-      ? ` - the platform mailbox credential and the Dovecot hash appear to have drifted. Click "Rotate platform mailbox password" in the Mail admin panel (calls ensureOpenshipPlatformMailbox with { rotate: true }) to refresh both ends atomically, then retry.`
+    // ensure* has already confirmed that the mailbox and forwarding rows are
+    // live. A 535 now means SMTP rejected the cached secret (or the mailbox was
+    // changed in the narrow race after reconciliation), so the explicit rotate
+    // action is the correct repair rather than claiming the mailbox is missing.
+    let suffix = isSmtpAuthFailure(err)
+      ? ` - SMTP rejected the reconciled platform credential. Click "Rotate platform mailbox password" in the Mailboxes tab to refresh both ends, then retry.`
       : ``;
+    if (isSmtpConnectTimeout(err)) {
+      try {
+        const reachability = await sshManager.withExecutor(serverId, (exec) =>
+          checkMailPortReachability(exec, smtpHost, {
+            cacheKey: `mail-health:${serverId}`,
+            force: true,
+          }),
+        );
+        const submission = reachability.ports.find((port) => port.port === SUBMISSION_PORT);
+        suffix = submission && submission.status !== "reachable" && submission.status !== "unknown"
+          ? ` - ${mailReachabilityFailureMessage(reachability, [SUBMISSION_PORT])}`
+          : ` - The connection timed out. The SMTP daemon may be unavailable, or a host/cloud provider firewall may be dropping TCP ${SUBMISSION_PORT}.`;
+      } catch {
+        suffix =
+          ` - The connection timed out. The SMTP daemon may be unavailable, or a host/cloud ` +
+          `provider firewall may be dropping TCP ${SUBMISSION_PORT}.`;
+      }
+    }
+    transporter.close();
     throw wrapSmtpError(
       err,
       `SMTP submission check failed against ${smtpHost}:${SUBMISSION_PORT}${suffix}`,
@@ -346,6 +327,11 @@ export async function sendTestEmail(
     messageId: info.messageId,
     smtpResponse: info.response,
   };
+}
+
+function isSmtpConnectTimeout(err: unknown): boolean {
+  const candidate = err as { code?: unknown; message?: unknown } | null;
+  return candidate?.code === "ETIMEDOUT" || /(?:connection\s+)?tim(?:e|ed)\s*out/i.test(String(candidate?.message ?? ""));
 }
 
 // ─── Error helpers ──────────────────────────────────────────────────────────

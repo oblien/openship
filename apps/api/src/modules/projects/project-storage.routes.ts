@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project-storage.controller";
-import { BindObjectStorageBody } from "./project-storage.schema";
+import { BindObjectStorageBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -34,6 +34,7 @@ r.post(
   "/",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     body: BindObjectStorageBody,
     mcp: {
       description:
@@ -48,6 +49,7 @@ r.delete(
   "/",
   {
     tag: "project:admin",
+    auditHandledByOperation: true,
     mcp: { description: "Remove the object-storage binding and the env vars it injected." },
   },
   cloudProjectProxy,

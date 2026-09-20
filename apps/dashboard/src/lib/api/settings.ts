@@ -2,7 +2,13 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 
 export type BuildMode = "auto" | "server" | "local";
-export type DefaultDeployTarget = "local" | "server" | "cloud";
+/**
+ * Mirrors the API's `DefaultDeployTarget` (settings.service.ts). No "local": a
+ * default is a BINDING, and "local" is the absence of one — derived per deploy, and
+ * on a server-host this box is already in the server list. A legacy stored value
+ * reads back as null.
+ */
+export type DefaultDeployTarget = "server" | "cloud";
 export type CloneStrategyPreference = "prompt" | "local" | "remote-with-token";
 /** How the edge reaches an app's upstream. See settings.service RouteStrategyPref. */
 export type RouteStrategy = "auto" | "loopback-port" | "container-ip";

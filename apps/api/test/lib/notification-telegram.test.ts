@@ -19,19 +19,19 @@ const safeFetch = vi.fn(async () => ({
   text: async () => JSON.stringify({ ok: true, result: { message_id: 1 } }),
 }));
 
-vi.mock("../../src/lib/safe-fetch", () => ({
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({
   safeFetch: (...args: unknown[]) => safeFetch(...(args as [])),
 }));
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
     return { CLOUD_MODE: false, NOTIFY_WEBHOOK_ALLOW_INTERNAL: false };
   },
 }));
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../../src/lib/mail", () => ({ sendMail: vi.fn() }));
-vi.mock("../../src/lib/encryption", () => ({ decrypt: (v: string) => v }));
+vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt: (v: string) => v }));
 
-const { sendTestToChannel, buildTelegramText } = await import("../../src/lib/notification-workers");
+const { sendTestToChannel, buildTelegramText } = await import("@repo/platform/engine/lib/notification-workers");
 
 const TOKEN = "123456789:AAHrandomlookingbottokenvalue0001";
 

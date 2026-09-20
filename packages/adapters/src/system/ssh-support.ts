@@ -3,6 +3,13 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import {
+  HOST_CHANNEL_AUTH_REJECTED,
+  HOST_CHANNEL_NOT_PROVISIONED,
+  HOST_CHANNEL_ROW_CREDENTIALS_UNUSED,
+  hostFirewallRule,
+} from "@repo/core";
+
 import type { SshConfig } from "../types";
 import { systemDebug } from "./debug";
 
@@ -10,8 +17,30 @@ function formatSshTarget(config: SshConfig): string {
   return `${config.username ?? "root"}@${config.host}:${config.port ?? 22}`;
 }
 
+/**
+ * Describe a REJECTED credential — the auth half, as opposed to
+ * {@link describeSshConnectFailure}'s transport half.
+ *
+ * The `hostChannel` branch is this function's #490: that bug was operators auditing
+ * `authorized_keys` over what was really a packet filter, and the fix was to stop
+ * wording a connect failure like a credential one. #527 is the mirror image and went
+ * unfixed for six releases — a rejected host-channel key worded as a stored-credential
+ * problem ("check the username, private key, passphrase"), on a row whose stored
+ * credentials nothing dials with. The reporter moved key files between /tmp, /root and
+ * ~/.ssh for a dozen messages because this string told them to.
+ */
 export function describeSshAuthFailure(config: SshConfig, originalMessage: string): string {
   const target = formatSshTarget(config);
+
+  // Checked before password/privateKey: the host channel always carries a privateKey, so
+  // the generic key branch below would otherwise claim it first and win every time.
+  if (config.hostChannel) {
+    return (
+      `${HOST_CHANNEL_AUTH_REJECTED} Dialed ${target} from inside the Openship API ` +
+      `container. ${HOST_CHANNEL_ROW_CREDENTIALS_UNUSED} ${HOST_CHANNEL_NOT_PROVISIONED} ` +
+      `(${originalMessage})`
+    );
+  }
 
   if (config.password) {
     return `SSH password authentication failed for ${target}. Check the username/password, or verify that the server allows password login. (${originalMessage})`;
@@ -22,6 +51,49 @@ export function describeSshAuthFailure(config: SshConfig, originalMessage: strin
   }
 
   return `SSH authentication failed for ${target}. (${originalMessage})`;
+}
+
+/**
+ * Describe a failure to CONNECT — the TCP/handshake half, as opposed to
+ * {@link describeSshAuthFailure}'s credential half.
+ *
+ * Worth its own message because the two are indistinguishable from the raw ssh2
+ * error and lead to opposite remedies. A dropped SYN surfaces as a bare "Timed out
+ * while waiting for handshake" with no host, no port and no cause, which reads
+ * exactly like a rejected key — so operators go and audit `authorized_keys` while
+ * the actual problem is a packet filter (#490).
+ *
+ * The original message is appended verbatim, and not only for detail:
+ * `isRetryableRemoteConnectionError` matches on substrings like "Timed out" and
+ * "ETIMEDOUT", so dropping it would silently reclassify every connect failure as
+ * non-retryable.
+ */
+export function describeSshConnectFailure(config: SshConfig, originalMessage: string): string {
+  const target = formatSshTarget(config);
+  const port = config.port ?? 22;
+
+  // The container→host bridge. A firewall is BY FAR the likeliest cause here: the
+  // address is a host-local one, so the packet traverses the host's filter/INPUT
+  // chain, where a default-deny ufw/firewalld policy drops it — unlike a published
+  // container port, which is DNAT'd through nat/FORWARD and bypasses ufw entirely.
+  //
+  // `unknown` is the honest kind, not a fallback: we are inside the container, so we
+  // cannot read the host's firewall and have to offer both syntaxes. Printing only the
+  // ufw form — as this did — left every RHEL-family host with advice it can't run.
+  if (config.hostChannel) {
+    return (
+      `Cannot reach the host SSH endpoint ${target} from inside the Openship API container. ` +
+      `Host control is configured, but the connection never completed. The usual cause is a ` +
+      `host firewall dropping traffic from the Docker bridge to the host's SSH port — allow ` +
+      `it with:\n${hostFirewallRule("unknown", [], port)}\n` +
+      `Or re-run \`openship up\`, which probes this and offers the exact rule. (${originalMessage})`
+    );
+  }
+
+  return (
+    `Cannot reach ${target} over SSH. Check that the host is up, that port ${port} is open, ` +
+    `and that no firewall or security group is dropping the connection. (${originalMessage})`
+  );
 }
 
 function execFileText(

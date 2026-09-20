@@ -8,10 +8,14 @@
   },
   "status": {
     "live": "Live",
+    "paused": "Paused",
     "attention": "Action Required",
     "queued": "Queued",
     "building": "Building",
     "deploying": "Deploying",
+    "reconciling": "Verifying",
+    "migrating": "Migrating",
+    "deploy_failed": "Deploy failed",
     "failed": "Failed",
     "cancelled": "Cancelled",
     "deleting": "Deleting",
@@ -36,6 +40,7 @@
     "services": "Services",
     "static": "Static",
     "standalone": "Standalone",
+    "worker": "Worker",
     "updateAvailable": "Update"
   },
   "hosting": {
@@ -56,8 +61,10 @@
   "env": {
     "productionFallback": "Production",
     "switchAria": "Switch environment",
-    "addBranchAria": "Add branch",
+    "newEnvironment": "New environment",
+    "backToEnvironments": "Back to environments",
     "searchBranches": "Search branches",
+    "refreshBranches": "Refresh branches",
     "noBranches": "No branches found",
     "environmentName": "Environment name",
     "branchLabel": "Branch label",
@@ -110,7 +117,7 @@
   "connections": {
     "useInProject": "Use in a project",
     "title": "Use in a project",
-    "subtitle": "Wire this database into another project as a ready connection.",
+    "subtitle": "Share this service with another project using a connection.",
     "targetLabel": "Project",
     "targetPlaceholder": "Select a project…",
     "valueLabel": "Value to inject",
@@ -144,16 +151,25 @@
     "openUrl": "Open in new tab",
     "forwardShort": "Forward",
     "usedByTitle": "Used by",
-    "usedByHint": "{count} project(s) depend on this app's connection. Unlink from the consuming project.",
+    "usedByHint": "{count} project(s) use this connection. Disconnect from the consuming project.",
     "usedByOpen": "Open project",
-    "linkedCountOne": "{count} linked app",
-    "linkedCountOther": "{count} linked apps",
-    "linkedHint": "Run against, not run by this project.",
-    "linkedBadge": "Linked",
+    "linkedCountOne": "{count} connected service",
+    "linkedCountOther": "{count} connected services",
+    "linkedHint": "These services are managed in their source projects.",
+    "linkedBadge": "Shared",
     "unlink": "Unlink",
-    "openApp": "Open app",
+    "openApp": "Open source",
     "internalTitle": "Internal address",
-    "internalDescription": "Reach this project privately from another service on the same server — no public port."
+    "internalDescription": "Reach this project privately from another service on the same server — no public port.",
+    "createNew": "Create new",
+    "connectExisting": "Connect existing",
+    "existingHint": "Use a service or app from another project. Its data and ownership stay in that project.",
+    "sourceLabel": "Source project or app",
+    "sourcePlaceholder": "Choose a project or app…",
+    "loadingServices": "Loading services…",
+    "noConnections": "No connection values are ready. Check the service’s port and credentials in its source project.",
+    "noSources": "Create a service in another project to connect it here.",
+    "sharedFrom": "Shared from {project}"
   },
   "sidebar": {
     "project": "Project",
@@ -167,6 +183,7 @@
     "noDomain": "No domain",
     "addDomain": "Add domain",
     "tabs": {
+      "topology": "Topology",
       "appSettings": "Settings",
       "overview": "Overview",
       "services": "Apps & Services",
@@ -175,8 +192,10 @@
       "health": "Health",
       "monitoring": "Monitoring",
       "source": "Source",
+      "sourceAndTriggers": "Source & Triggers",
       "webhooks": "Webhooks",
       "runtime": "Configuration",
+      "settings": "Settings",
       "logs": "Logs",
       "backup": "Backup",
       "advanced": "Advanced"
@@ -204,7 +223,7 @@
     "subtextOther": "This project has no live deployment yet. Review the source and try again.",
     "deployNow": "Deploy now",
     "connectSource": "Connect a source",
-    "settings": "Settings",
+    "settings": "Deployment settings",
     "detailsTitle": "Details",
     "detailsDescription": "What this project deploys and where",
     "type": "Type",
@@ -241,6 +260,7 @@
     "modeStatic": "Static Site",
     "modeStandalone": "Standalone",
     "modeServer": "Server",
+    "modeWorker": "Worker",
     "infrastructure": "Infrastructure",
     "platform": "Platform",
     "mode": "Mode",
@@ -278,6 +298,9 @@
     "waitingRequests": "Waiting for requests",
     "noTransfer": "No transfer yet"
   },
+  "analytics": {
+    "loadFailed": "Couldn't load traffic analytics"
+  },
   "monitoring": {
     "noDataTitle": "No monitoring data yet",
     "noDataDescription": "Analytics will appear here after the deployed app starts receiving traffic.",
@@ -304,6 +327,7 @@
     "geoUnavailableBody": "The edge proxy can't resolve visitor countries, so the map stays empty. Traffic totals are unaffected.",
     "noCountries": "No country data for this period yet.",
     "statusesTitle": "Responses",
+    "statusesOthers": "Others",
     "share": "{pct}%",
     "visitorDays": "Visitor-days",
     "peakDayTooltip": "Busiest single day: {peak}. A returning visitor counts once per day, so the total is an upper bound.",
@@ -381,12 +405,12 @@
     "unknown": "Unknown"
   },
   "routingRetry": {
-    "title": "Free domain routing needs attention",
-    "description": "The app is live on the server, but its free .opsh.io URL didn't route through Openship Cloud's edge. Retry once the server is reachable from the cloud on port 80.",
+    "title": "Domain routing needs attention",
+    "description": "The app is live on the server, but the routes in front of it didn't sync. Retry the repair, or check DNS and the edge on this server.",
     "retry": "Retry routing",
     "retrying": "Retrying…",
-    "success": "Free domain routing synced.",
-    "failed": "Couldn't sync the free domain routing."
+    "success": "Domain routing synced.",
+    "failed": "Couldn't sync the domain routing."
   },
   "deployBlocked": {
     "redeploy": "Redeploy"
@@ -420,12 +444,13 @@
     "noPublicDomainTitle": "No public domain is connected",
     "noPublicDomainDescOne": "This project has {count} service with exposed ports, but none are configured with a reachable domain. If you deploy now, the stack can run internally, but users will not be able to access it from a public URL.",
     "noPublicDomainDescOther": "This project has {count} services with exposed ports, but none are configured with a reachable domain. If you deploy now, the stack can run internally, but users will not be able to access it from a public URL.",
+    "openDomains": "Open Domains",
     "openServices": "Open Services",
     "deployAnyway": "Deploy anyway",
     "suggestedFix": "Suggested fix",
-    "fixStep1": "Open the Services tab.",
-    "fixStep2": "Pick the service that should be public.",
-    "fixStep3": "Enable domain exposure and choose the public port."
+    "fixStep1": "Open the Domains tab.",
+    "fixStep2": "Add a route or custom domain for the service port.",
+    "fixStep3": "Verify the domain and deploy."
   },
   "incomingWebhooks": {
     "title": "Incoming webhooks",
@@ -453,7 +478,8 @@
       "none": "Open"
     },
     "summaryDeploy": "Redeploys this project",
-    "summaryDeployService": "Redeploys the {service} service",
+    "summaryDeployOne": "Redeploys 1 selected service",
+    "summaryDeployServices": "Redeploys {count} services together",
     "summaryJob": "Runs the {job} job",
     "createTitle": "New incoming webhook",
     "createSubtitle": "Pick what it does and how callers authenticate.",
@@ -461,10 +487,10 @@
     "namePlaceholder": "e.g. CI deploy hook",
     "actionLabel": "Action",
     "actionDeploy": "Deploy",
-    "actionDeployDesc": "Redeploy this project (or one service) when called.",
+    "actionDeployDesc": "Redeploy this project or selected services when called.",
     "actionJob": "Run a job",
     "actionJobDesc": "Run one of your jobs when called.",
-    "serviceLabel": "Service (optional)",
+    "serviceLabel": "Services (optional)",
     "serviceAll": "Whole project",
     "jobLabel": "Job",
     "jobPlaceholder": "Select a job…",
@@ -507,5 +533,6 @@
       "unhealthy": "Unhealthy",
       "server_unreachable": "Server unreachable"
     }
-  }
+  },
+  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back in the project's Settings → Advanced"
 }

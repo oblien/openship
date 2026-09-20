@@ -32,16 +32,16 @@ const { mockEnv, getInOrganization, findLocal, getInstanceReachability, resolveL
     resolveInstancePublicIp: vi.fn(),
   }));
 
-vi.mock("../../src/config/env", () => ({ env: mockEnv }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: mockEnv }));
 vi.mock("@repo/db", () => ({ repos: { server: { getInOrganization, findLocal } } }));
-vi.mock("../../src/lib/public-url", () => ({ getInstanceReachability }));
-vi.mock("../../src/lib/server-target", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/lib/server-target")>()),
+vi.mock("@repo/platform/engine/lib/public-url", () => ({ getInstanceReachability }));
+vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>()),
   resolveLocalServerHost,
   resolveInstancePublicIp,
 }));
 
-import { resolveEdgeTargetHost } from "../../src/lib/edge-target";
+import { resolveEdgeTargetHost } from "@repo/platform/engine/lib/edge-target";
 
 const ORG = "org_1";
 

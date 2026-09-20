@@ -2,21 +2,14 @@ import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import type { CommandExecutor } from "../../types";
 import type { EnvironmentProfile } from "../environment";
+import { profileFixture } from "../environment.fixtures";
 import { reconcileServerModule } from "./reconcile";
 import { readManifest } from "./on-box-manifest";
 import type { ModuleVersion, VerifiedCatalog } from "./types";
 
 const H = (s: string) => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
 
-const PROFILE: EnvironmentProfile = {
-  os: "linux",
-  arch: "amd64",
-  distro: "ubuntu",
-  packageManager: "apt",
-  serviceManager: "systemd",
-  isRoot: true,
-  canSudo: false,
-};
+const PROFILE: EnvironmentProfile = profileFixture();
 
 /** In-memory executor with a fake FS; `execCode` lets a test fail an exec step. */
 function fakeExecutor(opts?: { execCode?: (cmd: string) => number; seed?: Record<string, string> }) {
@@ -143,21 +136,196 @@ describe("reconcileServerModule", () => {
     expect(m?.appliedSteps).not.toContain("will-fail");
   });
 
-  it("skips a step filtered to another distro", async () => {
+  const alpineOnly: ModuleVersion = {
+    version: "1.1.0", apply: "auto",
+    steps: [{ kind: "file", id: "apk-only", path: "/opt/apk.conf", asset: "a/apk.conf", sha256: H("apk"), distroFamily: ["alpine"] }],
+  };
+
+  it("skips a step filtered to another distro family", async () => {
     const { executor, files } = fakeExecutor();
-    const v11: ModuleVersion = {
-      version: "1.1.0", apply: "auto",
-      steps: [{ kind: "file", id: "apk-only", path: "/opt/apk.conf", asset: "a/apk.conf", sha256: H("apk"), distro: ["alpine"] }],
-    };
     const res = await reconcileServerModule(executor, {
       module: "openresty", profile: PROFILE, mode: "auto",
-      catalog: verified(2, "1.1.0", [baseline, v11], { ...luaAsset, "a/apk.conf": "apk" }),
+      catalog: verified(2, "1.1.0", [baseline, alpineOnly], { ...luaAsset, "a/apk.conf": "apk" }),
     });
     expect(res.skipped).toContain("apk-only");
     expect(res.appliedSteps).not.toContain("apk-only");
     expect(files.has("/opt/apk.conf")).toBe(false);
     // version still completes (all applicable steps done) → advances
     expect(res.toVersion).toBe("1.1.0");
+  });
+
+  it("runs a family-gated step on every distro in that family", async () => {
+    const rockyOnly: ModuleVersion = {
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "file", id: "rpm-only", path: "/opt/rpm.conf", asset: "a/rpm.conf", sha256: H("rpm"), distroFamily: ["rhel"] }],
+    };
+    // Amazon Linux: a distro the old id-keyed filter had never heard of, so every
+    // `distro: ["rocky", "rhel", …]` step silently skipped and the box came back "current".
+    const { executor, files } = fakeExecutor();
+    const res = await reconcileServerModule(executor, {
+      module: "openresty",
+      profile: profileFixture({ distro: "unknown", distroFamily: "rhel", distroId: "amzn", packageManager: "dnf" }),
+      mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, rockyOnly], { ...luaAsset, "a/rpm.conf": "rpm" }),
+    });
+    expect(res.ok).toBe(true);
+    expect(res.appliedSteps).toContain("rpm-only");
+    expect(files.get("/opt/rpm.conf")).toBe("rpm");
+  });
+
+  it("fails loudly on a family-gated step when the host's family is unknown", async () => {
+    const { executor, files } = fakeExecutor();
+    const res = await reconcileServerModule(executor, {
+      module: "openresty",
+      profile: profileFixture({ distro: "unknown", distroFamily: "unknown", distroId: "voidlinux" }),
+      mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, alpineOnly], { ...luaAsset, "a/apk.conf": "apk" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("apk-only");
+    expect(res.error).toContain("voidlinux");
+    expect(res.error).toMatch(/unknown/);
+    expect(files.has("/opt/apk.conf")).toBe(false);
+    // Not silently marked converged: the version marker stays at the baseline.
+    expect(res.toVersion).toBe("1.0.0");
+    expect((await readManifest(executor, "openresty"))?.migrationVersion).toBe("1.0.0");
+  });
+
+  // ─── Runtime shape validation ──────────────────────────────────────────────
+  // The catalog arrives as SIGNED JSON: the signature proves the author, never that a
+  // value is a member of the union the runner branches on. Each case below used to pass
+  // verification, match nothing, and let the version marker advance anyway.
+
+  /** A version the TypeScript unions forbid, as it would arrive from JSON. */
+  const asVersion = (raw: unknown) => raw as ModuleVersion;
+
+  it("fails loudly on a step whose distroFamily is not a family, instead of skipping it", async () => {
+    const { executor, files } = fakeExecutor();
+    // "redhat" is the os-release ID spelling; the family member is "rhel".
+    const typo = asVersion({
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "file", id: "rpm-only", path: "/opt/rpm.conf", asset: "a/rpm.conf", sha256: H("rpm"), distroFamily: ["redhat"] }],
+    });
+    const res = await reconcileServerModule(executor, {
+      module: "openresty",
+      profile: profileFixture({ distro: "rocky", distroFamily: "rhel", distroId: "rocky", packageManager: "dnf" }),
+      mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, typo], { ...luaAsset, "a/rpm.conf": "rpm" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("redhat");
+    expect(res.error).toContain("rhel");
+    expect(res.skipped).not.toContain("rpm-only");
+    expect(files.has("/opt/rpm.conf")).toBe(false);
+    // The marker stays at the baseline: nothing in 1.1.0 ran, so nothing claims it did.
+    expect(res.toVersion).toBe("1.0.0");
+    expect((await readManifest(executor, "openresty"))?.migrationVersion).toBe("1.0.0");
+  });
+
+  it("fails a version whose step declares a tier that isn't a tier", async () => {
+    const { executor } = fakeExecutor();
+    // Anything that isn't "consent" reads as "not consent" — i.e. it would run unattended.
+    const badTier = asVersion({
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "exec", id: "unattended", asset: "a/x.sh", sha256: H("x"), apply: "automatic" }],
+    });
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, badTier], { ...luaAsset, "a/x.sh": "x" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("automatic");
+    expect(res.appliedSteps).not.toContain("unattended");
+    expect((await readManifest(executor, "openresty"))?.migrationVersion).toBe("1.0.0");
+  });
+
+  it("fails a step whose kind the runner cannot execute", async () => {
+    const { executor } = fakeExecutor();
+    const unknownKind = asVersion({
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "systemd-unit", id: "future", asset: "a/x.sh", sha256: H("x") }],
+    });
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, unknownKind], { ...luaAsset, "a/x.sh": "x" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("systemd-unit");
+  });
+
+  it("applies the valid versions before a malformed one and stops there", async () => {
+    const { executor } = fakeExecutor();
+    const v11: ModuleVersion = {
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "file", id: "ok-step", path: "/opt/ok.conf", asset: "a/ok.conf", sha256: H("ok") }],
+    };
+    const v12 = asVersion({ version: "1.2.0", apply: "auto", steps: [{ kind: "file", id: "no-path", asset: "a/ok.conf", sha256: H("ok") }] });
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto",
+      catalog: verified(2, "1.2.0", [baseline, v11, v12], { ...luaAsset, "a/ok.conf": "ok" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.appliedSteps).toEqual(["lua-rules", "ok-step"]);
+    // 1.1.0 fully applied → stamped; 1.2.0 never started.
+    expect((await readManifest(executor, "openresty"))?.migrationVersion).toBe("1.1.0");
+  });
+
+  it("refuses a catalog whose latest cannot be ordered", async () => {
+    const { executor, files } = fakeExecutor();
+    // compareSemver reads "banana" as 0.0.0, so every version sorts above `latest` and
+    // the pending set comes out empty — a converged-looking no-op.
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto",
+      catalog: verified(1, "banana", [baseline], luaAsset),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("banana");
+    expect(files.has("/opt/rules.lua")).toBe(false);
+  });
+
+  it("refuses a catalog version that cannot be ordered instead of dropping it", async () => {
+    const { executor } = fakeExecutor();
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto",
+      catalog: verified(1, "1.0.0", [asVersion({ ...baseline, version: "1.0" })], luaAsset),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("1.0");
+    expect(res.appliedSteps).toEqual([]);
+  });
+
+  it("fails a family-gated step when the host's family is a value we cannot name", async () => {
+    const { executor } = fakeExecutor();
+    // Not "unknown" but a value outside the union entirely — what an os-release ID that
+    // resolves through no map (or names an Object.prototype key) arrives as.
+    const foreignFamily = {
+      ...profileFixture({ distro: "unknown", distroId: "redhat" }),
+      distroFamily: "redhat",
+    } as unknown as EnvironmentProfile;
+    const res = await reconcileServerModule(executor, {
+      module: "openresty",
+      profile: foreignFamily,
+      mode: "auto",
+      catalog: verified(2, "1.1.0", [baseline, alpineOnly], { ...luaAsset, "a/apk.conf": "apk" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("apk-only");
+    expect(res.error).toContain("redhat");
+    expect(res.skipped).not.toContain("apk-only");
+  });
+
+  it("dry-run reports a shape failure rather than a clean no-op", async () => {
+    const { executor } = fakeExecutor();
+    const typo = asVersion({
+      version: "1.1.0", apply: "auto",
+      steps: [{ kind: "file", id: "rpm-only", path: "/opt/rpm.conf", asset: "a/rpm.conf", sha256: H("rpm"), distroFamily: ["redhat"] }],
+    });
+    const res = await reconcileServerModule(executor, {
+      module: "openresty", profile: PROFILE, mode: "auto", dryRun: true,
+      catalog: verified(2, "1.1.0", [baseline, typo], { ...luaAsset, "a/rpm.conf": "rpm" }),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("redhat");
   });
 
   it("dry-run writes nothing and does not persist the manifest", async () => {

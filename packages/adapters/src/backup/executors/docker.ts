@@ -14,14 +14,16 @@
 
 import type Dockerode from "dockerode";
 import { PassThrough, Readable } from "node:stream";
-import { withTimeout } from "@repo/core";
+import { safeErrorMessage, withTimeout, shellQuote } from "@repo/core";
 import { DockerRuntime, resolveExecExitCode } from "../../runtime/docker";
+import { demuxDockerStream } from "../../runtime/docker-demux";
 import {
   daemonConnectionFrom,
   startAttachStream,
   startExecStream,
 } from "../../runtime/docker-exec-stream";
-import { isHostPathSource, scopedVolumeName } from "../../runtime/volume-namespace";
+import { ensureScopedVolumeName, isHostPathSource } from "../../runtime/volume-namespace";
+import { safeDumpCommand, safeRestoreCommand, type DumpCodec } from "../common/dump-pipeline";
 import { matchBackupSource } from "../common/source-match";
 import { registerExecutor } from "../registry";
 import type {
@@ -35,6 +37,35 @@ import type {
 } from "../types";
 
 const HELPER_IMAGE = "alpine:3";
+const BIND_PROBE_TARGET = "/__openship_bind_source";
+
+/** Docker's archive stat header encodes Go's os.FileMode; its top bit is ModeDir. */
+const DOCKER_MODE_DIRECTORY = 2 ** 31;
+
+type ArchiveInfoResponse = {
+  headers?: Record<string, string | string[] | undefined>;
+  resume?: () => unknown;
+};
+
+/**
+ * How many artifact bytes may sit between the daemon and OUR writer.
+ *
+ * A real ceiling rather than a hint: `demuxDockerStream` pauses the attach socket
+ * whenever this PassThrough is full, so a destination that drains slower than the dump is
+ * produced makes the backup slow instead of killing the API (#633). Bigger than the 16 KB
+ * stream default so a fast producer isn't paused and resumed thousands of times per
+ * second.
+ *
+ * NOT the whole in-flight figure, and an earlier version of this comment wrongly claimed
+ * it was "the ONLY place the payload is allowed to accumulate". The destination has its
+ * own buffer downstream of this one — for S3 the SDK's `Upload` holds up to
+ * `partSize × queueSize` (see MULTIPART_* in destinations/s3.ts) — so per run the honest
+ * number is this 4 MB PLUS whatever the destination holds, and the total scales with job
+ * concurrency. Stated precisely because "bounded" was the whole claim of the #633 fix, and
+ * a bound quoted 17× too low is the kind of comment that gets trusted in the wrong
+ * direction later.
+ */
+const ARTIFACT_BUFFER_BYTES = 4 * 1024 * 1024;
 
 /** No traffic for this long in EITHER direction = wedged. See
  *  ReceiveStreamOpts.idleTimeoutMs for why idle and not wall-clock. Capture and
@@ -46,6 +77,13 @@ const DEFAULT_HELPER_IDLE_MS = 10 * 60 * 1000;
 const DEFAULT_HELPER_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 /** How often to ask the daemon directly whether the helper has exited. */
 const EXIT_POLL_INTERVAL_MS = 2000;
+/**
+ * Quiet window the lost-`end` backstop needs before it force-closes the sinks.
+ *
+ * Re-checked rather than fired once: the helper can exit with its tail still in the
+ * socket, and closing then truncates the archive silently. See demuxContainerStream.
+ */
+const ATTACH_DRAIN_QUIET_MS = 3000;
 
 /**
  * A timer that fires only after `ms` of silence, reset by `touch()`.
@@ -118,13 +156,6 @@ function destroyQuietly(stream: { destroy?: (err?: Error) => void } | undefined)
   }
 }
 
-/** Single-quote shell escape — safe for arbitrary user-supplied
- *  values passed to `sh -c`. Wraps in single quotes and replaces any
- *  inner ' with the standard '\'' sequence. */
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
 /** Compression options exposed by the busybox+zstd alpine image. */
 function compressionFlag(compression: "zstd" | "gzip" | "none" | undefined): string {
   switch (compression) {
@@ -160,6 +191,36 @@ function parseVolumeSpec(
   return { source, target, type };
 }
 
+/** Read the path type returned by Docker's HEAD /containers/:id/archive endpoint. */
+function archivePathIsDirectory(response: ArchiveInfoResponse, path: string): boolean {
+  const rawHeader = response.headers?.["x-docker-container-path-stat"];
+  const encoded = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  if (!encoded) {
+    throw new Error(`Docker returned no path-stat header while inspecting ${path}`);
+  }
+
+  let stat: unknown;
+  try {
+    stat = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+  } catch (err) {
+    throw new Error(`Docker returned an invalid path-stat header while inspecting ${path}`, {
+      cause: err,
+    });
+  }
+  const mode = (stat as { mode?: unknown } | null)?.mode;
+  if (typeof mode !== "number" || !Number.isSafeInteger(mode)) {
+    throw new Error(`Docker returned no valid path mode while inspecting ${path}`);
+  }
+  return mode >= DOCKER_MODE_DIRECTORY;
+}
+
+function isMissingBindSourceError(err: unknown): boolean {
+  return (
+    (err as { statusCode?: number } | null)?.statusCode === 400 &&
+    /bind source path does not exist/i.test(safeErrorMessage(err))
+  );
+}
+
 export class DockerBackupExecutor implements BackupExecutor {
   readonly runtimeName = "docker" as const;
 
@@ -167,6 +228,91 @@ export class DockerBackupExecutor implements BackupExecutor {
 
   private get dockerode(): Dockerode {
     return this.runtime.docker;
+  }
+
+  /**
+   * Freeze / thaw the target container around a copy — Docker's native cgroup freezer.
+   *
+   * `unpause` is best-effort and deliberately swallows "not paused": the thaw runs from a
+   * `finally`, and a container the daemon already restarted (or that a human unpaused)
+   * must not turn a completed backup into a failed one. `pause` is NOT best-effort — see
+   * streamPath.
+   */
+  private async freeze(containerId: string): Promise<void> {
+    await this.dockerode.getContainer(containerId).pause();
+  }
+
+  private async thaw(containerId: string, label: string): Promise<void> {
+    try {
+      await this.dockerode.getContainer(containerId).unpause();
+    } catch (err) {
+      // Loud, because a container left frozen is an outage. Not fatal, because the
+      // artifact is already whole and failing the run would not thaw anything.
+      console.error(
+        `[backup] ${label}: could not unpause container ${containerId.slice(0, 12)} after the ` +
+          `copy — the service may still be FROZEN and needs \`docker unpause\`: ` +
+          `${(err as { message?: string })?.message ?? String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Ask the Docker daemon about a path in a container's mount namespace.
+   *
+   * The API may itself run in a container or connect to Docker over SSH/TLS, so
+   * `node:fs` would inspect the wrong filesystem. Docker's archive-info endpoint
+   * returns the daemon-side path's Go FileMode without copying any archive bytes.
+   */
+  private async containerPathIsDirectory(
+    container: Dockerode.Container,
+    path: string,
+  ): Promise<boolean> {
+    let response: ArchiveInfoResponse | undefined;
+    try {
+      response = (await container.infoArchive({ path })) as ArchiveInfoResponse;
+      return archivePathIsDirectory(response, path);
+    } finally {
+      // dockerode exposes the HEAD response as a stream. Drain it so the daemon
+      // connection can be reused, including through the SSH/TLS transports.
+      response?.resume?.();
+    }
+  }
+
+  /**
+   * Classify a recorded bind source when there is no service container to inspect.
+   * A never-started helper gives Docker a mount namespace, and archive-info reports
+   * the source type from the daemon host. `Mounts` (rather than legacy `Binds`) is
+   * deliberate: a missing source is rejected instead of being created as a directory.
+   */
+  private async declaredBindIsDirectory(sourcePath: string): Promise<boolean> {
+    try {
+      return await this.withHelper(
+        {
+          Image: HELPER_IMAGE,
+          NetworkDisabled: true,
+          HostConfig: {
+            Mounts: [
+              {
+                Type: "bind",
+                Source: sourcePath,
+                Target: BIND_PROBE_TARGET,
+                ReadOnly: true,
+              },
+            ],
+          },
+        },
+        (helper) => this.containerPathIsDirectory(helper, BIND_PROBE_TARGET),
+      );
+    } catch (err) {
+      // Preserve the existing restore behavior for a declared directory that does
+      // not exist yet: streamPath/receiveStream may create and populate it later.
+      if (isMissingBindSourceError(err)) return true;
+      throw new Error(
+        `Could not inspect bind mount source "${sourcePath}" on the Docker host: ` +
+          safeErrorMessage(err),
+        { cause: err },
+      );
+    }
   }
 
   async listSources(service: ServiceHandle): Promise<BackupSource[]> {
@@ -177,30 +323,42 @@ export class DockerBackupExecutor implements BackupExecutor {
     //  2. service.volumes from the DB (fallback when the container
     //     isn't running or doesn't exist yet).
     if (service.containerId) {
+      const container = this.dockerode.getContainer(service.containerId);
+      let data: Awaited<ReturnType<typeof container.inspect>> | null = null;
       try {
-        const data = await this.dockerode.getContainer(service.containerId).inspect();
+        data = await container.inspect();
+      } catch {
+        // Container gone — fall through to the DB-declared volumes.
+      }
+      if (data) {
         const mounts = (data.Mounts ?? []) as Array<{
           Type?: string;
           Name?: string;
           Source?: string;
           Destination?: string;
         }>;
-        return mounts
-          .filter((m) => m.Type === "volume" || m.Type === "bind")
-          .map(
-            (m, i): BackupSource => ({
-              id: m.Name ?? m.Source ?? `mount-${i}`,
-              target: m.Destination ?? "",
-              source: m.Name ?? m.Source ?? "",
-              type: (m.Type as BackupSource["type"]) ?? "volume",
-            }),
-          );
-      } catch {
-        // Container gone — fall through to the DB-declared volumes.
+        const sources: BackupSource[] = [];
+        for (const [i, mount] of mounts.entries()) {
+          if (mount.Type !== "volume" && mount.Type !== "bind") continue;
+          if (
+            mount.Type === "bind" &&
+            (!mount.Destination ||
+              !(await this.containerPathIsDirectory(container, mount.Destination)))
+          ) {
+            continue;
+          }
+          sources.push({
+            id: mount.Name ?? mount.Source ?? `mount-${i}`,
+            target: mount.Destination ?? "",
+            source: mount.Name ?? mount.Source ?? "",
+            type: mount.Type,
+          });
+        }
+        return sources;
       }
     }
 
-    return service.volumes
+    const sources = service.volumes
       .map((spec, i): BackupSource | null => {
         const parsed = parseVolumeSpec(spec);
         if (!parsed || !parsed.source) return null;
@@ -208,9 +366,16 @@ export class DockerBackupExecutor implements BackupExecutor {
         // name here so the fallback mounts the real volume (not an empty one
         // docker would auto-create). Bind mounts and grandfathered services
         // (namespaceVolumes=false) keep the raw source.
+        //
+        // Idempotent on purpose: the column stores whatever was written at deploy
+        // time, and for services deployed from an already-scoped spec that is the
+        // SCOPED name. Prefixing twice named a volume that never existed, which docker
+        // creates empty on mount — a capture that archives nothing (now a failure
+        // rather than a green run, via the empty-source gate) and a restore into a
+        // volume nothing reads.
         const source =
           parsed.type === "volume" && service.namespaceVolumes
-            ? scopedVolumeName(service.projectSlug, parsed.source)
+            ? ensureScopedVolumeName(service.projectSlug, parsed.source)
             : parsed.source;
         return {
           id: `${source}-${i}`,
@@ -220,6 +385,45 @@ export class DockerBackupExecutor implements BackupExecutor {
         };
       })
       .filter((x): x is BackupSource => x !== null);
+
+    if (!sources.some((source) => source.type === "bind")) return sources;
+    await this.ensureImage(HELPER_IMAGE);
+
+    const backupable: BackupSource[] = [];
+    for (const source of sources) {
+      if (source.type !== "bind" || (await this.declaredBindIsDirectory(source.source))) {
+        backupable.push(source);
+      }
+    }
+    return backupable;
+  }
+
+  /**
+   * The container's own `Config.Env`, as `KEY=value` pairs already split.
+   *
+   * This is the credentials source for every service Openship did not deploy
+   * itself — see `BackupExecutor.readContainerEnv`. Returns `{}` rather than
+   * throwing on any failure: it is an ENRICHMENT of the handle's env, so a
+   * container that has gone away, or a daemon that refuses the inspect, must leave
+   * the caller exactly as well off as before it asked.
+   */
+  async readContainerEnv(service: ServiceHandle): Promise<Record<string, string>> {
+    if (!service.containerId) return {};
+    try {
+      const data = await this.dockerode.getContainer(service.containerId).inspect();
+      const pairs = ((data.Config?.Env ?? []) as string[]) ?? [];
+      const env: Record<string, string> = {};
+      for (const pair of pairs) {
+        // Split on the FIRST `=` only: a value may contain them (a DSN, a JWT), and
+        // splitting on every one would truncate exactly the secrets that matter.
+        const eq = pair.indexOf("=");
+        if (eq <= 0) continue;
+        env[pair.slice(0, eq)] = pair.slice(eq + 1);
+      }
+      return env;
+    } catch {
+      return {};
+    }
   }
 
   async execStream(
@@ -242,15 +446,31 @@ export class DockerBackupExecutor implements BackupExecutor {
       WorkingDir: opts?.cwd,
       Env: opts?.env ? Object.entries(opts.env).map(([k, v]) => `${k}=${v}`) : undefined,
     });
-    // NO `hijack` — this is the single entry point for EVERY backup producer
-    // (pg_dump, mysqldump, mongodump, redis, custom commands, pre/post hooks), and
-    // hijack makes docker-modem ask for a connection upgrade. The daemon answers
-    // `101 Switching Protocols`; under Bun (the api image and the compiled desktop
-    // binary) node:http surfaces that as a plain `response`, so modem rejected with
-    // `(HTTP code 101) unexpected` — i.e. every database backup on a Docker box
-    // failed before a byte was read. Nothing here writes stdin, so there is no
-    // reason to hijack at all; see DockerEdgeExecutor.run() for the same fix.
-    const stream = await exec.start({ stdin: false });
+    // Read the dump over a RAW SOCKET, not through docker-modem. Neither of modem's
+    // two options can carry a backup.
+    //
+    // `{hijack: true}` makes it ask for a connection upgrade, and under Bun (this api
+    // ships as a Bun image and a Bun-compiled desktop binary) node:http surfaces the
+    // daemon's `101 Switching Protocols` as a plain `response`, so modem rejected
+    // every exec with `(HTTP code 101) unexpected` before a byte was read.
+    //
+    // Without hijack it hands back the `http.IncomingMessage` instead — which starts
+    // flowing and, under Bun, CANNOT BE STOPPED. Measured on Bun 1.3.1 vs Node 22,
+    // one 64 KB-chunk producer against a client that reads a single chunk and then
+    // pauses: Node's peer blocks after ~0.9 MB, Bun's swallows the ENTIRE 2 GB stream
+    // into its own buffers while the consumer has seen 0.1 MB. On a raw net.Socket
+    // Bun stops at ~1.6 MB, like Node.
+    //
+    // So `demuxDockerStream`'s backpressure — the whole #633 fix — is a no-op here
+    // unless the thing it pauses is a socket we own. This is the single entry point
+    // for EVERY producer (pg_dump, mysqldump, mongodump, redis, custom commands,
+    // pre/post hooks), i.e. precisely the path that OOM'd on a 110 GB dump, so it uses
+    // the same hand-rolled upgrade the restore direction already relies on. Nothing
+    // here writes stdin; `stdin: false` keeps the channel read-only.
+    const stream = await startExecStream(daemonConnectionFrom(this.dockerode), exec.id, {
+      tty: false,
+      stdin: false,
+    });
     return this.attachDemuxed(this.dockerode, exec.id, stream, opts, {
       label: `exec in service ${service.name}`,
     });
@@ -277,12 +497,9 @@ export class DockerBackupExecutor implements BackupExecutor {
     // shellEscape each pattern — these flow from user-facing fields,
     // an unescaped `; rm -rf /` would inject. tar's glob handling is
     // unchanged because the shell strips the quotes before exec.
-    const excludeArgs = (opts?.exclude ?? []).flatMap((p) => ["--exclude", shellEscape(p)]);
+    const excludeArgs = (opts?.exclude ?? []).flatMap((p) => ["--exclude", shellQuote(p)]);
     const tarFlags = compressionFlag(compression);
-    const tarCmd =
-      compression === "zstd"
-        ? `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} . | zstd -c -3`
-        : `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} .`;
+    const tarCmd = `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} .`;
     const helperImage = compression === "zstd" ? "alpine:3" : HELPER_IMAGE;
 
     await this.ensureImage(helperImage);
@@ -305,14 +522,68 @@ export class DockerBackupExecutor implements BackupExecutor {
       LogConfig: { Type: "none", Config: {} },
     };
 
-    return this.handOffHelper(
+    // Quiesce, if asked. The freeze must cover the ENTIRE copy, and the copy outlives this
+    // function — `handOffHelper` returns a stream the caller drains — so the thaw is tied
+    // to `awaitExit` settling, not to this call returning.
+    //
+    // `pause` is deliberately NOT best-effort: the caller asked for a point-in-time
+    // archive, and quietly producing a crash-consistent one labelled as quiesced is the
+    // silent-downgrade pattern this module exists to remove.
+    const quiesceId = opts?.quiesce ? service.containerId : null;
+    if (opts?.quiesce && !quiesceId) {
+      throw new Error(
+        `Cannot quiesce service "${service.name}" for a consistent copy: it has no running ` +
+          `container to freeze. Either deploy it, or take the copy without quiesce and accept ` +
+          `a crash-consistent archive.`,
+      );
+    }
+    if (quiesceId) await this.freeze(quiesceId);
+
+    const handed = await this.handOffHelper(
       {
         Image: helperImage,
-        Cmd: [
-          "sh",
-          "-c",
-          compression === "zstd" ? `apk add --no-cache zstd >/dev/null 2>&1; ${tarCmd}` : tarCmd,
-        ],
+        // Built by the SAME helper the DB producers use, for the same reason: a shell
+        // pipeline exits with its LAST command's status, so `tar -c … | zstd` reported
+        // ZSTD's success and a tar that failed mid-archive — a permissions error, a
+        // vanishing file, ENOSPC in the pipe — came back as exit 0 over a truncated
+        // archive that the run then recorded as a complete backup. Closing that for
+        // `pg_dump | zstd` and leaving it here would have been the same bug with a
+        // different payload, and the volume producer is the DEFAULT one.
+        //
+        // gzip and none need no pipeline at all (busybox tar compresses in-process via
+        // `tarFlags`), so those pass `"none"` and keep tar's own status directly.
+        Cmd: safeDumpCommand(
+          tarCmd,
+          compression === "zstd" ? "zstd" : "none",
+          [
+            // REFUSE an empty mount before doing anything else.
+            //
+            // The daemon CREATES a missing bind directory and a missing named volume
+            // when it honors HostConfig.Binds, so a source that is not on this host
+            // produces a helper that starts fine and a `tar -c` of nothing that exits
+            // 0. That archive is ~350 bytes compressed, so the orchestrator's
+            // zero-byte guard passes and the run is recorded as a successful backup —
+            // a nightly green tick over an external disk that failed to mount, a data
+            // directory that was renamed under a still-running container, or a volume
+            // that `docker system prune --volumes` took.
+            //
+            // An intentionally-empty source fails too, which is the deliberate half of
+            // the trade: an archive of nothing is not a restore point either way, and
+            // the operator has `payloadConfig.sourceIds` to narrow the policy. Silence
+            // is the only outcome that cannot be recovered from.
+            `SRC=${shellQuote(sourceId)}`,
+            `[ -n "$(ls -A /mnt 2>/dev/null)" ] || { echo "openship: backup source $SRC is ` +
+              `empty or missing on this host, so this archive would contain nothing. ` +
+              `Refusing to record it as a backup. If it is a mount, check that it is ` +
+              `mounted; if it is empty on purpose, narrow the policy's sourceIds." >&2; ` +
+              `exit 91; }`,
+            // zstd is not in alpine:3, so the helper installs it. Second, so a doomed
+            // capture does not pay the ~20s fetch first.
+            compression === "zstd" ? "apk add --no-cache zstd >/dev/null 2>&1" : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
         HostConfig: hostConfig,
         AttachStdout: true,
         AttachStderr: true,
@@ -322,8 +593,13 @@ export class DockerBackupExecutor implements BackupExecutor {
         NetworkDisabled: compression !== "zstd",
       },
       async (helper) => {
-        const stream = await helper.attach({
-          stream: true,
+        // Raw socket, not `helper.attach()`, for the reason execStream documents at
+        // length: dockerode's non-hijack attach yields an `http.IncomingMessage`, and
+        // under Bun pausing one does not stop the daemon — it buffers the whole
+        // archive internally instead. A volume tar is the other unbounded payload in
+        // this file, so it needs the same transport to be genuinely bounded.
+        const stream = await startAttachStream(daemonConnectionFrom(this.dockerode), helper.id, {
+          stdin: false,
           stdout: true,
           stderr: true,
         });
@@ -334,7 +610,24 @@ export class DockerBackupExecutor implements BackupExecutor {
           label: `Backup of "${sourceId}" on service ${service.name}`,
         });
       },
-    );
+    ).catch(async (err) => {
+      // The hand-off itself failed, so nothing will settle `awaitExit` and thaw below.
+      if (quiesceId) await this.thaw(quiesceId, `backup of "${sourceId}"`);
+      throw err;
+    });
+
+    if (!quiesceId) return handed;
+    return {
+      stdout: handed.stdout,
+      // Thaw when the copy is DONE, however it ends. `awaitExit` settles once the helper
+      // has exited and its output has drained, which is precisely the window the freeze has
+      // to cover; unfreezing when `streamPath` returned would thaw before a single byte had
+      // been read. The original promise is handed back so a caller still sees its value or
+      // its rejection.
+      awaitExit: handed.awaitExit.finally(() =>
+        this.thaw(quiesceId, `backup of "${sourceId}"`),
+      ),
+    };
   }
 
   async receiveStream(
@@ -361,22 +654,52 @@ export class DockerBackupExecutor implements BackupExecutor {
     const helperImage = compression === "zstd" ? "alpine:3" : HELPER_IMAGE;
     await this.ensureImage(helperImage);
 
-    const clearCmd = opts?.clearTarget ? `find /mnt -mindepth 1 -delete 2>/dev/null || true; ` : "";
-    const untarCmd =
+    // ORDER IS THE FIX HERE, and it is the difference between a failed restore and
+    // destroyed data.
+    //
+    // This used to be `apk add --no-cache zstd >/dev/null 2>&1; find /mnt -delete; zstd
+    // -d -c | tar -x`. Three defects compounding:
+    //   1. `apk add` joined with `;`, output discarded — a host with no egress (and
+    //      egress is required only on this codec, hence `NetworkDisabled` below) simply
+    //      has no zstd.
+    //   2. The target was CLEARED before anything checked that the decompressor exists.
+    //   3. The pipeline reports tar's status, and `tar -x` reading EOF exits 0.
+    // Verified locally: `sh -c 'find out -delete; nonexistent_zstd -d -c | tar -x -C out'`
+    // exits 0 with `out/` emptied. So a volume restore wiped the volume, extracted
+    // nothing, returned success — and `receiveStream` counts `bytesWritten` off `body`,
+    // not off tar, so the caller saw a healthy byte count. Upstream, the restore's own
+    // hasher never completes, and `digestIfComplete` treats that as "unverifiable, not a
+    // mismatch" (right in general), so nothing objected and the run went `succeeded`.
+    //
+    // Strictly worse than #611: that one failed to take a backup, this one deletes your
+    // data and reports a green restore.
+    //
+    // Now: install, PROVE the tool is there, and only then destroy anything — and the
+    // pipeline goes through `safeRestoreCommand`, so the decompressor's status can no
+    // longer hide behind tar's.
+    const restoreCodec: DumpCodec = compression === "none" ? "none" : compression;
+    const prelude = [
+      compression === "zstd" ? "apk add --no-cache zstd >/dev/null 2>&1 || true" : null,
       compression === "zstd"
-        ? `${clearCmd}zstd -d -c | tar -x -C /mnt`
-        : `${clearCmd}tar -x${compressionFlag(compression)}f - -C /mnt`;
+        ? 'command -v zstd >/dev/null 2>&1 || { echo "openship: zstd is not available in the ' +
+          'restore helper and could not be installed (the host may have no egress). ' +
+          'Refusing to clear the target: nothing was written and your data is untouched." >&2; ' +
+          "exit 90; }"
+        : null,
+      compression === "gzip"
+        ? 'command -v gzip >/dev/null 2>&1 || { echo "openship: gzip is not available in the ' +
+          'restore helper. Refusing to clear the target; your data is untouched." >&2; exit 90; }'
+        : null,
+      // Only now, with every tool proven present.
+      opts?.clearTarget ? "find /mnt -mindepth 1 -delete 2>/dev/null || true" : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     return this.withHelper(
       {
         Image: helperImage,
-        Cmd: [
-          "sh",
-          "-c",
-          compression === "zstd"
-            ? `apk add --no-cache zstd >/dev/null 2>&1; ${untarCmd}`
-            : untarCmd,
-        ],
+        Cmd: safeRestoreCommand(restoreCodec, "tar -x -C /mnt", prelude),
         // AutoRemove is OFF deliberately, and this is the fix for the `404 no such
         // container` in #434: with it on, the daemon could reap the helper before
         // /containers/{id}/wait answered, and the exit status was then unknowable.
@@ -749,29 +1072,57 @@ export class DockerBackupExecutor implements BackupExecutor {
     const { PassThrough } = await import("node:stream");
     const stdoutSink = new PassThrough();
     stdoutSink.resume();
+    // MANDATORY, not defensive, and it is new with `demuxDockerStream`.
+    //
+    // `modem.demuxStream` only ever WROTE to its sinks; ours destroys `stdout` with an
+    // Error on every abnormal end — a source error, a desync, an end mid-frame. An
+    // `'error'` event on a stream with no listener is an uncaught exception, and there
+    // is no `uncaughtException` handler in this process, so the API DIES — taking every
+    // other in-flight backup, restore and deployment with it, and stranding the restore
+    // row instead of recording it failed.
+    //
+    // Reachable on every restore: when the loader exits early (wrong credentials under
+    // `ON_ERROR_STOP=1`) the daemon closes the hijacked socket while `body.pipe(stream)`
+    // is still writing, the next write yields EPIPE, and `bridgeSocket` turns that into
+    // an `'error'` on this duplex. The timeout path reaches the same place.
+    //
+    // Swallowing is right HERE specifically: this sink's bytes are discarded by
+    // contract (restore commands log to stderr), the payload travels the OTHER way — in
+    // through stdin — so a demux failure on the output side cannot corrupt what is
+    // being restored, and the real failure already reaches the caller through the
+    // `stream.on("error")` → reject below.
+    stdoutSink.on("error", () => {});
     const stderrSink = new PassThrough();
     stderrSink.on("data", (chunk: Buffer) => {
       if (stderrChunks.length < 16) stderrChunks.push(chunk);
     });
-    this.dockerode.modem.demuxStream(
-      stream as unknown as NodeJS.ReadableStream,
-      stdoutSink,
-      stderrSink,
-    );
+    demuxDockerStream(stream as unknown as NodeJS.ReadableStream, stdoutSink, stderrSink);
 
-    const timer = opts?.timeoutMs
-      ? setTimeout(() => {
-          try {
-            (stream as unknown as { end?: () => void }).end?.();
-          } catch {
-            // best-effort
-          }
-        }, opts.timeoutMs)
-      : null;
+    const stderrTail = () =>
+      Buffer.concat(stderrChunks).toString("utf8").slice(0, 16 * 1024);
 
-    return new Promise<ExecExitInfo>((resolve, reject) => {
+    // Every LOGICAL restore applies through here — pg_restore, mysql, mongorestore,
+    // redis, custom_command — and this was the one direction with no completion
+    // backstop. The old ceiling only closed stdin and then kept waiting, which a
+    // `pg_restore` blocked on a lock ignores: nothing ever settled, the restore row sat
+    // in `applying` until a stale sweep guessed at it, and the exec was never reaped.
+    //
+    // So the same pair `streamPath`/`receiveStream` already share:
+    //   • the exec's own status, polled once the body is fully written, for the case
+    //     where the hijacked socket never EOFs (the #516 shape, one direction over);
+    //   • an absolute ceiling that REJECTS, so a wedged apply becomes a failed restore
+    //     with a reason instead of a row nobody can resolve.
+    //
+    // No idle watchdog, deliberately: the payload travels IN through stdin, so a long
+    // silence is what a healthy loader looks like while it builds an index — nothing is
+    // flowing because it stopped reading, not because it died. Abandoning that would
+    // leave the target half-written on a restore that was fine.
+    const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+    let bodyEnded = false;
+    let polling = true;
+
+    const attachEnded = new Promise<ExecExitInfo>((resolve, reject) => {
       body.on("error", (err) => {
-        if (timer) clearTimeout(timer);
         try {
           (stream as unknown as { end?: () => void }).end?.();
         } catch {
@@ -779,28 +1130,63 @@ export class DockerBackupExecutor implements BackupExecutor {
         }
         reject(err);
       });
+      body.on("end", () => {
+        bodyEnded = true;
+      });
       stream.on("end", async () => {
-        if (timer) clearTimeout(timer);
         try {
-          resolve({
-            code: await resolveExecExitCode(exec, exec.id),
-            stderr: Buffer.concat(stderrChunks)
-              .toString("utf8")
-              .slice(0, 16 * 1024),
-          });
+          resolve({ code: await resolveExecExitCode(exec, exec.id), stderr: stderrTail() });
         } catch (err) {
           reject(err);
         }
       });
-      stream.on("error", (err) => {
-        if (timer) clearTimeout(timer);
-        reject(err);
-      });
+      stream.on("error", (err) => reject(err));
       // Pipe body → stdin. ssh2/dockerode hijack streams are
       // bidirectional; writing to it = stdin, reading = stdout/stderr
       // (demuxed above).
       body.pipe(stream as unknown as NodeJS.WritableStream);
     });
+
+    // Gated on `bodyEnded` for the same reason `awaitHelperExit` gates its poll: an
+    // exec that has not been handed all of its input yet is expected to still be
+    // running. Resolving from a poll can clip the stderr TAIL — never data, which
+    // travels the other way — and a truncated diagnostic beats a hang.
+    const polledExit = async (): Promise<ExecExitInfo> => {
+      while (polling) {
+        await new Promise((r) => {
+          const t = setTimeout(r, EXIT_POLL_INTERVAL_MS);
+          (t as { unref?: () => void }).unref?.();
+        });
+        if (!polling || !bodyEnded) continue;
+        let info: { Running?: boolean; ExitCode?: number | null };
+        try {
+          info = await exec.inspect();
+        } catch {
+          continue; // transient daemon hiccup — the ceiling still covers us
+        }
+        if (info.Running === false && typeof info.ExitCode === "number") {
+          return { code: info.ExitCode, stderr: stderrTail() };
+        }
+      }
+      // Only reachable after the race settled and the finally cleared the flag.
+      return new Promise<never>(() => {});
+    };
+
+    try {
+      return await withTimeout(
+        Promise.race([attachEnded, polledExit()]),
+        timeoutMs,
+        `Restore into service ${service.name} exceeded its ` +
+          `${Math.round(timeoutMs / 1000)}s ceiling and was abandoned. The target may hold ` +
+          `partial data.`,
+      );
+    } finally {
+      polling = false;
+      // Drop the socket on every exit. On the ceiling this is what stops the write —
+      // leaving it open kept a wedged loader fed while the row said failed.
+      destroyQuietly(stream as unknown as { destroy?: (err?: Error) => void });
+      destroyQuietly(body);
+    }
   }
 
   async stopService(service: ServiceHandle): Promise<void> {
@@ -857,24 +1243,79 @@ export class DockerBackupExecutor implements BackupExecutor {
     const idleMs = opts?.idleTimeoutMs ?? DEFAULT_HELPER_IDLE_MS;
     const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
 
-    const stdout = new PassThrough();
+    const stdout = new PassThrough({ highWaterMark: ARTIFACT_BUFFER_BYTES });
     const stderrChunks: Buffer[] = [];
     const stderrSink = new PassThrough();
     stderrSink.on("data", (chunk: Buffer) => {
       if (stderrChunks.length < 16) stderrChunks.push(chunk);
     });
 
-    docker.modem.demuxStream(stream as unknown as NodeJS.ReadableStream, stdout, stderrSink);
+    // Our demuxer, not `modem.demuxStream`: this is the path every DB producer's
+    // dump flows through, and modem discards the `false` from `stdout.write()`, so
+    // a dump produced faster than the destination accepts it accumulated in this
+    // PassThrough until the heap gave out (#633). See docker-demux.ts.
+    //
+    // A demux failure has to reach `awaitExit`, not just `stdout`: the exit code is
+    // read from the attach stream's own `end`, which still fires after a desync, so
+    // the run would otherwise record the exec's `0` over a truncated artifact.
+    let demuxError: Error | null = null;
+    let rejectExit: ((err: Error) => void) | null = null;
+    demuxDockerStream(stream as unknown as NodeJS.ReadableStream, stdout, stderrSink, (err) => {
+      // Recorded ALWAYS, and additionally pushed at the promise once one exists.
+      // The demuxer can fail before `awaitExit` is constructed (its first `data`
+      // event) or after, and both have to land — the record covers the early case,
+      // the reject covers the case where nothing else will look at it again.
+      demuxError ??= err;
+      rejectExit?.(err);
+    });
+
+    // The demuxer only forwards frames — it never ends the destinations when the
+    // source attach stream ends. Without this, a consumer piping stdout (pg_dump,
+    // mysqldump, mongodump, custom commands → the destination writer) waits on an
+    // EOF that never comes: the dump is fully written, the exec has exited, and
+    // the run still sits in `uploading` forever (#516). demuxContainerStream
+    // below carries the same fix for the volume/tar path.
+    //
+    // Safe to end here, and ONLY here: this path learns the exit code from the
+    // attach stream's own 'end' (see awaitExit below), so by the time it fires
+    // every byte has already been demuxed. Do not move this to a daemon-side exit
+    // signal — an exec can exit with bytes still in flight, and ending early
+    // truncates the artifact (the trap demuxContainerStream documents).
+    let sinksEnded = false;
+    const endSinks = () => {
+      if (sinksEnded) return;
+      sinksEnded = true;
+      stdout.end();
+      stderrSink.end();
+    };
+    stream.on("end", endSinks);
+    stream.on("close", endSinks);
 
     const watchdog = createIdleWatchdog(
       idleMs,
       `${label} produced no data for ${Math.round(idleMs / 1000)}s and was abandoned.`,
     );
     stream.on("data", () => watchdog.touch());
+    // A `drain` is forward progress too, and since backpressure landed this is the
+    // only kind some healthy runs have. The watchdog used to mean "is the daemon
+    // producing", which was the same question as "is anything happening" while the
+    // demuxer read as fast as it could. Now a slow destination legitimately keeps the
+    // attach socket PAUSED — no `data` events at all — so a watchdog fed only by the
+    // source would abandon a backup that is moving, just slowly, and call it wedged.
+    // The destination accepting more bytes is exactly the evidence that it is not.
+    stdout.on("drain", () => watchdog.touch());
 
     const awaitExit = (async (): Promise<ExecExitInfo> => {
       const onEnd = new Promise<ExecExitInfo>((resolve, reject) => {
+        // Adopt the demux error channel: whichever comes first wins, and a desync
+        // that arrived before this promise existed is still pending in `demuxError`.
+        rejectExit = reject;
+        if (demuxError) reject(demuxError);
         stream.on("end", async () => {
+          // The demuxer may have failed with the source still ending cleanly. Its
+          // error outranks the exec's own status, which describes a process that
+          // did finish — just not into bytes we can trust.
+          if (demuxError) return reject(demuxError);
           try {
             resolve({
               code: await resolveExecExitCode(docker.getExec(execId), execId),
@@ -897,11 +1338,29 @@ export class DockerBackupExecutor implements BackupExecutor {
         );
       } catch (err) {
         stdout.destroy(err as Error);
+        // Reap the attach socket too, which this path used to leave open.
+        //
+        // Backpressure is what made that matter. Nothing is going to drain this exec
+        // now, so the socket sits PAUSED: the fd leaks, and `pg_dump` stays blocked
+        // inside the user's database on a `write(2)` that will never complete — holding
+        // its transaction snapshot open, which on a busy Postgres means bloat that
+        // outlives the failed backup. `pipeIntoCommand` and `demuxContainerStream` both
+        // already reap on their failure paths; this one was missed.
+        destroyQuietly(stream as unknown as { destroy?: (err?: Error) => void });
         throw err;
       } finally {
         watchdog.dispose();
       }
     })();
+
+    // A consumer legitimately stops awaiting this: the orchestrator's `for await` over
+    // the producer finalizes the generator the moment an upload fails, so the
+    // `await awaitExit` after the `yield` never runs. The idle watchdog then rejects
+    // this promise ~10 minutes later with nobody listening — an unhandled rejection,
+    // which is fatal on the Node-hosted desktop API. Attaching a no-op handler makes
+    // the rejection observed; every real awaiter still sees it, because this is the
+    // same promise object they hold.
+    void awaitExit.catch(() => {});
 
     return { stdout, awaitExit };
   }
@@ -911,14 +1370,29 @@ export class DockerBackupExecutor implements BackupExecutor {
     stream: NodeJS.ReadWriteStream,
     opts: { timeoutMs: number; idleTimeoutMs: number; label: string },
   ): { stdout: Readable; awaitExit: Promise<ExecExitInfo> } {
-    const stdout = new PassThrough();
+    const stdout = new PassThrough({ highWaterMark: ARTIFACT_BUFFER_BYTES });
     const stderrChunks: Buffer[] = [];
     const stderrSink = new PassThrough();
     stderrSink.on("data", (chunk: Buffer) => {
       if (stderrChunks.length < 16) stderrChunks.push(chunk);
     });
-    container.modem.demuxStream(stream as unknown as NodeJS.ReadableStream, stdout, stderrSink);
-    // demuxStream never ends the destinations. End `stdout` when the attach
+    // Backpressure-honoring demux — same reason as attachDemuxed above: `tar -c |
+    // zstd` out of a large volume outruns any network destination, and the
+    // difference has to stop at the attach socket rather than in this heap. And as
+    // there, a desync must beat the helper's own exit status to `awaitExit`, or a
+    // truncated archive is recorded as a complete one.
+    let demuxError: Error | null = null;
+    const demux = demuxDockerStream(
+      stream as unknown as NodeJS.ReadableStream,
+      stdout,
+      stderrSink,
+      (err) => {
+        demuxError = err;
+      },
+    );
+    /** Last moment payload moved in either direction — see the backstop below. */
+    let lastProgressAt = Date.now();
+    // The demuxer never ends the destinations. End `stdout` when the attach
     // stream itself ends (all output demuxed) — otherwise a consumer piping it
     // into `tar -x` stdin never sees EOF and hangs. This is RELIABLE only
     // because the helper has no AutoRemove (see streamPath): docker flushes the
@@ -958,7 +1432,17 @@ export class DockerBackupExecutor implements BackupExecutor {
       `${opts.label} produced no data for ${Math.round(opts.idleTimeoutMs / 1000)}s and was ` +
         `abandoned. Nothing was written; the archive is incomplete and was not kept.`,
     );
-    stream.on("data", () => watchdog.touch());
+    stream.on("data", () => {
+      lastProgressAt = Date.now();
+      watchdog.touch();
+    });
+    // Same reason as attachDemuxed: with backpressure in place a slow destination keeps
+    // this socket paused, so downstream drain is the progress signal that keeps a slow
+    // archive from being mistaken for a wedged one.
+    stdout.on("drain", () => {
+      lastProgressAt = Date.now();
+      watchdog.touch();
+    });
 
     const awaitExit = (async (): Promise<ExecExitInfo> => {
       try {
@@ -971,11 +1455,48 @@ export class DockerBackupExecutor implements BackupExecutor {
           note: "Nothing was written; the archive is incomplete and was not kept.",
         });
         exited = true;
-        // Backstop: over the SSH-tunneled attach the stream's end/close is not
-        // always delivered. The container has exited so all output is pushed;
-        // give the buffer a moment to drain, then force-close. Idempotent.
-        setTimeout(endSinks, 3000);
+        // Backstop for an attach whose end/close is never delivered (it happens over
+        // the SSH-tunneled transport). It used to be a flat `setTimeout(endSinks, 3000)`
+        // on the theory that "the container has exited so all output is pushed" — which
+        // BACKPRESSURE invalidates, and invalidates in the worst possible direction.
+        //
+        // `awaitHelperExit` resolves as soon as the helper exits, and the helper exits
+        // once the daemon has accepted its last bytes — which, while we are paused, are
+        // still sitting in the socket and the bridge, not in `stdout`. Ending `stdout`
+        // then strands them permanently: after `end()` Node emits no further `'drain'`,
+        // so the paused demuxer can never resume, and `gateSink` would have discarded
+        // the tail. Result: exit 0, a non-zero size, a sha256 that matches the truncated
+        // bytes, and a `volume-*.tar.zst` missing its end — recorded as a complete
+        // backup, on the DEFAULT producer. Exactly the class this pass exists to remove.
+        //
+        // So it keys on being IDLE AND EMPTY rather than on the clock, and re-arms while
+        // either is false. `demux.pending()` covers the case a silence check cannot:
+        // `stdout` at 4 MB emits `'drain'` only when its whole queue clears, so a slow
+        // destination is legitimately silent for far longer than any fixed window.
+        //
+        // Measured against the real demuxer: 16 MB of frames into a 4 MB `stdout` with a
+        // 64 KB/5ms consumer, ending the sink once while `pending()` was true delivered
+        // 7,667,712 of 16,777,216 bytes — 9.1 MB gone, and `stdout` emitted NO error.
+        // Note WHY there is no error: the demuxer was paused, so it never attempted the
+        // write that `gateSink`'s write-after-end guard would have caught. The loss is by
+        // STARVATION, not by writing to a closed sink, which is exactly why the
+        // `pending()` gate here is the load-bearing half and that guard is only a second
+        // line of defence.
+        const armEndBackstop = (): void => {
+          const timer = setTimeout(() => {
+            if (sinksEnded) return;
+            if (Date.now() - lastProgressAt < ATTACH_DRAIN_QUIET_MS || demux.pending()) {
+              return armEndBackstop();
+            }
+            endSinks();
+          }, ATTACH_DRAIN_QUIET_MS);
+          (timer as { unref?: () => void }).unref?.();
+        };
+        armEndBackstop();
         reapIfDone();
+        // `tar` can exit 0 having written an archive we could not read whole. The
+        // helper's status describes the process, not the bytes.
+        if (demuxError) throw demuxError;
         return {
           code: res.StatusCode,
           stderr: Buffer.concat(stderrChunks)

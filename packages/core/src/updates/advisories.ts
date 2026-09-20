@@ -5,7 +5,7 @@
 
 import type { Advisory, AdvisoryManifest, AdvisoryMode, AdvisorySeverity, LatestRelease, UpdateState } from "./types";
 import { ADVISORY_MODES } from "./types";
-import { changelogUrl } from "./types";
+import { changelogUrl } from "./changelog";
 import { compareSemver, satisfiesRange } from "./semver";
 
 const SEVERITY_RANK: Record<AdvisorySeverity, number> = { critical: 0, recommended: 1, info: 2 };

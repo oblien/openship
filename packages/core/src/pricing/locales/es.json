@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Publica sitios estáticos en Openship Cloud sin costo."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Para tu primera app en serio: contenedores, bases de datos y todo lo necesario."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Para apps en producción que necesitan espacio para crecer."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Para equipos que mueven tráfico serio sobre infraestructura compartida."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Límites a medida, infraestructura dedicada y un SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Todo lo de {inherited}, y además:",
+    "staticOnly": "Solo sitios estáticos: SSG, SPA y HTML puro",
+    "anyWorkload": "Ejecuta lo que sea: contenedores, Compose, workers, Postgres, Redis",
+    "runningServices": "{runningServices} apps, bases de datos o workers en ejecución",
+    "computeMinutes": "{computeMinutes} minutos de cómputo al mes",
+    "buildMinutes": "{buildMinutes} minutos de build al mes",
+    "power": "Hasta {powerCpu} vCPU y {powerRamGb} GB de RAM por app",
+    "projects": "{maxProjects} proyectos",
+    "projectsUnlimited": "Proyectos ilimitados",
+    "freeSubdomains": "{freeSubdomains} subdominios {freeDomainSuffix} gratis",
+    "freeSubdomainsUnlimited": "Subdominios {freeDomainSuffix} gratis e ilimitados",
+    "gitDeploys": "Despliega desde GitHub, GitLab o cualquier remoto Git",
+    "customDomains": "Dominios propios ilimitados, con TLS incluido",
+    "deployLogs": "Logs en vivo de build y despliegue",
+    "auditLog": "Registro de auditoría de cada cambio",
+    "unlimitedSeats": "Miembros de equipo ilimitados: nunca pagas por usuario",
+    "sso": "SSO y SAML",
+    "customLimits": "Límites a medida, negociados por contrato",
+    "dedicatedInfra": "Infraestructura y regiones dedicadas",
+    "onboarding": "Puesta en marcha y migración asistidas paso a paso",
+    "communitySupport": "Soporte de la comunidad",
+    "emailSupport": "Soporte por correo",
+    "prioritySupport": "Soporte prioritario",
+    "dedicatedSupport": "Soporte dedicado con SLA",
+    "selfHostedOpenSource": "La plataforma completa, de código abierto (Apache 2.0)",
+    "selfHostedUnlimited": "Despliegues, proyectos, servidores y dominios ilimitados",
+    "selfHostedServices": "Todos los servicios gestionados: Postgres, Redis, correo",
+    "selfHostedClients": "CLI, web y escritorio: un solo backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} subdominios {freeDomainSuffix} gratis al conectarte a Cloud"
+  },
+  "selfHosted": {
+    "name": "Autoalojado",
+    "tagline": "Ejecuta la plataforma completa en máquinas propias. Cualquier equipo Linux, cualquier proveedor, cualquier región. Sin medición de consumo, sin límite de usuarios, sin telemetría.",
+    "priceLabel": "Gratis",
+    "priceNote": "Apache 2.0: gratis para siempre, sin tarjeta de crédito",
+    "cta": "Empezar a autoalojar"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} minutos de cómputo",
+    "pack_25k": "{computeMinutes} minutos de cómputo",
+    "pack_100k": "{computeMinutes} minutos de cómputo"
+  },
+  "ui": {
+    "perMonth": "/mes",
+    "perYear": "/año",
+    "custom": "A medida",
+    "free": "Gratis",
+    "unlimited": "Ilimitado",
+    "mostPopular": "El más popular",
+    "monthsFree": "{months} meses gratis",
+    "ctaStart": "Empezar gratis",
+    "ctaChoose": "Elegir {name}",
+    "ctaContact": "Hablar con ventas",
+    "billedMonthly": "facturación mensual, cancela cuando quieras",
+    "campaignBadge": "{percentOff}% de descuento",
+    "campaignEnds": "La oferta termina el {date}",
+    "wasPrice": "antes {price}",
+    "standardTitle": "En todos los planes",
+    "creditPackNote": "≈ {appHours} horas de una app pequeña, o {buildMinutes} minutos de build"
+  }
+}

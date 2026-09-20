@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   scopedVolumeName,
+  ensureScopedVolumeName,
   isHostPathSource,
   scopeVolumeBinds,
 } from "./volume-namespace";
@@ -10,6 +11,38 @@ describe("scopedVolumeName", () => {
     expect(scopedVolumeName("clincai", "postgres_data")).toBe(
       "openship-clincai-postgres_data",
     );
+  });
+});
+
+describe("ensureScopedVolumeName", () => {
+  it("scopes a bare name", () => {
+    expect(ensureScopedVolumeName("clincai", "postgres_data")).toBe(
+      "openship-clincai-postgres_data",
+    );
+  });
+
+  it("leaves an already-scoped name alone", () => {
+    // The backup executor's DB fallback double-prefixed here, naming a volume that
+    // has never existed — docker creates it empty on mount, so the capture archived
+    // nothing and a restore wrote where nothing reads.
+    expect(ensureScopedVolumeName("clincai", "openship-clincai-postgres_data")).toBe(
+      "openship-clincai-postgres_data",
+    );
+  });
+
+  it("still scopes a name that carries ANOTHER project's prefix", () => {
+    // Not idempotence — that string is a foreign volume as far as this project is
+    // concerned, and silently adopting it would cross a data boundary.
+    expect(ensureScopedVolumeName("clincai", "openship-other-pgdata")).toBe(
+      "openship-clincai-openship-other-pgdata",
+    );
+  });
+
+  it("agrees with scopeVolumeBinds on the same source", () => {
+    // The two guards were written independently and diverged; a source and its spec
+    // must resolve to the same volume or backup and deploy mount different things.
+    const spec = scopeVolumeBinds("clincai", ["openship-clincai-pgdata:/data"], true)[0]!;
+    expect(spec.split(":")[0]).toBe(ensureScopedVolumeName("clincai", "openship-clincai-pgdata"));
   });
 });
 

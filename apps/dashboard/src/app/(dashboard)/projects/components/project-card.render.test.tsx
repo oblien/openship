@@ -63,18 +63,20 @@ describe("ProjectCard — hostname", () => {
 });
 
 describe("ProjectCard — status pill", () => {
-  it("does not read Live when the latest deploy failed", () => {
-    const out = text(
-      render(
-        project({
-          activeDeploymentId: "d1",
-          latestDeploymentId: "d2",
-          latestDeploymentStatus: "failed",
-        }),
-      ),
+  it("labels an ordinary failed attempt without inventing an action", () => {
+    const html = render(
+      project({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d2",
+        latestDeploymentStatus: "failed",
+      }),
     );
-    expect(out).toContain("Action Required");
+    const out = text(html);
+    expect(out).toContain("Deploy failed");
+    expect(out).not.toContain("Action Required");
     expect(out).not.toContain("Live");
+    expect(html).toContain('href="/build/d2"');
+    expect(html).not.toContain('data-project-action-required="true"');
   });
 
   it("reads Failed when the failed deploy is all the project has", () => {
@@ -88,5 +90,31 @@ describe("ProjectCard — status pill", () => {
   it("still reads Live for a healthy release", () => {
     const out = text(render(project({ activeDeploymentId: "d1" })));
     expect(out).toContain("Live");
+  });
+
+  it("links a genuine action-required badge to the owning deployment screen", () => {
+    const out = render(
+      project({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d2",
+        latestDeploymentStatus: "action_required",
+        latestDeploymentBlocked: true,
+      }),
+    );
+    expect(out).toContain("Action Required");
+    expect(out).toContain('data-project-action-required="true"');
+    expect(out).toContain('href="/projects/p1/deployments"');
+  });
+
+  it("links a routing action directly to Domains", () => {
+    const out = render(
+      project({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d1",
+        latestDeploymentStatus: "ready",
+        routingUnsynced: true,
+      }),
+    );
+    expect(out).toContain('href="/projects/p1/domains"');
   });
 });

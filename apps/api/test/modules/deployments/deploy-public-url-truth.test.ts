@@ -25,15 +25,15 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos: { server: { getInOrganization } },
 }));
 
-vi.mock("../../../src/lib/edge-target", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/edge-target")>()),
+vi.mock("@repo/platform/engine/lib/edge-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/edge-target")>()),
   resolveEdgeTargetHost,
 }));
 
 // R1 owns how a route becomes a URL (routing base vs CLOUD_DOMAIN). This suite is
 // about what the deploy does WITH those URLs, so the boundary is faked.
-vi.mock("../../../src/lib/public-endpoints", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/public-endpoints")>()),
+vi.mock("@repo/platform/engine/lib/public-endpoints", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/public-endpoints")>()),
   resolveServiceEndpointUrls,
 }));
 
@@ -41,7 +41,7 @@ import {
   buildServicePublicUrlMap,
   resolveEnvPublicUrls,
   resolvePortOnlyEnvHost,
-} from "../../../src/modules/deployments/compose/deploy.service";
+} from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 import type { Project, Service } from "@repo/db";
 
 const project = { id: "proj1", slug: "convex-app", name: "convex-app" } as Project;

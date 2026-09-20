@@ -2,6 +2,7 @@ import { exec, spawn } from "node:child_process";
 import {
   access,
   mkdir as fsMkdir,
+  open as fsOpen,
   readFile as fsReadFile,
   rename as fsRename,
   rm as fsRm,
@@ -115,9 +116,23 @@ export class LocalExecutor implements CommandExecutor {
     });
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
+  async writeFile(path: string, content: string, opts?: { mode?: number }): Promise<void> {
     await fsMkdir(dirname(path), { recursive: true });
-    await fsWriteFile(path, content, "utf-8");
+    if (opts?.mode === undefined) {
+      await fsWriteFile(path, content, "utf-8");
+      return;
+    }
+
+    // `mode` on writeFile only applies when the path is newly created. Open +
+    // fchmod first also tightens an existing path before any new payload bytes
+    // are written.
+    const file = await fsOpen(path, "w", opts.mode);
+    try {
+      await file.chmod(opts.mode);
+      await file.writeFile(content, "utf-8");
+    } finally {
+      await file.close();
+    }
   }
 
   async rename(from: string, to: string): Promise<void> {

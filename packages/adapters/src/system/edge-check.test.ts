@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { checkEdge } from "./checks";
+import { probeOutput } from "./environment.fixtures";
 import { uninstallEdge } from "./installer";
 import type { CommandExecutor } from "../types";
 
+/**
+ * A root Linux box that answers the host probe, plus whatever else a test names.
+ *
+ * The probe is matched first: it is one `sh` script containing `id -u`, `uname -s` and
+ * `command -v` lines, so a needle written for any of those would otherwise capture it and
+ * the whole profile would read as an sshd interception.
+ */
 function host(answers: Array<[string, string]>): CommandExecutor {
   return {
     exec: vi.fn(async (cmd: string) => {
+      if (cmd.includes("opsh_begin")) return probeOutput();
       for (const [needle, out] of answers) if (cmd.includes(needle)) return out;
       return "";
     }),
@@ -119,8 +128,8 @@ describe("uninstallEdge on a container edge", () => {
     const cmds: string[] = [];
     const exec = vi.fn(async (cmd: string) => {
       cmds.push(cmd);
+      if (cmd.includes("opsh_begin")) return probeOutput();
       if (cmd.startsWith("docker ps --filter name=openship-edge")) return "openship-edge";
-      if (cmd.includes("id -u")) return "0";
       return "";
     });
 

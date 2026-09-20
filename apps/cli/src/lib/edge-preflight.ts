@@ -38,6 +38,7 @@ import {
   edgeProxy,
   edgeProxyFor,
   collectProxyCerts,
+  isOurEdgeContainer,
   unreachableStaticRoots,
   copyStaticRootIntoEdge,
   type CommandExecutor,
@@ -90,12 +91,16 @@ export interface EdgePreflightDeps {
    * waits for the sockets to be released and reports whether they were. `freed:false`
    * means the handover did not happen, so bringing the stack up would just crash-loop
    * the edge on `bind() … (98: Address already in use)`.
+   *
+   * The shape is derived from the real function rather than restated: a hand-written
+   * `{ freed, stillBound }` is how the fake kept typechecking after the real one grew
+   * `privilegeDegraded`, leaving this path reporting a refused stop as a port conflict.
    */
   beginEdgeTakeover(
     executor: CommandExecutor,
     status: EdgeStatus,
     onLog: (message: string, level?: "info" | "warn" | "error") => void,
-  ): Promise<{ freed: boolean; stillBound: number[] }>;
+  ): Promise<Awaited<ReturnType<typeof realBeginEdgeTakeover>>>;
   /** Undo a `beginEdgeTakeover` from THIS run. True when something came back up. */
   rollbackHostEdge(): Promise<boolean>;
   /** Restore a proxy stopped by an earlier (crashed) run before we re-probe. */
@@ -137,6 +142,26 @@ export interface EdgePreflightDeps {
   /** Ask which action to take (interactive path only). */
   confirm(info: { owner: string; known: boolean; importable: number }): Promise<EdgeAction>;
   warn(message: string): void;
+}
+
+/**
+ * What a blocked takeover has to add when the stop was never allowed to run.
+ *
+ * `stillBound` reads as "something else is holding the port", which is only true once
+ * the stop actually ran. Refused, that same field means the proxy we set out to stop
+ * is simply still there — and "find what else is holding it and retry" sends the
+ * operator round a loop that cannot succeed as this login. Shared by both blocked
+ * paths below, and worded to match the api's 409 (`ensureEdgeClear`) so an operator
+ * meets one explanation whichever surface they hit.
+ */
+function privilegeClause(privilegeDegraded: boolean): string {
+  if (!privilegeDegraded) return "";
+  return (
+    " — and Openship could not run the stop as root on this host (see the privilege " +
+    "warning above), so stopping it was almost certainly refused rather than too slow. " +
+    "Retrying as this user will fail the same way: re-run as root, or as a user with " +
+    "passwordless sudo"
+  );
 }
 
 /**
@@ -217,7 +242,8 @@ export async function planAndApplyHostEdge(
       blockedBy:
         `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ${plural ? "are" : "is"} still in use ` +
         `after stopping ${owner}` +
-        (restored ? " (the previous proxy has been restored)" : ""),
+        (restored ? " (the previous proxy has been restored)" : "") +
+        privilegeClause(freed.privilegeDegraded),
     };
   }
   return action === "migrate"
@@ -452,7 +478,10 @@ export async function diagnoseEdge(): Promise<EdgeDiagnosis> {
   // Occupants that are NOT our edge container: a host process (systemd unit or a
   // bare pid) or some other container. If our container is meant to own these
   // ports, anything else here is what's blocking it.
-  const foreignOccupants = status.occupants.filter((o) => o.containerName !== "openship-edge");
+  // `isOurEdgeContainer`, not a name comparison: the container name is configurable via
+  // OPENSHIP_EDGE_CONTAINER, so a renamed edge running our image compared unequal here and
+  // read as a foreign proxy blocking itself.
+  const foreignOccupants = status.occupants.filter((o) => !isOurEdgeContainer(o.containerName));
   const hostProxySquatting =
     !running && foreignOccupants.some((o) => !o.containerName);
 
@@ -517,7 +546,8 @@ export async function repairEdgeConflict(
       detail:
         `port${freed.stillBound.length > 1 ? "s" : ""} ${freed.stillBound.join(" and ")} still in use ` +
         `after stopping ${owner || "the existing proxy"}` +
-        (restored ? " — the previous proxy has been restored" : " — and the restore did NOT bring it back"),
+        (restored ? " — the previous proxy has been restored" : " — and the restore did NOT bring it back") +
+        privilegeClause(freed.privilegeDegraded),
     };
   }
   spawnSync("docker", ["restart", "openship-edge"], { stdio: "ignore" });

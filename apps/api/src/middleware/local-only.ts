@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { env } from "../config";
+import { env } from "@repo/platform/engine/config/index";
 
 /**
  * Middleware that restricts a route to self-hosted instances only.

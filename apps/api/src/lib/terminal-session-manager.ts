@@ -23,11 +23,11 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
-import type { RequestContext } from "./request-context";
-import { sshManager } from "./ssh-manager";
+import type { ExecutionContext as RequestContext } from "@repo/platform";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 

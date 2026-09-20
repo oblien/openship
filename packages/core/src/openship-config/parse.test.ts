@@ -16,7 +16,10 @@ describe("parseOpenshipConfig", () => {
       port: 3000,
       env: { PUBLIC_URL: "https://x", API_KEY: { value: "sk_1", secret: true } },
       domains: ["app.example.com", { domain: "api.example.com", port: 8080, type: "custom" }],
-      routes: { cleanUrls: true, redirects: [{ source: "/old", destination: "/new", permanent: true }] },
+      routes: {
+        cleanUrls: true,
+        redirects: [{ source: "/old", destination: "/new", permanent: true }],
+      },
       resources: { tier: "medium" },
     });
     expect(errors).toEqual([]);
@@ -31,7 +34,11 @@ describe("parseOpenshipConfig", () => {
     expect(config?.volumes).toEqual(["storage", "uploads:/app/public/uploads"]);
     // normalized domains: string → object
     expect(config?.domains?.[0]).toEqual({ domain: "app.example.com" });
-    expect(config?.domains?.[1]).toMatchObject({ domain: "api.example.com", port: 8080, type: "custom" });
+    expect(config?.domains?.[1]).toMatchObject({
+      domain: "api.example.com",
+      port: 8080,
+      type: "custom",
+    });
     // no stray undefined keys
     expect(Object.values(config as object).every((v) => v !== undefined)).toBe(true);
   });
@@ -95,6 +102,40 @@ describe("parseOpenshipConfig", () => {
     expect(badRestart.errors.some((e) => e.includes("restart"))).toBe(true);
   });
 
+  it("parses per-service Docker build args with project-env inheritance", () => {
+    const { config, errors } = parseOpenshipConfig({
+      services: [
+        {
+          name: "admin",
+          build: ".",
+          dockerfile: "Dockerfile",
+          buildArgs: {
+            DATABASE_URI: null,
+            NEXT_PUBLIC_API_URL: "https://api.example.com",
+          },
+        },
+      ],
+    });
+
+    expect(errors).toEqual([]);
+    expect(config?.services?.[0]?.buildArgs).toEqual({
+      DATABASE_URI: null,
+      NEXT_PUBLIC_API_URL: "https://api.example.com",
+    });
+  });
+
+  it("rejects invalid native Docker build args before deployment", () => {
+    const { config, errors } = parseOpenshipConfig({
+      services: [{ name: "admin", build: ".", buildArgs: { "BAD-KEY": "x", PORT: 3000 } }],
+    });
+
+    expect(config?.services?.[0]?.buildArgs).toEqual({});
+    expect(errors).toEqual([
+      "services[0].buildArgs.BAD-KEY: has an invalid build argument name",
+      "services[0].buildArgs.PORT: must be a string or null",
+    ]);
+  });
+
   it("warns on unknown top-level keys but does not error", () => {
     const { errors, warnings, config } = parseOpenshipConfig({ framework: "vite", nope: 1 });
     expect(errors).toEqual([]);
@@ -108,21 +149,58 @@ describe("parseOpenshipConfig", () => {
     expect(parseOpenshipConfig("x").errors[0]).toMatch(/must be a JSON object/);
   });
 
+  // #641 read this the other way round — that one bad enum nulls the config and
+  // discards its valid siblings. It doesn't, and the reporting fix's severity
+  // split (whole-file vs field) depends on which of the two actually happens.
+  it("keeps the valid fields when one field fails validation", () => {
+    const { config, errors } = parseOpenshipConfig({ framework: "nextjs ", port: 8080 });
+    expect(config).not.toBeNull();
+    expect(config?.port).toBe(8080);
+    expect(config?.framework).toBeUndefined();
+    expect(errors.some((e) => e.startsWith("framework:"))).toBe(true);
+  });
+
+  it("nulls the config ONLY for a syntax error or a non-object root", () => {
+    expect(parseOpenshipConfigJson("{ not json").config).toBeNull();
+    expect(parseOpenshipConfigJson("null").config).toBeNull();
+    expect(parseOpenshipConfigJson("[]").config).toBeNull();
+    // An object root always yields a config, however many fields it refused.
+    expect(parseOpenshipConfigJson('{"framework":"coldfusion"}').config).toEqual({});
+  });
+
   // The examples printed in the docs/skill must validate cleanly, or the docs
   // are lying. Keep these in sync with reference/openship-json.mdx.
   it("accepts every documented example with no errors", () => {
     const examples = [
-      { $schema: "x", framework: "vite", buildCommand: "pnpm build", outputDirectory: "dist", productionMode: "static" },
       {
-        $schema: "x", framework: "nextjs", port: 3000, runtime: "docker",
-        env: { NEXT_PUBLIC_URL: "https://app.acme.com", DATABASE_URL: { value: "postgres://…", secret: true } },
+        $schema: "x",
+        framework: "vite",
+        buildCommand: "pnpm build",
+        outputDirectory: "dist",
+        productionMode: "static",
+      },
+      {
+        $schema: "x",
+        framework: "nextjs",
+        port: 3000,
+        runtime: "docker",
+        env: {
+          NEXT_PUBLIC_URL: "https://app.acme.com",
+          DATABASE_URL: { value: "postgres://…", secret: true },
+        },
         domains: ["app.acme.com"],
       },
       {
         $schema: "x",
         services: [
           { name: "web", build: ".", ports: ["3000"], exposed: true, domain: "app.acme.com" },
-          { name: "db", image: "postgres:17", volumes: ["pgdata:/var/lib/postgresql/data"], env: { POSTGRES_PASSWORD: { value: "…", secret: true } }, restart: "unless-stopped" },
+          {
+            name: "db",
+            image: "postgres:17",
+            volumes: ["pgdata:/var/lib/postgresql/data"],
+            env: { POSTGRES_PASSWORD: { value: "…", secret: true } },
+            restart: "unless-stopped",
+          },
         ],
       },
       {
@@ -135,7 +213,10 @@ describe("parseOpenshipConfig", () => {
           ],
         },
       },
-      { $schema: "x", domains: ["app.acme.com", { domain: "api.acme.com", port: 8080, type: "custom" }] },
+      {
+        $schema: "x",
+        domains: ["app.acme.com", { domain: "api.acme.com", port: 8080, type: "custom" }],
+      },
       { composePath: "deploy/docker-compose/docker-compose.yml" },
     ];
     for (const ex of examples) {
@@ -144,9 +225,33 @@ describe("parseOpenshipConfig", () => {
     }
   });
 
+  describe("monorepo override roots (#873)", () => {
+    it.each([
+      ["platform/dashboard_web", "./platform/dashboard_web/"],
+      [".", "./"],
+      ["apps\\web", "apps/web"],
+    ])("rejects duplicate monorepo override roots %s and %s (#873)", (first, second) => {
+      const { config, errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [
+            { name: "web", rootDirectory: first },
+            { name: "worker", rootDirectory: second },
+          ],
+        },
+      });
+      expect(errors).toEqual([
+        expect.stringMatching(/monorepo\.apps\[1\]\.rootDirectory: duplicates monorepo\.apps\[0\]/),
+      ]);
+      expect(config?.monorepo?.apps).toHaveLength(1);
+    });
+  });
+
   describe("composePath", () => {
     it("round-trips a file path and a directory path", () => {
-      for (const composePath of ["deploy/docker-compose/docker-compose.yml", "deploy/docker-compose"]) {
+      for (const composePath of [
+        "deploy/docker-compose/docker-compose.yml",
+        "deploy/docker-compose",
+      ]) {
         const { config, errors, warnings } = parseOpenshipConfig({ composePath });
         expect(errors).toEqual([]);
         expect(warnings).toEqual([]);

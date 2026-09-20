@@ -296,6 +296,17 @@ export interface AttachmentMeta {
   headers: Array<{ name?: string | null; value?: string | null }>;
 }
 
+export function encodeAttachmentBody(
+  content: Buffer | undefined,
+  includeAttachmentBytes = false,
+): string {
+  return includeAttachmentBytes && content ? content.toString('base64') : '';
+}
+
+export interface GetThreadOptions {
+  includeAttachmentBytes?: boolean;
+}
+
 export interface ListThreadsInput {
   folder: FolderSlug;
   cursor?: string;
@@ -856,6 +867,7 @@ export async function getThread(
   id: string,
   folder: FolderSlug = 'inbox',
   hint?: UidHint,
+  options: GetThreadOptions = {},
 ): Promise<ThreadResponse | null> {
   const mailbox = folderToMailbox(folder);
   const startedAt = performance.now();
@@ -1056,7 +1068,7 @@ export async function getThread(
             mimeType: ct,
             size: a.size ?? 0,
             inline: a.contentDisposition === 'inline',
-            body: '',
+            body: encodeAttachmentBody(a.content, options.includeAttachmentBytes),
             attachmentId: attId,
             headers: [],
           };

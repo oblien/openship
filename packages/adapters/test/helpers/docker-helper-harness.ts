@@ -13,6 +13,18 @@ import { DockerRuntime } from "../../src/runtime/docker";
 import { DockerBackupExecutor } from "../../src/backup/executors/docker";
 
 /**
+ * One Docker multiplexed frame: `[streamType, 0, 0, 0, uint32be length]` + payload.
+ * `1` is stdout, `2` is stderr.
+ */
+export function dockerFrame(type: 1 | 2, payload: string | Buffer): Buffer {
+  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const header = Buffer.alloc(8);
+  header[0] = type;
+  header.writeUInt32BE(body.length, 4);
+  return Buffer.concat([header, body]);
+}
+
+/**
  * A duplex-ish stand-in for the hijacked attach socket, used from both ends:
  * on restore, writes to it are the helper's stdin (recorded, so "did the archive
  * reach the helper" is observable); on capture, `emitOutput` is the helper
@@ -34,10 +46,20 @@ export class FakeAttachStream extends Readable {
     this.destroyed_ = true;
     return this;
   }
-  /** Simulate the helper writing to stdout/stderr. */
+  /** Simulate the helper writing to stdout — framed, because the executor now
+   *  demuxes the protocol itself (see runtime/docker-demux.ts) instead of handing
+   *  the socket to `modem.demuxStream`. A fake that pushed raw text would be
+   *  testing a wire format the daemon never speaks with `Tty: false`. */
   emitOutput(text: string) {
-    this.push(Buffer.from(text));
+    this.push(dockerFrame(1, text));
   }
+
+  /** Same, on the stderr channel — how the helper's `tar:`/`pg_dump:` complaints
+   *  actually arrive. */
+  emitStderr(text: string) {
+    this.push(dockerFrame(2, text));
+  }
+
   /** Simulate the daemon closing the attach once all output is demuxed. */
   finish() {
     this.push(null);

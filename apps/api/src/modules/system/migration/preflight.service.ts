@@ -1,7 +1,7 @@
 /**
  * Pre-flight checks for the "move to my own server" migration path.
  *
- * Three independent verifications, run in parallel so the wizard can
+ * Three infrastructure verifications, run in parallel so the wizard can
  * paint the readiness checklist in one round-trip:
  *
  *   1. SSH connectivity — can we actually log into the chosen server?
@@ -23,7 +23,8 @@
  */
 
 import { repos } from "@repo/db";
-import { sshManager } from "../../../lib/ssh-manager";
+import { SERVER_MIGRATION_UNAVAILABLE } from "./migrate-instance.service";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { resolveOpenshipDistDirOrNull } from "./openship-dist";
 
 export type DomainChoice =
@@ -33,30 +34,37 @@ export type DomainChoice =
 export interface PreflightInput {
   serverId: string;
   domain: DomainChoice;
+  organizationId: string;
 }
 
 export interface PreflightResult {
-  /** True iff EVERY check passed. */
+  /** Includes the deployment capability, currently unavailable. */
   ready: boolean;
   /** Independent per-check status so the wizard can paint a checklist. */
   checks: {
     ssh: { ok: boolean; detail: string };
     releaseDist: { ok: boolean; detail: string };
     domain: { ok: boolean; detail: string };
+    deployment: { ok: boolean; detail: string };
   };
 }
 
 /** Run all preflight checks in parallel, return a structured result. */
 export async function runPreflight(input: PreflightInput): Promise<PreflightResult> {
   const [ssh, releaseDist, domain] = await Promise.all([
-    checkSshReachable(input.serverId),
+    checkSshReachable(input.serverId, input.organizationId),
     checkReleaseDistPresent(),
     checkDomainReady(input),
   ]);
 
   return {
-    ready: ssh.ok && releaseDist.ok && domain.ok,
-    checks: { ssh, releaseDist, domain },
+    ready: false,
+    checks: {
+      ssh,
+      releaseDist,
+      domain,
+      deployment: { ok: false, detail: SERVER_MIGRATION_UNAVAILABLE },
+    },
   };
 }
 
@@ -64,8 +72,11 @@ export async function runPreflight(input: PreflightInput): Promise<PreflightResu
 
 async function checkSshReachable(
   serverId: string,
+  organizationId: string,
 ): Promise<{ ok: boolean; detail: string }> {
-  const server = await repos.server.get(serverId).catch(() => undefined);
+  const server = await repos.server
+    .getInOrganization(serverId, organizationId)
+    .catch(() => undefined);
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }
@@ -98,7 +109,11 @@ async function checkDomainReady(
   input: PreflightInput,
 ): Promise<{ ok: boolean; detail: string }> {
   if (input.domain.kind === "custom") {
-    return checkCustomDomain(input.serverId, input.domain.hostname);
+    return checkCustomDomain(
+      input.serverId,
+      input.domain.hostname,
+      input.organizationId,
+    );
   }
   return checkFreeSubdomainAvailable(input.domain.slug);
 }
@@ -114,8 +129,11 @@ async function checkDomainReady(
 async function checkCustomDomain(
   serverId: string,
   hostname: string,
+  organizationId: string,
 ): Promise<{ ok: boolean; detail: string }> {
-  const server = await repos.server.get(serverId).catch(() => undefined);
+  const server = await repos.server
+    .getInOrganization(serverId, organizationId)
+    .catch(() => undefined);
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }

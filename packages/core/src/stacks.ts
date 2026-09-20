@@ -16,6 +16,8 @@
  *   STACK_IDS                    // ["nextjs", "nuxt", ... ] - auto-generated
  */
 
+import { shellQuote } from "./shell-split";
+
 // ─── Language definitions ────────────────────────────────────────────────────
 
 export interface LanguageDefinition {
@@ -657,8 +659,18 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: ".",
     defaultPort: 3000,
-    defaultBuildCommand: "bundle install && bundle exec rails assets:precompile",
-    defaultStartCommand: "bundle exec rails server -b 0.0.0.0",
+    // Precompile only — `bundle install` is already the install step. The dummy
+    // secret is what Rails' own Dockerfile sets: an app touching credentials
+    // during eager load raises without it.
+    defaultBuildCommand:
+      "RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile",
+    // Stock config/puma.rb reads PORT, but a trimmed one falls back to 3000.
+    defaultStartCommand: 'bundle exec rails server -b 0.0.0.0 -p "${PORT:-3000}"',
+    // Rails 8 keeps the SQLite database AND Active Storage here; Rails' own
+    // Dockerfile declares `VOLUME /rails/storage`. Not `db/` — it holds
+    // migrations, so mounting over it would shadow later releases'.
+    persistentPaths: ["storage"],
+    cacheDirs: ["tmp/cache", "tmp/pids"],
     detection: {
       // Rails: Gemfile is required; bin/rails or config/routes.rb confirms.
       // The conjunction is encoded as an override in stack-detector.
@@ -1088,6 +1100,50 @@ export function packageManagerEnsureCommand(packageManager?: string): string {
   return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
 }
 
+/** Package managers that install dependency binaries into `node_modules/.bin`. */
+const NODE_BIN_PACKAGE_MANAGERS: ReadonlySet<string> = new Set(["npm", "yarn", "pnpm", "bun"]);
+
+/**
+ * Directories to search AHEAD of the image/host PATH so a command that names a
+ * dependency binary directly resolves - `next build`, `vite build`, `next start`.
+ *
+ * `npm run` / `bun run` prepend `node_modules/.bin` themselves, which is the only
+ * reason a package.json script can say `next build`. Every command we generate is
+ * handed to a bare `sh -c` instead (a Dockerfile RUN, an SSH exec, a container
+ * Cmd), so nothing does that injection for us and the binary is unresolvable even
+ * though it sits right there on disk - openship#623, exit 127.
+ *
+ * `roots` are searched nearest-first: a monorepo hoists dependencies to the
+ * workspace root, so the sub-app directory alone is not enough. Duplicates are
+ * dropped (a root-level app has the same value twice).
+ *
+ * Returns [] for every non-node package manager. Go/Rust/Python have no such
+ * directory, so the entries would be dead weight on every command lookup.
+ */
+export function nodeBinDirs(packageManager: string | undefined, roots: string[]): string[] {
+  if (!packageManager || !NODE_BIN_PACKAGE_MANAGERS.has(packageManager)) return [];
+  const dirs: string[] = [];
+  for (const root of roots) {
+    const dir = `${root.replace(/\/+$/, "")}/node_modules/.bin`;
+    if (!dirs.includes(dir)) dirs.push(dir);
+  }
+  return dirs;
+}
+
+/**
+ * `export PATH=...` prelude for a shell command, or "" when the package manager has
+ * no `node_modules/.bin`. Composes with `&&` exactly like
+ * {@link packageManagerEnsureCommand}. Safe to emit before the install step: PATH
+ * entries are resolved per command invocation, not validated at assignment, so a
+ * directory `install` is about to create is found by the build that follows it in
+ * the same shell.
+ */
+export function nodeBinPathExport(packageManager: string | undefined, roots: string[]): string {
+  const dirs = nodeBinDirs(packageManager, roots);
+  if (dirs.length === 0) return "";
+  return `export PATH=${dirs.map(shellQuote).join(":")}:"$PATH"`;
+}
+
 /** Get the resolved Docker runtime image for a stack */
 export function getRuntimeImage(stackId: StackId, packageManager?: string): string {
   const stack = STACKS[stackId] as StackDefinition;
@@ -1173,15 +1229,48 @@ export function stackExpectsBuildCommand(framework?: string | null): boolean {
 }
 
 /**
- * Hint whether a stack is typically static (no running server).
- * Used as a default for the hasServer toggle - the user can override.
+ * Does a stack CATEGORY describe something served as FILES rather than by a
+ * running process?
+ *
+ * The one definition of that category test. It was written out inline in three
+ * places — the hasServer default below, the sub-app serve-shape rule
+ * (`isStaticService`), and the detector's "force static output" coercion
+ * (`classifyAsStaticOutput`) — which is three chances to disagree about whether
+ * `frontend` counts.
+ *
+ * Category ALONE is deliberately not the whole answer anywhere it is used: a
+ * frontend stack can still ship a default start command (Astro, Gatsby), and a
+ * specific service row can carry its own. Each caller adds that half; this only
+ * answers the category question.
  */
-export function isTypicallyStatic(stackId: StackId): boolean {
-  const stack = STACKS[stackId] as StackDefinition;
-  return (
-    (stack.category === "static" || stack.category === "frontend") &&
-    !stack.defaultStartCommand
-  );
+export function categoryServesFiles(category?: string | null): boolean {
+  return category === "static" || category === "frontend";
+}
+
+/**
+ * Hint whether a stack is typically static (no running server): a frontend or
+ * static category whose canonical deploy shape is FILES, i.e. one that ships no
+ * default start command. Astro and Gatsby are frontend but SSR-capable
+ * (`node dist/server/entry.mjs`, `gatsby serve`), so they are NOT typically static.
+ *
+ * Used as the default for the hasServer toggle — the user can always override.
+ *
+ * Takes a loose string and returns false for anything unknown, because callers
+ * feed it a persisted `framework` column. It used to take `StackId` and index
+ * STACKS unguarded, which would throw on a stale or hand-edited value.
+ *
+ * NOT the same question as two neighbours that also say "static", and the three
+ * must not be merged:
+ *   - `deployment-class.ts` (private) asks `category === "static"` ONLY, deriving
+ *     a build KIND — a frontend SPA still builds like a buildpack.
+ *   - `deployable-service.ts` `isStaticService` asks whether a specific ROW is
+ *     served as files, which additionally depends on that row's resolved start
+ *     command — an Astro sub-app with no start command IS static.
+ */
+export function isTypicallyStatic(stackId?: string | null): boolean {
+  if (!stackId || !(stackId in STACKS)) return false;
+  const stack = STACKS[stackId as StackId] as StackDefinition;
+  return categoryServesFiles(stack.category) && !stack.defaultStartCommand;
 }
 
 // ─── Icon URLs - source of truth for logo/icon display ───────────────────────

@@ -1,0 +1,92 @@
+---
+title: Updates
+description: Inspect available project updates and apply them through the deployment workflow.
+---
+
+Updates compare a project's deployed version with its upstream source. Listing does not redeploy anything.
+Only projects visible to the caller are included.
+
+## Find available updates
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const updates = await ship.updates.list({ behindOnly: true });
+console.log(updates);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/updates?behind=1" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The SDK's `behindOnly` boolean maps to REST's `behind=1` filter. Omit it to include projects that are
+already current or do not support upstream comparison.
+
+## Refresh upstream information
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const scan = await ship.updates.scan();
+console.log(scan.scanned, scan.supported);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/scan" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The scan returns `scanned` and `supported` counts. Upstream results are cached; the deployed side is read
+from current project state when updates are listed.
+
+## Apply an update
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const submitted = await ship.updates.apply("proj_123");
+console.log(submitted.deployment_id, submitted.project_id);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/proj_123/apply" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+Applying uses the existing deployment workflow with an update trigger. It returns deployment and project
+IDs, not proof that the new version is ready. [Follow the deployment](/docs/api/deployments#wait-decisions-and-cancellation)
+and handle its final outcome.
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List update status; behindOnly filters to available updates. | `updates.list(input?)` | `GET /api/updates`<br />`updates:read` |
+| Refresh the organization’s update scan. | `updates.scan()` | `POST /api/updates/scan`<br />`updates:write` |
+| Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
+
+{/* api-operations:end */}

@@ -14,7 +14,7 @@
  */
 
 import type { ManualCert, RouteConfig, SslResult } from "../types";
-import type { OutputProbeResult } from "../system/output-exists";
+import type { OutputProbeResult, StaticProbeOptions } from "../system/output-exists";
 
 // ─── Routing ─────────────────────────────────────────────────────────────────
 
@@ -22,8 +22,23 @@ export interface RoutingProvider {
   /** Register a reverse-proxy route (domain → container/process) */
   registerRoute(route: RouteConfig): Promise<void>;
 
-  /** Remove a reverse-proxy route */
-  removeRoute(domain: string): Promise<void>;
+  /** Remove a reverse-proxy route. Providers that can roll back a failed
+   * removal must not recreate it after the caller has abandoned the attempt. */
+  removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void>;
+
+  /**
+   * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches
+   * a box that isn't redeploying. Converged boxes do nothing; see
+   * `NginxProvider.reapplyStoredRoutes`.
+   *
+   * Optional: only a provider that keeps generated config on disk has anything to replay.
+   * Cloud routes through Oblien's API and desktop has no edge at all.
+   */
+  reapplyStoredRoutes?(): Promise<{
+    scanned: number;
+    repaired: string[];
+    failed: { slug: string; reason: string }[];
+  }>;
 
   /**
    * Does a static `root` actually resolve WHERE THE PROXY LOOKS?
@@ -35,9 +50,16 @@ export interface RoutingProvider {
    * 404s. Only the provider knows which executor sees what nginx sees, so the
    * probe belongs here rather than in a caller guessing at edge topology.
    *
-   * Advisory: implementations never throw — `checked:false` means "no signal".
+   * `opts.hostname` opts into the HTTP half — one real request through the edge
+   * for that host and path. Same vantage-point argument, taken one step further:
+   * the filesystem check proves the bytes are reachable, an actual request proves
+   * they are SERVED (readable modes, a vhost that exists, a root the container can
+   * see). Omit it and the probe stays filesystem-only.
+   *
+   * Advisory: implementations never throw — `checked:false` means "no signal", and
+   * an absent `served` likewise.
    */
-  probeStaticRoot?(servedPath: string): Promise<OutputProbeResult>;
+  probeStaticRoot?(servedPath: string, opts?: StaticProbeOptions): Promise<OutputProbeResult>;
 
   /**
    * Serve edge-target challenge tokens for `host`, so Openship Cloud's shared edge
@@ -69,19 +91,28 @@ export interface RoutingProvider {
 
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
+export interface ProvisionCertOptions {
+  onLog?: (line: string) => void;
+  force?: boolean;
+  challenge?: "http-01" | "dns-01";
+  /** Existing hook commands already present in the Certbot execution environment. */
+  dnsAuthHook?: string;
+  dnsCleanupHook?: string;
+  /** Hook bodies that the provider must materialize beside Certbot on its target. */
+  dnsAuthHookScript?: string;
+  dnsCleanupHookScript?: string;
+}
+
 export interface SslProvider {
   /** Provision a new TLS certificate for a domain. `onLog`, when given, streams
    *  certbot's output line-by-line (powers the live-log verify modal). `force`
    *  bypasses the "cert already on disk" short-circuit and passes certbot
    *  `--force-renewal`, so a present-but-stale/near-expiry cert is actually
    *  reissued instead of returned as-is. */
-  provisionCert(
-    domain: string,
-    opts?: { onLog?: (line: string) => void; force?: boolean },
-  ): Promise<SslResult>;
+  provisionCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult>;
 
   /** Renew an existing TLS certificate */
-  renewCert(domain: string): Promise<SslResult>;
+  renewCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult>;
 
   /**
    * Install an operator-supplied certificate (bring-your-own / Cloudflare

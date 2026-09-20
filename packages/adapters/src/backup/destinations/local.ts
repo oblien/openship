@@ -39,15 +39,28 @@ class LocalDestinationImpl implements BackupDestination {
   readonly capabilities = CAPS;
 
   private readonly root: string;
+  /**
+   * Where artifacts written BEFORE `pathPrefix` moved out of the key builder live, or
+   * null when this destination has no prefix and the two are the same place.
+   */
+  private readonly legacyRoot: string | null;
 
   constructor(row: BackupDestinationRow) {
     if (!row.endpoint) {
       throw new Error(`LocalDestination "${row.name}" has no endpoint (root path) configured`);
     }
-    // Resolve to an absolute path + normalize. The path stays as
-    // configured — the user is trusted here since the destination is
-    // theirs (and gated at the api layer in cloud mode).
-    this.root = resolve(row.endpoint);
+    // Resolve to an absolute path + normalize. The path stays as configured — the user
+    // is trusted here since the destination is theirs (and gated at the api layer in
+    // cloud mode).
+    //
+    // `pathPrefix` IS applied, like s3.fullKey() and sftp.fullPath() do. It used to be
+    // honored only by accident, because the key builder injected it into every key; now
+    // that keys are destination-relative, a local destination with a prefix would
+    // otherwise stop nesting under it — silently, and only for new runs.
+    const base = resolve(row.endpoint);
+    const prefix = (row.pathPrefix ?? "").replace(/^\/+|\/+$/g, "");
+    this.root = prefix ? resolve(base, prefix) : base;
+    this.legacyRoot = prefix ? base : null;
   }
 
   private resolveKey(key: string): string {
@@ -57,6 +70,39 @@ class LocalDestinationImpl implements BackupDestination {
       throw new Error(`Invalid key (traversal): ${key}`);
     }
     return join(this.root, normalized);
+  }
+
+  /**
+   * The path to READ `key` from, preferring the current layout and falling back to the
+   * pre-prefix one.
+   *
+   * A run captured before this change recorded a key that already CONTAINS the prefix
+   * (the key builder put it there), and its bytes sit at `endpoint/<prefix>/<key…>` —
+   * which is `legacyRoot + key`, not `root + key`. Resolving it against the new root
+   * would look for `endpoint/<prefix>/<prefix>/…` and find nothing, so an existing
+   * restore point would quietly become unrestorable.
+   *
+   * Deliberately an existence check rather than a "does the key already start with the
+   * prefix" string test: the key builder's first literal segment is `openship`, so a
+   * destination whose prefix is also `openship` would make that test ambiguous. The
+   * filesystem is not ambiguous. Reads only — `put` always writes the current layout,
+   * so this shim shrinks to nothing as old runs age out of retention.
+   */
+  private async resolveKeyForRead(key: string): Promise<string> {
+    const current = this.resolveKey(key);
+    if (this.legacyRoot === null) return current;
+    try {
+      await fs.access(current);
+      return current;
+    } catch {
+      const legacy = join(this.legacyRoot, normalize(key));
+      try {
+        await fs.access(legacy);
+        return legacy;
+      } catch {
+        return current; // neither exists; report against the current layout
+      }
+    }
   }
 
   async preflight(): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -115,13 +161,12 @@ class LocalDestinationImpl implements BackupDestination {
   }
 
   async get(key: string): Promise<Readable> {
-    const path = this.resolveKey(key);
-    return createReadStream(path);
+    return createReadStream(await this.resolveKeyForRead(key));
   }
 
   async head(key: string): Promise<HeadInfo | null> {
     try {
-      const stat = await fs.stat(this.resolveKey(key));
+      const stat = await fs.stat(await this.resolveKeyForRead(key));
       return {
         sizeBytes: stat.size,
         uploadedAt: stat.mtime,
@@ -134,7 +179,7 @@ class LocalDestinationImpl implements BackupDestination {
   }
 
   async list(prefix: string, opts?: ListOpts): Promise<ListPage> {
-    const root = this.resolveKey(prefix);
+    const root = await this.resolveKeyForRead(prefix);
     const entries: ListPage["entries"] = [];
     const limit = opts?.limit ?? 1000;
 
@@ -169,7 +214,7 @@ class LocalDestinationImpl implements BackupDestination {
 
   async delete(key: string): Promise<void> {
     try {
-      await fs.unlink(this.resolveKey(key));
+      await fs.unlink(await this.resolveKeyForRead(key));
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e?.code !== "ENOENT") throw err;

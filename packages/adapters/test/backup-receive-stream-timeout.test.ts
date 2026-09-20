@@ -17,6 +17,10 @@
  * Fake timers throughout — the real defaults are 10 minutes and 6 hours.
  */
 
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -132,7 +136,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
       compression: "none",
     });
     p.catch(() => {});
-    stream.emitOutput("tar: can't create directory: Read-only file system\n");
+    stream.emitStderr("tar: can't create directory: Read-only file system\n");
 
     await expect(drive(p, 10_000)).rejects.toThrow(/Read-only file system/);
     expect(h.removals).toEqual([{ force: true }]);
@@ -286,5 +290,69 @@ describe("the helper is always reaped", () => {
     // A force-remove against a still-open attach is how you get a truncated
     // stream and an unexplained exit code.
     expect(stream.destroyed_).toBe(true);
+  });
+});
+
+describe("a volume restore never destroys the target before it can write", () => {
+  /** The helper `Cmd` the executor asked the daemon to run. */
+  async function helperScript(compression: "zstd" | "gzip" | "none") {
+    const h = harness({ wait: 0, inspect: [{ Running: false, Status: "exited", ExitCode: 0 }] });
+    const exec = await h.executor();
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+      compression,
+      clearTarget: true,
+    });
+    p.catch(() => {});
+    await drive(p, 10_000).catch(() => {});
+    const cmd = (h.created[0] as { Cmd: string[] }).Cmd;
+    expect(cmd[0]).toBe("sh");
+    return cmd[2];
+  }
+
+  it("refuses to clear the volume when the decompressor is missing", async () => {
+    // The worst bug in the module, and it was pre-existing. The helper ran
+    // `apk add zstd >/dev/null 2>&1; find /mnt -delete; zstd -d -c | tar -x` — `apk`
+    // joined with `;` and silenced, the target cleared BEFORE anything checked the tool
+    // existed, and a shell pipeline reporting tar's status, where `tar -x` on EOF exits 0.
+    // On a host with no egress (required only for this codec) that emptied the volume,
+    // extracted nothing, and returned success — and `bytesWritten` is counted off the
+    // BODY, so the caller saw a healthy byte count too. Strictly worse than #611: that
+    // failed to take a backup; this deletes your data and reports a green restore.
+    //
+    // Asserted by RUNNING the generated script with no zstd on PATH, against a real
+    // directory holding a real file, because the property is "the bytes survive" and no
+    // amount of reading the string proves that.
+    const script = (await helperScript("zstd")).replace(/\/mnt/g, "$TARGET");
+    const target = mkdtempSync(join(tmpdir(), "openship-restore-"));
+    const bin = mkdtempSync(join(tmpdir(), "openship-restore-bin-"));
+    writeFileSync(join(target, "precious.txt"), "PRECIOUS");
+
+    const res = spawnSync("/bin/sh", ["-c", script], {
+      input: Buffer.from("not-a-real-archive"),
+      env: { PATH: bin, TARGET: target },
+    });
+
+    expect(res.status).not.toBe(0);
+    expect((res.stderr ?? Buffer.alloc(0)).toString()).toMatch(/zstd is not available/);
+    // The whole point: the data is still there.
+    expect(readdirSync(target)).toEqual(["precious.txt"]);
+  });
+
+  it("puts the tool check BEFORE the destructive clear, in the script itself", async () => {
+    // Ordering is the invariant, and it is invisible at runtime until the day the tool is
+    // missing. A future edit that moves the clear earlier passes every other test.
+    const script = await helperScript("zstd");
+    expect(script.indexOf("command -v zstd")).toBeGreaterThan(-1);
+    expect(script.indexOf("find /mnt -mindepth 1 -delete")).toBeGreaterThan(-1);
+    expect(script.indexOf("command -v zstd")).toBeLessThan(
+      script.indexOf("find /mnt -mindepth 1 -delete"),
+    );
+  });
+
+  it("reports the decompressor's failure rather than tar's success", async () => {
+    // `safeRestoreCommand`'s dual-status idiom, on the direction where masking DESTROYS
+    // data instead of merely losing a restore point.
+    const script = await helperScript("zstd");
+    expect(script).toMatch(/the decompressor .* failed with status/);
   });
 });

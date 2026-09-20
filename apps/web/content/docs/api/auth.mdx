@@ -1,6 +1,6 @@
 ---
-title: Auth API
-description: The Better Auth wrapper plus the desktop session-bootstrap and cloud sign-in handoff, mounted under /api/auth.
+title: Authentication
+description: Browser sessions, OAuth discovery, and authentication handoffs.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -15,36 +15,6 @@ This module is consumed almost entirely by the dashboard (and, in desktop mode, 
 call it directly. For programmatic API access, mint a personal access token instead
 ([`openship token create`](/docs/cli/access)) and use it as a bearer header. See the
 [API overview](/docs/api) and [Auth & sessions](/docs/security/auth) for the full model.
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/auth/get-session`.
-Browser clients (the dashboard) authenticate with an httpOnly session cookie set by these endpoints; API
-clients send a personal access token as a bearer header (`Authorization: Bearer <token>`). Mounted in every
-mode (self-hosted, cloud, and desktop); the `desktop-*` and `*-callback` bootstrap routes below are only wired
-when the instance runs in **desktop** mode (`DEPLOY_MODE=desktop`).
-</Callout>
-
-## Endpoints
-
-These are plain Hono routes, not permission-tagged secure routes. The "Auth" column shows how each one is
-gated rather than a `resource:action` tag.
-
-| Method & path | Auth | What it does |
-|---|---|---|
-| `GET /api/auth/get-session` | Session cookie | Return the current session; in zero-auth desktop mode, bootstrap one on first hit. |
-| `GET /api/auth/desktop-login` | None (desktop) | Mint a session for the zero-auth local admin and redirect to the dashboard. |
-| `GET /api/auth/cloud-callback` | None (desktop) | Exchange a cloud auth `code` for a local session cookie. |
-| `POST /api/auth/desktop-auth-start` | Internal token | Register a `(nonce, state, PKCE verifier)` tuple before the system browser opens. |
-| `GET /api/auth/desktop-auth-poll` | None (desktop) | Electron polls this by `nonce` until the cloud sign-in resolves. |
-| `GET /api/auth/desktop-claim` | None (desktop) | Exchange a one-time claim `code` for a session cookie, then redirect. |
-| `GET\|POST /api/auth/*` | Better Auth | Catch-all delegated to Better Auth (sign-in/up, OAuth, organization, MCP). |
-
-<Callout title="POST /api/auth/* is rate-limited" type="info">
-Every `POST` under `/api/auth` runs through a tight per-IP bucket (10/min) to blunt credential stuffing,
-separate from the default API rate limit. `GET` routes (session reads, OAuth callbacks) stay on the normal
-policy. Mutating requests from untrusted origins are also rejected by the CSRF origin guard before the auth
-chain runs.
-</Callout>
 
 ## The Better Auth catch-all
 
@@ -82,7 +52,7 @@ user, mints a session, sets the cookie on the response, and returns it — so th
 succeeds instead of looping to `/login`.
 
 ```bash
-curl https://your-host/api/auth/get-session \
+curl "$OPENSHIP_URL/api/auth/get-session" \
   -H "Cookie: openship.session_token=<session>"
 ```
 
@@ -123,7 +93,7 @@ The remaining steps take query parameters, not bodies:
   the `Set-Cookie` header for cross-version Electron reliability) and redirects to the dashboard. `code` is
   required.
 
-## Errors you might see
+## Errors
 
 <Callout title="401 — Unauthorized" type="warn">
 `GET /api/auth/get-session` returns this when there's no valid session and the instance is not in zero-auth
@@ -140,3 +110,39 @@ expired` once the one-time code has been used or has timed out.
 `POST /api/auth/*` shares a 10/min per-IP bucket. Sign-in/sign-up loops that hammer it will be throttled before
 the default API limit fires.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Handle browser sessions and authentication through Better Auth. | `GET /api/auth/*`<br />`Handler authentication` |
+| Handle sign-in, account, and session mutations through Better Auth. | `POST /api/auth/*`<br />`Handler authentication` |
+| Exchange a cloud auth `code` for a local session cookie. | `GET /api/auth/cloud-callback`<br />`Handler authentication` |
+| Electron polls this by `nonce` until the cloud sign-in resolves. | `GET /api/auth/desktop-auth-poll`<br />`Handler authentication` |
+| Register a `(nonce, state, PKCE verifier)` tuple before the system browser opens. | `POST /api/auth/desktop-auth-start`<br />`Internal operator` |
+| Exchange a one-time claim `code` for a session cookie, then redirect. | `GET /api/auth/desktop-claim`<br />`Handler authentication` |
+| Mint a session for the zero-auth local admin and redirect to the dashboard. | `GET /api/auth/desktop-login`<br />`Handler authentication` |
+| Return the current session; in zero-auth desktop mode, bootstrap one on first hit. | `GET /api/auth/get-session`<br />`Handler authentication` |
+| Read a safe preview of a team invitation. | `GET /api/auth/invitation-preview/:id`<br />`Handler authentication` |
+| Read the public keys used to verify MCP OAuth tokens. | `GET /api/auth/mcp/jwks`<br />`Handler authentication` |
+| Read the identity associated with an MCP OAuth token. | `GET /api/auth/mcp/userinfo`<br />`Handler authentication` |
+| Accept an invitation through the browser session boundary. | `POST /api/auth/organization/accept-invitation`<br />`Handler authentication` |
+| Cancel a pending invitation through the browser session boundary. | `POST /api/auth/organization/cancel-invitation`<br />`Handler authentication` |
+| Invite a member through the browser session boundary. | `POST /api/auth/organization/invite-member`<br />`Handler authentication` |
+| Leave the active organization. | `POST /api/auth/organization/leave`<br />`Handler authentication` |
+| Reject a pending invitation through the browser session boundary. | `POST /api/auth/organization/reject-invitation`<br />`Handler authentication` |
+| Remove a member through the browser session boundary. | `POST /api/auth/organization/remove-member`<br />`Handler authentication` |
+| Update a member role through the browser session boundary. | `POST /api/auth/organization/update-member-role`<br />`Handler authentication` |
+| Handle sign-up with the installation's account-creation policy. | `POST /api/auth/sign-up/*`<br />`Handler authentication` |
+| Discover the OAuth authorization server. | `GET /.well-known/oauth-authorization-server`<br />`Public` |
+| Discover the OAuth authorization server. | `GET /.well-known/oauth-authorization-server/api/mcp`<br />`Public` |
+| Discover the OAuth authorization server. | `GET /.well-known/oauth-authorization-server/api/proxy/api/mcp`<br />`Public` |
+| Discover OAuth metadata for this protected resource. | `GET /.well-known/oauth-protected-resource`<br />`Public` |
+| Discover OAuth metadata for this protected resource. | `GET /.well-known/oauth-protected-resource/api/mcp`<br />`Public` |
+| Discover OAuth metadata for this protected resource. | `GET /.well-known/oauth-protected-resource/api/proxy/api/mcp`<br />`Public` |
+| Close a completed browser authentication handoff. | `GET /auth/callback/close`<br />`Browser callback` |
+| Complete the GitHub App browser handoff using installation state. | `GET /auth/callback/install`<br />`Browser callback` |
+
+{/* api-operations:end */}

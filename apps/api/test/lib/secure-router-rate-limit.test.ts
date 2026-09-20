@@ -19,7 +19,7 @@ const { rateLimit } = vi.hoisted(() => ({
 vi.mock("../../src/lib/rate-limit", () => ({ rateLimit }));
 
 // Minimal env so the rate-limiter loads without the full zod validation.
-vi.mock("../../src/config/env", () => ({ env: {} }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {} }));
 
 // authMiddleware sets ctx, so permission-tagged routes can key per-user.
 vi.mock("../../src/middleware/auth", () => ({

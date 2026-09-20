@@ -8,10 +8,14 @@
   },
   "status": {
     "live": "En ligne",
+    "paused": "En pause",
     "attention": "Action requise",
     "queued": "En file d'attente",
     "building": "Compilation",
     "deploying": "Déploiement",
+    "reconciling": "Vérification",
+    "migrating": "Migration",
+    "deploy_failed": "Échec du dernier déploiement",
     "failed": "Échec",
     "cancelled": "Annulé",
     "deleting": "Suppression",
@@ -35,6 +39,7 @@
     "services": "Services",
     "static": "Statique",
     "standalone": "Autonome",
+    "worker": "Worker",
     "appBadge": "Application",
     "updateAvailable": "Update"
   },
@@ -56,8 +61,10 @@
   "env": {
     "productionFallback": "Production",
     "switchAria": "Changer d'environnement",
-    "addBranchAria": "Ajouter une branche",
+    "newEnvironment": "Nouvel environnement",
+    "backToEnvironments": "Retour aux environnements",
     "searchBranches": "Rechercher des branches",
+    "refreshBranches": "Actualiser les branches",
     "noBranches": "Aucune branche trouvée",
     "environmentName": "Nom de l'environnement",
     "branchLabel": "Nom de la branche",
@@ -119,6 +126,7 @@
     "noDomain": "Aucun domaine",
     "addDomain": "Ajouter un domaine",
     "tabs": {
+      "topology": "Topologie",
       "appSettings": "Paramètres",
       "overview": "Vue d'ensemble",
       "services": "Services",
@@ -127,8 +135,10 @@
       "health": "Santé",
       "monitoring": "Surveillance",
       "source": "Source",
+      "sourceAndTriggers": "Source et déclencheurs",
       "webhooks": "Webhooks",
       "runtime": "Configuration",
+      "settings": "Paramètres",
       "logs": "Journaux",
       "backup": "Sauvegarde",
       "advanced": "Avancé"
@@ -156,7 +166,7 @@
     "subtextOther": "Ce projet n'a pas encore de déploiement en ligne. Vérifiez la source et réessayez.",
     "deployNow": "Déployer maintenant",
     "connectSource": "Connecter une source",
-    "settings": "Paramètres",
+    "settings": "Paramètres de déploiement",
     "attemptsTitle": "Tentatives de déploiement",
     "attemptsDescription": "Chaque compilation de ce projet — cliquez sur l'une d'elles pour l'ouvrir",
     "sourceTitle": "Source",
@@ -193,6 +203,7 @@
     "modeStatic": "Site statique",
     "modeStandalone": "Autonome",
     "modeServer": "Serveur",
+    "modeWorker": "Worker",
     "infrastructure": "Infrastructure",
     "platform": "Plateforme",
     "mode": "Mode",
@@ -230,6 +241,9 @@
     "waitingRequests": "En attente de requêtes",
     "noTransfer": "Aucun transfert pour le moment"
   },
+  "analytics": {
+    "loadFailed": "Impossible de charger les analyses de trafic"
+  },
   "monitoring": {
     "noDataTitle": "Aucune donnée de surveillance pour le moment",
     "noDataDescription": "Les analyses apparaîtront ici une fois que l'application déployée commencera à recevoir du trafic.",
@@ -256,6 +270,7 @@
     "geoUnavailableBody": "Le proxy edge ne peut pas résoudre les pays des visiteurs, la carte reste donc vide. Les totaux de trafic ne sont pas affectés.",
     "noCountries": "Aucune donnée de pays pour cette période.",
     "statusesTitle": "Réponses",
+    "statusesOthers": "Autres",
     "share": "{pct} %",
     "visitorDays": "Visiteurs-jours",
     "peakDayTooltip": "Journée la plus active : {peak}. Un visiteur qui revient compte une fois par jour, le total est donc une borne supérieure.",
@@ -333,12 +348,12 @@
     "unknown": "Inconnu"
   },
   "routingRetry": {
-    "title": "Le routage du domaine gratuit nécessite votre attention",
-    "description": "L'application est en ligne sur le serveur, mais son URL gratuite .opsh.io n'a pas été routée via l'edge d'Openship Cloud. Réessayez une fois que le serveur est accessible depuis le cloud sur le port 80.",
+    "title": "Le routage du domaine demande votre attention",
+    "description": "L'app tourne sur le serveur, mais les routes en amont ne se sont pas synchronisées. Relancez la réparation, ou vérifiez le DNS et l'edge de ce serveur.",
     "retry": "Réessayer le routage",
     "retrying": "Nouvelle tentative…",
-    "success": "Routage du domaine gratuit synchronisé.",
-    "failed": "Impossible de synchroniser le routage du domaine gratuit."
+    "success": "Routage du domaine synchronisé.",
+    "failed": "Impossible de synchroniser le routage du domaine."
   },
   "deployBlocked": {
     "redeploy": "Redéployer"
@@ -372,17 +387,18 @@
     "noPublicDomainTitle": "Aucun domaine public n'est connecté",
     "noPublicDomainDescOne": "Ce projet a {count} service avec des ports exposés, mais aucun n'est configuré avec un domaine accessible. Si vous déployez maintenant, la stack peut fonctionner en interne, mais les utilisateurs ne pourront pas y accéder depuis une URL publique.",
     "noPublicDomainDescOther": "Ce projet a {count} services avec des ports exposés, mais aucun n'est configuré avec un domaine accessible. Si vous déployez maintenant, la stack peut fonctionner en interne, mais les utilisateurs ne pourront pas y accéder depuis une URL publique.",
+    "openDomains": "Ouvrir les domaines",
     "openServices": "Ouvrir les services",
     "deployAnyway": "Déployer quand même",
     "suggestedFix": "Correction suggérée",
-    "fixStep1": "Ouvrez l'onglet Services.",
-    "fixStep2": "Sélectionnez le service qui doit être public.",
-    "fixStep3": "Activez l'exposition du domaine et choisissez le port public."
+    "fixStep1": "Ouvrez l'onglet Domaines.",
+    "fixStep2": "Ajoutez une route ou un domaine personnalisé pour le port du service.",
+    "fixStep3": "Vérifiez le domaine et déployez."
   },
   "connections": {
     "useInProject": "Utiliser dans un projet",
     "title": "Utiliser dans un projet",
-    "subtitle": "Reliez cette base de données à un autre projet comme une connexion prête à l'emploi.",
+    "subtitle": "Partagez ce service avec un autre projet via une connexion.",
     "targetLabel": "Projet",
     "targetPlaceholder": "Sélectionnez un projet…",
     "valueLabel": "Valeur à injecter",
@@ -417,15 +433,24 @@
     "forwardShort": "Rediriger",
     "usedByTitle": "Utilisé par",
     "usedByOpen": "Ouvrir le projet",
-    "usedByHint": "{count} projet(s) dépendent de la connexion de cette app. Dissociez-la depuis le projet consommateur.",
-    "linkedCountOne": "{count} app liée",
-    "linkedCountOther": "{count} apps liées",
-    "linkedHint": "Utilisées par ce projet, mais pas exécutées par lui.",
-    "linkedBadge": "Liée",
+    "usedByHint": "{count} projet(s) utilisent cette connexion. Déconnectez-la depuis le projet consommateur.",
+    "linkedCountOne": "{count} service connecté",
+    "linkedCountOther": "{count} services connectés",
+    "linkedHint": "Ces services sont gérés dans leurs projets sources.",
+    "linkedBadge": "Partagé",
     "unlink": "Dissocier",
-    "openApp": "Ouvrir l'app",
+    "openApp": "Ouvrir la source",
     "internalTitle": "Adresse interne",
-    "internalDescription": "Accédez à ce projet en privé depuis un autre service sur le même serveur — sans port public."
+    "internalDescription": "Accédez à ce projet en privé depuis un autre service sur le même serveur — sans port public.",
+    "createNew": "Créer un service",
+    "connectExisting": "Connecter un service existant",
+    "existingHint": "Utilisez un service ou une application d’un autre projet. Ses données et sa gestion restent dans ce projet.",
+    "sourceLabel": "Projet ou application source",
+    "sourcePlaceholder": "Choisir un projet ou une application…",
+    "loadingServices": "Chargement des services…",
+    "noConnections": "Aucune valeur de connexion disponible. Vérifiez le port et les identifiants du service dans le projet source.",
+    "noSources": "Créez un service dans un autre projet pour le connecter ici.",
+    "sharedFrom": "Partagé depuis {project}"
   },
   "incomingWebhooks": {
     "title": "Webhooks entrants",
@@ -453,7 +478,8 @@
       "none": "Ouvert"
     },
     "summaryDeploy": "Redéploie ce projet",
-    "summaryDeployService": "Redéploie le service {service}",
+    "summaryDeployOne": "Redéploie 1 service sélectionné",
+    "summaryDeployServices": "Redéploie {count} services ensemble",
     "summaryJob": "Exécute le job {job}",
     "createTitle": "Nouveau webhook entrant",
     "createSubtitle": "Choisissez ce qu'il fait et comment les appelants s'authentifient.",
@@ -461,10 +487,10 @@
     "namePlaceholder": "ex. hook de déploiement CI",
     "actionLabel": "Action",
     "actionDeploy": "Déployer",
-    "actionDeployDesc": "Redéploie ce projet (ou un service) lors de l'appel.",
+    "actionDeployDesc": "Redéploie ce projet ou les services sélectionnés lors de l'appel.",
     "actionJob": "Exécuter un job",
     "actionJobDesc": "Exécute l'un de vos jobs lors de l'appel.",
-    "serviceLabel": "Service (facultatif)",
+    "serviceLabel": "Services (facultatifs)",
     "serviceAll": "Tout le projet",
     "jobLabel": "Job",
     "jobPlaceholder": "Sélectionnez un job…",
@@ -507,5 +533,6 @@
       "unhealthy": "Défaillant",
       "server_unreachable": "Serveur inaccessible"
     }
-  }
+  },
+  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet"
 }

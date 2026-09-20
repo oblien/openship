@@ -80,7 +80,7 @@ export default function SystemStatusRow({
 
   return (
     <Link
-      href="/issues"
+      href="/monitoring"
       className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1 transition-colors hover:bg-muted/40"
     >
       {body}

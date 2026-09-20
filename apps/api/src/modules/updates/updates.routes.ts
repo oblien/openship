@@ -20,12 +20,12 @@ r.get(
 );
 r.post(
   "/scan",
-  { tag: "updates:write", mcp: { description: "Trigger a fresh update scan across the org's projects/apps." } },
+  { tag: "updates:write", auditHandledByOperation: true, mcp: { description: "Trigger a fresh update scan across the org's projects/apps." } },
   ctrl.triggerScan,
 );
 r.post(
   "/:projectId/apply",
-  { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup)." } },
+  { tag: "project:write", auditHandledByOperation: true, ids: { project: "projectId" }, mcp: { description: "Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup)." } },
   ctrl.applyUpdate,
 );
 

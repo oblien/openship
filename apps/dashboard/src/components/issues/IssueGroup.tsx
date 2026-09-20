@@ -4,7 +4,7 @@ import type { IssueScope, SystemIssue } from "@/lib/api/issues";
 import { useI18n } from "@/components/i18n-provider";
 import AlertPanel from "@/components/overview/AlertPanel";
 import { IssueRow } from "./IssueRow";
-import { SCOPE_ICON, SEVERITY_TONE } from "./issueMeta";
+import { SCOPE_ICON, panelTone } from "./issueMeta";
 
 /**
  * One scope's panel — the single level of grouping this surface has.
@@ -17,12 +17,16 @@ import { SCOPE_ICON, SEVERITY_TONE } from "./issueMeta";
 export function IssueGroup({
   scope,
   issues,
+  standAlone,
   busyId,
   onResolve,
   onInfraFix,
 }: {
   scope: IssueScope;
   issues: SystemIssue[];
+  /** True when nothing louder than an advisory is anywhere on the page — an
+   *  advisory panel then wears amber instead of the muted surface. */
+  standAlone: boolean;
   busyId: string | null;
   onResolve: (issue: SystemIssue) => void;
   onInfraFix: (issue: SystemIssue) => void;
@@ -33,7 +37,7 @@ export function IssueGroup({
 
   return (
     <AlertPanel
-      tone={SEVERITY_TONE[issues[0]!.severity] ?? "warning"}
+      tone={panelTone(issues[0]!.severity, standAlone)}
       icon={SCOPE_ICON[scope]}
       title={c.scopes[scope]}
       subtitle={c.scopeSubtitles[scope]}

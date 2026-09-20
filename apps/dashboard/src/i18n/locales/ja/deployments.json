@@ -32,7 +32,8 @@
       "total": "合計",
       "successful": "成功",
       "failed": "失敗",
-      "inProgress": "進行中"
+      "inProgress": "進行中",
+      "pageTitle": "このページ"
     },
     "autoDeploy": {
       "title": "自動デプロイ",
@@ -69,6 +70,7 @@
     "actionRequired": "対応が必要",
     "rejected": "却下",
     "verifying": "検証中",
+    "noChanges": "変更なし",
     "pending": "保留中"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "デプロイのピン留め解除に失敗しました",
     "rollbackModeInstant": "即時復元 — このバージョンの保持イメージを再利用し、再ビルドしません。",
     "rollbackModeRebuild": "再ビルド — このバージョンのイメージはホストに残っていないため、コミットを再ビルドします。",
+    "rollbackModeReacquireImage": "レジストリ復元 — このリリースに記録された正確なイメージ参照を再取得し、ソースは再ビルドしません。",
     "rollbackModeMixed": "ほぼ即時 — {count} 個のサービスはイメージが無いため再ビルドされます。"
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "これらは稼働したままで、変更されません: {names}",
     "confirm": "ロールバック",
     "cancel": "キャンセル"
+  },
+  "loadFailed": "デプロイを読み込めませんでした。",
+  "retry": "再試行",
+  "pagination": {
+    "label": "デプロイ履歴のページ",
+    "previous": "前のページ",
+    "next": "次のページ",
+    "pageOf": "{page} / {total} ページ",
+    "range": "全 {total} 件中 {from}–{to} 件"
   }
 }

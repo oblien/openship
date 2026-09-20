@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { sanitizeSpec } from "../../../src/modules/route-rules/route-rule.controller";
+import { sanitizeSpec } from "@repo/platform/engine/modules/route-rules/rule-inputs";
 
 /**
  * The TS side stores a `RouteRuleSpec` and pushes it into a shared dict; `rules_lib.lua`

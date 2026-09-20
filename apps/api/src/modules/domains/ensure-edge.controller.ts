@@ -4,13 +4,15 @@
  * the exact engine (`ensureEdge` → `ensureEdgeClear` → `runEdgeTakeover`) and the
  * generic prompt transport, so the SAME consent modal appears — but WITHOUT a
  * container redeploy: it installs/owns the edge on the project's server, then
- * re-applies the project's routes reload-free via `applyProjectRouting`.
+ * re-applies the project's routes reload-free via `reapplyProjectLiveRoutes`
+ * (the per-domain surface) + `applyProjectRouting` (the composite/fan-out overlay).
  *
  * Used by the Domains tab (first route / "set up edge") instead of forcing a
  * full deploy — which matters for migrated attach-live stacks whose containers
  * must not be recreated.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
@@ -24,16 +26,22 @@ import {
   type CommandExecutor,
 } from "@repo/adapters";
 import { getRequestContext } from "../../lib/request-context";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
-import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
+import { withDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
+import { ensureEdgeChallengeReady } from "@repo/platform/engine/lib/edge-challenge";
+import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
-import { sshManager } from "../../lib/ssh-manager";
-import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
-import { deliverManagedImage } from "../../lib/deliver-managed-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
-import { applyProjectRouting } from "./routing-apply.service";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
+import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
+import { resolveAcmeProviderOptions } from "@repo/platform/engine/lib/acme-config";
+import { withLiveProjectRuntimeMutation } from "@repo/platform/engine/lib/project-runtime-lock";
+import { applyProjectRouting } from "@repo/platform/engine/modules/domains/routing-apply.service";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { canRouteSelfApp } from "@repo/platform/engine/lib/self-app-routing";
+import { resolveProjectLiveDeployTarget } from "@repo/platform/engine/modules/projects/project-deploy-target";
+import { findLocalServer } from "@repo/platform/engine/lib/startup/self-server";
 import {
   createEdgeConsentSession,
   getEdgeConsentSession,
@@ -55,7 +63,6 @@ import {
  */
 async function withEdgeExecutor<T>(
   serverId: string,
-  organizationId: string,
   fn: (exec: CommandExecutor) => Promise<T>,
 ): Promise<T> {
   // No local/remote branch: `acquire` already returns the pooled HOST channel for a
@@ -65,30 +72,47 @@ async function withEdgeExecutor<T>(
   return sshManager.withExecutor(serverId, fn);
 }
 
-/** True when the server is the auto-registered local host (reachable via the
- *  host executor, not SSH — so no `probeReachable` dial). */
-async function isLocalHostServer(serverId: string, organizationId: string): Promise<boolean> {
-  const server = await repos.server.getInOrganization(serverId, organizationId).catch(() => null);
-  return Boolean(server?.isLocal);
-}
-
 /** Resolve the server a project's active deployment runs on (self-hosted only). */
 export async function resolveProjectServer(
   projectId: string,
   organizationId: string,
-): Promise<{ project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string } | { error: string; status: 400 | 404 }> {
+): Promise<
+  | {
+      project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>;
+      serverId: string;
+      isLocal: boolean;
+    }
+  | { error: string; status: 400 | 404; managed?: "cloud" }
+> {
   const project = await repos.project.findById(projectId);
-  if (!project || project.organizationId !== organizationId) return { error: "Project not found", status: 404 };
-  if (project.cloudWorkspaceId) {
-    return { error: "Cloud projects manage routing at the edge automatically", status: 400 };
+  if (!project || project.organizationId !== organizationId)
+    return { error: "Project not found", status: 404 };
+  // The active deployment snapshot is where the live edge actually runs. The
+  // mutable project binding is only the canonical resolver's fallback for a
+  // legacy/partial snapshot, never the first choice.
+  let { deployTarget, serverId } = await resolveProjectLiveDeployTarget(project);
+  if (deployTarget === "cloud") {
+    return {
+      error: "Cloud projects manage routing at the edge automatically",
+      status: 400,
+      managed: "cloud",
+    };
   }
-  if (!project.activeDeploymentId) return { error: "Deploy the project before setting up its edge", status: 400 };
-  // Prefer the durable binding; fall back to the active deployment's snapshot for
-  // legacy rows not yet backfilled.
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
-  const serverId = project.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId;
+  if (!project.activeDeploymentId)
+    return { error: "Deploy the project before setting up its edge", status: 400 };
+  if (!serverId && deployTarget === "local") {
+    // A derived local target is represented by the absence of a durable server
+    // binding. Resolve its canonical row for the edge executor, but do not write
+    // it back to the project: edge-status is read-only, and doing so would change
+    // the destination of the project's next deployment from local to server.
+    serverId = (await findLocalServer().catch(() => null))?.id ?? null;
+  }
   if (!serverId) return { error: "Project is not deployed to a server", status: 400 };
-  return { project, serverId };
+  // Snapshot metadata is historical input, not an authorization boundary.
+  // Reject a stale/foreign id before any reachability or SSH operation uses it.
+  const server = await repos.server.getInOrganization(serverId, organizationId).catch(() => null);
+  if (!server) return { error: "Project deployment server was not found", status: 400 };
+  return { project, serverId, isLocal: Boolean(server.isLocal) };
 }
 
 /**
@@ -107,28 +131,24 @@ export async function edgeStatus(c: Context) {
   const ctx = getRequestContext(c);
   await permission.assert(ctx, { resourceType: "project", resourceId: id, action: "read" });
 
-  const project = await repos.project.findById(id);
-  if (!project || project.organizationId !== ctx.organizationId) {
-    return c.json({ error: "Project not found" }, 404);
-  }
-  // Cloud manages its own ingress — always "ready", nothing to set up.
-  if (project.cloudWorkspaceId) {
+  const resolved = await resolveProjectServer(id, ctx.organizationId);
+  // Cloud manages its own ingress — always "ready", nothing to set up. This
+  // marker comes from the canonical ACTIVE-deployment target, not the mutable
+  // destination selected for a future deployment.
+  if ("error" in resolved && resolved.managed === "cloud") {
     return c.json({ ready: true, managed: "cloud" as const });
   }
-
-  const resolved = await resolveProjectServer(id, ctx.organizationId);
   // Not deployed / no server yet — surface a reason (200, not an error) so the
   // UI renders guidance rather than a failure.
   if ("error" in resolved) {
     return c.json({ ready: false, reachable: null, reason: resolved.error });
   }
-  const { serverId } = resolved;
+  const { serverId, isLocal } = resolved;
 
   // Fast-fail if the box is offline — but ONLY dial SSH for a real remote server.
   // The local host-server has no sshHost (probeReachable would falsely report it
   // offline); it's always reachable through createHostExecutor.
-  const local = await isLocalHostServer(serverId, ctx.organizationId);
-  if (!local) {
+  if (!isLocal) {
     const reachable = await sshManager.probeReachable(serverId).catch(() => false);
     if (!reachable) {
       return c.json({ ready: false, reachable: false });
@@ -143,14 +163,10 @@ export async function edgeStatus(c: Context) {
     // also credits a bare-host OpenResty leftover as ours even when the container
     // is stopped — which is why the pill said "ready" while the server tab said
     // "down". The edge is container-only now, so the container is the truth.
-    const { status, containerRunning } = await withEdgeExecutor(
-      serverId,
-      ctx.organizationId,
-      async (executor) => ({
-        status: await probeEdge(executor),
-        containerRunning: await ourEdgeContainerRunning(executor),
-      }),
-    );
+    const { status, containerRunning } = await withEdgeExecutor(serverId, async (executor) => ({
+      status: await probeEdge(executor),
+      containerRunning: await ourEdgeContainerRunning(executor),
+    }));
     return c.json({
       ready: containerRunning,
       reachable: true,
@@ -212,7 +228,7 @@ export async function ensureEdgeStream(c: Context) {
     try {
       appendEdgeLog(session.id, "Checking the server's edge (ports 80/443)…");
       appendEdgeLog(session.id, "Connecting to the server…");
-      await withEdgeExecutor(serverId, ctx.organizationId, async (executor) => {
+      await withEdgeExecutor(serverId, async (executor) => {
         // No extra probe here: the installer (`ensureEdgeClear` inside
         // `installContainerEdge`) detects the edge state itself and raises the
         // takeover consent, and the image pull streams live via `onLog` — so the
@@ -245,27 +261,63 @@ export async function ensureEdgeStream(c: Context) {
       });
 
       appendEdgeLog(session.id, "Edge ready — applying routes…");
-      // Prepare the box to answer Openship Cloud's target check while we're already
-      // here. Doing it at edge-setup (not when a free domain is added) is what makes
-      // a later free domain work without a redeploy — and it can't be deferred to the
-      // baked image's catch-all, which never reaches an edge on an older image.
-      //
-      // Routing is resolved from the DEPLOYMENT, not `platform()`: the edge we just
-      // prepared may live on a remote server, and the local orchestrator's provider
-      // would write the vhost to the wrong box.
-      await (async () => {
-        const dep = await repos.deployment.findById(resolved.project.activeDeploymentId!);
-        if (!dep) return;
-        const { routing } = await resolveDeploymentRuntime(dep);
-        await ensureEdgeChallengeReady(ctx.organizationId, routing, {
-          serverId,
-          onLog: (m) => appendEdgeLog(session.id, m.trim(), "warn"),
+      let routeWarnings = false;
+      const routesApplied = await withLiveProjectRuntimeMutation(id, async (liveProject) => {
+        // The consent/install phase can take minutes. Resolve the live target again
+        // only after taking the teardown lock: a redeploy may have moved the project,
+        // and DELETE may have claimed it while the operator was answering the prompt.
+        const liveTarget = await resolveProjectServer(id, ctx.organizationId);
+        if ("error" in liveTarget) throw new Error(liveTarget.error);
+        const dep = await findActiveDeployment(liveProject);
+        if (!dep) throw new Error("The active deployment no longer exists");
+
+        // Prepare the serving box to answer the managed-edge target check and
+        // reconcile the vhost shape. This remains best-effort, matching the
+        // pre-existing setup flow; the actual route writers below report warnings.
+        await withDeploymentPlatform(dep, async ({ routing }) => {
+          await ensureEdgeChallengeReady(ctx.organizationId, routing, {
+            serverId: liveTarget.serverId,
+            onLog: (m) => appendEdgeLog(session.id, m.trim(), "warn"),
+          });
+          await repairEdgeVhosts(routing, {
+            onLog: (m, level) => appendEdgeLog(session.id, m.trim(), level ?? "info"),
+          });
+        }).catch(() => {});
+
+        // BOTH appliers, in this order — the same pairing (and the same reason)
+        // `retryProjectRouting` documents. `reapplyProjectLiveRoutes` is the
+        // per-domain surface; `applyProjectRouting` layers composite/fan-out rules.
+        // The shared runtime lock remains held even when either best-effort write
+        // times out or fails, so deletion cannot finish and then have this callback
+        // recreate a route for a project that no longer exists.
+        const onWarning = (message: string) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, message, "warn");
+        };
+        await reapplyProjectLiveRoutes(liveProject, [], {
+          managedEdgeSyncedByCaller: true,
+          isSelfApp: await canRouteSelfApp(ctx, id),
+          onWarning,
+        }).catch((e) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn");
         });
-      })().catch(() => {});
-      await applyProjectRouting(id).catch((e) =>
-        appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
+        await applyProjectRouting(id, { onWarning }).catch((e) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn");
+        });
+        return true;
+      });
+      if (!routesApplied) {
+        throw new Error("The project was deleted while edge setup was in progress");
+      }
+      appendEdgeLog(
+        session.id,
+        routeWarnings
+          ? "Edge setup finished with route warnings. Review the messages above."
+          : "Edge setup and route application finished.",
+        routeWarnings ? "warn" : "info",
       );
-      appendEdgeLog(session.id, "Done — routes are live.");
       finishEdgeConsentSession(session.id, "completed");
     } catch (err) {
       appendEdgeLog(session.id, safeErrorMessage(err), "error");

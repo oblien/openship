@@ -15,9 +15,9 @@
 import "./_env";
 import { Hono } from "hono";
 import { db, schema, repos } from "@repo/db";
-import { mintPatToken } from "../../../src/lib/pat";
+import { mintPatToken } from "@repo/platform/engine/lib/pat";
 import { jobRoutes } from "../../../src/modules/jobs/job.routes";
-import { setJobRunnerForTests } from "../../../src/lib/job-runner";
+import { setJobRunnerForTests } from "@repo/platform/engine/lib/job-runner/index";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
 /**
@@ -72,7 +72,7 @@ export interface SeededOwner {
 
 /** Seed a user + org + owner membership + unscoped PAT. Returns a ready auth
  *  header. Owner role clears job:read/job:write without any grant rows. */
-export async function seedOwner(): Promise<SeededOwner> {
+export async function seedOwner(opts: { instanceAdmin?: boolean; bound?: boolean } = {}): Promise<SeededOwner> {
   const userId = uid("user");
   const orgId = `org_${userId}`;
   const now = new Date();
@@ -81,7 +81,7 @@ export async function seedOwner(): Promise<SeededOwner> {
     name: "Owner",
     email: `${userId}@test.local`,
     emailVerified: true,
-    role: "user",
+    role: opts.instanceAdmin ? "admin" : "user",
     autoProvisioned: false,
     createdAt: now,
     updatedAt: now,
@@ -102,7 +102,7 @@ export async function seedOwner(): Promise<SeededOwner> {
   const pat = mintPatToken();
   await repos.personalAccessToken.create({
     userId,
-    organizationId: orgId,
+    organizationId: (opts.bound ?? !opts.instanceAdmin) ? orgId : null,
     name: "e2e",
     tokenPrefix: pat.tokenPrefix,
     tokenHash: pat.tokenHash,

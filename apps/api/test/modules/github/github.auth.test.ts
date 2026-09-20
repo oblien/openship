@@ -13,7 +13,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: {
     api: {
       getAccessToken,
@@ -21,15 +21,15 @@ vi.mock("../../../src/lib/auth", () => ({
   },
 }));
 
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {},
 }));
 
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   getLocalGhToken: vi.fn(),
 }));
 
-import { getUserToken } from "../../../src/modules/github/github.auth";
+import { getUserToken } from "@repo/platform/engine/modules/github/github.auth";
 
 describe("getUserToken", () => {
   beforeEach(() => {

@@ -3,8 +3,11 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   ambientCallSource,
+  internalClientHeader,
   internalSourceHeader,
+  isAuditClientId,
   isAuditSource,
+  resolveCallClientId,
   resolveCallSource,
   runWithCallSource,
 } from "../../src/lib/call-source";
@@ -36,6 +39,20 @@ async function sourceFor(opts: {
   });
   const res = await app.request("/probe", { headers: opts.headers });
   return ((await res.json()) as { source: string }).source;
+}
+
+/** Resolve the source CLIENT for one synthetic request. */
+async function clientFor(opts: {
+  headers?: Record<string, string>;
+  ctx?: Record<string, unknown>;
+}): Promise<string | null> {
+  const app = new Hono();
+  app.get("/probe", (c: Context) => {
+    if (opts.ctx) c.set("ctx" as never, opts.ctx as never);
+    return c.json({ client: resolveCallClientId(c) });
+  });
+  const res = await app.request("/probe", { headers: opts.headers });
+  return ((await res.json()) as { client: string | null }).client;
 }
 
 const CLI_UA = "openship-cli/0.5.0";
@@ -160,6 +177,55 @@ describe("ambient source for emitters outside the handler chain", () => {
     expect((await first.json()).source).toBe("mcp");
     expect((await second.json()).source).toBe("dashboard");
     expect(ambientCallSource()).toBeNull();
+  });
+});
+
+describe("which client of the surface", () => {
+  it("trusts the client id the MCP dispatcher signs", async () => {
+    expect(await clientFor({ headers: internalClientHeader("oauth:cli_abc") })).toBe("oauth:cli_abc");
+    expect(await clientFor({ headers: internalClientHeader("pat:pat_123") })).toBe("pat:pat_123");
+  });
+
+  it("is null when nobody claimed one — never guessed from the credential", async () => {
+    // A browser and the CLI have one client per request; a value here would be
+    // invented rather than reported.
+    expect(await clientFor({ ctx: cookieCtx })).toBeNull();
+    expect(await clientFor({ ctx: patCtx, headers: { "user-agent": CLI_UA } })).toBeNull();
+  });
+
+  it("ignores a forged claim — attribution a caller can write is worse than none", async () => {
+    const forged = { "x-openship-call-client": "oauth:someone-elses-agent.deadbeefdeadbeef" };
+    expect(await clientFor({ headers: forged })).toBeNull();
+    expect(await clientFor({ headers: { "x-openship-call-client": "oauth:x" } })).toBeNull();
+  });
+
+  it("rejects a correctly-signed id that is not a principal id", async () => {
+    // The nonce proves we sent it; it does not prove we assembled it from
+    // something the column should hold, and the value reaches the audit UI.
+    const nonce = internalSourceHeader("mcp")["x-openship-call-source"]!.split(".").pop()!;
+    for (const bad of ["cli_abc", "oauth:", "session:abc", `oauth:${"x".repeat(129)}`, "oauth:a b"]) {
+      expect(await clientFor({ headers: { "x-openship-call-client": `${bad}.${nonce}` } }), bad).toBeNull();
+    }
+  });
+
+  it("travels independently of the source claim", async () => {
+    // The dispatcher sends both; a request carrying only one is still coherent.
+    expect(
+      await sourceFor({ headers: internalClientHeader("oauth:cli_abc"), ctx: patCtx }),
+    ).toBe("api");
+    expect(await clientFor({ headers: internalSourceHeader("mcp") })).toBeNull();
+  });
+});
+
+describe("isAuditClientId", () => {
+  it("accepts the two principal-id shapes and nothing else", () => {
+    expect(isAuditClientId("oauth:cli_abc")).toBe(true);
+    expect(isAuditClientId("pat:pat_9f2.a-b")).toBe(true);
+    expect(isAuditClientId("oauth:")).toBe(false);
+    expect(isAuditClientId("pat")).toBe(false);
+    expect(isAuditClientId("user:u1")).toBe(false);
+    expect(isAuditClientId("")).toBe(false);
+    expect(isAuditClientId(null)).toBe(false);
   });
 });
 

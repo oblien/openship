@@ -18,17 +18,17 @@ const { resolveEdgeTargetHost, sync, ensureTargetVerified } = vi.hoisted(() => (
   ensureTargetVerified: vi.fn(),
 }));
 
-vi.mock("../../src/lib/cloud/client", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({
   cloudClient: () => ({ edgeProxy: { sync } }),
 }));
-vi.mock("../../src/lib/edge-target", () => ({
+vi.mock("@repo/platform/engine/lib/edge-target", () => ({
   resolveEdgeTargetHost,
   canonicalEdgeTarget: (h: string) => (/^https?:\/\//.test(h) ? h : `http://${h}`),
 }));
-vi.mock("../../src/lib/edge-target-verify", () => ({ ensureTargetVerified }));
+vi.mock("@repo/platform/engine/lib/edge-target-verify", () => ({ ensureTargetVerified }));
 
-import { CloudRequestError } from "../../src/lib/cloud/request-error";
-import { ensureManagedEdgeProxy, ManagedEdgeError } from "../../src/lib/managed-edge-proxy";
+import { CloudRequestError } from "@repo/platform/engine/lib/cloud/request-error";
+import { ensureManagedEdgeProxy, ManagedEdgeError } from "@repo/platform/engine/lib/managed-edge-proxy";
 
 const unverified = () =>
   new CloudRequestError("Edge proxy sync failed (403): target_unverified", {

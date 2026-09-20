@@ -1,4 +1,13 @@
 {
+  "loadFailed": "Could not load deployments.",
+  "retry": "Try again",
+  "pagination": {
+    "label": "Deployment pages",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pageOf": "Page {page} of {total}",
+    "range": "{from}–{to} of {total} deployments"
+  },
   "time": {
     "secondsAgo": "{n}s ago",
     "minutesAgo": "{n}m ago",
@@ -29,6 +38,7 @@
   "sidebar": {
     "overview": {
       "title": "Overview",
+      "pageTitle": "On this page",
       "total": "Total",
       "successful": "Successful",
       "failed": "Failed",
@@ -69,6 +79,7 @@
     "actionRequired": "Action required",
     "rejected": "Rejected",
     "verifying": "Verifying",
+    "noChanges": "No changes",
     "pending": "Pending"
   },
   "serviceStatus": {
@@ -168,6 +179,7 @@
     "unpinFailed": "Failed to unpin deployment",
     "rollbackModeInstant": "Instant restore — reuses this version's retained image, no rebuild.",
     "rollbackModeRebuild": "Rebuild — this version's image is no longer on the host, so its commit is built again.",
+    "rollbackModeReacquireImage": "Registry restore — pulls the exact image reference recorded for this release; no source rebuild.",
     "rollbackModeMixed": "Mostly instant — {count} service(s) lost their image and will be rebuilt."
   },
   "rollbackConfirm": {

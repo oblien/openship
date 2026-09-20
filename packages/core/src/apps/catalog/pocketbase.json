@@ -1,0 +1,121 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "minEngine": "0.6.6",
+  "id": "pocketbase",
+  "name": "PocketBase",
+  "description": "Self-hosted PocketBase with auth, a realtime SQLite database, file storage, and an admin dashboard in one small service.",
+  "repository": "https://github.com/pocketbase/pocketbase",
+  "kind": "template",
+  "logo": "pocketbase",
+  "category": "backend",
+  "tags": ["auth", "database", "sqlite", "realtime"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "pocketbase",
+      "build": {
+        "dockerfile": "FROM alpine:3.24.1 AS downloader\nARG PB_VERSION=0.40.1\nRUN apk add --no-cache ca-certificates unzip wget \\\n    && ARCH=$(uname -m) \\\n    && case \"$ARCH\" in x86_64) ARCH=amd64 ;; aarch64) ARCH=arm64 ;; *) echo \"Unsupported architecture: $ARCH\" >&2; exit 1 ;; esac \\\n    && wget -q https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/checksums.txt -O /tmp/checksums.txt \\\n    && wget -q https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_${ARCH}.zip -O /tmp/pocketbase_${PB_VERSION}_linux_${ARCH}.zip \\\n    && cd /tmp \\\n    && grep \" pocketbase_${PB_VERSION}_linux_${ARCH}.zip$\" checksums.txt | sha256sum -c - \\\n    && unzip pocketbase_${PB_VERSION}_linux_${ARCH}.zip -d /pb\nFROM alpine:3.24.1\nRUN apk add --no-cache ca-certificates su-exec \\\n    && addgroup -S pocketbase \\\n    && adduser -S -G pocketbase -h /pb pocketbase\nCOPY --chown=pocketbase:pocketbase --from=downloader /pb/pocketbase /pb/pocketbase\nCOPY --chown=pocketbase:pocketbase pocketbase/entrypoint.sh /pb/entrypoint.sh\nRUN chmod 755 /pb/entrypoint.sh\nWORKDIR /pb\nENTRYPOINT [\"/pb/entrypoint.sh\"]\nCMD [\"/pb/pocketbase\", \"serve\", \"--http=0.0.0.0:8090\", \"--encryptionEnv=PB_ENCRYPTION_KEY\"]\n",
+        "files": [
+          {
+            "path": "entrypoint.sh",
+            "content": "#!/bin/sh\nset -eu\nmkdir -p /pb/pb_data\nchown pocketbase:pocketbase /pb/pb_data\nexport PB_ENCRYPTION_KEY=\"$(printf '%.32s' \"$PB_ENCRYPTION_SEED\")\"\nif [ ! -e /pb/pb_data/.openship-superuser ]; then\n  su-exec pocketbase /pb/pocketbase superuser upsert \"$POCKETBASE_SUPERUSER_EMAIL\" \"$POCKETBASE_SUPERUSER_PASSWORD\" --dir=/pb/pb_data --encryptionEnv=PB_ENCRYPTION_KEY >/dev/null\n  su-exec pocketbase touch /pb/pb_data/.openship-superuser\nfi\nexec su-exec pocketbase \"$@\"\n"
+          }
+        ]
+      },
+      "environment": {
+        "GOMEMLIMIT": "512MiB"
+      },
+      "secretEnv": ["PB_ENCRYPTION_SEED", "POCKETBASE_SUPERUSER_PASSWORD"],
+      "ports": ["8090:8090"],
+      "exposedPort": 8090,
+      "exposed": true,
+      "volumes": ["pocketbase_data:/pb/pb_data"],
+      "healthcheck": {
+        "test": ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"],
+        "interval": "5s",
+        "timeout": "3s",
+        "retries": 20,
+        "startPeriod": "10s"
+      },
+      "stopGracePeriod": "30s",
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "PB_ENCRYPTION_SEED",
+      "service": "pocketbase",
+      "label": "Settings encryption seed",
+      "help": "Derives the stable 32-character key that encrypts PocketBase settings in the data volume.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "POCKETBASE_SUPERUSER_PASSWORD",
+      "service": "pocketbase",
+      "label": "Initial superuser password",
+      "help": "Auto-generated for the first deployment and shown in the connection card.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "POCKETBASE_SUPERUSER_EMAIL",
+      "service": "pocketbase",
+      "label": "Superuser email",
+      "help": "Email for the superuser created during the first deployment.",
+      "type": "text",
+      "default": "admin@openship.local",
+      "required": true
+    }
+  ],
+  "connection": {
+    "title": "Connect to PocketBase",
+    "description": "Use the public URL from browsers and other projects. The admin dashboard is available at /_/.",
+    "guide": {
+      "intro": "PocketBase stores auth, records, and files in one persistent SQLite-backed volume.",
+      "useHint": "Create scoped credentials for automation, configure off-host backups, and point each app at this URL.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "PocketBase URL",
+        "source": "publicUrl:pocketbase",
+        "kind": "url",
+        "envKey": "POCKETBASE_URL",
+        "recommended": true
+      },
+      {
+        "id": "email",
+        "label": "Superuser email",
+        "source": "env:pocketbase:POCKETBASE_SUPERUSER_EMAIL",
+        "envKey": "POCKETBASE_SUPERUSER_EMAIL"
+      },
+      {
+        "id": "password",
+        "label": "Initial superuser password",
+        "help": "Use this installation credential until you change the password in PocketBase.",
+        "source": "env:pocketbase:POCKETBASE_SUPERUSER_PASSWORD",
+        "envKey": "POCKETBASE_SUPERUSER_PASSWORD",
+        "secret": true
+      }
+    ]
+  },
+  "provides": [
+    {
+      "id": "pocketbase",
+      "outputRefs": ["url"],
+      "category": "database"
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "pocketbase",
+      "port": 8090,
+      "label": "PocketBase API and dashboard",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ]
+}

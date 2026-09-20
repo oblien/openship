@@ -12,7 +12,7 @@
  * plugin's invariants and audit hooks stay correct.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../client";
 import { organization } from "../schema/organization";
 
@@ -71,6 +71,57 @@ export function createOrganizationRepo(db: Database) {
         .update(organization)
         .set({ subscriptionStatus: status })
         .where(eq(organization.id, id));
+    },
+
+    /** Mirror an authoritative Oblien entitlement without changing its quota. */
+    async setBillingEntitlement(id: string, namespace: string, input: {
+      planTierId: string;
+      subscriptionStatus: string;
+      currentPeriodStart: Date | null;
+      currentPeriodEnd: Date | null;
+    }): Promise<void> {
+      const rows = await db.update(organization).set(input)
+        .where(and(eq(organization.id, id), eq(organization.oblienNamespace, namespace)))
+        .returning();
+      if (rows.length !== 1) throw new Error("Organization namespace changed during billing synchronization");
+    },
+
+    /**
+     * Record the org's Oblien namespace slug.
+     *
+     * This column was read in eleven places and written in NONE, which made the
+     * entire Oblien entitlement path inert: every quota helper opens with
+     * `if (!org.oblienNamespace) return`, so `setQuota`, `addQuota`,
+     * `resetAndRegrant` and `applyResourceLimits` were no-ops, namespaces ran
+     * with no ceiling at all, and the `credits.usage` webhook — which matches
+     * deliveries on this column — dropped every event. Nothing about that failure
+     * was visible: each function returned successfully.
+     */
+    async setOblienNamespace(id: string, namespace: string): Promise<void> {
+      const rows = await db
+        .update(organization)
+        .set({ oblienNamespace: namespace })
+        .where(and(eq(organization.id, id), isNull(organization.oblienNamespace)))
+        .returning();
+      if (rows.length === 0) {
+        const existing = await this.findById(id);
+        if (existing?.oblienNamespace !== namespace) {
+          throw new Error("Organization namespace cannot be reassigned");
+        }
+      }
+    },
+
+    /**
+     * Orgs with no namespace recorded yet — the boot backfill's work list.
+     * Bounded because this runs on every cloud boot and the tail of orgs that
+     * predate namespace persistence only needs draining once.
+     */
+    async listWithoutOblienNamespace(limit = 200): Promise<{ id: string }[]> {
+      return db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(isNull(organization.oblienNamespace))
+        .limit(limit);
     },
   };
 }

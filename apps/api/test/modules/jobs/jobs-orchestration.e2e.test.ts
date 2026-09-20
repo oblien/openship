@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const ssh = vi.hoisted(() => ({ state: { code: 0, output: "ok" } }));
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     retain: () => {},
     release: () => {},
@@ -19,8 +19,8 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
 }));
 
 import { db, schema, repos, resetJobs, seedOwner, installFakeRunner } from "./_harness";
-import * as jobService from "../../../src/modules/jobs/job.service";
-import { runDueOnceJobs } from "../../../src/modules/jobs/job-command";
+import * as jobService from "@repo/platform/engine/modules/jobs/job.service";
+import { runDueOnceJobs } from "@repo/platform/engine/modules/jobs/job-command";
 
 const runner = installFakeRunner();
 let owner: Awaited<ReturnType<typeof seedOwner>>;

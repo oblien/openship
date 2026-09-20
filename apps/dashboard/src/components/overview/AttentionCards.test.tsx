@@ -15,7 +15,7 @@ import { IssuesCard, UpdatesCard } from "./AttentionCards";
  * diagnosis must be clamped rather than truncated — because a single truncated line
  * of an nginx error is what made these rows useless in a 320px column.
  *
- * They now render rows from the `/issues` feed, so this file also guards the swap:
+ * They now render rows from the Monitoring feed, so this file also guards the swap:
  * every behaviour the card used to compute from container state must still hold when
  * the severity and the fix arrive on the row instead.
  *
@@ -103,11 +103,11 @@ describe("IssuesCard", () => {
 
   it("caps the list and hands the remainder to the tracker", () => {
     const html = issues();
-    // 4 issues, 3 rows → the 4th is only reachable via /issues.
+    // 4 issues, 3 rows → the 4th is only reachable via /monitoring.
     expect(html).toContain("web-01");
     expect(html).not.toContain("billing-api-worker");
     expect(html).toContain("1 more");
-    expect(html).toContain('href="/issues"');
+    expect(html).toContain('href="/monitoring"');
     // The header count still reports every issue, not just the visible ones.
     expect(html).toContain(">4<");
   });
@@ -123,7 +123,7 @@ describe("IssuesCard", () => {
   });
 
   it("renders no hide control where hiding means nothing", () => {
-    // The fixture preview and the /issues groups pass no handler; a dead X on the
+    // The fixture preview and Monitoring groups pass no handler; a dead X on the
     // tracker would suggest the feed itself can be filtered.
     expect(issues()).not.toContain("Hide until something changes");
   });
@@ -132,7 +132,7 @@ describe("IssuesCard", () => {
     // There is no Issues entry in the sidebar — this card IS the shortcut, so its
     // footer link cannot depend on a fourth row existing to appear.
     const html = issues(ISSUE_FIXTURES.outage!.slice(0, 1));
-    expect(html).toContain('href="/issues"');
+    expect(html).toContain('href="/monitoring"');
     expect(html).not.toMatch(/\d+ more/);
     expect(html).toContain("View all");
   });

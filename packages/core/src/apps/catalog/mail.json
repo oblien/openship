@@ -3,9 +3,9 @@
   "verified": true,
   "id": "mail",
   "name": "Openship Mail",
-  "description": "A complete self-hosted mail server — SMTP/IMAP + webmail on your own domain.",
+  "description": "Your own mail on your own domain — SMTP/IMAP, mailboxes and webmail on one server. Or keep the mailboxes you already have and just run the webmail.",
   "kind": "flow",
-  "logo": "mail-webmail",
+  "logo": "mail",
   "category": "mail",
   "tags": [
     "mail",

@@ -4,9 +4,16 @@ on:
   pull_request: {}
   push:
     branches: [main]
-    # A tag is what actually ships; the e2e-docker job runs on tags (see its
-    # `if` gate) so a release is proven restorable before it goes out.
-    tags: ["v*"]
+    # NO `tags:` here, deliberately. Nothing in THIS file gates a release — the checks
+    # that BLOCK a publish (this same suite plus the real-daemon E2E matrix) live in
+    # release-gate.yml, which Release and Docker images each list in `needs:` because
+    # workflows are not ordered against one another.
+    #
+    # It used to run on tags too, "for the record". The record was three copies: the gate
+    # runs this suite once per calling workflow, so a tag push executed typecheck + tests
+    # THREE times and produced one extra full run whose result gated nothing and whose
+    # failure nobody could act on differently. A tag is not branch-protected, so no
+    # required check disappears with it.
   workflow_dispatch: {}
 
 # One in-flight run per ref. PR pushes cancel their predecessor — nobody reads
@@ -59,62 +66,31 @@ jobs:
             exit 1
           fi
 
-  test:
-    name: Test
+  test_suites:
+    name: Tests (${{ matrix.suite }})
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Cache bun install
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # Runs `turbo run test` → vitest across every package that defines a test
-      # script (@repo/core, @repo/adapters, @repo/db [PGlite — no external DB],
-      # apps/api, apps/dashboard). Packages resolve to src, so no build needed.
-      # apps/api excludes test/e2e/** here — those need a daemon and run in the
-      # e2e-docker job below.
-      - name: Run tests
-        run: bun run test
-
-  # Rollback and restore against a REAL Docker daemon. This is the only job that
-  # proves those paths work at all; every other test in the repo mocks the runtime.
-  #
-  # MANUAL by design: runs only on a manual `workflow_dispatch` and on release
-  # tag pushes (v*) — never on main pushes or PRs, which stay fast (typecheck +
-  # tests). The tag run is the release-restorability gate.
-  #
-  # `RUN_DOCKER_E2E=1` is what makes it honest: without it the suite skips when no
-  # daemon answers, which is exactly how these cases sat green-and-unrun for months.
-  # With it, an unreachable daemon fails in `beforeAll` instead of reporting skipped.
-  #
-  # `fast` is every daemon-level and full-cycle case (~5 min); `heavy` is
-  # rollback-build-restore alone (~225s cold, and fileParallelism is off, so it
-  # holds the whole suite up). Both run here — see E2E_SCOPE in
-  # apps/api/vitest.e2e.config.ts.
-  e2e-docker:
-    name: E2E (real Docker, ${{ matrix.scope }})
-    # Manual + release tags only. Never on main pushes or PRs.
-    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        scope: [fast, heavy]
+        include:
+          - suite: API 1/2
+            command: bun run --cwd apps/api test --shard=1/2
+          - suite: API 2/2
+            command: bun run --cwd apps/api test --shard=2/2
+          - suite: Database
+            command: bun run --cwd packages/db test
+          # Both suites rebuild the same native bundle. Keep them sequential on
+          # their own runner; the other packages do not share that filesystem.
+          - suite: SDK and CLI
+            command: bunx turbo run test --filter=@repo/sdk --filter=@repo/cli --concurrency=1 --log-order=stream
+          # Exclusions keep new workspace test scripts included automatically.
+          # Keep filters on the workspace runner. Script tests run once below,
+          # independently of the root command's argument-forwarding behavior.
+          - suite: Other packages
+            command: |
+              bunx turbo run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --filter=!@repo/email --concurrency=1 --log-order=stream
+              bun run test:scripts
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -135,15 +111,102 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Fail here rather than inside vitest, so "the runner lost Docker" is
-      # distinguishable at a glance from "a rollback assertion broke".
-      - name: Check the Docker daemon
-        run: |
-          docker info
-          docker version
+      # Run every workspace test, with the large API suite split across runners.
+      # Direct Vitest runs and Turbo's stream mode expose progress immediately.
+      # API test/e2e/** still runs in release-gate.yml against a real daemon.
+      - name: Run tests
+        run: ${{ matrix.command }}
 
-      - name: Run real-daemon E2E
+  # Preserve the existing required "Test" check. A failed, skipped, or canceled
+  # matrix must fail this check; no individual shard can make the PR green.
+  test:
+    name: Test
+    needs: test_suites
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every test suite to pass
         env:
-          RUN_DOCKER_E2E: "1"
-          E2E_SCOPE: ${{ matrix.scope }}
-        run: bun run --cwd apps/api test:e2e
+          TEST_SUITES_RESULT: ${{ needs.test_suites.result }}
+        run: |
+          if [ "$TEST_SUITES_RESULT" != "success" ]; then
+            echo "::error::Test suites finished with status: $TEST_SUITES_RESULT"
+            exit 1
+          fi
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build public SDK and CLI
+        run: bun run build:sdk
+
+      - name: Check documentation and public examples
+        run: bun run docs:check
+
+      - name: Build documentation website
+        run: bun run --cwd apps/web build
+
+  # The webmail server's own suite, which nothing else runs.
+  #
+  # GH-220: apps/email/server/test/{sanitize,from-header,list-snippet}.test.ts had no
+  # runner at all. They are `bun:test` files, and the root `test` script is
+  # `turbo run test --filter=!@repo/email` → vitest, so turbo never reached them; the
+  # server is not a root workspace member either (workspaces is apps/* + packages/*,
+  # which matches apps/email but not its subdirectories), so its deps are not installed
+  # by the root install. Net effect: 35 assertions were green on someone's laptop and
+  # unreachable from every pipeline — including sanitize.test.ts, which pins the fix for
+  # the CSS url()/@import read-receipt leak (GHSA-3hcp-c4c7-6m8p) and asserts the read
+  # pane stays inert. That is exactly the kind of test that must not rot.
+  #
+  # Its own job rather than a turbo target: these need `bun test` (not vitest) and a
+  # separate install rooted in apps/email/server. Independent and parallel, so it cannot
+  # slow the jobs above.
+  webmail-server-test:
+    name: Test webmail server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun install
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-webmail-${{ hashFiles('apps/email/server/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-webmail-
+            ${{ runner.os }}-bun-
+
+      # Not --frozen-lockfile: the committed lockfile is regenerated by
+      # scripts/build-release.ts for the dist, so it can legitimately lag the manifest
+      # here. Resolving fresh is fine for a test-only install.
+      - name: Install webmail server dependencies
+        working-directory: apps/email/server
+        run: bun install
+
+      - name: Run webmail server tests
+        working-directory: apps/email/server
+        run: bun test

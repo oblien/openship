@@ -1,6 +1,13 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { AppManagement, AppSettingGroup, AppTemplate } from "@repo/core";
+import type {
+  AppManagement,
+  AppMinResources,
+  AppSettingGroup,
+  AppTemplate,
+  HostCapacity,
+  ResourceFit,
+} from "@repo/core";
 
 /** One catalog entry as returned by GET /apps/catalog. */
 export interface AppCatalogField {
@@ -26,6 +33,9 @@ export interface AppCatalogEntry {
   management: AppManagement | null;
   /** Verified trust mark — official open-source image + reviewed pipeline. */
   verified?: boolean;
+  /** Hosting model — drives the card badge + wizard notice. "experimental" =
+   *  runs but not production-grade. */
+  hosting?: "self-hosted" | "experimental";
   /** A per-org user-uploaded app — always unverified; render an "Unverified" chip. */
   custom?: boolean;
   /** Not installable this version — render dimmed + block install. */
@@ -35,7 +45,20 @@ export interface AppCatalogEntry {
   requiresUpdate?: { minVersion?: string };
   /** A newer (engine-gated) version exists; the bundled copy is being served. */
   updateAvailable?: boolean;
+  /** What the app declares it needs from the machine. Absent for almost every
+   *  app; when present the wizard shows it against the chosen destination and
+   *  deploy preflight enforces it. */
+  minResources?: AppMinResources;
   configFields: AppCatalogField[];
+}
+
+/** GET /apps/catalog/:id/host-fit — an app's declared minimum vs. a destination.
+ *  Advisory; `capacity.source === "unknown"` means we couldn't measure, which is
+ *  never a shortfall. */
+export interface AppHostFitView {
+  minResources: AppMinResources | null;
+  capacity: HostCapacity;
+  fit: ResourceFit;
 }
 
 export type InstallAppResult =
@@ -95,6 +118,7 @@ export type LocalizedString = string | { [locale: string]: string };
 /** One resolved connection value (URL or generated key) for the app Overview. */
 export interface AppConnectionOutput {
   id: string;
+  sourceServiceId?: string;
   label: string;
   help?: string;
   secret: boolean;
@@ -148,6 +172,17 @@ export const appsApi = {
    *  defaults it would then overwrite. */
   template: (id: string) =>
     api.get<{ data: AppTemplate; draft?: AppOpenDraft | null }>(endpoints.apps.catalogEntry(id)),
+
+  /** Does a chosen destination meet the app's declared minimum? Advisory — the
+   *  wizard shows the shortfall before anything is created; deploy preflight is
+   *  the gate that refuses. Only worth calling for an app with `minResources`. */
+  hostFit: (id: string, target: { deployTarget?: string; serverId?: string }) =>
+    api.get<{ data: AppHostFitView }>(endpoints.apps.catalogHostFit(id), {
+      params: {
+        ...(target.deployTarget ? { deployTarget: target.deployTarget } : {}),
+        ...(target.serverId ? { serverId: target.serverId } : {}),
+      },
+    }),
 
   /** Install an app from the catalog. Template apps return the new project;
    *  flow apps return the wizard route to hand off to. `routes` carries the

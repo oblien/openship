@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { STACKS } from "@repo/core";
 import { CloudRuntime } from "./cloud";
 import { DEFAULT_RESOURCE_CONFIG } from "../types";
@@ -67,5 +67,31 @@ describe("CloudRuntime.deployStatic output path (regression #66)", () => {
       rt.deployStatic({ ...baseConfig, outputDirectory: "../../etc" }),
     ).rejects.toThrow(/escapes/);
     expect(created).toHaveLength(0);
+  });
+
+  test("a provider 404 creates a new page, while a provider outage does not replace one", async () => {
+    const created: Array<{ path: string }> = [];
+    const client = fakeClientRecording(created);
+    const get = vi.fn().mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }));
+    client.pages.get = get;
+    await new CloudRuntime(client as never).deployStatic({ ...baseConfig, outputDirectory: "dist" });
+    expect(created).toHaveLength(1);
+    get.mockRejectedValue(Object.assign(new Error("provider down"), { status: 503 }));
+    await expect(new CloudRuntime(client as never).deployStatic({ ...baseConfig, outputDirectory: "dist" })).rejects.toThrow("provider down");
+    expect(created).toHaveLength(1);
+  });
+
+  test("uses delegated page reads and reports a failed custom-domain connection", async () => {
+    const connectDomain = vi.fn().mockRejectedValue(new Error("DNS verification failed"));
+    const pageGet = vi.fn().mockResolvedValue(null);
+    const create = vi.fn().mockResolvedValue({ page: { slug: "profilcard", url: null } });
+    const direct = vi.fn().mockRejectedValue(new Error("namespace token cannot read Pages"));
+    const rt = new CloudRuntime({ pages: { get: direct } } as never, {
+      namespace: "ns-a", adminProxy: { createPage: create, pages: { get: pageGet, create, connectDomain } as never },
+    });
+    await expect(rt.deployStatic({ ...baseConfig, outputDirectory: "dist", publicEndpoints: [{ domainType: "custom", customDomain: "app.example.com" }] }))
+      .rejects.toThrow("DNS verification failed");
+    expect(pageGet).toHaveBeenCalled();
+    expect(direct).not.toHaveBeenCalled();
   });
 });

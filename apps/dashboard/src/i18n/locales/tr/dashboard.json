@@ -55,12 +55,13 @@
     "viewAllApps": "Tüm {count} uygulamayı gör →"
   },
   "nav": {
+    "scale": "Ölçeklendirme",
     "home": "Ana Sayfa",
     "new-project": "Yeni Proje",
     "projects": "Projeler",
     "apps": "Uygulamalar",
     "deployments": "Dağıtımlar",
-    "issues": "Sorunlar",
+    "issues": "İzleme",
     "backups": "Yedekler",
     "domains": "Alan Adları",
     "monitoring": "İzleme",
@@ -69,10 +70,18 @@
     "jobs": "Görevler",
     "settings": "Ayarlar",
     "billing": "Faturalandırma ve Kullanım",
+    "audit": "Denetim kaydı",
+    "mailSetup": "E-posta kur",
+    "mailSetupProgress": "Kurulum ilerlemesi",
+    "addMailbox": "Posta kutusu ekle",
+    "webmail": "Webmail",
     "sections": {
       "main": "Ana Menü",
       "settings": "Ayarlar",
       "infrastructure": "Altyapı",
+      "mail": "E-posta",
+      "delivery": "Teslimat",
+      "system": "Sistem",
       "account": "Hesap"
     }
   },

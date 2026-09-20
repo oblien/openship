@@ -20,14 +20,14 @@ import type { RouteRuleSpec } from "@repo/core";
  * hosts get pushed, with what body, and to which target.
  */
 
-const { listByProject, listDomains, findProject, findDeployment, postEdgeMgmt, resolveDeploymentRuntime } =
+const { listByProject, listDomains, findProject, findDeployment, postEdgeMgmt, resolveDeploymentPlatform } =
   vi.hoisted(() => ({
     listByProject: vi.fn(),
     listDomains: vi.fn(),
     findProject: vi.fn(),
     findDeployment: vi.fn(),
     postEdgeMgmt: vi.fn(),
-    resolveDeploymentRuntime: vi.fn(),
+    resolveDeploymentPlatform: vi.fn(),
   }));
 
 vi.mock("@repo/db", async (importOriginal) => ({
@@ -40,14 +40,19 @@ vi.mock("@repo/db", async (importOriginal) => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/project-analytics")>()),
+vi.mock("@repo/platform/engine/lib/project-analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/project-analytics")>()),
   postEdgeMgmt,
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/deployment-runtime")>()),
-  resolveDeploymentRuntime,
+// `withDeploymentPlatform` is the seam: it resolves the platform, hands the caller
+// the target, and releases the transport. Stubbing the wrapper (rather than the
+// resolver under it) keeps this test about the FAN-OUT while the real wrapper's own
+// dispose/error contract is pinned in lib/with-deployment-runtime.test.ts.
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>()),
+  withDeploymentPlatform: async (dep: unknown, fn: (resolved: unknown) => unknown) =>
+    fn(await resolveDeploymentPlatform(dep)),
 }));
 
 import {
@@ -55,7 +60,7 @@ import {
   resolveProjectPushTarget,
   serializeProjectRules,
   type HostRuleEntry,
-} from "../../../src/modules/route-rules/route-rule.service";
+} from "@repo/platform/engine/modules/route-rules/route-rule.service";
 
 const RL: RouteRuleSpec = { rateLimit: { rps: 5, burst: 5, key: "ip" } };
 const BAN: RouteRuleSpec = { ban: { countries: ["RU"] } };
@@ -262,24 +267,24 @@ describe("resolveProjectPushTarget", () => {
   });
 
   it("returns nothing for a project deployed to cloud", async () => {
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: "dep1" });
-    findDeployment.mockResolvedValue({ id: "dep1", meta: {}, organizationId: "org1" });
-    resolveDeploymentRuntime.mockResolvedValue({ effectiveTarget: "cloud", serverId: null });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: "dep1" });
+    findDeployment.mockResolvedValue({ id: "dep1", projectId: "p1", meta: {}, organizationId: "org1" });
+    resolveDeploymentPlatform.mockResolvedValue({ effectiveTarget: "cloud", serverId: null });
 
     expect(await resolveProjectPushTarget("p1")).toBeNull();
   });
 
   it("targets the server the deployment actually runs on", async () => {
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: "dep1" });
-    findDeployment.mockResolvedValue({ id: "dep1", meta: {}, organizationId: "org1" });
-    resolveDeploymentRuntime.mockResolvedValue({ effectiveTarget: "server", serverId: "srv9" });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: "dep1" });
+    findDeployment.mockResolvedValue({ id: "dep1", projectId: "p1", meta: {}, organizationId: "org1" });
+    resolveDeploymentPlatform.mockResolvedValue({ effectiveTarget: "server", serverId: "srv9" });
 
     expect(await resolveProjectPushTarget("p1")).toEqual({ serverId: "srv9" });
   });
 
   it("falls back to the local edge for a project that has never deployed", async () => {
     // Rules can be authored before the first deploy; the local edge is the default.
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: null });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: null });
     expect(await resolveProjectPushTarget("p1")).toEqual({ serverId: null });
   });
 

@@ -19,6 +19,10 @@ const h = vi.hoisted(() => ({
   assertCalled: [] as Array<{ resourceId: string; action: string }>,
 }));
 
+vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
+  withProjectRuntimeLock: async (_id: string, run: () => Promise<unknown>) => run(),
+}));
+
 vi.mock("@repo/db", () => ({
   repos: {
     projectConnection: {
@@ -38,7 +42,7 @@ vi.mock("../../../src/lib/permission", () => ({
   },
 }));
 
-import { listConsumers } from "../../../src/modules/projects/project-connection.service";
+import { listConsumers } from "@repo/platform/engine/modules/projects/project-connection.service";
 
 const ctx = { organizationId: "org1", userId: "u1" } as never;
 
@@ -134,4 +138,16 @@ describe("listConsumers — one shared database, many consumers", () => {
     expect(c!.targetName).toBe("Unknown");
     expect(c!.targetProjectId).toBe("app-a");
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: {
+    assert: vi.fn(async (_ctx: unknown, req: { resourceId: string; action: string }) => {
+      h.assertCalled.push({ resourceId: req.resourceId, action: req.action });
+    }),
+  },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

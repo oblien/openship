@@ -32,7 +32,6 @@ export type {
   HeadInfo,
   ListOpts,
   ListPage,
-  PayloadKind,
   ProducerOpts,
   PutOpts,
   PutResult,
@@ -42,6 +41,33 @@ export type {
   StreamPathOpts,
   TriggerSource,
 } from "./types";
+
+// The payload-kind union and everything the platform knows about each kind. Declared
+// in `@repo/core` (see backup-catalog.ts) so the dashboard can read the same table;
+// re-exported here so an adapter consumer has one import for the backup surface.
+export {
+  BACKUP_PAYLOADS,
+  PAYLOAD_KINDS,
+  PAYLOAD_KIND_AUTO,
+  imageDetectableSpecs,
+  isPayloadKind,
+  isPolicyPayloadKind,
+  operatorSelectableKinds,
+  payloadSpec,
+  payloadSpecs,
+  PAYLOAD_COMPRESSION_CODECS,
+  isPayloadCompression,
+  requiresRestoreCommand,
+  restoreAppliesAfterBounce,
+  restoreClearsTarget,
+  restoreNeedsLiveContainer,
+  validatePolicyPayload,
+  type BackupPayloadSpec,
+  type PayloadCompression,
+  type PayloadConfigKey,
+  type PayloadKind,
+  type PolicyPayloadKind,
+} from "@repo/core";
 
 // Registry accessors
 export {
@@ -61,8 +87,15 @@ export {
 export { setBackupCredentialSecret } from "./common/credentials";
 export { HashingPassthrough } from "./common/sha256-stream";
 export { artifactKey, manifestKey, runPrefix } from "./common/key-builder";
+export { safePipelineFragment } from "./common/dump-pipeline";
+export { sanitizeProducerOpts } from "./common/producer-opts";
 export { buildManifest, validateManifest } from "./common/manifest";
 export { matchBackupSource } from "./common/source-match";
+export {
+  PRESERVED_ARTIFACT_METADATA_KEYS,
+  REDACTED_USERINFO_MARKER,
+  isRedactedCommand,
+} from "./common/artifact-metadata";
 
 // Single strategy-driven volume-transfer core (same/cross-daemon).
 export {
@@ -87,6 +120,7 @@ import "./producers/mysql-dump";
 import "./producers/redis";
 import "./producers/mongo";
 import "./producers/custom-command";  // explicit-only, no detect
+import "./producers/path";            // explicit-only, no detect
 import "./producers/volume";          // universal fallback — LAST
 import "./executors/docker";          // docker runtime → backup executor
 import "./executors/cloud";           // cloud runtime → backup executor

@@ -29,11 +29,62 @@ export function sameKind(a: UpdatableIdentity, b: UpdatableIdentity): boolean {
   return a.kind === b.kind;
 }
 
+/** Git's own floor for an abbreviated sha — `core.abbrev` never goes below 7. */
+const MIN_ABBREV = 7;
+
+/** Hex sha, full or abbreviated. Anything else (a tag, a branch, `HEAD`) is not comparable. */
+const HEX_SHA = /^[0-9a-f]{1,40}$/;
+
+/** A full, canonical commit sha — what the GitHub API returns and what we store. */
+export function isFullCommitSha(v: string | null | undefined): boolean {
+  return /^[0-9a-f]{40}$/i.test(v?.trim() ?? "");
+}
+
+function normalizeSha(v: string | null | undefined): string | null {
+  const s = v?.trim().toLowerCase();
+  return s && HEX_SHA.test(s) ? s : null;
+}
+
+/** Verdict of comparing two commit refs by value. `unknown` = not comparable. */
+export type CommitShaMatch = "same" | "different" | "unknown";
+
+/**
+ * Do two commit refs name the same commit? Deliberately not string equality: the
+ * two sides come from different places. A branch HEAD arrives from the GitHub API
+ * as all 40 hex chars, while a deployment's stored sha is whatever the caller that
+ * triggered it supplied — `openship deploy --commit 1eeaf76`, an MCP call, a CI
+ * script — and git checks that out happily, so the deploy is correct while the row
+ * records an abbreviation. Comparing those by bytes reads one commit as two, and
+ * since every surface renders `sha.slice(0, 7)`, the operator is told "new commit
+ * available 1eeaf76 — you're deployed on 1eeaf76".
+ *
+ * Three-valued because "not provably equal" is not the same as "different", and
+ * only a provable difference may drive a nudge:
+ *   - a ref that isn't a hex sha at all (a tag, a branch name) → `unknown`
+ *   - a prefix match below git's abbreviation floor → `unknown`, not a guess
+ *   - a prefix match at or above it → `same`; two distinct commits sharing seven
+ *     hex chars is a collision git itself calls ambiguous, and the far rarer
+ *     failure than an update we advertise forever.
+ */
+export function compareCommitSha(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): CommitShaMatch {
+  const x = normalizeSha(a);
+  const y = normalizeSha(b);
+  if (!x || !y) return "unknown";
+  if (x === y) return "same";
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  if (!long.startsWith(short)) return "different";
+  return short.length >= MIN_ABBREV ? "same" : "unknown";
+}
+
 /**
  * Is `current` behind `latest` (i.e. an update is available)?
  *
  *   - release → semver comparison (`compareSemver`), the single source of truth.
- *   - commit  → sha inequality (a different remote HEAD means new commits).
+ *   - commit  → a PROVABLE sha difference (`compareCommitSha`); an abbreviated or
+ *               non-sha ref on either side is no evidence, not new commits.
  *   - image   → digest inequality when BOTH digests are known; if either digest
  *               is unknown, fall back to ref/tag inequality. Unknown-vs-unknown
  *               (no digest either side) → NOT behind (we can't claim an update
@@ -49,7 +100,7 @@ export function isBehind(current: UpdatableIdentity, latest: UpdatableIdentity):
   }
 
   if (current.kind === "commit" && latest.kind === "commit") {
-    return !!current.sha && !!latest.sha && current.sha !== latest.sha;
+    return compareCommitSha(current.sha, latest.sha) === "different";
   }
 
   if (current.kind === "image" && latest.kind === "image") {

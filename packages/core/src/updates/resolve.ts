@@ -9,7 +9,7 @@
 
 import { compareSemver } from "./semver";
 import { findAnnouncement } from "./advisories";
-import type { Advisory, AdvisoryManifest } from "./types";
+import type { Advisory, AdvisoryManifest, ReleaseFeedSnapshot } from "./types";
 
 /** The GitHub `releases/latest` fields we consume. */
 export interface GithubReleasePayload {
@@ -39,6 +39,9 @@ export type DesktopUpdateCheck =
       announcement: Advisory | null;
     }
   | { available: false };
+
+/** One desktop-owned check feeds both the installer and dashboard advisories. */
+export type DesktopUpdateSnapshot = DesktopUpdateCheck & ReleaseFeedSnapshot;
 
 /**
  * Installer asset name the release pipeline publishes for a platform/arch.
@@ -71,10 +74,12 @@ export function resolveDesktopUpdate(input: {
   platform: string;
   arch: string;
   currentVersion: string;
+  /** Exact tagged CHANGELOG section. Falls back to the release body for legacy callers. */
+  changelogNotes?: string | null;
   /** Parsed advisory manifest for the release tag. Absent/null → never prompt. */
   manifest?: AdvisoryManifest | null;
 }): DesktopUpdateCheck {
-  const { releasePayload, platform, arch, currentVersion, manifest } = input;
+  const { releasePayload, platform, arch, currentVersion, changelogNotes, manifest } = input;
   const latest = (releasePayload?.tag_name ?? "").replace(/^v/, "");
   if (!latest || compareSemver(latest, currentVersion) <= 0) return { available: false };
 
@@ -87,7 +92,10 @@ export function resolveDesktopUpdate(input: {
   return {
     available: true,
     version: latest,
-    notes: releasePayload?.body ?? "",
+    // `undefined` preserves compatibility for callers that have not fetched the
+    // changelog. `null` means the tagged changelog was unavailable: show no
+    // notes instead of falling back to the unrelated GitHub release body.
+    notes: changelogNotes === undefined ? (releasePayload?.body ?? "") : (changelogNotes ?? ""),
     asset: { name: asset.name, url: asset.browser_download_url, size: asset.size },
     // Mode "desktop": a VPS-only advisory (edge/OpenResty, compose) must never
     // pop a modal in the desktop app, and vice versa.

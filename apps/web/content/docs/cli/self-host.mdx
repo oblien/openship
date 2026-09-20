@@ -1,415 +1,60 @@
 ---
-title: Self-host infrastructure
-description: CLI reference for the server, system, mail, and backup commands that operate an Openship instance you run yourself.
+title: Servers and operations
+description: Manage servers, backup workflows, mail, and instance configuration.
 ---
 
-These four command groups manage the machinery *behind* your deployments — the servers they land on,
-the instance's own settings and lifecycle, an optional self-hosted mail server, and scheduled backups.
-They're the terminal equivalent of the dashboard's [Servers](/docs/dashboard/servers),
-[Settings](/docs/dashboard/settings), [Emails](/docs/dashboard/emails), and
-[Backups](/docs/dashboard/backups) screens.
+These operations require an authorized connection to a self-hosted installation. Provider and
+host permissions still apply in native mode.
 
-<Callout title="Log in first, and know your instance type">
-Every command here talks to your instance's API and needs a token — run `openship login` once. The
-`server`, `system`, and `mail` groups only work on a **self-hosted** instance; run against Openship Cloud
-and they exit with a clean "self-host only" message. `backup` works on any instance.
-</Callout>
-
-<Callout title="--json everywhere" type="info">
-Add the global `--json` flag to any command for machine-readable output on stdout (tables and spinners are
-suppressed): `openship server list --json`.
-</Callout>
-
-## `openship server`
-
-Manage the SSH servers your instance can build and deploy on. See the
-[Custom servers guide](/docs/guides/custom-servers) for the click-by-click version.
-
-| Subcommand | Purpose |
-|---|---|
-| `list` (alias `ls`) | List servers in the active organization. |
-| `add` | Register a new server by its SSH connection details. |
-| `rm <id>` (alias `remove`) | Delete a server. |
-| `test-connection` (alias `test`) | Try an SSH connection **without** saving it. |
-| `check <serverId>` | Run component health checks against a saved server. |
-| `install <serverId>` | Install required components on a server. |
-| `rate-limit <serverId>` | Read or update per-server OpenResty rate limiting. |
-| `monitor <serverId>` | Stream live CPU / memory / disk / load stats. |
-| `ssh <serverId>` | Interactive SSH terminal *(coming soon — currently a stub)*. |
-
-### Connection flags (`add` and `test-connection`)
-
-Both commands take the same SSH connection flags. `--host` is the only required one.
-
-| Flag | Purpose | Default |
-|---|---|---|
-| `--host <host>` | SSH host / IP. **Required.** | — |
-| `--name <name>` | Display name (`add` only). | — |
-| `--port <port>` | SSH port. | `22` |
-| `--user <user>` | SSH user. | `root` |
-| `--auth-method <method>` | `password`, `key`, or `agent`. | — |
-| `--password <password>` | Password (password auth). | — |
-| `--key-path <path>` | Path to a private key (key auth). | — |
-| `--key-passphrase <passphrase>` | Private key passphrase. | — |
-| `--jump-host <host>` | SSH jump / bastion host. | — |
-| `--ssh-args <args>` | Extra raw `ssh` arguments. | — |
+## Servers
 
 ```bash
-# Add a server, then confirm it's reachable and ready
-openship server add --host 203.0.113.10 --name web-1 --user deploy --auth-method key --key-path ~/.ssh/id_ed25519
-openship server test-connection --host 203.0.113.10 --user deploy --auth-method key --key-path ~/.ssh/id_ed25519
 openship server list
-```
-
-### `check` and `install`
-
-`check` reports which components are present and healthy; `install` puts the missing ones on the box.
-The installable components are **`docker`, `git`, `openresty`, `certbot`, `rsync`**.
-
-| Command | Flag | Purpose |
-|---|---|---|
-| `check <serverId>` | `-c, --component <name...>` | Limit the check to specific components. |
-| `install <serverId>` | `-c, --component <name...>` | Components to install. **Required.** |
-| `install <serverId>` | `--follow` | Stream the install logs live (SSE). |
-
-```bash
 openship server check srv_123
-openship server install srv_123 --component docker --component openresty --follow
 ```
 
-### `rate-limit`
+Use the [server reference](/docs/cli/reference/server) to register connections, install components,
+set rate limits, and monitor a server. The [Servers API](/docs/api/servers) also exposes container,
+Git credential, and tunnel operations. Start with the [server guide](/docs/guides/custom-servers)
+for prerequisites.
 
-With no flags it prints the current limit. Pass any of the flags below to update it (an OpenResty
-config change on that server).
+## Backups and restores
 
-| Flag | Purpose |
-|---|---|
-| `--rps <n>` | Requests per second (`0` removes the limit). |
-| `--burst <n>` | Burst allowance. |
-| `--whitelist <cidr...>` | CIDRs exempt from limiting. |
+The workflow has four parts:
+
+| Step | Commands |
+| --- | --- |
+| Configure and verify storage | [backup destination](/docs/cli/reference/backup/destination) |
+| Choose a source, schedule, and retention | [backup policy](/docs/cli/reference/backup/policy) |
+| Inspect executions or prepare a restore | [backup run](/docs/cli/reference/backup/run) |
+| Inspect, apply, or cancel a prepared restore | [backup restore](/docs/cli/reference/backup#openship-backup-restore) |
 
 ```bash
-openship server rate-limit srv_123                          # read
-openship server rate-limit srv_123 --rps 50 --burst 100     # update
-openship server monitor srv_123                             # live stats (Ctrl-C to stop)
+openship backup destination list
+openship backup policy list --project proj_123
+openship backup policy run policy_123
+openship backup run list --project proj_123
 ```
 
-## `openship system`
+Preparing a restore does not apply it. Inspect the returned restore session and confirmation
+requirements before using the apply command. See [backups and restores](/docs/guides/backups-restore).
 
-Instance-level settings, first-run onboarding, migration between hosting modes, and whole-instance
-data transfer. Migration is covered in depth in
-[Cloud connect & migration](/docs/guides/cloud-connect-migration).
+## Mail
 
-| Subcommand | Purpose |
-|---|---|
-| `settings get` | Show current instance settings. |
-| `settings set` | Update instance-level settings. |
-| `onboarding apply` | Configure a fresh instance (fails once it's already configured). |
-| `upgrade-to-auth` | Promote a zero-auth instance to email/password login. |
-| `browse [path]` | List directories on the instance host (defaults to home). |
-| `migration preflight` | Read-only readiness check for the own-server migration. |
-| `migration start` | Migrate this instance onto your own server. |
-| `migration start-cloud` | Migrate this instance to Openship Cloud. |
-| `migration start-tunnel` | Expose this instance via an edge tunnel. |
-| `migration switch-back` | Reverse a migration back to single-user. |
-| `data-transfer export` | Export the entire instance to a JSON file. |
-| `data-transfer import` | Import an instance export file. |
+Use [mail commands](/docs/cli/reference/mail) to provision or adopt a server, manage domains and
+mailboxes, and inspect delivery health. The [email guide](/docs/guides/email-webmail) covers DNS,
+relay configuration, and webmail. Mail commands currently require an HTTP context.
 
-### `settings set`
+## Installation settings and data
 
-| Flag | Purpose |
-|---|---|
-| `--auth-mode <mode>` | `none`, `local`, or `cloud`. |
-| `--confirm <phrase>` | Required for `--auth-mode none`: `I-understand-no-auth`. |
-| `--tunnel-provider <provider>` | Tunnel provider (empty string clears it). |
-| `--tunnel-token <token>` | Tunnel token. |
-| `--default-build-mode <mode>` | Default build mode for new deployments. |
-| `--default-rollback-window <n>` | Default rollback window. |
-| `--invitation-mail-source <src>` | `platform` or `cloud`. |
+Use [system commands](/docs/cli/reference/system) for instance settings, onboarding, filesystem
+browsing, and data transfer. Settings have native SDK support; remaining setup and migration actions
+require HTTP.
 
-```bash
-openship system settings get
-openship system settings set --default-build-mode server
-```
+For moving an installation, follow [control-plane migration](/docs/guides/migrate-control-plane).
+For moving a workload, follow [server-to-server migration](/docs/guides/server-to-server-migration).
 
-<Callout title="Turning auth off is deliberate" type="warn">
-`--auth-mode none` makes the instance passwordless, so it also requires
-`--confirm I-understand-no-auth`. See [Authentication](/docs/security/auth) for what each mode means.
-</Callout>
+## Reverse proxy
 
-### `upgrade-to-auth`
-
-Turns a zero-auth (`authMode: none`) instance into a real email/password account. If you omit
-`--password`, it's prompted for without echoing.
-
-| Flag | Purpose |
-|---|---|
-| `--name <name>` | Account display name. |
-| `--email <email>` | Account email. |
-| `--password <password>` | Account password (prompted if omitted). |
-| `--use-own-mail-server` | Warm the self-hosted mail server for auth emails. |
-
-### `onboarding apply`
-
-First-run only. Persists instance settings and creates the initial SSH server row in one call. It accepts
-the same SSH connection flags as `server add` — prefixed with `--ssh-` — plus `--server-name`, and the
-same instance settings as `settings set` (`--auth-mode`, `--tunnel-provider`, `--tunnel-token`,
-`--default-build-mode`, `--default-rollback-window`).
-
-| Flag | Purpose | Default |
-|---|---|---|
-| `--ssh-host <host>` | SSH host of the target server. | — |
-| `--ssh-port <n>` | SSH port. | `22` |
-| `--ssh-user <user>` | SSH user. | `root` |
-| `--ssh-auth-method <method>` | SSH auth method. | — |
-| `--ssh-password <password>` | SSH password. | — |
-| `--ssh-key-path <path>` | SSH private key path. | — |
-| `--ssh-key-passphrase <pass>` | SSH key passphrase. | — |
-| `--ssh-jump-host <host>` | SSH jump host. | — |
-| `--ssh-args <args>` | Extra SSH args. | — |
-| `--server-name <name>` | Display name for the server. | — |
-
-### `migration`
-
-`preflight` and `start` move a single-user instance onto your own server; `start-cloud` moves it to
-Openship Cloud; `start-tunnel` fronts it with an edge tunnel; `switch-back` reverses any of them.
-
-| Command | Flag | Purpose |
-|---|---|---|
-| `preflight` / `start` | `--server-id <id>` | Target server id. **Required.** |
-| `preflight` / `start` | `--hostname <host>` | Custom domain pointing at the server. |
-| `preflight` / `start` | `--slug <slug>` | Free `<slug>.opsh.io` subdomain. |
-| `start-cloud` | `--allow-non-empty-target` | Proceed even if the cloud org already has projects. |
-| `start-tunnel` | `--slug <slug>` | Tunnel slug. **Required.** |
-| `switch-back` | `--abandon-remote` | Skip pulling remote data; keep the local DB as-is. |
-| `switch-back` | `-y, --yes` | Skip the confirmation prompt. |
-
-Pass **either** `--hostname` (custom domain) **or** `--slug` (free subdomain), not both.
-
-```bash
-openship system migration preflight --server-id srv_123 --hostname app.example.com
-openship system migration start     --server-id srv_123 --hostname app.example.com
-```
-
-### `data-transfer`
-
-Owner-only. Moves the whole instance database; secrets are sealed under an optional passphrase. `import`
-defaults to `wipe` (replace) mode.
-
-| Command | Flag | Purpose | Default |
-|---|---|---|---|
-| `export` | `--passphrase <passphrase>` | Seal secrets under this passphrase. | — |
-| `export` | `--out <file>` | Write to a file instead of stdout. | — |
-| `import` | `--file <path>` | Path to an export file. **Required.** | — |
-| `import` | `--passphrase <passphrase>` | Passphrase used at export time. | — |
-| `import` | `--mode <mode>` | `wipe` (replace) or `merge`. | `wipe` |
-| `import` | `-y, --yes` | Skip the confirmation prompt. | — |
-
-```bash
-openship system data-transfer export --passphrase "correct horse" --out instance.json
-openship system data-transfer import --file instance.json --passphrase "correct horse" --mode merge
-```
-
-<Callout title="wipe replaces everything" type="error">
-Importing in the default `wipe` mode deletes the current instance data before restoring the file. It asks
-for confirmation unless you pass `-y`. Use `--mode merge` to layer the file on top instead.
-</Callout>
-
-## `openship mail`
-
-Set up and administer a self-hosted iRedMail server. This is the terminal side of the
-[Emails](/docs/dashboard/emails) screen; the [Email & webmail guide](/docs/guides/email-webmail) walks
-through the whole flow.
-
-| Subcommand | Purpose |
-|---|---|
-| `steps` | List the setup steps. |
-| `status [serverId]` | Show setup progress for a mail server. |
-| `servers` | List every server the mail stack is installed on. |
-| `scan <serverId>` | Probe a server for an existing mail install (read-only). |
-| `adopt <serverId>` | Re-adopt an install whose orchestrator state was lost. |
-| `setup <serverId>` | Start or resume the setup wizard (streams over SSE). |
-| `cancel` | Cancel the setup currently running. |
-| `dns-ack <serverId>` | Acknowledge that DNS records are published. |
-| `ptr-ack <serverId>` | Acknowledge that reverse DNS (PTR) is configured. |
-| `reset <serverId>` | Wipe the on-server setup state file (`-y` skips the confirmation prompt). |
-| `forget <serverId>` | Stop managing a mail server (drops the DB row only). |
-| `health <serverId>` | Show live status of every mail daemon. |
-| `logs <serverId> <component>` | Tail a mail component's journal (snapshot). |
-| `postmaster set-password <serverId>` | Rotate the postmaster password. |
-
-### `setup`
-
-Runs (or resumes) the install wizard, streaming each step's logs. It pauses at two gates — publishing DNS
-records and setting reverse DNS — which you clear with `dns-ack` / `ptr-ack`, then re-run with the
-`--start-step` it prints.
-
-| Flag | Purpose |
-|---|---|
-| `-d, --domain <domain>` | Mail domain, e.g. `example.com`. **Required.** |
-| `--start-step <n>` | Resume from a specific step (`1`–`13`). |
-| `--config <json>` | iRedMail config overrides as a JSON object. |
-
-```bash
-openship mail setup srv_123 --domain example.com
-# ...publish the DNS records it prints, then:
-openship mail dns-ack srv_123
-openship mail setup srv_123 --domain example.com --start-step 7
-```
-
-### `logs` and `postmaster`
-
-| Command | Flag | Purpose | Default |
-|---|---|---|---|
-| `logs <serverId> <component>` | `-n, --lines <n>` | Number of journal lines (max 1000). | `200` |
-| `postmaster set-password <serverId>` | `--password <password>` | New password, min 12 chars (prompted if omitted). | — |
-
-The `component` for `logs` is a daemon key such as `postfix`, `dovecot`, `amavis`, `clamav`, `iredapd`,
-or `postgresql`.
-
-```bash
-openship mail health srv_123
-openship mail logs srv_123 postfix --lines 500
-```
-
-<Callout title="scan, adopt, forget go together" type="info">
-`forget` only drops Openship's tracking row — the installed daemons and on-server state stay put. To pick
-the server back up later, run `mail scan <serverId>` and, if it reports adoptable, `mail adopt <serverId>`.
-</Callout>
-
-## `openship backup`
-
-Policies (schedules), runs (executions), staged restores, and storage destinations. This mirrors the
-[Backups](/docs/dashboard/backups) screen; the [Backups & restore guide](/docs/guides/backups-restore)
-covers the concepts.
-
-### `backup policy`
-
-Backup policies (schedules) for a project.
-
-| Subcommand | Purpose |
-|---|---|
-| `list` | List backup policies for a project. |
-| `create` | Create a backup policy. |
-| `run <policyId>` | Trigger a policy's backup now. |
-
-| Command | Flag | Purpose | Default |
-|---|---|---|---|
-| `list` | `--project <id>` | Project id. **Required.** | — |
-| `create` | `--project <id>` | Project id. **Required.** | — |
-| `create` | `--destination <id>` | Backup destination id. **Required.** | — |
-| `create` | `--service <id>` | Scope the policy to a single service. | — |
-| `create` | `--cron <expr>` | Cron schedule, e.g. `'0 3 * * *'`. | — |
-| `create` | `--pre-deploy` | Also run this backup before each deploy. | — |
-| `create` | `--retain-count <n>` | Keep at most N runs. | — |
-| `create` | `--retain-days <n>` | Keep runs for N days. | — |
-| `create` | `--payload-kind <kind>` | Payload kind. | `auto` |
-| `create` | `--payload-config <json>` | Payload config as a JSON object. | — |
-| `create` | `--pre-hook <cmd>` | Shell command run before the backup. | — |
-| `create` | `--post-hook <cmd>` | Shell command run after the backup. | — |
-| `create` | `--disabled` | Create the policy disabled. | — |
-| `run` | `--follow` | Stream the run to completion. | — |
-
-```bash
-openship backup policy create --project proj_123 --destination dst_123 --cron '0 3 * * *' --retain-count 7
-openship backup policy run pol_123 --follow
-```
-
-### `backup run`
-
-Backup runs (executions).
-
-| Subcommand | Purpose |
-|---|---|
-| `list` | List backup runs for a project. |
-| `get <runId>` | Show one run (optionally stream it). |
-| `protect <runId>` | Protect a run from retention pruning (or release it). |
-| `restore <runId>` | Prepare a restore from a run (stages it; apply separately). |
-
-| Command | Flag | Purpose | Default |
-|---|---|---|---|
-| `list` | `--project <id>` | Project id. **Required.** | — |
-| `list` | `--service <id>` | Filter to a single service. | — |
-| `list` | `--limit <n>` | Max rows. | `50` |
-| `get` | `--follow` | Stream progress to completion. | — |
-| `protect` | `--until <iso>` | Protect until this ISO timestamp. | — |
-| `protect` | `--release` | Clear protection so retention can prune it. | — |
-| `restore` | `--mode <mode>` | `in_place` or `to_fork`. | `in_place` |
-| `restore` | `--fork-server <id>` | Target mail server id (for `--mode to_fork`). | — |
-| `restore` | `--follow` | Stream the preparation phase. | — |
-
-### `backup restore`
-
-Manage staged restores. `run restore` *prepares* a restore and returns a `restoreId` plus a confirmation
-token; `restore apply` performs it.
-
-| Subcommand | Purpose |
-|---|---|
-| `apply <restoreId>` | Apply a staged restore (destructive). |
-| `cancel <restoreId>` | Cancel a staged or in-flight restore. |
-| `get <restoreId>` | Show one restore (optionally stream it). |
-
-| Command | Flag | Purpose |
-|---|---|---|
-| `apply` | `--token <token>` | Confirmation token from prepare. **Required.** |
-| `apply` | `--follow` | Stream the restore to completion. |
-| `get` | `--follow` | Stream progress to completion. |
-
-```bash
-# Prepare, then apply with the token it prints
-openship backup run restore run_123
-openship backup restore apply rst_123 --token <confirmationToken> --follow
-```
-
-<Callout title="Applying a restore is destructive" type="warn">
-`restore apply` overwrites live data, which is why it requires the confirmation token handed back by the
-prepare step. Cancel a staged restore you no longer want with `openship backup restore cancel <restoreId>`.
-</Callout>
-
-### `backup destination`
-
-Backup destinations (storage targets).
-
-| Subcommand | Purpose |
-|---|---|
-| `list` | List backup destinations. |
-| `create` | Create a backup destination. |
-| `preflight <destinationId>` | Verify a destination (write + read + delete a probe object). |
-
-`create` requires `--name` and `--kind`; the remaining flags depend on the kind.
-
-| Flag | Purpose |
-|---|---|
-| `--name <name>` | Display name. **Required.** |
-| `--kind <kind>` | `s3_compatible`, `sftp`, `openship_server`, or `local`. **Required.** |
-| `--endpoint <url>` | Endpoint URL, or absolute path for `local`. |
-| `--region <region>` | S3 region. |
-| `--bucket <bucket>` | S3 bucket. |
-| `--path-prefix <prefix>` | Key / path prefix. |
-| `--access-key-id <id>` | S3 access key id. |
-| `--secret-access-key <key>` | S3 secret access key. |
-| `--ssh-host <host>` | SFTP host. |
-| `--ssh-port <port>` | SFTP port. |
-| `--ssh-user <user>` | SFTP user. |
-| `--sftp-password <pw>` | SFTP password. |
-| `--sftp-private-key <key>` | SFTP private key (raw). |
-| `--sftp-private-key-file <path>` | Read the SFTP private key from a file. |
-| `--sftp-key-passphrase <pw>` | SFTP private key passphrase. |
-| `--server <id>` | Server id (for the `openship_server` kind). |
-| `--default` | Mark as the default destination. |
-
-```bash
-openship backup destination create --name s3-backups --kind s3_compatible \
-  --endpoint https://s3.us-east-1.amazonaws.com --region us-east-1 --bucket my-backups \
-  --access-key-id AKIA... --secret-access-key ... --default
-openship backup destination preflight dst_123
-```
-
-## Related
-
-<Cards>
-  <Card title="Custom servers" href="/docs/guides/custom-servers" description="Connect and prepare your own machines to deploy on." />
-  <Card title="Cloud connect & migration" href="/docs/guides/cloud-connect-migration" description="Move an instance between self-hosted, cloud, and tunnel modes." />
-  <Card title="Email & webmail" href="/docs/guides/email-webmail" description="Stand up the self-hosted mail server end to end." />
-  <Card title="Backups & restore" href="/docs/guides/backups-restore" description="Schedule backups and restore from a run." />
-</Cards>
+The [edge workflow](/docs/cli/edge) covers setup, domains, and traffic rules. Its complete options are
+in the [edge reference](/docs/cli/reference/edge).

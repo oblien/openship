@@ -22,7 +22,7 @@ book. This guide walks you through all of it.
   the two lines Openship gives you.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -31,8 +31,6 @@ book. This guide walks you through all of it.
 ### Open your project's Domains tab
 
 Go to your project and open the **Domains** tab. This is home base for everything about addresses and HTTPS.
-
-<Callout title="Screenshot">Project page, the **Domains** tab selected, showing the current access URL and an **Add domain** button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -70,8 +68,6 @@ Saving the domain just registers your intent. It stays **Pending** until you add
 that's the next two steps.
 </Callout>
 
-<Callout title="Screenshot">The Add domain form: **Custom domain** selected, the domain-name field filled in, the "Maps to port" field, and the Include-www / External-ingress toggles. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -89,8 +85,6 @@ There are usually two records:
   Nobody else can add it, so it's how Openship knows the domain is really yours.
 
 Copy each value exactly as shown — don't retype it, use the Copy button.
-
-<Callout title="Screenshot">The DNS Records panel with the routing record and the `_openship-challenge` TXT record, each with a Copy button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -137,8 +131,6 @@ Let's Encrypt (a trusted certificate authority). When it lands, the status becom
 reachable at `https://app.example.com` with the padlock. Certificates also renew automatically before they
 expire, so this is a one-time setup.
 
-<Callout title="Screenshot">A verified custom domain row showing **Verified** status and **SSL: Active**, with a **Visit** action. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -148,7 +140,7 @@ expire, so this is a one-time setup.
 Openship figures out which records you need based on where your project runs. You don't choose the first two —
 they're picked for you. The records panel tells you which one applies.
 
-<Tabs items={['Self-hosted (A record)', 'Openship Cloud (CNAME)', 'External edge (TXT only)']}>
+<Tabs items={['Self-hosted (A record)', 'Openship Cloud (CNAME)', 'External edge']}>
 
 <Tab value="Self-hosted (A record)">
 
@@ -157,10 +149,10 @@ Your project runs on your own server, so the domain points straight at that mach
 | Type | Host | Value |
 |---|---|---|
 | `A` | `@` | your server's public IP |
-| `TXT` | `_openship-challenge` | a long verification string |
 
-Openship checks that the `A` record resolves to your server and that the TXT matches, then issues the HTTPS
-certificate for you.
+The `A` record is guidance. Self-hosted verification obtains a certificate through ACME; it does not
+compare public DNS with your server IP or require an ownership TXT record. The hostname must reach the
+server for the selected ACME challenge to succeed.
 
 </Tab>
 
@@ -178,7 +170,7 @@ Openship confirms the `CNAME` and the TXT, then handles HTTPS for you.
 
 </Tab>
 
-<Tab value="External edge (TXT only)">
+<Tab value="External edge">
 
 For advanced setups where **your own edge already terminates HTTPS** — a Cloudflare Tunnel, a load balancer, or
 another reverse proxy in front of Openship. Turn on **External ingress & TLS** when adding the domain.
@@ -187,9 +179,15 @@ another reverse proxy in front of Openship. Turn on **External ingress & TLS** w
 |---|---|---|
 | `TXT` | `_openship-challenge` | a long verification string |
 
-Here Openship only checks the TXT record to confirm you own the name. It does **not** require the domain to
-point at it and does **not** issue a certificate — your edge is doing that job. The SSL status will read
-**External TLS**.
+On **Openship Cloud**, add the TXT record above to prove domain ownership. On a **self-hosted instance**,
+the operator already owns the server: no DNS record is requested or checked. Openship does not issue a
+certificate in either case; the SSL status reads **External TLS**.
+
+For a homelab behind **Nginx Proxy Manager**, point your internal DNS name at NPM and configure it to forward
+to the Openship server reachable on your LAN or tunnel. NPM owns HTTPS. Choose **External ingress & TLS**
+for the domain, then verify it. Your rotating home WAN address is not a verification requirement.
+Clients outside your LAN still need a reachable address, VPN, or tunnel; private DNS alone does not provide
+public access.
 
 </Tab>
 
@@ -241,7 +239,7 @@ There's nothing for Openship to renew, so it watches the expiry and reminds you 
 before it lapses.
 </Callout>
 
-## Prefer the terminal?
+## CLI
 
 Every step above has a CLI equivalent. The `add` command prints the DNS records and the domain's ID; use that
 ID to verify.
@@ -267,7 +265,7 @@ openship domain list --project <projectId>
 [Domains API reference](/docs/api/domains).
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="Verify keeps failing" type="warn">
 Openship tells you which of the two checks is still missing. If the **routing record** (`A`/`CNAME`) is the
@@ -304,7 +302,7 @@ outcome — that log names the real cause (DNS not resolving, port 80 unreachabl
 **Copy log** if you want to keep it, and **Try again** to re-run without closing the window.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Domains API reference" href="/docs/api/domains" description="Every domain endpoint — add, preview, verify, primary, and SSL — with request shapes." />

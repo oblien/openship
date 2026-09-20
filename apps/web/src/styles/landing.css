@@ -1814,10 +1814,29 @@
    ═══════════════════════════════════════════════════════════════ */
 .pp-root {
   background: var(--th-bg-page);
+  /* One rhythm for the whole page instead of a different clamp per section. The
+     page previously used three similar-but-different vertical scales, which reads
+     as six sections that all look alike — deliberate contrast between a MAJOR
+     break and a MINOR one is what gives a long page structure. */
+  --pp-gap-major: clamp(72px, 9vw, 128px);
+  --pp-gap-minor: clamp(40px, 5vw, 64px);
+  /* Digits in prices and allowances line up in a column. The whole model is
+     numbers now, so proportional figures wobbling against each other is the most
+     visible lapse available on this page. */
+  font-variant-numeric: tabular-nums;
 }
+/**
+ * 1280px + 1.5rem, which is Tailwind's `max-w-7xl px-6` — the EXACT box the navbar
+ * (`navbar.tsx`) and the footer (`footer.tsx`) already use.
+ *
+ * It was 1180px, so every row on this page sat 50px inside the logo above it and
+ * the footer below it. Match the site's existing landmark instead of picking a
+ * third width: the alignment is only correct while these agree, and "wider" is a
+ * side effect of agreeing, not the goal.
+ */
 .pp-container {
   margin: 0 auto;
-  max-width: 1180px;
+  max-width: 1280px;
   padding: 0 1.5rem;
 }
 .pp-eyebrow {
@@ -1842,15 +1861,46 @@
   overflow: hidden;
   border-bottom: 1px solid var(--th-bd-subtle);
 }
-/* Single soft violet wash - quiet, never loud */
+/**
+ * Hero ground: a hairline grid that fades out, with one quiet plum wash over it.
+ *
+ * The grid earns its place — this page sells servers and containers, and ruled
+ * infrastructure is the subject's own vocabulary. It replaced a lone blurred
+ * violet radial, which is the single most generic hero treatment on the web and
+ * said nothing about what Openship is.
+ *
+ * `mask-image` fades the rules out rather than a second stacked gradient: the
+ * lines have to vanish before the headline, or they read as noise behind text.
+ */
 .pp-hero-glow {
   position: absolute;
-  inset: -10% -5% 30% -5%;
-  background:
-    radial-gradient(45% 55% at 50% 0%, rgba(139,92,246,.08) 0%, transparent 65%);
+  inset: 0;
   pointer-events: none;
   z-index: 0;
-  filter: blur(10px);
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,.022) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: center top;
+  /* Two masks multiplied: the radial keeps it centred, the linear holds the rules
+     OFF the top 96px so they never sit behind the navbar. First pass used one
+     radial at full strength from y=0 and the grid read as an unfinished wireframe
+     across the header, strongest exactly where the page has nothing to say. */
+  -webkit-mask-image:
+    radial-gradient(90% 62% at 50% 12%, #000 0%, transparent 74%),
+    linear-gradient(to bottom, transparent 0, #000 96px);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    radial-gradient(90% 62% at 50% 12%, #000 0%, transparent 74%),
+    linear-gradient(to bottom, transparent 0, #000 96px);
+  mask-composite: intersect;
+}
+/* The wash sits ABOVE the rules so it tints them, not beside them. */
+.pp-hero-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(52% 58% at 50% -8%, var(--th-clr-plum-wash) 0%, transparent 68%);
 }
 .pp-hero-inner {
   position: relative;
@@ -1862,6 +1912,7 @@
   letter-spacing: -0.045em;
   line-height: 1;
   color: var(--th-text-heading);
+  text-wrap: balance;
 }
 .pp-headline-soft { color: var(--th-on-40); }
 .pp-sub {
@@ -1870,6 +1921,8 @@
   font-size: 16.5px;
   line-height: 1.65;
   color: var(--th-text-body);
+  /* Stops the last line landing as one orphaned word under a centered block. */
+  text-wrap: pretty;
 }
 
 /* Toggle */
@@ -1938,46 +1991,239 @@
   margin-right: 4px;
 }
 
-/* ── Plan cards ──────────────────────────────────────────────── */
-.pp-plans-section {
-  padding: clamp(40px, 6vw, 80px) 0;
+/* ── Self-hosted band - the promise, stated before any price ─── */
+/* Bottom padding is no longer 0: the cloud section below now opens with its own
+   hairline and tinted ground, and a band butted straight against that rule reads
+   as one run-on block instead of two statements. */
+.pp-selfhost-section {
+  padding: var(--pp-gap-major) 0;
 }
+.pp-selfhost {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid var(--th-clr-plum-bdr);
+  border-radius: 24px;
+  background: var(--th-clr-plum-wash);
+  /* A plum-tinted shadow rather than a neutral one — a grey drop shadow under a
+     tinted surface is the detail that makes a coloured panel look pasted on. */
+  box-shadow: 0 1px 2px rgba(108,92,231,.04), 0 18px 44px rgba(108,92,231,.05);
+}
+@media (min-width: 900px) {
+  .pp-selfhost {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+  }
+}
+.pp-selfhost-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--th-clr-plum);
+}
+.pp-selfhost-name {
+  font-size: clamp(1.75rem, 3.6vw, 2.375rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  color: var(--th-text-heading);
+}
+.pp-selfhost-lead {
+  margin-top: 12px;
+  max-width: 34rem;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--th-text-body);
+}
+.pp-selfhost-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 24px;
+}
+.pp-selfhost-amt {
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--th-text-heading);
+}
+.pp-selfhost-note {
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+.pp-selfhost-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pp-selfhost-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--th-text-strong);
+}
+
+/* Filled CTA on a LIGHT surface. `.pp-btn--primary` is white-on-dark and goes
+   invisible here, so this one uses the theme's own primary button tokens. */
+.pp-solid-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 26px;
+  padding: 13px 26px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+  border: 1px solid transparent;
+  transition: background .15s ease, transform .12s ease;
+}
+.pp-solid-cta:hover {
+  background: var(--th-btn-bg-hover);
+  transform: translateY(-1px);
+}
+
+/* ── Plan cards ──────────────────────────────────────────────── */
+/**
+ * The cloud section sits on a faintly tinted ground with hairlines top and bottom.
+ *
+ * This is the fix for the flattest thing about the page: the cards used
+ * `--th-bg-page`, the exact colour behind them, so four tiers were outlined in
+ * hairline on white with nothing between "plain card" and the inverted popular
+ * one. Tinting the SECTION instead of darkening the cards lets them stay white and
+ * simply lift, which also makes this the page's main event without shouting.
+ */
+.pp-plans-section {
+  padding: var(--pp-gap-major) 0;
+  background: var(--th-bg-subtle);
+  border-top: 1px solid var(--th-bd-subtle);
+  border-bottom: 1px solid var(--th-bd-subtle);
+}
+.pp-plans-head {
+  text-align: center;
+  margin: 0 auto var(--pp-gap-minor);
+  max-width: 40rem;
+}
+.pp-plans-title {
+  /* Larger than the FAQ's heading on purpose. Both were clamped to nearly the same
+     size, so the page's main event and its footer utility carried equal weight. */
+  font-size: clamp(2.125rem, 5vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: var(--th-text-heading);
+  text-wrap: balance;
+}
+.pp-plans-note {
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--th-text-body);
+  text-wrap: pretty;
+}
+/* ── Campaign notice ─────────────────────────────────────────────
+   Only in the DOM while the catalog has a live campaign, so it costs nothing
+   the rest of the year. Terra reads as an offer without competing with the
+   plum brand accent used by the self-hosted band. */
+.pp-campaign {
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 999px;
+  background: var(--th-clr-terra-bg);
+  border: 1px solid var(--th-clr-terra-bdr);
+}
+.pp-campaign-badge {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--th-clr-terra);
+}
+.pp-campaign-ends {
+  font-size: 12.5px;
+  color: var(--th-text-body);
+  padding-right: 6px;
+}
+
+/* Mobile-first: one column, then 2-up, then the full ladder side by side.
+   `minmax(0, 1fr)` (not `1fr`) so a long feature line can't push a column past
+   its track and give the page a horizontal scrollbar. */
 .pp-plans {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
-@media (max-width: 900px) { .pp-plans { grid-template-columns: 1fr; } }
+@media (min-width: 620px) {
+  .pp-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .pp-plans { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 .pp-plan {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 36px 32px;
-  background: var(--th-bg-page);
-  border: 1px solid var(--th-bd-default);
+  /* Top padding clears the absolutely-placed "most popular" ribbon, and is
+     uniform so a non-popular card's name still sits on the same baseline. */
+  padding: 44px 26px 30px;
+  /* White ON the section's tinted ground — see .pp-plans-section. */
+  background: var(--th-card-bg);
+  border: 1px solid var(--th-bd-subtle);
   border-radius: 22px;
-  transition: border-color .2s ease, transform .2s ease;
+  box-shadow: var(--th-card-shadow);
+  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
 }
 .pp-plan:hover {
-  border-color: var(--th-bd-strong);
+  border-color: var(--th-bd-default);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0,0,0,.03), 0 12px 28px rgba(0,0,0,.06);
 }
 .pp-plan--highlight {
   background: #0c0d12;
   color: rgba(255,255,255,.85);
   border-color: rgba(255,255,255,.08);
+  /* The plum ring is what makes this card read as CHOSEN rather than merely
+     inverted — the dark fill alone is a colour change, not an endorsement. */
   box-shadow:
+    0 0 0 1px var(--th-clr-plum-bg),
     0 4px 12px rgba(0,0,0,.05),
-    0 28px 60px rgba(0,0,0,.18);
+    0 28px 60px rgba(12,13,18,.22);
 }
-.pp-plan--highlight:hover { border-color: rgba(255,255,255,.18); }
-@media (min-width: 900px) {
+.pp-plan--highlight:hover {
+  border-color: rgba(255,255,255,.18);
+  box-shadow:
+    0 0 0 1px rgba(108,92,231,.28),
+    0 4px 12px rgba(0,0,0,.05),
+    0 32px 68px rgba(12,13,18,.26);
+}
+/* Only lift once the whole ladder is on one row - in the 2-up stack a lifted
+   card just breaks the baseline. */
+@media (min-width: 1000px) {
   .pp-plan--highlight { transform: translateY(-12px); }
+  /* MUST restate the lift for hover. `.pp-plan:hover` is (0,2,0) and beats
+     `.pp-plan--highlight` (0,1,0) whatever the source order, so without this the
+     popular card DROPS from -12px to the generic -2px the moment you point at it. */
+  .pp-plan--highlight:hover { transform: translateY(-14px); }
 }
 .pp-plan-ribbon {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -1988,41 +2234,8 @@
   color: rgba(255,255,255,.95);
   border: 1px solid rgba(255,255,255,.16);
 }
-/* Ribbon on a light (non-highlight) card — the white-on-white default is
-   invisible there, so use theme-aware outlined text. */
-.pp-plan-ribbon--muted {
-  background: transparent;
-  color: var(--th-text-muted);
-  border-color: var(--th-bd-default);
-}
-/* An unavailable plan reads as paused, not sold — dim it and soften its CTA. */
-.pp-plan--muted { opacity: 0.86; }
-.pp-plan--muted .pp-plan-amt { color: var(--th-text-muted); }
-.pp-plan-cta--muted { opacity: 0.7; }
-.pp-plan-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-.pp-plan-n {
-  font-size: 30px;
-  font-weight: 500;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  color: var(--th-text-heading);
-}
-.pp-plan--highlight .pp-plan-n { color: rgba(255,255,255,.95); }
-.pp-plan-tag {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--th-text-muted);
-}
-.pp-plan--highlight .pp-plan-tag { color: rgba(255,255,255,.45); }
 .pp-plan-name {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -2052,8 +2265,8 @@
 .pp-plan-amt {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: clamp(2.25rem, 4vw, 2.75rem);
+  gap: 6px;
+  font-size: clamp(2rem, 3vw, 2.375rem);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -2072,6 +2285,44 @@
   color: var(--th-text-muted);
 }
 .pp-plan--highlight .pp-plan-pricenote { color: rgba(255,255,255,.45); }
+
+/* ── Campaign, per card ──────────────────────────────────────────
+   `align-self: start` keeps the pill hugging its text instead of stretching
+   across the flex column. Both rules also carry a light-on-dark variant, since
+   the popular card inverts. */
+.pp-plan-save {
+  align-self: start;
+  margin-bottom: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--th-clr-terra);
+  background: var(--th-clr-terra-bg);
+  border: 1px solid var(--th-clr-terra-bdr);
+}
+.pp-plan--highlight .pp-plan-save {
+  color: var(--th-clr-terra-soft);
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.16);
+}
+.pp-plan-was {
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+/* Strike only the money, not the whole "was $39" phrase — the label is copy, the
+   number is what is being replaced. */
+.pp-plan-was s {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+}
+.pp-plan--highlight .pp-plan-was { color: rgba(255,255,255,.45); }
+.pp-plan-ends {
+  display: block;
+  margin-top: 2px;
+}
 
 .pp-plan-cta {
   display: inline-flex;
@@ -2110,20 +2361,175 @@
 .pp-plan-features li {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
+  gap: 9px;
+  font-size: 13.5px;
   line-height: 1.55;
   color: var(--th-text-strong);
 }
 .pp-plan--highlight .pp-plan-features li { color: rgba(255,255,255,.78); }
+/**
+ * Ticks are plum, not near-black.
+ *
+ * At `--th-text-heading` every tick carried the same weight as the sentence beside
+ * it, so a card read as sixteen dark marks instead of a list you scan. The accent
+ * both lightens the column and is the one place the brand colour appears at full
+ * strength, which is enough — this page spends its boldness on the popular card.
+ */
 .pp-plan-check {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex-shrink: 0;
   margin-top: 2px;
+  /* Soft plum, not full-strength: there are up to nine ticks per card and four
+     cards, so at `--th-clr-plum` the page carried thirty-odd saturated marks and
+     the boldness that belongs to the popular card was spent on punctuation. */
+  color: var(--th-clr-plum-soft);
+}
+.pp-plan--highlight .pp-plan-check { color: var(--th-clr-plum-soft); }
+
+/* "Everything in X, plus:" — the list's lead-in. Quiet, uppercase-adjacent weight,
+   and no tick, because it is not one of the things you get. */
+.pp-plan-inherits {
+  margin-top: 24px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--th-text-muted);
+}
+.pp-plan--highlight .pp-plan-inherits { color: rgba(255,255,255,.5); }
+/* When the lead-in is present it owns the top margin, so the list tightens up
+   under it instead of opening a second full gap. */
+.pp-plan-inherits + .pp-plan-features { margin-top: 12px; }
+
+/**
+ * "In every plan" — a footnote to the grid, NOT another tier.
+ *
+ * It was a rounded, bordered, tinted panel, i.e. pixel-for-pixel the Enterprise
+ * strip below it, so a shared footnote and a purchasable tier read as siblings.
+ * Now it is an unboxed band on a hairline with its label set to the side, which
+ * gives the section a third register instead of a second copy of the second one.
+ *
+ * The items FLOW rather than sitting in a 3-column grid: five items in three
+ * columns left a hole under the last one, and the hole read as a missing feature.
+ */
+.pp-standard {
+  margin-top: 26px;
+  padding-top: 26px;
+  border-top: 1px solid var(--th-bd-default);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .pp-standard {
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 40px;
+    align-items: start;
+  }
+}
+.pp-standard-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+  line-height: 1.5;
+}
+.pp-standard-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 30px;
+}
+.pp-standard-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--th-text-body);
+}
+
+/**
+ * Enterprise — a real tier, given the weight of one.
+ *
+ * It shares the tier cards' white surface and shadow rather than the old flat
+ * tinted panel, so the eye files it with the four above it instead of with the
+ * footnote band. `align-items: start` replaces `center`: with three columns of
+ * unequal height, centring left the name floating in the middle of its column and
+ * the CTA adrift in the middle of its own.
+ */
+.pp-ent {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  padding: clamp(28px, 4vw, 40px) clamp(24px, 4vw, 40px);
+  background: var(--th-card-bg);
+  border: 1px solid var(--th-bd-subtle);
+  border-radius: 22px;
+  box-shadow: var(--th-card-shadow);
+}
+@media (min-width: 900px) {
+  .pp-ent {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.25fr) auto;
+    gap: 48px;
+    align-items: start;
+  }
+}
+.pp-ent-name {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
   color: var(--th-text-heading);
 }
-.pp-plan--highlight .pp-plan-check { color: rgba(255,255,255,.85); }
+.pp-ent-lead {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+  text-wrap: pretty;
+}
+/**
+ * "Custom" reads as a price, because it IS this tier's price.
+ *
+ * At 16px it was quieter than the body copy beside it, so the one tier without a
+ * number looked like it had lost its number. It is set BELOW the name, not above:
+ * at price scale on top it outweighed the word "Enterprise" and the tier read as
+ * though it were called "Custom".
+ */
+.pp-ent-price {
+  margin-top: 16px;
+  font-size: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--th-text-heading);
+}
+/* Matches .pp-plan-inherits, so the strip's list opens the same way a card's does. */
+.pp-ent-inherits {
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+}
+.pp-ent-features {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 28px;
+}
+@media (min-width: 620px) {
+  .pp-ent-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.pp-ent-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--th-text-strong);
+}
+.pp-ent .pp-solid-cta { margin-top: 0; }
 
 /* ── Matrix ──────────────────────────────────────────────────── */
 .pp-matrix-section {
@@ -2242,19 +2648,23 @@
 
 /* ── FAQ ─────────────────────────────────────────────────────── */
 .pp-faq-section {
-  padding: clamp(80px, 10vw, 140px) 0;
+  padding: var(--pp-gap-major) 0;
 }
 .pp-faq-head {
   text-align: center;
-  margin: 0 auto clamp(48px, 7vw, 72px);
+  margin: 0 auto var(--pp-gap-minor);
   max-width: 40rem;
 }
 .pp-faq-title {
-  font-size: clamp(2rem, 5vw, 3rem);
+  /* Deliberately SMALLER than .pp-plans-title. The two were within a hair of each
+     other, which gave the page two competing main events; the FAQ is support
+     material and should read as support material. */
+  font-size: clamp(1.75rem, 3.6vw, 2.375rem);
   font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
   color: var(--th-text-heading);
+  text-wrap: balance;
 }
 .pp-faq-list {
   margin: 0 auto;
@@ -2278,6 +2688,14 @@
   list-style: none;
 }
 .pp-faq-q::-webkit-details-marker { display: none; }
+/* The whole row is the hit target, so the whole row has to acknowledge the
+   pointer — only the chevron reacted before, on a 760px-wide click area. */
+.pp-faq-q:hover .pp-faq-icon { background: var(--th-sf-05); color: var(--th-text-heading); }
+.pp-faq-q:focus-visible {
+  outline: 2px solid var(--th-clr-plum);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
 .pp-faq-icon {
   display: inline-flex;
   align-items: center;
@@ -2303,7 +2721,9 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
 
 /* ── End CTA ─────────────────────────────────────────────────── */
 .pp-end {
-  padding: clamp(60px, 8vw, 120px) 0 clamp(80px, 10vw, 140px);
+  /* Extra bottom room before the footer — the one place the rhythm is deliberately
+     asymmetric, because a dark card butted against the footer loses its edge. */
+  padding: 0 0 var(--pp-gap-major);
 }
 .pp-end-card {
   position: relative;

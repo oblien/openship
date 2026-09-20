@@ -29,13 +29,20 @@ import { ResourcePicker } from "@/components/permissions/ResourcePicker";
 import { useModal } from "@/context/ModalContext";
 import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import {
+  INVITATION_DELIVERY_HEADER,
+  INVITATION_DELIVERY_LINK_ONLY,
+} from "@repo/core";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 type MailSource = "platform" | "cloud";
 
 const orgClient = (authClient as unknown as {
   organization: {
-    inviteMember: (opts: { email: string; role: MemberRole }) => Promise<{ error?: { message?: string } }>;
+    inviteMember: (
+      opts: { email: string; role: MemberRole },
+      fetchOptions?: { headers?: Record<string, string> },
+    ) => Promise<{ error?: { message?: string } }>;
   };
 }).organization;
 
@@ -87,9 +94,10 @@ export function InviteMemberInline({
     };
   }, [selfHosted]);
 
-  // Block send when the chosen transport can't deliver — the invite link would
-  // never reach the person. Only blocks on a KNOWN-bad state (never on unknown).
-  const transportBlocked =
+  // A known-unavailable transport switches to link-only mode. The invitation is
+  // still created through Better Auth's authorized path, then the owner copies
+  // it from Pending invitations; no duplicate invitation write exists.
+  const linkOnly =
     selfHosted &&
     ((mailSource === "platform" && emailDeliverable === false) ||
       (mailSource === "cloud" && !cloudConnected));
@@ -134,15 +142,33 @@ export function InviteMemberInline({
           });
           if (!ok) return;
         }
-        await permissionsApi.inviteWithGrants({ email: email.trim(), role, grants });
+        await permissionsApi.inviteWithGrants(
+          { email: email.trim(), role, grants },
+          { linkOnly },
+        );
       } else {
-        const res = await orgClient.inviteMember({ email: email.trim(), role });
+        const res = await orgClient.inviteMember(
+          { email: email.trim(), role },
+          linkOnly
+            ? {
+                headers: {
+                  [INVITATION_DELIVERY_HEADER]: INVITATION_DELIVERY_LINK_ONLY,
+                },
+              }
+            : undefined,
+        );
         if (res.error) {
           showToast(res.error.message ?? t.settings.inviteMember.toast.failedSend, "error", t.settings.common.toast.invitation);
           return;
         }
       }
-      showToast(interpolate(t.settings.inviteMember.toast.invitationSent, { email }), "success", t.settings.common.toast.invitation);
+      showToast(
+        linkOnly
+          ? t.settings.inviteMember.toast.invitationLinkCreated
+          : interpolate(t.settings.inviteMember.toast.invitationSent, { email }),
+        "success",
+        t.settings.common.toast.invitation,
+      );
       onInvited();
       onClose();
     } catch (err) {
@@ -169,7 +195,7 @@ export function InviteMemberInline({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && email.trim() && !transportBlocked) void handleInvite();
+              if (e.key === "Enter" && email.trim()) void handleInvite();
             }}
             placeholder={t.settings.inviteMember.emailPlaceholder}
             disabled={inviting}
@@ -319,11 +345,13 @@ export function InviteMemberInline({
         <button
           type="button"
           onClick={handleInvite}
-          disabled={inviting || !email.trim() || transportBlocked}
+          disabled={inviting || !email.trim()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {inviting && <Loader2 className="size-4 animate-spin" />}
-          {t.settings.inviteMember.sendInvite}
+          {linkOnly
+            ? t.settings.inviteMember.createInviteLink
+            : t.settings.inviteMember.sendInvite}
         </button>
       </div>
     </div>

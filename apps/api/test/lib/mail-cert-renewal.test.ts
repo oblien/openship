@@ -59,7 +59,10 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // domain-ssl resolves a platform for the SSL provider only, then releases the
+  // docker transport it eagerly bound — a no-op stub here.
+  disposePlatform: () => {},
   resolveDeploymentPlatform: h.resolveDeploymentPlatform,
 }));
 
@@ -67,11 +70,11 @@ vi.mock("../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "selfhosted", runtime: {} }),
 }));
 
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: <T,>(fn: () => Promise<T>) => fn() }),
 }));
 
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "selfhosted" },
 }));
 
@@ -79,7 +82,7 @@ import {
   MAIL_DOMAIN_OWNER,
   manageDomainSsl,
   recordMailCertDomain,
-} from "../../src/lib/domain-ssl";
+} from "@repo/platform/engine/lib/domain-ssl";
 
 const HOST = "mail.example.com";
 const BASE = "example.com";
@@ -233,3 +236,12 @@ describe("renewing a mail-owned row", () => {
     );
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));

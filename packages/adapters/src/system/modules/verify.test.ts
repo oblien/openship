@@ -6,6 +6,7 @@ import {
   sha256Hex,
   expectedAssetHashes,
   referencedAssets,
+  catalogShapeError,
 } from "./verify";
 import type { ModuleCatalog } from "./types";
 
@@ -96,5 +97,64 @@ describe("asset hash verification", () => {
     const res = verifyAssets(catalog, missing);
     expect(res.ok).toBe(false);
     expect(res.failures["a/e1.sh"]).toBe("missing asset");
+  });
+});
+
+describe("catalog shape gate", () => {
+  it("clears a well-formed catalog", () => {
+    const assets = { "a/f1": asset("lua bytes"), "a/e1.sh": asset("#!/bin/sh\n") };
+    expect(catalogShapeError(makeCatalog(assets))).toBeNull();
+  });
+
+  it("names the offending field for a non-array versions", () => {
+    const bad = { module: "openresty", schema: 1, serial: 1, latest: "1.0.0", versions: null };
+    expect(catalogShapeError(bad)).toBe("catalog versions must be an array (got null)");
+  });
+
+  it("names the offending step for a non-object step", () => {
+    const bad = {
+      module: "openresty",
+      schema: 1,
+      serial: 1,
+      latest: "1.0.0",
+      versions: [{ version: "1.0.0", apply: "auto", steps: ["rm -rf /"] }],
+    };
+    expect(catalogShapeError(bad)).toBe(
+      'version "1.0.0": step is not an object (got "rm -rf /")',
+    );
+  });
+
+  it("refuses a schema from a newer engine before any walk", () => {
+    const bad = { module: "openresty", schema: 2, serial: 1, latest: "1.0.0", versions: null };
+    expect(catalogShapeError(bad)).toBe("catalog schema must be 1 (got 2)");
+  });
+
+  // Pre-guard these threw a raw TypeError from inside the asset walk (`versions is
+  // not iterable` / `sha256.toLowerCase of undefined`) instead of refusing.
+  it("verifyAssets refuses a malformed manifest instead of throwing", () => {
+    const bad = {
+      module: "openresty",
+      schema: 1,
+      serial: 1,
+      latest: "1.0.0",
+      versions: null,
+    } as unknown as ModuleCatalog;
+    const res = verifyAssets(bad, new Map());
+    expect(res.ok).toBe(false);
+    expect(res.shapeError).toBe("catalog versions must be an array (got null)");
+    expect(res.failures).toEqual({});
+  });
+
+  it("verifyAssets refuses a step whose sha256 is missing", () => {
+    const bad = {
+      module: "openresty",
+      schema: 1,
+      serial: 1,
+      latest: "1.0.0",
+      versions: [{ version: "1.0.0", apply: "auto", steps: [{ kind: "exec", id: "s1", asset: "a/s1.sh" }] }],
+    } as unknown as ModuleCatalog;
+    const res = verifyAssets(bad, new Map([["a/s1.sh", asset("#!/bin/sh\n")]]));
+    expect(res.ok).toBe(false);
+    expect(res.shapeError).toMatch(/step "s1": sha256 must be 64 hex chars \(got undefined\)/);
   });
 });

@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
+  disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string) => ({
     domain,
     expiresAt: "2030-01-01T00:00:00.000Z",
@@ -52,7 +53,7 @@ vi.mock("@repo/db", () => ({
       })),
     },
     deployment: {
-      findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1", meta: {} })),
+      findById: vi.fn(async (id: string) => ({ id, projectId: "proj_1", organizationId: "org_1", meta: {} })),
     },
     server: { findLocal: vi.fn(async () => null) },
   },
@@ -60,7 +61,12 @@ vi.mock("@repo/db", () => ({
 
 // Resolve the SSL provider through the deployment platform (the primary path) so
 // the spies below ARE the provider manageDomainSsl reaches.
-vi.mock("../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // domain-ssl resolves a platform for the SSL provider only, then releases the
+  // docker transport it eagerly bound. A spy, not a no-op stub: dropping that
+  // release leaks a loopback listener per issuance and per renewal, and nothing
+  // else in the suite would notice.
+  disposePlatform: h.disposePlatform,
   resolveDeploymentPlatform: vi.fn(async () => ({
     platform: {
       ssl: {
@@ -77,11 +83,11 @@ vi.mock("../../src/lib/controller-helpers", () => ({
 }));
 
 // The lock is orthogonal here — run the body inline.
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: <T,>(fn: () => Promise<T>) => fn() }),
 }));
 
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "selfhosted" },
 }));
 
@@ -90,7 +96,7 @@ import {
   resolveSslPatch,
   tlsIssuedElsewhere,
   describeTlsIssuedElsewhere,
-} from "../../src/lib/domain-ssl";
+} from "@repo/platform/engine/lib/domain-ssl";
 
 /** Register a domain row the mocked repo will serve. */
 function domain(hostname: string, extra: Record<string, unknown> = {}) {
@@ -112,6 +118,7 @@ function domain(hostname: string, extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   h.domains.clear();
   h.updateSsl.mockClear();
+  h.disposePlatform.mockClear();
   h.provisionCert.mockClear();
   h.renewCert.mockClear();
   h.verifyCert.mockClear();
@@ -224,6 +231,30 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(res.reason).toBe("not_local");
   });
+
+  /**
+   * Resolving the deploy target's platform to get `.ssl` eagerly binds a
+   * Docker-over-SSH bridge for a remote box, and this path runs per issuance AND per
+   * renewal — so the bridge has to go back before we use the provider, not after.
+   * That ordering is the whole point of `resolveSslOnly`, and it only holds because
+   * `createInfraProvider` builds ssl from the pooled executor and is never handed the
+   * runtime. If someone changes that, certbot starts running through a transport we
+   * already closed; if someone drops the release, the box leaks a listener per cert.
+   */
+  it("releases the resolved platform BEFORE issuing through its provider", async () => {
+    domain("app.example.com");
+
+    const order: string[] = [];
+    h.disposePlatform.mockImplementation(() => void order.push("dispose"));
+    h.provisionCert.mockImplementationOnce(async (d: string) => {
+      order.push("provision");
+      return { domain: d, expiresAt: "2030-01-01T00:00:00.000Z", issuer: "R3", verified: true, reason: "issued" as const };
+    });
+
+    await manageDomainSsl("app.example.com", { action: "provision" });
+
+    expect(order).toEqual(["dispose", "provision"]);
+  });
 });
 
 describe("resolveSslPatch — not_local can never clobber a status", () => {
@@ -247,3 +278,12 @@ describe("resolveSslPatch — not_local can never clobber a status", () => {
     ).toMatchObject({ sslStatus: "provisioning" });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));

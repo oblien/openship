@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono";
 import { db, schema, eq } from "@repo/db";
-import { env } from "../../config/env";
+import { env } from "@repo/platform/engine/config/env";
 
 /**
  * SaaS cloud-session auth.

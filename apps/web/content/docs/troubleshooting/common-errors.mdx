@@ -31,7 +31,7 @@ rate-limit response have none, so match those by status.
 | **`FORBIDDEN`** (403) — "Forbidden" | You're authenticated, but your role or grants in this organization don't permit the action. | Ask an org owner/admin for the right role, or check [Permissions & roles](/docs/security/permissions) for what each action needs. |
 | **`NOT_FOUND`** (404) — "`<resource>` not found" | The thing you asked for doesn't exist — or it exists but isn't in your organization (Openship returns 404 rather than leaking that it's someone else's). | Double-check the id. List the resource (e.g. `GET /api/projects`) to get valid ids for your org. |
 | **`CONFLICT`** (409) — e.g. "Project '…' already exists", "Domain '…' is already in use" | Something with that name is already taken in your organization — a project name or slug, a domain/hostname, or an environment name. | Pick a different name, slug, or hostname, or reuse the resource that already exists instead of creating a duplicate. |
-| **Rate limited** (429) — "Too many requests" *(no code)* | You exhausted a rate-limit bucket. Openship limits the whole `/api` surface per rolling minute. | Honor the `Retry-After` header (seconds) and back off — don't hammer-retry. See [rate limits](/docs/api#rate-limits) for the per-policy budgets. |
+| **Rate limited** (429) — "Too many requests" *(no code)* | You exhausted a rate-limit bucket. Openship limits the whole `/api` surface per rolling minute. | Honor the `Retry-After` header (seconds) and back off — don't hammer-retry. See [rate limits](/docs/api/http#rate-limits) for the per-policy budgets. |
 | **`AUTH_UNAVAILABLE`** (503) — "Authentication service unavailable" | Checking your session threw — the auth backend's database is unreachable, session decryption failed, or similar. Importantly, this is *not* treated as "no session" — Openship fails closed rather than letting you through. | Transient — retry after a moment. If it persists, check your instance's database and API logs. |
 | **Internal server error** (500) — "Internal server error" *(no code)* | An unhandled error on the server. There's no machine code because it wasn't an anticipated failure. | Check your API server logs for the `[UNHANDLED ERROR]` entry — that has the real cause. If self-hosting, that log line is where to start. |
 
@@ -102,7 +102,7 @@ their own policies.
 **How to fix:** Read the `Retry-After` response header (seconds until the window resets) and wait that long
 before retrying. Every response also carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
 `X-RateLimit-Reset` so you can pace yourself before you hit the wall. The per-policy limits are listed in the
-[API overview](/docs/api#rate-limits).
+[API overview](/docs/api/http#rate-limits).
 </Callout>
 
 <Callout type="warn" title="Self-hosting behind a proxy?">

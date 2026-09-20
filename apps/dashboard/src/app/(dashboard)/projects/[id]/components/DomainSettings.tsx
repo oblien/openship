@@ -34,6 +34,7 @@ import { useCloud } from "@/context/CloudContext";
 import { serviceDisplayHost } from "@/utils/route-display";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
+import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { useEdgeModal, useVerifyModal } from "@/hooks/useSystemPrepareModal";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
@@ -49,6 +50,7 @@ import {
   resolvePublicEndpointHostname,
   validatedPublicEndpointPayload,
 } from "@/lib/public-endpoint-payload";
+import { buildOptimisticDomainRow, findLoadedDomainRow } from "./optimistic-domain-row";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -60,6 +62,19 @@ interface DnsRecord {
 }
 
 type DomainTone = "success" | "warning" | "danger" | "neutral";
+
+/**
+ * Which static-404 a routed path is hitting. Three distinct diagnoses with three
+ * distinct fixes, so they cannot share one message:
+ *   missing    — nothing at the served path (wrong Output Directory, empty build)
+ *   noIndex    — the directory is there but holds no index file
+ *   notServed  — the edge answered 404/5xx for a real request to this route
+ */
+type OutputHint = {
+  path: string;
+  kind: "missing" | "noIndex" | "notServed";
+  status?: number;
+};
 
 interface DomainSummaryItem {
   /** Unique key for React iteration — endpoint id OR hostname when no endpoint. */
@@ -334,9 +349,13 @@ export const DomainSettings = () => {
   const [newDomainPath, setNewDomainPath] = useState("/");
   const [showCustomDomainSection, setShowCustomDomainSection] = useState(false);
   const [includeWww, setIncludeWww] = useState(false);
+  const [sslChallenge, setSslChallenge] = useState<"http-01" | "dns-01">("http-01");
   // TLS + ingress handled upstream (Cloudflare Tunnel / LB): verify via TXT
   // only, skip certbot, serve plain HTTP. The domain need not resolve to us.
   const [externalIngress, setExternalIngress] = useState(false);
+  const wildcardDomain = newDomain.trim().toLowerCase().startsWith("*.");
+  const effectiveSslChallenge = wildcardDomain ? "dns-01" : sslChallenge;
+  const effectiveIncludeWww = wildcardDomain ? false : includeWww;
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Hostname of the row currently running its Renew action. Null when no
   // renew is in flight. Per-row so multi-domain projects can renew one
@@ -805,7 +824,12 @@ export const DomainSettings = () => {
       // up front. persist (below) then attaches the port and lists it; the
       // backend keeps it pending until /verify.
       if (isCustom) {
-        const result = await projectsApi.connectDomain(id, { domain: host, includeWww, externalIngress });
+        const result = await projectsApi.connectDomain(id, {
+          domain: host,
+          includeWww: effectiveIncludeWww,
+          externalIngress,
+          sslChallenge: effectiveSslChallenge,
+        });
         if (!result.success) {
           showToast(
             result.error || t.projectSettings.domains.toast.addDomainFailed,
@@ -1040,11 +1064,28 @@ export const DomainSettings = () => {
     setPendingDomainAction(null);
   }, [pendingDomainAction, domainsData.isLoading, projectRuntimePort, setPendingDomainAction]);
 
-  // Match a "no output found" check to a static card by routed path.
-  const outputHintFor = (targetPath?: string): { path: string } | null => {
+  /**
+   * Match a static-output finding to a card by routed path, and say WHICH failure
+   * it is.
+   *
+   * This used to test only `!c.found`, so the two most common static 404s rendered
+   * nothing at all: a doc-root that exists with no index file (computed as
+   * `hasIndex`, warned about in the build log, then dropped here), and a path the
+   * edge answers with a 404/5xx.
+   *
+   * Precedence mirrors the server's `outputFindingIsBroken`: an edge that PROVES it
+   * serves overrides a missing index.html, because `cleanUrls` resolves `/about`
+   * from `about.html` with no index anywhere. An absent `served` (every record
+   * written before the HTTP half existed) falls back to the filesystem rule.
+   */
+  const outputHintFor = (targetPath?: string): OutputHint | null => {
     if (!targetPath) return null;
-    const match = outputChecks.find((c) => c.checked && !c.found && c.path === targetPath);
-    return match ? { path: match.path } : null;
+    const c = outputChecks.find((x) => x.checked && x.path === targetPath);
+    if (!c) return null;
+    if (!c.found) return { path: c.path, kind: "missing" };
+    if (c.served === false) return { path: c.path, kind: "notServed", status: c.status };
+    if (!c.hasIndex && c.served !== true) return { path: c.path, kind: "noIndex" };
+    return null;
   };
 
   const handleRenewDomainSsl = async (hostname: string) => {
@@ -1207,33 +1248,21 @@ export const DomainSettings = () => {
         },
       }));
 
+      // Optimistic rows for the cards, built by the shared rule in
+      // optimistic-domain-row.ts — which is where the "never invent a row id"
+      // invariant lives, and why: a fabricated id renders a Verify button that
+      // 404s. The real rows arrive from the refetch triggered just below.
       await updateDomains(payload.map((endpoint, index) => {
-        const hostname = endpoint.domainType === "custom"
-          ? endpoint.customDomain || ""
-          : `${endpoint.domain}.${baseDomain}`;
-        const existing = domainsData.domains.find((domain) => (
-          (typeof domain?.id === "string" && domain.id === endpoints[index]?.id) ||
-          domain?.hostname === hostname
-        ));
-
-        // Custom domains are pending until DNS-verified (matches the backend);
-        // free/managed domains are host-verified immediately. Don't optimistically
-        // flash a new custom domain as "Verified".
-        const isCustom = endpoint.domainType === "custom";
-        return {
-          ...existing,
-          id: existing?.id || endpoints[index]?.id || hostname,
+        // The SHARED resolver, not a second copy — the same answer the redirect
+        // target list and the save itself are built from, so a hostname can't be
+        // resolved one way here and another way there.
+        const hostname = resolvePublicEndpointHostname(endpoint, baseDomain);
+        return buildOptimisticDomainRow({
+          endpoint,
           hostname,
-          domain: hostname,
-          primary: index === 0,
-          isPrimary: index === 0,
-          verified: existing?.verified ?? !isCustom,
-          status: existing?.status ?? (isCustom ? "pending" : "active"),
-          sslStatus: existing?.sslStatus ?? (endpoint.domainType === "free" ? "active" : "none"),
-          targetPort: endpoint.port ?? null,
-          targetPath: endpoint.targetPath ?? null,
-          domainType: endpoint.domainType,
-        };
+          existing: findLoadedDomainRow(domainsData.domains, hostname, endpoints[index]?.id),
+          index,
+        }) as (typeof domainsData.domains)[number];
       }));
 
       // Drop the cached project info so the next mount of Overview /
@@ -1936,10 +1965,35 @@ export const DomainSettings = () => {
                   </div>
                   <button
                     onClick={() => setIncludeWww((value) => !value)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${includeWww ? "bg-primary" : "bg-muted"}`}
+                    disabled={wildcardDomain}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveIncludeWww ? "bg-primary" : "bg-muted"}`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${includeWww ? "translate-x-6" : "translate-x-1"}`}
+                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${effectiveIncludeWww ? "translate-x-6" : "translate-x-1"}`}
+                    />
+                  </button>
+                </div>
+              )}
+
+              {newDomainType === "custom" && !externalIngress && (
+                <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/25 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-foreground">{t.projectSettings.domains.add.dnsChallenge}</p>
+                    <p className="text-[12px] text-muted-foreground">
+                      {wildcardDomain
+                        ? t.projectSettings.domains.add.dnsChallengeWildcardDesc
+                        : t.projectSettings.domains.add.dnsChallengeDesc}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSslChallenge((value) => (value === "dns-01" ? "http-01" : "dns-01"))}
+                    disabled={wildcardDomain}
+                    aria-pressed={effectiveSslChallenge === "dns-01"}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveSslChallenge === "dns-01" ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${effectiveSslChallenge === "dns-01" ? "translate-x-6" : "translate-x-1"}`}
                     />
                   </button>
                 </div>
@@ -2704,8 +2758,8 @@ function DomainOverviewCard({
   autoOpenRecords?: boolean;
   /** Live port-reachability advisory ("nothing responded on port X"). */
   portHint?: { port: number; serviceName?: string } | null;
-  /** Live static-output advisory ("no build output found at this path"). */
-  outputHint?: { path: string } | null;
+  /** Live static-output advisory — which of the three static-404 shapes this is. */
+  outputHint?: OutputHint | null;
 }) {
   const { t } = useI18n();
   const d = t.projectSettings.domains;
@@ -2714,24 +2768,44 @@ function DomainOverviewCard({
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [records, setRecords] = useState<DnsRecord[] | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  /**
+   * The fetch FAILED, as opposed to succeeding with nothing to add.
+   *
+   * `catch { setRecords([]) }` collapsed those two into one, and the empty state
+   * reads "No records to add for this domain." — so a 404/500/offline told the
+   * operator their DNS was already fine while the panel had simply failed to
+   * load. That is the worst possible lie for this particular panel: its whole job
+   * is to say what to go and add.
+   */
+  const [recordsError, setRecordsError] = useState(false);
 
   const openRecords = useCallback(async () => {
     setRecordsOpen(true);
     if (records !== null || !loadRecords) return;
     setRecordsLoading(true);
+    setRecordsError(false);
     try {
       setRecords(await loadRecords());
     } catch {
-      setRecords([]);
+      setRecordsError(true);
     } finally {
       setRecordsLoading(false);
     }
   }, [records, loadRecords]);
 
   // A just-failed verify opens the records so the fix is right there.
+  //
+  // Gated on `!recordsError` because making the failure non-terminal reopened a
+  // loop the old `setRecords([])` had closed by accident: `openRecords` is
+  // memoised on `[records, loadRecords]`, `loadRecords` is a fresh arrow on every
+  // parent render, and this card isn't memoised — so every keystroke in the
+  // Domains editor re-ran this effect, and with `records` still null the guard
+  // inside `openRecords` no longer stopped it. That fired one failing request per
+  // keystroke. A failure now auto-opens exactly once; the explicit Retry below is
+  // the way back.
   useEffect(() => {
-    if (autoOpenRecords) void openRecords();
-  }, [autoOpenRecords, openRecords]);
+    if (autoOpenRecords && !recordsError) void openRecords();
+  }, [autoOpenRecords, recordsError, openRecords]);
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card">
@@ -2851,7 +2925,16 @@ function DomainOverviewCard({
         {outputHint ? (
           <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg/40 px-3 py-2.5 text-[12px] text-warning">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span>{interpolate(d.outputHint.body, { path: outputHint.path })}</span>
+            <span>
+              {outputHint.kind === "notServed"
+                ? interpolate(d.outputHint.notServed, {
+                    path: outputHint.path,
+                    status: String(outputHint.status ?? ""),
+                  })
+                : outputHint.kind === "noIndex"
+                  ? interpolate(d.outputHint.noIndex, { path: outputHint.path })
+                  : interpolate(d.outputHint.body, { path: outputHint.path })}
+            </span>
           </div>
         ) : null}
 
@@ -2884,10 +2967,33 @@ function DomainOverviewCard({
 
             {recordsOpen ? (
               <div className="space-y-2">
+                {domain.domainId ? (
+                  <AutoDnsPanel
+                    plan={() => domainsApi.dnsPlan(domain.domainId!).then((r) => r.data)}
+                    apply={() => domainsApi.dnsApply(domain.domainId!).then((r) => r.data)}
+                    reloadKey={domain.domainId}
+                  />
+                ) : null}
                 <p className="text-[12px] text-muted-foreground">{d.records.hint}</p>
                 {recordsLoading ? (
                   <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" /> {d.records.loading}
+                  </div>
+                ) : recordsError ? (
+                  <div className="flex flex-wrap items-center gap-2 py-2 text-[12px] text-warning">
+                    <span>{d.records.failed}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Clears the error so the guard above lets one more attempt
+                        // through; `records` is already null on the failure path.
+                        setRecordsError(false);
+                        void openRecords();
+                      }}
+                      className="font-medium underline underline-offset-2 hover:no-underline"
+                    >
+                      {d.records.retry}
+                    </button>
                   </div>
                 ) : records && records.length > 0 ? (
                   records.map((record, i) => (

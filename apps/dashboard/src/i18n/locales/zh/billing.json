@@ -3,6 +3,8 @@
     "title": "容量与用量",
     "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
     "routes": "免费路由",
+    "runningServices": "运行中的服务",
+    "projects": "项目",
     "workspaces": "工作区",
     "unlimited": "无限制",
     "used": "已用",
@@ -11,12 +13,12 @@
   },
   "topupsComingSoon": "一次性积分充值即将推出——您将可以在此在每月额度之外添加积分。",
   "header": {
-    "credits": "Credits",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "credits": "积分",
+    "creditsSuffix": "共 {limit}",
+    "overQuota": "超出配额",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "传入和传出总计",
+    "build": "构建时间",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -33,9 +35,10 @@
     "invoices": "账单"
   },
   "portal": {
-    "openButton": "打开 Stripe 门户",
+    "openButton": "打开账单门户",
     "errorMissingUrl": "响应中缺少门户 URL",
-    "errorOpenFailed": "无法打开 Stripe 门户"
+    "errorOpenFailed": "无法打开 Stripe 门户",
+    "supportButton": "联系支持"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "重新连接"
     },
     "notEnabled": {
-      "title": "此组织未启用账单功能",
-      "description": "账单功能已配置，但未对此组织启用。请联系您的管理员启用。"
+      "title": "Cloud 购买功能尚未开放",
+      "description": "Openship 尚未启用订阅和积分购买。请稍后重试。"
+    },
+    "notConfigured": {
+      "title": "Cloud 账单设置尚未完成",
+      "description": "Openship 需要完成账单设置。请联系 Openship 支持团队。"
+    },
+    "forbidden": {
+      "title": "你无权访问账单",
+      "description": "请让组织所有者授予你账单访问权限。"
+    },
+    "signInRequired": {
+      "title": "登录以查看账单",
+      "description": "无法验证你的会话。请重新登录以继续。",
+      "signIn": "登录"
+    },
+    "loadFailed": {
+      "title": "无法加载账单",
+      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 Openship 支持团队。"
     }
   },
   "plansRoute": {
     "loadError": "加载套餐失败",
     "genericError": "出现错误",
     "tryAgain": "重试",
-    "checkoutError": "无法开始结账"
+    "checkoutError": "无法开始结账",
+    "replacementNotice": "更改套餐或计费周期将在付款后按所选全价开始新周期。不会自动按比例折算费用。",
+    "changeViaSupport": "请联系支持以更改当前订阅。",
+    "billingUnavailable": "此账户暂时无法购买。"
   },
   "pricing": {
     "custom": "定制",
@@ -73,44 +96,52 @@
     "currentPlan": "当前套餐",
     "contactSales": "联系销售",
     "freeForever": "永久免费",
-    "upgrade": "升级"
+    "upgrade": "升级",
+    "comingSoon": "即将推出",
+    "billingInterval": "计费周期",
+    "monthly": "按月",
+    "annual": "按年",
+    "billedAnnually": "按年计费"
   },
   "topups": {
     "loadError": "加载充值包失败",
-    "title": "充值额度",
-    "description": "通过 Stripe 收费的一次性额度包。额度永不过期，并会叠加在您的每月额度之上。",
+    "title": "追加 Cloud 用量",
+    "description": "一次性购买构建和应用用量。增加余额，但不提高项目数、构建时间或服务数上限。",
     "tryAgain": "重试",
-    "credits": "额度",
+    "credits": "积分",
     "redirecting": "正在跳转…",
     "buy": "购买",
     "empty": "目前没有可用的充值包。",
     "receiptsTitle": "近期充值",
-    "receiptsDescription": "收据在 Stripe 中管理——打开账单门户即可查看您的账单历史并下载收据。",
+    "receiptsDescription": "查看额外用量购买收据。",
     "opening": "正在打开…",
-    "openPortal": "打开 Stripe 门户",
+    "openPortal": "打开账单门户",
     "checkoutError": "无法开始结账",
-    "portalError": "无法打开账单门户"
+    "portalError": "无法打开账单门户",
+    "extraUsage": "额外用量",
+    "prepaidUsage": "预付用量",
+    "allowanceEquivalent": "相当于一个账单周期内所含用量的比例",
+    "oneTime": "一次性付款"
   },
   "overview": {
-    "creditsLeft": "剩余额度",
+    "creditsLeft": "剩余积分",
     "planLabel": "{name} 套餐",
     "usedThisPeriod": "本周期已用",
     "resets": "重置",
     "resetsInDay": "{n} 天后",
     "resetsInDays": "{n} 天后",
     "none": "—",
-    "upgradeToPro": "升级到 Pro",
     "recentActivity": "近期活动",
     "last7Days": "过去 7 天",
     "viewFullUsage": "查看完整用量",
     "noUsageYet": "暂无用量",
     "usageError": "加载用量失败",
-    "needMoreCredits": "需要更多额度？",
+    "needMoreCredits": "需要更多积分？",
     "oneTimeTopups": "一次性充值，不改变订阅",
     "seeAllPacks": "查看所有充值包",
     "packsError": "加载充值包失败",
     "noPacks": "没有可用的充值包。",
-    "creditsAmount": "{n} 额度",
+    "creditsAmount": "{n} 积分",
     "oneTime": "{price} 一次性",
     "buy": "购买",
     "checkoutError": "无法开始结账"
@@ -121,7 +152,7 @@
       "balance": "余额",
       "balanceSuffix": "共 {limit} 额度",
       "consumed": "本周期消耗",
-      "credits": "额度",
+      "credits": "积分",
       "burnRate": "消耗速率",
       "burnRateSuffix": "额度/天（过去 7 天）",
       "projected": "预计周期末",
@@ -133,23 +164,35 @@
     },
     "chart": {
       "title": "用量随时间变化",
-      "subtitle": "每 {unit} 的堆叠计量单位。"
+      "subtitle": "每{unit}的 Cloud 积分。"
     },
     "breakdown": {
       "title": "资源明细",
-      "subtitle": "按所选范围内的计量资源用量按比例分摊的额度。",
+      "subtitle": "所选日期内的实际资源用量。Cloud 积分总量显示在上方。",
       "resource": "资源",
       "units": "单位",
-      "credits": "额度",
+      "credits": "积分",
       "percentOfTotal": "占总量百分比",
       "loading": "加载中…",
       "empty": "所选范围内无用量。"
     },
     "resources": {
-      "cpu": { "label": "CPU 时间", "units": "vCPU-小时" },
-      "memory": { "label": "内存", "units": "GB-小时" },
-      "disk": { "label": "磁盘 IO", "units": "GB" },
-      "network": { "label": "网络", "units": "GB" }
+      "cpu": {
+        "label": "CPU 时间",
+        "units": "vCPU-小时"
+      },
+      "memory": {
+        "label": "内存",
+        "units": "GB-小时"
+      },
+      "disk": {
+        "label": "磁盘活动",
+        "units": "GB"
+      },
+      "network": {
+        "label": "数据传输",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "工作区",
@@ -186,15 +229,177 @@
       "incomplete": "未完成",
       "incomplete_expired": "已过期",
       "unpaid": "未付款",
-      "paused": "已暂停"
-    }
+      "paused": "已暂停",
+      "credit_exhausted": "Cloud 已暂停"
+    },
+    "includedTitle": "包含内容",
+    "perYear": "${price}/年"
   },
   "paymentPanel": {
     "title": "付款方式",
-    "description": "银行卡、银行账户和账单详情在 Stripe 客户门户中管理。打开门户即可添加、移除或更新您的付款方式。"
+    "description": "管理付款方式和账单信息。"
   },
   "invoicesPanel": {
     "title": "账单",
-    "description": "账单和收据存放在 Stripe 客户门户中。打开门户即可查看您的账单历史并下载 PDF 账单。"
+    "description": "查看或申请账单历史和发票。"
+  },
+  "subscription": {
+    "title": "订阅",
+    "renewsOn": "于 {date} 续订",
+    "endsOn": "已停止续订。你的订阅将于 {date} 结束。",
+    "endsAtPeriodEnd": "已停止续订。你的订阅将在已付费周期结束时终止。",
+    "renewalEnabled": "自动续订已启用。",
+    "ended": "订阅已结束。选择套餐以重新订阅。",
+    "billedMonthly": "按月计费",
+    "cancel": "取消订阅",
+    "resume": "恢复续订",
+    "cancelNotice": "已付费周期结束后将不再续订。在此之前，你的订阅仍然有效。",
+    "confirmCancel": "停止续订",
+    "keepPlan": "保留订阅",
+    "error": "无法更新订阅，请重试。"
+  },
+  "checkout": {
+    "checking": "正在刷新你的 Cloud 套餐和余额，付款处理可能需要一点时间。",
+    "active": "你的 Cloud 套餐已生效。",
+    "pending": "你的付款可能仍在处理中。刷新此页面以查看套餐和余额。如果已完成的付款未显示，请联系支持。",
+    "support": "联系支持"
+  },
+  "deployGate": {
+    "title": "选择套餐以部署",
+    "description": "创建项目、构建代码和运行应用需要付费 Cloud 套餐。",
+    "preserved": "项目设置会保留在此页面。付款会在新标签页中打开；套餐生效后，请返回此处继续。",
+    "close": "返回项目",
+    "checkPlan": "检查套餐",
+    "loading": "正在加载 Cloud 套餐…",
+    "loadError": "无法加载 Cloud 套餐。请重试。",
+    "ownerRequired": "请联系工作区所有者选择或管理 Cloud 套餐。",
+    "readyTitle": "返回你的项目",
+    "ready": "Cloud 套餐已更新。关闭此窗口后重试。",
+    "pending": "套餐尚未变更。请完成付款后再次检查。",
+    "blockedTitle": "Cloud 套餐需要处理",
+    "creditsTitle": "Cloud 用量额度已耗尽",
+    "creditsDescription": "追加用量或选择更高套餐以继续。追加用量不会提高项目数、构建时间或服务数上限。",
+    "paymentDescription": "更新付款或订阅信息以继续部署。",
+    "pausedDescription": "此工作区的 Cloud 部署已暂停。请联系支持团队恢复访问。",
+    "upgradeTitle": "此项目需要更多容量",
+    "upgradeDescription": "选择容量足够的套餐，或调整项目后重试。",
+    "manageBilling": "管理账单",
+    "topups": "追加用量",
+    "checkoutOpened": "付款页面已在单独的标签页中准备就绪。如果未打开，请使用下方链接。",
+    "continueCheckout": "继续付款",
+    "reasons": {
+      "static-only": "当前套餐不支持此类应用。请选择支持该类型的套餐进行部署。",
+      "build-minutes-exhausted": "已达到每月构建时间上限。请选择更高套餐，或等待构建额度重置。",
+      "free-subdomain-limit": "已用完套餐中的 Cloud 子域名。请选择更高套餐，或删除未使用的子域名。",
+      "resource-tier": "此项目需要的 CPU 或内存超出了套餐上限。请选择更高套餐，或在项目设置中减少资源。",
+      "running-services": "已达到运行服务数量上限。请选择更高套餐，或停止不再需要的服务。",
+      "project-limit": "已达到项目数量上限。请选择更高套餐，或删除不再需要的项目。"
+    }
+  },
+  "resourcesGuide": {
+    "title": "了解 Cloud 用量",
+    "credits": "Cloud 积分",
+    "creditsHint": "构建和运行中的应用会因 CPU、内存、磁盘读写和数据传输消耗积分。工作负载越大，积分消耗越快。",
+    "creditsPerCycle": "每个账单周期 {amount} 积分",
+    "buildTime": "构建时间",
+    "buildMinutes": "每月 {amount} 分钟",
+    "buildHint": "构建代码所花的时间。一次 5 分钟的构建会消耗每月额度中的 5 分钟。",
+    "apps": "运行中的服务",
+    "appsHint": "同时运行的应用、数据库和工作进程。每个运行中的 Compose 服务都计入此上限。",
+    "machine": "每个服务的 CPU 和内存",
+    "machineHint": "单个服务可选的最大 CPU 和内存规格。这是资源上限，不是共享余额。",
+    "projects": "项目",
+    "projectsHint": "工作区中保存的项目，包括草稿。",
+    "routesHint": "应用的 Cloud 公共地址。",
+    "unlimited": "无设定上限",
+    "notIncluded": "不包含",
+    "noPlan": "未订阅 Cloud 套餐",
+    "setupOnly": "需要订阅",
+    "setupHint": "选择 Cloud 套餐以创建项目、构建代码并运行应用。",
+    "includedTitle": "你的资源",
+    "limitsHint": "套餐中的项目数、运行服务数和每月构建时间。",
+    "balanceRule": "用量额度耗尽后，应用会暂停。追加用量以继续运行，或升级套餐以提高资源上限。",
+    "reset": "构建额度将于 {date} 重置",
+    "cpuHint": "随时间累计的处理资源用量。1 个 vCPU 运行 1 小时等于 1 vCPU 小时。",
+    "memoryHint": "随时间累计的内存用量。1 GB 内存使用 1 小时等于 1 GB 小时。",
+    "diskHint": "应用读取和写入的数据量。这是磁盘活动量，不是已存储数据的大小。",
+    "networkHint": "应用发送和接收的数据量。",
+    "usageMeaning": "如何理解此数值",
+    "selectedRange": "所选日期范围内使用的积分",
+    "usageHint": "所选日期内实际使用的 CPU、内存、磁盘活动和数据传输。",
+    "creditsChart": "每{unit}的 Cloud 积分。",
+    "allProjects": "所有项目",
+    "from": "开始日期（UTC）",
+    "to": "结束日期，含当日（UTC）",
+    "invalidRange": "结束日期必须等于或晚于开始日期。",
+    "moreFeatures": "更多功能",
+    "usageAllowance": "Cloud 使用量",
+    "usageIncluded": "包含共享用量额度",
+    "usageSummary": "构建和运行中的应用共享用量额度。机器规格越高、运行时间越长，消耗越多。",
+    "usageDetails": "用量详情",
+    "usagePercent": "已使用 {percent}%"
+  },
+  "onboarding": {
+    "workspaceDescription": "选择 Cloud 套餐以创建项目、构建代码并运行应用。订阅前不包含项目或计算资源。",
+    "includedCredits": "包含的 Cloud 积分",
+    "noFreeCompute": "不含免费 Cloud 算力",
+    "planRequired": "需要订阅计划",
+    "savedCredits": "保留的用量余额",
+    "savedCreditsHint": "预付用量保留在此工作区中。选择套餐即可用于 Cloud 部署。",
+    "offerTitle": "在 Openship Cloud 上线",
+    "offerLabel": "开始部署",
+    "offerDescription": "为项目提供空间，为应用提供构建时间和运行资源。",
+    "startingWith": "从 {name} 开始",
+    "subscribe": "订阅 {name}",
+    "compare": "比较所有计划",
+    "checkoutNote": "订阅前请确认付款信息。",
+    "choosePlan": "选择计划",
+    "stepsTitle": "从项目到生产环境",
+    "stepPlan": "选择计划",
+    "stepPlanHint": "选择所需的项目数、服务数和构建时间。",
+    "stepCheckout": "完成付款",
+    "stepCheckoutHint": "付款后，你的 Cloud 套餐即会激活。",
+    "stepDeploy": "部署项目",
+    "stepDeployHint": "创建项目并点击部署。",
+    "usageTitle": "Cloud 用量从这里开始",
+    "usageDescription": "使用付费计划部署后，即可在此查看构建和应用用量。",
+    "paymentTitle": "尚无付款方式",
+    "paymentDescription": "结账时添加付款方式。首次购买后可在此管理。",
+    "invoicesTitle": "尚无账单",
+    "invoicesDescription": "首次付款后将显示账单和收据。",
+    "topupsTitle": "从 Cloud 计划开始",
+    "topupsDescription": "套餐包含构建和应用用量。订阅激活后可追加用量。",
+    "compareTitle": "为项目选择合适的计划",
+    "compareDescription": "比较项目数、服务数、构建时间，以及每个应用可用的 CPU 和内存。",
+    "savedProjects": "工作区中保留了 {count} 个已保存的项目。订阅后可添加更多。"
+  },
+  "resourceOverview": {
+    "overviewHint": "工作空间的使用量、剩余额度和套餐上限。",
+    "remaining": "剩余 {amount}",
+    "unavailable": "使用量暂不可用",
+    "measuredUsage": "本周期实测用量",
+    "sharedCompute": "使用共享计算额度",
+    "computeTitle": "计算用量",
+    "computeHint": "CPU、内存、磁盘活动和应用数据传输共享同一额度。用量包含构建和运行中的应用。",
+    "cpu": "CPU 时间",
+    "cpuHint": "1 vCPU-h 表示一个 CPU 核心使用一小时。衡量的是实际计算工作，而不是应用运行时长。",
+    "memory": "内存时间",
+    "memoryHint": "1 GB-h 表示分配 1 GB 内存一小时。",
+    "disk": "磁盘活动",
+    "diskHint": "应用磁盘的读写数据量，不是已占用的存储容量。",
+    "transfer": "应用数据传输",
+    "transferHint": "应用的入站和出站数据。Edge 分发流量单独显示。",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Edge 流量",
+    "bandwidthHint": "工作空间所有 Edge 路由的入站和出站流量。此月度额度独立于计算额度。达到上限后路由暂停，直到重置或升级。",
+    "requests": "Edge 请求",
+    "requestsHint": "工作空间 Edge 路由处理的 HTTP 请求。这是访客请求数，不是账单记录或 API 调用数。",
+    "requestsIncluded": "包含在流量额度中",
+    "partialError": "部分用量加载失败，请刷新重试。",
+    "refresh": "刷新资源用量",
+    "period": "{start} – {end}",
+    "currentPeriod": "当前账单周期",
+    "viewUsage": "查看详细用量",
+    "bandwidthPerMonth": "{amount} GB / 月"
   }
 }

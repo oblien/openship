@@ -4,6 +4,70 @@
     "save": "保存",
     "cancel": "キャンセル"
   },
+  "releaseImageSource": {
+    "validationInvalid": "リリースイメージのソースが無効です。",
+    "toast": {
+      "saved": "コンテナリリースのソースを保存しました。",
+      "saveFailed": "コンテナリリースのソースを保存できませんでした。"
+    },
+    "status": {
+      "notDeployed": "未デプロイ",
+      "checking": "確認中…",
+      "unavailable": "利用できません"
+    },
+    "switchToImage": {
+      "title": "ビルド済みイメージのソースに切り替える",
+      "description": "保存すると、すべての環境で現在の Git またはローカルソースが置き換えられます。既存のデプロイとロールバック履歴は引き続き利用できます。",
+      "keep": "現在のソースを維持"
+    },
+    "switchToGit": {
+      "title": "Git ソースに切り替える",
+      "description": "リポジトリをリンクするまで何も変更されません。リンクすると、すべての環境で追跡中のイメージソースが置き換えられます。",
+      "back": "イメージソースに戻る"
+    },
+    "entry": {
+      "shortButton": "ビルド済みイメージを使用",
+      "button": "ビルド済みコンテナイメージを追跡",
+      "description": "リポジトリをクローンまたはビルドせずに、バージョン付きレジストリイメージを直接デプロイします。"
+    },
+    "summary": {
+      "title": "追跡中のコンテナイメージ",
+      "badge": "ビルド済み",
+      "description": "公開済みイメージを直接デプロイします。リポジトリのクローンもビルドコマンドの実行も行いません。",
+      "linkGit": "Git リポジトリをリンク",
+      "image": "イメージ",
+      "versionSource": "バージョンソース",
+      "githubReleases": "GitHub リリース",
+      "pinnedVersion": "固定バージョン",
+      "currentVersion": "現在のバージョン",
+      "targetVersion": "対象バージョン",
+      "latestVersion": "最新バージョン",
+      "updateAvailable": "更新があります"
+    },
+    "editor": {
+      "trackingTitle": "リリース追跡",
+      "configureTitle": "ビルド済みイメージを設定",
+      "templateHint": "{tag} を使うと発行元の正確なタグを保持し、{version} を使うと正規化されたバージョンを使用します。",
+      "provider": "バージョンプロバイダー",
+      "githubTitle": "GitHub リリース",
+      "githubDescription": "最新の公開リリースタグを追跡します。",
+      "urlTitle": "バージョン URL または固定",
+      "urlDescription": "バージョンエンドポイントを読み取るか、固定バージョンをデプロイします。",
+      "imageTemplate": "イメージテンプレート",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub リポジトリ",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "バージョン URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "version/tag_name を含むテキストまたは JSON を返す HTTPS エンドポイントです。",
+      "pinnedVersion": "固定バージョン",
+      "pinnedPlaceholder": "任意。例: v2.4.1",
+      "pinnedHint": "検出された最新バージョンより優先されます。更新を追跡する場合は空欄にします。",
+      "appliesAll": "変更はこのプロジェクトのすべての環境に適用されます。",
+      "saving": "保存中…",
+      "save": "ソースを保存"
+    }
+  },
   "appSettings": {
     "modeApp": "アプリ設定",
     "modeDeployment": "デプロイ",
@@ -34,6 +98,28 @@
       "project": "プロジェクト",
       "hostedOn": "ホスト先"
     },
+    "projectMenu": {
+      "rename": "プロジェクト名を変更",
+      "copyId": "プロジェクト ID をコピー",
+      "idCopied": "プロジェクト ID をコピーしました",
+      "copyFailed": "クリップボードにコピーできませんでした",
+      "pause": "プロジェクトを一時停止",
+      "resume": "プロジェクトを再開",
+      "delete": "プロジェクトを削除"
+    },
+    "rename": {
+      "title": "プロジェクト名を変更",
+      "description": "表示名だけを変更します。再デプロイは行われません。",
+      "label": "プロジェクト名",
+      "placeholder": "マイプロジェクト",
+      "identityNote": "プロジェクトの識別子「{slug}」は変わりません — URL、コンテナ名、ボリュームはそのままです。URL を変更するには「ドメインとルート」でドメインを編集してください。",
+      "save": "保存",
+      "cancel": "キャンセル",
+      "toast": {
+        "renamed": "{name} に変更しました",
+        "failed": "プロジェクト名の変更に失敗しました"
+      }
+    },
     "statusActive": "有効",
     "statusDisabled": "無効",
     "hostedCloud": "Openship Cloud",
@@ -47,15 +133,54 @@
       "liveAccessible": "稼働中でアクセス可能",
       "pausedInaccessible": "一時停止中でアクセス不可",
       "disable": "無効にする",
-      "enable": "有効にする"
+      "enable": "有効にする",
+      "migrating": "移行中",
+      "migratingHint": "別のサーバーへ移動しています"
+    },
+    "migration": {
+      "title": "移行",
+      "description": "このプロジェクトを別のサーバーへ移動します",
+      "currentServer": "現在のサーバー",
+      "migrate": "移行",
+      "noOtherServers": "移動先にするため、2 台目のサーバーを追加してください。",
+      "cloudLater": "サーバー間の移行です。Openship Cloud との相互移行はまだ対応していません。",
+      "startFailed": "移行を開始できませんでした",
+      "confirmTitle": "{project} を {server} へ移動",
+      "confirmSubtitle": "移動を開始するまで、何も変更されません。",
+      "svcVolumes": "ボリューム {count} 個",
+      "downtimeNote": "データのコピーと新サーバーでの起動が終わるまで、プロジェクトは停止します。ステートフルなサービスは転送中ずっと停止したままです。",
+      "dnsNote": "DNS はまだ旧サーバーを指しています。新サーバーが応答し始めたらレコードを変更してください。",
+      "cancel": "キャンセル",
+      "confirmStart": "移動を開始",
+      "duplicate": "複製",
+      "intentMove": "移動",
+      "intentCopy": "複製",
+      "intentMoveHint": "プロジェクトそのものが移動します。確認後、旧サーバーからコンテナとボリュームが削除されます。",
+      "intentCopyHint": "元のプロジェクトはそのまま稼働します。新サーバーにデータを複製した 2 つ目のプロジェクトが作られます。",
+      "confirmTitleCopy": "{project} を {server} に複製",
+      "confirmStartCopy": "複製を開始",
+      "downtimeNoteCopy": "データ複製中はプロジェクトが短時間停止します（正しく複製するにはボリュームを静止させる必要があります）。複製が終わり次第、旧サーバーで再び起動します。",
+      "copyNoDomainsNote": "複製にはドメインが付きません。既存のドメインは、それを配信しているプロジェクトに残ります。",
+      "fromLabel": "移行元",
+      "toLabel": "移行先",
+      "modeLabel": "モード",
+      "scopeLabel": "複製する対象",
+      "scopeAll": "すべて選択",
+      "scopeHintAll": "すべてのサービスとそのデータ。",
+      "scopeHintSome": "{count} 個のサービス — 残りは元のプロジェクトにのみ残ります。",
+      "sourceServices": "サービス {count} 個",
+      "runningStatus": "実行中 — {status}"
     },
     "cache": {
-      "title": "キャッシュ",
-      "description": "キャッシュされたビルド成果物と依存関係のインストールを消去します",
+      "title": "Docker ビルドキャッシュ",
+      "description": "未使用のビルドキャッシュはサーバーごとに自動で 5 GB に制限されます",
       "clearInstall": "インストールキャッシュを消去",
       "clearInstallDesc": "キャッシュされた node_modules を削除します",
       "clearBuild": "ビルドキャッシュを消去",
-      "clearBuildDesc": "キャッシュされたビルド出力を削除します"
+      "clearBuildDesc": "このプロジェクトの Docker サーバー全体から未使用キャッシュを削除します",
+      "clearBuildConfirm": "このサーバー上の未使用 Docker ビルドキャッシュをすべて消去しますか？他のプロジェクトは次回のデプロイ時に依存関係を再ビルドする場合があります。",
+      "clearBuildSuccess": "ビルドキャッシュを {size} 解放しました",
+      "clearBuildEmpty": "消去できる未使用のビルドキャッシュはありません"
     },
     "transfer": {
       "title": "移行とクローン",
@@ -240,16 +365,16 @@
       "appliesOnDeploy": "次回のデプロイで適用されます。"
     },
     "env": {
-      "title": "環境変数",
-      "description": "保存時に暗号化されます。シークレットはマスクされたまま保持され、変更した値のみが書き込まれます。",
+      "title": "プロジェクト環境（ビルドと共有ランタイム）",
+      "description": "イメージのビルドと共有ランタイムの入力に使用します。実行時は Compose の値とサービス固有の値が優先されます。シークレットはマスクされます。",
       "edit": "編集"
     }
   },
   "envVars": {
     "cancel": "キャンセル",
     "saveChanges": "変更を保存",
-    "title": "環境変数",
-    "description": "本番環境。保存時に暗号化されます。シークレットは設定済みと表示されます。置き換えるには入力し、そのまま保持するには空欄にしてください。",
+    "title": "プロジェクト環境（ビルドと共有ランタイム）",
+    "description": "プロジェクトの本番環境変数です。シークレットはマスクされます。保存済みのシークレットを維持するには空欄にします。同じキーではサービスの実行時の値が優先されます。",
     "empty": "まだ環境変数がありません。",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• （設定済み — 入力して置き換え）",
@@ -267,38 +392,20 @@
       "saved": "環境変数を保存しました",
       "savedTitle": "保存しました",
       "saveFailed": "環境変数の保存に失敗しました",
-      "saveFailedTitle": "保存に失敗しました"
+      "saveFailedTitle": "保存に失敗しました",
+      "noChanges": "保存する変更はありません — 保存済みの値はそのまま維持されます。",
+      "noChangesTitle": "保存する変更なし"
     },
     "linkedBadge": "リンク済み",
     "linkedManaged": "{app} 経由",
     "linkedTitle": "リンクされた統合",
     "linkedBody": "この値は {app} の接続から取得されます。そのアプリ側で管理してください — ここでの変更は保存されません。",
     "unlink": "接続を削除",
-    "close": "閉じる"
+    "close": "閉じる",
+    "applyText": "保存しました。実行時の変更は再起動で適用します。イメージのビルドで使用する値は、再ビルドして再デプロイしてください。"
   },
   "gitInfo": {
-    "repository": "リポジトリ",
-    "autoDeploy": "自動デプロイ",
-    "deploysOnPush": "プッシュのたびにデプロイします",
-    "manualOnly": "手動デプロイのみ",
-    "branchToDeploy": "デプロイするブランチ",
-    "chooseBranch": "リポジトリのどのブランチからデプロイするかを選択します",
-    "save": "保存",
-    "cancel": "キャンセル",
-    "viewOnGithub": "GitHub で表示",
-    "recentCommits": "最近のコミット",
-    "totalCommits": "合計 {count} 件",
-    "noCommits": "まだコミットがありません",
-    "toast": {
-      "fetchBranchesFailed": "ブランチの取得に失敗しました",
-      "errorTitle": "エラー",
-      "branchUpdated": "ブランチを更新しました",
-      "updatedTitle": "更新しました",
-      "branchUpdateFailed": "ブランチの更新に失敗しました",
-      "autoDeployEnabled": "自動デプロイを有効にしました",
-      "autoDeployDisabled": "自動デプロイを無効にしました",
-      "autoDeployFailed": "自動デプロイの更新に失敗しました"
-    }
+    "autoDeploy": "自動デプロイ"
   },
   "git": {
     "connectFirst": {
@@ -361,13 +468,13 @@
       "title": "ロールバック戦略",
       "rebuild": "再ビルド（git）",
       "instant": "即時（スナップショット）",
-      "descRebuild": "イメージがホストに残っていない場合は、以前のコミットを再ビルドします。",
-      "descInstant": "各バージョンのイメージを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。",
+      "descRebuild": "ホストにイメージが残っていない場合は、過去のコミットを再ビルドします。",
+      "descInstant": "履歴の上限内で成果物を保持します。古いバージョンは再ビルドが必要になる場合があります。",
       "toggleAria": "スナップショット保持を切り替え",
-      "keepNone": "追加のコピーを保持しない",
-      "keepCopies": "バージョンごとにコピーを保持",
-      "descRebuildFiles": "ファイルがホストに残っていない場合は、以前のコミットを再ビルドします。",
-      "descInstantFiles": "各バージョンのファイルを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。"
+      "keepNone": "イメージを再利用、または再ビルド",
+      "keepCopies": "ロールバック用の成果物を保持",
+      "descRebuildFiles": "ホストにファイルが残っていない場合は、過去のコミットを再ビルドします。",
+      "descInstantFiles": "履歴の上限内でビルド済みファイルを保持します。古いバージョンは再ビルドが必要になる場合があります。"
     },
     "rollbackHistory": {
       "title": "ロールバック履歴",
@@ -377,13 +484,17 @@
       "descGit": "最近のイメージはいずれの場合も保持されるため、ロールバックはビルドを省略できます。",
       "decreaseAria": "ロールバック履歴を減らす",
       "increaseAria": "ロールバック履歴を増やす",
-      "sizeEach": "各 ~{size}",
+      "sizeEach": "イメージあたり約 {size}（共有レイヤーを含む）",
       "diskFree": "空き {size}",
       "autoBadge": "自動調整",
       "manualBadge": "手動設定",
       "kindFiles": "ディスク上のビルド済みファイル",
       "kindImages": "ホスト上のイメージ",
-      "descGitFiles": "最近のバージョンのファイルはいずれの場合も保持されるため、ロールバックはビルドを省略できます。"
+      "descGitFiles": "最近のバージョンのファイルはいずれの場合も保持されるため、ロールバックはビルドを省略できます。",
+      "retentionHint": "最近のデプロイ成果物を保持し、すばやくロールバックできるようにします。",
+      "retentionDescription": "保持する過去のリリース数の上限です。稼働中およびピン留めしたリリースは別枠で保持します。古い成果物は削除されますが、デプロイ履歴は残ります。0 にすると、稼働中およびピン留めしたリリースのみ保持します。",
+      "defaultBadge": "インスタンスの既定値",
+      "loadFailed": "ロールバック設定を読み込めませんでした。"
     },
     "commits": {
       "title": "最近のコミット",
@@ -448,6 +559,9 @@
     "title": "マシンパワー",
     "description": "このプロジェクトのコンテナに適用する CPU とメモリの上限。",
     "loading": "対象マシンを読み取っています…",
+    "unavailable": "マシンパワーを利用できません",
+    "loadFailed": "マシンパワーの読み込みに失敗しました",
+    "retry": "再試行",
     "machineCapacity": "マシン: {cpu} vCPU · {memory}",
     "exceedsMachine": "このマシンの容量を超えています",
     "appliesOnNextDeploy": "上限はコンテナの再作成時に適用されます。変更を反映するには再デプロイしてください。",
@@ -472,6 +586,10 @@
       "high": {
         "name": "High",
         "description": "高トラフィックのアプリケーション"
+      },
+      "xlarge": {
+        "name": "特大",
+        "description": "データベースと高負荷ワークロード"
       }
     },
     "custom": {
@@ -526,10 +644,6 @@
     "cannotUndo": "この操作は取り消せません。",
     "aboutToPrefix": "削除しようとしています: ",
     "aboutToSuffix": "。",
-    "deleteAllAria": "すべての環境を削除",
-    "deleteAll": "すべての環境を削除",
-    "deleteAllOn": "プロジェクトアプリとその配下のすべてのブランチ環境を削除します。",
-    "deleteAllOff": "この環境のみを削除します。他のブランチは残ります。",
     "scanning": "接続されたサービスとボリュームをスキャン中…",
     "wipeAria": "サービスデータも消去",
     "wipeLabelOne": "サービスデータも消去（{count} ボリューム）",
@@ -544,9 +658,7 @@
     "typePrefix": "確認のために ",
     "typeSuffix": " と入力してください。",
     "cancel": "キャンセル",
-    "confirmDeleteWipe": "削除してデータを消去",
     "confirmDeleteEnvWipe": "環境を削除してデータを消去",
-    "confirmDelete": "プロジェクトを削除",
     "confirmDeleteEnv": "環境を削除",
     "linkedTitleOne": "{count} 件のプロジェクトがこのアプリに接続しています",
     "linkedTitleOther": "{count} 件のプロジェクトがこのアプリに接続しています",
@@ -623,6 +735,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "マッピング先ポート",
       "includeWww": "www を含める",
+      "dnsChallenge": "DNS-01 チャレンジを使用",
+      "dnsChallengeDesc": "接続済みの DNS プロバイダーで証明書を発行・更新します。ポート 80 に到達できない場合に使用してください。",
+      "dnsChallengeWildcardDesc": "ワイルドカード証明書には DNS-01 と接続済みの DNS プロバイダーが必要です。",
       "includeWwwDesc": "www.{domain} 用のレコードも生成します",
       "includeWwwFallback": "yourdomain.com",
       "adding": "追加中...",
@@ -734,6 +849,23 @@
       "noneYet": "まだチェックが実行されていないため、表示できる結果がありません。表示されている DNS レコードを追加してから「検証」を実行してください。",
       "attempts": "これまでに {count} 回失敗しています。",
       "pillHint": "理由を表示"
+    },
+    "records": {
+      "failed": "このドメインの DNS レコードを読み込めませんでした。",
+      "retry": "再試行"
+    },
+    "outputHint": {
+      "body": "{path} にビルド出力が見つかりません — 出力ディレクトリを確認して再デプロイしてください。",
+      "noIndex": "{path} に出力はありますが index ファイルがありません — リクエストは 404 になります。出力ディレクトリを確認してください。",
+      "notServed": "エッジが {path} に対して HTTP {status} を返しました — このパスは配信されていません。出力ディレクトリとルートを確認してください。"
     }
+  },
+  "serviceEnvironment": {
+    "title": "サービスのランタイム環境",
+    "description": "これらの変数はこのサービスのみに適用され、Compose やプロジェクトの同名の値より優先されます。「環境の変更を適用」で保存済みの値を有効にします。",
+    "overrides": "このサービスでは次のキーがプロジェクトの値より優先されます: {keys}。",
+    "buildArguments": "ビルド引数は Compose ファイルまたはソース設定で指定し、変更を反映するには再ビルドが必要です。",
+    "projectLink": "共有プロジェクト環境を編集",
+    "loadFailed": "上書きを確認するためのプロジェクト変数名を読み込めませんでした。"
   }
 }

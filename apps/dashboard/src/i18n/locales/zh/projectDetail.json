@@ -167,6 +167,15 @@
 			"dependsOn": "依赖于",
 			"startShellHint": "启动服务以打开 shell。",
 			"saveEnvironment": "保存环境",
+			"environmentApply": {
+				"title": "应用环境更改",
+        "applying": "正在应用更改…",
+        "applied": "环境变量更改已应用",
+				"hint": "无需重新构建即可将已保存的变量应用到此服务。服务将重新启动。",
+				"saveFirst": "请先保存更改，再将其应用到此服务。",
+				"restartBlocked": "{name} 有已保存的环境更改，普通重启无法应用这些更改。请在“环境”选项卡中查看并应用。",
+				"failed": "无法应用环境更改"
+			},
 			"stop": "停止",
 			"restart": "重启",
 			"start": "启动",
@@ -192,7 +201,7 @@
 			"deleteCancel": "取消",
 			"deleteConfirm": "删除服务",
 			"toast": {
-				"envUpdated": "环境已更新",
+				"envUpdated": "环境已保存",
 				"envSaveFailed": "保存环境失败",
 				"deployFirstStart": "请先部署项目，然后此服务将启动",
 				"deployFailed": "部署失败",

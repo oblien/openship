@@ -50,7 +50,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  disposeRuntime: (runtime: { dispose?: () => Promise<void> }) => { void runtime.dispose?.(); },
   resolveDeploymentRuntimeForRead: vi.fn(async () => ({
     runtime: {
       name: "docker",
@@ -69,13 +70,13 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   })),
 }));
 
-vi.mock("../../../src/lib/host-capacity", () => ({
+vi.mock("@repo/platform/engine/lib/host-capacity", () => ({
   getHostCapacity: vi.fn(async () => h.capacity),
 }));
 
-vi.mock("../../../src/lib/system-debug", () => ({ systemDebug: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({ systemDebug: vi.fn() }));
 
-const { collectProjectUsage } = await import("../../../src/modules/monitoring/project-usage");
+const { collectProjectUsage } = await import("@repo/platform/engine/modules/monitoring/project-usage");
 
 const ctx = { organizationId: "org1" } as never;
 
@@ -91,7 +92,7 @@ const container = (id: string, service: string, state = "running") => ({
 
 beforeEach(() => {
   h.project = { id: "p1", organizationId: "org1", slug: "app", name: "App", activeDeploymentId: "d1" };
-  h.deployment = { id: "d1", containerId: "c-primary", meta: {}, organizationId: "org1" };
+  h.deployment = { id: "d1", projectId: "p1", containerId: "c-primary", meta: {}, organizationId: "org1" };
   h.services = [];
   h.serviceDeployments = [];
   h.liveContainers = [];
@@ -121,7 +122,7 @@ describe("single-container app", () => {
   });
 
   it("returns no targets when the deployment has no container yet", async () => {
-    h.deployment = { id: "d1", containerId: null, meta: {}, organizationId: "org1" };
+    h.deployment = { id: "d1", projectId: "p1", containerId: null, meta: {}, organizationId: "org1" };
     const r = await collectProjectUsage(ctx, "p1");
     expect(r.services).toEqual([]);
     expect(r.overall.cpuPercent).toBe(0);

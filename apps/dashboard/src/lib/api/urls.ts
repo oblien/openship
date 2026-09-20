@@ -27,9 +27,8 @@ function resolveTarget(rawUrl?: string): Target {
   const origin = rawUrl ? originOf(rawUrl) : undefined;
   if (!origin) return DEFAULT_TARGET;
   return (
-    TARGETS.find(
-      (t) => originOf(t.dashboard) === origin || originOf(t.api) === origin,
-    ) ?? DEFAULT_TARGET
+    TARGETS.find((t) => originOf(t.dashboard) === origin || originOf(t.api) === origin) ??
+    DEFAULT_TARGET
   );
 }
 
@@ -84,11 +83,9 @@ function sameOriginProxyOrigin(): string | null {
 // into `window.__OPENSHIP_API_ORIGIN__` for the browser bundle (whose base URL
 // is a module-load constant — a build-time NEXT_PUBLIC var can't carry it).
 
-
 function localApiOverride(): string | null {
   if (typeof window !== "undefined") {
-    const injected = (window as { __OPENSHIP_API_ORIGIN__?: string })
-      .__OPENSHIP_API_ORIGIN__;
+    const injected = (window as { __OPENSHIP_API_ORIGIN__?: string }).__OPENSHIP_API_ORIGIN__;
     if (!injected) return null;
     return alignLoopbackOrigin(injected.replace(/\/+$/, ""), window.location.origin);
   }
@@ -136,6 +133,62 @@ export function getRestApiBaseUrl() {
   return `${getApiOrigin()}/api`;
 }
 
+/** External MCP clients use the canonical resource path advertised by OAuth. */
+export function getMcpEndpointUrl() {
+  return `${getApiOrigin()}/api/mcp`;
+}
+
+/**
+ * Resolve a URL returned by the API for direct browser navigation.
+ *
+ * Most API responses return absolute external URLs, but a few auth flows return
+ * an API-root path such as `/api/github/connect/redirect`. Resolving that path
+ * against `window.location` is wrong in both split-host SaaS and self-hosted
+ * proxy mode: it lands on the dashboard instead of the API. Treat relative
+ * values as API-relative and preserve already-absolute HTTP(S) destinations.
+ *
+ * `apiBase` is injectable so all deployment topologies can be covered without
+ * mutating build-time environment variables in tests.
+ */
+export function resolveApiNavigationUrl(target: string, apiBase = getRestApiBaseUrl()): string {
+  const value = target.trim();
+  if (!value) throw new Error("API navigation URL is empty");
+
+  // Absolute destinations (for example github.com or api.openship.io) are
+  // authoritative, but never allow a non-web scheme into window navigation.
+  if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(value)) {
+    const absolute = new URL(value);
+    if (absolute.protocol !== "http:" && absolute.protocol !== "https:") {
+      throw new Error("API navigation URL must use HTTP or HTTPS");
+    }
+    return absolute.toString();
+  }
+  if (value.startsWith("//")) {
+    throw new Error("Protocol-relative API navigation URLs are not allowed");
+  }
+
+  const normalizedBase = new URL(apiBase.endsWith("/") ? apiBase : `${apiBase}/`);
+  if (normalizedBase.protocol !== "http:" && normalizedBase.protocol !== "https:") {
+    throw new Error("API base URL must use HTTP or HTTPS");
+  }
+
+  // The server speaks in canonical `/api/...` paths. The browser client base
+  // already includes that segment (or `/api/proxy/api`), so remove it once.
+  let relative = value.replace(/^\/+/, "");
+  if (relative === "api") relative = "";
+  else if (relative.startsWith("api/")) relative = relative.slice("api/".length);
+
+  const resolved = new URL(relative, normalizedBase);
+  // A server-provided relative path must not escape the selected API mount.
+  if (
+    resolved.origin !== normalizedBase.origin ||
+    !resolved.pathname.startsWith(normalizedBase.pathname)
+  ) {
+    throw new Error("API navigation URL escaped the API base");
+  }
+  return resolved.toString();
+}
+
 export function getCloudDashboardUrl(rawUrl?: string) {
   return originOf(rawUrl ?? "") ?? cloudPartner(currentTarget()).dashboard;
 }
@@ -158,4 +211,3 @@ export function getMarketingOrigin() {
   }
   return "https://openship.io";
 }
-

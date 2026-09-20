@@ -156,6 +156,9 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
     { label: dp.promptDetails.port, value: details.port != null ? String(details.port) : null },
     { label: dp.promptDetails.process, value: typeof details.command === "string" ? details.command : null },
     { label: "PID", value: details.pid != null ? String(details.pid) : null },
+    // The container is the owner for any docker-published port, so it has to be visible
+    // — the operator is being asked to approve stopping THIS, not the daemon behind it.
+    { label: "Container", value: typeof details.containerName === "string" ? details.containerName : null },
     { label: "Systemd Unit", value: typeof details.systemdUnit === "string" ? details.systemdUnit : null },
     { label: dp.promptDetails.unitDescription, value: typeof details.systemdDescription === "string" ? details.systemdDescription : null },
     { label: dp.promptDetails.openshipDeployment, value: typeof details.deploymentId === "string" ? details.deploymentId : null },

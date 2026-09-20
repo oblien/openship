@@ -1,0 +1,78 @@
+---
+title: Issues and health
+description: Read authorized issues, inspect workload health, and request fresh checks.
+---
+
+Issues combine deployment problems, incidents, domain failures, component health, and update advisories.
+Results are filtered to resources the caller can see.
+
+## List issues
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.issues.list({ status: "open" });
+console.log(result.issues, result.counts);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/issues?status=open" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+`status` is `open` or `resolved`. The result contains `issues`, `counts`, and the selected `status`.
+Each issue includes its severity, source, target, message, and any supported resolution action.
+Counts are grouped as `outage`, `actionRequired`, `advisory`, and `total`.
+
+## Inspect workload health
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const health = await ship.issues.health();
+console.log(health.workloads, health.currentScan);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/issues/health" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The health snapshot includes workload observations, scan timing, and watcher capabilities. It does not
+start a continuous watcher. `scanHealth()` requests a fresh one-time check where the host supports it;
+native scheduling remains disabled unless explicitly configured.
+
+## Refresh issue sources
+
+`rescan()` starts the broader rescan pipeline and requires job-write access. `rescanStatus()` reads the
+latest scan's stage statuses, summaries, and failures. Check the returned state before treating a scan
+as complete.
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read visible active or resolved issues and their suggested actions. | `issues.list(input?)` | `GET /api/issues`<br />`project:list` |
+| Read issue counts by severity. | `issues.summary()` | `GET /api/issues/summary`<br />`project:list` |
+| Read cached workload health snapshots. | `issues.health()` | `GET /api/issues/health`<br />`project:list` · Self-hosted |
+| Refresh current workload health without enabling the scheduler. | `issues.scanHealth()` | `POST /api/issues/health/scan`<br />`project:list` · Self-hosted |
+| Run applicable issue checkers immediately. | `issues.rescan()` | `POST /api/issues/rescan`<br />`job:write` · Self-hosted |
+| Read the status of an issue rescan. | `issues.rescanStatus()` | `GET /api/issues/rescan/status`<br />`job:read` · Self-hosted |
+
+{/* api-operations:end */}

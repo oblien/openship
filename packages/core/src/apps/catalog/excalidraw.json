@@ -17,12 +17,32 @@
     {
       "name": "excalidraw",
       "image": "excalidraw/excalidraw:latest",
-      "ports": [
-        "8203:80"
-      ],
       "exposedPort": 80,
       "exposed": true,
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8203:80"
+      ]
     }
-  ]
+  ],
+  "connection": {
+    "title": "Open Excalidraw",
+    "description": "No login and no server-side storage — open the link and start drawing.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Whiteboard",
+        "source": "publicUrl:excalidraw",
+        "kind": "url",
+        "recommended": true,
+        "help": "Opens the whiteboard. No sign-in required."
+      }
+    ],
+    "firstLogin": {
+      "note": "There is nothing to log into and nothing stored on the server: drawings live in your browser, so use Export to save anything you want to keep. Anyone who can reach this URL can use it — put it behind your own access control if that matters."
+    }
+  }
 }

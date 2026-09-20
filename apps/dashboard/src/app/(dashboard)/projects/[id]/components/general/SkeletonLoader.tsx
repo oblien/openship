@@ -91,34 +91,6 @@ export const StatsCardsSkeleton = () => {
   );
 };
 
-export const ProjectIdentitySkeleton = () => {
-  return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden animate-pulse">
-      <div className="bg-muted/40 px-6 py-5 border-b border-border flex items-center gap-3">
-        <div className="w-12 h-12 rounded-2xl bg-muted/50"></div>
-        <div>
-          <div className="h-6 w-40 bg-muted/50 rounded-2xl mb-2"></div>
-          <div className="h-4 w-48 bg-muted/30 rounded-2xl"></div>
-        </div>
-      </div>
-      
-      <div className="p-6 space-y-5">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-5 w-32 bg-muted/50 rounded-2xl"></div>
-              <div className="h-4 w-16 bg-muted/30 rounded-2xl"></div>
-            </div>
-            <div className="p-4 bg-muted/40 rounded-2xl">
-              <div className="h-5 w-full bg-muted/50 rounded-2xl"></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 export const ProjectInfoSkeleton = () => {
   return (
     <>

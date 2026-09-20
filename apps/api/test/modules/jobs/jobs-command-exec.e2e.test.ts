@@ -12,42 +12,45 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // output/exit + can emit log lines. vi.hoisted so the mock factory can see it.
 const ssh = vi.hoisted(() => ({
   state: {
+    retained: new Set<string>(),
     handler: null as
       | null
       | ((
           serverId: string,
           cmd: string,
           onLine: (e: { message: string; level: "info" | "warn" | "error" }) => void,
+          options?: { signal?: AbortSignal },
         ) => Promise<{ code: number; output: string }> | { code: number; output: string }),
   },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
-    retain: () => {},
-    release: () => {},
+    retain: (id: string) => { ssh.state.retained.add(id); },
+    release: (id: string) => { ssh.state.retained.delete(id); },
     withExecutor: async (
       serverId: string,
-      fn: (ex: { streamExec: (cmd: string, onLine: (e: unknown) => void) => Promise<{ code: number; output: string }> }) => unknown,
+      fn: (ex: { streamExec: (cmd: string, onLine: (e: unknown) => void, options?: { signal?: AbortSignal }) => Promise<{ code: number; output: string }> }) => unknown,
     ) =>
       fn({
-        streamExec: async (cmd: string, onLine: (e: unknown) => void) =>
+        streamExec: async (cmd: string, onLine: (e: unknown) => void, options?: { signal?: AbortSignal }) =>
           ssh.state.handler
-            ? await ssh.state.handler(serverId, cmd, onLine as (e: { message: string; level: "info" | "warn" | "error" }) => void)
+            ? await ssh.state.handler(serverId, cmd, onLine as (e: { message: string; level: "info" | "warn" | "error" }) => void, options)
             : { code: 0, output: "" },
       }),
   },
 }));
 
 import { db, schema, repos, resetJobs, installFakeRunner } from "./_harness";
-import { startCommandRun } from "../../../src/modules/jobs/job-command";
-import { jobRunBus, type JobRunEvent } from "../../../src/modules/jobs/job-run.sse";
+import { startCommandRun } from "@repo/platform/engine/modules/jobs/job-command";
+import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import type { Job } from "@repo/db";
 
 installFakeRunner();
 beforeEach(async () => {
   await resetJobs();
   ssh.state.handler = null;
+  ssh.state.retained.clear();
 });
 
 let jseq = 0;
@@ -136,12 +139,25 @@ describe("command jobs — execution", () => {
     expect(run.output).toContain("B-bad");
   });
 
-  it("times out a hung command (best-effort) and marks it failed", async () => {
-    ssh.state.handler = () => new Promise(() => {}); // never resolves
+  it("aborts a timed-out command and holds its connection until execution settles", async () => {
+    let aborted = false;
+    let heldDuringCancellation = false;
+    ssh.state.handler = (sid, _cmd, _onLine, options) => new Promise(resolve => {
+      options?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        setTimeout(() => {
+          heldDuringCancellation = ssh.state.retained.has(sid);
+          resolve({ code: 1, output: "cancelled" });
+        }, 25);
+      }, { once: true });
+    });
     const job = await makeCommandJob({ command: "sleep 999", serverIds: ["srv-1"], timeoutMs: 50 });
     const run = await waitForRun(await startCommandRun(job));
     expect(run.status).toBe("failed");
     expect(run.error?.toLowerCase()).toContain("timed out");
+    expect(aborted).toBe(true);
+    expect(heldDuringCancellation).toBe(true);
+    expect(ssh.state.retained.size).toBe(0);
   });
 });
 

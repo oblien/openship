@@ -174,6 +174,15 @@
 			"dependsOn": "Depends On",
 			"startShellHint": "Start the service to open a shell.",
 			"saveEnvironment": "Save environment",
+			"environmentApply": {
+				"title": "Apply environment changes",
+        "applying": "Applying changes…",
+        "applied": "Environment changes applied",
+				"hint": "Apply saved variables to this service without rebuilding. The service will restart.",
+				"saveFirst": "Save your changes before applying them to this service.",
+				"restartBlocked": "{name} has saved environment changes that a normal restart cannot apply. Review and apply them in the Environment tab.",
+				"failed": "Could not apply environment changes"
+			},
 			"stop": "Stop",
 			"restart": "Restart",
 			"start": "Start",
@@ -199,7 +208,7 @@
 			"deleteCancel": "Cancel",
 			"deleteConfirm": "Delete service",
 			"toast": {
-				"envUpdated": "Environment updated",
+				"envUpdated": "Environment saved",
 				"envSaveFailed": "Failed to save environment",
 				"deployFirstStart": "Deploy the project first, then this service will start",
 				"deployFailed": "Deploy failed",

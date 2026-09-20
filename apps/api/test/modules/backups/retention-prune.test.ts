@@ -20,32 +20,42 @@
  */
 
 import { DEFAULT_RETAIN_COUNT } from "@repo/core";
-import { db, repos, schema } from "@repo/db";
+import { db, eq, repos, schema } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   /** Artifact keys the destination was asked to delete, in call order. */
   deleted: [] as string[],
+  /** Keys the fake destination refuses to delete, by exact key. */
+  undeletable: new Set<string>(),
   syncPolicySchedule: vi.fn(),
 }));
 
 vi.mock("@repo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/adapters")>()),
   resolveDestination: () => ({
+    // Mirrors the real contract: per-key outcomes, NEVER a throw on a partial
+    // failure. A mock that returned nothing is what let the prune read a refused
+    // delete as a successful one.
     deleteMany: async (keys: string[]) => {
-      h.deleted.push(...keys);
+      const failed = keys
+        .filter((k) => h.undeletable.has(k))
+        .map((key) => ({ key, error: "AccessDenied" }));
+      const deleted = keys.filter((k) => !h.undeletable.has(k));
+      h.deleted.push(...deleted);
+      return { deleted, failed };
     },
   }),
 }));
 
 // Registering a real cron schedule is the JobRunner's business, not retention's.
-vi.mock("../../../src/modules/backups/triggers/cron", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/modules/backups/triggers/cron")>()),
+vi.mock("@repo/platform/engine/modules/backups/triggers/cron", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/backups/triggers/cron")>()),
   syncPolicySchedule: h.syncPolicySchedule,
 }));
 
-import { createPolicy } from "../../../src/modules/backups/backup.service";
-import { prunePolicy, runRetentionSweep } from "../../../src/modules/backups/retention-prune";
+import { createPolicy } from "@repo/platform/engine/modules/backups/backup.service";
+import { prunePolicy, runRetentionSweep } from "@repo/platform/engine/modules/backups/retention-prune";
 import {
   seedBackupDestination,
   seedBackupPolicy,
@@ -64,6 +74,7 @@ let destinationId: string;
 
 beforeEach(async () => {
   h.deleted.length = 0;
+  h.undeletable.clear();
   vi.clearAllMocks();
   // The PGlite instance is per FILE, and the sweep walks every policy on the
   // instance — so a leftover policy from the previous test is a real row it
@@ -98,6 +109,23 @@ async function seedRuns(
     );
   }
   return rows;
+}
+
+/**
+ * A mail server = a `servers` row (where the org lives) plus the `mail_servers`
+ * row that `backup_policy.mail_server_id` actually points at. Both are needed:
+ * the FK is on mail_servers, the org lookup goes through servers.
+ */
+let mailServerSeq = 0;
+async function seedMailServer(orgId: string): Promise<string> {
+  // Rows survive the beforeEach wipe (it clears policies and runs), so the id
+  // has to be unique across the file, not just within a test.
+  const id = `server_mail_${++mailServerSeq}`;
+  await db
+    .insert(schema.servers)
+    .values({ id, organizationId: orgId, name: "mail", sshHost: "10.0.0.9" });
+  await db.insert(schema.mailServers).values({ serverId: id, domain: "example.test" });
+  return id;
 }
 
 describe("retention defaults", () => {
@@ -218,7 +246,7 @@ describe("prunePolicy", () => {
 
     const outcome = await prunePolicy(policy);
 
-    expect(outcome).toEqual({ dropped: 2, skipped: null });
+    expect(outcome).toEqual({ dropped: 2, deferred: 0, skipped: null });
     // The row goes too — an artifact-less row would advertise a restorable
     // backup whose bytes are gone.
     expect((await repos.backupRun.findById(runs[0]!.id))?.deletedAt).toBeTruthy();
@@ -227,6 +255,8 @@ describe("prunePolicy", () => {
 
   it("reports WHY it did nothing instead of returning a bare zero", async () => {
     // Silence is what let "retention is on" and "retention runs" diverge.
+    // A policy with neither source column set can't be scoped to an org, so the
+    // paged read can't even be issued — that has to be said, not returned as 0.
     const policy = await seedBackupPolicy(destinationId, {
       sourceKind: "mail_server",
       projectId: null,
@@ -235,8 +265,50 @@ describe("prunePolicy", () => {
     const outcome = await prunePolicy(policy);
     expect(outcome).toEqual({
       dropped: 0,
-      skipped: "mail-server policy — retention not implemented",
+      deferred: 0,
+      skipped: "policy has neither a project nor a mail server",
     });
+  });
+
+  it("prunes a mail-server policy by mailServerId, against real SQL", async () => {
+    // The mail source used to be skipped outright: the one backup whose payload
+    // is every stored message was also the one with no ceiling. This goes through
+    // the real query rather than a mocked repo, because "does listByOrganization
+    // honor mailServerId" is the assumption the whole path rests on.
+    const mailServerId = await seedMailServer(organizationId);
+    const policy = await seedBackupPolicy(destinationId, {
+      sourceKind: "mail_server",
+      projectId: null,
+      mailServerId,
+      retainCount: 1,
+    });
+    const runs = await seedRuns(policy.id, 3, { projectId: null, mailServerId });
+
+    const outcome = await prunePolicy(policy);
+
+    expect(outcome).toEqual({ dropped: 2, deferred: 0, skipped: null });
+    expect(h.deleted).toEqual(["artifact-1.tar", "artifact-0.tar"]);
+    expect((await repos.backupRun.findById(runs[2]!.id))?.deletedAt).toBeNull();
+  });
+
+  it("names the skip when deleting the mail server also removes its policy", async () => {
+    // No org means no scoped read; deleting on a guess would cross tenants.
+    const mailServerId = await seedMailServer(organizationId);
+    const policy = await seedBackupPolicy(destinationId, {
+      sourceKind: "mail_server",
+      projectId: null,
+      mailServerId,
+      retainCount: 1,
+    });
+    await seedRuns(policy.id, 2, { projectId: null, mailServerId });
+    await db.delete(schema.servers).where(eq(schema.servers.id, mailServerId));
+
+    expect(await prunePolicy(policy)).toEqual({
+      dropped: 0,
+      deferred: 0,
+      skipped: "policy deleted",
+    });
+    expect(h.deleted).toEqual([]);
   });
 
   it("says so when the destination row is gone", async () => {
@@ -304,5 +376,74 @@ describe("prunePolicy", () => {
     expect(outcome.dropped).toBe(1);
     // Two policies sharing a destination must not co-mingle their windows.
     expect(h.deleted).toEqual(["artifact-0.tar"]);
+  });
+});
+
+describe("a destination that refuses a delete does not lose the run", () => {
+  /**
+   * `deleteMany` reports per-key failures and resolves — an expired credential, a
+   * bucket policy without `s3:DeleteObject`, a full disk. Soft-deleting the row on
+   * top of that was a permanent leak: the row is the only record of which keys
+   * belong to the run, and every later sweep skips deleted rows, so nothing retries.
+   * The operator watches the run vanish and the quota stay put.
+   */
+  it("keeps the row when every object is refused, and retries on the next sweep", async () => {
+    const policy = await seedBackupPolicy(destinationId, { projectId, retainCount: 1 });
+    await seedRuns(policy.id, 2);
+    h.undeletable.add("artifact-0.tar");
+
+    const first = await prunePolicy(policy);
+    expect(first.dropped).toBe(0);
+    expect(first.deferred).toBe(1);
+    const rows = await db.query.backupRun.findMany({
+      where: eq(schema.backupRun.projectId, projectId),
+    });
+    expect(rows.filter((r) => r.deletedAt !== null)).toEqual([]);
+
+    // The destination recovers; the same sweep logic now completes the delete.
+    h.undeletable.clear();
+    const second = await prunePolicy(policy);
+    expect(second.dropped).toBe(1);
+    expect(second.deferred).toBe(0);
+    expect(h.deleted).toEqual(["artifact-0.tar"]);
+  });
+
+  it("keeps the row when only SOME of its objects are refused", async () => {
+    // A partially-reclaimed run is still a leak, and re-deleting the keys that did
+    // succeed is free — all three destinations count "already gone" as deleted.
+    const policy = await seedBackupPolicy(destinationId, { projectId, retainCount: 1 });
+    await seedBackupRun(organizationId, {
+      policyId: policy.id,
+      projectId,
+      destinationId,
+      status: "succeeded",
+      finishedAt: new Date(Date.UTC(2026, 0, 1)),
+      artifacts: [{ key: "old-a.tar" }, { key: "old-b.tar" }],
+      manifestKey: "old-manifest.json",
+    });
+    await seedRuns(policy.id, 1, { finishedAt: new Date(Date.UTC(2026, 0, 9)) });
+    h.undeletable.add("old-b.tar");
+
+    const outcome = await prunePolicy(policy);
+
+    expect(outcome).toMatchObject({ dropped: 0, deferred: 1 });
+    expect(h.deleted).toEqual(["old-a.tar", "old-manifest.json"]);
+  });
+
+  it("reports deferred runs out of the sweep instead of a clean pass", async () => {
+    const policy = await seedBackupPolicy(destinationId, {
+      projectId,
+      retainCount: 1,
+      enabled: true,
+      cronExpression: "0 3 * * *",
+    });
+    await seedRuns(policy.id, 2);
+    h.undeletable.add("artifact-0.tar");
+
+    const stats = await runRetentionSweep();
+
+    // Not an error and not a skip — the policy was evaluated and did its job. The
+    // count is the only thing that says the bytes are still there.
+    expect(stats).toMatchObject({ runsDeleted: 0, runsDeferred: 1, errors: 0 });
   });
 });

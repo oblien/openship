@@ -46,13 +46,27 @@ describe("compileRoutingToOblien", () => {
 
   it("proxies a full-URL rewrite to a literal origin (not the owned workspace)", () => {
     const input = compileRoutingToOblien(
-      { rewrites: [{ source: "/proxy/(.*)", destination: "https://api.example.com/$1" }] },
+      { rewrites: [{ source: "/proxy/(.*)", destination: "https://api.example.com/fixed" }] },
       { backend: { workspace: "ws_backend", port: 3000 } },
     );
     expect(input.routes).toEqual([
       {
         match: { path: "/proxy/", type: "prefix" },
-        action: { kind: "proxy", origin: "https://api.example.com/$1" },
+        action: { kind: "proxy", origin: "https://api.example.com/fixed" },
+      },
+    ]);
+  });
+
+  // The origin used to carry a literal `$1`, which the prefix match never filled.
+  // `RouteProxyAction.path` is the field that takes a capture template.
+  it("carries a wildcard rewrite's capture as the upstream path template", () => {
+    const input = compileRoutingToOblien({
+      rewrites: [{ source: "/proxy/(.*)", destination: "https://api.example.com/v2/$1" }],
+    });
+    expect(input.routes).toEqual([
+      {
+        match: { path: "/proxy/(.*)", type: "wildcard" },
+        action: { kind: "proxy", origin: "https://api.example.com", path: "/v2/$1" },
       },
     ]);
   });
@@ -62,8 +76,8 @@ describe("compileRoutingToOblien", () => {
       {
         redirects: [
           { source: "/old", destination: "/new", permanent: true }, // → 308
-          { source: "/tmp", destination: "/temp" }, // → 307
-          { source: "/see", destination: "/other", statusCode: 303 }, // unsupported → 307
+          { source: "/tmp", destination: "/temp", permanent: false }, // → 307
+          { source: "/see", destination: "/other", statusCode: 303 }, // Oblien has no 303 → 307
         ],
       },
       { root: { workspace: "ws_app", port: 8080 } },
@@ -72,6 +86,32 @@ describe("compileRoutingToOblien", () => {
       { match: { path: "/old", type: "exact" }, action: { kind: "redirect", status: 308, to: "/new" } },
       { match: { path: "/tmp", type: "exact" }, action: { kind: "redirect", status: 307, to: "/temp" } },
       { match: { path: "/see", type: "exact" }, action: { kind: "redirect", status: 307, to: "/other" } },
+      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_app", port: 8080 } },
+    ]);
+  });
+
+  // #510: Oblien substitutes `$1..$9` into `to` only for a `wildcard` match, so a
+  // prefix match would send the visitor to a literal `/news/` — the same failure the
+  // nginx prefix location produced.
+  it("compiles a wildcard redirect to a wildcard match with capture substitution", () => {
+    const input = compileRoutingToOblien(
+      {
+        redirects: [
+          { source: "/blog/:path*", destination: "/news/:path*", permanent: true },
+          { source: "/docs/(.*)", destination: "/documentation/$1" },
+        ],
+      },
+      { root: { workspace: "ws_app", port: 8080 } },
+    );
+    expect(input.routes).toEqual([
+      {
+        match: { path: "/blog/(.*)", type: "wildcard" },
+        action: { kind: "redirect", status: 308, to: "/news/$1" },
+      },
+      {
+        match: { path: "/docs/(.*)", type: "wildcard" },
+        action: { kind: "redirect", status: 308, to: "/documentation/$1" },
+      },
       { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_app", port: 8080 } },
     ]);
   });

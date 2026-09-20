@@ -1,169 +1,121 @@
 ---
 title: API overview
-description: The Openship HTTP API — base URL, authentication, permissions, rate limits, and the standard JSON error shape.
+description: Control Openship with the Node.js SDK or REST API.
 ---
 
-Everything the dashboard and the [`openship`](/docs/cli) CLI can do is a call to the same HTTP API: create
-projects, trigger deployments, attach domains, read analytics, manage backups. It's a plain JSON API built on
-[Hono](https://hono.dev), so you can drive it from a script, a CI job, or an AI agent exactly the way the
-first-party clients do.
+Create projects, deploy code, and operate your installation from an application or script. Each resource
+has one reference page: shared behavior and fields, with **SDK** and **REST API** tabs for examples.
 
-<Callout title="Base URL & auth">
-Every route lives under **`/api`** on your own instance — e.g. `https://your-host/api/projects`. There is no
-hosted `/v1` gateway and no separate key format: the base URL is wherever you run Openship. Authenticate with a
-personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access); the dashboard uses a session cookie instead. Full details in
-[Authentication](/docs/security/auth).
-</Callout>
+## Start here
 
-## Authentication
+| Your application needs to… | Use |
+| --- | --- |
+| Control an existing self-hosted or Cloud installation | [Remote SDK client](/docs/api/sdk/client) or [REST API](/docs/api/http) |
+| Run Openship inside a Node application | [Native SDK](/docs/api/sdk/native) |
+| Run commands from a terminal or CI | [CLI](/docs/cli) |
 
-A request proves who it is in exactly one of four ways. Openship checks for a `Bearer` token first, then a
-session cookie, then the loopback fallback (only if that mode is enabled).
+The SDK is currently a repository preview. See [installation and release availability](/docs/api/sdk/installation).
 
-| Method | What you send | Who uses it |
-|---|---|---|
-| **Personal access token** | `Authorization: Bearer opsh_pat_…` | CLI, scripts, server-to-server |
-| **Session cookie** | httpOnly cookie set at login | The dashboard, in a browser |
-| **MCP OAuth** | An OAuth 2.1 access token bound at consent | AI agents connecting to `/api/mcp` |
-| **Zero-auth loopback** | Nothing (request from `127.0.0.1`) | Desktop app / opt-in single-user instance |
+## Make a request
+
+Use a token that can read projects in your organization. The SDK returns the application result;
+REST returns the endpoint's JSON response.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts title="list-projects.mts"
+import { OpenshipClient } from "openship";
+
+const token = process.env.OPENSHIP_TOKEN;
+const organizationId = process.env.OPENSHIP_ORGANIZATION_ID;
+if (!token || !organizationId) throw new Error("Set a token and organization ID");
+
+const ship = new OpenshipClient({
+  baseUrl: "https://ship.example.com",
+  token,
+  organizationId,
+});
+
+const projects = await ship.projects.list({ page: 1, perPage: 20 });
+console.log(projects.data);
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl https://your-host/api/projects \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+export OPENSHIP_URL="https://ship.example.com"
+export OPENSHIP_ORGANIZATION_ID="org_123"
+# Set OPENSHIP_TOKEN to your personal access token.
+
+curl "$OPENSHIP_URL/api/projects?page=1&perPage=20" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "X-Organization-Id: $OPENSHIP_ORGANIZATION_ID" \
+  -H "X-Openship-Scope: fixed"
 ```
 
-<Callout title="Bearer is for non-browser clients only" type="info">
-A `Bearer` token presented from a browser-trusted origin is rejected (`BEARER_NOT_ALLOWED_FROM_BROWSER`), so an
-exfiltrated session token can't be replayed past the httpOnly cookie. A token can be **org-scoped** (rejects a
-mismatched `X-Organization-Id` with `TOKEN_ORG_SCOPE`) and **read-only** (rejects mutations with
-`TOKEN_READ_ONLY`). MCP OAuth discovery is served at the origin root:
-`/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`.
-</Callout>
+</Tab>
+</Tabs>
 
-## Permissions
+### Example conventions
 
-Once you're authenticated, every route runs one permission check. Each route declares a tag of the form
-`resource:action` — `project:read`, `domain:write`, `deployment:admin` — and sub-resources add a middle segment
-(`project:service:write`). The action lines up with the HTTP method: `read` (GET one), `write`
-(POST/PUT/PATCH), `admin` (DELETE and destructive), `list` (GET a collection).
+Resource examples use `ship` for a configured remote client or [native user scope](/docs/api/sdk/identity).
+Replace IDs such as `proj_123` with your own. REST examples use the URL and token above; a token's
+organization binding applies to every request. To pin an organization independently of defaults,
+include the two scope headers shown above. [Older APIs must support fixed scopes](/docs/api/sdk/compatibility#fixed-organization-scopes).
 
-Access is decided **per organization**. Openship resolves which org you mean from the `X-Organization-Id`
-header (falling back to your session default), then checks your role there — `owner`, `admin`, `member`, or
-`restricted` (grant-only). Openship refuses to boot if any route is missing a tag, so there is no accidentally
-unprotected endpoint. The per-endpoint tables on the module pages list the tag for every route; see
-[Permissions & roles](/docs/security/permissions) for the full model.
+Named SDK methods unwrap response envelopes where applicable. For example, `projects.get(id)` returns a
+project, while its REST endpoint returns `{ data: project }`. IDs may be method arguments in the SDK
+and URL, query, or body fields in REST; the code tabs show that mapping.
 
-## Rate limits
+## Applications
 
-The whole `/api` surface is rate-limited. Unauthenticated requests fall under a per-IP default; authenticated
-requests get a more generous per-user budget. Some route groups carry a tighter or looser named policy. Limits
-are per rolling minute.
+| Resource | Use |
+| --- | --- |
+| [Projects](/docs/api/projects) | Configuration, environments, connections, and storage bindings |
+| [Source files](/docs/api/sources) | Generated code, folder uploads, and source detection |
+| [Deployments](/docs/api/deployments) | Builds, progress, decisions, cancellation, and rollback |
+| [Services](/docs/api/services) | Containers and services within a project |
+| [App catalog](/docs/api/apps) | Templates and application settings |
+| [GitHub](/docs/api/github) | Accounts, repositories, and GitHub App sources |
 
-| Policy | Limit | Keyed by | Applies to |
-|---|---|---|---|
-| `default-anon` | 300 / min | IP | Any unauthenticated route |
-| `default-authed` | 3000 / min | user | Any authenticated route |
-| `auth-tight` | 10 / min | IP | `POST /api/auth/*` (login, signup, reset) and self-host invite signup |
-| `mcp` | 300 / min | IP | `/api/mcp` (tool-call bursts) |
-| `webhook-ingress` | 120 / min | source IP | Inbound webhook deliveries |
-| `billing-portal` | 20 / min | org | Stripe portal / checkout creation |
+## Networking
 
-Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. `/api/health` is
-never limited (load balancers and SSR poll it). On a self-hosted instance with neither `TRUST_PROXY` nor
-`OPENSHIP_PUBLIC_URL` set, requests arriving over loopback skip the ordinary limits — the `auth-tight` login
-gate always enforces.
+| Resource | Use |
+| --- | --- |
+| [Domains and TLS](/docs/api/domains) | Hostnames, DNS verification, and certificates |
+| [DNS providers](/docs/api/dns) | DNS credentials and zone checks |
+| [Webhooks](/docs/api/webhooks) | Incoming actions and provider deliveries |
+| [Edge administration](/docs/api/edge) | Discover and import existing edge sites |
+| [Server terminal](/docs/api/terminal) / [service terminal](/docs/api/service-terminal) | Interactive WebSocket sessions |
 
-<Callout title="429 — Too many requests" type="warn">
-When a bucket is exhausted the request gets a `429` with body `{"error":"Too many requests"}` plus a
-`Retry-After` header (seconds). Back off until the window resets rather than retrying immediately.
-</Callout>
+## Operations
 
-## Error shape
+| Resource | Use |
+| --- | --- |
+| [Analytics](/docs/api/analytics) | Traffic and resource usage |
+| [Issues and health](/docs/api/issues) | Problems, health snapshots, and rescans |
+| [Updates](/docs/api/updates) | Available versions and update deployment |
+| [Jobs](/docs/api/jobs) | Commands, schedules, and run history |
+| [Backups](/docs/api/backups) / [destinations](/docs/api/backup-destinations) | Policies, archives, and restores |
+| [Notifications](/docs/api/notifications) | Channels, subscriptions, and deliveries |
+| [Notices](/docs/api/notices) | Public installation announcements |
+| [Audit log](/docs/api/audit) | Organization activity |
 
-Errors come back as JSON with a stable shape: a human `error` message and, for typed failures, a machine
-`code`. Validation failures add a field-level `details` map.
+## Access and infrastructure
 
-```json
-{ "error": "This access token is read-only", "code": "TOKEN_READ_ONLY" }
-```
+| Resource | Use |
+| --- | --- |
+| [Tokens](/docs/api/tokens) / [permissions](/docs/api/permissions) | Credentials, members, invitations, and grants |
+| [Provider credentials](/docs/api/credentials) | Registry and DNS provider secrets |
+| [User settings](/docs/api/settings) | Build, deploy, routing, and Git defaults |
+| [Servers](/docs/api/servers) / [installation settings](/docs/api/system) | Hosts, components, setup, and administration |
+| [Health](/docs/api/health) / [container images](/docs/api/images) | Installation metadata and image catalog |
+| [Mail](/docs/api/mail) | Self-hosted email services |
+| [Migration](/docs/api/migration) / [data transfer](/docs/api/data-transfer) | Server adoption, moves, imports, and exports |
+| [Cloud](/docs/api/cloud) / [billing](/docs/api/billing) | Cloud connections, plans, and usage |
+| [Authentication](/docs/api/auth) / [MCP](/docs/api/mcp) | Browser login and agent protocols |
 
-| Status | Typical `code` | Meaning |
-|---|---|---|
-| `400` | `VALIDATION_ERROR` | Request body failed the schema — see `details` for the offending fields. |
-| `401` | `INVALID_TOKEN`, `BEARER_NOT_ALLOWED_FROM_BROWSER` | Not authenticated, or a bad/expired token (plain `Unauthorized` when no session at all). |
-| `403` | `TOKEN_ORG_SCOPE`, `TOKEN_READ_ONLY` | Authenticated but not allowed — wrong org, read-only token, or your role/grants deny the action. |
-| `404` | — | Resource doesn't exist, or isn't in your organization (IDOR-safe). |
-| `409` | — | Conflict with current state (e.g. a delete already in progress). |
-| `429` | — | Rate-limited (see above). |
-| `503` | `AUTH_UNAVAILABLE` | The auth backend is unreachable — retry; never treated as "no session". |
-| `500` | — | Unhandled server error (`{"error":"Internal server error"}`, no code). |
-
-## Route groups & availability
-
-Routes are mounted per module. Most exist in every deploy mode; a handful are **self-hosted-only** (they touch
-the host filesystem, SSH, or local setup and are never loaded in cloud mode), and the cloud gateway swaps its
-route set by mode.
-
-| Base path | Covers | Availability |
-|---|---|---|
-| `/api/health` | Liveness + public deploy metadata | Both (unauthenticated) |
-| `/api/auth` | Sessions, OAuth, org management (Better Auth) | Both |
-| `/api/projects` | Projects, env, deploy config | Both |
-| `/api/projects/:id/services` | Services within a project | Both |
-| `/api/deployments` | Builds, deploys, rollbacks | Both |
-| `/api/domains` | Custom domains, DNS, SSL | Both |
-| `/api/github` | GitHub connection, repos, webhooks | Both |
-| `/api/webhooks` | Inbound provider webhooks (`/api/webhooks/backup` too) | Both |
-| `/api/analytics` | Traffic, usage, deployment stats | Both |
-| `/api` (backups) | Backup runs and restores | Both |
-| `/api/backup-destinations` | Backup targets, policies, schedules | Both |
-| `/api/notifications` | Channels, subscriptions, deliveries | Both |
-| `/api/audit` | Organization audit log | Both |
-| `/api/apps` | One-click app catalog and installer | Both |
-| `/api/updates` | Update status for apps, projects, self-app, webmail | Both |
-| `/api/notices` | Platform status notices (public read, operator push) | Both |
-| `/api/settings` | Workspace / deploy defaults | Both |
-| `/api/tokens` | Personal access tokens | Both |
-| `/api/permissions` | Roles and resource grants | Both |
-| `/api/billing` | Plans, usage, checkout | Both (mode-specific extensions) |
-| `/api/mcp` | Model Context Protocol JSON-RPC endpoint | Both |
-| `/api/images` | Container image helpers | Both |
-| `/api/services/terminal` | Interactive service terminal (WebSocket) | Both |
-| `/api/cloud` | Cloud account link / gateway | Both (SaaS vs local route set) |
-| `/api/jobs` | Scheduled jobs, runs, triggers | Self-hosted only |
-| `/api/system` | Filesystem browse, instance setup, provisioning | Self-hosted only |
-| `/api/mail` | Self-hosted mail server wizard | Self-hosted only |
-| `/api/migration` | Adopt an existing Docker host | Self-hosted only |
-| `/api/terminal` | Interactive server (SSH) terminal | Self-hosted only |
-
-## Module reference
-
-<Cards>
-  <Card title="Health" href="/docs/api/health" description="Public liveness and deployment-info probes." />
-  <Card title="Auth" href="/docs/api/auth" description="Sessions, OAuth, and organization management." />
-  <Card title="Projects" href="/docs/api/projects" description="Create and configure projects, env vars, and deploy settings." />
-  <Card title="Services" href="/docs/api/services" description="Manage the services that make up a project." />
-  <Card title="Apps" href="/docs/api/apps" description="Browse the one-click app catalog, install apps, and manage custom apps." />
-  <Card title="Deployments" href="/docs/api/deployments" description="Trigger builds, deploy, cancel, restart, and roll back." />
-  <Card title="Domains" href="/docs/api/domains" description="Attach domains, preview and verify DNS, manage SSL." />
-  <Card title="GitHub" href="/docs/api/github" description="Connect accounts, browse repos, and wire push auto-deploy." />
-  <Card title="Webhooks" href="/docs/api/webhooks" description="Inbound provider webhooks that turn a push into a deploy." />
-  <Card title="Analytics" href="/docs/api/analytics" description="Traffic, usage, container, and deployment metrics." />
-  <Card title="Backups" href="/docs/api/backups" description="Backup runs, restores, and their status." />
-  <Card title="Backup destinations" href="/docs/api/backup-destinations" description="Backup targets, policies, and schedules." />
-  <Card title="Notifications" href="/docs/api/notifications" description="Channels, subscriptions, and the alert feed." />
-  <Card title="Audit" href="/docs/api/audit" description="Read the organization's audit log." />
-  <Card title="Settings" href="/docs/api/settings" description="Workspace build and deploy defaults." />
-  <Card title="Tokens" href="/docs/api/tokens" description="Create and revoke personal access tokens." />
-  <Card title="Permissions" href="/docs/api/permissions" description="Manage roles and per-resource grants." />
-  <Card title="Billing" href="/docs/api/billing" description="Plans, usage, and checkout." />
-  <Card title="MCP" href="/docs/api/mcp" description="The Model Context Protocol endpoint for AI agents." />
-  <Card title="Images" href="/docs/api/images" description="Browse the build-image catalog for services." />
-  <Card title="Service terminal" href="/docs/api/service-terminal" description="Open a shell into a running service container." />
-  <Card title="Cloud" href="/docs/api/cloud" description="Link an instance to Openship Cloud and its control-plane endpoints." />
-  <Card title="System" href="/docs/api/system" description="Self-hosted instance administration (self-hosted only)." />
-  <Card title="Mail" href="/docs/api/mail" description="Install and run a self-hosted mail stack (self-hosted only)." />
-  <Card title="Migration" href="/docs/api/migration" description="Adopt an existing Docker host as a project (self-hosted only)." />
-  <Card title="Terminal" href="/docs/api/terminal" description="Interactive SSH shell to a managed server (self-hosted only)." />
-</Cards>
+For transport details, see [HTTP basics](/docs/api/http). For errors, providers, and current native/Cloud
+limits, see [SDK errors](/docs/api/sdk/errors) and [compatibility](/docs/api/sdk/compatibility).

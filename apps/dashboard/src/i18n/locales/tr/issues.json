@@ -1,8 +1,9 @@
 {
-  "title": "Sorunlar",
+  "title": "İzleme",
   "subtitle": "Openship'in projelerinde, sunucularında ve alan adlarında bulduğu her sorun.",
   "tabs": {
     "open": "Açık",
+    "health": "Sağlık",
     "resolved": "Çözüldü"
   },
   "resolvedNote": "Geçmiş, konteyner ve sunucu olaylarını kapsar — diğer kontroller anlık durumu bildirir, bu yüzden düzelen bir sertifika ya da dağıtım burada görünmeyi bırakır.",

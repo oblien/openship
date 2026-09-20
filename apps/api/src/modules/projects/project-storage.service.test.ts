@@ -1,3 +1,4 @@
+import type { ExecutionContext } from "@repo/platform";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
@@ -19,12 +20,16 @@ const h = vi.hoisted(() => ({
   projects: {} as Record<string, Record<string, unknown> | null>,
   updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
   merges: [] as Array<{ projectId: string; upserts: { key: string; value: string; isSecret?: boolean }[]; deletes: string[] }>,
-  connections: [] as Array<{ projectId: string; sourceProjectId: string; outputId: string; envKey: string }>,
+  connections: [] as Array<{ projectId: string; sourceProjectId: string; outputId: string; envKey: string; mode?: string }>,
+  internalAvailable: true,
+  internalAsks: [] as Array<{ projectId: string; sourceProjectId: string; outputId: string }>,
   links: [] as Array<{ id: string; envKey: string; sourceProjectId: string }>,
   deletedLinks: [] as string[],
   probe: vi.fn(async () => ({ ok: true }) as { ok: boolean; message?: string }),
   outputs: [] as Array<{ id: string; value: string }>,
   redeploys: [] as string[],
+  candidates: [] as Array<Record<string, unknown>>,
+  denied: new Set<string>(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -35,43 +40,47 @@ vi.mock("@repo/db", () => ({
         h.updates.push({ id, patch });
         h.projects[id] = { ...(h.projects[id] ?? {}), ...patch };
       }),
-      listByOrganization: vi.fn(async () => ({ rows: [], total: 0, page: 1, perPage: 20 })),
+      listByOrganization: vi.fn(async () => ({ rows: h.candidates, total: h.candidates.length, page: 1, perPage: 200 })),
     },
     projectConnection: { listByTarget: vi.fn(async () => h.links) },
   },
 }));
-vi.mock("../../lib/permission", () => ({ permission: { assert: vi.fn(async () => {}) } }));
-vi.mock("../../lib/connectivity", () => ({ runConnectivityCheck: h.probe }));
-vi.mock("../../lib/connectivity-checks", () => ({}));
-vi.mock("../../lib/credential-encryption", () => ({
+vi.mock("@repo/platform/engine/lib/authorization", () => ({ authorization: { authorize: vi.fn(async (ctx: ExecutionContext) => ctx), checkPermissionOnResource: vi.fn(async (_ctx: ExecutionContext, input: { resourceId: string }) => !h.denied.has(input.resourceId)) } }));
+vi.mock("@repo/platform/engine/lib/connectivity", () => ({ runConnectivityCheck: h.probe }));
+vi.mock("@repo/platform/engine/lib/connectivity-checks", () => ({}));
+vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: (v: string | null | undefined) => (v ? `enc(${v})` : null),
 }));
-vi.mock("../../lib/ssrf-guard", () => ({ assertPublicUrl: vi.fn(async () => {}) }));
-vi.mock("../apps/app-settings.service", () => ({
+vi.mock("@repo/platform/engine/lib/ssrf-guard", () => ({ assertPublicUrl: vi.fn(async () => {}) }));
+vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({
   getAppConnectionView: vi.fn(async () => ({ outputs: h.outputs })),
 }));
-vi.mock("./project-env.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-env.service", () => ({
   mergeEnvVars: vi.fn(async (projectId: string, _org: string, patch: { upserts: never[]; deletes: string[] }) => {
     h.merges.push({ projectId, upserts: patch.upserts, deletes: patch.deletes });
   }),
 }));
-vi.mock("./project-connection.service", () => ({
-  createConnection: vi.fn(async (_ctx: unknown, projectId: string, input: { sourceProjectId: string; outputId: string; envKey: string }) => {
+vi.mock("@repo/platform/engine/modules/projects/project-connection.service", () => ({
+  createConnection: vi.fn(async (_ctx: unknown, projectId: string, input: { sourceProjectId: string; outputId: string; envKey: string; mode?: string }) => {
     h.connections.push({ projectId, ...input });
     h.links.push({ id: `link_${input.envKey}`, envKey: input.envKey, sourceProjectId: input.sourceProjectId });
+  }),
+  internalModeAvailable: vi.fn(async (_ctx: unknown, projectId: string, input: { sourceProjectId: string; outputId: string }) => {
+    h.internalAsks.push({ projectId, ...input });
+    return h.internalAvailable;
   }),
   deleteConnection: vi.fn(async (_ctx: unknown, _projectId: string, linkId: string) => {
     h.deletedLinks.push(linkId);
     h.links = h.links.filter((l) => l.id !== linkId);
   }),
 }));
-vi.mock("../deployments/build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   triggerDeployment: vi.fn(async (_ctx: unknown, input: { projectId: string }) => {
     h.redeploys.push(input.projectId);
   }),
 }));
 
-import { bindObjectStorage, unbindObjectStorage } from "./project-storage.service";
+import { bindObjectStorage, getObjectStorage, unbindObjectStorage } from "@repo/platform/engine/modules/projects/project-storage.service";
 
 const ctx = { organizationId: "org1" } as never;
 
@@ -83,6 +92,10 @@ beforeEach(() => {
   h.links = [];
   h.deletedLinks = [];
   h.redeploys = [];
+  h.candidates = [];
+  h.denied.clear();
+  h.internalAsks = [];
+  h.internalAvailable = true;
   h.probe.mockResolvedValue({ ok: true });
   h.outputs = [
     { id: "endpoint", value: "https://minio.example.com" },
@@ -99,6 +112,17 @@ beforeEach(() => {
 function envOf(index = 0): Record<string, string> {
   return Object.fromEntries(h.merges[index].upserts.map((v) => [v.key, v.value]));
 }
+
+it("does not disclose storage candidate names or buckets without project read access", async () => {
+  h.candidates = [
+    { id: "store", name: "Visible", appTemplateId: "minio" },
+    { id: "hidden", name: "Private infrastructure", appTemplateId: "minio" },
+  ];
+  h.denied.add("hidden");
+  const view = await getObjectStorage(ctx, "app");
+  expect(view.candidates).toEqual([{ projectId: "store", name: "Visible", appTemplateId: "minio", defaultBucket: "uploads" }]);
+  expect(JSON.stringify(view)).not.toContain("Private infrastructure");
+});
 
 describe("bindObjectStorage — external provider", () => {
   const input = {
@@ -189,6 +213,46 @@ describe("bindObjectStorage — an installed storage app", () => {
   it("says so when the source app hasn't published its endpoint yet", async () => {
     h.outputs = [];
     await expect(bindObjectStorage(ctx, "app", input)).rejects.toThrow(/deploy it first/i);
+  });
+});
+
+/**
+ * GH-631/#632 follow-up. The dashboard sends NO mode, so this is the default
+ * path. It used to pick internal-vs-public by catching the "internal mode isn't
+ * available" ValidationError — which the FIRST linked output always threw, and
+ * that output is a credential (AWS_ACCESS_KEY_ID is pushed first). Once
+ * credentials stopped being rejected for not parsing as URLs, every bind flipped
+ * to internal with nothing checking that the ENDPOINT was internally reachable.
+ * The mode must come from asking about the endpoint, and from nothing else.
+ */
+describe("bindObjectStorage — choosing internal vs public with no mode given", () => {
+  const input = { sourceProjectId: "store", bucket: "uploads" };
+
+  it("asks the connection layer about the ENDPOINT output, not a credential", async () => {
+    await bindObjectStorage(ctx, "app", input);
+    expect(h.internalAsks).toEqual([
+      { projectId: "app", sourceProjectId: "store", outputId: "endpoint" },
+    ]);
+  });
+
+  it("wires every output internal when the endpoint resolves internally", async () => {
+    await bindObjectStorage(ctx, "app", input);
+    expect(h.connections.map((c) => c.mode)).toEqual(["internal", "internal", "internal"]);
+  });
+
+  it("wires public — not internal — when the endpoint has no internal address", async () => {
+    // e.g. the storage app runs on another server, or on Oblien cloud: the
+    // per-host `openship-<slug>` network isn't joinable, so an alias would
+    // resolve nowhere while the bind still reported success.
+    h.internalAvailable = false;
+    await bindObjectStorage(ctx, "app", input);
+    expect(h.connections.map((c) => c.mode)).toEqual(["public", "public", "public"]);
+  });
+
+  it("an EXPLICIT mode is still obeyed without asking", async () => {
+    await bindObjectStorage(ctx, "app", { ...input, mode: "public" as const });
+    expect(h.internalAsks).toEqual([]);
+    expect(h.connections.map((c) => c.mode)).toEqual(["public", "public", "public"]);
   });
 });
 

@@ -8,11 +8,9 @@ GitHub, where new deployments land by default, the tokens and AI clients that ta
 your team, and how this install itself is run and updated.
 
 Open it from the dashboard's left navigation (the **Settings** item), or go straight to **`/settings`**. The
-screen has a tab nav on the right (a horizontal strip on mobile) that switches between eight tabs. Each tab
+screen has a tab nav on the right (a horizontal strip on mobile) that switches between sections. Each tab
 is also directly linkable with a `?tab=` query — e.g. `/settings?tab=team` — so you can bookmark or share the
 exact place you mean.
-
-<Callout title="Screenshot">Settings page with the tab nav showing all tabs (General, Tokens, MCP, Team, Notifications, Audit log, Cloud, Instance) and the General tab open. *(screenshot pending)*</Callout>
 
 <Callout title="Some tabs and sections only appear in some setups" type="info">
 The **Cloud** tab is hidden on the managed Openship Cloud — it shows on self-hosted and desktop installs
@@ -24,19 +22,24 @@ expect, that's why.
 
 ## General
 
-The home tab: your GitHub connection and the defaults applied to new deployments.
+The home tab contains language, interface preferences, and self-hosted build preferences.
 
-### GitHub
+## Git
 
-The **GitHub** card is where you link the account Openship reads your repositories from. If you're not
-connected yet, press **Connect GitHub** and approve the window that pops up. Once linked, the card shows
-your login and how many installations you have, with **Add account**, **Install GitHub App**,
-**Manage on GitHub**, and **Disconnect**. There's also an optional **gh CLI** fallback for cloning repos
-outside your App installations during local builds.
+The **Git** tab owns outbound source-control access. On self-hosted instances, workspace owners first see
+**Self-hosted GitHub Apps**, where they can create Apps with GitHub's manifest flow, register an existing
+GitHub or GitHub Enterprise App, manage installations, rotate credentials, verify health, and choose a
+default source. See [Self-hosted GitHub Apps](/docs/guides/self-hosted-github-app).
+
+The **GitHub** connection card underneath manages the separate local `gh`/device/token identity and the
+managed Openship App fallback. When workspace-owned Apps exist, their install, manage, and delete controls
+remain exclusively in the source cards, so **Disconnect** cannot misleadingly remove only an unrelated
+OAuth account.
+
+The **GitHub clone credentials** card stores a personal token fallback for private clones. On desktop it can
+also forward the local Git identity to remote build servers.
 
 See [Deploy from GitHub](/docs/guides/deploy-from-github) for the full walk-through.
-
-<Callout title="Screenshot">General tab, the "GitHub" card showing a connected account with installation count and the Add account / Manage on GitHub / Disconnect actions. *(screenshot pending)*</Callout>
 
 ### Deploy Defaults
 
@@ -57,22 +60,8 @@ Choose the language used across the dashboard. The change applies immediately.
 
 ## Tokens
 
-Credentials that let other things act on your behalf. Two cards live here.
-
-### GitHub clone credentials
-
-A personal GitHub token used to clone **private** repos when the GitHub App isn't installed. Paste a
-classic (`ghp_…`) or fine-grained (`github_pat_…`) token, then toggle **Use as default clone token** to put
-it into the clone chain. It sits second in priority — after any per-project override, before the App
-installation token. Give a classic token the `repo` scope, or fine-grained read access to the repos you
-deploy.
-
-This card also has **Forward my git identity to build servers** — a single per-operator switch (replacing
-the old per-deploy checkbox). When on, a build that runs on a remote server clones directly on that server
-using your local `gh` login, tunneled over SSH just for the clone; nothing is written to the server. When
-off, the server falls back to its own git login, a stored token, the public path, or cloning on Openship
-and transferring. See [Git authentication for private repos](/docs/guides/git-authentication) for the full
-chain.
+Credentials that let other things act on your behalf. GitHub clone credentials live in **Git**; this tab
+contains API access tokens.
 
 ### Personal Access Tokens
 
@@ -86,8 +75,6 @@ permissions unless you narrow it. When creating one you can:
 
 Press **Create token**, then copy it immediately — this is the only time the value is shown. Existing
 tokens are listed with **read-only** / **scoped** badges and a **Revoke** button.
-
-<Callout title="Screenshot">Tokens tab showing the clone-credentials card and the Personal Access Tokens list with the create form (name, expiry, read-only, limit-to-resources). *(screenshot pending)*</Callout>
 
 <Callout title="Copy the token now" type="warn">
 A new token's value is displayed once, at creation. If you lose it you can't recover it — revoke it and
@@ -110,8 +97,6 @@ Two ways to authenticate:
 **Connected clients** lists every authorized client with its access level (read-only / full control) and
 resource scope, each with a disconnect action.
 
-<Callout title="Screenshot">MCP tab showing the endpoint copy row, the per-client "Add to your client" snippets, and the Connected clients list. *(screenshot pending)*</Callout>
-
 ## Team
 
 Who can reach this organization's projects, deployments, and servers. See
@@ -126,8 +111,6 @@ Who can reach this organization's projects, deployments, and servers. See
 If you're on a personal workspace, this tab also offers **Create team** to spin up a separate, isolated
 team organization.
 
-<Callout title="Screenshot">Team tab showing Active members with role selectors and the Invite member button, plus any pending invitations. *(screenshot pending)*</Callout>
-
 ## Notifications
 
 Decide what you get told about and where it goes.
@@ -141,15 +124,11 @@ Decide what you get told about and where it goes.
 - **Organization defaults** — the subscriptions applied when a new member joins. Members can override their
   own per-channel.
 
-<Callout title="Screenshot">Notifications tab showing the delivery channels list and the event × channel subscription grid. *(screenshot pending)*</Callout>
-
 ## Audit log
 
 *(Admin or owner only.)* A running feed of every change in the organization — who did it, what changed, and
 when. Search across events, actors, and resources, filter by event type, and expand any entry to see the
 **before**/**after** of the change plus actor details (name, email, IP, user agent).
-
-<Callout title="Screenshot">Audit log tab with the search box, event-type filter, and an expanded entry showing before/after values. *(screenshot pending)*</Callout>
 
 ## Cloud
 
@@ -157,8 +136,6 @@ when. Search across events, actors, and resources, filter by event type, and exp
 global CDN. Press **Connect to Openship Cloud** and sign in; once connected the card shows your cloud
 account with a **Disconnect** option. This connection is also what enables migrating your instance to the
 cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
-
-<Callout title="Screenshot">Cloud tab in the disconnected state showing the "Connect to Openship Cloud" button and the features it unlocks. *(screenshot pending)*</Callout>
 
 ## Instance
 
@@ -176,15 +153,42 @@ nothing can push updates to your install. More in [Updating Openship](/docs/guid
 
 ### Export / Import data
 
-*(Self-hosted and desktop, owner-gated.)* **Export data** downloads the entire instance database as one portable file —
-projects, servers, deployments, and settings. Set a passphrase to include your secrets (env vars, tokens,
-SSH credentials), re-encrypted under it; leave it blank to export without secrets. **Import data** restores
-such a file onto this instance, either **Replace everything** (wipe and restore exactly — best for moving
-to a new machine) or **Merge into existing** (keep current data and add the imported rows).
+*(Self-hosted and desktop, instance administrators only.)* **Export instance or projects** downloads a
+portable JSON file. Choose the entire instance, or select projects and individual environments in bulk.
+The same project export is available in **Project → Advanced → Export project**, with all of that
+project's environments selected by default.
+
+Project exports include deployments, service configuration, environment variables, linked apps, routing,
+backup policies and destinations, and Git credentials. Related self-hosted servers are recommended and
+included by default. You can choose which configuration and history to include. Environment values,
+private keys, deployment snapshots, inline Compose configuration, and credentials require a transfer password and are sealed
+in the file; save that password separately.
+
+**Import data** uploads the file once and previews its contents. Select the environments to import into
+the current workspace, review conflicts, and map source servers to destination servers. Matching
+self-hosted servers are reused with their existing connection credentials. Existing projects are skipped
+by default; **Overwrite matching project records** updates imported configuration while retaining
+destination-only records. Individual projects can override that choice. Shared integrations and backup
+destinations are reused unless you explicitly choose to overwrite shared settings.
+
+Cloud projects require the destination workspace to be connected to the **same Openship Cloud account**.
+Cloud servers cannot be transferred between accounts. A source control-plane host always needs an
+explicit target mapping. Projects mapped to a different host arrive disabled with live container
+references cleared, ready for a migration or redeployment.
+
+Loopback SSH addresses also require explicit mapping. Backup schedules that use a source-local folder
+or a different backup host arrive disabled; reconnect the storage, verify it, and then enable the schedules.
+
+Exports contain control-plane metadata. Volume contents, database payloads, source folders, and host TLS
+files stay on their server. Keep using that server, or move the runtime data with migration/backup
+restore. Reconnect local source folders and update Git/webhook callback URLs when the control-plane
+address changes. The import result keeps these follow-up notes available.
+
+Direct transfer continues to move an entire instance. Use an export file for project selections so you
+can review conflicts and server mappings on the destination before applying them.
 
 <Callout title="Import can wipe this instance" type="warn">
-"Replace everything" erases all current data here and signs you out. Only the workspace **owner** can
-export or import, and you'll need the original passphrase to restore secrets.
+An instance archive also offers **Entire instance**, with merge or full replacement. Replacement erases
+all destination data and signs you out. A project archive can never wipe an instance. Only an
+**instance administrator** can export or import, and restoring credentials requires the original password.
 </Callout>
-
-<Callout title="Screenshot">Instance tab showing the type/auth cards, the Updates section, and the Export / Import data controls. *(screenshot pending)*</Callout>

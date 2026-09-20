@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
-import { generateId } from "@repo/core";
-import type { Database } from "../client";
-import { projectConnection } from "../schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { generateId, ValidationError } from "@repo/core";
+import type { Database, DatabaseTransaction } from "../client";
+import { projectConnection, project, envVar } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -10,7 +10,7 @@ export type NewProjectConnection = typeof projectConnection.$inferInsert;
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createProjectConnectionRepo(db: Database) {
+export function createProjectConnectionRepo(db: Database | DatabaseTransaction) {
   return {
     /** Links a consumer (target) project depends on. */
     async listByTarget(targetProjectId: string): Promise<ProjectConnection[]> {
@@ -23,6 +23,12 @@ export function createProjectConnectionRepo(db: Database) {
     async listBySource(sourceProjectId: string): Promise<ProjectConnection[]> {
       return db.query.projectConnection.findMany({
         where: eq(projectConnection.sourceProjectId, sourceProjectId),
+      });
+    },
+
+    async listBySourceService(sourceServiceId: string): Promise<ProjectConnection[]> {
+      return db.query.projectConnection.findMany({
+        where: eq(projectConnection.sourceServiceId, sourceServiceId),
       });
     },
 
@@ -44,13 +50,47 @@ export function createProjectConnectionRepo(db: Database) {
           set: {
             organizationId: data.organizationId,
             sourceProjectId: data.sourceProjectId,
+            sourceServiceId: data.sourceServiceId ?? null,
             outputId: data.outputId,
             mode: data.mode,
+            usesPrivateNetwork: data.usesPrivateNetwork ?? true,
             updatedAt: new Date(),
           },
         })
         .returning();
       return row;
+    },
+
+    /** A bundle owns its env keys and links together, including on reconnect. */
+    async saveBindings(
+      targetProjectId: string,
+      environment: string,
+      bindings: Array<{
+        connection: Omit<NewProjectConnection, "id" | "createdAt" | "updatedAt">;
+        encryptedValue: string;
+      }>,
+    ): Promise<ProjectConnection[]> {
+      return db.transaction(async tx => {
+        // Serialize changes to this consumer's bindings, including the ownership check.
+        await tx.select({ id: project.id }).from(project).where(eq(project.id, targetProjectId)).for("update");
+        const links = await tx.query.projectConnection.findMany({ where: eq(projectConnection.targetProjectId, targetProjectId) });
+        const keys = bindings.map(binding => binding.connection.envKey);
+        const scope = and(eq(envVar.projectId, targetProjectId), eq(envVar.environment, environment), isNull(envVar.serviceId), inArray(envVar.key, keys));
+        const existingVars = await tx.select({ key: envVar.key }).from(envVar).where(scope);
+        const owned = new Set(links.map(link => link.envKey));
+        for (const variable of existingVars) {
+          if (!owned.has(variable.key)) throw new ValidationError(`An environment variable "${variable.key}" already exists on this project. Choose another name or remove it before connecting.`);
+        }
+        await tx.delete(envVar).where(scope);
+        await tx.insert(envVar).values(bindings.map(binding => ({
+          id: generateId("env"), projectId: targetProjectId, environment, serviceId: null,
+          key: binding.connection.envKey, value: binding.encryptedValue, isSecret: true,
+        })));
+        const repo = createProjectConnectionRepo(tx);
+        const result: ProjectConnection[] = [];
+        for (const binding of bindings) result.push(await repo.upsert(binding.connection));
+        return result;
+      });
     },
 
     async delete(id: string): Promise<void> {

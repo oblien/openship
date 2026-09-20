@@ -6,15 +6,19 @@ import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
 import { deployApi, projectsApi, isAbortError } from "@/lib/api";
 import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
-import { type Service } from "@/lib/api/services";
 import { useModal } from "@/context/ModalContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useRouter } from "next/navigation";
 import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
-
+import {
+  hasConnectedDomain,
+  isPotentiallyPublicService,
+  shouldWarnAboutUnreachableServices,
+} from "./redeploy-unreachable-warning";
 export const Deployments = () => {
   const {
     id,
@@ -23,9 +27,11 @@ export const Deployments = () => {
     servicesData,
     refreshServices,
     hasMultipleServices,
+    domainsData,
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
@@ -109,9 +115,7 @@ export const Deployments = () => {
       .getPendingActions(projectData.id)
       .then((res) => {
         if (cancelled) return;
-        setBlockedAction(
-          res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null,
-        );
+        setBlockedAction(res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null);
       })
       .catch(() => {
         /* best-effort — the status badge already says Action Required */
@@ -145,6 +149,10 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
+        if (showCloudPricing(error)) {
+          setIsRedeploying(false);
+          return;
+        }
         // A timeout almost certainly means the server started the deploy but was
         // slow to return the id — show the deployments list so it's visible rather
         // than stranding the user on an error.
@@ -168,7 +176,7 @@ export const Deployments = () => {
         setIsRedeploying(false); // success navigates away; only clear on failure
       }
     },
-    [projectData?.id, router, showToast, t],
+    [projectData?.id, router, showToast, showCloudPricing, t],
   );
 
   const handleRedeploy = async () => {
@@ -179,8 +187,12 @@ export const Deployments = () => {
       if (hasMultipleServices) {
         const services =
           servicesData.services.length > 0 ? servicesData.services : await refreshServices();
-        if (shouldWarnAboutUnreachableServices(services)) {
-          const candidateServices = services.filter(isPotentiallyPublicService);
+        if (shouldWarnAboutUnreachableServices(services, domainsData.domains, projectData.port)) {
+          const candidateServices = services.filter(
+            (s) =>
+              isPotentiallyPublicService(s) &&
+              !hasConnectedDomain(s, domainsData.domains, projectData.port),
+          );
           let modalId = "";
           modalId = showModal({
             customContent: (
@@ -200,10 +212,10 @@ export const Deployments = () => {
                         className="rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                         onClick={() => {
                           hideModal(modalId);
-                          setActiveTab("services");
+                          setActiveTab("domains");
                         }}
                       >
-                        {t.projects.redeploy.openServices}
+                        {t.projects.redeploy.openDomains}
                       </button>
                       <button
                         type="button"
@@ -442,19 +454,3 @@ export const Deployments = () => {
     </div>
   );
 };
-
-function hasConnectedDomain(service: Service) {
-  if (!service.exposed) return false;
-  if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
-  return Boolean(service.domain?.trim());
-}
-
-function isPotentiallyPublicService(service: Service) {
-  return service.enabled && (service.ports?.length ?? 0) > 0;
-}
-
-function shouldWarnAboutUnreachableServices(services: Service[]) {
-  const candidateServices = services.filter(isPotentiallyPublicService);
-  if (candidateServices.length === 0) return false;
-  return candidateServices.every((service) => !hasConnectedDomain(service));
-}

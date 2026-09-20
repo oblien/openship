@@ -18,18 +18,18 @@ const {
   probeServerGitAccess: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.token", () => ({ tokenFor, requireTokenFor }));
-vi.mock("../../../src/modules/github/github.http", () => ({ isPublicRepo }));
-vi.mock("../../../src/modules/github/server-github.service", () => ({ resolveServerGitCredential }));
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.token", () => ({ tokenFor, requireTokenFor }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ isPublicRepo }));
+vi.mock("@repo/platform/engine/modules/github/server-github.service", () => ({ resolveServerGitCredential }));
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   getLocalGhToken,
   // The real one is just this predicate over getLocalGhToken (it's the single
   // definition of the relay's precondition), so derive it from the same mock.
   hasLocalGitIdentity: async () => !!(await getLocalGhToken()),
 }));
-vi.mock("../../../src/modules/github/server-git-ambient", () => ({ probeServerGitAccess }));
+vi.mock("@repo/platform/engine/modules/github/server-git-ambient", () => ({ probeServerGitAccess }));
 
-import { resolveBuildGitToken } from "../../../src/modules/github/clone-auth";
+import { resolveBuildGitToken } from "@repo/platform/engine/modules/github/clone-auth";
 
 const ctx = { userId: "u1", organizationId: "o1" } as any;
 const base = { ctx, projectId: "p1", owner: "acme", repo: "app" };

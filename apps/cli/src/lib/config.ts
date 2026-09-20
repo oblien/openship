@@ -4,7 +4,7 @@
  * The file holds named CONTEXTS — each pins an API + dashboard endpoint, the
  * PAT issued against them, and optionally cached capabilities (see caps.ts).
  * A single `current` name selects the active context; every authenticated
- * command reads from it (see api-client.ts).
+ * command reads from it (see ship-client.ts).
  *
  * A legacy flat config ({ token, apiUrl, dashboardUrl }) is migrated to a
  * single "default" context on first read.
@@ -172,8 +172,8 @@ export function listContexts(): ContextInfo[] {
 
 /* ---------- Backward-compatible active-context helpers ---------- */
 
-export function getToken(): string | null {
-  return getContext().token ?? null;
+export function getToken(name?: string): string | null {
+  return getContext(name).token ?? null;
 }
 
 export function setToken(

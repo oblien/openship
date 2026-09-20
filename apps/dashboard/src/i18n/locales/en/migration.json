@@ -251,7 +251,9 @@
     "editRetry": "Edit & retry",
     "safetyTitle": "Non-destructive & reversible.",
     "safetyBody": "Data is copied, never moved — your source is only briefly paused, and nothing is deleted unless you explicitly cut over.",
-    "cleanupTarget": "Remove copied data from target"
+    "cleanupTarget": "Remove copied data from target",
+    "retryRun": "Retry",
+    "changeTarget": "Change target"
   },
   "plan": {
     "missing": "not found"

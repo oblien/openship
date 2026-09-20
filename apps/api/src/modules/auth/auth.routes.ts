@@ -12,13 +12,16 @@
  */
 
 import { Hono } from "hono";
-import { db, eq, schema } from "@repo/db";
-import { env } from "../../config/env";
-import { auth, isSaasDeployment } from "../../lib/auth";
+import { db, eq, repos, schema } from "@repo/db";
+import { env } from "@repo/platform/engine/config/env";
+import { auth, isSaasDeployment } from "@repo/platform/engine/lib/auth";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
+import { authMiddleware } from "../../middleware/auth";
+import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import * as ctrl from "./auth.controller";
+import { handleMcpTokenRequest } from "./mcp-token.handler";
 
 export const authRoutes = new Hono();
 
@@ -30,6 +33,21 @@ if (env.DEPLOY_MODE === "desktop") {
   authRoutes.get("/desktop-auth-poll", ctrl.desktopAuthPoll);
   authRoutes.get("/desktop-claim", ctrl.desktopClaim);
 }
+
+// Public by design: the invitation id is an unguessable bearer token and this
+// route returns only its claim-page projection. Better Auth's own invitation
+// lookup requires a session, which a brand-new invitee cannot have yet.
+authRoutes.get("/invitation-preview/:id", ctrl.invitationPreview);
+
+// Compatibility URLs use the same authorized operations as the SDK. The shared
+// invitation service owns the serialization boundary.
+authRoutes.post("/organization/invite-member", authMiddleware, organizationController.inviteMember);
+authRoutes.post("/organization/accept-invitation", authMiddleware, organizationController.acceptInvitation);
+authRoutes.post("/organization/reject-invitation", authMiddleware, organizationController.rejectInvitation);
+authRoutes.post("/organization/cancel-invitation", authMiddleware, organizationController.cancelInvitation);
+authRoutes.post("/organization/update-member-role", authMiddleware, organizationController.updateMemberRole);
+authRoutes.post("/organization/remove-member", authMiddleware, organizationController.removeMember);
+authRoutes.post("/organization/leave", authMiddleware, organizationController.leaveOrganization);
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps
 // open public signup. On self-host the ONLY Better Auth signup allowed is the
@@ -50,6 +68,41 @@ authRoutes.on("POST", "/sign-up/*", async (c, next) => {
   );
 });
 
+// The mcp() plugin's discovery metadata advertises `jwks_uri` and
+// `userinfo_endpoint` under /api/auth/mcp/* but implements NEITHER — both fell
+// through to the catch-all and 404'd. A verifying OAuth client (Claude.ai)
+// fetches the jwks to validate the id_token; an empty answer kills the
+// connection right after the token exchange. Serve them here, BEFORE the
+// catch-all. The key is the instance's persistent RS256 keypair that also
+// signs the (re-issued) id_token — see lib/mcp-oidc-keys.ts.
+authRoutes.get("/mcp/jwks", async (c) => {
+  const { getMcpSigningKey } = await import("../../lib/mcp-oidc-keys");
+  const key = await getMcpSigningKey();
+  return c.json({ keys: [key.publicJwk] }, 200, {
+    "Cache-Control": "public, max-age=3600",
+    "Access-Control-Allow-Origin": "*",
+  });
+});
+
+authRoutes.get("/mcp/userinfo", async (c) => {
+  const token = c.req.header("authorization")?.replace(/^Bearer /i, "");
+  if (!token) {
+    return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
+  }
+  const row = await repos.oauth.findAccessToken(token);
+  if (!row?.userId || row.accessTokenExpiresAt < new Date()) {
+    return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
+  }
+  const user = await repos.user.findById(row.userId);
+  if (!user) return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
+  const scopes = row.scopes.split(" ");
+  return c.json({
+    sub: user.id,
+    ...(scopes.includes("profile") ? { name: user.name } : {}),
+    ...(scopes.includes("email") ? { email: user.email, email_verified: user.emailVerified } : {}),
+  });
+});
+
 // Better Auth catch-all — must be last so the desktop overrides + signup guard win.
 authRoutes.on(["GET", "POST"], "/*", async (c) => {
   const request = await normalizeMcpRedirectUri(c.req.raw, async (clientId) => {
@@ -60,5 +113,11 @@ authRoutes.on(["GET", "POST"], "/*", async (c) => {
       .limit(1);
     return client?.redirectUrls.split(",");
   });
+  // MCP token grants go through the RFC 8707 wrapper (validates `resource`,
+  // audience-binds the issued token) before reaching the plugin. Everything
+  // else is delegated verbatim.
+  if (c.req.method === "POST" && new URL(request.url).pathname.endsWith("/mcp/token")) {
+    return handleMcpTokenRequest(request);
+  }
   return auth.handler(request);
 });

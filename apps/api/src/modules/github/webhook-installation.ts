@@ -4,16 +4,56 @@
  */
 
 import { repos } from "@repo/db";
-import { env } from "../../config/env";
-import { invalidateOrgGitHubCache, invalidateUserGitHubCache } from "./github.auth";
-import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubInstallationPayload } from "./github.types";
+import { env } from "@repo/platform/engine/config/env";
+import {
+  getGitHubAuthMode,
+  invalidateOrgGitHubCache,
+  invalidateUserGitHubCache,
+} from "@repo/platform/engine/modules/github/github.auth";
+import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
+import type { GitHubInstallationPayload } from "@repo/contracts";
+import { listGitHubSourcesForWebhook } from "@repo/platform/engine/modules/github/github-source.service";
+
+interface InstallationWebhookScope {
+  sourceIds: Set<string>;
+  includeLegacy: boolean;
+}
+
+async function resolveInstallationScope(
+  payload: GitHubInstallationPayload,
+): Promise<InstallationWebhookScope> {
+  const sources = await listGitHubSourcesForWebhook({
+    installationId: payload.installation.id,
+    appId: payload.installation.app_id,
+  }).catch(() => []);
+  const sourceIds = new Set(sources.map((source) => source.id));
+  const configuredAppId = Number(env.GITHUB_APP_ID ?? 0);
+  const legacyMode = env.CLOUD_MODE || getGitHubAuthMode() === "app";
+  return {
+    sourceIds,
+    includeLegacy:
+      legacyMode &&
+      (sourceIds.size === 0 ||
+        configuredAppId <= 0 ||
+        configuredAppId === payload.installation.app_id),
+  };
+}
+
+function rowsInScope<T extends { sourceId?: string | null }>(
+  rows: T[],
+  scope: InstallationWebhookScope,
+): T[] {
+  return rows.filter((row) =>
+    row.sourceId ? scope.sourceIds.has(row.sourceId) : scope.includeLegacy,
+  );
+}
 
 // ─── Installation events ─────────────────────────────────────────────────────
 
 export async function handleInstallation(
   payload: GitHubInstallationPayload,
 ): Promise<WebhookHandlerResult> {
+  const scope = await resolveInstallationScope(payload);
   // SaaS-only contract: the GitHub App is owned by openship.io, so
   // installation events ONLY have authoritative meaning on the SaaS
   // (env.CLOUD_MODE=true). On a self-hosted instance the App's webhook
@@ -25,10 +65,9 @@ export async function handleInstallation(
   // Acknowledge with 200 (so GitHub doesn't retry forever) and refuse to
   // touch local state.
   //
-  // The narrow exception is GITHUB_AUTH_MODE=app, the self-host path
-  // where the operator IS running their own App with local credentials
-  // and no SaaS proxy. There the webhook IS the authoritative source.
-  if (!env.CLOUD_MODE && env.GITHUB_AUTH_MODE !== "app") {
+  // The exception is effective local App mode (explicit or auto-detected),
+  // where the operator owns the App and its webhook legitimately points here.
+  if (!scope.includeLegacy && scope.sourceIds.size === 0) {
     console.log(
       `[GitHub Webhook] Ignoring installation.${payload.action} on self-hosted instance — SaaS (api.openship.io) is the authoritative source for GitHub App installations.`,
     );
@@ -41,13 +80,13 @@ export async function handleInstallation(
 
   switch (payload.action) {
     case "created":
-      return handleInstallationCreated(payload);
+      return handleInstallationCreated(payload, scope);
     case "deleted":
-      return handleInstallationDeleted(payload);
+      return handleInstallationDeleted(payload, scope);
     case "suspend":
-      return handleInstallationSuspended(payload);
+      return handleInstallationSuspended(payload, scope);
     case "unsuspend":
-      return handleInstallationCreated(payload); // Re-upsert to restore
+      return handleInstallationCreated(payload, scope); // Re-upsert to restore
     default:
       return {
         success: true,
@@ -59,62 +98,60 @@ export async function handleInstallation(
 
 async function handleInstallationCreated(
   payload: GitHubInstallationPayload,
+  scope: InstallationWebhookScope,
 ): Promise<WebhookHandlerResult> {
-  const senderId = String(payload.sender.id);
   const installationId = payload.installation.id;
   const accountLogin = payload.installation.account.login.toLowerCase();
   const accountType = payload.installation.account.type;
 
-  /* Find the user by their GitHub provider ID in Better Auth's account table.
-   * The connect flow runs GitHub OAuth on the SaaS BEFORE the install URL,
-   * so this row should always exist by the time the install webhook fires. */
-  const account = await findUserByGitHubId(senderId);
-  if (!account) {
+  // Installation webhooks carry no Openship workspace binding and can arrive
+  // before or after the browser setup redirect. They may refresh a row that the
+  // verified claim callback already owns, but must never invent one by guessing
+  // from sender membership order.
+  const existing = rowsInScope(
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    scope,
+  );
+  if (existing.length === 0) {
     console.log(
-      `[GitHub Webhook] installation.created from GitHub user ${senderId} (${accountLogin}) — no Better Auth account row. The user installed the App without doing GitHub OAuth on the SaaS first; the connect flow should have run OAuth before returning the install URL. Returning 200 so GitHub doesn't retry; user must redo Connect from the dashboard.`,
+      `[GitHub Webhook] installation.created for ${accountLogin} is awaiting the state-bound setup callback; no workspace row was guessed.`,
     );
     return {
       success: true,
       event: "installation",
-      message: "No linked Openship user - ignored (OAuth required first)",
+      message: "Awaiting authenticated setup callback",
     };
   }
 
-  // not ctx-scoped: webhook background path. GitHub's installation
-  // webhook payload does NOT carry the state nonce we bind in
-  // resolveInstallUrl → consumeInstallState (that nonce is only
-  // available on the redirect callback to the dashboard, not on the
-  // webhook delivery). Without a state nonce here, we have NO authoritative
-  // signal for which org the install belongs to. The fallback below
-  // picks the user's first membership; their personal org
-  // (deterministic id `org_<userId>`) is the second-level fallback.
-  //
-  // FOLLOW-UP: extend the github_install_state row to be matchable by
-  // (senderId + accountLogin) so this webhook can read the org from
-  // the install-state row written at request time and drop the
-  // memberships[0] guess entirely. Requires either webhook ordering
-  // guarantees or carrying senderId / accountLogin through the SaaS
-  // install_state row.
-  const memberships = await repos.member.listByUser(account.userId).catch(() => []);
-  const organizationId =
-    memberships[0]?.organizationId ?? `org_${account.userId}`;
-
-  await repos.gitInstallation.upsert({
-    userId: account.userId,
-    organizationId,
-    provider: "github",
-    installationId,
-    owner: accountLogin,
-    ownerType: accountType,
-    providerUserId: senderId,
-    providerOwnerId: String(payload.installation.account.id),
-    isOrg: accountType === "Organization",
-  });
-  await invalidateUserGitHubCache(account.userId);
-  await invalidateOrgGitHubCache(organizationId);
+  await Promise.all(
+    existing.map((row) =>
+      repos.gitInstallation.upsert({
+        userId: row.userId,
+        organizationId: row.organizationId,
+        sourceId: row.sourceId ?? null,
+        provider: "github",
+        installationId,
+        owner: accountLogin,
+        ownerType: accountType,
+        providerUserId: String(payload.sender.id),
+        providerOwnerId: String(payload.installation.account.id),
+        isOrg: accountType === "Organization",
+      }),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.userId))].map((userId) =>
+      invalidateUserGitHubCache(userId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.organizationId))].map((organizationId) =>
+      invalidateOrgGitHubCache(organizationId),
+    ),
+  );
 
   console.log(
-    `[GitHub Webhook] installation.created on ${accountLogin} written for userId ${account.userId}`,
+    `[GitHub Webhook] installation.${payload.action} refreshed ${existing.length} workspace binding(s) for ${accountLogin}`,
   );
   return {
     success: true,
@@ -125,74 +162,86 @@ async function handleInstallationCreated(
 
 async function handleInstallationDeleted(
   payload: GitHubInstallationPayload,
+  scope: InstallationWebhookScope,
 ): Promise<WebhookHandlerResult> {
-  const senderId = String(payload.sender.id);
   const installationId = payload.installation.id;
   const accountLogin = payload.installation.account.login.toLowerCase();
 
-  const account = await findUserByGitHubId(senderId);
-  if (!account) {
-    await repos.gitInstallation.removeByInstallationIdForProvider(installationId);
-    return { success: true, event: "installation", message: "No linked user - ignored" };
-  }
-
-  // Capture the install row's organizationId BEFORE deleting so the
-  // team's shared cache entries get cleared too.
-  const existing = await repos.gitInstallation
-    .findByOwner(account.userId, accountLogin)
-    .catch(() => null);
-  await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
-  await invalidateUserGitHubCache(account.userId);
-  if (existing?.organizationId) {
-    await invalidateOrgGitHubCache(existing.organizationId);
-    // Reconcile access grants: this owner's repos are gone, so prune the
-    // org-level + per-repo grants pointing at it (self-healing hygiene).
-    await repos.resourceGrant
-      .deleteGitHubGrantsForOwner(existing.organizationId, accountLogin)
-      .catch(() => 0);
-  }
+  const existing = rowsInScope(
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    scope,
+  );
+  const sourceIds = new Set(existing.map((row) => row.sourceId ?? null));
+  await Promise.all(
+    [...sourceIds].map((sourceId) =>
+      repos.gitInstallation.removeByInstallationIdForProvider(installationId, sourceId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.userId))].map((userId) =>
+      invalidateUserGitHubCache(userId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.organizationId))].map((organizationId) =>
+      invalidateOrgGitHubCache(organizationId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.organizationId))].map(async (organizationId) => {
+      // Grants are owner-scoped, not source-scoped. Keep them when another
+      // active App still covers this owner in the workspace.
+      const replacement = await repos.gitInstallation
+        .findByOrgAndOwner(organizationId, accountLogin)
+        .catch(() => undefined);
+      if (!replacement) {
+        await repos.resourceGrant
+          .deleteGitHubGrantsForOwner(organizationId, accountLogin)
+          .catch(() => 0);
+      }
+    }),
+  );
 
   return { success: true, event: "installation", message: "Installation removed" };
 }
 
 async function handleInstallationSuspended(
   payload: GitHubInstallationPayload,
+  scope: InstallationWebhookScope,
 ): Promise<WebhookHandlerResult> {
-  const senderId = String(payload.sender.id);
   const installationId = payload.installation.id;
   const accountLogin = payload.installation.account.login.toLowerCase();
 
-  const account = await findUserByGitHubId(senderId);
-  if (!account) {
-    await repos.gitInstallation.removeByInstallationIdForProvider(installationId);
-    return { success: true, event: "installation", message: "No linked user - ignored" };
-  }
+  // Suspension is reversible. Preserve the workspace binding and grants so an
+  // unsuspend event becomes usable again without an impossible second setup
+  // callback; GitHub will refuse token minting while it is suspended.
+  const existing = rowsInScope(
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    scope,
+  );
+  const sourceIds = new Set(existing.map((row) => row.sourceId ?? null));
+  await Promise.all(
+    [...sourceIds].map((sourceId) =>
+      repos.gitInstallation.suspendByInstallationIdForProvider(installationId, sourceId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.userId))].map((userId) =>
+      invalidateUserGitHubCache(userId),
+    ),
+  );
+  await Promise.all(
+    [...new Set(existing.map((row) => row.organizationId))].map((organizationId) =>
+      invalidateOrgGitHubCache(organizationId),
+    ),
+  );
+  console.log(
+    `[GitHub Webhook] Installation suspended for ${accountLogin}; workspace bindings retained`,
+  );
 
-  // Suspended installations can't issue tokens - remove so token resolution
-  // falls back to the user's OAuth token, and linkRepo will prompt re-install.
-  const existing = await repos.gitInstallation
-    .findByOwner(account.userId, accountLogin)
-    .catch(() => null);
-  await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
-  await invalidateUserGitHubCache(account.userId);
-  if (existing?.organizationId) {
-    await invalidateOrgGitHubCache(existing.organizationId);
-    // Suspended installs can't issue tokens — prune this owner's grants
-    // so they don't linger; the owner re-grants on unsuspend.
-    await repos.resourceGrant
-      .deleteGitHubGrantsForOwner(existing.organizationId, accountLogin)
-      .catch(() => 0);
-  }
-  console.log(`[GitHub Webhook] Installation suspended for ${accountLogin} - removed from DB`);
-
-  return { success: true, event: "installation", message: `Installation suspended for ${accountLogin}` };
-}
-
-/**
- * Find our user by their GitHub account ID using Better Auth's account table.
- */
-async function findUserByGitHubId(githubId: string) {
-  const account = await repos.account.findByProviderAccountId("github", githubId);
-  if (!account) return null;
-  return { userId: account.userId, accountId: account.accountId };
+  return {
+    success: true,
+    event: "installation",
+    message: `Installation suspended for ${accountLogin}`,
+  };
 }

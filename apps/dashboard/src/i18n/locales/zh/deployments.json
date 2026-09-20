@@ -32,7 +32,8 @@
       "total": "总计",
       "successful": "成功",
       "failed": "失败",
-      "inProgress": "进行中"
+      "inProgress": "进行中",
+      "pageTitle": "本页"
     },
     "autoDeploy": {
       "title": "自动部署",
@@ -69,6 +70,7 @@
     "actionRequired": "需要处理",
     "rejected": "已拒绝",
     "verifying": "验证中",
+    "noChanges": "无变更",
     "pending": "待处理"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "取消固定部署失败",
     "rollbackModeInstant": "即时恢复 — 复用该版本保留的镜像，无需重新构建。",
     "rollbackModeRebuild": "重新构建 — 该版本的镜像已不在主机上，将重新构建其提交。",
+    "rollbackModeReacquireImage": "注册表恢复 — 重新拉取为此版本记录的精确镜像引用，无需重新构建源代码。",
     "rollbackModeMixed": "基本即时 — {count} 个服务的镜像已丢失，将重新构建。"
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "它们会继续运行，不会被改动：{names}",
     "confirm": "回滚",
     "cancel": "取消"
+  },
+  "loadFailed": "无法加载部署记录。",
+  "retry": "重试",
+  "pagination": {
+    "label": "部署历史分页",
+    "previous": "上一页",
+    "next": "下一页",
+    "pageOf": "第 {page} 页，共 {total} 页",
+    "range": "第 {from}–{to} 条部署，共 {total} 条"
   }
 }

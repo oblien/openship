@@ -11,6 +11,7 @@
 import { describe, test, expect } from "vitest";
 import { Hono } from "hono";
 import { handleApiError } from "@/middleware/error-handler";
+import { AppError, OperationError } from "@repo/contracts";
 
 function makeApp() {
   const app = new Hono();
@@ -24,6 +25,35 @@ function makeApp() {
 }
 
 describe("handleApiError — malformed JSON body", () => {
+  test("exposes explicit operation recovery details while keeping canonical error fields authoritative", async () => {
+    const app = makeApp();
+    app.get("/failure", () => {
+      throw new OperationError("Cleanup failed", 409, "PROJECT_TEARDOWN_FAILED", {
+        canForceOrphan: true,
+        error: "ignored",
+        code: "ignored",
+      });
+    });
+    const response = await app.request("/failure");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Cleanup failed",
+      code: "PROJECT_TEARDOWN_FAILED",
+      canForceOrphan: true,
+    });
+  });
+
+  test("does not expose arbitrary provider error properties as public recovery details", async () => {
+    const app = makeApp();
+    app.get("/failure", () => {
+      throw Object.assign(new AppError("Provider denied", 403, "PROVIDER_DENIED"), {
+        details: { credential: "secret" },
+      });
+    });
+    const response = await app.request("/failure");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Provider denied", code: "PROVIDER_DENIED" });
+  });
   test("returns 400 (not 500) for a syntactically invalid body", async () => {
     const app = makeApp();
     const res = await app.request("/echo", {

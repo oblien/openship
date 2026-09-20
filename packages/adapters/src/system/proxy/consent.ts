@@ -76,10 +76,20 @@ export async function ensureEdgeClear(
       // journal of its own, so nobody downstream can undo this.
       await rollbackEdgeTakeover(executor, onLog);
       const plural = freed.stillBound.length > 1;
+      const ports =
+        `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ` +
+        `${plural ? "are" : "is"} still in use, so the edge can't bind. Nothing was installed`;
       throw new AppError(
-        `Stopped the existing proxy, but port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ` +
-          `${plural ? "are" : "is"} still in use, so the edge can't bind. Nothing was installed and ` +
-          "the previous proxy has been restored — find what else is holding the port and retry.",
+        // The advice has to match the actual cause. Told to hunt for another holder, an
+        // operator retries the same unprivileged takeover forever — and "stopped the
+        // existing proxy" is untrue on this arm, since the stop is what was refused.
+        freed.privilegeDegraded
+          ? `The ${ports} — and Openship could not run the stop as root on this host (see the ` +
+            "privilege warning above), so stopping the existing proxy was almost certainly " +
+            "refused. Retrying as this user will fail the same way: reconnect as root, or as a " +
+            "user with passwordless sudo."
+          : `Stopped the existing proxy, but ${ports} and the previous proxy has been restored — ` +
+            "find what else is holding the port and retry.",
         409,
         "EDGE_PORTS_STILL_BOUND",
       );

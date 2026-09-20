@@ -15,8 +15,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { resolveGitHubAuthMode } = vi.hoisted(() => ({ resolveGitHubAuthMode: vi.fn() }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   resolveGitHubAuthMode,
+  getGitHubAuthMode: () => "gh-first",
   getGitHubConnectionState: vi.fn(),
   getInstallationId: vi.fn(),
   getInstallationToken: vi.fn(),
@@ -25,21 +26,21 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   resolveInstallUrl: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   listUserOwnedRepos: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.token", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.token", () => ({
   tokenFor: vi.fn(),
   canResolveTokenFor: vi.fn(),
 }));
 
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {},
   runtimeTarget: { id: "local" },
 }));
 
-import { LocalGitHubSource } from "../../../src/modules/github/sources/local-source";
+import { LocalGitHubSource } from "@repo/platform/engine/modules/github/sources/local-source";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as never;
 

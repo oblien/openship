@@ -1,0 +1,18 @@
+{
+  "title": "SDK setup",
+  "pages": [
+    "index",
+    "installation",
+    "---Connect---",
+    "client",
+    "native",
+    "identity",
+    "lifecycle",
+    "---Integrate---",
+    "errors",
+    "utilities",
+    "operator",
+    "examples",
+    "compatibility"
+  ]
+}

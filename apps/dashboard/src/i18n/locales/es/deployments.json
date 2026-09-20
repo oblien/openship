@@ -32,7 +32,8 @@
       "total": "Total",
       "successful": "Correctos",
       "failed": "Fallidos",
-      "inProgress": "En curso"
+      "inProgress": "En curso",
+      "pageTitle": "En esta página"
     },
     "autoDeploy": {
       "title": "Despliegue automático",
@@ -69,6 +70,7 @@
     "actionRequired": "Acción requerida",
     "rejected": "Rechazado",
     "verifying": "Verificando",
+    "noChanges": "Sin cambios",
     "pending": "Pendiente"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "No se pudo desfijar el despliegue",
     "rollbackModeInstant": "Restauración instantánea: reutiliza la imagen retenida de esta versión, sin recompilar.",
     "rollbackModeRebuild": "Recompilación: la imagen de esta versión ya no está en el host, así que se compila su commit.",
+    "rollbackModeReacquireImage": "Restauración desde el registro: descarga la referencia exacta de imagen guardada para esta versión, sin recompilar el código fuente.",
     "rollbackModeMixed": "Casi instantáneo: {count} servicio(s) perdieron su imagen y se recompilarán."
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "Estos siguen en ejecución y no se modifican: {names}",
     "confirm": "Revertir",
     "cancel": "Cancelar"
+  },
+  "loadFailed": "No se pudo cargar el historial de despliegues.",
+  "retry": "Reintentar",
+  "pagination": {
+    "label": "Páginas del historial de despliegues",
+    "previous": "Página anterior",
+    "next": "Página siguiente",
+    "pageOf": "Página {page} de {total}",
+    "range": "Despliegues {from}–{to} de {total}"
   }
 }

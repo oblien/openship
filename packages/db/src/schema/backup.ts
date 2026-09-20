@@ -217,6 +217,9 @@ export const backupRun = pgTable(
   "backup_run",
   {
     id: text("id").primaryKey(),
+    /** One enqueue operation can fan out into several service runs. This
+     *  identifier is shared by those children; legacy rows are NULL. */
+    batchId: text("batch_id"),
 
     // Policy + destination — SET NULL on delete so the run row + its
     // remote artifacts survive their schedule's deletion.
@@ -250,6 +253,17 @@ export const backupRun = pgTable(
 
     startedAt: timestamp("started_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
+    /**
+     * Durable worker lease. `startedAt`/`finishedAt` above describe the run's
+     * public history; these two columns describe whether code can still be
+     * mutating the source or destination after an outcome was recorded.
+     *
+     * Only `claimExecution` opens the lease and only the worker's outermost
+     * `finally` closes it. FSM transitions and heartbeat sweeps deliberately do
+     * neither: a terminal status is not proof that a racing worker has stopped.
+     */
+    executionStartedAt: timestamp("execution_started_at"),
+    executionFinishedAt: timestamp("execution_finished_at"),
     /** Bumped at each FSM transition (heartbeat for stale-run detection). */
     lastEventAt: timestamp("last_event_at").notNull().defaultNow(),
 
@@ -277,12 +291,16 @@ export const backupRun = pgTable(
     index("idx_backup_run_org_started").on(table.organizationId, table.startedAt),
     index("idx_backup_run_destination_started").on(table.destinationId, table.startedAt),
     index("idx_backup_run_project_started").on(table.projectId, table.startedAt),
+    index("idx_backup_run_policy_batch")
+      .on(table.policyId, table.batchId)
+      .where(sql`${table.batchId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    index("idx_backup_run_execution_in_flight")
+      .on(table.projectId)
+      .where(sql`${table.executionStartedAt} IS NOT NULL AND ${table.executionFinishedAt} IS NULL`),
     // Partial index for the boot-time stale-run sweep.
     index("idx_backup_run_in_flight")
       .on(table.status)
-      .where(
-        sql`${table.status} IN ('queued','preparing','snapshotting','uploading','verifying')`,
-      ),
+      .where(sql`${table.status} IN ('queued','preparing','snapshotting','uploading','verifying')`),
   ],
 );
 
@@ -352,8 +370,9 @@ export const backupRestore = pgTable(
      * Cancel is cooperative, so the request has to outlive the request handler:
      * the node taking the cancel isn't guaranteed to be the node running the
      * apply, and the running phase must see the flag rather than be interrupted.
-     * `cancelRequestedAt` holds the FIRST press — a second press ~2min later is
-     * the force-terminal escape hatch for a wedged `applying` row.
+     * `cancelRequestedAt` holds the FIRST press for audit/history. An applying
+     * row stays non-terminal until its worker acknowledges the request; elapsed
+     * time or a second press is not proof that the writer stopped.
      */
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     cancelRequestedAt: timestamp("cancel_requested_at"),

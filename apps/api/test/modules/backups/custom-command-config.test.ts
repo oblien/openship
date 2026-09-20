@@ -45,10 +45,13 @@ vi.mock("@repo/db", () => ({
         id: "bkr_live",
         status: "queued",
         policyId: "pol_mail",
+        projectId: null,
         serviceId: null,
         mailServerId: "mail_1",
         organizationId: "org_1",
       }),
+      claimExecution: async () => "claimed",
+      acknowledgeExecutionFinished: async () => {},
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         Object.assign(h.row, { status }, patch ?? {});
       },
@@ -105,11 +108,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
         stdout.end(Buffer.from("ARCHIVE-BYTES"));
         return { stdout, awaitExit: Promise.resolve({ code: 0, stderr: "" }) };
       },
-      pipeIntoCommand: async (
-        _svc: unknown,
-        argv: string[],
-        body: NodeJS.ReadableStream,
-      ) => {
+      pipeIntoCommand: async (_svc: unknown, argv: string[], body: NodeJS.ReadableStream) => {
         const chunks: Buffer[] = [];
         for await (const chunk of body) chunks.push(Buffer.from(chunk as Buffer));
         h.pipedInto.push({
@@ -126,25 +125,30 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // The orchestrator releases the runtime it resolved when the run ends; these
+  // stubs hold no transport, so the release is a no-op here.
+  disposeRuntime: () => {},
+  disposePlatform: () => {},
   resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "bare" } } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => null,
+  liveContainerForService: async () => ({ containerId: null, running: null }),
 }));
 
-const { BackupOrchestrator } = await import("../../../src/modules/backups/backup.orchestrator");
+const { BackupOrchestrator } = await import("@repo/platform/engine/modules/backups/backup.orchestrator");
 // Producers self-register by side effect and aren't exported by name, so this is
 // also the registry lookup the orchestrator itself makes.
 const { resolveProducer, resolveExecutor } = await import("@repo/adapters");
@@ -282,6 +286,94 @@ describe("payloadConfig forwarding is not mail-specific", () => {
 
     expect(h.execCommands[0]).toBe("cat /data/dump.bin");
     expect(recorded()[0].metadata.restoreCommand).toBe("tee /data/dump.bin");
+  });
+
+  it("records a DSN password verbatim and restores with it", async () => {
+    // The second way a custom_command artifact became unrestorable: the recorded
+    // metadata went into jsonb through the BUILD-LOG credential scrubber, which
+    // rewrites a URL's userinfo to `***@`. So a policy whose commands carry a DSN was
+    // stored with the password gone — present, plausible, and certain to fail
+    // authentication partway through the restore, after the artifact had streamed.
+    //
+    // It also protected nothing: the same command goes unredacted into the
+    // destination's manifest.json (the copy that leaves the box) and sits unredacted
+    // on the policy row.
+    //
+    // Asserted at BOTH ends, because the record and the execution are separate reads:
+    // what the run stored, and what the restore actually ran.
+    const uri = "mongodb://root:s3cr3t@db:27017/?authSource=admin";
+    h.payloadConfig = {
+      produceCommand: `mongodump --uri "${uri}" --archive`,
+      restoreCommand: `mongorestore --uri "${uri}" --archive`,
+    };
+
+    await new BackupOrchestrator().execute("bkr_live");
+
+    expect(h.row.status).toBe("succeeded");
+    expect(recorded()[0].metadata.restoreCommand).toBe(h.payloadConfig.restoreCommand);
+    expect(String(recorded()[0].metadata.restoreCommand)).not.toContain("***");
+    expect(String(recorded()[0].metadata.produceCommand)).toContain("s3cr3t");
+
+    await resolveProducer("custom_command").restore!(
+      {
+        id: "db_1",
+        projectId: "",
+        name: "db",
+        image: null,
+        env: {},
+        volumes: [],
+        containerId: null,
+        projectSlug: "shop",
+        namespaceVolumes: false,
+      },
+      resolveExecutor("bare", {} as never),
+      {
+        key: recorded()[0].key,
+        metadata: recorded()[0].metadata,
+        payloadKind: "custom_command",
+        sha256: recorded()[0].sha256,
+        sizeBytes: recorded()[0].sizeBytes,
+        open: async () => Readable.from([Buffer.from("ARCHIVE-BYTES")]),
+      },
+      {},
+    );
+
+    expect(h.pipedInto[0].command).toBe(h.payloadConfig.restoreCommand);
+  });
+
+  it("refuses a scrubbed command instead of failing on auth mid-restore", async () => {
+    // For the runs already captured this way. Running it would authenticate as `***`
+    // and die inside mongorestore with a message that says nothing about why — from a
+    // half-applied restore. The refusal names the cause and the way out.
+    await expect(
+      resolveProducer("custom_command").restore!(
+        {
+          id: "db_1",
+          projectId: "",
+          name: "db",
+          image: null,
+          env: {},
+          volumes: [],
+          containerId: null,
+          projectSlug: "shop",
+          namespaceVolumes: false,
+        },
+        resolveExecutor("bare", {} as never),
+        {
+          key: "k",
+          metadata: {
+            restoreCommand: 'mongorestore --uri "mongodb://***@db:27017/?authSource=admin"',
+          },
+          payloadKind: "custom_command",
+          sha256: "a".repeat(64),
+          sizeBytes: 1,
+          open: async () => Readable.from([Buffer.from("x")]),
+        },
+        {},
+      ),
+    ).rejects.toThrow(/redacted/i);
+    // Nothing ran — the point is that the target is untouched.
+    expect(h.pipedInto).toHaveLength(0);
   });
 
   it("fails clearly when the policy really has no produce command", async () => {

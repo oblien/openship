@@ -1,0 +1,23 @@
+---
+title: init
+description: Commands, arguments, and options for openship init.
+cliGroup: openship init
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship init
+
+Link the current directory to an Openship project (.openship/project.json)
+
+```text
+openship init [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Project id to link (skips the picker) |
+| `--environment <name>` | Default deploy environment (default: "production") |
+| `--dir <path>` | Directory to initialize (default: ".") |
+| `--force` | Overwrite an existing project link |
+| `-y, --yes` | Non-interactive: fail instead of prompting |

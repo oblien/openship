@@ -101,6 +101,10 @@
     "serverOnPort": "Servidor na porta {port}",
     "serverPortNotSet": "Porta do servidor não definida",
     "staticFromEdge": "Estático a partir da edge",
+    "modeServer": "Servidor",
+    "modeWorker": "Worker",
+    "modeStatic": "Estático",
+    "workerModeDesc": "Executa continuamente sem porta nem URL pública — um consumidor de fila, cron ou bot.",
     "buildSettingsTitle": "Configurações de Build"
   },
   "projectSettings": {
@@ -119,6 +123,7 @@
     "noneSet": "Nenhuma definida",
     "pasteEnv": "Colar .env",
     "uploadEnv": "Enviar .env",
+    "downloadEnv": "Baixar .env",
     "edit": "Editar",
     "cancel": "Cancelar",
     "saving": "Salvando...",
@@ -128,7 +133,7 @@
     "valuePlaceholder": "valor",
     "dropHere": "Solte o arquivo .env aqui",
     "noneTitle": "Nenhuma variável de ambiente",
-    "emptyHintEditing": "Clique em \"Adicionar Variável\", use \"Colar .env\", envie um arquivo ou cole em qualquer lugar dentro desta caixa",
+    "emptyHintEditing": "Cole um bloco .env em qualquer lugar dentro desta caixa ou solte aqui um arquivo .env.",
     "emptyHintReadonly": "Clique em \"Editar\" para gerenciar as variáveis de ambiente",
     "pasteHint": "Cole um bloco .env completo em qualquer lugar dentro desta caixa.",
     "addVariable": "Adicionar Variável",
@@ -140,6 +145,7 @@
       "interpolated": "Interpolado"
     },
     "toast": {
+      "downloadFailed": "Não foi possível baixar as variáveis de ambiente.",
       "title": "Variáveis de Ambiente",
       "added": "{count} adicionada(s)",
       "updated": "{count} atualizada(s)",
@@ -201,9 +207,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Serviço com estado na cloud: os dados ficam no disco persistente do workspace (sobrevivem a reinicializações), mas ",
       "statefulWarnBold": "não são mantidos entre rebuilds",
-      "statefulWarnPart2": " a menos que os backups estejam ativados. As montagens de volume do Docker não se aplicam.",
+      "statefulWarnPart2": ". Faça o backup e a restauração dos dados explicitamente antes de substituir o workspace.",
       "volumeHint": "Volume nomeado ou caminho do host → caminho do container.",
-      "volumeCloudNote": "Na cloud essas montagens não se aplicam — os dados persistem no disco do workspace (não entre rebuilds sem backups).",
+      "volumeCloudNote": "O Openship Cloud não oferece suporte a montagens de volumes persistentes. Escolha um servidor para cargas que precisam de volumes.",
       "sourcePlaceholder": "Origem",
       "containerPathPlaceholder": "Caminho do container",
       "readOnlyMount": "Montagem somente leitura",
@@ -349,9 +355,6 @@
       "successful": "Implantação Bem-sucedida",
       "deploying": "Implantando Serviços…"
     },
-    "running": "em execução",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} com falha",
     "decisionBannerTitle": "Ação necessária — alguns serviços falharam",
     "decisionBannerDefaultMsg": "Esta implantação foi concluída com serviços que falharam. Mantenha-a e corrija-os depois, ou rejeite-a para restaurar a versão anterior.",
     "review": "Revisar",
@@ -391,6 +394,12 @@
       "retryOther": "Tentar Novamente {count} Serviços Com Falha"
     }
   },
+  "composeServiceTally": {
+    "running": "em execução",
+    "builtSuffix": "· {count} compilados",
+    "buildingSuffix": "· {count} compilando",
+    "failedSuffix": "· {count} com falha"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelada",
@@ -401,12 +410,20 @@
     },
     "detailsTitle": "Detalhes da Implantação",
     "rowStatus": "Status",
+    "rowTarget": "Destino",
+    "rowBuild": "Build",
     "rowBuildTime": "Tempo de Build",
     "rowServices": "Serviços",
     "rowProject": "Projeto",
-    "rowType": "Tipo",
-    "running": "em execução",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} com falha"
+    "rowType": "Tipo"
+  },
+  "configDiagnostics": {
+    "title": "Parte do openship.json deste repositório não foi aplicada",
+    "description": "Os campos listados abaixo foram ignorados; o resto do arquivo foi aplicado. O deploy vai continuar.",
+    "titleWholeFile": "O openship.json deste repositório foi ignorado",
+    "descriptionWholeFile": "Nada do arquivo foi aplicado. O deploy vai continuar com as configurações que o Openship detectou.",
+    "refused": "Recusado",
+    "unrecognized": "Não reconhecido",
+    "hint": "Execute `openship config validate` no repositório para verificar o arquivo antes do próximo deploy."
   }
 }

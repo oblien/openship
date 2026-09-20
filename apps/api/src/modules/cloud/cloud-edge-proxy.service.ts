@@ -7,8 +7,8 @@
  */
 
 import { SYSTEM } from "@repo/core";
-import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "../../lib/edge-target";
-import { getNamespaceClient } from "../../lib/openship-cloud";
+import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "@repo/platform/engine/lib/edge-target";
+import { getNamespaceClient } from "@repo/platform/engine/lib/openship-cloud";
 
 /** Canonicalize a slug the same way for sync and delete so both look up the
  *  SAME Oblien proxy (a mismatch here would orphan the route on teardown). */

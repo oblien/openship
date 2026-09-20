@@ -5,8 +5,8 @@
  * other jobs land on).
  */
 
-import { getJobRunner } from "../../lib/job-runner";
-import { pruneAuditEvents } from "./audit-prune";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
+import { pruneAuditEvents } from "@repo/platform/engine/modules/audit/audit-prune";
 
 const AUDIT_PRUNE_JOB_ID = "audit:retention-prune";
 const AUDIT_PRUNE_CRON = "17 3 * * *";

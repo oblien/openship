@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryFilter } from "@repo/core";
 
-import { getProjectStatus, projectDisplayDomain } from "./project-status";
+import {
+  PROJECT_STATUS_META,
+  getProjectAttentionReason,
+  getProjectStatus,
+  migrationNeedsOperator,
+  projectActionHref,
+  projectDisplayDomain,
+  projectStatusHint,
+  projectStatusHref,
+  projectStatusLabel,
+} from "./project-status";
+import { baseDictionary as en } from "@/i18n";
 import {
   calculateDeploymentStats,
   filterDeployments,
   getStatusConfig,
+  mapRowToDeployment,
 } from "@/app/(dashboard)/deployments/utils";
 import type { Deployment } from "@/app/(dashboard)/deployments/types";
 
@@ -90,23 +103,23 @@ describe("getProjectStatus — a failed latest deploy is never Live", () => {
     ).toBe("failed");
   });
 
-  it("reports attention — not live — when an older release serves and the newest deploy failed", () => {
-    // The site IS up, so "failed" would be a lie; the newest deploy died, so
-    // "live" hides it. Same signal the other operator-needed states use.
+  it("reports deploy failed — not action required — when an older release still serves", () => {
+    // There is nothing pending for the operator to answer. The new attempt died,
+    // while the narrower label also preserves the fact that the site is still up.
     expect(
       getProjectStatus({
         activeDeploymentId: "d1",
         latestDeploymentId: "d2",
         latestDeploymentStatus: "failed",
       }),
-    ).toBe("attention");
+    ).toBe("deploy_failed");
   });
 
-  it("reports attention for a failed latest even when the caller omits latestDeploymentId", () => {
+  it("reports deploy failed when the caller omits latestDeploymentId", () => {
     // Environment summaries pass activeDeploymentId + status only. A failure
     // never advances the pointer, so a set pointer means an older release.
     expect(getProjectStatus({ activeDeploymentId: "d1", latestDeploymentStatus: "failed" })).toBe(
-      "attention",
+      "deploy_failed",
     );
   });
 
@@ -121,6 +134,72 @@ describe("getProjectStatus — a failed latest deploy is never Live", () => {
       "live",
     );
   });
+
+  it("reports reconciliation as progress, not as an action", () => {
+    const project = {
+      id: "p1",
+      activeDeploymentId: "d1",
+      latestDeploymentId: "d2",
+      latestDeploymentStatus: "reconciling",
+    };
+    expect(getProjectStatus(project)).toBe("reconciling");
+    expect(getProjectAttentionReason(project)).toBeNull();
+    expect(projectActionHref(project)).toBeNull();
+  });
+
+  it("does not resurrect an action after the operator rejected a partial release", () => {
+    expect(
+      getProjectStatus({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d2",
+        latestDeploymentStatus: "rejected",
+      }),
+    ).toBe("live");
+  });
+});
+
+describe("projectActionHref — every action badge has an owner", () => {
+  it.each([
+    [
+      "partial-release decision",
+      { id: "p1", activeDeploymentId: "live", awaitingDecision: true },
+      "/build/live",
+    ],
+    [
+      "routing repair",
+      { id: "p1", activeDeploymentId: "live", routingUnsynced: true },
+      "/projects/p1/domains",
+    ],
+    [
+      "blocked deployment",
+      { id: "p1", latestDeploymentId: "d2", latestDeploymentStatus: "action_required" },
+      "/projects/p1/deployments",
+    ],
+    [
+      "migration cutover",
+      {
+        id: "p1",
+        activeMigration: { id: "m1", status: "awaiting_cutover", mode: "project_move" },
+      },
+      "/projects/p1/advanced",
+    ],
+  ])("routes %s to its resolution surface", (_name, project, href) => {
+    expect(getProjectStatus(project)).toBe("attention");
+    expect(projectActionHref(project)).toBe(href);
+  });
+
+  it("returns no action link for an ordinary failed deployment", () => {
+    const project = {
+      id: "p1",
+      activeDeploymentId: "d1",
+      latestDeploymentId: "d2",
+      latestDeploymentStatus: "failed",
+    };
+    expect(getProjectStatus(project)).toBe("deploy_failed");
+    expect(getProjectAttentionReason(project)).toBeNull();
+    expect(projectActionHref(project)).toBeNull();
+    expect(projectStatusHref(project)).toBe("/build/d2");
+  });
 });
 
 describe("projectDisplayDomain — only a persisted route", () => {
@@ -133,11 +212,20 @@ describe("projectDisplayDomain — only a persisted route", () => {
   });
 
   it("returns the persisted primary route", () => {
-    expect(projectDisplayDomain({ primaryDomain: "convex.example.com" })).toBe("convex.example.com");
+    expect(projectDisplayDomain({ primaryDomain: "convex.example.com" })).toBe(
+      "convex.example.com",
+    );
   });
 });
 
 describe("deployments list — a blocked deploy is visible and counted", () => {
+  it("uses the API's groups for every filter and page statistic", () => {
+    for (const [group, statuses] of Object.entries(DEPLOYMENT_HISTORY_STATUSES)) {
+      const rows = statuses.map((status) => mapRowToDeployment({ id: status, status }));
+      expect(filterDeployments(rows, { status: group as DeploymentHistoryFilter })).toHaveLength(statuses.length);
+      expect(calculateDeploymentStats(rows)[group as DeploymentHistoryFilter]).toBe(statuses.length);
+    }
+  });
   it("gets its own chip instead of falling through to Pending", () => {
     const config = getStatusConfig("action_required");
     expect(config.label).toBe("Action required");
@@ -163,5 +251,179 @@ describe("deployments list — a blocked deploy is visible and counted", () => {
     ]);
     expect(stats.failed).toBe(2);
     expect(stats.success).toBe(1);
+  });
+});
+
+/**
+ * A project the operator PAUSED must not read "Live".
+ *
+ * Pausing stops containers; it does not touch the deployment row. So every
+ * surface that derives its pill from the deployment — the cards, the sidebar, the
+ * home list — reported a green "Live" over a project serving nothing, which is
+ * also why a pause looked like it had failed.
+ *
+ * `enabled` is server-derived from `disabled_at` in enrichProject, so this one
+ * derivation fixes all of those surfaces at once.
+ */
+describe("getProjectStatus — paused", () => {
+  const paused = { enabled: false, activeDeploymentId: "d1", latestDeploymentStatus: "ready" };
+
+  it("reads paused, not live", () => {
+    expect(getProjectStatus(paused)).toBe("paused");
+  });
+
+  it("is unaffected when the field is absent — old payloads read exactly as before", () => {
+    expect(getProjectStatus({ activeDeploymentId: "d1", latestDeploymentStatus: "ready" })).toBe(
+      "live",
+    );
+    expect(
+      getProjectStatus({
+        enabled: true,
+        activeDeploymentId: "d1",
+        latestDeploymentStatus: "ready",
+      }),
+    ).toBe("live");
+  });
+
+  it("yields to an in-flight deploy — a redeploy of a paused project is news", () => {
+    expect(getProjectStatus({ ...paused, latestDeploymentStatus: "building" })).toBe("building");
+    expect(getProjectStatus({ ...paused, latestDeploymentStatus: "deploying" })).toBe("deploying");
+  });
+
+  it("yields to teardown, which outranks a pause", () => {
+    expect(getProjectStatus({ ...paused, deletionInProgress: true })).toBe("deleting");
+  });
+
+  it("never applies to the control plane, which cannot be paused", () => {
+    expect(getProjectStatus({ ...paused, appTemplateId: "openship" })).toBe("live");
+  });
+
+  it("wins over a paused project's stale deploy flags, so the pill matches what the operator did", () => {
+    expect(getProjectStatus({ ...paused, routingUnsynced: true })).toBe("paused");
+    expect(getProjectStatus({ ...paused, awaitingDecision: true })).toBe("paused");
+  });
+
+  it("has presentation + a localized label like every other status", () => {
+    expect(PROJECT_STATUS_META.paused).toBeDefined();
+    expect(projectStatusLabel("paused", en as never)).toBe("Paused");
+  });
+});
+
+/**
+ * A live migration, as the project payload reports it (`activeMigration`).
+ *
+ * The point of putting it here — in the shared status source — is that a project being moved
+ * to another server is a fact about the PROJECT, so every surface that renders one reads it
+ * from the payload it already loads. Before this, only the project's own Advanced tab knew,
+ * because only that panel asked the migration API, and only while it was mounted.
+ */
+describe("a project with a live migration", () => {
+  const migrating = (status: string, mode = "project_move") => ({
+    activeMigration: { id: "dmr_1", status, mode },
+  });
+  // A healthy, serving project — so every assertion below is the migration overriding
+  // something that would otherwise read "Live".
+  const live = { enabled: true, activeDeploymentId: "d1", latestDeploymentStatus: "ready" };
+
+  it("reads Migrating through every phase that is making progress", () => {
+    for (const status of [
+      "queued",
+      "adopting",
+      "moving_data",
+      "deploying",
+      "verifying",
+      "cutover",
+    ]) {
+      expect(getProjectStatus({ ...live, ...migrating(status) }), status).toBe("migrating");
+    }
+  });
+
+  it("outranks the target deploy's own status, which says 'deploying' about the copy", () => {
+    // The run deploys onto the target, so the project's newest deployment row genuinely reads
+    // `deploying`. "Deploying" is true of that deploy and misleading about the project.
+    expect(
+      getProjectStatus({
+        ...live,
+        latestDeploymentStatus: "deploying",
+        ...migrating("moving_data"),
+      }),
+    ).toBe("migrating");
+  });
+
+  it("outranks a pause, because the run is what is touching the containers now", () => {
+    expect(getProjectStatus({ enabled: false, ...migrating("moving_data") })).toBe("migrating");
+  });
+
+  it("outranks an unrelated attention flag — one story at a time, the current one", () => {
+    expect(getProjectStatus({ ...live, routingUnsynced: true, ...migrating("verifying") })).toBe(
+      "migrating",
+    );
+  });
+
+  it("yields to teardown, the only thing more final than a move", () => {
+    expect(
+      getProjectStatus({ ...live, deletionInProgress: true, ...migrating("moving_data") }),
+    ).toBe("deleting");
+  });
+
+  it("reads Action Required — not Migrating — once the run PARKS for the operator", () => {
+    // `awaiting_cutover` and `partial` have stopped advancing: the target is up, the source is
+    // stopped-but-intact, and it stays that way until a human confirms or rolls back. A pill
+    // reading "Migrating" for three days while nothing migrates is the exact bug the other
+    // attention states in this module exist to avoid.
+    expect(getProjectStatus({ ...live, ...migrating("awaiting_cutover") })).toBe("attention");
+    expect(getProjectStatus({ ...live, ...migrating("partial") })).toBe("attention");
+  });
+
+  it("reads Action Required when a destructive cutover failed and can only be retried", () => {
+    const activeMigration = {
+      id: "r",
+      status: "cutover",
+      mode: "project_move",
+      needsAction: true,
+    };
+
+    expect(getProjectStatus({ ...live, activeMigration })).toBe("attention");
+    expect(getProjectAttentionReason({ ...live, activeMigration })).toBe("migrationCutover");
+  });
+
+  it("names the action in the pill's hint, so the amber is not a dead end", () => {
+    const hint = projectStatusHint({ ...live, ...migrating("awaiting_cutover") }, en as never);
+    expect(hint).toBe(en.projects.migrationAwaitingHint);
+    expect(getProjectAttentionReason({ ...live, ...migrating("partial") })).toBe(
+      "migrationCutover",
+    );
+  });
+
+  it("stops overriding anything the moment the run is terminal (payload drops the field)", () => {
+    expect(getProjectStatus({ ...live, activeMigration: null })).toBe("live");
+    expect(getProjectStatus(live)).toBe("live");
+  });
+
+  it("applies to a DUPLICATE too — its source is briefly stopped while volumes stream", () => {
+    expect(getProjectStatus({ ...live, ...migrating("moving_data", "project_copy") })).toBe(
+      "migrating",
+    );
+  });
+
+  it("exposes the parked question, so a panel need not re-list the phases", () => {
+    // Two copies of "which phases are parked" would drift, and the symptom would be a card
+    // calling a run "in progress" beside a pill saying it needs attention.
+    expect(
+      migrationNeedsOperator({ id: "r", status: "awaiting_cutover", mode: "project_move" }),
+    ).toBe(true);
+    expect(migrationNeedsOperator({ id: "r", status: "partial", mode: "project_move" })).toBe(true);
+    expect(migrationNeedsOperator({ id: "r", status: "moving_data", mode: "project_move" })).toBe(
+      false,
+    );
+    expect(migrationNeedsOperator(null)).toBe(false);
+    expect(migrationNeedsOperator(undefined)).toBe(false);
+  });
+
+  it("has presentation + a localized label like every other status", () => {
+    expect(PROJECT_STATUS_META.migrating).toBeDefined();
+    // NOT amber: an advancing run needs nothing from the operator.
+    expect(PROJECT_STATUS_META.migrating.badge).not.toContain("warning");
+    expect(projectStatusLabel("migrating", en as never)).toBe("Migrating");
   });
 });

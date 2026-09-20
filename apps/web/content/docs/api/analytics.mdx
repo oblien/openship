@@ -1,159 +1,201 @@
 ---
-title: Analytics API
-description: Read request traffic, deployment stats, and container resource usage for a project or the whole org, plus per-server edge analytics.
+title: Analytics
+description: Read project traffic, deployment statistics, and resource usage.
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table';
+Analytics report traffic, deployment outcomes, and runtime usage for resources the caller can access.
+Project methods take a project ID in the SDK; REST uses `?projectId=`. Server methods take a server ID.
 
-The Analytics API reports how your apps are doing: request traffic and status codes, deployment
-frequency and success rate, live container CPU/memory/bandwidth, and geographic request breakdowns
-scraped from the edge proxy. In the dashboard these numbers back the project **Analytics** tab and the
-org **Dashboard**; every route is read-only.
+## Read request traffic
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/analytics`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and [auth model](/docs/security/auth) for details.
-</Callout>
+`overview` returns the cumulative summary and time-series periods together. Use `summary` or `periods`
+when you only need one. `geo` adds geographic, path, and status-code breakdowns where available.
 
-<Callout title="Project scope via ?projectId=" type="info">
-Every endpoint except `/dashboard` requires a `?projectId=` — omitting it returns `404`. `/dashboard` takes
-no parameters and always reports the caller's active organization. When a `projectId` points at a **cloud**
-project, the request is transparently forwarded to Openship Cloud.
-</Callout>
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
 
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/analytics` | `analytics:read` | Cumulative request/traffic summary for a project (requires `?projectId=`). |
-| `GET /api/analytics/periods` | `analytics:read` | Traffic time-series broken into periods. |
-| `GET /api/analytics/overview` | `analytics:read` | Summary + periods together (traffic, status codes, top paths) in one fetch. |
-| `GET /api/analytics/deployments` | `analytics:read` | Deployment statistics (frequency, success rate, durations). |
-| `GET /api/analytics/usage` | `analytics:read` | Current container resource usage (CPU / memory / bandwidth). |
-| `GET /api/analytics/usage/stream` | `analytics:read` | SSE stream of real-time resource usage for the active container. |
-| `GET /api/analytics/container` | `analytics:read` | Container info for a project's runtime (status, IP, uptime). |
-| `GET /api/analytics/dashboard` | `analytics:read` | Org dashboard rollup (headline metrics). |
-| `GET /api/analytics/server/:serverId` | `server:read` | Persisted minute-bucket request analytics for a server. |
-| `GET /api/analytics/server/:serverId/geo` | `server:read` | Daily per-country geo aggregates for a server. |
-| `GET /api/analytics/server/:serverId/live` | `server:read` | Live analytics proxied from the server's management API. |
-
-## Request analytics
-
-`summary`, `periods`, and `overview` read the same underlying traffic data. `overview` returns both the
-cumulative summary and the time-series periods in a single fetch — the dashboard uses it so a project view
-makes one round-trip instead of two. All three share these query parameters:
-
-```
-GET /api/analytics/overview
+```ts
+const traffic = await ship.analytics.overview("proj_123", {
+  from: "2026-09-01T00:00:00Z",
+  to: "2026-09-02T00:00:00Z",
+});
+console.log(traffic.summary, traffic.periods);
 ```
 
-<TypeTable
-  type={{
-    projectId: { type: 'string', description: 'Project to report on. Required — these endpoints are always project-scoped.', required: true },
-    from: { type: 'string', description: 'ISO date string — start of range.' },
-    to: { type: 'string', description: 'ISO date string — end of range.' },
-    live: { type: 'boolean', description: 'Include real-time data from the running container.', default: 'false' },
-    domain: { type: 'string', description: 'Scope to a single tracked domain instead of aggregating all of the project\'s domains.' },
-  }}
-/>
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl "https://your-host/api/analytics/overview?projectId=proj_123" \
+curl "$OPENSHIP_URL/api/analytics/overview?projectId=proj_123&from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
+</Tab>
+</Tabs>
+
+| Input | Applies to | Use |
+| --- | --- | --- |
+| `domain` | Summary, periods, overview, and geo | Limit results to one tracked hostname. |
+| `from`, `to` | Periods, overview, and geo | Ordered ISO date range, at most 366 days. |
+
+The project ID is required. An inaccessible or missing project is not included in results. Fixed
+organization scopes do not forward through an owner's Cloud link; see [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
+
+## Read deployment statistics
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const stats = await ship.analytics.deploymentStats("proj_123");
+console.log(stats.successfulDeployments, stats.failedDeployments);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-# Same thing from the CLI (generic authenticated request):
-openship api /analytics/overview -q projectId=proj_123
-```
-
-## Deployment stats
-
-Success/failure counts and average build durations for a project.
-
-```
-GET /api/analytics/deployments?projectId=<id>
-```
-
-```bash
-curl "https://your-host/api/analytics/deployments?projectId=proj_123" \
+curl "$OPENSHIP_URL/api/analytics/deployments?projectId=proj_123" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-## Resource usage
+</Tab>
+</Tabs>
 
-`usage` returns a point-in-time snapshot of the active container's resources; `container` returns its
-runtime info (status, IP, uptime). Both take:
+Statistics include totals, success and failure counts, average build duration, and daily counts.
+`dashboard()` returns project and deployment counts for the caller's organization.
 
-<TypeTable
-  type={{
-    projectId: { type: 'string', description: 'Project whose active container to inspect.', required: true },
-    from: { type: 'string', description: 'ISO date string — start of range.' },
-    to: { type: 'string', description: 'ISO date string — end of range.' },
-    bucketMinutes: { type: 'number', description: 'Bucket size in minutes for time-series data (min 10).', default: '60' },
-  }}
-/>
+## Read runtime usage
+
+`resources` returns an aggregate plus per-service usage, capacity, timestamp, and a `supported` flag.
+`usage` and `containerInfo` read the active runtime and can return `null` when it is unavailable.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const usage = await ship.analytics.resources("proj_123");
+console.log(usage.supported, usage.overall, usage.services);
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl "https://your-host/api/analytics/usage?projectId=proj_123" \
+curl "$OPENSHIP_URL/api/analytics/resources?projectId=proj_123" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-### Live usage stream
+</Tab>
+</Tabs>
 
-`GET /api/analytics/usage/stream?projectId=<id>` is a [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
-stream that emits a `usage` event roughly every 5 seconds while the connection is open. It takes only
-`projectId` and requires the project to have an active deployment with a running container.
+Use `usageHistory(projectId, { from, to, serviceKey })` for time buckets. All three filters are optional;
+the result reports its `granularityMinutes` and selected `serviceKey`.
+
+### Live usage
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+for await (const event of ship.analytics.streamUsage("proj_123", {
+  signal: AbortSignal.timeout(30_000),
+})) {
+  console.log(event);
+}
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -N "https://your-host/api/analytics/usage/stream?projectId=proj_123" \
+curl -N "$OPENSHIP_URL/api/analytics/usage/stream?projectId=proj_123" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-<Callout title="404 — nothing to stream" type="warn">
-The stream returns `404` when the project has no active deployment, or the active deployment has no running
-container. Deploy the project first, then reconnect.
-</Callout>
+</Tab>
+</Tabs>
 
-## Dashboard rollup
+The REST endpoint returns Server-Sent Events. An active deployment with a running container is required.
+Pass an abort signal or stop iteration to close an SDK stream.
 
-Org-wide headline metrics for the active organization's dashboard. Takes no query parameters.
+## Control path collection
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.analytics.setPathsCollection("proj_123", { enabled: true });
 ```
-GET /api/analytics/dashboard
-```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl https://your-host/api/analytics/dashboard \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+curl -X POST "$OPENSHIP_URL/api/analytics/paths-collection/proj_123" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true}'
 ```
+
+</Tab>
+</Tabs>
+
+This changes collection settings and requires write access. Other analytics methods read data.
 
 ## Server analytics
 
-These read request analytics for a specific **server** (identified by the `:serverId` path parameter),
-gathered from the edge proxy (OpenResty) rather than per-project. Viewing them triggers an on-demand,
-self-throttled scrape — the response returns the rows currently in the database, and fresh buckets land for
-the next read. All three require a `domain` query parameter and use the `server:read` permission.
+Server analytics require `server:read` access and a tracked `domain`. Persisted buckets and daily geo
+data remain readable when a server is offline; live analytics require a reachable management API.
 
-| Route | Query | Returns |
-|---|---|---|
-| `GET /api/analytics/server/:serverId` | `domain` (required), `from`, `to` | Minute-bucket analytics. `from`/`to` accept ISO timestamps or epoch minutes; default is the last 60 minutes. |
-| `GET /api/analytics/server/:serverId/geo` | `domain` (required), `day` | Daily per-country aggregates. `day` is `YYYYMMDD`; defaults to today. |
-| `GET /api/analytics/server/:serverId/live` | `domain` (required) | Real-time totals proxied live from the server's management API over SSH. |
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const buckets = await ship.analytics.serverBuckets("srv_123", { domain: "app.example.com" });
+console.log(buckets);
+```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl "https://your-host/api/analytics/server/srv_123?domain=app.example.com" \
+curl "$OPENSHIP_URL/api/analytics/server/srv_123?domain=app.example.com" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-<Callout title="400 — domain is required" type="error">
-The server analytics routes return `400` if the `domain` query parameter is missing. Pass the tracked
-hostname you want the numbers for.
-</Callout>
+</Tab>
+</Tabs>
 
-<Callout title="502 — can't reach the server" type="warn">
-`/server/:serverId/live` returns `502` when Openship can't reach that server's management API (SSH down,
-proxy not running). The persisted `/server/:serverId` and `/geo` reads still work from the database.
-</Callout>
+| Method | Additional input | Result |
+| --- | --- | --- |
+| `serverBuckets` | Optional `from`, `to` | Persisted minute buckets; range values accept ISO timestamps or epoch minutes. |
+| `serverGeo` | Optional `day` in `YYYYMMDD` format | Daily country totals. |
+| `serverLive` | None | Live edge analytics. |
+
+Every method above also requires `domain`. Missing domain returns `400`; an unreachable live source can
+return `502`.
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream current resource usage. | `analytics.streamUsage(projectId, options?)` | `GET /api/analytics/usage/stream`<br />`analytics:read` |
+| Read summary statistics for the selected scope and period. | `analytics.summary(id, input?)` | `GET /api/analytics`<br />`analytics:read` |
+| List supported analytics periods. | `analytics.periods(id, input?)` | `GET /api/analytics/periods`<br />`analytics:read` |
+| Read aggregate traffic and application analytics. | `analytics.overview(id, input?)` | `GET /api/analytics/overview`<br />`analytics:read` |
+| Read geographic traffic statistics. | `analytics.geo(id, input?)` | `GET /api/analytics/geo`<br />`analytics:read` |
+| Read deployment outcome statistics. | `analytics.deploymentStats(id)` | `GET /api/analytics/deployments`<br />`analytics:read` |
+| Read current workload resource usage. | `analytics.usage(id)` | `GET /api/analytics/usage`<br />`analytics:read` |
+| Read analytics runtime/container information. | `analytics.containerInfo(id)` | `GET /api/analytics/container`<br />`analytics:read` |
+| Read configured resource allocations. | `analytics.resources(id)` | `GET /api/analytics/resources`<br />`analytics:read` |
+| Read historical resource usage. | `analytics.usageHistory(id, input?)` | `GET /api/analytics/usage/history`<br />`analytics:read` |
+| Enable or disable request-path collection. | `analytics.setPathsCollection(id, input)` | `POST /api/analytics/paths-collection/:projectId`<br />`project:write` |
+| Read server traffic buckets. | `analytics.serverBuckets(id, input)` | `GET /api/analytics/server/:serverId`<br />`server:read` |
+| Read geographic server-request statistics. | `analytics.serverGeo(id, input)` | `GET /api/analytics/server/:serverId/geo`<br />`server:read` |
+| Read current server traffic data. | `analytics.serverLive(id, input)` | `GET /api/analytics/server/:serverId/live`<br />`server:read` |
+| Read the analytics dashboard aggregate. | `analytics.dashboard()` | `GET /api/analytics/dashboard`<br />`analytics:read` |
+
+{/* api-operations:end */}

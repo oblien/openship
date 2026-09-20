@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { EnsureProjectBody } from "../../../src/modules/projects/project.schema";
+import { EnsureProjectBody } from "@repo/contracts";
 
 /**
  * #427 — POST /projects/ensure returned 400 Bad Request when creating a project

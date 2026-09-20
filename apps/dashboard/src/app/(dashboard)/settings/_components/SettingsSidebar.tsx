@@ -6,7 +6,6 @@
  * Tabs are URL-driven via the `tab` query param so deep-linking works:
  *   /settings              → general (default)
  *   /settings?tab=team     → team / workspace management
- *   /settings?tab=audit    → audit log
  *   /settings?tab=cloud    → cloud connection (self-hosted only)
  *   /settings?tab=instance → instance info
  *
@@ -17,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, ClipboardList, Cloud, Server, Bell, KeyRound, Boxes, Mail } from "lucide-react";
+import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
@@ -49,7 +48,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "tokens" | "mcp" | "team" | "notifications" | "email" | "audit" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -62,22 +61,44 @@ export interface SettingsTab {
 }
 
 export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTabId } {
-  const { selfHosted, deployMode } = usePlatform();
+  const { selfHosted, deployMode, productView } = usePlatform();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  const allowedTabs: SettingsTabId[] = ["general", "tokens", "mcp", "team", "notifications", "email", "audit", "cloud", "infrastructure", "instance"];
-  const activeTab: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
+  // `/settings?tab=dns` in two places (and a render test pins that string), and a value
+  // missing from this list silently falls back to "general".
+  const allowedTabs: SettingsTabId[] = ["general", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  // DNS credentials moved into Credentials — one screen for every third-party secret
+  // instead of three. The old link lands on the screen that now owns them.
+  const activeTab: SettingsTabId = requested === "dns" ? "credentials" : requested;
 
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: SettingsIcon, visible: true },
-    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: KeyRound, visible: true },
+    // Git sources, as their own domain rather than a card on General: the App install, the
+    // clone PAT and per-server auth are one subject with several shapes, and more providers
+    // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
+    // mail-only shell, which deploys nothing from source.
+    { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
+    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
+    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
     { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).
-    { id: "email", label: t.settings.sidebar.tabs.email, icon: Mail, visible: selfHosted, requiresRole: "admin" },
-    { id: "audit", label: t.settings.sidebar.tabs.audit, icon: ClipboardList, visible: true, requiresRole: "admin" },
+    // In Openship Mail it sits next to a whole rail of mail-server surfaces, where
+    // "Email" would read as the mail server's own config; "System sender" says
+    // what it actually is (where invites and alerts are sent FROM).
+    {
+      id: "email",
+      label: productView === "mail"
+        ? t.settings.sidebar.tabs.systemSender
+        : t.settings.sidebar.tabs.email,
+      icon: Mail,
+      visible: selfHosted,
+      requiresRole: "admin",
+    },
     { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no

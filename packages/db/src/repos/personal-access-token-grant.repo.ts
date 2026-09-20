@@ -20,6 +20,22 @@ import type { Permission, ResourceGrant, ResourceType } from "./resource-grant.r
 
 type Row = typeof personalAccessTokenGrant.$inferSelect;
 
+export interface PatGrantInput {
+  resourceType: ResourceType;
+  resourceId: string;
+  permissions: Permission[];
+  scope?: SourceAccessScope | null;
+}
+
+/** The same normalized grant insert participates in token and OAuth-binding transactions. */
+export async function insertPatGrants(db: Pick<Database, "insert">, tokenId: string, grants: readonly PatGrantInput[]): Promise<void> {
+  if (grants.length === 0) return;
+  await db.insert(personalAccessTokenGrant).values(grants.map(g => ({
+    id: generateId("patgrant"), tokenId, resourceType: g.resourceType, resourceId: g.resourceId,
+    permissionsJson: JSON.stringify(g.permissions), scopeJson: serializeSourceAccessScope(g.scope),
+  })));
+}
+
 function rowToGrant(row: Row): ResourceGrant {
   let permissions: Permission[] = [];
   try {
@@ -80,24 +96,9 @@ export function createPersonalAccessTokenGrantRepo(db: Database) {
 
     async createMany(
       tokenId: string,
-      grants: Array<{
-        resourceType: ResourceType;
-        resourceId: string;
-        permissions: Permission[];
-        scope?: SourceAccessScope | null;
-      }>,
+      grants: PatGrantInput[],
     ): Promise<void> {
-      if (grants.length === 0) return;
-      await db.insert(personalAccessTokenGrant).values(
-        grants.map((g) => ({
-          id: generateId("patgrant"),
-          tokenId,
-          resourceType: g.resourceType,
-          resourceId: g.resourceId,
-          permissionsJson: JSON.stringify(g.permissions),
-          scopeJson: serializeSourceAccessScope(g.scope),
-        })),
-      );
+      await insertPatGrants(db, tokenId, grants);
     },
 
     async deleteByToken(tokenId: string): Promise<void> {

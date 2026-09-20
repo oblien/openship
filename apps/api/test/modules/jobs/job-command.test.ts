@@ -7,12 +7,18 @@ const h = vi.hoisted(() => ({
   finishCalls: [] as Array<Record<string, unknown>>,
   startedRuns: [] as Array<Record<string, unknown>>,
   cmds: [] as string[],
+  notifications: [] as Array<Record<string, unknown>>,
+  members: [] as Array<{ organizationId: string }>,
   retain: 0,
   release: 0,
   runSeq: 0,
   execImpl: null as
     | null
-    | ((cmd: string, onLog: (e: { message: string; level: string }) => void, serverId: string) => Promise<{ code: number; output: string }>),
+    | ((
+        cmd: string,
+        onLog: (e: { message: string; level: string }) => void,
+        serverId: string,
+      ) => Promise<{ code: number; output: string }>),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -33,15 +39,27 @@ vi.mock("@repo/db", () => ({
       },
       listRecent: async () => [],
     },
-    // Notification fan-out — no org resolvable in tests, so these stay quiet.
-    member: { listByUser: async () => [] },
+    // Notification fan-out — controllable via h.members and h.notifications
+    member: { listByUser: async () => h.members },
     notificationChannel: { findById: async () => null },
-    notificationDelivery: { create: async () => {} },
+    notificationDelivery: {
+      create: async (d: Record<string, unknown>) => {
+        h.notifications.push(d);
+      },
+    },
     notificationSubscription: { listEnabledForDispatch: async () => [] },
   },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
+  notification: {
+    emit: (input: Record<string, unknown>) => {
+      h.notifications.push(input);
+    },
+  },
+}));
+
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     retain: () => {
       h.retain++;
@@ -59,12 +77,13 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
   },
 }));
 
-import { runCommandJobTick } from "../../../src/modules/jobs/job-command";
-import { jobRunBus, type JobRunEvent } from "../../../src/modules/jobs/job-run.sse";
+import { runCommandJobTick } from "@repo/platform/engine/modules/jobs/job-command";
+import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import { createRunBus } from "../../../src/lib/run-sse";
 
 const cmdJob = (key: string, cfg: Record<string, unknown>) => ({
   key,
+  enabled: true,
   actionType: "command",
   actionConfig: cfg,
 });
@@ -73,6 +92,8 @@ beforeEach(() => {
   h.finishCalls.length = 0;
   h.startedRuns.length = 0;
   h.cmds.length = 0;
+  h.notifications.length = 0;
+  h.members.length = 0;
   h.jobRows = {};
   h.retain = 0;
   h.release = 0;
@@ -229,6 +250,56 @@ describe("custom job executor (runCommandJobTick)", () => {
     expect(f.status).toBe("failed"); // any server non-zero → failed
     expect(String(f.output)).toContain("srvA");
     expect(String(f.output)).toContain("srvB");
+  });
+
+  it("failure emits notification with jobName, exitCode, error, duration, and logExcerpt", async () => {
+    h.members.push({ organizationId: "org_1" });
+    h.jobRows["custom:fail"] = {
+      ...cmdJob("custom:fail", { serverId: "srv1", command: "fail.sh" }),
+      label: "Audit unconfigured backups",
+      createdBy: "user_1",
+    };
+    h.execImpl = async () => ({
+      code: 17,
+      output: "ALERT: Found 1 project(s) without backup configuration!\n",
+    });
+
+    await runCommandJobTick("custom:fail");
+
+    const failedEmit = h.notifications.find((n) => n.eventType === "job_run.failed");
+    expect(failedEmit).toBeDefined();
+    expect(failedEmit?.payload).toMatchObject({
+      jobName: "Audit unconfigured backups",
+      label: "Audit unconfigured backups",
+      jobKey: "custom:fail",
+      status: "failed",
+      exitCode: 17,
+      errorMessage: "Command exited with code 17",
+      logExcerpt: "ALERT: Found 1 project(s) without backup configuration!",
+    });
+    expect(typeof (failedEmit?.payload as Record<string, unknown>)?.durationMs).toBe("number");
+    expect(h.finishCalls[0].summary).toMatchObject({ exitCode: 17 });
+  });
+
+  it("bounds and scrubs notification output while retaining the failure tail", async () => {
+    h.members.push({ organizationId: "org_1" });
+    h.jobRows["custom:logs"] = {
+      ...cmdJob("custom:logs", { serverId: "srv1", command: "run.sh" }),
+      label: "Backup",
+      createdBy: "user_1",
+    };
+    h.execImpl = async () => ({
+      code: 2,
+      output: `${"x".repeat(4000)}\npostgres://user:do-not-deliver@db/app\nlast failure`,
+    });
+
+    await runCommandJobTick("custom:logs");
+
+    const event = h.notifications.find((n) => n.eventType === "job_run.failed");
+    const excerpt = String((event?.payload as Record<string, unknown>)?.logExcerpt);
+    expect(excerpt.length).toBeLessThanOrEqual(2000);
+    expect(excerpt).toMatch(/last failure$/);
+    expect(excerpt).not.toContain("do-not-deliver");
   });
 });
 

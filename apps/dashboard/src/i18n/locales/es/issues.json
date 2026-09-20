@@ -1,8 +1,9 @@
 {
-  "title": "Problemas",
+  "title": "Monitoreo",
   "subtitle": "Todo lo que Openship encontró mal en tus proyectos, servidores y dominios.",
   "tabs": {
     "open": "Abiertos",
+    "health": "Salud",
     "resolved": "Resueltos"
   },
   "resolvedNote": "El historial cubre incidentes de contenedores y servidores; las demás comprobaciones informan del estado actual, así que un certificado o despliegue arreglado simplemente deja de aparecer aquí.",

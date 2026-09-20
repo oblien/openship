@@ -13,9 +13,10 @@
  */
 
 import { Hono } from "hono";
+import { CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
-import * as billingLocal from "./billing-local.controller";
+import * as billingLocal from "./billing.controller";
 
 export const billingLocalRoutes = new Hono();
 const r = secureRouter(billingLocalRoutes, {
@@ -32,44 +33,50 @@ const r = secureRouter(billingLocalRoutes, {
 // POST /payment-methods, and GET /invoices do not exist on the SaaS
 // side — invoices and payment methods are owned by Stripe's hosted
 // portal (POST /portal returns the redirect URL), and subscription
-// updates are POST /subscription (replace) or POST /cancel. Mounting
+// updates use POST /subscription (checkout), /cancel, or /resume. Mounting
 // the orphan routes here just routed dashboard calls into 404 HTML
 // pages from the SaaS proxy, breaking dashboard error handling.
 r.use("/state", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
+r.use("/resume", authMiddleware);
 r.use("/usage", authMiddleware);
+r.use("/resources", authMiddleware);
+r.use("/allowances", authMiddleware);
 r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/state", { tag: "billing:read" }, billingLocal.getState);
+r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getState);
 
 /* ---------- Subscriptions ---------- */
-r.get("/subscription", { tag: "billing:read" }, billingLocal.getSubscription);
-r.post("/subscription", { tag: "billing:write" }, billingLocal.createSubscription);
+r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getSubscription);
+r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.createSubscription);
 
 /* ---------- Cancellation ---------- */
-// Destructive — admin tier per the same precedent as the SaaS sibling.
-r.post("/cancel", { tag: "billing:admin" }, billingLocal.cancelSubscription);
+// Renewal controls use the same grants as the SaaS operations.
+r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.cancelSubscription);
+r.post("/resume", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.resumeSubscription);
 
 /* ---------- Usage ---------- */
-r.get("/usage", { tag: "billing:read" }, billingLocal.getUsage);
+r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getUsage);
+r.get("/resources", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getResources);
+r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.listAllowanceDetail);
 
 /* ---------- Top-ups ---------- */
-r.get("/topup-packs", { tag: "billing:read" }, billingLocal.listTopupPacks);
+r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.listTopupPacks);
 r.post(
   "/topup",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { body: CreateTopupBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingLocal.createTopup,
 );
 
-/* ---------- Stripe Portal (invoices + PM management) ---------- */
+/* ---------- Namespace billing portal ---------- */
 // Each call mints a Stripe portal session — tight per-org limit (20/min)
 // stops a runaway frontend retry loop from racking up Stripe API spend.
 r.post(
   "/portal",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingLocal.createPortal,
 );

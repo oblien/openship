@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeAdvanced } from "../../../src/modules/services/service.service";
+import { mergeAdvanced } from "@repo/platform/engine/modules/services/service.service";
 
 /**
  * `service.advanced` is one JSONB blob holding four independently-owned keys:
@@ -60,6 +60,12 @@ describe("mergeAdvanced", () => {
     });
     expect("healthcheck" in next).toBe(false);
     expect(next.readiness).toEqual({ enabled: true, onFailure: "warn" });
+  });
+
+  it("can restore and remove generated config files through the service API", () => {
+    const files = [{ path: "/etc/kong.yml", content: "_format_version: '3.0'" }];
+    expect(mergeAdvanced(null, { files }).files).toEqual(files);
+    expect(mergeAdvanced({ files }, { files: null })).toEqual({});
   });
 
   it("REPLACES a key rather than deep-merging it", () => {

@@ -59,6 +59,15 @@ const h = vi.hoisted(() => ({
   liveContainerId: null as string | null,
   /** Force listSources to fail, standing in for an unreachable host. */
   probeError: null as string | null,
+  /** Force receiveStream to fail with a PLAIN Error, the way a tar failure,
+   *  an ENOSPC or the idle watchdog does — after the target was cleared. */
+  receiveError: null as string | null,
+  receiveOpenError: null as string | null,
+  applyReadError: null as string | null,
+  applyBody: null as Readable | null,
+  /** What `redis-cli CONFIG GET appendonly` reports. "yes" means the RDB would
+   *  be ignored at startup, so the restore must refuse rather than no-op. */
+  appendonly: "no",
   artifacts: [] as unknown[],
   /** Ordered log of everything that touches the target. */
   calls: [] as string[],
@@ -95,6 +104,13 @@ vi.mock("@repo/db", () => ({
         return h.row;
       },
       findById: async () => h.row,
+      claimApply: async () => {
+        if (h.row?.status !== "prepared" || h.row.cancelRequested === true) {
+          return "state_changed";
+        }
+        h.row.status = "applying";
+        return "claimed";
+      },
       requestCancel: async () => h.row,
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         const tr: Tr = { status, patch };
@@ -111,11 +127,15 @@ vi.mock("@repo/db", () => ({
     project: {
       findById: async () => ({
         id: "prj_1",
+        organizationId: "org_1",
         name: "shop",
         slug: "shop",
         activeDeploymentId: h.activeDeploymentId,
       }),
       listEnvVars: async () => [],
+      // serviceHandleFor reads env through the SCOPED map (project-level and
+      // service-scoped, per environment) rather than every row in the project.
+      getEnvMap: async () => ({}),
     },
     service: {
       findById: async () => ({
@@ -130,7 +150,7 @@ vi.mock("@repo/db", () => ({
       listByProject: async () => h.serviceIds.map((id) => ({ id })),
     },
     deployment: {
-      findById: async () => ({ id: "dep_1", containerId: h.depContainerId, meta: {} }),
+      findById: async () => ({ id: "dep_1", projectId: "prj_1", organizationId: "org_1", containerId: h.depContainerId, meta: {} }),
     },
   },
 }));
@@ -161,10 +181,53 @@ class TestExecutor extends DockerBackupExecutor {
       throw new Error(`Restore target "${targetSourceId}" not found on service ${service.name}`);
     }
     h.calls.push(`receive:${source.source}`);
+    if (h.receiveOpenError) throw new Error(h.receiveOpenError);
     // Drain, so the apply-time hasher sees the whole archive as a real extract
     // would. A stub that ignored the body would silently disable that check.
     for await (const chunk of body) void chunk;
+    // Thrown AFTER the call is logged, because that is the real ordering: the
+    // helper clears the target in its prelude, so by the time an extract fails the
+    // volume is already empty.
+    if (h.receiveError) throw new Error(h.receiveError);
     return { bytesWritten: ARCHIVE.byteLength };
+  }
+
+  /**
+   * Records whether the container was RUNNING at the moment a through-container payload
+   * was restored, which is the whole question for pg_dump/mysql_dump/mongo_dump/
+   * custom_command: their `restore()` is a `docker exec`, and a real daemon answers
+   * `409 container stopped/paused` if the orchestrator has stopped it first.
+   */
+  async pipeIntoCommand(
+    service: ServiceHandle,
+    _cmd: string[],
+    body: Readable,
+    _opts?: unknown,
+  ): Promise<{ code: number; stderr: string }> {
+    const running = h.containers.get(service.containerId ?? "")?.Running ?? false;
+    h.calls.push(`exec:${running ? "running" : "STOPPED"}`);
+    for await (const chunk of body) void chunk;
+    return { code: 0, stderr: "" };
+  }
+
+  /**
+   * Producers also plain-exec for probes — the redis one asks `CONFIG GET appendonly`
+   * before it will write, because an AOF-enabled Redis loads its append-only file at
+   * startup and would ignore a restored RDB entirely. Use the real --raw reply shape.
+   */
+  async execStream(
+    _service: ServiceHandle,
+    cmd: string[],
+    _opts?: unknown,
+  ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
+    const joined = cmd.join(" ");
+    h.calls.push(`probe:${joined.includes("appendonly") ? "appendonly" : "config"}`);
+    const out = joined.includes("appendonly") ? `appendonly\n${h.appendonly}\n`
+      : joined.includes("CONFIG GET save") ? "save\n3600 1\n" : "OK\n";
+    return {
+      stdout: Readable.from([Buffer.from(out)]),
+      awaitExit: Promise.resolve({ code: 0, stderr: "" }),
+    };
   }
 }
 
@@ -198,35 +261,48 @@ vi.mock("@repo/adapters", async (importOriginal) => {
     ...actual,
     resolveDestination: () => ({
       head: async () => ({ sizeBytes: ARCHIVE.byteLength, uploadedAt: new Date(0) }),
-      get: async () => Readable.from([ARCHIVE]),
+      get: async () => {
+        if (h.row?.status !== "applying") return Readable.from([ARCHIVE]);
+        h.applyBody = h.applyReadError
+          ? new Readable({ read() { this.destroy(new Error(h.applyReadError!)); } })
+          : h.receiveOpenError
+            ? new Readable({ read() { this.push(ARCHIVE); } })
+            : Readable.from([ARCHIVE]);
+        return h.applyBody;
+      },
     }),
     resolveExecutor: () => new TestExecutor({ docker: fakeDaemon } as never),
   };
 });
 
-vi.mock("../../../src/modules/backups/restore.sse", () => ({
+vi.mock("@repo/platform/engine/modules/backups/restore.sse", () => ({
   restoreRunBus: { publish: () => {}, subscribe: () => () => {} },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // The orchestrator releases the runtime it resolved when the run ends; these
+  // stubs hold no transport, so the release is a no-op here.
+  disposeRuntime: () => {},
+  disposePlatform: () => {},
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
   resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => h.liveContainerId,
+  liveContainerForService: async () => ({ containerId: h.liveContainerId, running: null }),
 }));
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 const TOKEN = "t".repeat(32);
 const CTX = { organizationId: "org_1", userId: "usr_1" } as never;
@@ -292,6 +368,11 @@ beforeEach(() => {
   h.depContainerId = null;
   h.liveContainerId = null;
   h.probeError = null;
+  h.receiveError = null;
+  h.receiveOpenError = null;
+  h.applyReadError = null;
+  h.applyBody = null;
+  h.appendonly = "no";
   h.artifacts = [];
   h.calls.length = 0;
   h.transitions.length = 0;
@@ -523,5 +604,231 @@ describe("the deployment-managed container fallback", () => {
 
     expect(last.status).toBe("succeeded");
     expect(h.calls).toEqual(["receive:openship-shop-pgdata"]);
+  });
+});
+
+describe("a payload restored THROUGH the container must not have it stopped first", () => {
+  it("leaves a custom_command service running, and never stops it", async () => {
+    // The bug the payload-matrix E2E surfaced against a real daemon: apply stopped any
+    // running service unconditionally, then the producer exec'd into it — `409 container
+    // stopped/paused - … is not running`. `NEEDS_LIVE_CONTAINER` already named these
+    // payload kinds but was only consulted in `prepare`, as a "does a container exist"
+    // precondition, so every logical-dump restore (postgres, mysql, mongo, redis,
+    // custom_command) failed on a service that was running — the normal case. It appeared
+    // to work only if the operator had already stopped the service by hand.
+    h.containers.set("ctr_app", { Running: true, Mounts: [] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [
+      {
+        name: "custom.bin",
+        key: "org_1/bkr_1/custom.bin",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "custom_command",
+        metadata: { restoreCommand: "cat > /data/custom.txt" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status, JSON.stringify(terminal.patch)).toBe("succeeded");
+    // The load ran against a LIVE container...
+    expect(h.calls).toContain("exec:running");
+    expect(h.calls).not.toContain("exec:STOPPED");
+    // ...and nothing was stopped, so nothing had to be started back.
+    expect(h.calls).not.toContain("stop");
+    expect(h.calls).not.toContain("start");
+    expect(h.containers.get("ctr_app")!.Running).toBe(true);
+  });
+
+  it("does NOT restart the service when the extract failed on a cleared volume", async () => {
+    // The worst outcome this module can produce, and it was the DEFAULT for every
+    // ordinary failure. `clearTarget: true` means the helper empties the volume in
+    // its PRELUDE, before tar runs — so once any error escapes `producer.restore`
+    // the data is already gone. The catch decided whether to restart from the
+    // exception TYPE alone (PartialWriteError / RestoreCancelled), because the
+    // `wroteInto` flag was scoped inside the try and invisible to it. A tar failure,
+    // an ENOSPC or the idle watchdog all raise a PLAIN Error, so they took the
+    // restart branch: the app came back up on an EMPTY volume, which turns a clear
+    // failure into a silently corrupt running service.
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.receiveError = "tar: unexpected end of file";
+    h.artifacts = [
+      {
+        name: "volume-vol_a.tar.zst",
+        key: "org_1/bkr_1/volume-vol_a.tar.zst",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "volume",
+        metadata: { volumeId: "vol_a", compression: "zstd" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status, JSON.stringify(terminal.patch)).toBe("failed");
+    expect(h.calls).toContain("stop");
+    expect(h.calls).toContain("receive:vol_a");
+    // The assertion that matters: NOT started back.
+    expect(h.calls).not.toContain("start");
+    expect(h.containers.get("ctr_app")!.Running).toBe(false);
+    // And the row says why, so an operator does not start it by hand either.
+    const meta = (terminal.patch?.meta ?? {}) as Record<string, unknown>;
+    expect(meta.partialWrite).toBe(true);
+    expect(meta.serviceLeftStopped).toBe(true);
+    expect(String(terminal.patch?.errorMessage)).toContain("tar: unexpected end of file");
+    expect(String(terminal.patch?.errorMessage)).toContain("partial data");
+  });
+
+  it("fails cleanly when the backup download breaks during apply", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.applyReadError = "backup download connection reset";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.applyReadError);
+    expect(terminal.patch?.meta).toMatchObject({ partialWrite: true, serviceLeftStopped: true });
+    expect(h.calls).not.toContain("start");
+    expect(h.applyBody?.destroyed).toBe(true);
+  }, 2_000);
+
+  it("closes the backup download if the target refuses its input", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.receiveOpenError = "restore helper unavailable";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.receiveOpenError);
+    expect(h.applyBody?.destroyed).toBe(true);
+    expect(h.calls).not.toContain("start");
+  });
+
+  it("BOUNCES a running redis after writing dump.rdb, so the write takes effect", async () => {
+    // redis_rdb is in NEEDS_LIVE_CONTAINER because the write needs a live container
+    // (`cat > /data/dump.rdb` through pipeIntoCommand). That made `stoppedByUs` false
+    // and no restart site fired — so the file landed under a running Redis that reads
+    // it only at STARTUP. The restore reported success, the dataset was unchanged,
+    // and the next ordinary restart snapshotted over the artifact.
+    h.containers.set("ctr_redis", { Running: true, Mounts: [] });
+    h.liveContainerId = "ctr_redis";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [
+      {
+        name: "redis-dump.rdb",
+        key: "org_1/bkr_1/redis-dump.rdb",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "redis_rdb",
+        metadata: { rdbPath: "/data/dump.rdb", compression: "none" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status, JSON.stringify(terminal.patch)).toBe("succeeded");
+    // Written against a LIVE container...
+    expect(h.calls).toContain("exec:running");
+    // ...and then power-cycled, in that order, so startup loads what we wrote.
+    const stop = h.calls.indexOf("stop");
+    const start = h.calls.indexOf("start");
+    expect(stop, JSON.stringify(h.calls)).toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(stop);
+    expect(h.containers.get("ctr_redis")!.Running).toBe(true);
+  });
+
+  it.each(["yes", "unknown"])("refuses an unsafe RDB restore without claiming data was changed (appendonly: %s)", async (appendonly) => {
+    // With `appendonly yes` Redis loads its append-only file at startup and never
+    // looks at dump.rdb, so even a correct write plus a correct bounce changes
+    // nothing. `CONFIG SET appendonly no` does not help either — the container's own
+    // config decides at startup. Refusing is the only honest outcome; reporting
+    // success here is the failure this whole module exists to remove.
+    h.containers.set("ctr_redis", { Running: true, Mounts: [] });
+    h.liveContainerId = "ctr_redis";
+    h.activeDeploymentId = "dep_1";
+    h.appendonly = appendonly;
+    h.artifacts = [
+      {
+        name: "redis-dump.rdb",
+        key: "org_1/bkr_1/redis-dump.rdb",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "redis_rdb",
+        metadata: { rdbPath: "/data/dump.rdb", compression: "none" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(String(terminal.patch?.errorMessage)).toContain("AOF persistence");
+    expect(String(terminal.patch?.errorMessage)).not.toContain("partial data");
+    expect(terminal.patch?.meta).not.toMatchObject({ partialWrite: true });
+    expect(terminal.patch?.meta).not.toMatchObject({ destructive: true });
+    // Refused BEFORE writing anything, so nothing was touched.
+    expect(h.calls).not.toContain("exec:running");
+    expect(h.containers.get("ctr_redis")!.Running).toBe(true);
+  });
+
+  it("does NOT bounce a logical dump — those apply through the live server", async () => {
+    // The contrast that keeps the new set from becoming a category. pg_restore /
+    // mysql / mongorestore apply immediately, so a stop+start would be pure downtime.
+    h.containers.set("ctr_app", { Running: true, Mounts: [] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [
+      {
+        name: "custom.bin",
+        key: "org_1/bkr_1/custom.bin",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "custom_command",
+        metadata: { restoreCommand: "cat > /data/custom.txt" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status, JSON.stringify(terminal.patch)).toBe("succeeded");
+    expect(h.calls).not.toContain("stop");
+    expect(h.calls).not.toContain("start");
+  });
+
+  it("still stops a running service for a VOLUME restore", async () => {
+    // The contrast case, and the reason this is a condition rather than a blanket change:
+    // a volume restore wants the writer stopped, and it does not need the container at all
+    // because the volume is mounted into a separate helper.
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [
+      {
+        name: "volume-vol_a.tar.zst",
+        key: "org_1/bkr_1/volume-vol_a.tar.zst",
+        sha256: null,
+        sizeBytes: ARCHIVE.byteLength,
+        payloadKind: "volume",
+        metadata: { volumeId: "vol_a", compression: "zstd" },
+      },
+    ];
+
+    const terminal = await restore();
+
+    expect(terminal.status, JSON.stringify(terminal.patch)).toBe("succeeded");
+    expect(h.calls).toContain("stop");
+    expect(h.calls).toContain("receive:vol_a");
+    // Started back, because WE stopped it.
+    expect(h.calls).toContain("start");
+    expect(h.containers.get("ctr_app")!.Running).toBe(true);
   });
 });

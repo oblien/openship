@@ -27,9 +27,9 @@ vi.mock("@repo/db", async (importOriginal) => {
   return { ...actual, repos: {} };
 });
 
-vi.mock("../../src/lib/cloud/require-cloud", () => ({ requireCloud }));
+vi.mock("@repo/platform/engine/lib/cloud/require-cloud", () => ({ requireCloud }));
 
-import { assertFreeEndpointsAllowed } from "../../src/lib/free-domain-guard";
+import { assertFreeEndpointsAllowed } from "@repo/platform/engine/lib/free-domain-guard";
 
 // process.env is process-global; a reused worker could carry HOST_DOMAIN into a
 // later file's fresh env parse, so shield subsequent files.

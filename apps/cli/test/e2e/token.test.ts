@@ -8,6 +8,7 @@ vi.mock("../../src/lib/config", () => ({
 import { tokenCommand } from "../../src/commands/token";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 
+const tokenRow = { id: "t1", name: "ci", tokenPrefix: "opsh_pat_test", readOnly: false, scoped: false, expiresAt: null, lastUsedAt: null, useCount: 0, revokedAt: null, createdAt: "2026-09-12T00:00:00.000Z" };
 let fetchStub: FetchStub;
 afterEach(() => fetchStub?.restore());
 
@@ -29,7 +30,7 @@ async function freshTokenCommand(): Promise<typeof tokenCommand> {
 describe("openship token list", () => {
   it("GETs /tokens and tabulates the data envelope", async () => {
     fetchStub = stubFetch(() => ({
-      json: { data: [{ id: "t1", name: "ci", readOnly: false }] },
+      json: { data: [tokenRow] },
     }));
     const { out, code } = await runCommand(tokenCommand, ["list"]);
     expect(code).toBe(0);
@@ -42,7 +43,7 @@ describe("openship token list", () => {
 describe("openship token create", () => {
   it("POSTs the name + flags and prints the one-time secret", async () => {
     fetchStub = stubFetch(() => ({
-      json: { data: { id: "t2", name: "deploy", token: "opsh_secret_xyz" } },
+      json: { data: { ...tokenRow, id: "t2", name: "deploy", token: "opsh_secret_xyz" } },
     }));
     const { out, err, code } = await runCommand(await freshTokenCommand(), [
       "create",
@@ -63,7 +64,7 @@ describe("openship token create", () => {
 
   it("sends grants (not fullAccess) when the token is scoped", async () => {
     fetchStub = stubFetch(() => ({
-      json: { data: { id: "t3", name: "bot", token: "opsh_secret_scoped" } },
+      json: { data: { ...tokenRow, id: "t3", name: "bot", token: "opsh_secret_scoped" } },
     }));
     const { code } = await runCommand(await freshTokenCommand(), [
       "create",
@@ -109,7 +110,7 @@ describe("openship token create", () => {
 
 describe("openship token revoke", () => {
   it("DELETEs the token by id", async () => {
-    fetchStub = stubFetch(() => ({ status: 204 }));
+    fetchStub = stubFetch(() => ({ json: { data: { revoked: true } } }));
     const { err, code } = await runCommand(tokenCommand, ["revoke", "t9"]);
     expect(code).toBe(0);
     expect(fetchStub.calls[0].method).toBe("DELETE");

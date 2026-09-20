@@ -51,7 +51,7 @@ vi.mock("@repo/db", () => ({ repos: { serviceTerminalSession } }));
 vi.mock("../../../src/lib/ws", () => ({
   upgradeWebSocket: (fn: unknown) => fn,
 }));
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 

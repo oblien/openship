@@ -1,335 +1,247 @@
-# Rollback — pending work + known limits
+# Rollback — open work
 
-State as of 2026-08-05. This file lives next to the orchestrator so anyone
-working on rollback sees the open questions before they pick up new work. The
-backup/restore half has its own file: `../../backups/PENDING.md`.
+Only what is NOT done. The shipped model — the three restore modes, the retention
+resolver, the never-dead-end invariant — lives in the code and its comments
+(`rollback-orchestrator.ts`, `restore-plan.ts`, `release-retention.ts`) and in git
+history; nothing is restated here. The backup/restore half has its own file:
+`../../backups/PENDING.md`.
 
----
-
-## Shipped (the current state)
-
-**The restore model.** `planRestore` (restore-plan.ts) decides at ROLLBACK time
-how a release comes back, from what's actually still on the host — never from a
-flag frozen onto the deployment:
-
-- `redeploy-pinned` — the artifact is there, so ONE `triggerDeployment` call
-  replays the target's frozen snapshot + env with the artifact PINNED. No build,
-  no clone, no git token (`snapshotNeedsGitSource`). The artifact is an image
-  (server apps, per compose service) or a release DIRECTORY (static sites).
-- `unit-swap` — bare/cloud only (capability `unitRestore`), where the artifact is
-  a durable per-deployment unit that survived the redeploy: `makeActive`, a
-  health probe, then the pointer, with a compensating swap-back on DB failure.
-- `rebuild` — nothing retained, but the commit is known. Same deploy call minus
-  the pins.
-
-A restore is a REAL deployment (forward-only pointer), so it inherits the deploy
-pipeline's env/ports/volumes/labels/network/routing, health gate, stabilization
-watch, logs, SSE and notifications; `onSuccess` reuses the version number per
-commit, so rolling back to v2 reads as v2. A failed restore leaves the current
-release serving.
-
-**Invariant: rollback never dead-ends.** If the commit is known, the release is
-restorable — instantly when the artifact is there, by rebuild when it isn't. The
-dashboard therefore has ONE rollback action whose confirm names the resolved mode.
-
-**Retention.**
-
-- `artifact_retained_at` is set on EVERY successful deploy (both rows), so the
-  affordance is honest for every project. Nulled when retention purges.
-- `resolveRollbackWindow` is the single resolver: explicit `rollback_window` →
-  the disk-sized `rollback_window_computed` (NULL window = auto) → the instance
-  default. Sized by `computeAutoRollbackWindow` in `@repo/core` from free disk on
-  the daemon's data root (25%, capped, clamped 2–20), measured once per deploy
-  inside the image reap and persisted, so prune/GC/UI do no I/O.
-- `project.defaultRollbackStrategy` is a RETENTION preference read LIVE ("hold
-  artifacts" vs "rebuild"), not a per-deployment decision — flipping it applies
-  to existing history.
-- Pins (`deployment.pinned`) are exempt and don't consume the window budget;
-  capped at `MAX_PINNED_PER_PROJECT` (10).
-- Purging NEVER removes an artifact another retained release still references
-  (`computeKeepSet` gates both `prune` and the compose per-service reclaim) — a
-  restore shares its source release's tag, so this is load-bearing.
-- Per-service images resolve through `effectiveImagesAsOf`: a deploy only
-  rebuilds what changed, so an untouched service's image comes from the newest
-  row at-or-before the target that recorded one.
-
-**Surfaces.** `GET /deployments/:id/restore-plan` serves the confirm copy and
-gates the GitHub-access check (an instant restore needs no repo access). Retention
-controls live in the project's Backup tab and in the deploy wizard's target panel,
-both rendering one `RollbackRetentionCards`.
-
-**Also shipped:** hard-link release-dir dedup on bare (`rsync --link-dest`);
-`project.cloudArchiveStrategy` exists (default `'inplace'`; `'offload'` is a
-forward-compatibility placeholder).
-
-**Tests.** Unit: `restore-plan.test.ts` (every mode incl. static + partial compose
-+ the no-snapshot guard), `pinned-artifacts.test.ts`, `rollback-prune.test.ts`
-(window/pin math + the shared-artifact guard), `@repo/core/rollback-window.test.ts`,
-`effectiveImagesAsOf` against a real PGlite.
-
-Real-daemon E2Es under `apps/api/test/e2e/`. They run only in the opt-in suite
-(`bun run --cwd apps/api test:e2e`) — `bun run test` excludes the directory — and
-CI runs them in the `e2e-docker` job with `RUN_DOCKER_E2E=1`, which turns "no
-daemon" into a FAILURE instead of a skip. Locally the socket is resolved the way
-the product resolves it (explicit → `DOCKER_HOST` → active `docker context` →
-`/var/run/docker.sock`), so Colima / Rancher / Podman need no env at all; a skip
-prints the reason. See `apps/api/test/helpers/docker-e2e.ts`.
-
-CI splits them by cost through `E2E_SCOPE` (`apps/api/vitest.e2e.config.ts`): every
-file below except `rollback-build-restore` runs on each PR and push (`fast`, ~5 min);
-that one runs on `workflow_dispatch`, the nightly schedule and `v*` tags (`heavy`).
-A bare `bun run --cwd apps/api test:e2e` with no `E2E_SCOPE` still runs everything,
-so the local command is unchanged. Rationale in `../../backups/PENDING.md`.
-
-- `rollback-docker.e2e.test.ts` — daemon-level facts: a redeploy REMOVES the
-  container while the image survives; a restored container is complete (env,
-  pinned loopback publish, volume, labels, caps) and serves the old bytes; prune
-  withholds a shared image.
-- `rollback-full-cycle.e2e.test.ts` — `rollback()` itself, single-app: the whole
-  chain (plan → triggerDeployment → pipeline → deploy → onSuccess →
-  onDeploymentReady) with NO clone and NO build, forward-only pointer, version
-  reuse, symmetric roll-forward.
-- `rollback-compose-cycle.e2e.test.ts` — `rollback()` on a two-service stack where
-  only ONE service changed: both services pinned (the untouched one resolved
-  backwards via `effectiveImagesAsOf`), nothing rebuilt, the unchanged service
-  never disturbed.
-- `rollback-build-restore.e2e.test.ts` — the slowest one (it pulls a Node base
-  image): a REAL build of `fixtures/deploy/node`, then a restore that reuses its
-  image. Its build config comes from `buildConfigSnapshot` + `createBuildConfig`,
-  the production pair — the hand-written literal it replaced was cast `as never`
-  and silently omitted `runtimeImage`, so the recipe read `FROM undefined`.
-
-The same suite carries one non-rollback file, `backup-volume-roundtrip.e2e.test.ts`
-— the backup half's only real-daemon proof (see `../../backups/PENDING.md`).
-
-The cycle tests fake exactly two seams — how the platform/runtime is LOCATED (so a
-test box isn't handed OpenResty) and GitHub check emission. Everything else is
-real: rows, orchestrator, planner, pipeline, containers.
-
-**Bugs these tests found and fixed** (all pre-existing, all reachable outside
-rollback too):
-
-- `snapshot.productionPaths.length` crashed the pipeline on any release whose
-  snapshot never set the field — un-restorable AND un-redeployable.
-- Preflight judged a fully-pinned deploy by BUILD-config rules ("missing install
-  command"), so adding a required field would retroactively break restores of
-  every older release. Now exempt via `isFullyPinned`.
-- `triggerDeployment` refused any project with no git URL and no localPath — which
-  a registry-image-only adopted stack legitimately is. Now gated on whether the
-  deploy actually needs source.
-- Six of nine `service_deployment` write sites left `serviceName` NULL, so a
-  restore of such a release could not key its per-service pins and rebuilt
-  everything. All nine now record it.
-- `normalizeRollbackWindow("")` returned 0 — a cleared form field meant "retain
-  nothing".
+Every item below was re-verified against the working tree on 2026-08-20, including
+uncommitted changes. Line numbers are from that check.
 
 ---
 
-## Pending — Cloud rollback architecture
+## Cloud (Oblien)
 
-### 1. Inline workspace model (one workspace per project, not per deployment)
+### Inline workspace model — one workspace per project, not per deployment
 
-Currently we run **one Oblien workspace per deployment**. 5 retained deployments = 5 stopped workspaces + their archives, each billing a workspace slot.
+We still run **one Oblien workspace per deployment**, so 5 retained deployments = 5
+workspaces (1 running + 4 stopped) plus their archives, each billing a slot.
+`CloudRuntime.deploy` takes the BUILD workspace as the unit (`cloud.ts:1626`,
+`workspaceId = config.imageRef`), promotes it with `ws.lifecycle.makePermanent()`
+(`cloud.ts:1651`), and returns `containerId: workspaceId` (`cloud.ts:1859`) — so a
+deployment's container id IS its own workspace id. The capability comment says it
+outright at `cloud.ts:451-454`.
 
-The proposed model: **one workspace per project**, releases as folders inside:
+The proposed model: one workspace per project, releases as folders inside, with
+`working_dir` pointing at `/app/current`. Rollback = `ln -sfn … current` +
+`workload.restart`. Instant, one slot per project, the same Capistrano shape bare
+already uses (`bare.ts:207`, `bare.ts:256`).
 
 ```
 /app/
-  releases/
-    <depId-1>/
-    <depId-2>/
-    <depId-3>/
-  current  →  releases/<depId-3>/       # symlink
+  releases/<depId-1>/  <depId-2>/  <depId-3>/
+  current  →  releases/<depId-3>/
 ```
 
-Workload's `working_dir` points at `/app/current`. Rollback = `ln -sfn ... current` + `workload.restart`. Instant. One slot per project. Same Capistrano shape we use on bare.
+Nothing of it has shipped. What it needs:
 
-**Why this isn't shipped:** ~300-500 line refactor of `CloudRuntime.deploy` (provision-once flow), `build.service.ts` (thread `previousDeploymentId` to cloud too, currently bare-only), `project` schema (add `cloudWorkspaceId`), and a slimmed `archive/makeActive/purge` for cloud. The user is going to address the static-compute path on Oblien's side first — once that lands, we revisit.
+- The provision-once refactor of `CloudRuntime.deploy` (`cloud.ts:1625-1860`). Today
+  staging is a one-shot in-place `mv /app/.staging /app/production`
+  (`cloud.ts:1737-1765`) and `workDir` is `/app/production` or `/app`
+  (`cloud.ts:1702-1705`, applied at `cloud.ts:1789-1795`) — never a release dir.
+- Symlink-swap `makeActive`, plus a slimmed `archive`/`purge` (`cloud.ts:2124-2216`).
+  All three are still workspace-lifecycle calls: `stop(from)` then `start(to)`,
+  `createArchive + stop`, `deleteAllArchives + destroy`.
+- Cloud consumption of `previousDeploymentId`. It IS on the shared `DeployConfig` and
+  set for every runtime (`build-pipeline.ts:1740`), but only bare reads it
+  (`bare.ts:642`, `bare.ts:688`); `adapters/src/types.ts:344-352` documents
+  "Docker/Cloud ignore the field".
 
-**Migration path** (no-breaking): add `project.cloudWorkspaceId`. On deploy, if set → inline path; if not → provision the project workspace and stamp the column. Old per-deployment workspaces stay addressable for rollback until they prune out. Models coexist; projects converge naturally.
+**The migration path in the old plan no longer works, and this is the trap.**
+`project.cloudWorkspaceId` now exists — but it is the cloud LINK marker, not an
+inline hook. It is stamped after every successful cloud deploy from the workspace
+that deploy just created (`deployment-lifecycle.ts:759-767`) and read only to derive
+the target (`build.service.ts:411`, `core/types.ts:65`). So it is **already non-null
+for every existing cloud project**, and "if set → inline path, if not → provision and
+stamp" would route every legacy per-deployment project into the inline path on its
+next deploy. A separate inline-vs-legacy marker is needed. Note also that the
+`BuildConfig.cloudWorkspaceId` consumed at `cloud.ts:663-672` is a DIFFERENT value —
+the browser folder-upload session workspace (`build-pipeline.ts:829-831` ←
+`build.service.ts:1224`).
 
-### 2. Oblien "create workspace from archive" — not supported
+**Why the obvious alternative is not available.** "Kill the workspace and recreate it
+from an archive" is not buildable against the current Oblien API, verified against
+their docs: archive endpoints are workspace-scoped (`/workspace/{wsId}/archives/*`)
+with no account-level store; `workspaces.create` has no `restore_from`,
+`from_archive`, `archive_id`, `seed`, `hydrate`, `from`, `source`, `template` or
+`clone_from` — `image` (a read-only catalog id) is the only source identifier;
+`GET /workspace/images` is the only images endpoint, so there is no
+commit-workspace-to-custom-image flow; and `POST /workspace/{wsId}/restore` only
+restores to the last snapshot of THAT workspace. It would need a new Oblien endpoint
+(open question with their team) or external durable storage, which was explored and
+reverted as the wrong call for Openship Cloud. The inline model sidesteps the
+requirement entirely, which is why it is the path.
 
-We verified this against the docs (`/llms.mdx/docs/api/{snapshots,workspaces,images}` + concepts). Confirmed:
+**What it costs until then.** Retention archives the previous release
+(`rollback-orchestrator.ts:96-105`) whenever the runtime advertises `unitRestore`,
+which cloud does (`cloud.ts:454`); `archive` keeps the workspace claimed by design
+(`cloud.ts:2099-2117` — a stopped workspace is what makes rollback work), and only
+`purge` frees a slot, when the release falls out of the window. The restore side
+needs that survivor: `restore-plan.ts:188-190` only returns `unit-swap` when the
+target still has a container id and a retained artifact, and `cloud.ts:2131-2136`
+throws "workspace is gone" without it. So a cloud project's rollback window is a
+direct multiplier on Oblien workspace slots.
 
-- Archive endpoints are workspace-scoped (`/workspace/{wsId}/archives/*`). No account-level store.
-- `workspaces.create` has NO `restore_from`, `from_archive`, `archive_id`, `seed`, `hydrate`, `from`, `source`, `template`, or `clone_from` parameter. `image` (catalog ID) is the only source identifier.
-- `GET /workspace/images` is the only images endpoint — catalog is read-only; no "commit workspace to custom image" flow.
-- `POST /workspace/{wsId}/restore` only restores to the LAST snapshot of THAT workspace.
+### `cloud_archive_strategy: 'offload'` persists and then does nothing
 
-Conclusion: the "kill workspace + recreate from archive" pattern the user originally wanted is **not buildable** against the current Oblien API. We'd need either:
-- A new Oblien endpoint we don't have (open question with their team), or
-- External durable storage (R2/S3), which we explored and reverted because it's the wrong call for Openship Cloud (should be internal to the Oblien account).
+The column accepts `'inplace' | 'offload'` (`schema/project.ts:393`), the API takes it
+(`project.schema.ts:403-405`), and it is persisted and echoed back
+(`project-crud.service.ts:600`, `:1218-1219`, `:1746`). It has **zero readers** — no
+`=== "offload"` comparison anywhere, and the one consumer of the archive decision,
+`cloud.ts:2141-2179`, never receives the project row, so it cannot vary by strategy.
 
-The inline workspace model (item 1) sidesteps the requirement entirely.
+Reserved for a future self-hosted-to-external-S3 path (shipping archives off-host).
+Not buildable for Openship Cloud, which would need the Oblien support the item above
+establishes we don't have. Either wire it or stop accepting the value.
 
-### 3. `cloud_archive_strategy: 'offload'` is a placeholder
+*(Correction to the old reference list: `0022_cloud_archive_offload.sql` does not
+exist — 0022 is `0022_version_on_success_backfill.sql`. The column ships in
+`0000_init.sql:362`.)*
 
-The DB column accepts `'inplace' | 'offload'`. Only `'inplace'` is wired. `'offload'` is reserved for a future self-hosted-to-external-S3 path — when self-hosted users want to ship their archives off-host. Not buildable for Openship Cloud (which would need internal Oblien support per item 2).
+### A failed archive delete on purge is still only a warning
 
----
-
-## Pending — orchestrator / data model
-
-### 4. Atomic flip — RESOLVED for docker, narrowed for bare/cloud
-
-A `redeploy-pinned` / `rebuild` restore is a normal deployment: the pointer only
-advances on success, so there is no window to be inconsistent in. `unit-swap`
-(bare/cloud) still swaps-then-writes, but now health-probes before committing and
-swaps back on DB failure. The residual case — compensating swap ALSO fails — logs
-a CRITICAL for manual reconciliation.
-
-### 5. Per-environment rollback window
-
-`rollbackWindow` is per-project. In practice production usually wants longer retention than preview. Either:
-- Move the column to a per-environment table, or
-- Resolve at runtime via `instance_settings` with an env-specific override.
-
-Not urgent until preview deploys get heavy.
-
-### 6. Multi-service compose rollback — RESOLVED
-
-Compose restore no longer touches container ids at all (the dead
-`DeploymentRef.serviceContainerIds` is gone). It pins per-service IMAGES —
-resolved via `effectiveImagesAsOf`, so an unchanged service reuses the image
-already on the host. A service whose image aged out simply falls into the
-buildable set.
-
-What the deploy path does with the service list is narrower than this section
-used to claim. `build-pipeline.ts` hands the release's FROZEN list to
-`syncFromCompose(..., { removeMissing: false })`: rows are created and updated,
-never deleted. A frozen list is a snapshot, not an inventory — on a rollback it
-predates every service added since, and deleting those rows would cascade
-`service_deployment` (`onDelete: "cascade"`) across all of history and orphan
-their running containers. So **services newer than the target keep running,
-untouched, with their rows and history intact**, and the rollback confirm dialog
-says so. Removing a de-listed service stays the job of the explicit compose
-reconcile (`reconcileFromCompose`), which models a removal policy on purpose.
-
-### 7. Health-check gate — RESOLVED
-
-`redeploy-pinned`/`rebuild` inherit the deploy pipeline's health check and the
-#335 stabilization watch, and never advance the pointer on failure. `unit-swap`
-probes `getContainerInfo` until running (skipped on bare, which can't inspect)
-and reverts if it doesn't come up.
-
-### 8. Hot-rollback for Docker (no container churn)
-
-Still open, and now the main remaining latency win. A restore recreates the
-container from the retained image (seconds). A true hot swap would keep the old
-container running on a second loopback port and flip only the edge upstream —
-sub-100ms — which needs the route layer to support an endpoint swap without
-container churn, plus a policy for how long two versions may coexist.
+`CloudRuntime.purge` now propagates the WORKSPACE deletion, so a slot we still pay for
+can no longer be recorded as reclaimed. `snapshots.deleteAllArchives` stays warn-only,
+because a workspace that never archived has nothing to delete and Oblien's response for
+that case is not one this code can tell apart from a real failure — making it fatal
+would break every cloud purge to report a leak that may not exist. Distinguishing the
+two needs a confirmed answer from Oblien (or an archive listing before the delete);
+until then a genuinely stuck archive blob keeps billing storage and only shows up in a
+log line.
 
 ---
 
-## Pending — UX
+## Retention and core
 
-### 9. Restore-mode chip in the deployments LIST
+### Per-environment rollback window
 
-The confirm dialog names the resolved mode, but the list rows don't: showing
-"instant" vs "rebuild" per row would need a presence check per row (an SSH round
-trip), so it's deliberately resolved on demand instead. A cheap approximation
-(artifact_retained_at + age) could pre-badge rows.
+`rollbackWindow` is per-project and the resolver is environment-blind:
+`RollbackWindowProject` carries four project-level fields
+(`release-retention.ts:7-12`) and `resolveRollbackWindowDetail` has the three
+documented branches with no env parameter (`release-retention.ts:39-70`, `:72-74`).
+The columns are project-scoped (`schema/project.ts:298`, `:305`) and the instance
+default is one scalar (`schema/settings.ts:71`). There is no per-environment table at
+all — the only `environment` columns are project identity
+(`schema/project.ts:89-93`), env-var scoping (`:534`), and `deployment.environment`
+(`schema/deployment.ts:56`). Enforcement confirms the gap: `prune` resolves ONE
+window and walks every ready deployment with no environment filter
+(`rollback-orchestrator.ts:524-537`), while a release's environment is a
+per-deployment attribute (`:346`).
 
-### 10. Rollback diff preview — PARTIALLY SHIPPED
+Worth knowing before picking this up: a **separately created** environment is its own
+project row and therefore gets its own copy of the column, seeded from the parent at
+create (`project-crud.service.ts:1745`). The uncovered case is narrower than "per
+environment" suggests — preview deployments living inside ONE project row share that
+row's single window, which is exactly when production wants longer retention than
+preview.
 
-`RollbackConfirmDialog` now shows the resolved mode, which services rebuild, the
-ENV diff (keys + direction, never values) and the "services newer than this release
-keep running and are not touched" line, all from `GET /deployments/:id/restore-plan`.
-Still open: commit range and per-service image diff.
+Either move the column to a per-environment table, or resolve at runtime via
+`instance_settings` with an env-specific override. Not urgent until preview deploys
+get heavy.
 
-### 11. Bulk delete + bulk pin
+### Hot-rollback for Docker (no container churn)
 
-Right now pin/delete is one-at-a-time per deployment row. Bulk select for retention cleanup.
+The main remaining latency win, and fully unbuilt. Every Docker restore recreates the
+container from the retained image (`rollback-orchestrator.ts:339-355`); the only
+in-place path is `restoreViaUnitSwap` (`:359-465`), which is bare/cloud `makeActive`
+plus a probe and a pointer flip, and it ends in a full route **re-sync**
+(`syncProjectManagedEdge`, `:455-462`) rather than an upstream flip. The route layer
+has no endpoint-swap primitive: `upstream-url.ts:1-80` is a pure resolver, one target
+per container, and `routing-apply.service.ts` re-applies routing for the project's
+single `activeDeploymentId`.
 
-### 12. Cloud (Oblien) restore still costs a workspace per release
+**The "second loopback port" premise is impossible on the default strategy**, which is
+the part that has to be solved first: `canOverlap = runtime.name !== "bare" &&
+routeStrategy !== "loopback-port"` (`build-pipeline.ts:1540`, rationale at
+`:1537-1539` and `:1834-1841`) — a pinned loopback port cannot be double-bound, so
+loopback-port deploys stop-first. The only overlap that exists today is deploy-time
+run-new-then-swap under the advanced `container-ip` strategy
+(`upstream-url.ts:13-15`, `project.schema.ts:441-444`), and it still creates a new
+container.
 
-`unit-swap` keeps cloud working, but one workspace per retained deployment is the
-model item 1 above replaces. Unchanged by this work.
-
----
-
-## Pending — bigger architectural moves (not on the near-term roadmap)
-
-### 13. Content-addressable artifact store
-
-Two builds producing byte-identical output pay 2× storage. A content-addressable store (build output → SHA → ref count) would dedupe across deployments and projects. Real win at scale; large new subsystem.
-
-### 14. Bare runtime: full Capistrano (symlink-swap supervisor)
-
-Today bare runs one supervisor unit per deployment. Full Capistrano would run one unit per project pointing at `current` symlink. Rollback = symlink swap + `systemctl reload`. Even faster than today's `stop(from)+start(to)`. Bigger refactor; current model works.
-
-### 15. Filesystem-native snapshots on bare (zfs/btrfs)
-
-Block-level dedup beyond rsync hard-links. Ties us to a filesystem; not portable.
-
----
-
-## Decision log
-
-- **S3/R2 offload for Openship Cloud** — rejected. Should be internal to Oblien; S3 belongs to a future self-hosted-only path.
-- **`pause` instead of `stop` on archive** — rejected. Paused workspaces keep memory billed; the archive semantic must stay cheap.
-- **Custom Oblien images from workspaces** — not available (read-only catalog).
-- **Hard-link release dedup on bare** — shipped (via `rsync --link-dest`).
-- **Redeploy-from-commit as the purged-artifact fallback** — shipped, then FOLDED
-  INTO rollback itself: the restore planner picks `rebuild` automatically, so the
-  dashboard has one action instead of two CTAs.
-- **`DockerRuntime.makeActive`** — DELETED. Recreating a container by hand there
-  could only ever be a lesser copy of `deploy()` (it shipped no env, no published
-  port, no volumes, no labels), and Docker's artifact is the image anyway.
-- **Restore as a new deployment row** — shipped (forward-only pointer). History
-  grows by one row per restore; `onSuccess` reuses the commit's version number.
-- **A rollback's FROZEN env wins over live rows** — decided, shipped for compose
-  (the single-app path always worked this way; compose was the anomaly, where the
-  frozen layer beat live *project* env but lost to live *service* env). "The release
-  runs what it ran" is the whole promise of rollback, and a merge that silently
-  half-applies it is worse than either rule. The live layers stay as the base and
-  the frozen map moves last, so it shadows exactly the keys it captured and leaves
-  the rest — dropping them would delete keys the flat snapshot never recorded. The
-  cost is real: a rollback reverts a rotated secret. The mitigation shipped in the
-  same commit — `RollbackConfirmDialog` shows the env diff (keys and DIRECTION only,
-  never values, because env is output-masked everywhere else and a confirm dialog is
-  not the place to widen that).
-- **Scope-aware env capture** — deferred, and marked rather than left implicit.
-  `dep.envVars` is a flat `Record<string,string>` with no service scoping, so one
-  case is genuinely unresolvable: a key that was project-scoped at capture and is
-  now service-scoped with per-service values replays one value everywhere. Fixing it
-  changes the column's shape (migration + capture + back-compat read for every
-  existing row). Instead each row is stamped `meta.envCapture = "flat-v1"` so a
-  future scoped capture is unambiguous, and the diff marks those keys
-  `scopeAmbiguous` so the operator sees exactly the case the flat map can't decide.
-- **`removeMissing: false` at deploy time** — the most consequential behavior change
-  in this pass, and it is NOT rollback-only. A service genuinely deleted from a
-  compose file now keeps its row and stays deployed until someone reconciles. The
-  narrower `removeMissing: dep.trigger !== "rollback"` was rejected because it leaves
-  the reaper-orphan bug live on ordinary deploys: the sync ran first and its cascade
-  emptied the very `service_deployment` list `deployComposeServices` reaps de-listed
-  containers from, so the container was orphaned and left running.
-- **`advanced` deliberately NOT on the wire schema.** The compose `advanced` blob
-  (healthcheck / readiness / generated files / resource caps / network alias) is now
-  carried through storage AND the deployable snapshot, so a rollback replays it. It
-  was NOT added to `BuildServiceInput` or the dashboard deploy body: nothing needs it
-  there, and it would open an MCP-exposed write path for `readiness` and `files` that
-  today exists only behind the merge-protected service-update route.
-- **`defaultRollbackStrategy` now persisted at create.** It was in the request
-  schema and the dashboard already sent it; only the persist side was missing, so it
-  silently fell back to the column default. Only explicit senders change behavior.
-- **The `git` strategy name is a misnomer** and stays one for now: Docker retains
-  images regardless of strategy, so the real knob is the disk-sized window, not the
-  strategy label.
+Needs all four: the swap primitive, a dual-version model, a rollback caller for it,
+and a policy for how long two versions may coexist.
 
 ---
 
-## Reference
+## UX
 
-- Orchestrator: `apps/api/src/modules/deployments/rollback/rollback-orchestrator.ts`
-- Restore planner: `apps/api/src/modules/deployments/rollback/restore-plan.ts`
-- Pinned artifacts: `apps/api/src/modules/deployments/pinned-artifacts.ts`
-- Window math: `packages/core/src/rollback-window.ts`
-- Cloud primitives: `packages/adapters/src/runtime/cloud.ts`
-- Bare primitives: `packages/adapters/src/runtime/bare.ts:528-576`
-- Docker primitives: `packages/adapters/src/runtime/docker.ts:851-921`
-- Schema: `packages/db/src/schema/deployment.ts` + `packages/db/src/schema/project.ts`
-- Migration: `packages/db/drizzle/0021_deployment_rollback.sql` + `0022_cloud_archive_offload.sql`
-- Dashboard menu: `apps/dashboard/src/app/(dashboard)/deployments/components/DeploymentMenu.tsx`
+### The deployments list never says instant vs rebuild
+
+Half of the cheap approximation already ships: `DeploymentCard.tsx:217-225` renders a
+`Snapshotted` chip gated on `!pinned && artifactRetainedAt && !isActive`, beside
+`Active` (`:199`) and `Pinned` (`:208`).
+
+What's missing is the mode itself. `instant`/`rebuild`/`mixed` exists only on the
+confirm path — `DeploymentMenu.tsx:140-150` builds `modeLine` from the restore plan
+and `RollbackConfirmDialog.tsx:57` renders it. No row-level badge names the mode, no
+row uses age, and the **rebuild-only case renders no chip at all** (no artifact, commit
+present) — that state is visible only in the menu item's tooltip
+(`DeploymentMenu.tsx:267-277`). Resolving it truly per row costs a presence check (an
+SSH round trip) per row, which is why it's on demand today; `artifact_retained_at` +
+age is the approximation worth trying.
+
+### Rollback diff preview — commit range and per-service image diff
+
+Everything else in the dialog is done. Still absent, both because the restore-plan
+payload doesn't carry them:
+
+- **Commit range.** `RestorePlanUI` (`dashboard/src/lib/api/deploy.ts:7-43`) and the
+  server payload (`deployment.service.ts:223-243`, served at
+  `deployment.controller.ts:200-206` / `deployment.routes.ts:140-151`) carry
+  mode / needsRepository / rebuildServices / env / untouchedServices / code / reason
+  and no commit fields; the dialog renders no compare link. The orchestrator already
+  resolves `prevSha` internally — the preview just never exposes it.
+- **Per-service image diff.** `rebuildServices` is service NAMES only.
+  `resolveEffectiveServiceImages` (`rollback-orchestrator.ts:212-240`) resolves the
+  old/new image refs internally and the preview drops them.
+
+Both want new payload fields, matching `RestorePlanUI` entries, dialog sections, and
+locale keys.
+
+### Bulk pin and bulk delete
+
+Pin and delete are one-at-a-time per row, top to bottom. `DeploymentsList.tsx` is 38
+lines and just maps rows — no selection state, no header row, no checkbox. The
+actions are single-row menu items (`DeploymentMenu.tsx:152-166`, `:168-177`) over
+per-id routes (`deployment.routes.ts:157` `POST /:id/pin`, `:178` `DELETE /:id`) and a
+per-id client (`deploy.ts` `deleteDeployment(id)`, `pin(id, pinned)`). Nothing bulk
+exists on any layer.
+
+Wants row selection, a bulk action bar, and collection-scoped routes with their
+permission tags — the use case is retention cleanup.
+
+---
+
+## Not on the near-term roadmap
+
+### Content-addressable artifact store
+
+Two builds producing byte-identical output pay 2× storage. A store keyed by SHA with
+ref counting would dedupe across deployments and projects. Nothing like it exists:
+the only digest in the model is `service_deployment.image_digest`
+(`schema/service.ts:271-276`, migration 0050) and its purpose is update-scanner drift
+detection on mutable tags. Retention keeps by a row-derived tag set
+(`computeKeepSet`, `image-gc.ts:49-61`) — a keep set, not ref counting — and bare
+dedupe is filesystem hard-links (`bare.ts:311`), not content addressing. Real win at
+scale; large new subsystem.
+
+### Bare runtime: full Capistrano (per-project supervisor unit)
+
+Still one unit per deployment. Unit identity is the deployment id
+(`supervisor/systemd.ts:5`, `:12`, `:56-61`), release dirs are per deployment
+(`bare.ts:206-208`), and `makeActive` is `stop(from)` then `start(to)`
+(`bare.ts:835-853`, rationale `:819-833`). There is no `current` release pointer — the
+one `ln -sfn` (`bare.ts:256`) links shared persistent paths into a release dir.
+
+Full Capistrano would run one unit per project pointing at `current`, making rollback
+a symlink swap plus `systemctl reload` — faster than today's stop/start. Bigger
+refactor; the current model works.
+
+### Filesystem-native snapshots on bare (zfs/btrfs)
+
+Block-level dedup beyond rsync hard-links. Entirely unbuilt: no filesystem detection
+and no snapshot/clone path. Bare release dedup is `rsync -a --delete --link-dest`
+(`bare.ts:283-329`, the call at `:311`) with a plain `mv` fallback (`:322-328`). Ties
+us to a filesystem; not portable.

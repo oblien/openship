@@ -3,6 +3,8 @@
     "title": "Capacidad y uso",
     "subtitle": "Capacidad incluida en tu plan y cuánto has usado. Las cifras en vivo se sincronizan desde Openship Cloud.",
     "routes": "Rutas gratuitas",
+    "runningServices": "Servicios en ejecución",
+    "projects": "Proyectos",
     "workspaces": "Espacios de trabajo",
     "unlimited": "Ilimitado",
     "used": "usado",
@@ -11,12 +13,12 @@
   },
   "topupsComingSoon": "Las recargas de créditos únicas estarán disponibles pronto: aquí podrás añadir créditos además de tu asignación mensual.",
   "header": {
-    "credits": "Credits",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "credits": "Créditos",
+    "creditsSuffix": "de {limit}",
+    "overQuota": "Cuota superada",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "entrada y salida combinadas",
+    "build": "Tiempo de compilación",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -33,9 +35,10 @@
     "invoices": "Facturas"
   },
   "portal": {
-    "openButton": "Abrir portal de Stripe",
+    "openButton": "Abrir el portal de facturación",
     "errorMissingUrl": "Falta la URL del portal en la respuesta",
-    "errorOpenFailed": "No se pudo abrir el portal de Stripe"
+    "errorOpenFailed": "No se pudo abrir el portal de Stripe",
+    "supportButton": "Contactar con soporte"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "Volver a conectar"
     },
     "notEnabled": {
-      "title": "La facturación no está habilitada para esta organización",
-      "description": "La facturación está configurada, pero no activa para esta organización. Contacta a tu administrador para habilitarla."
+      "title": "Las compras de Cloud aún no están disponibles",
+      "description": "Openship aún no ha habilitado las suscripciones ni la compra de créditos. Inténtalo de nuevo más tarde."
+    },
+    "notConfigured": {
+      "title": "La configuración de facturación de Cloud está incompleta",
+      "description": "Openship debe completar la configuración de facturación. Contacta con el soporte de Openship."
+    },
+    "forbidden": {
+      "title": "No tienes acceso a la facturación",
+      "description": "Pide al propietario de tu organización que te conceda acceso a la facturación."
+    },
+    "signInRequired": {
+      "title": "Inicia sesión para ver la facturación",
+      "description": "No se pudo verificar tu sesión. Inicia sesión de nuevo para continuar.",
+      "signIn": "Iniciar sesión"
+    },
+    "loadFailed": {
+      "title": "No se pudo cargar la facturación",
+      "description": "La facturación no está disponible temporalmente. Inténtalo de nuevo. Si el problema persiste, contacta con el soporte de Openship."
     }
   },
   "plansRoute": {
     "loadError": "No se pudieron cargar los planes",
     "genericError": "Algo salió mal",
     "tryAgain": "Intentar de nuevo",
-    "checkoutError": "No se pudo iniciar el pago"
+    "checkoutError": "No se pudo iniciar el pago",
+    "replacementNotice": "Cambiar el plan o el intervalo de facturación inicia un nuevo ciclo al precio completo seleccionado después del pago. No hay prorrateo automático.",
+    "changeViaSupport": "Contacta con soporte para cambiar tu suscripción actual.",
+    "billingUnavailable": "Las compras aún no están disponibles para esta cuenta."
   },
   "pricing": {
     "custom": "Personalizado",
@@ -73,33 +96,41 @@
     "currentPlan": "Plan actual",
     "contactSales": "Contactar con ventas",
     "freeForever": "Gratis para siempre",
-    "upgrade": "Mejorar"
+    "upgrade": "Mejorar",
+    "comingSoon": "Próximamente",
+    "billingInterval": "Intervalo de facturación",
+    "monthly": "Mensual",
+    "annual": "Anual",
+    "billedAnnually": "Facturación anual"
   },
   "topups": {
     "loadError": "No se pudieron cargar los paquetes de recarga",
-    "title": "Recargar créditos",
-    "description": "Paquetes de créditos de pago único cobrados a través de Stripe. Los créditos nunca caducan y se suman a tu asignación mensual.",
+    "title": "Añadir uso de Cloud",
+    "description": "Uso adicional para compilaciones y apps con un solo pago. Aumenta tu saldo sin cambiar los límites de proyectos, compilación o servicios.",
     "tryAgain": "Intentar de nuevo",
-    "credits": "créditos",
+    "credits": "Créditos",
     "redirecting": "Redirigiendo…",
     "buy": "Comprar",
     "empty": "No hay paquetes de recarga disponibles en este momento.",
     "receiptsTitle": "Recargas recientes",
-    "receiptsDescription": "Los recibos se gestionan en Stripe: abre el portal de facturación para ver tu historial de facturas y descargar los recibos.",
+    "receiptsDescription": "Consulta los recibos de tus compras de uso adicional.",
     "opening": "Abriendo…",
-    "openPortal": "Abrir portal de Stripe",
+    "openPortal": "Abrir el portal de facturación",
     "checkoutError": "No se pudo iniciar el pago",
-    "portalError": "No se pudo abrir el portal de facturación"
+    "portalError": "No se pudo abrir el portal de facturación",
+    "extraUsage": "Uso adicional",
+    "prepaidUsage": "Uso prepagado",
+    "allowanceEquivalent": "del uso incluido en un ciclo de facturación",
+    "oneTime": "Pago único"
   },
   "overview": {
-    "creditsLeft": "créditos restantes",
+    "creditsLeft": "créditos disponibles",
     "planLabel": "Plan {name}",
     "usedThisPeriod": "Usado en este período",
     "resets": "Se restablece",
     "resetsInDay": "En {n} día",
     "resetsInDays": "En {n} días",
     "none": "—",
-    "upgradeToPro": "Mejorar a Pro",
     "recentActivity": "Actividad reciente",
     "last7Days": "Últimos 7 días",
     "viewFullUsage": "Ver uso completo",
@@ -121,7 +152,7 @@
       "balance": "Saldo",
       "balanceSuffix": "de {limit} créditos",
       "consumed": "Consumido en este período",
-      "credits": "créditos",
+      "credits": "Créditos",
       "burnRate": "Tasa de consumo",
       "burnRateSuffix": "créditos/día (últimos 7 días)",
       "projected": "Proyección de fin de período",
@@ -133,11 +164,11 @@
     },
     "chart": {
       "title": "Uso a lo largo del tiempo",
-      "subtitle": "Unidades medidas apiladas por {unit}."
+      "subtitle": "Créditos Cloud por {unit}."
     },
     "breakdown": {
       "title": "Desglose de recursos",
-      "subtitle": "Créditos atribuidos proporcionalmente al uso medido de recursos en el rango seleccionado.",
+      "subtitle": "Uso real de recursos en las fechas seleccionadas. El total de créditos Cloud se muestra arriba.",
       "resource": "Recurso",
       "units": "Unidades",
       "credits": "Créditos",
@@ -146,10 +177,22 @@
       "empty": "No hay uso en el rango seleccionado."
     },
     "resources": {
-      "cpu": { "label": "Tiempo de CPU", "units": "vCPU-horas" },
-      "memory": { "label": "Memoria", "units": "GB-horas" },
-      "disk": { "label": "E/S de disco", "units": "GB" },
-      "network": { "label": "Red", "units": "GB" }
+      "cpu": {
+        "label": "Tiempo de CPU",
+        "units": "vCPU-horas"
+      },
+      "memory": {
+        "label": "Memoria",
+        "units": "GB-horas"
+      },
+      "disk": {
+        "label": "Actividad de disco",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Transferencia de datos",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Espacio de trabajo",
@@ -186,15 +229,177 @@
       "incomplete": "Incompleto",
       "incomplete_expired": "Expirado",
       "unpaid": "Sin pagar",
-      "paused": "Pausado"
-    }
+      "paused": "Pausado",
+      "credit_exhausted": "Cloud pausado"
+    },
+    "includedTitle": "Qué incluye",
+    "perYear": "${price}/año"
   },
   "paymentPanel": {
     "title": "Método de pago",
-    "description": "Las tarjetas, cuentas bancarias y datos de facturación se gestionan en el Portal de Clientes de Stripe. Abre el portal para agregar, eliminar o actualizar tus métodos de pago."
+    "description": "Gestiona tus métodos de pago y datos de facturación."
   },
   "invoicesPanel": {
     "title": "Facturas",
-    "description": "Las facturas y los recibos se encuentran en el Portal de Clientes de Stripe. Abre el portal para ver tu historial de facturación y descargar las facturas en PDF."
+    "description": "Consulta o solicita tu historial de facturación y tus facturas."
+  },
+  "subscription": {
+    "title": "Suscripción",
+    "renewsOn": "Se renueva el {date}",
+    "endsOn": "Renovación detenida. Tu suscripción termina el {date}.",
+    "endsAtPeriodEnd": "Renovación detenida. Tu suscripción termina al finalizar el período pagado.",
+    "renewalEnabled": "La renovación automática está activada.",
+    "ended": "La suscripción ha terminado. Elige un plan para suscribirte de nuevo.",
+    "billedMonthly": "Facturación mensual",
+    "cancel": "Cancelar suscripción",
+    "resume": "Reactivar renovación",
+    "cancelNotice": "La renovación se detendrá al finalizar el período pagado. Tu suscripción seguirá vigente hasta entonces.",
+    "confirmCancel": "Detener renovación",
+    "keepPlan": "Mantener suscripción",
+    "error": "No se pudo actualizar tu suscripción. Inténtalo de nuevo."
+  },
+  "checkout": {
+    "checking": "Actualizando tu plan y saldo de Cloud. El pago puede tardar un momento en procesarse.",
+    "active": "Tu plan de Cloud está activo.",
+    "pending": "Es posible que tu pago siga procesándose. Actualiza esta página para consultar el plan y el saldo. Contacta con soporte si falta un pago completado.",
+    "support": "Contactar con soporte"
+  },
+  "deployGate": {
+    "title": "Elige un plan para desplegar",
+    "description": "Se requiere un plan de Cloud de pago para crear proyectos, compilar código y ejecutar apps.",
+    "preserved": "La configuración de tu proyecto se conserva aquí. El pago se abre en otra pestaña; vuelve aquí después de activar tu plan para continuar.",
+    "close": "Volver al proyecto",
+    "checkPlan": "Comprobar plan",
+    "loading": "Cargando tu plan Cloud…",
+    "loadError": "No se pudo cargar tu plan Cloud. Inténtalo de nuevo.",
+    "ownerRequired": "Pide al propietario de tu espacio de trabajo que elija o gestione el plan Cloud.",
+    "readyTitle": "Vuelve a tu proyecto",
+    "ready": "Tu plan Cloud se ha actualizado. Cierra esta ventana e inténtalo de nuevo.",
+    "pending": "Tu plan aún no ha cambiado. Completa el pago y vuelve a comprobarlo.",
+    "blockedTitle": "Tu plan Cloud necesita atención",
+    "creditsTitle": "Cuota de uso de Cloud agotada",
+    "creditsDescription": "Añade más uso o elige un plan superior para continuar. El uso adicional no aumenta los límites de proyectos, compilación o servicios.",
+    "paymentDescription": "Actualiza tus datos de pago o suscripción para seguir desplegando.",
+    "pausedDescription": "El despliegue Cloud está pausado en este espacio. Contacta con soporte para restablecer el acceso.",
+    "upgradeTitle": "Este proyecto necesita más capacidad",
+    "upgradeDescription": "Elige un plan con capacidad suficiente o ajusta tu proyecto e inténtalo de nuevo.",
+    "manageBilling": "Gestionar facturación",
+    "topups": "Añadir uso",
+    "checkoutOpened": "El pago está listo en otra pestaña. Si no se ha abierto, usa el enlace de abajo.",
+    "continueCheckout": "Continuar al pago",
+    "reasons": {
+      "static-only": "Tu plan no incluye este tipo de aplicación. Elige un plan compatible para desplegar.",
+      "build-minutes-exhausted": "Has alcanzado tu límite mensual de compilación. Elige un plan superior o espera a que se renueve tu cuota.",
+      "free-subdomain-limit": "Has usado todos los subdominios Cloud de tu plan. Elige un plan superior o elimina un subdominio que no uses.",
+      "resource-tier": "Este proyecto necesita más CPU o memoria de lo que permite tu plan. Elige un plan superior o reduce los recursos en la configuración del proyecto.",
+      "running-services": "Has alcanzado tu límite de servicios activos. Elige un plan superior o detén un servicio que ya no necesites.",
+      "project-limit": "Has alcanzado tu límite de proyectos. Elige un plan superior o elimina un proyecto que ya no necesites."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Cómo funciona el uso de Cloud",
+    "credits": "Créditos Cloud",
+    "creditsHint": "Las compilaciones y las aplicaciones activas consumen créditos por CPU, memoria, actividad de disco y transferencia de datos. Las cargas mayores consumen créditos más rápido.",
+    "creditsPerCycle": "{amount} créditos / ciclo de facturación",
+    "buildTime": "Tiempo de compilación",
+    "buildMinutes": "{amount} min / mes",
+    "buildHint": "Tiempo dedicado a compilar tu código. Una compilación de 5 minutos consume 5 minutos de tu cuota mensual.",
+    "apps": "Servicios activos",
+    "appsHint": "Aplicaciones, bases de datos y procesos en ejecución al mismo tiempo. Cada servicio Compose activo cuenta para este límite.",
+    "machine": "CPU y memoria por servicio",
+    "machineHint": "La capacidad máxima de CPU y memoria para un servicio. Es un límite, no un saldo compartido.",
+    "projects": "Proyectos",
+    "projectsHint": "Proyectos guardados en tu espacio de trabajo, incluidos los borradores.",
+    "routesHint": "Direcciones Cloud públicas para tus aplicaciones.",
+    "unlimited": "Sin límite establecido",
+    "notIncluded": "No incluido",
+    "noPlan": "Sin plan Cloud",
+    "setupOnly": "Requiere suscripción",
+    "setupHint": "Elige un plan de Cloud para crear proyectos, compilar código y ejecutar apps.",
+    "includedTitle": "Tus recursos",
+    "limitsHint": "Proyectos, servicios en ejecución y tiempo de compilación mensual de tu plan.",
+    "balanceRule": "Las apps se pausan al agotarse la cuota de uso. Añade más uso para continuar o mejora el plan para aumentar los límites de recursos.",
+    "reset": "La cuota de compilación se renueva el {date}",
+    "cpuHint": "Procesamiento utilizado a lo largo del tiempo. 1 vCPU durante 1 hora equivale a 1 vCPU-hora.",
+    "memoryHint": "Memoria utilizada a lo largo del tiempo. 1 GB durante 1 hora equivale a 1 GB-hora.",
+    "diskHint": "Datos que leen y escriben tus aplicaciones. Es actividad de disco, no el tamaño almacenado.",
+    "networkHint": "Datos enviados y recibidos por tus aplicaciones.",
+    "usageMeaning": "Cómo interpretar el valor",
+    "selectedRange": "Créditos usados en este intervalo",
+    "usageHint": "Uso real de CPU, memoria, actividad de disco y transferencia de datos en las fechas seleccionadas.",
+    "creditsChart": "Créditos Cloud por {unit}.",
+    "allProjects": "Todos los proyectos",
+    "from": "Desde (UTC)",
+    "to": "Hasta inclusive (UTC)",
+    "invalidRange": "Elige una fecha final igual o posterior a la inicial.",
+    "moreFeatures": "Más funciones",
+    "usageAllowance": "Uso de Cloud",
+    "usageIncluded": "Incluye una cuota de uso compartida",
+    "usageSummary": "Las compilaciones y las apps en ejecución comparten una cuota de uso. Las máquinas más grandes y los tiempos de ejecución más largos consumen más.",
+    "usageDetails": "Detalles de uso",
+    "usagePercent": "{percent}% utilizado"
+  },
+  "onboarding": {
+    "workspaceDescription": "Elige un plan de Cloud para crear proyectos, compilar código y ejecutar tus apps. Antes de suscribirte no se incluyen proyectos ni recursos de cómputo.",
+    "includedCredits": "Créditos de Cloud incluidos",
+    "noFreeCompute": "Sin cómputo gratuito en Cloud",
+    "planRequired": "Requiere un plan",
+    "savedCredits": "Saldo de uso guardado",
+    "savedCreditsHint": "El uso pagado por adelantado permanece en este espacio de trabajo. Elige un plan para usarlo en despliegues de Cloud.",
+    "offerTitle": "Lanza en Openship Cloud",
+    "offerLabel": "Empieza a desplegar",
+    "offerDescription": "Un lugar para tus proyectos, con tiempo de compilación y recursos para tus apps.",
+    "startingWith": "Empieza con {name}",
+    "subscribe": "Suscribirse a {name}",
+    "compare": "Comparar todos los planes",
+    "checkoutNote": "Revisa tus datos de pago antes de suscribirte.",
+    "choosePlan": "Elegir un plan",
+    "stepsTitle": "Del proyecto a producción",
+    "stepPlan": "Elige tu plan",
+    "stepPlanHint": "Elige los proyectos, servicios y tiempo de compilación que necesitas.",
+    "stepCheckout": "Completa el pago",
+    "stepCheckoutHint": "Tu plan de Cloud se activa después del pago.",
+    "stepDeploy": "Despliega tu proyecto",
+    "stepDeployHint": "Crea tu proyecto y pulsa Desplegar.",
+    "usageTitle": "Tu uso de Cloud empieza aquí",
+    "usageDescription": "Despliega con un plan de pago para ver aquí el uso de compilaciones y aplicaciones.",
+    "paymentTitle": "Aún no hay método de pago",
+    "paymentDescription": "Añade un método de pago al suscribirte. Podrás gestionarlo aquí después de tu primera compra.",
+    "invoicesTitle": "Aún no hay facturas",
+    "invoicesDescription": "Tus facturas y recibos aparecen después de tu primer pago.",
+    "topupsTitle": "Empieza con un plan de Cloud",
+    "topupsDescription": "Tu plan incluye uso para compilaciones y apps. Puedes añadir más cuando la suscripción esté activa.",
+    "compareTitle": "Encuentra el plan adecuado para tus proyectos",
+    "compareDescription": "Compara proyectos, servicios, tiempo de compilación, CPU y memoria disponibles para cada app.",
+    "savedProjects": "Proyectos guardados en este espacio de trabajo: {count}. Suscríbete para añadir más."
+  },
+  "resourceOverview": {
+    "overviewHint": "Uso, recursos restantes y límites del plan de tu espacio de trabajo.",
+    "remaining": "Quedan {amount}",
+    "unavailable": "Uso no disponible",
+    "measuredUsage": "Medido en este período",
+    "sharedCompute": "Usa tu capacidad de cómputo compartida",
+    "computeTitle": "Uso de cómputo",
+    "computeHint": "CPU, memoria, actividad de disco y transferencia de aplicaciones comparten una asignación. Incluye compilaciones y aplicaciones en ejecución.",
+    "cpu": "Tiempo de CPU",
+    "cpuHint": "1 vCPU-h equivale a un núcleo de CPU utilizado durante una hora. Mide el trabajo realizado, no el tiempo de actividad de la aplicación.",
+    "memory": "Tiempo de memoria",
+    "memoryHint": "1 GB-h equivale a 1 GB de memoria asignada durante una hora.",
+    "disk": "Actividad de disco",
+    "diskHint": "Datos leídos y escritos en los discos de las aplicaciones, no el espacio almacenado.",
+    "transfer": "Transferencia de aplicaciones",
+    "transferHint": "Datos entrantes y salientes de tus aplicaciones. El tráfico Edge se muestra por separado.",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Transferencia Edge",
+    "bandwidthHint": "Tráfico entrante y saliente de las rutas de tu espacio de trabajo. La asignación mensual es independiente del cómputo. Las rutas se pausan al alcanzar el límite hasta el reinicio o la mejora del plan.",
+    "requests": "Solicitudes Edge",
+    "requestsHint": "Solicitudes HTTP servidas por las rutas de tu espacio. Son visitas, no registros de facturación ni llamadas a la API.",
+    "requestsIncluded": "Incluidas en tu asignación de tráfico",
+    "partialError": "No se pudo cargar parte del uso. Actualiza para volver a intentarlo.",
+    "refresh": "Actualizar uso de recursos",
+    "period": "{start} – {end}",
+    "currentPeriod": "Período de facturación actual",
+    "viewUsage": "Ver uso detallado",
+    "bandwidthPerMonth": "{amount} GB / mes"
   }
 }

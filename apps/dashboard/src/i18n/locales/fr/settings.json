@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Valeurs par défaut",
       "settings": "Paramètres",
+      "dns": "DNS",
       "notifications": "Notifications",
       "team": "Équipe",
       "members": "Membres",
@@ -47,11 +48,12 @@
     "title": "Paramètres",
     "tabs": {
       "general": "Général",
-      "tokens": "Jetons",
+      "git": "Git",
+      "tokens": "Jetons d'API",
       "mcp": "MCP",
       "team": "Équipe",
       "notifications": "Notifications",
-      "audit": "Journal d'audit",
+      "credentials": "Identifiants",
       "cloud": "Cloud",
       "infrastructure": "Infrastructure",
       "instance": "Instance"
@@ -113,10 +115,6 @@
     "noServers": "Aucun serveur configuré pour l'instant - ajoutez-en un depuis le sélecteur de déploiement.",
     "clearDefault": "Effacer la valeur par défaut (demander à chaque fois)",
     "targets": {
-      "local": {
-        "label": "Cette machine",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Mon serveur",
         "desc": "Un serveur SSH configuré"
@@ -128,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "votre serveur",
-      "cloud": "Openship Cloud",
-      "local": "Cette machine"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Choisissez d'abord un serveur",
@@ -160,6 +157,64 @@
     "toast": {
       "setTo": "Mode de build défini sur {mode}",
       "failed": "Échec de la mise à jour du mode de build"
+    }
+  },
+  "githubSources": {
+    "title": "Applications GitHub auto-hébergées",
+    "description": "Gérez la connexion GitHub sur cette instance avec des identifiants chiffrés, des webhooks directs et des jetons d'installation temporaires.",
+    "publicUrlRequired": "Configurez d'abord une URL HTTPS publique pour cette instance Openship. GitHub doit pouvoir joindre le rappel de configuration et le webhook.",
+    "createWithGithub": "Créer avec GitHub",
+    "registerExisting": "Enregistrer une application existante",
+    "manifestHelp": "Openship enverra à GitHub un manifeste aux autorisations minimales. GitHub créera l'application, renverra ses identifiants une seule fois, puis ouvrira l'installation des dépôts.",
+    "nameLabel": "Nom de la source",
+    "namePlaceholder": "GitHub Acme",
+    "continueOnGithub": "Continuer sur GitHub",
+    "empty": "Aucune application GitHub appartenant à l'espace de travail.",
+    "defaultBadge": "Par défaut",
+    "activeBadge": "Active",
+    "invalidBadge": "Attention requise",
+    "webhookChanged": "Cette application a été enregistrée avec une ancienne URL de webhook. Mettez à jour les URL du webhook et de configuration sur GitHub, puis enregistrez de nouveau la source.",
+    "installations": "Comptes installés",
+    "noInstallations": "Pas encore installée sur un compte.",
+    "suspended": "suspendue",
+    "installAccount": "Installer sur un compte",
+    "verify": "Vérifier",
+    "edit": "Modifier",
+    "makeDefault": "Définir par défaut",
+    "manage": "Gérer sur GitHub",
+    "delete": "Supprimer",
+    "confirmDelete": "Supprimer {name} d'Openship ? Ses identifiants locaux et liaisons d'installation seront supprimés, mais l'application restera installée sur GitHub jusqu'à sa désinstallation.",
+    "editHelp": "Laissez les champs secrets vides pour conserver les valeurs chiffrées déjà enregistrées.",
+    "manualHelp": "Saisissez les identifiants d'une application GitHub existante. Openship vérifie la clé privée avant tout enregistrement.",
+    "appIdLabel": "Identifiant de l'application",
+    "clientIdLabel": "Identifiant du client",
+    "clientSecretLabel": "Secret du client",
+    "optionalHelp": "Facultatif pour l'authentification par jeton d'installation.",
+    "leaveBlank": "Laissez vide pour conserver la valeur enregistrée.",
+    "privateKeyLabel": "Clé privée (PEM)",
+    "privateKeyHelp": "Générez une clé privée dans les réglages de l'application GitHub et collez le fichier PEM complet.",
+    "webhookSecretLabel": "Secret du webhook",
+    "webhookSecretHelp": "Utilisez le même secret robuste dans les réglages du webhook (16 caractères minimum).",
+    "enterpriseSettings": "Réglages de GitHub Enterprise",
+    "webUrlLabel": "URL web de GitHub",
+    "apiUrlLabel": "URL de l'API GitHub",
+    "defaultLabel": "Utiliser cette application comme source par défaut",
+    "setupUrlLabel": "URL de configuration",
+    "webhookUrlLabel": "URL du webhook",
+    "registerAndInstall": "Enregistrer et installer",
+    "toast": {
+      "loadFailed": "Impossible de charger les sources d'applications GitHub.",
+      "createFailed": "Impossible de démarrer la création de l'application GitHub.",
+      "installFailed": "Impossible d'ouvrir l'installation de l'application GitHub.",
+      "verified": "Application GitHub vérifiée.",
+      "verifyFailed": "Échec de la vérification de l'application GitHub.",
+      "defaultChanged": "Application GitHub par défaut modifiée.",
+      "defaultFailed": "Impossible de modifier l'application GitHub par défaut.",
+      "deleted": "Source d'application GitHub supprimée.",
+      "deleteFailed": "Impossible de supprimer la source d'application GitHub.",
+      "updated": "Source d'application GitHub mise à jour.",
+      "created": "Application GitHub enregistrée.",
+      "saveFailed": "Impossible d'enregistrer la source d'application GitHub."
     }
   },
   "cloneCredentials": {
@@ -286,6 +341,7 @@
     "you": "(vous)",
     "removeMember": "Supprimer le membre",
     "pendingInvitations": "Invitations en attente ({count})",
+    "copyInviteLink": "Copier le lien d'invitation",
     "invitedAs": "Invité en tant que {role} - expire le {date}",
     "roles": {
       "owner": "Propriétaire",
@@ -353,6 +409,7 @@
       "updateRoleFailed": "Échec de la mise à jour du rôle",
       "removeFailed": "Échec de la suppression",
       "cancelFailed": "Échec de l'annulation",
+      "copyInviteFailed": "Impossible de copier le lien d'invitation",
       "accessUpdated": "Accès mis à jour",
       "loadGrantsFailed": "Échec du chargement des octrois",
       "deleteFailed": "Échec de la suppression de l'espace de travail",
@@ -383,9 +440,11 @@
     "pickerTitle": "Accès initial aux ressources",
     "pickerDesc": "Les membres restreints commencent sans aucun accès. Choisissez ce que cette invitation déverrouille une fois acceptée — vous pourrez en accorder davantage plus tard depuis la ligne du membre.",
     "sendInvite": "Envoyer l'invitation",
+    "createInviteLink": "Créer un lien d'invitation",
     "toast": {
       "failedSend": "Échec de l'envoi de l'invitation",
       "invitationSent": "Invitation envoyée à {email}",
+      "invitationLinkCreated": "Lien d'invitation créé — copiez-le depuis les invitations en attente",
       "personalOrgBlocked": "Les espaces de travail personnels ne peuvent pas inviter de membres. Créez d'abord une organisation d'équipe, puis envoyez des invitations.",
       "updateMailSourceFailed": "Échec de la mise à jour de la source de messagerie"
     }
@@ -615,13 +674,31 @@
     "updatesOne": "1 mise à jour disponible",
     "updatesMany": "{n} mises à jour disponibles",
     "allHealthy": "Tous les composants de la plateforme sont à jour",
-    "manageLink": "Gérer dans Serveurs"
+    "manageLink": "Gérer dans Serveurs",
+    "hostControlLabel": "Déployer sur cette machine",
+    "hostControlDesc": "Autoriser OpenShip à déployer des applications sur le serveur sur lequel il s'exécute, en plus de vos serveurs connectés. Désactivé si installé avec --no-host-control (plan de contrôle uniquement) — activez-le pour ajouter cette machine comme cible de déploiement.",
+    "hostControlEnvNote": "Cette machine a été définie comme plan de contrôle uniquement à l'installation (--no-host-control). L'activer remplace ce réglage pour qu'OpenShip puisse déployer ici.",
+    "hostControlError": "Impossible de modifier le contrôle de l'hôte — seul le propriétaire de l'espace de travail de cette machine le peut."
   },
   "dataTransfer": {
     "export": {
       "title": "Exporter les données",
       "description": "Téléchargez toute la base de données de l'instance sous forme de fichier.",
       "intro": "Crée un instantané portable de tout — projets, serveurs, déploiements, paramètres. Définissez une phrase secrète pour inclure vos secrets (variables d'environnement, jetons, identifiants SSH) ; ils sont rechiffrés avec elle, ce qui rend le fichier sûr à déplacer. Laissez-la vide pour exporter sans les secrets.",
+      "filterTitle": "Historique facultatif",
+      "filterDescription": "La configuration, les projets, serveurs, utilisateurs et identifiants sont toujours inclus. Décochez les historiques inutiles pour réduire la taille de l’export.",
+      "filterAnalytics": "Analyses et échantillons d’utilisation",
+      "filterActivity": "Historique d’audit et de notifications",
+      "filterBackups": "Historique des sauvegardes et restaurations",
+      "filterIncidents": "Historique des incidents de santé",
+      "filterMigrations": "Historique des migrations Docker",
+      "coreRows": "Lignes toujours incluses",
+      "selectedRows": "Lignes d’export sélectionnées",
+      "countUnavailable": "indisponible",
+      "transferSecretNotice": "Pour transférer correctement les identifiants, notamment les mots de passe et clés SSH, variables d’environnement, jetons et identifiants de sauvegarde, générez ou saisissez un secret de transfert ci-dessous. Conservez-le séparément et saisissez le même lors de l’import. Ne copiez pas le BETTER_AUTH_SECRET de l’instance vers la destination.",
+      "generateTransferSecret": "Générer un secret de transfert",
+      "copyTransferSecret": "Copier le secret de transfert",
+      "copiedTransferSecret": "Secret de transfert copié. Conservez-le en sécurité pour l’import.",
       "passphraseLabel": "Phrase secrète (optionnelle)",
       "passphrasePlaceholder": "Protège vos secrets",
       "confirmLabel": "Confirmer la phrase secrète",
@@ -803,6 +880,36 @@
     "toast": {
       "setTo": "Stratégie de routage définie sur {mode}",
       "failed": "Échec de la mise à jour de la stratégie de routage"
+    }
+  },
+  "credentials": {
+    "title": "Identifiants",
+    "description": "Jetons et connexions qu'Openship utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
+    "noProviders": "Aucun fournisseur d'identifiants n'est disponible sur cette instance.",
+    "noneForProvider": "Aucun ajouté pour le moment.",
+    "add": "Ajouter",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "connect": "Ajouter un identifiant",
+    "delete": "Supprimer",
+    "verify": "Revérifier auprès du fournisseur",
+    "badgeActive": "Fonctionne",
+    "badgeInvalid": "À vérifier",
+    "fieldName": "Libellé",
+    "namePlaceholder": "ex. GHCR lecture seule",
+    "secretKeptPlaceholder": "•••••••• (enregistré — laisser vide pour conserver)",
+    "selectPlaceholder": "Choisir…",
+    "verifyNote": "Openship vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
+    "confirmDelete": "Supprimer « {name} » ? Tout ce qui en dépend cessera de fonctionner.",
+    "toast": {
+      "loadFailed": "Impossible de charger les identifiants",
+      "created": "Identifiant ajouté",
+      "updated": "Identifiant mis à jour",
+      "deleted": "Identifiant supprimé",
+      "saveFailed": "Impossible d'enregistrer l'identifiant",
+      "deleteFailed": "Impossible de supprimer l'identifiant",
+      "verifyOk": "Le fournisseur a accepté l'identifiant",
+      "verifyFailed": "Le fournisseur a refusé l'identifiant"
     }
   }
 }

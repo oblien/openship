@@ -72,14 +72,18 @@ describe("renderUpPlan", () => {
             state: { binary: false, plugin: false, daemon: false },
             gap: { summary: "Docker isn't installed", installable: true },
             wouldInstall: true,
-            installCommand: "curl -fsSL https://get.docker.com | sh",
+            // An Amazon Linux 2023 box, because the command is now derived from the
+            // host: this fixture said `curl … get.docker.com | sh`, which the plan would
+            // never print here — the script exits 1 on `ID=amzn`. A mocked fixture that
+            // can't happen makes the assertion below prove nothing about the renderer.
+            installCommand: "dnf install -y docker",
           },
         }),
       ),
     );
     expect(out).toContain("Docker isn't installed");
     expect(out).toMatch(/WOULD install it/);
-    expect(out).toContain("curl -fsSL https://get.docker.com | sh");
+    expect(out).toContain("dnf install -y docker");
     // The escape hatch for an operator who doesn't want Docker on this box.
     expect(out).toContain("--bare");
   });
@@ -99,7 +103,11 @@ describe("renderUpPlan", () => {
             gap: {
               summary: "Docker is installed but its daemon isn't reachable",
               installable: false,
-              hint: "sudo systemctl start docker",
+              // `dockerGap` now derives this from the host's service manager, so the hint
+              // is `enable --now` (what we'd actually run) rather than a bare `start` —
+              // and on OpenRC it is an `rc-service` pair. A fixture the product can't
+              // produce would keep this green while the renderer showed something else.
+              hint: "sudo systemctl enable --now docker",
             },
             wouldInstall: false,
           },
@@ -107,7 +115,7 @@ describe("renderUpPlan", () => {
       ),
     );
     expect(out).toContain("would NOT install it");
-    expect(out).toContain("sudo systemctl start docker");
+    expect(out).toContain("sudo systemctl enable --now docker");
   });
 
   it("prints the service definition for the bare method", () => {

@@ -1,6 +1,6 @@
 {
-  "name": "openship",
-  "version": "0.6.1",
+  "name": "@repo/workspace",
+  "version": "0.7.2",
   "description": "Open-source, self-hostable deployment platform",
   "license": "Apache-2.0",
   "repository": {
@@ -42,6 +42,7 @@
     "clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
     "lint": "turbo run lint --filter=!@repo/email",
     "test": "turbo run test --filter=!@repo/email --concurrency=1",
+    "test:scripts": "bun test ./scripts/",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "turbo run db:generate --filter=@repo/db",
     "db:push": "turbo run db:push --filter=@repo/db",
@@ -49,7 +50,10 @@
     "dev:clean": "turbo run clean && rm -rf node_modules",
     "clean:modules": "find apps packages -name node_modules -type d -prune -exec rm -rf {} + && rm -rf node_modules",
     "release": "bun scripts/release.ts",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "build:sdk": "bun run --cwd packages/openship build",
+    "docs:reference": "node scripts/generate-api-reference.mjs --write && node scripts/generate-cli-reference.mjs --write",
+    "docs:check": "node scripts/check-docs.mjs"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
@@ -61,8 +65,8 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@octokit/auth-oauth-device": "^8.0.3",
     "api": "^6.1.3",
     "sonner": "^2.0.7"
-  }
+  },
+  "private": true
 }

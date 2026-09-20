@@ -1,3 +1,4 @@
+import { createEncryption } from "@repo/db/encryption";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import { createDeploymentRepo } from "../../../../../packages/db/src/repos/deployment.repo";
@@ -42,6 +43,9 @@ const h = vi.hoisted(() => ({
   sessionStatuses: [] as Array<{ id: string; status: string; detail?: Record<string, unknown> }>,
   activePointer: [] as string[],
   notifications: [] as string[],
+  deletedUpdateStatuses: [] as string[],
+  deleteUpdateStatusError: null as Error | null,
+  finishedLogs: [] as unknown[][],
 }));
 
 vi.mock("@repo/db", () => ({
@@ -64,8 +68,14 @@ vi.mock("@repo/db", () => ({
         if (rejection) throw new Error(rejection);
       },
       supersedePendingDecisions: async () => {},
-      finishBuildSession: async () => {
+      finishBuildSession: async (
+        _id: string,
+        _status: string,
+        _durationMs: number,
+        logs?: unknown[],
+      ) => {
         if (h.finishError) throw h.finishError;
+        h.finishedLogs.push(logs ?? []);
       },
     },
     project: {
@@ -75,10 +85,16 @@ vi.mock("@repo/db", () => ({
       setCloudWorkspaceId: async () => {},
     },
     service: { listByDeployment: async () => [] },
+    updateStatus: {
+      deleteByProject: async (projectId: string) => {
+        if (h.deleteUpdateStatusError) throw h.deleteUpdateStatusError;
+        h.deletedUpdateStatuses.push(projectId);
+      },
+    },
   },
 }));
 
-vi.mock("../../../src/modules/deployments/session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   updateStatus: (id: string, status: string, detail?: Record<string, unknown>) => {
     h.sessionStatuses.push({ id, status, detail });
   },
@@ -86,7 +102,7 @@ vi.mock("../../../src/modules/deployments/session-manager", () => ({
   appendLog: () => {},
 }));
 
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
@@ -94,15 +110,13 @@ vi.mock("../../../src/lib/notification-dispatcher", () => ({
   },
 }));
 vi.mock("../../../src/lib/audit", () => ({ audit: { recordAsync: () => {} } }));
-vi.mock("../../../src/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
-vi.mock("../../../src/modules/mail/webmail/webmail-project.service", () => ({
-  markWebmailInstalled: async () => {},
-  mailServerIdFromWebmailSlug: () => null,
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
+  onWebmailDeployed: async () => {},
 }));
 
-const { onSuccess, onFailure, reportPipelineError } = await import(
-  "../../../src/modules/deployments/deployment-lifecycle"
-);
+const { onSuccess, onFailure, reportPipelineError } =
+  await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
 type LifecycleContext = Parameters<typeof onSuccess>[0];
 
 function ctxFor(): LifecycleContext {
@@ -135,7 +149,10 @@ const statusPairs = () => h.statusWrites.map((w) => `${w.id}:${w.status}`);
 
 function loggerSpy() {
   const lines: Array<{ message: string; level?: string }> = [];
-  return { lines, logger: { log: (message: string, level?: string) => lines.push({ message, level }) } };
+  return {
+    lines,
+    logger: { log: (message: string, level?: string) => lines.push({ message, level }) },
+  };
 }
 
 beforeEach(() => {
@@ -147,9 +164,25 @@ beforeEach(() => {
   h.sessionStatuses = [];
   h.activePointer = [];
   h.notifications = [];
+  h.deletedUpdateStatuses = [];
+  h.deleteUpdateStatusError = null;
+  h.finishedLogs = [];
 });
 
 describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
+  it("activates a successful preview on its own project row (#195)", async () => {
+    const ctx = ctxFor();
+    ctx.project.id = "project-preview";
+    ctx.project.environmentType = "preview";
+    ctx.dep.projectId = "project-preview";
+    ctx.dep.environment = "preview";
+
+    await onSuccess(ctx, { containerId: "preview-container", durationMs: 1 });
+
+    expect(h.activePointer).toEqual(["project-preview:dep_1"]);
+    expect(statusPairs()).toEqual(["dep_1:ready"]);
+  });
+
   it("onSuccess still reports ready when finishBuildSession throws", async () => {
     h.finishError = new Error(
       'Failed query: update "build_session" set "status" = $1, "logs" = $2 …',
@@ -177,6 +210,48 @@ describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
     expect(h.sessionStatuses.map((s) => s.status)).toEqual(["failed"]);
     expect(h.notifications).toEqual(["deployment.failed"]);
     expect(ctx.settled).toBe("failed");
+  });
+
+  it("writes a direct pipeline failure into the persisted terminal log exactly once (#751)", async () => {
+    const ctx = ctxFor();
+    const { lines, logger } = loggerSpy();
+    ctx.logger = logger;
+    ctx.persistLogs = () =>
+      lines.map((line) => ({
+        timestamp: "2026-08-31T00:00:00.000Z",
+        message: line.message,
+        level: line.level as "error" | "info" | "warn" | undefined,
+      }));
+
+    await onFailure(ctx, "No services were found for this project", 99);
+
+    expect(lines).toEqual([
+      { message: "Error: No services were found for this project", level: "error" },
+    ]);
+    expect(h.finishedLogs.at(-1)).toEqual([
+      expect.objectContaining({
+        message: "Error: No services were found for this project",
+        level: "error",
+      }),
+    ]);
+  });
+
+  it("does not duplicate a terminal reason already emitted by a lower layer", async () => {
+    const ctx = ctxFor();
+    const { lines, logger } = loggerSpy();
+    logger.log("Error: docker build failed", "error");
+    ctx.logger = logger;
+    ctx.persistLogs = () =>
+      lines.map((line) => ({
+        timestamp: "2026-08-31T00:00:00.000Z",
+        message: line.message,
+        level: line.level as "error" | "info" | "warn" | undefined,
+      }));
+
+    await onFailure(ctx, "docker build failed", 99);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.message).toBe("Error: docker build failed");
   });
 
   it("sanitizes the writes that land BEFORE the outcome (text + jsonb)", async () => {
@@ -308,6 +383,23 @@ describe("lifecycle: no write before settlement may tear down a live deploy", ()
     expect(statusPairs()).toEqual(["dep_1:ready"]);
     expect(ctx.settled).toBe("ready");
   });
+
+  it("onSuccess invalidates cached update_status for the project", async () => {
+    const ctx = ctxFor();
+    await expect(onSuccess(ctx, { containerId: "c1", durationMs: 1 })).resolves.toBeUndefined();
+    expect(h.deletedUpdateStatuses).toEqual(["prj_1"]);
+  });
+
+  it("keeps a successful deploy ready when cache invalidation fails", async () => {
+    h.deleteUpdateStatusError = new Error("database unavailable");
+    const ctx = ctxFor();
+
+    await expect(onSuccess(ctx, { containerId: "c1", durationMs: 1 })).resolves.toBeUndefined();
+
+    expect(statusPairs()).toEqual(["dep_1:ready"]);
+    expect(ctx.settled).toBe("ready");
+    expect(h.sessionStatuses.map((status) => status.status)).toEqual(["ready"]);
+  });
 });
 
 describe("pipeline: the outer catch must not re-report a settled deploy", () => {
@@ -359,27 +451,34 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
         }),
       }),
     };
-    return { writes, repo: createDeploymentRepo(db as never) };
+    return { writes, repo: createDeploymentRepo(db as never, createEncryption("repository-test-secret")) };
   }
 
   it("retries with a marker payload and keeps status + duration", async () => {
     const { writes, repo } = fakeDb();
     const poisoned = [{ timestamp: "t", level: "warn", message: `Admin key: ${NUL}x` }];
 
-    await expect(repo.finishBuildSession("bld_1", "ready", 4321, poisoned)).resolves.toBeUndefined();
+    await expect(
+      repo.finishBuildSession("bld_1", "ready", 4321, poisoned),
+    ).resolves.toBeUndefined();
 
     expect(writes).toHaveLength(2);
     for (const w of writes) {
       expect(w.status).toBe("ready");
       expect(w.durationMs).toBe(4321);
-      expect(w.finishedAt).toBeInstanceOf(Date);
+      // Terminal outcome is not worker completion. The pipeline's outermost
+      // finally stamps finishedAt only after all host-writing hooks return, so
+      // project teardown cannot race detached deploy work.
+      expect(w).not.toHaveProperty("finishedAt");
     }
     expect(JSON.stringify(writes[1].logs)).toContain("Build logs could not be stored");
   });
 
   it("sheds a lone-surrogate payload too, not just a NUL", async () => {
     const { writes, repo } = fakeDb();
-    const poisoned = [{ timestamp: "t", level: "warn", message: `half ${String.fromCharCode(0xd83d)}` }];
+    const poisoned = [
+      { timestamp: "t", level: "warn", message: `half ${String.fromCharCode(0xd83d)}` },
+    ];
 
     await expect(repo.finishBuildSession("bld_1", "ready", 1, poisoned)).resolves.toBeUndefined();
 
@@ -406,3 +505,6 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     expect(writes[0].status).toBe("cancelled");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: () => {} } }));

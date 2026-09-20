@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
 describe("host-capacity is self-hosted only", () => {
-  const src = read("../../src/lib/host-capacity.ts");
+  const src = read("../../../../packages/platform/src/engine/lib/host-capacity.ts");
 
   it("gates on CLOUD_MODE inside the exported entry point", () => {
     expect(src).toContain("env.CLOUD_MODE");
@@ -62,7 +62,7 @@ describe("host-capacity is self-hosted only", () => {
  * has no SSH target at all, and reaching for one would surface as a hang.
  */
 describe("project resources capacity resolution", () => {
-  const src = read("../../src/modules/projects/project-resources.service.ts");
+  const src = read("../../../../packages/platform/src/engine/modules/projects/project-resources.service.ts");
 
   it("skips the probe entirely for a cloud project", () => {
     const fnStart = src.indexOf("async function resolveTargetCapacity");

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCustomHostname, isValidCustomHostname, isApexDomain } from "../src/utils";
+import {
+  normalizeCustomHostname,
+  isValidCustomHostname,
+  isApexDomain,
+  isWildcardHostname,
+  wwwSiblingHostname,
+} from "../src/utils";
 
 describe("normalizeCustomHostname", () => {
   it("produces one canonical form so storage and lookup always agree", () => {
@@ -21,7 +27,9 @@ describe("normalizeCustomHostname", () => {
   it("is idempotent (canonical input is unchanged)", () => {
     const canonical = "api.acme.io";
     expect(normalizeCustomHostname(canonical)).toBe(canonical);
-    expect(normalizeCustomHostname(normalizeCustomHostname("HTTPS://Api.Acme.io/"))).toBe(canonical);
+    expect(normalizeCustomHostname(normalizeCustomHostname("HTTPS://Api.Acme.io/"))).toBe(
+      canonical,
+    );
   });
 
   it("returns empty for blank/scheme-only input", () => {
@@ -37,6 +45,10 @@ describe("normalizeCustomHostname", () => {
   it("does NOT strip a www. prefix", () => {
     expect(normalizeCustomHostname("www.example.com")).toBe("www.example.com");
     expect(normalizeCustomHostname("HTTPS://WWW.Example.com/")).toBe("www.example.com");
+  });
+  it("preserves wildcard prefix on normalization", () => {
+    expect(normalizeCustomHostname(" *.example.com/ ")).toBe("*.example.com");
+    expect(wwwSiblingHostname("*.example.com")).toBeNull();
   });
 });
 
@@ -70,12 +82,33 @@ describe("isApexDomain", () => {
     expect(isApexDomain("example.com.")).toBe(true);
     expect(isApexDomain("WWW.example.com")).toBe(false);
   });
+  it("is false for wildcard domains", () => {
+    expect(isApexDomain("*.example.com")).toBe(false);
+    expect(isApexDomain("*.sub.example.com")).toBe(false);
+  });
 });
 
 describe("isValidCustomHostname", () => {
   it("accepts real multi-label public hostnames", () => {
-    for (const h of ["example.com", "app.example.com", "a.b.c.example.co.uk", "xn--80ak6aa92e.com"]) {
+    for (const h of [
+      "example.com",
+      "app.example.com",
+      "a.b.c.example.co.uk",
+      "xn--80ak6aa92e.com",
+    ]) {
       expect(isValidCustomHostname(h)).toBe(true);
+    }
+  });
+  it("accepts wildcard hostnames", () => {
+    for (const h of ["*.example.com", "*.app.example.com", "*.example.co.uk"]) {
+      expect(isValidCustomHostname(h)).toBe(true);
+      expect(isWildcardHostname(h)).toBe(true);
+    }
+  });
+
+  it("rejects invalid wildcard shapes", () => {
+    for (const h of ["*example.com", "app.*.example.com", "*.", "*.com", "*"]) {
+      expect(isValidCustomHostname(h)).toBe(false);
     }
   });
 

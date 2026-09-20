@@ -25,7 +25,8 @@ The CLI is one small command-line tool. Copy the line for your system and paste 
 
 <InstallTabs />
 
-Already have a package manager? `npm i -g openship` works too (or `pnpm`, `yarn`, `bun`).
+Already have a package manager? `npm i -g openship` works too (or `pnpm`, `yarn`, `bun`) — that
+route needs **Node 22+**, since it runs on your Node rather than bringing its own.
 Full options — desktop app, cloud, Docker Compose — are on the [Installation](/docs/getting-started/installation) page.
 
 </Step>
@@ -84,13 +85,11 @@ apps you don't change anything: just press **Deploy**.
 You land on the build screen, which streams the logs live — like watching the oven through the glass door.
 When it finishes, you get a link. Click it, and your app is online. 🎉
 
-<Callout title="Screenshot">The dashboard's new-project screen with a repo/folder selected and a **Deploy** button, then the live build screen ending in a URL. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
 
-## Prefer the terminal?
+## CLI
 
 You can deploy without leaving the shell. First create a project in the dashboard, then from your code
 folder:
@@ -104,7 +103,7 @@ openship deploy       # build it and put it online
 `openship init` writes a small `.openship/project.json` file so later commands know which project to act
 on. Add `--watch` to `openship deploy` to follow the build logs until it's done.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="`openship open` says the API isn't responding" type="warn">
 The platform isn't up yet. Run `openship up` first (give it a few seconds to become healthy), then try
@@ -116,7 +115,7 @@ Open the build screen and read the last few red lines — that's the real reason
 usually a missing build command, a missing environment variable, or the app listening on the wrong port.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Installation" href="/docs/getting-started/installation" description="Desktop app, Docker Compose, cloud, and system requirements — the full set of ways to install." />

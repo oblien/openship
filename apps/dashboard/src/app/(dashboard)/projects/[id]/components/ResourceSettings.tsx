@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Cpu, Infinity as InfinityIcon, Loader2, SlidersHorizontal } from "lucide-react";
 import {
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   formatCpuCores,
   formatMemoryMb,
-  type HostCapacity,
+  type ProjectResources,
   type ResourceTier,
 } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -33,14 +33,6 @@ import { getApiErrorMessage, projectsApi } from "@/lib/api";
  * to be provisioned at a concrete size. The backend enforces that too
  * (`requiresLimit`); this component just doesn't offer the option.
  */
-
-interface ResourcesView {
-  production?: { cpuCores?: number; memoryMb?: number; diskMb?: number } | null;
-  build?: { cpuCores?: number; memoryMb?: number; diskMb?: number } | null;
-  tier?: ResourceTier;
-  capacity?: HostCapacity;
-  requiresLimit?: boolean;
-}
 
 /** Header doubles as the collapse toggle (same shape as RoutingConfigCard): a
  *  six-tile picker is a lot of vertical weight for a setting you touch rarely,
@@ -97,33 +89,48 @@ export const ResourceSettings: React.FC = () => {
   const { showToast } = useToast();
   const r = t.projectSettings.resources;
 
-  const [view, setView] = useState<ResourcesView | null>(null);
+  const [view, setView] = useState<ProjectResources | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState<ResourceTier | null>(null);
   const [selected, setSelected] = useState<ResourceTier>("unlimited");
   const [customCpu, setCustomCpu] = useState("0");
   const [customMemory, setCustomMemory] = useState("0");
   const [showCustom, setShowCustom] = useState(false);
   const [open, setOpen] = useState(false);
+  const loadRequest = useRef(0);
 
   /** Seed every field from a server response. The custom inputs track the SAVED
    *  values even when a preset was chosen, so opening Custom afterwards starts
    *  from what's live rather than from whatever was last typed. */
-  const applyView = useCallback((data: ResourcesView, fallbackTier?: ResourceTier) => {
+  const applyView = useCallback((data: ProjectResources) => {
     setView(data);
-    setSelected(data.tier ?? fallbackTier ?? "unlimited");
-    setCustomCpu(String(data.production?.cpuCores ?? 0));
-    setCustomMemory(String(data.production?.memoryMb ?? 0));
+    setSelected(data.tier);
+    setCustomCpu(String(data.production.cpuCores));
+    setCustomMemory(String(data.production.memoryMb));
   }, []);
 
   const load = useCallback(async () => {
-    const res = await projectsApi.getResources(id);
-    if (res.success && res.data) applyView(res.data as ResourcesView);
-    setLoading(false);
-  }, [id, applyView]);
+    const request = ++loadRequest.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const { data } = await projectsApi.getResources(id);
+      if (request === loadRequest.current) applyView(data);
+    } catch (err) {
+      if (request === loadRequest.current) {
+        setLoadError(getApiErrorMessage(err, r.loadFailed));
+      }
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
+    }
+  }, [id, applyView, r.loadFailed]);
 
   useEffect(() => {
     void load();
+    return () => {
+      loadRequest.current += 1;
+    };
   }, [load]);
 
   const capacity = view?.capacity;
@@ -136,17 +143,18 @@ export const ResourceSettings: React.FC = () => {
   const save = async (tier: ResourceTier, values?: { cpuCores: number; memoryMb: number }) => {
     if (saving) return;
     setSaving(tier);
-    const res = await projectsApi.updateResources(id, {
-      production: tier === "custom" ? { tier, ...values } : { tier },
-    });
-    if (res.success) {
-      applyView(res.data as ResourcesView, tier);
+    try {
+      const { data } = await projectsApi.updateResources(id, {
+        production: tier === "custom" ? { tier, ...values } : { tier },
+      });
+      applyView(data);
       setShowCustom(false);
       showToast(r.toast.updated, "success");
-    } else {
-      showToast(getApiErrorMessage(res) || r.toast.updateFailed, "error");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, r.toast.updateFailed), "error");
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   const saveCustom = () => {
@@ -176,10 +184,22 @@ export const ResourceSettings: React.FC = () => {
     return `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`;
   };
 
-  const tierName = (tier: ResourceTier): string =>
-    tier === "custom" ? r.custom.name : r.tiers[tier as keyof typeof r.tiers].name;
-  const tierDescription = (tier: ResourceTier): string =>
-    tier === "custom" ? r.custom.description : r.tiers[tier as keyof typeof r.tiers].description;
+  /**
+   * Tier copy, and it must NEVER be a hard index into the dictionary.
+   *
+   * `RESOURCE_TIER_ORDER` (packages/core) is the source of truth for which tiers exist, and this
+   * component renders every one of them. When `xlarge` was added there without its locale keys,
+   * `r.tiers[tier].name` read `undefined.name` and took the whole Resources tab down with a
+   * runtime TypeError — a white screen for a missing translation.
+   *
+   * A locale is data that lags the code by definition (nine files, and five of them have no
+   * `resources` block at all and inherit English). So an absent key degrades to the tier's own
+   * id, which is ugly and completely usable, instead of crashing.
+   */
+  const tierCopy = (tier: ResourceTier): { name?: string; description?: string } | undefined =>
+    tier === "custom" ? r.custom : (r.tiers as Record<string, { name?: string; description?: string }>)[tier];
+  const tierName = (tier: ResourceTier): string => tierCopy(tier)?.name ?? tier;
+  const tierDescription = (tier: ResourceTier): string => tierCopy(tier)?.description ?? "";
 
   // Collapsed-header readout of what's live. "No limits" already says it all, so
   // it doesn't get its "Machine capacity" spec appended.
@@ -197,6 +217,8 @@ export const ResourceSettings: React.FC = () => {
       summary={
         loading ? (
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+        ) : loadError ? (
+          <span className="truncate text-[12px] text-destructive">{r.unavailable}</span>
         ) : (
           <>
             {capacityKnown ? (
@@ -216,6 +238,20 @@ export const ResourceSettings: React.FC = () => {
         <div className="flex items-center gap-2 py-2 text-[13px] text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           {r.loading}
+        </div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
+        >
+          <p className="text-[12px] text-destructive">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="shrink-0 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/10"
+          >
+            {r.retry}
+          </button>
         </div>
       ) : (
         <>

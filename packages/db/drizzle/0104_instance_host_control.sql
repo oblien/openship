@@ -1,0 +1,15 @@
+-- Runtime host-control toggle (#527): may OpenShip deploy to the machine it runs on?
+--
+-- Nullable with NO default, deliberately — the same contract as product_mode
+-- (0098). The instance_settings row exists on every instance, so a NOT NULL
+-- DEFAULT would write a concrete value everywhere and permanently shadow the
+-- OPENSHIP_HOST_CONTROL env var (written by `openship up --no-host-control`).
+-- The resolver reads `settings.host_control_enabled ?? env`, so "unset" has to
+-- stay representable. NULL means "no instance override, use env".
+--
+-- Unlike product_mode this DOES gate privileged behavior (host-root deploys via
+-- the container->host SSH channel + mounted docker socket), so the WRITE path is
+-- gated to the box-owning org's owner. The precedence still lets the DB override
+-- env: the operator's need is to re-enable from Settings what --no-host-control
+-- turned off.
+ALTER TABLE "instance_settings" ADD COLUMN IF NOT EXISTS "host_control_enabled" boolean;

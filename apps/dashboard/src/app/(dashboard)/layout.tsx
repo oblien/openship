@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSession, getDeploymentInfoOrNull } from "@/lib/server/session";
+import { resolveRequestProductView } from "@/lib/server/product-view";
 import { ApiUnavailable } from "@/components/api-unavailable";
-import { Sidebar } from "@/components/sidebar";
+import { DashboardShell } from "@/components/dashboard-shell";
 import { UpdateCenter } from "@/components/updates/UpdateCenter";
 import { MigratedLauncher } from "@/components/migrated-launcher";
 import { MigrationInProgress } from "@/components/migration-in-progress";
@@ -18,10 +19,9 @@ type OrgListResponse = { data?: OrgListItem[] } | OrgListItem[] | null;
 
 async function fetchUserOrgs(): Promise<OrgListItem[]> {
   try {
-    const res = await serverApi.get<OrgListResponse>(
-      "auth/organization/list",
-      { cache: "no-store" },
-    );
+    const res = await serverApi.get<OrgListResponse>("auth/organization/list", {
+      cache: "no-store",
+    });
     if (!res) return [];
     if (Array.isArray(res)) return res;
     return res.data ?? [];
@@ -96,9 +96,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // single-org users get the only one auto-set server-side. Runs BEFORE
   // the migration / teamMode gates because those are configured per-org
   // and reading them with the wrong active org would mis-route.
-  const { redirectTo } = await resolveOrgChooserGate(
-    session.session.activeOrganizationId,
-  );
+  const { redirectTo } = await resolveOrgChooserGate(session.session.activeOrganizationId);
   if (redirectTo) redirect(redirectTo);
 
   // Layout MUST see fresh `migrationInProgress` to route correctly during
@@ -141,6 +139,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .get("github/home", { cache: "no-store" })
     .catch(() => null);
 
+  // Resolve the rail HERE, on the server, so the first painted sidebar is already
+  // the right one. Doing it client-side from document.cookie would render the
+  // platform rail and then flip the entire nav after hydration. Passing the
+  // deployment info we just fetched keeps this on the fresh copy.
+  const productView = await resolveRequestProductView(deploymentInfo);
+
   return (
     <DashboardProviders
       initialGithubData={initialGithubData}
@@ -148,7 +152,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
       isServerHost={deploymentInfo.isServerHost}
+      hostControlEnabled={deploymentInfo.hostControlEnabled}
       authMode={deploymentInfo.authMode}
+      version={deploymentInfo.version}
+      productMode={deploymentInfo.productMode ?? "platform"}
+      productView={productView}
       cloudAuthUrl={deploymentInfo.cloudAuthUrl}
       cloudApiUrl={deploymentInfo.cloudApiUrl}
       machineName={deploymentInfo.machineName}
@@ -160,11 +168,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             partial outage, maintenance) / available update / what's-new, so it
             adds no chrome when idle. */}
         <UpdateCenter />
-        <div className="flex flex-1 min-h-0">
-          <Sidebar />
-          {/* Main content */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
-        </div>
+        <DashboardShell>{children}</DashboardShell>
       </div>
     </DashboardProviders>
   );

@@ -9,6 +9,7 @@ import {
   type IssueCounts,
   type IssueSeverity,
   type SystemIssue,
+  type MonitoringScanSession,
 } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -19,6 +20,15 @@ import { IssueList } from "@/components/issues/IssueList";
 import { IssueSummary } from "@/components/issues/IssueSummary";
 import { useIssueActions } from "@/components/issues/useIssueActions";
 import { useReattachActiveFix } from "@/hooks/useReattachActiveFix";
+import { useInfraFleet } from "@/hooks/useInfraFleet";
+import {
+  PrepareStreamContent,
+  useContainerApplyModal,
+  type SystemPrepareOptions,
+} from "@/hooks/useSystemPrepareModal";
+import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
+import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
+import { MonitoringHealth } from "@/components/issues/MonitoringHealth";
 
 type SeverityFilter = "all" | IssueSeverity;
 
@@ -31,7 +41,7 @@ const SEVERITY_FILTERS: SeverityFilter[] = ["all", "outage", "action_required", 
  * fix each row carries. What's left here is genuinely presentational state (which
  * tab, which severity, the search box) plus dispatching a row's fix to the mechanism
  * that already performs it: an HTTP call for project/domain items, the shared
- * `useInfraFix` modal flow for managed containers.
+ * `useInfraFix` stream flow for managed containers.
  *
  * The one thing worth stating in code: this page NEVER decides that something is
  * fine. An empty list means every source reported nothing, not that a filter here
@@ -42,27 +52,60 @@ export function IssuesView() {
   const c = t.issues;
   const { selfHosted } = usePlatform();
   const { toast } = useToast();
+  const infra = useInfraFleet(selfHosted);
+  const [operation, setOperation] = useState<{
+    id: string;
+    opts: SystemPrepareOptions;
+  } | null>(null);
+  const operationSequence = useRef(0);
+  const presentOperation = useCallback((opts: SystemPrepareOptions) => {
+    const id = `issue-operation-${++operationSequence.current}`;
+    setOperation({
+      id,
+      opts: { ...opts, retryMode: opts.initialAttachSessionId ? "reattach" : "restart" },
+    });
+    return id;
+  }, []);
+  const presentRecoveredOperation = useCallback(
+    (opts: SystemPrepareOptions) =>
+      operationSequence.current === 0 ? presentOperation(opts) : "",
+    [presentOperation],
+  );
+  const openContainerApply = useContainerApplyModal(presentOperation);
 
   // Refresh recovery: if an edge install/repair is running (the fix a row here
-  // dispatches), re-open its live modal rather than leaving the operator on a
+  // dispatches), re-open its inline log rather than leaving the operator on a
   // static "issue" row with no sign the work is already underway.
-  useReattachActiveFix({ install: true });
+  useReattachActiveFix({ install: selfHosted }, presentRecoveredOperation);
 
-  const [tab, setTab] = useState<"open" | "resolved">("open");
+  const [tab, setTab] = useState<"open" | "health" | "resolved">("open");
   const [issues, setIssues] = useState<SystemIssue[]>([]);
   const [counts, setCounts] = useState<IssueCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
+  const [scan, setScan] = useState<MonitoringScanSession | null>(null);
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [query, setQuery] = useState("");
   const [queryDraft, setQueryDraft] = useState("");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Container health is a self-hosted capability: the watcher reads Docker
+  // daemons owned by this installation. Cloud workloads are observed by the
+  // cloud platform, not by this local health endpoint, so do not expose a tab
+  // that can only answer with the route's intentional local-only 404.
+  const tabs = selfHosted
+    ? (["open", "health", "resolved"] as const)
+    : (["open", "resolved"] as const);
+
+  useEffect(() => {
+    if (!selfHosted && tab === "health") setTab("open");
+  }, [selfHosted, tab]);
+
   const load = useCallback(
     async (opts: { silent?: boolean } = {}) => {
       if (!opts.silent) setLoading(true);
       try {
-        const res = await issuesApi.list(tab);
+        const res = await issuesApi.list(tab === "resolved" ? "resolved" : "open");
         setIssues(res?.data ?? []);
         setCounts(res?.counts ?? null);
       } catch (err) {
@@ -74,11 +117,70 @@ export function IssuesView() {
     [tab, c.loadFailed, c.toast.title, toast],
   );
 
-  const { busyId, resolve, infraFix } = useIssueActions(load);
+  const { busyId, resolve, infraFix } = useIssueActions(load, presentOperation);
+
+  // Updates in the monitoring feed are fleet work, not modal work. The bulk API
+  // accepts every eligible target immediately and the fleet hook follows the
+  // durable in-progress rows after navigation or refresh. The inline panel reads
+  // one target's replayable log without interrupting those background operations.
+  const openApplyLog = useCallback(
+    (target: ContainerApplyActive) => {
+      if (!target.sessionId) return;
+      openContainerApply(target.serverId, target.component, {
+        label:
+          target.component === "mail"
+            ? t.servers.containers.componentMail
+            : t.servers.containers.componentEdge,
+        intent: target.intent ?? "update",
+        attachSessionId: target.sessionId,
+        onDone: () => void infra.reload(),
+      });
+    },
+    [openContainerApply, t.servers.containers, infra.reload],
+  );
+
+  const runBulk = useCallback(
+    async (intent: ContainerApplyIntent) => {
+      try {
+        const result = await infra.applyAll(intent);
+        if (!result) return;
+        if (result.started.length === 0 && result.skipped.length === 0) {
+          toast("info", t.servers.list.infra.nothingToDo);
+        } else if (result.skipped.length > 0) {
+          const copy = t.servers.list.infra;
+          toast(
+            "info",
+            interpolate(result.skipped.length === 1 ? copy.skippedOne : copy.skippedMany, {
+              n: String(result.skipped.length),
+            }),
+          );
+        }
+      } catch {
+        toast("error", t.servers.list.infra.applyFailed);
+      }
+    },
+    [infra, toast, t.servers.list.infra],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Reattach to the instance-wide checker batch after refresh. This polls only a
+  // tiny in-memory status document; it never starts or repeats scanner work.
+  useEffect(() => {
+    if (!selfHosted) return;
+    let cancelled = false;
+    const read = async () => {
+      const result = await issuesApi.rescanStatus().catch(() => null);
+      if (cancelled || !result) return;
+      setScan(result.data);
+      setRescanning(result.data?.status === "running");
+      if (result.data?.status === "running") window.setTimeout(() => void read(), 1200);
+    };
+    void read();
+    return () => { cancelled = true; };
+  }, [selfHosted]);
 
   useEffect(() => {
     return () => {
@@ -106,16 +208,29 @@ export function IssuesView() {
     setRescanning(true);
     try {
       const res = await issuesApi.rescan();
-      const failed = res?.data?.failed?.length ?? 0;
-      toast(
-        failed > 0 ? "error" : "success",
-        failed > 0 ? interpolate(c.toast.rescanPartial, { n: String(failed) }) : c.toast.rescanned,
-        c.toast.title,
-      );
-      await load({ silent: true });
+      setScan(res.data);
+      // The POST only accepts the batch. This status loop owns completion;
+      // closing/navigating away cannot cancel the server-side jobs.
+      const watch = async () => {
+        const status = await issuesApi.rescanStatus().catch(() => null);
+        if (!status?.data) return;
+        setScan(status.data);
+        if (status.data.status === "running") {
+          window.setTimeout(() => void watch(), 1200);
+          return;
+        }
+        const failed = status.data.stages.filter((stage) => stage.status === "failed").length;
+        toast(
+          failed ? "error" : "success",
+          failed ? interpolate(c.toast.rescanPartial, { n: String(failed) }) : c.toast.rescanned,
+          c.toast.title,
+        );
+        await load({ silent: true });
+        setRescanning(false);
+      };
+      void watch();
     } catch (err) {
       toast("error", getApiErrorMessage(err, c.toast.rescanFailed), c.toast.title);
-    } finally {
       setRescanning(false);
     }
   };
@@ -166,9 +281,23 @@ export function IssuesView() {
         )}
       </div>
 
+      {operation && (
+        <section
+          className="mb-6 rounded-2xl border border-border/50 bg-card"
+          aria-label="Operation log"
+        >
+          <PrepareStreamContent
+            key={operation.id}
+            opts={operation.opts}
+            inline
+            onClose={() => setOperation(null)}
+          />
+        </section>
+      )}
+
       {/* Open / Resolved. Same geometry as the deployments status switch. */}
       <div className="mb-4 inline-flex items-center gap-1 rounded-xl bg-muted/35 p-1">
-        {(["open", "resolved"] as const).map((key) => (
+        {tabs.map((key) => (
           <button
             key={key}
             type="button"
@@ -184,6 +313,8 @@ export function IssuesView() {
         ))}
       </div>
 
+      {scan && <ScanProgress session={scan} />}
+
       {/* The Resolved tab is honest about its coverage: only incidents have a lifecycle,
           so its silence is not a claim that nothing else ever broke. Sits above the
           content rather than inside the feed column, because it qualifies the whole tab —
@@ -194,7 +325,9 @@ export function IssuesView() {
         </p>
       )}
 
-      {loading ? (
+      {tab === "health" ? (
+        <MonitoringHealth />
+      ) : loading ? (
         // Two-column skeleton: the feed on the left, the summary rail on the right,
         // so the fold doesn't reflow when the real data lands.
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
@@ -234,7 +367,7 @@ export function IssuesView() {
             </div>
           </div>
         </div>
-      ) : issues.length === 0 ? (
+      ) : issues.length === 0 && (infra.empty || !selfHosted) ? (
         // Nothing at all for this tab: the empty state stands alone, full width and
         // centred, with no filters or summary rail to frame an absence.
         <EmptyIssues filtered={false} resolved={tab === "resolved"} />
@@ -242,6 +375,10 @@ export function IssuesView() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
           {/* ── LEFT COLUMN — the feed ── */}
           <div className="min-w-0">
+            {issues.length === 0 ? (
+              <EmptyIssues filtered={false} resolved={tab === "resolved"} />
+            ) : (
+              <>
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="relative w-full sm:flex-1 sm:min-w-[220px]">
                 <Search className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -305,14 +442,73 @@ export function IssuesView() {
                 </button>
               </div>
             )}
+              </>
+            )}
           </div>
 
           {/* ── RIGHT COLUMN — sticky summary ── */}
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+            {selfHosted && !infra.empty && (
+              <InfraFleetCard
+                counts={infra.counts}
+                scanning={infra.scanning}
+                applying={infra.applying}
+                active={infra.active}
+                outcome={infra.outcome}
+                onScan={infra.scan}
+                onApply={runBulk}
+                onViewLogs={openApplyLog}
+              />
+            )}
             <IssueSummary issues={issues} tab={tab} />
           </div>
         </div>
       )}
     </PageContainer>
   );
+}
+
+const SCAN_LABELS: Record<MonitoringScanSession["stages"][number]["key"], string> = {
+  "services:health-watch": "Services & containers",
+  "infra:scan": "Server components",
+  "domains:verify-pending": "Domains & certificates",
+  "updates:scan": "Project updates",
+};
+
+function ScanProgress({ session }: { session: MonitoringScanSession }) {
+  const actionable = session.stages.filter((stage) => stage.status !== "skipped");
+  const finished = actionable.filter((stage) => stage.status === "completed" || stage.status === "failed").length;
+  const percent = actionable.length ? Math.round((finished / actionable.length) * 100) : 100;
+  const radius = 25;
+  const circumference = 2 * Math.PI * radius;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-border/50 bg-card p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="relative size-16 shrink-0">
+          <svg viewBox="0 0 64 64" className="size-16 -rotate-90" aria-label={`${percent}% scanned`}>
+            <circle cx="32" cy="32" r={radius} fill="none" stroke="var(--color-muted)" strokeWidth="6" />
+            <circle cx="32" cy="32" r={radius} fill="none" stroke={session.status === "completed" ? "var(--color-success-solid)" : "var(--color-primary)"} strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - percent / 100)} className="transition-[stroke-dashoffset] duration-500" />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold tabular-nums">{percent}%</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-foreground">{session.status === "running" ? "Scanning monitoring sources" : "Latest monitoring scan"}</p><p className="text-xs text-muted-foreground">{finished} of {actionable.length} checkers finished · runs concurrently</p></div></div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {session.stages.map((stage) => <div key={stage.key} className="rounded-lg bg-muted/25 px-3 py-2"><div className="flex items-center gap-2"><span className={`size-2 rounded-full ${stage.status === "running" ? "animate-pulse bg-primary" : stage.status === "completed" ? "bg-success-solid" : stage.status === "failed" ? "bg-danger-solid" : "bg-muted-foreground/40"}`} /><span className="truncate text-xs font-medium text-foreground">{SCAN_LABELS[stage.key]}</span></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{scanStageDetail(stage)}</p></div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function scanStageDetail(stage: MonitoringScanSession["stages"][number]): string {
+  if (stage.status === "pending") return "Waiting";
+  if (stage.status === "running") return "Checking…";
+  if (stage.status === "skipped") return "Not available here";
+  if (stage.status === "failed") return stage.error ?? "Failed";
+  const values = Object.entries(stage.summary ?? {}).filter(([, value]) => typeof value === "number");
+  if (!values.length) return "Completed";
+  return values.slice(0, 2).map(([key, value]) => `${value} ${key}`).join(" · ");
 }

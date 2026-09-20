@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Managed-container drift (edge / mail images pinned to APP_VERSION). The sibling
@@ -39,6 +39,9 @@ vi.mock("@repo/db", () => ({
 
 vi.mock("@repo/adapters", () => ({
   dockerAvailable: vi.fn().mockResolvedValue(true),
+  // Only the bulk apply reaches this, and only to pre-check 80/443 before promising
+  // an edge REPAIR. Clean by default so classification isn't the thing under test.
+  probeEdge: vi.fn().mockResolvedValue({ canProceedClean: true }),
   detectEdgeContainer: vi
     .fn()
     .mockResolvedValue({ name: null, running: false, image: null, exists: false }),
@@ -49,26 +52,26 @@ vi.mock("@repo/adapters", () => ({
     .mockResolvedValue({ flavor: "none", running: false, exists: false, image: null }),
 }));
 
-vi.mock("../../../src/lib/edge-image", () => ({
+vi.mock("@repo/platform/engine/lib/edge-image", () => ({
   pinnedEdgeImage: vi.fn(() => "ghcr.io/oblien/openship-edge:0.5.0"),
 }));
 
-vi.mock("../../../src/lib/mail-image", () => ({
+vi.mock("@repo/platform/engine/lib/mail-image", () => ({
   pinnedMailImage: vi.fn(() => "ghcr.io/oblien/openship-mail:0.5.0"),
 }));
 
-vi.mock("../../../src/lib/edge-reconcile", () => ({
+vi.mock("@repo/platform/engine/lib/edge-reconcile", () => ({
   reconcileServerEdge: vi.fn().mockResolvedValue({ converted: false, updated: true, edgeDown: false }),
 }));
 
-vi.mock("../../../src/lib/mail-reconcile", () => ({
+vi.mock("@repo/platform/engine/lib/mail-reconcile", () => ({
   reconcileServerMail: vi.fn().mockResolvedValue({ updated: true, mailDown: false, ran: true }),
   repairServerMail: vi.fn().mockResolvedValue({ started: true, mailDown: false }),
 }));
 
 const executor = { exec: vi.fn() };
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: vi.fn(async (_id: string, fn: (e: unknown) => unknown) => fn(executor)),
   },
@@ -76,17 +79,22 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
 
 import {
   imageTag,
+  applyAllContainers,
   classifyContainerIssues,
   detectServerContainers,
   applyServerContainer,
   refreshServerContainer,
   scanInstanceContainers,
   scanOrgContainers,
-} from "../../../src/modules/system/server-containers.service";
+  runContainerApply,
+} from "@repo/platform/engine/modules/system/server-containers.service";
 import { repos } from "@repo/db";
 import { dockerAvailable, detectEdgeContainer, detectMailEngine } from "@repo/adapters";
-import { reconcileServerEdge } from "../../../src/lib/edge-reconcile";
-import { reconcileServerMail, repairServerMail } from "../../../src/lib/mail-reconcile";
+import { reconcileServerEdge } from "@repo/platform/engine/lib/edge-reconcile";
+import { reconcileServerMail, repairServerMail } from "@repo/platform/engine/lib/mail-reconcile";
+import { drainBackgroundWork } from "@repo/platform/engine/lib/background-work";
+
+afterEach(drainBackgroundWork);
 
 /** An installed edge probe result, running the given image (or stopped). */
 function edgeContainer(image: string | null, running = true) {
@@ -331,6 +339,94 @@ describe("detectServerContainers", () => {
     expect(views).toEqual([]);
     expect(mocked.status.upsert).not.toHaveBeenCalled();
     expect(mocked.status.remove).not.toHaveBeenCalledWith("srv_1", "edge");
+  });
+
+  it("never writes the in-progress flag — a scan must not clear a running apply", async () => {
+    mocked.edge.mockResolvedValue(edgeContainer("ghcr.io/oblien/openship-edge:0.4.0") as never);
+
+    await detectServerContainers(server);
+
+    // The repo preserves the flag only when the payload omits it. A probe knows what
+    // the box runs, not whether a swap is mid-flight; writing its default is what let
+    // the 6-hourly scan (and the dashboard's own mount auto-scan) erase the state.
+    const payload = mocked.status.upsert.mock.calls
+      .map(([p]) => p as { component: string })
+      .find((p) => p.component === "edge");
+    expect(payload).toBeDefined();
+    expect(Object.keys(payload!)).not.toContain("latestInProgress");
+  });
+});
+
+describe("applyAllContainers", () => {
+  const box = (id: string) => ({ id, name: id.toUpperCase(), sshHost: `10.0.0.${id.slice(-1)}` });
+  const behindEdge = (serverId: string) => ({
+    serverId,
+    component: "edge" as const,
+    behind: true,
+    latestInProgress: false,
+    detail: null,
+  });
+
+  it("requires target authorization before any fleet target is flagged or probed", async () => {
+    mocked.server.listByOrganization.mockResolvedValue([box("srv_forbidden")] as never);
+    mocked.status.listByOrg.mockResolvedValue([behindEdge("srv_forbidden")] as never);
+    await expect(applyAllContainers("org_1", ["update"], async () => { throw new Error("Host execution is disabled"); }))
+      .rejects.toThrow("Host execution is disabled");
+    expect(mocked.status.setInProgress).not.toHaveBeenCalled();
+    expect(mocked.reconcileEdge).not.toHaveBeenCalled();
+  });
+
+  it("settles queued work as failed and clears its flag when authority is revoked", async () => {
+    const started = runContainerApply({ ...box("srv_revoked"), organizationId: "org_1" } as never, "edge", "update", async () => {
+      throw new Error("Server authorization was revoked");
+    });
+    await started.done;
+    expect(started.session).toMatchObject({ status: "failed", error: "Server authorization was revoked" });
+    expect(mocked.status.setInProgress).toHaveBeenCalledWith("srv_revoked", "edge", false);
+    expect(mocked.reconcileEdge).not.toHaveBeenCalled();
+  });
+
+  it("flags every accepted target before returning — queued ones included", async () => {
+    // Five targets against a concurrency of 3: two of them cannot have been started
+    // by the time the response is built, and used to be indistinguishable from
+    // "never asked for" on every surface that reads the cache.
+    const servers = ["srv_1", "srv_2", "srv_3", "srv_4", "srv_5"];
+    mocked.server.listByOrganization.mockResolvedValue(servers.map(box) as never);
+    mocked.status.listByOrg.mockResolvedValue(servers.map(behindEdge) as never);
+
+    const result = await applyAllContainers("org_1", ["update"]);
+
+    expect(result.started).toHaveLength(5);
+    expect(result.skipped).toEqual([]);
+    for (const id of servers) {
+      expect(mocked.status.setInProgress).toHaveBeenCalledWith(id, "edge", true);
+    }
+  });
+
+  it("refuses a target whose apply is already in flight", async () => {
+    mocked.server.listByOrganization.mockResolvedValue([box("srv_1")] as never);
+    mocked.status.listByOrg.mockResolvedValue([
+      { ...behindEdge("srv_1"), latestInProgress: true },
+    ] as never);
+
+    const result = await applyAllContainers("org_1", ["update"]);
+
+    expect(result.started).toEqual([]);
+    expect(result.skipped).toMatchObject([{ serverId: "srv_1", reason: "already_running" }]);
+    expect(mocked.reconcileEdge).not.toHaveBeenCalled();
+  });
+
+  it("acts only on the intents it was given", async () => {
+    mocked.server.listByOrganization.mockResolvedValue([box("srv_1"), box("srv_2")] as never);
+    mocked.status.listByOrg.mockResolvedValue([
+      behindEdge("srv_1"),
+      { serverId: "srv_2", component: "edge" as const, behind: false, latestInProgress: false, detail: { down: true } },
+    ] as never);
+
+    const result = await applyAllContainers("org_1", ["repair"]);
+
+    expect(result.started).toMatchObject([{ serverId: "srv_2", intent: "repair" }]);
+    expect(mocked.status.setInProgress).not.toHaveBeenCalledWith("srv_1", "edge", true);
   });
 });
 

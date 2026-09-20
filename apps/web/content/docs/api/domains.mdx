@@ -1,43 +1,37 @@
 ---
-title: Domains API
-description: Attach custom domains to a project, preview and verify DNS, and manage SSL certificates.
+title: Domains and TLS
+description: Attach hostnames, verify DNS, and manage certificates.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-The Domains API attaches web addresses (like `app.example.com`) to a project, checks that the DNS is set up
-correctly, and manages the HTTPS certificate. In the dashboard this is the project's **Domains** tab; from
-the terminal it's the [`openship domain`](/docs/cli/projects) command.
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/domains`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/domains` | `domain:list` | List domains (optionally `?projectId=`). |
-| `POST /api/domains` | `domain:write` | Add a domain to a project. |
-| `POST /api/domains/preview` | `domain:read` | Preview the DNS records a hostname will need — creates nothing. |
-| `GET /api/domains/:id` | `domain:read` | Read one domain's verify + SSL state. |
-| `DELETE /api/domains/:id` | `domain:admin` | Remove a domain. |
-| `POST /api/domains/:id/verify` | `domain:write` | Verify ownership / DNS for a domain. |
-| `POST /api/domains/:id/primary` | `domain:write` | Make this the project's primary domain. |
-| `GET /api/domains/:id/records` | `domain:read` | Get the DNS records for a domain. |
-| `POST /api/domains/:id/renew` | `domain:write` | Renew the SSL certificate. |
-| `POST /api/domains/:id/verify-ssl` | `domain:write` | Check the SSL certificate. |
-| `POST /api/domains/renew-all` | `domain:write` | Renew every certificate that's due. |
-| `POST /api/domains/verify-pending` | `domain:write` | Re-verify all domains still pending. |
+Domains connect hostnames to a project and track DNS verification and TLS certificates. The SDK takes a
+project ID as the first argument when creating or listing domains; REST includes it in the body or query.
 
 ## Add a domain
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.create("proj_123", {
+  hostname: "app.example.com",
+});
+console.log(result);
 ```
-POST /api/domains
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/domains" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projectId":"proj_123","hostname":"app.example.com"}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -51,18 +45,6 @@ POST /api/domains
   }}
 />
 
-```bash
-curl -X POST https://your-host/api/domains \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"projectId":"proj_123","hostname":"app.example.com"}'
-```
-
-```bash
-# Same thing from the CLI:
-openship domain add app.example.com
-```
-
 <Callout title="Adding a domain doesn't make it live by itself" type="info">
 After adding, you must point your DNS at Openship and then **verify**. Use `POST /api/domains/preview`
 (or `openship domain preview <hostname>`) to see the exact records to add at your DNS provider first.
@@ -73,34 +55,57 @@ After adding, you must point your DNS at Openship and then **verify**. Use `POST
 Side-effect-free: pass a hostname, get back the records to create. `POST` is used only so the hostname
 travels in the body.
 
-```
-POST /api/domains/preview
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.preview({
+  hostname: "app.example.com",
+});
+console.log(result);
 ```
 
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X POST https://your-host/api/domains/preview \
+curl -X POST "$OPENSHIP_URL/api/domains/preview" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"hostname":"app.example.com"}'
 ```
+
+</Tab>
+</Tabs>
 
 The response's `mode` tells you which setup applies: `selfhosted` (an A record to your server), `cloud`
 (a CNAME to Openship Cloud), or `external` (a TXT record only — you front TLS yourself).
 
 ## Verify a domain
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const verification = await ship.domains.verify("dom_123");
+console.log(verification);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/domains/dom_123/verify" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
 Once DNS is in place, verify it. Openship checks the routing record and the ownership TXT record, marks the
 domain active, and (unless it's external-ingress) provisions SSL in the background.
 
-```
-POST /api/domains/:id/verify
-```
-
-```bash
-openship domain verify <domainId>
-```
-
-## Errors you might see
+## Errors
 
 <Callout title="422 — verification failed" type="warn">
 The DNS records aren't resolving yet, or don't match. DNS can take minutes to hours to propagate. Confirm
@@ -112,3 +117,28 @@ you which check is still failing.
 The `:id` doesn't belong to your organization (or was deleted). List your domains with `GET /api/domains`
 to get valid IDs.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream domain verification progress. | `domains.verifyStream(id, input?, options?)` | `POST /api/domains/:id/verify/stream`<br />`domain:write` |
+| List domains using the supplied filters. | `domains.list(id)` | `GET /api/domains`<br />`domain:list` |
+| Attach a domain using the requested project and routing configuration. | `domains.create(id, input)` | `POST /api/domains`<br />`domain:write` |
+| Read one domain record. | `domains.get(id)` | `GET /api/domains/:id`<br />`domain:read` |
+| Remove a domain and its routing binding. | `domains.remove(id)` | `DELETE /api/domains/:id`<br />`domain:admin` |
+| Run domain verification. | `domains.verify(id, input?)` | `POST /api/domains/:id/verify`<br />`domain:write` |
+| Read DNS records required by a domain. | `domains.records(id, input?)` | `GET /api/domains/:id/records`<br />`domain:read` |
+| Preview DNS changes before applying them. | `domains.dnsPlan(id, input?)` | `GET /api/domains/:id/dns/plan`<br />`domain:read` |
+| Apply the authorized DNS plan. | `domains.dnsApply(id, input?)` | `POST /api/domains/:id/dns/apply`<br />`domain:write` |
+| Select the project’s primary domain. | `domains.setPrimary(id)` | `POST /api/domains/:id/primary`<br />`domain:write` |
+| Request certificate renewal for a domain record. | `domains.renewSsl(id)` | `POST /api/domains/:id/renew`<br />`domain:write` |
+| Check the domain’s current certificate. | `domains.verifySsl(id)` | `POST /api/domains/:id/verify-ssl`<br />`domain:write` |
+| Install a supplied certificate and private key. | `domains.uploadCert(id, input)` | `POST /api/domains/:id/certificate`<br />`domain:write` · Self-hosted |
+| Preview domain connection requirements. | `domains.preview(input)` | `POST /api/domains/preview`<br />`domain:read` |
+| Request renewal for eligible certificates. | `domains.renewAllSsl()` | `POST /api/domains/renew-all`<br />`domain:write` |
+| Verify pending domains visible to the caller. | `domains.verifyPending(input?)` | `POST /api/domains/verify-pending`<br />`domain:write` |
+
+{/* api-operations:end */}

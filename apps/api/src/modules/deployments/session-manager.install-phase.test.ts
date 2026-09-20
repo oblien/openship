@@ -6,7 +6,7 @@ import {
   broadcastInstallPhase,
   updateStatus,
   type SseWriter,
-} from "./session-manager";
+} from "@repo/platform/engine/modules/deployments/session-manager";
 
 /**
  * The install stepper's source of truth is a DEDICATED session channel, parallel

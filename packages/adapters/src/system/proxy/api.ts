@@ -25,7 +25,13 @@ import type { ProxySettings } from "@repo/core";
 import type { CommandExecutor, ManualCert } from "../../types";
 import type { EdgeStatus, ImportedSite, ProxyKind, ProxyScanResult } from "../types";
 import { probeEdge } from "./detect";
-import { canImportProxy, detectInstalledProxy, scanImportableSites, scanOpenshipEdge } from "./import";
+import {
+  canImportProxy,
+  detectInstalledProxy,
+  scanImportableSites,
+  scanOpenshipEdge,
+  scanOpenshipEdgeStrict,
+} from "./import";
 import { caddyStoreCert } from "./import/caddy-certs";
 import { traefikAcmeCert, traefikDeclaredCertPaths } from "./import/traefik-certs";
 import {
@@ -51,8 +57,10 @@ export interface ProxySiteRouteSsl {
 export interface ProxySiteRoute {
   /** Published host port the proxy forwards to — the container-join key. */
   port: number;
-  /** Location path prefix this upstream serves (e.g. "/", "/v3"). */
+  /** Location path this upstream serves (e.g. "/", "/v3"). */
   path: string;
+  /** Whether the source used nginx's exact-match selector (`location = …`). */
+  exact?: boolean;
   domains: string[];
   ssl: ProxySiteRouteSsl;
   /**
@@ -73,8 +81,9 @@ export interface ProxySiteRoute {
  * path-fan-out domain (`/ → :1010`, `/v3 → :1020`) yields one entry PER port,
  * each carrying its path — letting a join attach `/v3` to the `:1020` service.
  * Each port maps to a LIST (a port can serve multiple paths / come from multiple
- * vhosts). Static docroots (no upstream port) are skipped. Same (port,path) from
- * multiple vhosts union their domains and prefer an SSL-terminating one's cert.
+ * vhosts). Static docroots (no upstream port) are skipped. Same (port,path,match
+ * mode) from multiple vhosts union their domains and prefer an SSL-terminating
+ * one's cert.
  */
 export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySiteRoute[]> {
   const byPort = new Map<number, ProxySiteRoute[]>();
@@ -93,7 +102,9 @@ export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySi
       if (!Number.isFinite(port) || port <= 0) continue;
 
       const list = byPort.get(port) ?? [];
-      const existing = list.find((r) => r.path === up.path);
+      const existing = list.find(
+        (r) => r.path === up.path && Boolean(r.exact) === Boolean(up.exact),
+      );
       if (existing) {
         existing.domains = [...new Set([...existing.domains, ...site.serverNames])];
         if (site.ssl) {
@@ -110,6 +121,7 @@ export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySi
         list.push({
           port,
           path: up.path,
+          ...(up.exact ? { exact: true } : {}),
           domains: [...site.serverNames],
           ...(site.proxy ? { proxy: site.proxy } : {}),
           ssl: site.ssl
@@ -185,6 +197,15 @@ export interface EdgeProxyApi {
   container: string | null;
   /** Everything it serves, normalized. One scan, memoized. */
   listSites(): Promise<ProxyScanResult>;
+  /**
+   * Every loopback host port dialled by OUR edge. Unlike `listSites`, a config,
+   * transport, or permission failure rejects instead of masquerading as an
+   * empty inventory. Allocation uses this to fail closed around existing routes.
+   */
+  listLoopbackUpstreamPortsStrict(opts?: {
+    /** Bypass the per-instance memoized inventory and replace it with a fresh scan. */
+    refresh?: boolean;
+  }): Promise<Set<number>>;
   /** Sites reverse-indexed by the published host port they forward to. */
   sitesByPort(): Promise<Map<number, ProxySiteRoute[]>>;
   /** The vhost answering for `host`, or null. */
@@ -302,6 +323,28 @@ function makeApi(
     return scan;
   };
 
+  let strictLoopbackPorts: Promise<Set<number>> | null = null;
+  const listLoopbackUpstreamPortsStrict = (opts: { refresh?: boolean } = {}) => {
+    if (!ours) {
+      return Promise.reject(
+        new Error("Strict loopback upstream inventory is only available for the Openship edge"),
+      );
+    }
+    if (opts.refresh || !strictLoopbackPorts) {
+      const nextScan = scanOpenshipEdgeStrict(exec, container).then(
+        ({ loopbackUpstreamPorts }) => loopbackUpstreamPorts,
+      );
+      strictLoopbackPorts = nextScan;
+      // A transient transport/config failure must remain visible to this caller,
+      // but it must not poison the API instance forever. The next call retries a
+      // real scan; it never falls back to an older successful inventory.
+      void nextScan.catch(() => {
+        if (strictLoopbackPorts === nextScan) strictLoopbackPorts = null;
+      });
+    }
+    return strictLoopbackPorts;
+  };
+
   const siteFor = async (host: string): Promise<ImportedSite | null> => {
     const target = host.toLowerCase();
     const { sites } = await listSites();
@@ -339,6 +382,7 @@ function makeApi(
     ours,
     container,
     listSites,
+    listLoopbackUpstreamPortsStrict,
     sitesByPort: async () => buildProxyRouteIndex((await listSites()).sites),
     siteFor,
     certFor: async (host) => (await certCandidateFor(host)).cert,

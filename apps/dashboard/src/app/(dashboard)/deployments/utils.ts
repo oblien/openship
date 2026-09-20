@@ -1,5 +1,13 @@
 import type { Deployment } from "./types";
 import type { Dictionary } from "@/i18n";
+import { DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryFilter } from "@repo/core";
+
+/** UI aliases and raw API statuses use the same groups as server-side history. */
+function historyGroup(status: string): DeploymentHistoryFilter | undefined {
+  if (Object.hasOwn(DEPLOYMENT_HISTORY_STATUSES, status)) return status as DeploymentHistoryFilter;
+  return (Object.keys(DEPLOYMENT_HISTORY_STATUSES) as DeploymentHistoryFilter[])
+    .find((group) => (DEPLOYMENT_HISTORY_STATUSES[group] as readonly string[]).includes(status));
+}
 
 export const mapRowToDeployment = (row: any): Deployment => {
   const statusMap: Record<string, Deployment["status"]> = {
@@ -125,6 +133,18 @@ export const getStatusConfig = (status: string) => {
         borderColor: "border-border/50",
         label: "Canceled",
       };
+    case "no_changes":
+      // Nothing shipped because nothing had changed — a healthy outcome, so
+      // neutral rather than the warning tone a "didn't land" state gets. Kept out
+      // of `statusMap` above so it isn't folded into "canceled", which would tell
+      // the operator to redeploy something that is already current.
+      return {
+        icon: 'checkmark-72-1658234612.png',
+        color: "var(--color-neutral)",
+        bgColor: "bg-muted/60",
+        borderColor: "border-border/50",
+        label: "No changes",
+      };
     case "partial_failure":
       // Some services succeeded, others failed. Treated as a
       // deployed-with-warnings state — dashboard still shows the
@@ -205,17 +225,7 @@ export const filterDeployments = (
   const { status = "all", searchQuery = "", projectId = "all" } = filters;
 
   return deployments.filter((deployment) => {
-    // Handle both "canceled" and "cancelled" spellings; and count a blocked
-    // deploy under "Failed" — it genuinely didn't ship, so hiding it from that
-    // tab would make a real failure invisible. The chip still reads "Action
-    // required" so the difference isn't lost.
-    const deploymentStatus =
-      deployment.status === 'cancelled'
-        ? 'canceled'
-        : deployment.status === 'action_required'
-          ? 'failed'
-          : deployment.status;
-    const matchesStatus = status === "all" || deploymentStatus === status;
+    const matchesStatus = status === "all" || historyGroup(deployment.status) === status;
     const matchesSearch =
       !searchQuery ||
       deployment.commit.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -232,18 +242,10 @@ export const filterDeployments = (
  * Calculates deployment statistics
  */
 export const calculateDeploymentStats = (deployments: Deployment[]) => {
-  return {
-    total: deployments.length,
-    success: deployments.filter((d) => d.status === "success").length,
-    // Blocked deploys count as failed here for the same reason they show under
-    // the Failed filter — they didn't ship. Keeping them out would quietly
-    // inflate the success rate.
-    failed: deployments.filter((d) => d.status === "failed" || d.status === "action_required")
-      .length,
-    building: deployments.filter((d) => d.status === "building").length,
-    pending: deployments.filter((d) => d.status === "pending").length,
-    // Handle both "canceled" and "cancelled" spellings
-    canceled: deployments.filter((d) => d.status === "canceled" || d.status === "cancelled").length,
-  };
+  const counts = { total: deployments.length, success: 0, failed: 0, building: 0, pending: 0, canceled: 0 };
+  for (const deployment of deployments) {
+    const group = historyGroup(deployment.status);
+    if (group) counts[group] += 1;
+  }
+  return counts;
 };
-

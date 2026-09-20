@@ -50,8 +50,68 @@ const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>(
 ]);
 
 const PRESIGN_TTL_DEFAULT = 60 * 60;
+/**
+ * Baseline multipart part size, and the memory budget that bounds the uploader.
+ *
+ * S3 caps an upload at **10,000 parts**, so a fixed part size is also a size ceiling:
+ * 16 MiB × 10,000 is ~156 GiB, and exceeding it fails at `CompleteMultipartUpload` —
+ * i.e. AFTER transferring every byte, hours into a large backup. That is the
+ * fail-late-and-surprise-the-operator shape this module has been removing, so
+ * `partSizeFor()` scales the part size up when the artifact's size is known.
+ *
+ * In-flight memory for one upload is `partSize × queueSize`, which is why the queue is
+ * derived from a byte budget instead of being a fixed count: a bigger part size must buy
+ * fewer concurrent parts, not more resident memory.
+ */
 const MULTIPART_PART_SIZE = 16 * 1024 * 1024;
-const MULTIPART_QUEUE_SIZE = 4;
+const MULTIPART_MEMORY_BUDGET = 64 * 1024 * 1024;
+/** Leave headroom under S3's hard 10,000-part limit rather than landing exactly on it. */
+const MULTIPART_MAX_PARTS = 9_000;
+
+/**
+ * Part size for a stream whose size we do NOT know — which is every database dump,
+ * since a dump is piped straight through and has no `sizeHint`.
+ *
+ * This constant IS the ceiling, in disguise: the largest artifact such an upload can
+ * finish is `size × MULTIPART_MAX_PARTS`. At the 16 MiB baseline that was ~140 GiB,
+ * and #633's dump was 110 GB — close enough that it was a live risk rather than a
+ * theoretical one, and it failed at `CompleteMultipartUpload`, i.e. after paying for
+ * every byte.
+ *
+ * 32 MiB doubles the reach to ~281 GiB at IDENTICAL in-flight memory, because
+ * `queueSizeFor` derives concurrency from the same byte budget — the part count halves
+ * as the part size doubles. Going further would buy reach with resident memory, and
+ * this module exists because an unbounded byte plane OOM'd the API, so that trade is
+ * refused here. Past this point the honest answer is `abortIfPastCeiling`, which fails
+ * early with a reason instead of late with an opaque S3 error.
+ */
+const UNKNOWN_SIZE_PART_SIZE = 32 * 1024 * 1024;
+
+/** Part size that keeps an artifact under the part limit. Exported for test. */
+export function partSizeFor(sizeBytes: number | undefined): number {
+  if (!sizeBytes || sizeBytes <= 0) return UNKNOWN_SIZE_PART_SIZE;
+  return Math.max(MULTIPART_PART_SIZE, Math.ceil(sizeBytes / MULTIPART_MAX_PARTS));
+}
+
+/** Concurrent parts that fit the memory budget at this part size. Exported for test. */
+export function queueSizeFor(partSize: number): number {
+  return Math.max(1, Math.floor(MULTIPART_MEMORY_BUDGET / partSize));
+}
+
+/**
+ * The largest artifact an upload at this part size can actually complete.
+ *
+ * Exported because it is the number an operator needs when a backup fails for this
+ * reason, and because a limit nothing can name is a limit nobody can plan around.
+ */
+export function partLimitCeiling(partSize: number): number {
+  return partSize * MULTIPART_MAX_PARTS;
+}
+
+/** Bytes as whole GiB, for an operator-facing message. */
+function gib(bytes: number): number {
+  return Math.round(bytes / (1024 * 1024 * 1024));
+}
 
 class S3DestinationImpl implements BackupDestination {
   readonly kind = "s3_compatible" as const;
@@ -114,6 +174,7 @@ class S3DestinationImpl implements BackupDestination {
 
   async put(key: string, body: Readable, opts: PutOpts): Promise<PutResult> {
     const fullKey = this.fullKey(key);
+    const partSize = partSizeFor(opts.size);
 
     // Below-threshold: a single PutObject. For unknown-size streams, the
     // SDK's Upload class handles both single and multipart automatically.
@@ -126,17 +187,52 @@ class S3DestinationImpl implements BackupDestination {
         ContentType: opts.contentType ?? "application/octet-stream",
         Metadata: opts.metadata,
       },
-      partSize: MULTIPART_PART_SIZE,
-      queueSize: MULTIPART_QUEUE_SIZE,
+      // Derived, not fixed — see partSizeFor. An artifact whose size we know never trips
+      // S3's 10,000-part limit; one we don't (a DB dump has no sizeHint) gets
+      // UNKNOWN_SIZE_PART_SIZE, whose ceiling is enforced below rather than discovered
+      // at CompleteMultipartUpload.
+      partSize,
+      queueSize: queueSizeFor(partSize),
       leavePartsOnError: false,
     });
 
+    const ceiling = partLimitCeiling(partSize);
     let bytesWritten = 0;
+    /**
+     * Set when we abort for the part-limit ceiling, so `done()`'s rejection can be
+     * replaced with the real reason. Without this the operator sees whatever the SDK
+     * throws for a cancelled upload, which says nothing about why.
+     */
+    let ceilingError: Error | null = null;
+
     upload.on("httpUploadProgress", (progress) => {
       if (typeof progress.loaded === "number") bytesWritten = progress.loaded;
+      // Fail as soon as completion is IMPOSSIBLE, not after paying for every byte.
+      // S3 rejects a >10,000-part upload at CompleteMultipartUpload — the very last
+      // call — so without this a 300 GB dump transfers for hours and then throws an
+      // error that names neither the limit nor the remedy.
+      if (!ceilingError && bytesWritten > ceiling) {
+        ceilingError = new Error(
+          `Artifact exceeds what one S3 multipart upload can hold at this part size: ` +
+            `${gib(bytesWritten)} GiB transferred, ceiling ${gib(ceiling)} GiB ` +
+            `(${MULTIPART_MAX_PARTS} parts × ${Math.round(partSize / (1024 * 1024))} MiB). ` +
+            `Aborted early rather than failing at CompleteMultipartUpload after ` +
+            `transferring everything. A source whose size is known scales its part size ` +
+            `automatically; a streamed database dump cannot, so this artifact needs to be ` +
+            `split or sent to a destination without a part limit.`,
+        );
+        void upload.abort().catch(() => {});
+      }
     });
 
-    const result = (await upload.done()) as CompleteMultipartUploadCommandOutput;
+    let result: CompleteMultipartUploadCommandOutput;
+    try {
+      result = (await upload.done()) as CompleteMultipartUploadCommandOutput;
+    } catch (err) {
+      // Our abort surfaces as a generic cancellation; the ceiling is the real cause.
+      if (ceilingError) throw ceilingError;
+      throw err;
+    }
     return {
       bytesWritten,
       etag: result.ETag?.replace(/"/g, "") ?? undefined,

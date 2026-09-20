@@ -24,7 +24,7 @@ import { composeSpecsEqual, toComposeSpec } from "@repo/db";
 import type { ComposeAdvanced } from "@repo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { projectServicesToDeployableServices } from "../../../src/modules/deployments/compose/project-services";
+import { projectServicesToDeployableServices } from "@repo/platform/engine/modules/deployments/compose/project-services";
 import { seedOrg, seedProject, seedService } from "../../helpers/seed";
 
 /** Every key of the blob, so a partial write shows up as a specific loss. */

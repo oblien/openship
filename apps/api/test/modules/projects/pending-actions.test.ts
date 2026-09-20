@@ -52,19 +52,20 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/deployments/session-manager", () => ({ getSession }));
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({ getSession }));
 
 import {
   getDeploymentPendingActions,
   getOrgPendingActions,
   getProjectPendingActions,
-} from "../../../src/modules/projects/pending-actions.service";
+} from "@repo/platform/engine/modules/projects/pending-actions.service";
 
 const ORG = "org-1";
 const PROJECT = "proj-1";
 
 const dep = (over: Record<string, unknown> = {}) => ({
   id: "dep-1",
+  projectId: PROJECT,
   organizationId: ORG,
   status: "ready",
   meta: null,
@@ -106,6 +107,55 @@ beforeEach(() => {
   findLatestByProjects.mockResolvedValue(new Map());
   findManyById.mockResolvedValue(new Map());
   listByProjects.mockResolvedValue(new Map());
+});
+
+/**
+ * `compiled.skipped` was read by NOTHING before this: a vercel.json rule the proxy
+ * couldn't translate simply never existed, with no log line and no UI. Recomputed here
+ * from the stored config (the compiler is pure), so it needs no column and can't go
+ * stale — and it reports before the project has ever deployed.
+ */
+describe("routing_rules_dropped", () => {
+  const withRouting = (routingConfig: unknown) =>
+    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, routingConfig });
+
+  it("names each rule that is not live", async () => {
+    withRouting({
+      redirects: [
+        // Destination references a wildcard the source never captures.
+        { source: "/blog/:path*", destination: "/news/:slug*" },
+      ],
+    });
+
+    const [action] = await getProjectPendingActions(PROJECT, ORG);
+
+    expect(action.kind).toBe("routing_rules_dropped");
+    expect(action.severity).toBe("advisory");
+    expect(action.title).toBe("1 routing rule could not be applied");
+    expect(action.message).toContain("/blog/:path*");
+    expect((action.details as { skipped: string[] }).skipped).toHaveLength(1);
+  });
+
+  it("is silent for a config that compiles cleanly", async () => {
+    withRouting({
+      redirects: [{ source: "/blog/:path*", destination: "/news/:path*", permanent: true }],
+      cleanUrls: true,
+    });
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  it("is silent with no routing config at all", async () => {
+    withRouting(null);
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  // On a single-service project the app already receives `/api/…` via `location /`, and
+  // on a composite one the deploy path supplies the real backend. Reporting it as
+  // dropped would be noise in both cases.
+  it("does not report a path rewrite as dropped just for lacking a backend", async () => {
+    withRouting({ rewrites: [{ source: "/api/(.*)", destination: "/api/index.js" }] });
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
 });
 
 describe("deploy_blocked — the case nothing could see before", () => {
@@ -161,14 +211,62 @@ describe("deploy_blocked — the case nothing could see before", () => {
     const [action] = await getProjectPendingActions(PROJECT, ORG);
 
     expect(action.message).toContain("previous Openship deployment");
-    expect(action.message).toContain("Free Port & Continue");
+    // Describes the offer without quoting the button's words: the deploy prompt now
+    // labels it by what it stops ("Stop Container", "Stop Service"), so a literal
+    // pinned here was a copy in two places that could disagree.
+    expect(action.message).toMatch(/Openship will (free the port|stop that (container|service)) first/);
+  });
+
+  it("promises no Free Port button when the deploy refused to offer one", async () => {
+    // `stopTarget: "none"` — e.g. a Docker-published port whose container could not be
+    // identified. Redeploying raises no prompt at all, so copy that says "redeploy and
+    // choose Free Port" sends the operator to a button that will not be there.
+    findLatestByProject.mockResolvedValue(
+      blockedByPort({
+        errorMessage: "Port 3000 is published by a Docker container Openship couldn't identify",
+        errorDetails: {
+          port: 3000,
+          pid: 42,
+          command: "docker-proxy -host-port 3000 (PID 42)",
+          dockerPublished: true,
+          stopTarget: "none",
+        },
+      }),
+    );
+
+    const [action] = await getProjectPendingActions(PROJECT, ORG);
+
+    expect(action.message).not.toMatch(/Free Port/i);
+    expect(action.message).toContain("Docker container");
+    expect(action.resolveWith?.[0]?.label).toBe("Redeploy");
+  });
+
+  it("names the container, not docker-proxy, when a container holds the port", async () => {
+    findLatestByProject.mockResolvedValue(
+      blockedByPort({
+        errorDetails: {
+          port: 3000,
+          pid: 42,
+          command: "docker container openship-api-web (openship/api:latest)",
+          containerName: "openship-api-web",
+          isManagedDeployment: true,
+          dockerPublished: true,
+          stopTarget: "container",
+        },
+      }),
+    );
+
+    const [action] = await getProjectPendingActions(PROJECT, ORG);
+
+    expect(action.message).toContain("openship-api-web");
+    expect(action.message).toContain("stop that container");
   });
 
   it("says it could not tell when ownership was never probed", async () => {
-    // The nohup supervisor's PORT_IN_USE carries only {port, pid, command} — no
-    // `isManagedDeployment`. Treating absent as false would tell the operator a
-    // process is not Openship's when we simply didn't look, and that is the
-    // difference between "safe to free" and "might kill something else".
+    // A listener with no systemd unit and no container carries no `isManagedDeployment`
+    // at all. Treating absent as false would tell the operator a process is not
+    // Openship's when we simply couldn't establish it, and that is the difference
+    // between "safe to free" and "might kill something else".
     findLatestByProject.mockResolvedValue(
       blockedByPort({
         errorDetails: { port: 3000, pid: 42, command: "node server.js (PID 42)" },

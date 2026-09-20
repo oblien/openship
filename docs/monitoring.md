@@ -304,6 +304,26 @@ yourself at the origin does nothing. See
 For a non-Cloudflare proxy, set `OPENSHIP_EDGE_TRUSTED_PROXIES` (comma-separated CIDRs)
 and optionally `OPENSHIP_EDGE_REAL_IP_HEADER`.
 
+### Free `*.opsh.io` domains
+
+A free domain is served by Openship Cloud's own edge, which proxies to your box on plain :80
+and names the visitor in `X-Real-IP` — a different header from the Cloudflare path, and nginx
+allows one `real_ip_header` per config scope. So those vhosts (and only those) carry their own
+`realip` block, emitted inside the `server { }` by `registerRoute`.
+
+That block trusts `X-Real-IP` from **any** peer, unlike the Cloudflare path. It has to: the
+Cloud edge reaches your box from its own address, `opsh.io` being Cloudflare-proxied covers
+only the visitor→edge leg, and a peer list that doesn't contain the real egress address
+silently ignores the header — leaving every free-domain visitor logged as the edge. The bound
+is the `server_name`: it applies to `<slug>.opsh.io` alone, a hostname whose only legitimate
+path is that edge. Custom domains keep the peer-anchored http-scope block, and this must not
+be widened to them.
+
+Existing vhosts pick the block up on the next route apply. That happens on a deploy, an
+"Ensure edge", a domain save, or Retry routing — and the edge-ensure path also replays any
+vhost stamped below the current `VHOST_GENERATION`, so an upgrade alone no longer leaves a
+generated-config fix applying to nothing.
+
 ---
 
 ## On Openship Cloud

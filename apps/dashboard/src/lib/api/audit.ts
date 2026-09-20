@@ -23,6 +23,10 @@ export interface AuditEventRow {
   /** Human name for the resource, resolved server-side. Null when unnameable. */
   resourceName: string | null;
   source: AuditSource | null;
+  /** Which client of that surface — `oauth:<clientId>` / `pat:<tokenId>`. MCP only. */
+  sourceClientId: string | null;
+  /** That client's display name, resolved server-side. Null when unresolvable. */
+  sourceClientName: string | null;
   before: unknown;
   after: unknown;
   ipAddress: string | null;
@@ -41,6 +45,8 @@ export interface AuditFacets {
   total: number;
   categories: { id: string; label: string; description: string; count: number }[];
   sources: { source: AuditSource | null; count: number }[];
+  /** MCP clients that appear in the window, busiest first. Capped server-side. */
+  clients: { id: string; name: string | null; count: number }[];
   actors: AuditActor[];
   settings: AuditSettings;
   canManage: boolean;
@@ -58,6 +64,7 @@ export interface AuditQuery {
   eventType?: string;
   actorUserId?: string;
   source?: AuditSource | "";
+  sourceClientId?: string;
   resourceType?: string;
   resourceId?: string;
   /** ISO strings — the client owns "last 7 days" so presets follow local midnight. */

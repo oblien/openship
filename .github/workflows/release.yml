@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  # Manual run publishes ONLY the CLI to npm (current version, no tag / installers).
+  # Manual run publishes ONLY the SDK/CLI package to npm (current version, no tag / installers).
   workflow_dispatch: {}
 
 concurrency:
@@ -15,6 +15,13 @@ permissions:
   contents: write
 
 jobs:
+  # Typecheck + tests. `publish` and `publish-npm` depend on this, so a red test
+  # stops the release instead of publishing alongside it. Runs on the manual
+  # dispatch too — that path publishes npm, which is immutable.
+  gate:
+    name: Release gate
+    uses: ./.github/workflows/release-gate.yml
+
   build-openship:
     name: Build openship release artifact
     if: github.event_name == 'push'
@@ -535,7 +542,7 @@ jobs:
           retention-days: 7
 
   publish-npm:
-    name: Publish CLI to npm
+    name: Publish Openship to npm
     runs-on: ubuntu-24.04
     # npm is the ONE immutable artifact — a published version can never be
     # replaced. So it must publish LAST, only after every other job in the
@@ -546,9 +553,15 @@ jobs:
     # mismatch. `always()` keeps the manual npm-only path working: on a
     # workflow_dispatch the `publish` job is skipped (push-only), and we publish
     # anyway; on a tag push we require `publish` to have succeeded.
-    needs: [publish]
+    #
+    # `gate` is required on BOTH paths, and is the one condition with no escape
+    # hatch: the tag path inherits it through `publish`, and the dispatch path —
+    # which skips `publish` entirely — would otherwise put an untested,
+    # unreplaceable version on npm.
+    needs: [gate, publish]
     if: >-
       always() &&
+      needs.gate.result == 'success' &&
       (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
     # OIDC trusted publishing: npm verifies this workflow's identity instead of
     # a long-lived token. id-token:write lets the runner mint the OIDC token.
@@ -590,8 +603,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build CLI
-        run: bun run --cwd apps/cli build
+      - name: Build SDK and CLI package
+        run: bun run --cwd packages/openship build
 
       # Gate: run the ACTUAL built bundle across node/bun/shebang/no-node and
       # boot the real server. This is the last check before the IMMUTABLE npm
@@ -601,8 +614,11 @@ jobs:
       - name: Release smoke — built CLI launches + server boots
         run: SMOKE_SKIP_BUILD=1 bash apps/cli/scripts/release-smoke.sh
 
+      - name: Verify packed SDK outside the workspace
+        run: bun run --cwd packages/openship test:package
+
       - name: Publish to npm (OIDC trusted publishing — no token)
-        working-directory: apps/cli
+        working-directory: packages/openship
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -617,31 +633,9 @@ jobs:
             echo "::notice::${NAME}@${VERSION} already on npm — skipping publish (re-run of an existing release)."
             exit 0
           fi
-          # tsup bundles the @repo/* workspace packages into dist/, so they must
-          # NOT appear in the published manifest — a `workspace:*` specifier is
-          # uninstallable off the monorepo (bun/npm: "@repo/… failed to resolve").
-          # Strip EVERY workspace dependency generically: hard-coding the list
-          # once shipped a broken 0.4.1 that kept @repo/adapters. This can never
-          # silently miss a newly-added @repo/* again.
-          node -e '
-            const fs = require("fs");
-            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            const stripped = [];
-            for (const k of Object.keys(p.dependencies || {})) {
-              if (String(p.dependencies[k]).startsWith("workspace:")) {
-                delete p.dependencies[k];
-                stripped.push(k);
-              }
-            }
-            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
-            console.log("stripped workspace deps:", stripped.join(", ") || "(none)");
-          '
-          # Fail loudly if any workspace: specifier somehow survives — never ship
-          # an uninstallable package.
-          if grep -q '"workspace:' package.json; then
-            echo "::error::a workspace:* dependency survived the strip — refusing to publish an uninstallable package."
-            exit 1
-          fi
+          # The distribution owns an installable manifest. Never rewrite a
+          # source workspace manifest during publication.
+          bun run check
           # Prereleases (v1.2.3-rc.1) publish to the `next` dist-tag, not `latest`.
           if [[ "${TAG}" == *-* ]]; then
             npm publish --access public --tag next
@@ -652,7 +646,7 @@ jobs:
   publish:
     name: Publish GitHub release
     if: github.event_name == 'push'
-    needs: [build-openship, build-email, build-dashboard, build-cli-payload, build-desktop, build-desktop-macos]
+    needs: [gate, build-openship, build-email, build-dashboard, build-cli-payload, build-desktop, build-desktop-macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -691,9 +685,41 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Read bun version
+        id: bun-version
+        run: echo "version=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+
+      # Only to run scripts/changelog-notes.ts (pure core parser, zero external deps) — this
+      # job deliberately does no `bun install`.
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-version.outputs.version }}
+
+      # The release body is this version's CHANGELOG.md section, written to a
+      # FILE (never interpolated into the shell — changelog prose is full of
+      # backticks and quotes) and passed to `gh --notes-file`. The extractor
+      # always emits a body, and this step is non-fatal on top of that: missing
+      # notes must never fail a release.
+      - name: Build release notes from CHANGELOG.md
+        id: notes
+        run: |
+          set -uo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          if ! bun scripts/changelog-notes.ts "${TAG}" > "${NOTES_FILE}"; then
+            echo "::warning::changelog extraction failed — publishing a generic body."
+            printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md).\n' \
+              "${GITHUB_REPOSITORY}" "${TAG}" > "${NOTES_FILE}"
+          fi
+          echo "file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+          echo "▸ release notes (${TAG}):"
+          head -c 500 "${NOTES_FILE}"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -718,10 +744,25 @@ jobs:
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "::notice::Release ${TAG} exists — re-uploading core assets (--clobber)."
             gh release upload "${TAG}" "${CORE_ASSETS[@]}" --clobber
+            # Backfill notes ONLY when the existing release has none (a release
+            # cut before this step existed, or a re-run of one that published an
+            # empty body). A body that's already there may have been hand-edited
+            # on the release page — never overwrite it.
+            if EXISTING_BODY="$(gh release view "${TAG}" --json body --jq '.body')"; then
+              if [[ -z "${EXISTING_BODY//[[:space:]]/}" ]]; then
+                if gh release edit "${TAG}" --notes-file "${NOTES_FILE}"; then
+                  echo "::notice::Backfilled empty release notes for ${TAG}."
+                else
+                  echo "::warning::Assets uploaded, but release-note backfill failed for ${TAG}."
+                fi
+              fi
+            else
+              echo "::warning::Could not read existing release notes; preserving them for ${TAG}."
+            fi
           else
             gh release create "${TAG}" \
               --title "Openship ${TAG}" \
-              --notes-from-tag \
+              --notes-file "${NOTES_FILE}" \
               ${PRERELEASE_FLAG} \
               "${CORE_ASSETS[@]}"
           fi

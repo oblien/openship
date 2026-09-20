@@ -7,7 +7,7 @@
  * read-only; acting on the result requires an explicit, user-accepted EdgePolicy.
  */
 
-import { AppError } from "@repo/core";
+import { AppError, shellQuote } from "@repo/core";
 import type { CommandExecutor } from "../../types";
 import {
   describeProcess as probeProcess,
@@ -15,6 +15,16 @@ import {
   type PortOccupant,
 } from "../../runtime/port-conflict";
 import { waitForPortFree } from "../port-listen";
+import {
+  classifyProxy,
+  describeContainerById,
+  EDGE_CONTAINER_NAME,
+  isOurEdgeContainer,
+  mayStopUnitForEdgeTakeover,
+  resolveContainerPublishingPort,
+  stopContainerDurably,
+} from "../port-owner";
+import { tryExec } from "../probe-exec";
 import type {
   SystemLog,
   EdgeOccupant,
@@ -57,43 +67,17 @@ export class EdgeMigrateRequested extends Error {
   }
 }
 
-async function tryExec(executor: CommandExecutor, command: string): Promise<string | null> {
-  try {
-    return await executor.exec(command);
-  } catch {
-    return null;
-  }
-}
-
-/** Classify a proxy from an image/command/unit string. Exported so the Docker
- *  migration scan can flag a containerized reverse proxy (traefik/nginx/…). */
-export function classifyProxy(text: string | undefined): ProxyKind | undefined {
-  if (!text) return undefined;
-  const t = text.toLowerCase();
-  if (t.includes("openresty")) return "openresty";
-  if (/(^|[\s/:])nginx/.test(t)) return "nginx";
-  if (/(^|[\s/:])caddy/.test(t)) return "caddy";
-  if (/(apache2|httpd)/.test(t)) return "apache";
-  if (/(^|[\s/:])traefik/.test(t)) return "traefik";
-  if (/(^|[\s/:])haproxy/.test(t)) return "haproxy";
-  return undefined;
-}
-
-/** Single-quote a value for safe shell interpolation. */
-export function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+/** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
+ *  this package read `sq(...)`; there is one implementation, in core. */
+export const sq = shellQuote;
 
 /**
- * The edge we ship as a container: compose service `edge`, published image
- * `…/openship-edge`, default container name `openship-edge`. Recognized by name
- * OR image so a host-networked OR bridged edge container counts as OUR edge —
- * not a foreign proxy to take over. Matching the `openship-edge` image name is
- * the stable signal (the container name is configurable via OPENSHIP_EDGE_CONTAINER).
+ * Recognizing our own edge container now lives in `system/port-owner`, so the deploy
+ * port-conflict path can refuse to offer it as a stop target without importing this
+ * module (which imports the port probe — that direction is a cycle). Re-exported here
+ * because every existing caller reads it from the edge module.
  */
-export function isOurEdgeContainer(name?: string, image?: string): boolean {
-  return /openship-edge/i.test(`${name ?? ""} ${image ?? ""}`);
-}
+export { classifyProxy, EDGE_CONTAINER_NAME, isOurEdgeContainer };
 
 /**
  * Make carried vhosts safe to `include` inside the edge image.
@@ -246,14 +230,6 @@ export function edgeFailureReason(containerLog: string): string | null {
 }
 
 /**
- * OUR edge container's default name. Lives here (the lean detect module) rather
- * than next to the installer, so the takeover journal — which deliberately imports
- * nothing heavier than this file — can name the container it has to stop before
- * restoring a foreign proxy.
- */
-export const EDGE_CONTAINER_NAME = "openship-edge";
-
-/**
  * Is OUR edge CONTAINER running? `openship-edge` by NAME (the default) or by
  * IMAGE (covers a container renamed via OPENSHIP_EDGE_CONTAINER). A running edge
  * container OWNS 80/443 — host-networked (no `--filter publish` match; its Lua
@@ -401,19 +377,25 @@ async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string 
   return null;
 }
 
+/**
+ * Which container publishes this edge port. Delegates to the shared resolver so there
+ * is ONE `docker ps --filter publish=` query in the tree — the deploy-time port
+ * conflict path needs the same answer with labels, and two copies drifted apart on
+ * exactly the question that matters (how many owners there are).
+ *
+ * Takes the first of several deliberately: for a takeover, ANY foreign container on
+ * :80 makes the port unavailable to our edge, so naming one is enough to classify and
+ * to have something to stop. The deploy path treats the same multi-owner answer as
+ * ambiguous, because there it decides WHICH one to stop.
+ */
 async function detectDockerOnPort(
   executor: CommandExecutor,
   port: number,
-): Promise<{ name: string; image: string } | null> {
-  const out = await tryExec(
-    executor,
-    `docker ps --filter publish=${port} --format '{{.Names}}\t{{.Image}}' 2>/dev/null | head -1`,
-  );
-  const line = out?.trim();
-  if (!line) return null;
-  const [name, image] = line.split("\t");
-  if (!name) return null;
-  return { name, image: image ?? "" };
+): Promise<{ id: string; name: string; image: string } | null> {
+  const onPort = await resolveContainerPublishingPort(executor, port);
+  const container =
+    onPort.kind === "one" ? onPort.container : onPort.kind === "ambiguous" ? onPort.containers[0] : null;
+  return container ? { id: container.id, name: container.name, image: container.image } : null;
 }
 
 /** `nginx: worker process` / `openresty: worker process …` (the child that shows
@@ -463,10 +445,20 @@ async function probeEdgePort(
   const docker = await detectDockerOnPort(executor, port);
   if (!listener && !docker) return null;
 
+  // A HOST-NETWORKED container publishes nothing, so `detectDockerOnPort` never sees it
+  // and the only handle is the container id in the listener's own cgroup. Resolve its
+  // NAME here: the takeover stops targets by container, but the rollback JOURNAL keys on
+  // `containerName`, so an id-only occupant would be stopped with nothing recorded to
+  // restore it — a takeover that cannot be rolled back.
+  const cgroupContainer =
+    !docker && listener?.containerId
+      ? await describeContainerById(executor, listener.containerId)
+      : null;
+
   const proxy = classifyProxy(
     [
-      docker?.image,
-      docker?.name,
+      docker?.image ?? cgroupContainer?.image,
+      docker?.name ?? cgroupContainer?.name,
       listener?.rawCommand,
       listener?.command,
       listener?.systemdUnit,
@@ -513,8 +505,12 @@ async function probeEdgePort(
     rawCommand: listener?.rawCommand,
     systemdUnit: listener?.systemdUnit,
     systemdDescription: listener?.systemdDescription,
-    isDocker: Boolean(docker),
-    containerName: docker?.name,
+    isDocker: Boolean(docker) || Boolean(listener?.dockerPublished) || Boolean(listener?.containerId),
+    containerName: docker?.name ?? cgroupContainer?.name,
+    // Without a container the takeover falls through to `kill -9` on a process INSIDE
+    // somebody's container, which frees nothing durably.
+    containerId: docker?.id ?? listener?.containerId,
+    dockerPublished: listener?.dockerPublished,
     proxy,
     managedByOpenship,
   };
@@ -571,14 +567,23 @@ export function stopTargetsForStatus(status: EdgeStatus): EdgeStopTarget[] {
   const out: EdgeStopTarget[] = [];
   const seen = new Set<string>();
   for (const o of status.occupants) {
-    const identity = o.systemdUnit ?? o.containerName ?? (o.pid ? `pid:${o.pid}` : `port:${o.port}`);
+    // Container FIRST. Keying on the unit collapsed two different containers into one
+    // target whenever both resolved to the same daemon unit — one foreign proxy on :80
+    // and another on :443 both read `docker.service`, so the second was never stopped
+    // and the takeover half-freed the ports while reporting success.
+    const identity =
+      o.containerName ?? o.containerId ?? o.systemdUnit ?? (o.pid ? `pid:${o.pid}` : `port:${o.port}`);
     if (seen.has(identity)) continue;
     seen.add(identity);
     out.push({
       port: o.port,
       unit: o.systemdUnit,
-      pid: o.pid,
-      container: o.containerName,
+      // A forwarder's pid is dockerd's, not the workload's: killing it severs a live
+      // container's port mapping and frees nothing durably. With no container resolved
+      // there is nothing here to stop, and freeEdgeTargets reports the port still bound
+      // rather than claiming a takeover that did not happen.
+      pid: o.dockerPublished && !o.containerName && !o.containerId ? undefined : o.pid,
+      container: o.containerName ?? o.containerId,
       // Prefer the proxy kind over the raw cmdline — `nginx (PID 123)` reads
       // better in "Stopping …" than `nginx: master process /usr/sbin/nginx …`.
       label: o.proxy && o.pid ? `${o.proxy} (PID ${o.pid})` : o.command,
@@ -623,16 +628,21 @@ export async function freeEdgeTargets(
     const where = t.port ? ` (port ${t.port})` : "";
     if (t.container) {
       onLog(`Stopping container ${t.container}${where}...`, "warn");
-      // Clear the restart policy first so `docker stop` is durable across a daemon/host reboot.
-      await tryExec(executor, `docker update --restart=no ${sq(t.container)} 2>/dev/null || true`);
-      await tryExec(executor, `docker stop ${sq(t.container)} 2>/dev/null || true`);
-    } else if (t.unit) {
+      await stopContainerDurably(executor, t.container);
+    } else if (t.unit && mayStopUnitForEdgeTakeover(t.unit)) {
       onLog(`Stopping & disabling service ${t.unit}${where}...`, "warn");
       await tryExec(
         executor,
         `systemctl disable --now ${sq(t.unit)} 2>/dev/null || systemctl stop ${sq(t.unit)} 2>/dev/null || true; ` +
           `systemctl reset-failed ${sq(t.unit)} 2>/dev/null || true`,
       );
+    } else if (t.unit) {
+      // A unit resolved but is one we refuse to disable — a container runtime, the
+      // rootless user manager, sshd. Unreachable now that a docker-published port
+      // reports no unit at all, and kept as the backstop for that: `systemctl disable
+      // --now docker.service` here would have been the same accident as #628, minus
+      // the prompt that at least named it.
+      onLog(`Refusing to stop ${t.unit}${where} — free that port manually.`, "error");
     } else if (t.pid) {
       onLog(`Stopping ${t.label ?? `process ${t.pid}`}${where}...`, "warn");
       await tryExec(executor, `kill ${t.pid} 2>/dev/null || true`);

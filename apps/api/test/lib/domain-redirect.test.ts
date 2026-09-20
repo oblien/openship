@@ -6,7 +6,7 @@ import {
   normalizeRedirect,
   resolveRedirectStatus,
   resolveRouteRedirect,
-} from "../../src/lib/domain-redirect";
+} from "@repo/platform/engine/lib/domain-redirect";
 
 describe("normalizeRedirect", () => {
   it("normalizes a target the way hostnames are normalized everywhere else", () => {

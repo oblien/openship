@@ -5,11 +5,17 @@ import { ArrowUpRight, Loader2 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
 
-export function OpenStripePortalButton({ label }: { label?: string }) {
+export function OpenStripePortalButton({ label, enabled = false }: { label?: string; enabled?: boolean }) {
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const buttonLabel = label ?? t.billing.portal.openButton;
+
+  if (!enabled) return (
+    <a href="mailto:support@openship.io" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+      {t.billing.portal.supportButton}<ArrowUpRight className="size-3.5" />
+    </a>
+  );
 
   async function openPortal() {
     setPending(true);

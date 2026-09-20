@@ -1,36 +1,85 @@
 ---
-title: Webhooks API
-description: The unified inbound webhook endpoint that verifies provider signatures and turns a GitHub push into an auto-deploy.
+title: Webhooks
+description: Create incoming actions and inspect provider deliveries.
 ---
 
-The Webhooks API is a single **inbound** endpoint that receives event deliveries from external providers
-(GitHub, Stripe), verifies the delivery's cryptographic signature, and dispatches it to the matching handler.
-Its main job on a self-hosted instance is turning a GitHub **push** into an automatic redeploy of the
-project(s) linked to that repository. You don't call this endpoint yourself — GitHub and Stripe do.
+Incoming hooks trigger a saved deployment or job action. Provider webhooks receive signed events from
+services such as GitHub. Both record deliveries, but their authentication protocols differ.
 
-<Callout title="Base path & auth">
-This route lives under **`/api`** on your instance — `https://your-host/api/webhooks/:provider`. It is the
-one part of the API that takes **no bearer token and no session cookie**: it authenticates each delivery by
-verifying the provider's signature (GitHub HMAC-SHA256, Stripe signature) against a stored secret. See the
-[API overview](/docs/api) for the token-based auth used by every other module, and
-[Auth](/docs/security/auth) for the security model. Available on both self-hosted and cloud instances.
-</Callout>
+## Create an incoming hook
 
-## Endpoints
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
 
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/webhooks/:provider` | `public` | Receive a provider webhook (`github` or `stripe`), verify its signature, and dispatch it. |
+```ts
+const hook = await ship.webhooks.create("proj_123", {
+  name: "Deploy site",
+  actionType: "deploy",
+  authMode: "token",
+});
+console.log(hook.id, hook.url);
+```
 
-`:provider` must be `github` or `stripe`; any other value returns `404`. The route is public but
-signature-gated, rate-limited by the `webhook-ingress` policy (120 deliveries/min per source IP), and caps
-the request body at 5 MB.
+</Tab>
+<Tab value="REST API">
 
-<Callout title="Two other webhook endpoints live outside this module" type="info">
-Backup-provider callbacks are served at `/api/webhooks/backup` (a separate module), and Stripe billing
-events are handled at `/api/billing/webhook/stripe` (cloud-only). Both are documented with their own
-modules. Only `github` is registered on the unified `/:provider` dispatcher by default — see below.
-</Callout>
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/incoming-webhooks" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Deploy site","actionType":"deploy","authMode":"token"}'
+```
+
+</Tab>
+</Tabs>
+
+| Field | Use |
+| --- | --- |
+| `actionType` | Required: `deploy` or `job`. |
+| `name` | Display name; defaults to `Webhook`. |
+| `authMode` | `token` (default), `hmac`, or `none`; `none` is not allowed for jobs. |
+| `actionConfig.serviceId` / `serviceIds` | Restrict a deploy action to services within this project. |
+| `actionConfig.jobKey` | Required for a job action. |
+
+The returned hook includes its URL and, where authorized, a secret. Store that secret securely.
+Job hooks require project-write, job-write, and administration access to every job target server.
+
+## Invoke an authorized action
+
+Use this operation when your integration is already authenticated with Openship:
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.webhooks.invoke("proj_123", "hook_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/incoming-webhooks/hook_123/invoke" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+An external sender instead calls the hook's returned URL using its token or HMAC authentication.
+The dispatch rechecks the saved execution identity, current membership, and any saved credential limits.
+It does not replace the caller with the organization owner.
+
+Hooks that lack saved authority return `requiresReauthorization: true`. An authorized editor can rotate
+the hook or update it with `{ enabled: true }` to reauthorize it. Authority changes rotate the credential;
+update external senders to use the new secret.
+
+## Read deliveries
+
+`deliveries(projectId)` lists a project's events. `hookDeliveries(projectId, hookId)` selects one hook;
+`listDeliveries()` lists events visible across the selected organization. Pagination filters access
+before selecting the page.
 
 ## Dispatch a provider webhook
 
@@ -60,20 +109,13 @@ The dispatcher:
 ```bash
 # GitHub sends this automatically. Illustrative manual delivery — the signature
 # must be a valid HMAC-SHA256 of the exact body using the project's webhook secret:
-curl -X POST https://your-host/api/webhooks/github \
+curl -X POST "$OPENSHIP_URL/api/webhooks/github" \
   -H "Content-Type: application/json" \
   -H "X-GitHub-Event: ping" \
   -H "X-GitHub-Delivery: $(uuidgen)" \
   -H "X-Hub-Signature-256: sha256=<hmac-of-body>" \
   -d '{"zen":"Keep it simple."}'
 ```
-
-<Callout title="No CLI command for this endpoint" type="info">
-Webhooks are machine-to-machine, so there is no `openship` command that calls `/api/webhooks`. Instead,
-Openship registers the GitHub webhook — with a per-project signing secret — automatically when you link a
-repository to a project (see [`openship project`](/docs/cli/projects)). You never configure the URL or
-secret by hand.
-</Callout>
 
 ### Signature verification (GitHub)
 
@@ -111,7 +153,7 @@ When a verified `push` event arrives, the handler maps it to deployments like th
 
 Deep dive on wiring and edge cases: [Auto-deploy on push](/docs/guides/auto-deploy).
 
-## Errors you might see
+## Errors
 
 <Callout title="401 — invalid or missing signature" type="warn">
 The `X-Hub-Signature-256` header is absent, or the HMAC doesn't match the stored secret. This is expected
@@ -135,3 +177,31 @@ A verified delivery whose handler threw still returns `200` — on purpose, so G
 duplicate deploy. The failure detail is in the response body; check your instance logs for the
 `[Webhook] github handler error` entry.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the project’s incoming webhooks. | `webhooks.list(id)` | `GET /api/projects/:id/incoming-webhooks`<br />`project:read` |
+| Create an incoming hook with an authorized action and authentication mode. | `webhooks.create(id, input)` | `POST /api/projects/:id/incoming-webhooks`<br />`project:write` |
+| List project webhook deliveries. | `webhooks.deliveries(id, input?)` | `GET /api/projects/:id/webhook-deliveries`<br />`project:read` |
+| Update a hook and reauthorize its action when requested. | `webhooks.update(parentId, id, input)` | `PATCH /api/projects/:id/incoming-webhooks/:hookId`<br />`project:write` |
+| Rotate hook credentials and reauthorize execution. | `webhooks.rotate(parentId, id)` | `POST /api/projects/:id/incoming-webhooks/:hookId/rotate`<br />`project:write` |
+| Remove an incoming hook. | `webhooks.remove(parentId, id)` | `DELETE /api/projects/:id/incoming-webhooks/:hookId`<br />`project:write` |
+| Read one hook’s delivery history. | `webhooks.hookDeliveries(parentId, id, input?)` | `GET /api/projects/:id/incoming-webhooks/:hookId/deliveries`<br />`project:read` |
+| Invoke the hook’s saved action through the SDK. | `webhooks.invoke(parentId, id)` | `POST /api/projects/:id/incoming-webhooks/:hookId/invoke`<br />`project:write` |
+| Read webhook deliveries visible in the organization. | `webhooks.listDeliveries(input?)` | `GET /api/settings/webhook-deliveries`<br />`settings:read` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Receive a provider webhook (`github` or `stripe`), verify its signature, and dispatch it. | HTTP only | `POST /api/webhooks/:provider`<br />`Handler authentication` |
+| Trigger a backup from an inbound webhook (bearer token is the credential). | HTTP only | `POST /api/webhooks/backup`<br />`Handler authentication` |
+| Authenticate an incoming hook and dispatch its saved action. | HTTP only | `POST /api/webhooks/incoming/:id`<br />`Handler authentication` |
+
+{/* api-operations:end */}

@@ -3,6 +3,8 @@
     "title": "Kapasite ve Kullanım",
     "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
     "routes": "Ücretsiz rotalar",
+    "runningServices": "Çalışan hizmetler",
+    "projects": "Projeler",
     "workspaces": "Çalışma alanları",
     "unlimited": "Sınırsız",
     "used": "kullanıldı",
@@ -33,9 +35,10 @@
     "invoices": "Faturalar"
   },
   "portal": {
-    "openButton": "Stripe Portalını Aç",
+    "openButton": "Faturalandırma portalını aç",
     "errorMissingUrl": "Yanıtta portal URL'si bulunamadı",
-    "errorOpenFailed": "Stripe portalı açılamadı"
+    "errorOpenFailed": "Stripe portalı açılamadı",
+    "supportButton": "Destekle iletişime geç"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "Tekrar Bağlan"
     },
     "notEnabled": {
-      "title": "Bu organizasyon için faturalandırma etkin değil",
-      "description": "Faturalandırma yapılandırılmış ancak bu organizasyon için aktif değil. Etkinleştirmek için yöneticinizle iletişime geçin."
+      "title": "Cloud satın alımları henüz kullanılamıyor",
+      "description": "Openship abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
+    },
+    "notConfigured": {
+      "title": "Cloud faturalandırma kurulumu tamamlanmadı",
+      "description": "Openship’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen Openship desteğiyle iletişime geçin."
+    },
+    "forbidden": {
+      "title": "Faturalandırmaya erişiminiz yok",
+      "description": "Kuruluş sahibinizden size faturalandırma erişimi vermesini isteyin."
+    },
+    "signInRequired": {
+      "title": "Faturalandırmayı görüntülemek için giriş yapın",
+      "description": "Oturumunuz doğrulanamadı. Devam etmek için tekrar giriş yapın.",
+      "signIn": "Giriş yap"
+    },
+    "loadFailed": {
+      "title": "Faturalandırma yüklenemedi",
+      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse Openship desteğiyle iletişime geçin."
     }
   },
   "plansRoute": {
     "loadError": "Planlar yüklenemedi",
     "genericError": "Bir sorun oluştu",
     "tryAgain": "Tekrar dene",
-    "checkoutError": "Ödeme adımı başlatılamadı"
+    "checkoutError": "Ödeme adımı başlatılamadı",
+    "replacementNotice": "Planı veya faturalandırma aralığını değiştirmek, ödeme sonrasında seçilen tam fiyatla yeni bir dönem başlatır. Otomatik orantılı ücret hesaplaması yapılmaz.",
+    "changeViaSupport": "Mevcut aboneliğinizi değiştirmek için destekle iletişime geçin.",
+    "billingUnavailable": "Bu hesap için satın alma henüz kullanılamıyor."
   },
   "pricing": {
     "custom": "Özel",
@@ -74,23 +97,31 @@
     "currentPlan": "Mevcut plan",
     "contactSales": "Satış ekibiyle iletişime geçin",
     "freeForever": "Sonsuza kadar ücretsiz",
-    "upgrade": "Yükselt"
+    "upgrade": "Yükselt",
+    "billingInterval": "Faturalandırma aralığı",
+    "monthly": "Aylık",
+    "annual": "Yıllık",
+    "billedAnnually": "Yıllık faturalandırılır"
   },
   "topups": {
     "loadError": "Kredi paketleri yüklenemedi",
-    "title": "Kredi yükle",
-    "description": "Stripe üzerinden ücretlendirilen tek seferlik kredi paketleri. Kredilerin süresi dolmaz ve aylık kotanıza eklenir.",
+    "title": "Cloud kullanımı ekle",
+    "description": "Derlemeler ve uygulamalar için tek seferlik kullanım. Proje, derleme süresi veya servis limitlerini değiştirmeden bakiyenizi artırır.",
     "tryAgain": "Tekrar dene",
-    "credits": "kredi",
+    "credits": "Krediler",
     "redirecting": "Yönlendiriliyor…",
     "buy": "Satın Al",
     "empty": "Şu anda kullanılabilir kredi paketi yok.",
     "receiptsTitle": "Son kredi yüklemeleri",
-    "receiptsDescription": "Makbuzlar Stripe üzerinden yönetilir — fatura geçmişinizi görüntülemek ve makbuzları indirmek için faturalandırma portalını açın.",
+    "receiptsDescription": "Ek kullanım satın alımlarınızın makbuzlarını görüntüleyin.",
     "opening": "Açılıyor…",
-    "openPortal": "Stripe Portalını Aç",
+    "openPortal": "Faturalandırma portalını aç",
     "checkoutError": "Ödeme adımı başlatılamadı",
-    "portalError": "Faturalandırma portalı açılamadı"
+    "portalError": "Faturalandırma portalı açılamadı",
+    "extraUsage": "Ek kullanım",
+    "prepaidUsage": "Ön ödemeli kullanım",
+    "allowanceEquivalent": "bir fatura dönemine dahil kullanımın oranı",
+    "oneTime": "Tek seferlik ödeme"
   },
   "overview": {
     "creditsLeft": "kalan kredi",
@@ -100,7 +131,6 @@
     "resetsInDay": "{n} gün içinde",
     "resetsInDays": "{n} gün içinde",
     "none": "—",
-    "upgradeToPro": "Pro Plana Yükselt",
     "recentActivity": "Son etkinlikler",
     "last7Days": "Son 7 gün",
     "viewFullUsage": "Tüm kullanımı görüntüle",
@@ -122,7 +152,7 @@
       "balance": "Bakiye",
       "balanceSuffix": "toplam {limit} kredi",
       "consumed": "Bu dönemde tüketilen",
-      "credits": "kredi",
+      "credits": "Krediler",
       "burnRate": "Tüketim hızı",
       "burnRateSuffix": "kredi/gün (son 7 gün)",
       "projected": "Dönem sonu kullanım tahmini",
@@ -134,11 +164,11 @@
     },
     "chart": {
       "title": "Zaman içindeki kullanım",
-      "subtitle": "Her {unit} için ölçülen birimler yığılmış olarak gösterilir."
+      "subtitle": "{unit} başına Cloud kredisi."
     },
     "breakdown": {
       "title": "Kaynak dağılımı",
-      "subtitle": "Krediler, seçilen aralıktaki ölçülmüş kaynak kullanımına orantılı olarak dağıtılır.",
+      "subtitle": "Seçilen tarihlerdeki gerçek kaynak kullanımı. Toplam Cloud kredileri yukarıda gösterilir.",
       "resource": "Kaynak",
       "units": "Birimler",
       "credits": "Krediler",
@@ -147,10 +177,22 @@
       "empty": "Seçilen aralıkta kullanım bulunamadı."
     },
     "resources": {
-      "cpu": { "label": "CPU süresi", "units": "vCPU-saat" },
-      "memory": { "label": "Bellek", "units": "GB-saat" },
-      "disk": { "label": "Disk G/Ç", "units": "GB" },
-      "network": { "label": "Ağ", "units": "GB" }
+      "cpu": {
+        "label": "CPU süresi",
+        "units": "vCPU-saat"
+      },
+      "memory": {
+        "label": "Bellek",
+        "units": "GB-saat"
+      },
+      "disk": {
+        "label": "Disk etkinliği",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Veri aktarımı",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Çalışma Alanı",
@@ -187,15 +229,177 @@
       "incomplete": "Tamamlanmamış",
       "incomplete_expired": "Süresi Doldu",
       "unpaid": "Ödenmemiş",
-      "paused": "Duraklatıldı"
-    }
+      "paused": "Duraklatıldı",
+      "credit_exhausted": "Cloud duraklatıldı"
+    },
+    "includedTitle": "Neler dahil",
+    "perYear": "${price}/yıl"
   },
   "paymentPanel": {
     "title": "Ödeme yöntemi",
-    "description": "Kartlar, banka hesapları ve faturalandırma bilgileri Stripe Müşteri Portalı üzerinden yönetilir. Ödeme yöntemlerinizi eklemek, kaldırmak veya güncellemek için portalı açın."
+    "description": "Ödeme yöntemlerinizi ve fatura bilgilerinizi yönetin."
   },
   "invoicesPanel": {
     "title": "Faturalar",
-    "description": "Faturalar ve makbuzlar Stripe Müşteri Portalı'nda yer alır. Fatura geçmişinizi görüntülemek ve PDF faturalarınızı indirmek için portalı açın."
+    "description": "Fatura geçmişinizi ve faturalarınızı görüntüleyin veya talep edin."
+  },
+  "subscription": {
+    "title": "Abonelik",
+    "renewsOn": "{date} tarihinde yenilenir",
+    "endsOn": "Yenileme durduruldu. Aboneliğiniz {date} tarihinde sona erer.",
+    "endsAtPeriodEnd": "Yenileme durduruldu. Aboneliğiniz ödenen dönemin sonunda sona erer.",
+    "renewalEnabled": "Otomatik yenileme etkin.",
+    "ended": "Abonelik sona erdi. Yeniden abone olmak için bir plan seçin.",
+    "billedMonthly": "Aylık faturalandırılır",
+    "cancel": "Aboneliği iptal et",
+    "resume": "Yenilemeyi sürdür",
+    "cancelNotice": "Ödenen dönem sonunda yenileme durdurulacak. Aboneliğiniz o zamana kadar devam eder.",
+    "confirmCancel": "Yenilemeyi durdur",
+    "keepPlan": "Aboneliği koru",
+    "error": "Aboneliğiniz güncellenemedi. Lütfen tekrar deneyin."
+  },
+  "checkout": {
+    "checking": "Cloud planınız ve bakiyeniz güncelleniyor. Ödemenin işlenmesi biraz sürebilir.",
+    "active": "Cloud planınız etkin.",
+    "pending": "Ödemeniz hâlâ işleniyor olabilir. Planınızı ve bakiyenizi kontrol etmek için bu sayfayı yenileyin. Tamamlanmış bir ödeme görünmüyorsa destekle iletişime geçin.",
+    "support": "Destekle iletişime geç"
+  },
+  "deployGate": {
+    "title": "Dağıtım için bir plan seçin",
+    "description": "Proje oluşturmak, kod derlemek ve uygulama çalıştırmak için ücretli bir Cloud planı gereklidir.",
+    "preserved": "Proje ayarlarınız burada korunur. Ödeme yeni bir sekmede açılır; devam etmek için planınızı etkinleştirdikten sonra buraya dönün.",
+    "close": "Projeye dön",
+    "checkPlan": "Planı kontrol et",
+    "loading": "Cloud planınız yükleniyor…",
+    "loadError": "Cloud planınız yüklenemedi. Tekrar deneyin.",
+    "ownerRequired": "Cloud planını seçmesini veya yönetmesini çalışma alanınızın sahibinden isteyin.",
+    "readyTitle": "Projenize dönün",
+    "ready": "Cloud planınız güncellendi. Bu pencereyi kapatıp tekrar deneyin.",
+    "pending": "Planınız henüz değişmedi. Ödemeyi tamamlayıp tekrar kontrol edin.",
+    "blockedTitle": "Cloud planınız için işlem gerekiyor",
+    "creditsTitle": "Cloud kullanım hakkı tükendi",
+    "creditsDescription": "Devam etmek için kullanım ekleyin veya daha büyük bir plan seçin. Ek kullanım proje, derleme süresi veya servis limitlerini artırmaz.",
+    "paymentDescription": "Dağıtıma devam etmek için ödeme veya abonelik bilgilerinizi güncelleyin.",
+    "pausedDescription": "Bu çalışma alanında Cloud dağıtımı duraklatıldı. Erişimi yeniden açmak için destekle iletişime geçin.",
+    "upgradeTitle": "Bu proje daha fazla kapasite gerektiriyor",
+    "upgradeDescription": "Yeterli kapasitesi olan bir plan seçin veya projenizi düzenleyip tekrar deneyin.",
+    "manageBilling": "Faturalandırmayı yönet",
+    "topups": "Kullanım ekle",
+    "checkoutOpened": "Ödeme ayrı bir sekmede hazır. Açılmadıysa aşağıdaki bağlantıyı kullanın.",
+    "continueCheckout": "Ödemeye devam et",
+    "reasons": {
+      "static-only": "Planınız bu uygulama türünü içermiyor. Dağıtmak için destekleyen bir plan seçin.",
+      "build-minutes-exhausted": "Aylık derleme süresi sınırına ulaştınız. Daha büyük bir plan seçin veya derleme kotanızın yenilenmesini bekleyin.",
+      "free-subdomain-limit": "Planınızdaki tüm Cloud alt alan adlarını kullandınız. Daha büyük bir plan seçin veya kullanılmayan bir alt alan adını kaldırın.",
+      "resource-tier": "Bu proje, planınızın izin verdiğinden daha fazla CPU veya bellek gerektiriyor. Daha büyük bir plan seçin veya proje ayarlarında kaynakları azaltın.",
+      "running-services": "Çalışan hizmet sınırına ulaştınız. Daha büyük bir plan seçin veya artık gerek duymadığınız bir hizmeti durdurun.",
+      "project-limit": "Proje sınırına ulaştınız. Daha büyük bir plan seçin veya artık gerek duymadığınız bir projeyi silin."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Cloud kullanımı nasıl hesaplanır?",
+    "credits": "Cloud kredileri",
+    "creditsHint": "Derlemeler ve çalışan uygulamalar CPU, bellek, disk etkinliği ve veri aktarımı için kredi tüketir. Daha büyük iş yükleri kredileri daha hızlı tüketir.",
+    "creditsPerCycle": "Fatura dönemi başına {amount} kredi",
+    "buildTime": "Derleme süresi",
+    "buildMinutes": "Ayda {amount} dk",
+    "buildHint": "Kodunuzu derlemek için harcanan süre. 5 dakikalık bir derleme, aylık hakkınızdan 5 dakika kullanır.",
+    "apps": "Çalışan hizmetler",
+    "appsHint": "Aynı anda çalışan uygulamalar, veritabanları ve arka plan görevleri. Çalışan her Compose hizmeti bu sınıra dahil edilir.",
+    "machine": "Hizmet başına CPU ve bellek",
+    "machineHint": "Bir hizmet için seçilebilen en yüksek CPU ve bellek boyutudur. Bu bir sınırdır, ortak bakiye değildir.",
+    "projects": "Projeler",
+    "projectsHint": "Taslaklar dahil, çalışma alanınızda kayıtlı projeler.",
+    "routesHint": "Uygulamalarınızın herkese açık Cloud adresleri.",
+    "unlimited": "Belirlenmiş sınır yok",
+    "notIncluded": "Dahil değil",
+    "noPlan": "Cloud planı yok",
+    "setupOnly": "Abonelik gerekli",
+    "setupHint": "Proje oluşturmak, kod derlemek ve uygulama çalıştırmak için bir Cloud planı seçin.",
+    "includedTitle": "Kaynaklarınız",
+    "limitsHint": "Planınızdaki projeler, çalışan servisler ve aylık derleme süresi.",
+    "balanceRule": "Kullanım hakkı bitince uygulamalar duraklatılır. Devam etmek için kullanım ekleyin veya kaynak limitlerini artırmak için planınızı yükseltin.",
+    "reset": "Derleme kotası {date} tarihinde yenilenir",
+    "cpuHint": "Zaman içindeki işlem gücü kullanımıdır. 1 vCPU’nun 1 saat çalışması 1 vCPU-saat eder.",
+    "memoryHint": "Zaman içindeki bellek kullanımıdır. 1 GB belleğin 1 saat kullanılması 1 GB-saat eder.",
+    "diskHint": "Uygulamalarınızın okuduğu ve yazdığı verilerdir. Depolanan veri boyutunu değil, disk etkinliğini gösterir.",
+    "networkHint": "Uygulamalarınızın gönderdiği ve aldığı veriler.",
+    "usageMeaning": "Bu değer nasıl okunur?",
+    "selectedRange": "Bu tarih aralığında kullanılan krediler",
+    "usageHint": "Seçilen tarihlerdeki gerçek CPU, bellek, disk etkinliği ve veri aktarımı kullanımı.",
+    "creditsChart": "{unit} başına Cloud kredisi.",
+    "allProjects": "Tüm projeler",
+    "from": "Başlangıç (UTC)",
+    "to": "Bitiş, gün dahil (UTC)",
+    "invalidRange": "Başlangıç tarihiyle aynı veya daha sonraki bir bitiş tarihi seçin.",
+    "moreFeatures": "Diğer özellikler",
+    "usageAllowance": "Cloud kullanımı",
+    "usageIncluded": "Ortak kullanım hakkı dahil",
+    "usageSummary": "Derlemeler ve çalışan uygulamalar ortak bir kullanım hakkını paylaşır. Daha büyük makineler ve daha uzun çalışma süreleri daha fazla tüketir.",
+    "usageDetails": "Kullanım ayrıntıları",
+    "usagePercent": "%{percent} kullanıldı"
+  },
+  "onboarding": {
+    "workspaceDescription": "Proje oluşturmak, kod derlemek ve uygulamalarınızı çalıştırmak için bir Cloud planı seçin. Abonelik öncesinde proje veya işlem kaynağı dahil değildir.",
+    "includedCredits": "Dahil olan Cloud kredileri",
+    "noFreeCompute": "Ücretsiz Cloud işlem kaynağı yok",
+    "planRequired": "Plan gerekli",
+    "savedCredits": "Saklanan kullanım bakiyesi",
+    "savedCreditsHint": "Ön ödemeli kullanımınız bu çalışma alanında kalır. Cloud dağıtımlarında kullanmak için bir plan seçin.",
+    "offerTitle": "Openship Cloud üzerinde yayına çıkın",
+    "offerLabel": "Dağıtıma başlayın",
+    "offerDescription": "Projeleriniz için bir yer, uygulamalarınız için derleme süresi ve kaynaklar.",
+    "startingWith": "{name} ile başlayın",
+    "subscribe": "{name} planına abone olun",
+    "compare": "Tüm planları karşılaştırın",
+    "checkoutNote": "Abone olmadan önce ödeme bilgilerinizi inceleyin.",
+    "choosePlan": "Plan seçin",
+    "stepsTitle": "Projeden üretime",
+    "stepPlan": "Planınızı seçin",
+    "stepPlanHint": "İhtiyacınız olan proje, servis ve derleme süresini seçin.",
+    "stepCheckout": "Ödemeyi tamamlayın",
+    "stepCheckoutHint": "Ödeme sonrası Cloud planınız etkinleşir.",
+    "stepDeploy": "Projenizi dağıtın",
+    "stepDeployHint": "Projenizi oluşturun ve Dağıt düğmesine basın.",
+    "usageTitle": "Cloud kullanımınız burada başlar",
+    "usageDescription": "Derleme ve uygulama kullanımını görmek için ücretli bir planla dağıtım yapın.",
+    "paymentTitle": "Henüz ödeme yöntemi yok",
+    "paymentDescription": "Ödeme sırasında bir ödeme yöntemi ekleyin. İlk satın alımdan sonra buradan yönetebilirsiniz.",
+    "invoicesTitle": "Henüz fatura yok",
+    "invoicesDescription": "Fatura ve makbuzlarınız ilk ödemeden sonra görünür.",
+    "topupsTitle": "Bir Cloud planıyla başlayın",
+    "topupsDescription": "Planınız derlemeler ve uygulamalar için kullanım içerir. Aboneliğiniz etkinleştikten sonra daha fazla ekleyebilirsiniz.",
+    "compareTitle": "Projeleriniz için doğru planı bulun",
+    "compareDescription": "Projeleri, servisleri, derleme süresini ve her uygulama için CPU ile belleği karşılaştırın.",
+    "savedProjects": "Çalışma alanınızda {count} kayıtlı proje kalır. Daha fazlasını eklemek için abone olun."
+  },
+  "resourceOverview": {
+    "overviewHint": "Çalışma alanınızın kullanımı, kalan hakları ve plan sınırları.",
+    "remaining": "{amount} kaldı",
+    "unavailable": "Kullanım alınamadı",
+    "measuredUsage": "Bu dönemde ölçülen",
+    "sharedCompute": "Ortak işlem kotanızı kullanır",
+    "computeTitle": "İşlem kullanımı",
+    "computeHint": "CPU, bellek, disk etkinliği ve uygulama aktarımı ortak kotayı kullanır. Derlemeler ve çalışan uygulamalar dahildir.",
+    "cpu": "CPU süresi",
+    "cpuHint": "1 vCPU-h, bir CPU çekirdeğinin bir saat kullanılmasıdır. Uygulamanın açık kaldığı süreyi değil, yapılan işi ölçer.",
+    "memory": "Bellek süresi",
+    "memoryHint": "1 GB-h, bir saat boyunca ayrılan 1 GB bellektir.",
+    "disk": "Disk etkinliği",
+    "diskHint": "Uygulama disklerinden okunan ve yazılan veriler. Depolama alanı değildir.",
+    "transfer": "Uygulama veri aktarımı",
+    "transferHint": "Uygulamalarınızın gelen ve giden verileri. Edge trafiği ayrı gösterilir.",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Edge veri aktarımı",
+    "bandwidthHint": "Çalışma alanınızın Edge rotalarındaki gelen ve giden trafik. Aylık kota işlem kotasından ayrıdır. Sınırda rotalar yenilenme veya yükseltmeye kadar duraklatılır.",
+    "requests": "Edge istekleri",
+    "requestsHint": "Çalışma alanınızın Edge rotalarında karşılanan HTTP istekleri. Fatura kayıtları veya API çağrıları değil, ziyaretçi istekleridir.",
+    "requestsIncluded": "Trafik kotanıza dahildir",
+    "partialError": "Bazı kullanım verileri yüklenemedi. Yenileyerek tekrar deneyin.",
+    "refresh": "Kaynak kullanımını yenile",
+    "period": "{start} – {end}",
+    "currentPeriod": "Geçerli fatura dönemi",
+    "viewUsage": "Ayrıntılı kullanımı görüntüle",
+    "bandwidthPerMonth": "{amount} GB / ay"
   }
 }

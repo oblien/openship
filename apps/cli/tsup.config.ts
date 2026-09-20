@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { defineConfig } from "tsup";
 
 // Inline the package version at build time so the CLI reports the released
@@ -6,6 +6,10 @@ import { defineConfig } from "tsup";
 const { version } = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ) as { version: string };
+
+// tsup runs config entries concurrently. Clean once before any bundle starts,
+// otherwise the main bundle can erase an already-emitted executable wrapper.
+rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });
 
 // Both bundles need the CJS-compat shim so esbuild's __require helper works
 // under Node ESM. The bundle is ESM, but @repo/adapters transitively pulls CJS
@@ -22,9 +26,7 @@ const CJS_SHIM = [
 ].join("\n");
 
 // Two bundles because each needs its OWN shebang and tsup's `banner` is
-// per-config, not per-entry. Configs run in array order, so Bundle 1's
-// `clean: true` wipes dist/ before Bundle 2 (which must NOT clean) writes
-// dist/node-entry.js beside it.
+// per-config, not per-entry. The output directory is cleaned once above.
 export default defineConfig([
   // ── Bundle 1: dist/index.js — the polyglot sh/JS launcher ──────────────
   // The first two banner lines are a sh/JS POLYGLOT launcher, not a plain
@@ -42,7 +44,7 @@ export default defineConfig([
     entry: { index: "src/index.ts" },
     format: ["esm"],
     dts: true,
-    clean: true,
+    clean: false,
     define: { __CLI_VERSION__: JSON.stringify(version) },
     // Bundle the workspace packages (@repo/core, @repo/onboarding) INTO the
     // output. They're never published to npm, so an npx-installed `openship`
@@ -77,11 +79,17 @@ export default defineConfig([
     // "./index.js"` that loads the sibling polyglot bundle (Node strips its
     // sh shebang on import). No CJS shim needed here — the wrapper bundles
     // nothing.
+    //
+    // `./node-bootstrap.js` (Bundle 3) is external for a second, stronger reason:
+    // node-entry.js is the ONE file that has to parse on the old Node it is
+    // diagnosing. Inlining the recovery code would put that whole import chain
+    // inside the gate, so one modern-syntax dependency anywhere in it would break
+    // the gate with the same SyntaxError the gate exists to replace.
     esbuildPlugins: [
       {
         name: "keep-index-external",
         setup(build) {
-          build.onResolve({ filter: /^\.\/index\.js$/ }, (args) => ({
+          build.onResolve({ filter: /^\.\/(index|node-bootstrap)\.js$/ }, (args) => ({
             path: args.path,
             external: true,
           }));
@@ -91,5 +99,20 @@ export default defineConfig([
     banner: {
       js: "#!/usr/bin/env node",
     },
+  },
+
+  // ── Bundle 3: dist/node-bootstrap.js — old-Node recovery ────────────────
+  // Imported (never executed) by node-entry.js when the runtime is below the
+  // floor: reuse a vendored Node, or offer to fetch one via the same
+  // ensureNodeRuntime() `openship update` calls. Its own bundle so the gate can
+  // load it with `await import()` in a try/catch — see the note above.
+  //
+  // Must stay dependency-free: the whole point is that it parses and runs on the
+  // old Node being recovered. node-runtime → cache → paths is node-builtins-only
+  // today, and node-entry-gate.test.ts fails if a third-party import creeps in.
+  {
+    entry: { "node-bootstrap": "src/node-bootstrap.ts" },
+    format: ["esm"],
+    clean: false,
   },
 ]);

@@ -32,7 +32,8 @@
       "total": "Toplam",
       "successful": "Başarılı",
       "failed": "Başarısız",
-      "inProgress": "Devam Ediyor"
+      "inProgress": "Devam Ediyor",
+      "pageTitle": "Bu sayfada"
     },
     "autoDeploy": {
       "title": "Otomatik Dağıtım",
@@ -69,6 +70,7 @@
     "actionRequired": "İşlem gerekiyor",
     "rejected": "Reddedildi",
     "verifying": "Doğrulanıyor",
+    "noChanges": "Değişiklik yok",
     "pending": "Beklemede"
   },
   "serviceStatus": {
@@ -168,6 +170,7 @@
     "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı",
     "rollbackModeInstant": "Anında geri yükleme — bu sürümün saklanan imajı kullanılır, yeniden derleme yok.",
     "rollbackModeRebuild": "Yeniden derleme — bu sürümün imajı sunucuda yok, commit'i tekrar derlenecek.",
+    "rollbackModeReacquireImage": "Kayıt deposundan geri yükleme — bu sürüm için kaydedilen tam imaj referansını yeniden çeker; kaynak yeniden derlenmez.",
     "rollbackModeMixed": "Çoğunlukla anında — {count} servis imajını yitirdi ve yeniden derlenecek."
   },
   "rollbackConfirm": {
@@ -189,5 +192,14 @@
     "untouchedNote": "Bunlar çalışmaya devam eder ve değiştirilmez: {names}",
     "confirm": "Geri dön",
     "cancel": "İptal"
+  },
+  "loadFailed": "Dağıtımlar yüklenemedi.",
+  "retry": "Tekrar dene",
+  "pagination": {
+    "label": "Dağıtım geçmişi sayfaları",
+    "previous": "Önceki sayfa",
+    "next": "Sonraki sayfa",
+    "pageOf": "Sayfa {page} / {total}",
+    "range": "{total} dağıtımdan {from}–{to}"
   }
 }

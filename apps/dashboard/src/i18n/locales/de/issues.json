@@ -1,8 +1,9 @@
 {
-  "title": "Probleme",
+  "title": "Monitoring",
   "subtitle": "Alles, was Openship in deinen Projekten, Servern und Domains gefunden hat.",
   "tabs": {
     "open": "Offen",
+    "health": "Gesundheit",
     "resolved": "Behoben"
   },
   "resolvedNote": "Der Verlauf umfasst Container- und Server-Vorfälle — die übrigen Prüfungen melden den aktuellen Zustand, ein behobenes Zertifikat oder Deployment verschwindet hier also einfach.",

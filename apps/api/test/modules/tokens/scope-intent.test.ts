@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveScopeIntent } from "../../../src/modules/tokens/token.controller";
+import { resolveScopeIntent } from "@repo/platform/engine/modules/tokens/token.service";
 
 /**
  * The scoped-vs-unscoped decision, which both mint paths (PAT create + MCP

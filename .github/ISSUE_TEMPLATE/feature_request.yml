@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest new functionality for OpenShip
+title: "[Feature]: "
+labels: ["enhancement"]
+type: feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature. Explain the problem first so we can evaluate the best solution.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Existing issue
+      description: Search the existing issues before submitting a new request.
+      options:
+        - label: I have searched the existing issues and found no duplicate.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem would this feature solve, and who would benefit from it?
+      placeholder: Describe the need rather than only the proposed implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe how you would like the feature to work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative solutions you have considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mockups, links, examples, or any other useful context.
+    validations:
+      required: false

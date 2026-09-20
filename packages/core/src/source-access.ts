@@ -342,12 +342,95 @@ export function serializeSourceAccessScope(
 }
 
 /**
+ * Are all segments from `i` onward `**`? Such a tail matches ANY remainder,
+ * including none — the property that makes `src/**` cover `src` itself.
+ */
+function tailIsAllDoubleStar(segs: readonly string[], i: number): boolean {
+  for (let k = i; k < segs.length; k++) if (segs[k] !== "**") return false;
+  return true;
+}
+
+/**
+ * Is every single segment matched by `cand` also matched by `env`? Both are
+ * within-segment patterns — neither is `**`.
+ *
+ * Conservative on partial globs: a candidate containing `*` is accepted only
+ * against `*` (which matches every segment) or against an identical pattern.
+ * Deciding `a*b` ⊆ `a*` in general is regular-language inclusion, and getting it
+ * subtly wrong here WIDENS a grant, so everything else is refused. The picker
+ * never authors partial globs (see `patternFor`) — they arrive only via free text.
+ */
+function segmentIsSubset(cand: string, env: string): boolean {
+  if (env === "*") return true;
+  if (cand === env) return true;
+  if (cand.includes("*")) return false;
+  return segmentMatches(cand, env);
+}
+
+/**
+ * Is every path matched by `candidate` also matched by `envelope`? Compares the
+ * two as PATTERNS, segment by segment.
+ *
+ * Sound, not complete: it may refuse a containment that genuinely holds (e.g.
+ * `a/x` inside `**` + `/x`, where the envelope's `**` is followed by more
+ * segments), but it never accepts one that does not. That asymmetry is the whole
+ * requirement — a false positive at mint time widens a grant, a false negative
+ * only refuses one.
+ *
+ * The rules, and why each is needed:
+ *   • an envelope `**` whose tail is all `**` absorbs the candidate's remainder.
+ *   • an envelope `**` followed by real segments is matched ONLY by a candidate
+ *     `**` in the same position — a candidate of bounded width cannot be shown to
+ *     land on the envelope's post-`**` segments.
+ *   • a candidate `**` is otherwise NEVER covered: it spans whole segments, and
+ *     every non-`**` envelope segment (`*`, `dir`, `a*`) spans exactly one.
+ *   • candidate exhausted ⇒ the envelope's remaining segments must all be `**`.
+ */
+function patternIsSubset(candidate: string, envelope: string): boolean {
+  const c = candidate.split("/");
+  const e = envelope.split("/");
+
+  let ci = 0;
+  let ei = 0;
+  while (ci < c.length) {
+    if (ei >= e.length) return false; // envelope ran out; the candidate still reaches
+    if (e[ei] === "**") {
+      if (tailIsAllDoubleStar(e, ei)) return true; // covers everything left
+      if (c[ci] !== "**") return false; // bounded "**": only a candidate "**" lines up
+      ci++;
+      ei++;
+      continue;
+    }
+    if (c[ci] === "**") return false; // one-segment envelope can't hold a "**"
+    if (!segmentIsSubset(c[ci]!, e[ei]!)) return false;
+    ci++;
+    ei++;
+  }
+  // Candidate exhausted: the envelope must not still require segments.
+  return tailIsAllDoubleStar(e, ei);
+}
+
+/**
  * Is `candidate` entirely contained by `envelope`?
  *
  * Used at mint time: a token's scope must never exceed the minter's own. Every
- * candidate pattern has to be covered by some envelope pattern. Patterns are
- * compared by MATCHING the candidate pattern's literal prefix against the
- * envelope — `src/**` ⊆ `**`, and `src/**` ⊄ `src/a/**`.
+ * candidate pattern has to be covered by some SINGLE envelope pattern — so
+ * `src/**` ⊆ `**`, and `src/**` ⊄ `src/a/**`. (Coverage by the UNION of two
+ * envelope patterns is refused. That fails closed, and no picker output needs it.)
+ *
+ * This compares pattern against pattern. It used to synthesize a probe PATH from
+ * the candidate — each `**` replaced by ONE literal segment — and match that
+ * against the envelope. That silently dropped `**`'s depth-spanning reach: a `*`
+ * envelope segment matches one segment, so it "covered" the probe, and a minter
+ * scoped to `src/*` could mint `src/**` (the whole subtree). For `["**"]` it also
+ * cleared `grantsWholeRepo`, i.e. the clone-token tier — GHSA-qv27-39pc-qw9f
+ * finding 3.
+ *
+ * Widening the probe to two segments does NOT fix this. It relocates the boundary
+ * one level down and newly accepts `**` ⊆ `*` + `/*`, which is false and fails
+ * closed today. `**` has unbounded reach, so no fixed-depth witness path can stand
+ * in for it — the comparison has to be structural. Both directions are pinned in
+ * source-access.test.ts so a future "simplification" cannot reopen either.
  */
 export function scopeIsSubset(
   candidate: readonly string[],
@@ -358,14 +441,10 @@ export function scopeIsSubset(
   return candidate.every((raw) => {
     const pattern = normalizeRepoPattern(raw);
     if (pattern === null) return false;
-    // A pattern is covered when the envelope grants its most permissive reach.
-    // Replace trailing "**" with a probe segment so "src/**" tests as a path
-    // under src rather than as the literal string "src/**".
-    const probe = pattern
-      .split("/")
-      .map((s) => (s === "**" ? " probe" : s))
-      .join("/")
-      .replace(/ probe/g, "__any__");
-    return matchesAny(probe, envelope) || matchesAny(pattern, envelope);
+    return envelope.some((rawEnv) => {
+      const env = normalizeRepoPattern(rawEnv);
+      if (env === null) return false; // ignore a bad rule; never let it widen access
+      return patternIsSubset(pattern, env);
+    });
   });
 }

@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useProjectTabNavigation } from "@/hooks/useProjectTabNavigation";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AppLogo } from "@/components/AppLogo";
 import { DomainSwitcher } from "@/components/routing/DomainSwitcher";
 import { formatDate } from "@/utils/date";
-import { getProjectStatus, PROJECT_STATUS_META, projectStatusLabel } from "@/utils/project-status";
+import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import {
   LayoutDashboard,
   Activity,
@@ -17,14 +18,13 @@ import {
   GitBranch,
   Wrench,
   ScrollText,
-  AlertTriangle,
   Layers,
   ExternalLink,
   DatabaseBackup,
-  Webhook,
   Plus,
   HeartPulse,
   MonitorSmartphone,
+  Waypoints,
 } from "lucide-react";
 
 const TAB_ICONS: Record<
@@ -32,18 +32,17 @@ const TAB_ICONS: Record<
   React.ComponentType<{ className?: string; strokeWidth?: number }>
 > = {
   overview: LayoutDashboard,
+  topology: Waypoints,
   monitoring: Activity,
   services: Layers,
   domains: Globe,
   deployments: Rocket,
   health: HeartPulse,
   source: GitBranch,
-  webhooks: Webhook,
   runtime: Wrench,
   settings: Wrench,
   logs: ScrollText,
   backup: DatabaseBackup,
-  advanced: AlertTriangle,
 };
 
 /**
@@ -68,18 +67,16 @@ export const ProjectSidebar = () => {
   const {
     projectData,
     projectNotFound,
-    activeTab,
+    activeTabGroup,
     tabs,
-    setActiveTab,
     access,
     domainsData,
     selectedDomain,
     setSelectedDomain,
     setPendingDomainAction,
   } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
   const { t } = useI18n();
-  const status = getProjectStatus(projectData);
-  const meta = PROJECT_STATUS_META[status];
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
 
   // Route switch: pick which domain the Production line shows/opens (shared via
@@ -122,13 +119,6 @@ export const ProjectSidebar = () => {
     }
   };
 
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
-  };
-
   if (!projectData.id || projectNotFound) {
     return null;
   }
@@ -167,12 +157,10 @@ export const ProjectSidebar = () => {
               </div>
             </div>
           </div>
-          <span
-            className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-            {projectStatusLabel(status, t)}
-          </span>
+          <ProjectStatusBadge
+            project={projectData}
+            className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+          />
         </div>
 
         <div className="mt-4 space-y-3">
@@ -253,11 +241,12 @@ export const ProjectSidebar = () => {
         <div className="space-y-1">
           {tabs.map((tab) => {
             const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-            const isActive = activeTab === tab.id;
+            const isActive = activeTabGroup === tab.id;
             return (
               <Link
                 key={tab.id}
                 href={`/projects/${projectData.id}/${tab.id}`}
+                aria-current={isActive ? "page" : undefined}
                 onClick={(e) => {
                   // Let modified/middle clicks open the tab in a new browser tab;
                   // a plain click switches client-side (snappy, keeps scroll).
@@ -290,15 +279,9 @@ export const ProjectSidebar = () => {
 
 /** Mobile horizontal scroll tabs - rendered above content in left column */
 export const ProjectMobileTabs = () => {
-  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domainsData } = useProjectSettings();
+  const { projectData, projectNotFound, activeTabGroup, tabs, domainsData } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
-
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
-  };
 
   if (!projectData.id || projectNotFound) {
     return null;
@@ -309,11 +292,12 @@ export const ProjectMobileTabs = () => {
       <div className="flex items-center gap-1 overflow-x-auto py-2.5 scrollbar-hide">
         {tabs.map((tab) => {
           const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-          const isActive = activeTab === tab.id;
+          const isActive = activeTabGroup === tab.id;
           return (
             <Link
               key={tab.id}
               href={`/projects/${projectData.id}/${tab.id}`}
+              aria-current={isActive ? "page" : undefined}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                 e.preventDefault();

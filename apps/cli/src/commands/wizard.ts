@@ -35,7 +35,7 @@ import {
 import { isValidEmail } from "@repo/core";
 import { startService, normalizeUrl } from "./up";
 import {
-  ensureInternalToken,
+  internalFetch,
   internalGet,
   internalPost,
   bootstrapAdmin,
@@ -57,12 +57,17 @@ import {
 import { runRepair, looksCorrupted, lastServiceError } from "../lib/repair";
 import {
   ensureDocker,
-  dockerGap,
+  dockerInstallPreview,
   hasDockerCompose,
   composeUp,
   composeInternalToken,
   composePrefetch,
+  composePgDataRisk,
+  composeSecretRotationRisk,
   composeTrustedOriginUrls,
+  pinnedImagesReady,
+  renderPgDataRefusal,
+  renderSecretRotationRefusal,
   resolveComposePorts,
   sourceBuildDir,
   readInstallMethod,
@@ -78,6 +83,8 @@ import {
   renderEdgeConflict,
   confirmEdgeAction,
   remediateUnreachableStaticRoots,
+  diagnoseEdge,
+  repairEdgeConflict,
 } from "../lib/edge-preflight";
 import { importMigratedSites } from "../lib/edge-import";
 import { LocalExecutor, type ImportedSite, type UnreachableStaticRoot } from "@repo/adapters/proxy";
@@ -224,10 +231,11 @@ async function streamProvision(
   // on 80/443, or a cert issue) reports WHY instead of a generic "not ready".
   let detail: string | undefined;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/system/self-register/stream?id=${sessionId}`, {
-      headers: { "X-Internal-Token": ensureInternalToken() },
+    const call = await internalFetch(port, `/api/system/self-register/stream?id=${sessionId}`, {
       signal: AbortSignal.timeout(300_000),
     });
+    if (call.kind !== "response") return { ok: false, detail: call.detail };
+    const res = call.res;
     if (!res.ok || !res.body) return { ok: false };
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
@@ -658,17 +666,29 @@ export async function runWizard(): Promise<void> {
   if (process.platform === "linux") {
     // Say what's ACTUALLY missing. "Docker isn't installed" on a box that has
     // Docker but no Compose plugin (Debian's docker.io) sent operators chasing
-    // the wrong problem, and re-running get.docker.com for a daemon that's merely
-    // unreachable can't help — it just rewrites their docker repo config.
-    const gap = dockerGap();
+    // the wrong problem, and re-running the Docker installer for a daemon that's
+    // merely unreachable can't help — it just rewrites their docker repo config.
+    //
+    // The preview rather than `dockerGap()` alone, so the command we announce is the
+    // one we are about to run: it is derived from this host's package manager, and this
+    // line claimed `get.docker.com` even where the plan is a `dnf install`.
+    const preview = dockerInstallPreview();
+    const gap = preview.gap;
     if (!gap) {
       method = "compose";
     } else if (!gap.installable) {
       log.warn(`${gap.summary} — using the bare process service instead.`);
       if (gap.hint) log.info(gap.hint);
       method = "bare";
+    } else if (!preview.wouldInstall) {
+      // A host Openship recognizes and won't guess at (openSUSE, Arch, an unidentified
+      // ID). Naming the reason beats the generic "couldn't install it automatically"
+      // this used to fall through to after trying.
+      log.warn(`${gap.summary} — using the bare process service instead.`);
+      log.info(preview.unsupportedReason ?? "Openship can't install Docker on this host.");
+      method = "bare";
     } else {
-      log.step(`${gap.summary} — installing via get.docker.com…`);
+      log.step(`${gap.summary} — installing with \`${preview.installCommand}\`…`);
       method = (await ensureDocker({ onNotice: (line) => log.info(line) })) ? "compose" : "bare";
       if (method === "bare") {
         log.warn("Couldn't install Docker automatically — falling back to the bare process service.");
@@ -755,6 +775,33 @@ export async function runWizard(): Promise<void> {
     const dashboardPort = String(ports.dashboard);
     const moved = portMoveNotice(ports, composeTrustedOriginUrls());
     if (moved.length) log.info(moved.join("\n"));
+    // #486: refuse a pinned image tag the registry doesn't have yet, before touching
+    // the box — named images and a way forward instead of docker's `manifest unknown`.
+    if (!pinnedImagesReady({ version: __CLI_VERSION__ })) {
+      cancel("The pinned Openship image tag isn't in the registry yet — nothing on this box was changed.");
+      process.exit(1);
+    }
+
+    // #488: the prefetch below replaces `.env`, so an install whose `.env` no longer
+    // yields the secrets its data volume was created with has to be caught here — after
+    // the replace, the real values are gone. The wizard has no --reset-secrets; someone
+    // who wants the reset runs `openship up --reset-secrets`.
+    const rotation = composeSecretRotationRisk();
+    if (rotation) {
+      console.error(renderSecretRotationRefusal(rotation));
+      cancel("This install's secrets couldn't be read — nothing on this box was changed.");
+      process.exit(1);
+    }
+
+    // #487: same fetch-first hazard for a data volume whose cluster we can't locate —
+    // refuse before the prefetch writes a guessed OPENSHIP_PGDATA into `.env`.
+    const pgData = composePgDataRisk();
+    if (pgData) {
+      console.error(renderPgDataRefusal(pgData));
+      cancel("This install's Postgres data layout couldn't be determined — nothing on this box was changed.");
+      process.exit(1);
+    }
+
     // Fetch FIRST, cut over second — same rule as `openship up`. Pulling after the
     // preflight stops a foreign proxy keeps the box dark for the whole download, and
     // a failed pull takes their sites down for a problem that never reached them.
@@ -763,16 +810,15 @@ export async function runWizard(): Promise<void> {
         ? "Building the Openship images before touching :80/:443 (first run takes a few minutes)…"
         : "Pulling images before touching :80/:443…",
     );
-    if (
-      !composePrefetch({
-        apiPort,
-        dashboardPort,
-        publicUrl,
-        trustProxy: behindProxy,
-        version: __CLI_VERSION__,
-        noHostControl: !allowHostControl,
-      })
-    ) {
+    const fetched = composePrefetch({
+      apiPort,
+      dashboardPort,
+      publicUrl,
+      trustProxy: behindProxy,
+      version: __CLI_VERSION__,
+      noHostControl: !allowHostControl,
+    });
+    if (!fetched.ok) {
       cancel("Couldn't fetch the Openship images — nothing on this box was changed.");
       process.exit(1);
     }
@@ -796,8 +842,11 @@ export async function runWizard(): Promise<void> {
     migratedStaticRootOverrides = edgePlan.staticRootOverrides;
     log.step("Starting the Docker Compose stack…");
     const up = await composeUp({
-      // Prefetched above, before the preflight stopped anything.
+      // Prefetched above, before the preflight stopped anything — including its
+      // materialize, so its verdict is the only one that still knows whether the env
+      // changed (see ComposePrefetchResult.envChanged).
       alreadyFetched: true,
+      envChanged: fetched.envChanged,
       apiPort,
       dashboardPort,
       publicUrl,
@@ -871,10 +920,18 @@ export async function runWizard(): Promise<void> {
         migratedCertPems,
         migratedStaticRootOverrides,
       );
-      if (!imported.ok) {
+      // A PARTIAL import is not a total failure: `importMigratedSites` returns
+      // ok:false when even one site missed, so keying the warning off `ok` and
+      // printing `migratedSites.length` claimed every site was dark one line after
+      // the import itself said "Migrated 3/4". Report only the real shortfall, and
+      // leave the retry advice to the import — it's the only layer that knows
+      // whether the cause was transient (edge still starting) or a config it will
+      // reject identically on every re-run.
+      const missed = migratedSites.length - imported.registered.length;
+      if (missed > 0) {
         log.warn(
-          `Your ${migratedSites.length} existing site${migratedSites.length === 1 ? "" : "s"} ` +
-            "aren't served yet — re-run `openship up` to retry the import.",
+          `${missed} of your ${migratedSites.length} existing site${migratedSites.length === 1 ? "" : "s"} ` +
+            `${missed === 1 ? "isn't" : "aren't"} served yet — see the import output above.`,
         );
       }
     }
@@ -924,6 +981,13 @@ export async function runWizard(): Promise<void> {
     // success — so a hard failure read as a success.
     else if (!result.domainRegistered) liveUrl = `http://localhost:${started.dashPort}`;
     for (const w of result.warnings) log.warn(w);
+    // The wizard provisions the host channel through the same compose path as
+    // `openship up`, so it inherits the same silent failure: authorized and
+    // configured, never dialed, dead behind a default-deny firewall (#490). Probe it
+    // before the summary claims the install is done. Best-effort — a blocked channel
+    // is a degraded install, not a failed one.
+    const { verifyHostChannel } = await import("../lib/host-channel-preflight");
+    await verifyHostChannel().catch(() => {});
     finishSetup({
       liveUrl,
       dashPort: started.dashPort,
@@ -1141,11 +1205,38 @@ export async function runControl(): Promise<void> {
     note(chalk.red("The service is installed but keeps failing to start — the database looks corrupted."), "Needs repair");
   }
 
+  // A foreign proxy squatting on :80/:443 is the edge equivalent of the corrupt-DB
+  // case: surface it up front and offer the SAME takeover/migrate that `openship
+  // edge` and `openship up` run, by calling that exact core (repairEdgeConflict).
+  // Linux-only — diagnoseEdge returns an empty diagnosis (occupant null) elsewhere.
+  const edge = process.platform === "linux" ? await diagnoseEdge().catch(() => null) : null;
+  const foreignProxy = edge?.occupant ? edge : null;
+  if (foreignProxy) {
+    const n = foreignProxy.sites.length;
+    note(
+      chalk.yellow(
+        `Another proxy (${foreignProxy.occupant}) is serving :80/:443` +
+          (n > 0 ? ` — ${n} site${n === 1 ? "" : "s"} importable.` : "."),
+      ),
+      "Edge conflict",
+    );
+  }
+
   const action = ensure(
     await select({
       message: "What would you like to do?",
       options: [
         ...(corrupted ? [{ value: "repair", label: "Repair database", hint: "backup → heal → verify" }] : []),
+        ...(foreignProxy && foreignProxy.sites.length > 0
+          ? [{
+              value: "edge-migrate",
+              label: "Take over :80/:443 & migrate its sites",
+              hint: `${foreignProxy.sites.length} site${foreignProxy.sites.length === 1 ? "" : "s"}`,
+            }]
+          : []),
+        ...(foreignProxy
+          ? [{ value: "edge-takeover", label: "Take over :80/:443", hint: `stop ${foreignProxy.occupant}, don't import` }]
+          : []),
         { value: "open", label: "Open the dashboard" },
         running
           ? { value: "restart", label: "Restart the service" }
@@ -1163,6 +1254,23 @@ export async function runControl(): Promise<void> {
     case "repair": {
       const res = await runRepair();
       outro(res.healed ? chalk.green(res.detail) : chalk.yellow(res.detail));
+      return;
+    }
+    case "edge-migrate":
+    case "edge-takeover": {
+      // Reuse the exact takeover core `openship edge` / `openship up` run — no
+      // reimplementation of the journaled stop, site import, or rollback here.
+      const mode = action === "edge-migrate" ? "migrate" : "stop";
+      const sp = spinner();
+      sp.start(mode === "migrate" ? "Migrating the existing proxy's sites…" : "Taking over :80/:443…");
+      const res = await repairEdgeConflict(mode, apiPort, (m, lvl) =>
+        lvl === "error" ? log.error(m) : lvl === "warn" ? log.warn(m) : log.step(m),
+      );
+      sp.stop(res.ok ? "Done." : "Couldn't complete the takeover.");
+      if (res.ok && res.registered.length) {
+        log.success(`Migrated ${res.registered.length} site(s): ${res.registered.join(", ")}`);
+      }
+      outro(res.ok ? chalk.green(res.detail) : chalk.yellow(res.detail));
       return;
     }
     case "open":

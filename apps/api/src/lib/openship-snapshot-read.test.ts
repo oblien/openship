@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
 import type { DatabaseDump } from "@repo/db";
-import { readProjectSnapshot } from "./openship-manifest";
+import { readProjectSnapshot } from "@repo/platform/engine/lib/openship-manifest";
 
 /** Minimal executor stub: `readOpenshipFile` runs `cat …` via exec — return the
  *  canned payload for that, ignore the mkdir/other calls. */

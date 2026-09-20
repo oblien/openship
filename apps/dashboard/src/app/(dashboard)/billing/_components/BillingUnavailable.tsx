@@ -4,21 +4,15 @@
  * BillingUnavailable — empty-state card rendered when the billing
  * surface is reachable but not usable in the current mode.
  *
- * Three accurate variants per the trace:
- *
- *   - `saas-not-enabled`  : we're in SaaS mode but the org has no
- *                            billing configured (admin should enable).
- *   - `cloud-not-connected`: local mode, no cloud session linked —
- *                            offers a Connect to Cloud button.
- *   - `cloud-unreachable`  : local mode, cloud was linked but the
- *                            proxy got a 5xx — likely transient or
- *                            expired session; user can retry/reconnect.
+ * Purchase availability, integration setup, permissions, and temporary
+ * failures are distinct. None implies a per-organization enable switch.
  *
  * The Connect button reuses CloudContext.startConnect, identical to
  * the settings/cloud flow so we don't fork the PKCE handshake.
  */
 
 import { useCallback } from "react";
+import Link from "next/link";
 import { ExternalLink, Loader2, Cloud, CircleAlert } from "lucide-react";
 import { useCloud } from "@/context/CloudContext";
 import { Button } from "@/components/ui/button";
@@ -26,6 +20,10 @@ import { useI18n } from "@/components/i18n-provider";
 
 export type BillingUnavailableReason =
   | "saas-not-enabled"
+  | "billing-not-configured"
+  | "billing-forbidden"
+  | "billing-sign-in-required"
+  | "billing-unreachable"
   | "cloud-not-connected"
   | "cloud-session-expired"
   | "cloud-unreachable";
@@ -43,12 +41,15 @@ export function BillingUnavailable({ reason }: Props) {
   }, [startConnect]);
 
   const handleRetry = useCallback(() => {
-    // Re-check cloud status and reload the route — Next will re-run
-    // the server component, which re-hits /billing/state.
-    void refresh().then(() => {
+    const reload = () => {
       if (typeof window !== "undefined") window.location.reload();
-    });
-  }, [refresh]);
+    };
+    if (reason === "cloud-unreachable") {
+      void refresh().then(reload, reload);
+    } else {
+      reload();
+    }
+  }, [reason, refresh]);
 
   if (reason === "cloud-not-connected") {
     return (
@@ -135,15 +136,35 @@ export function BillingUnavailable({ reason }: Props) {
     );
   }
 
-  // saas-not-enabled
+  const content = {
+    "saas-not-enabled": t.billing.unavailable.notEnabled,
+    "billing-not-configured": t.billing.unavailable.notConfigured,
+    "billing-forbidden": t.billing.unavailable.forbidden,
+    "billing-sign-in-required": t.billing.unavailable.signInRequired,
+    "billing-unreachable": t.billing.unavailable.loadFailed,
+  }[reason];
+
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
       <h2 className="text-base font-semibold text-foreground">
-        {t.billing.unavailable.notEnabled.title}
+        {content.title}
       </h2>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        {t.billing.unavailable.notEnabled.description}
+        {content.description}
       </p>
+      <div className="mt-5 flex justify-center">
+        {reason === "billing-sign-in-required" ? (
+          <Button asChild>
+            <Link href="/login">
+              {t.billing.unavailable.signInRequired.signIn}
+            </Link>
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={handleRetry}>
+            {t.billing.unavailable.unreachable.tryAgain}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

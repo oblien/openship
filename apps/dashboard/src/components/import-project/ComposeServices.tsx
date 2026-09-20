@@ -21,7 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
-import { folderApi } from "@/lib/api/folder";
+import { isMaskedValue } from "@repo/core";
+import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -48,13 +49,10 @@ type EnvVarRow = { key: string; value: string; visible: boolean };
 const envToArray = (
   env: Record<string, string>,
   visibleByKey: Record<string, boolean> = {},
-  meta?: ComposeServiceInfo["environmentMeta"],
 ) =>
-  Object.entries(env).map(([key, value]) => {
-    const parsed = meta?.[key];
-    const fallbackVisible = parsed?.source === "default" && value === parsed.resolvedValue;
-    return { key, value, visible: visibleByKey[key] ?? fallbackVisible };
-  });
+  Object.entries(env).map(([key, value]) => ({
+    key, value, visible: visibleByKey[key] ?? !isMaskedValue(value),
+  }));
 
 const arrayToEnv = (arr: Array<{ key: string; value: string }>) => {
   const env: Record<string, string> = {};
@@ -80,7 +78,8 @@ const envRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 
 const missingEnvCount = (service: ComposeServiceInfo) =>
   Object.entries(service.environmentMeta ?? {}).filter(
-    ([key, meta]) => meta.source === "missing" && !service.environment[key],
+    ([key, meta]) =>
+      meta.required || (meta.source === "missing" && !service.environment[key]),
   ).length;
 
 const portDisplay = (port: string) => parseContainerPort(port) || port;
@@ -251,7 +250,7 @@ const ServiceDomainSection: React.FC<{
             className={`absolute left-[3px] top-[3px] h-4 w-4 rounded-full shadow-sm transition-all ${
               service.exposed
                 ? "translate-x-[18px] bg-white"
-                : "translate-x-0 bg-background dark:bg-muted-foreground/70"
+                : "translate-x-0 bg-background dark:bg-muted-foreground/70 dim:bg-muted-foreground/70"
             }`}
           />
         </button>
@@ -599,6 +598,9 @@ const ServiceConfigSection: React.FC<{
               {cfg.volumeHint}
               {isCloud && ` ${cfg.volumeCloudNote}`}
             </p>
+            {isCloud && service.volumes.length > 0 && (
+              <p role="alert" className="text-xs text-destructive">{cfg.volumeCloudNote}</p>
+            )}
             <div className="space-y-2">
               {volumeRows.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -708,15 +710,11 @@ const ServiceCard: React.FC<{
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
-  // #336: in the folder-upload flow the scan masks env — reveal THIS service's
-  // real values from the upload session (write-gated on the API). Only wired
-  // when an upload session exists; git/edit flows have no session-scoped source.
-  const uploadSessionId = config.uploadSessionId;
-  const onRevealAll = uploadSessionId
-    ? async () => (await folderApi.reveal(uploadSessionId)).environments[service.name] ?? {}
-    : undefined;
+  // Fresh scans already supply editable values. Only saved, masked rows fetch
+  // on demand, using the same lookup as the project's service detail panel.
+  const onReveal = useServiceEnvReveal(config.projectId, service.serviceId);
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
-    envToArray(service.environment, {}, service.environmentMeta),
+    envToArray(service.environment),
   );
 
   const statusLabel = service.exposed
@@ -730,7 +728,7 @@ const ServiceCard: React.FC<{
   useEffect(() => {
     setEnvRows((current) => {
       if (envRecordsEqual(arrayToEnv(current), service.environment)) return current;
-      return envToArray(service.environment, visibilityByKey(current), service.environmentMeta);
+      return envToArray(service.environment, visibilityByKey(current));
     });
   }, [service.environment, service.environmentMeta]);
 
@@ -904,10 +902,11 @@ const ServiceCard: React.FC<{
             isEditingMode={true}
             showSettingsActions={false}
             borderless
+            hideTitle
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
-            onRevealAll={onRevealAll}
+            onReveal={onReveal}
           />
         </div>
       </Modal>

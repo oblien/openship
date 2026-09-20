@@ -1,3 +1,5 @@
+import { resolveProjectAuthority, type ProjectSource } from "@repo/platform/engine/lib/cloud/project-authority";
+export { resolveProjectAuthority, type ProjectSource } from "@repo/platform/engine/lib/cloud/project-authority";
 /**
  * Project source-routing — the single place that answers "is this project id a
  * LOCAL project (served from the local DB) or a CLOUD project (canonical on the
@@ -29,13 +31,12 @@
  *   • resolveProjectSource / proxyToSaaS — the underlying primitives.
  */
 import type { Context, Next } from "hono";
-import { CLOUD_UNREACHABLE_CODE } from "@repo/core";
+import { AppError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
+import { authorization } from "@repo/platform/engine/lib/authorization";
 import { repos } from "@repo/db";
-import { env } from "../../config";
+import { env } from "@repo/platform/engine/config/index";
 import { getRequestContext } from "../request-context";
-import { cloudFetchAsOrgOwner, resolveOrgCloudUserId } from "./transport";
-
-export type ProjectSource = "local" | "cloud";
+import { cloudFetchAsOrgOwner, resolveOrgCloudUserId } from "@repo/platform/engine/lib/cloud/transport";
 
 const SOURCE_HEADER = "X-Project-Source";
 
@@ -48,20 +49,8 @@ export async function resolveProjectSource(
   projectId: string,
   organizationId: string,
 ): Promise<ProjectSource | "not-found"> {
-  // On the SaaS we ARE the canonical store — never proxy.
-  if (env.CLOUD_MODE) return "local";
-
   const hint = c.req.header(SOURCE_HEADER)?.toLowerCase();
-  if (hint === "cloud") return "cloud";
-  if (hint === "local") return "local";
-
-  const local = await repos.project.findById(projectId).catch(() => null);
-  if (local) return "local";
-
-  // No local row — it's a cloud project iff the org has a cloud link to proxy
-  // through. No link → genuinely not found (IDOR-safe: same 404 as a foreign id).
-  const ownerUserId = await resolveOrgCloudUserId(organizationId).catch(() => null);
-  return ownerUserId ? "cloud" : "not-found";
+  return resolveProjectAuthority(projectId, organizationId, hint === "cloud" || hint === "local" ? hint : undefined);
 }
 
 /**
@@ -80,6 +69,9 @@ export async function proxyToSaaS(
   organizationId: string,
   opts?: { path?: string; body?: string },
 ): Promise<Response> {
+  if (getRequestContext(c).scopeMode === "fixed") {
+    throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
+  }
   const url = new URL(c.req.url);
   const path = opts?.path ?? `${url.pathname}${url.search}`;
   const method = c.req.method.toUpperCase();
@@ -241,7 +233,10 @@ export async function cloudProjectProxyByQuery(c: Context, next: Next): Promise<
   if (env.CLOUD_MODE) return next();
   const projectId = c.req.query("projectId");
   if (!projectId) return next(); // org-wide request — nothing project-specific to proxy
-  const organizationId = getRequestContext(c).organizationId;
+  const context = await authorization.authorize(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "read" });
+  c.set("scopedOrganizationId", context.organizationId);
+  c.set("ctx", { ...context, hono: c });
+  const organizationId = context.organizationId;
   const source = await resolveProjectSource(c, projectId, organizationId);
   if (source === "cloud") return proxyToSaaS(c, organizationId);
   return next();

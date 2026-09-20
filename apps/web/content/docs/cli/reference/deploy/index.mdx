@@ -1,0 +1,30 @@
+---
+title: deploy
+description: Commands, arguments, and options for openship deploy.
+cliGroup: openship deploy
+---
+
+See the [workflow guide](/docs/cli/deploy) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship deploy
+
+Trigger a deployment for the current project
+
+```text
+openship deploy [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Project ID (defaults to the linked project in .openship/project.json) |
+| `--branch <name>` | Git branch to deploy (defaults to the current branch) |
+| `--commit <sha>` | Specific commit SHA (defaults to the latest commit on the branch) |
+| `--env <environment>` | Variable set: production \| preview (project ID selects the runtime) (default: "production") |
+| `--force-all` | Rebuild every enabled service (skip smart per-service routing) |
+| `--service-ids <ids>` | Comma-separated service IDs to deploy (smart routing) |
+| `--smart-route` | Rebuild only services changed since the active deploy |
+| `--refresh` | Re-apply current env to the active deploy (no git pull, no rebuild) |
+| `--folder` | Upload the current folder as source (also works inside a Git repository) |
+| `--name <name>` | Project name for a folder (non-git) deploy (defaults to the directory name) |
+| `--server <id>` | Registered server ID (see `openship server list`) |
+| `--watch` | Stream the deployment logs until it finishes |

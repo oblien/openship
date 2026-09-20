@@ -1,0 +1,105 @@
+---
+title: SDK utilities
+description: Typed inputs, pagination, deployment helpers, and HTTP transport.
+---
+
+These utilities support the resource operations documented under [API](/docs/api).
+
+## Typed inputs and results
+
+Method inputs and results are exported by `openship`. Derive a specific operation's types when writing
+a reusable integration:
+
+```ts
+import type { ProjectOperations } from "openship";
+
+type CreateProjectInput = Parameters<ProjectOperations["create"]>[0];
+type Project = Awaited<ReturnType<ProjectOperations["get"]>>;
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  return ship.projects.create(input);
+}
+```
+
+Do not import internal repository packages. The public package exports the operation types, contracts,
+and SDK errors. `?` in an operation table marks an optional argument.
+
+## Pagination
+
+`iteratePages()` works with named list methods that return `{ data, total?, page?, perPage? }`:
+
+```ts
+import { iteratePages } from "openship";
+
+for await (const project of iteratePages((page) => ship.projects.list(page), { perPage: 50 })) {
+  console.log(project.id, project.name);
+}
+```
+
+Pass `signal` to stop iteration. Methods that return a plain array do not need this helper. Access is
+checked by the underlying list operation on every page.
+
+## Deployment helpers
+
+Use `ship.deployment(id)` for a handle, or pass an operations object directly:
+
+```ts
+import { createDeploymentHandle, waitForDeployment, consumeDeploymentEvents } from "openship";
+
+const handle = createDeploymentHandle(ship.deployments, "dep_123");
+const status = await handle.status();
+console.log(status.deploymentStatus);
+
+export async function waitForRelease(deploymentId: string) {
+  return waitForDeployment(ship.deployments, deploymentId, { timeoutMs: 120_000 });
+}
+
+export async function printBuildLogs(deploymentId: string, signal: AbortSignal) {
+  return consumeDeploymentEvents(ship.deployments.events(deploymentId, { signal }), (event) => {
+    if (event.log) process.stdout.write(event.log);
+  });
+}
+```
+
+`createDeploymentHandle()` exposes `id`, `get`, `status`, `wait`, `events`, `cancel`, `respond`, and
+`rollback`. It does not own an installation. See [deployment outcomes and decisions](/docs/api/deployments#wait-decisions-and-cancellation).
+
+## Compose normalization
+
+`normalizeComposeServices(document, baseDirectory)` converts **normalized Compose JSON**, such as
+`docker compose config --format json`, into the input expected by `services.sync()`.
+
+```ts
+import { normalizeComposeServices } from "openship";
+
+const services = normalizeComposeServices(
+  {
+    services: { cache: { image: "redis:7" } },
+  },
+  "/absolute/path/to/project",
+);
+
+await ship.services.sync("proj_123", { services });
+```
+
+It validates unsupported mount, build, and namespace settings. Parse YAML and resolve Compose
+interpolation before calling this helper. See [services](/docs/api/services#sync-from-docker-compose).
+
+## HTTP transport
+
+Only a remote `OpenshipClient` exposes `http`. Use it for documented endpoints without a named SDK method:
+
+```ts
+import type { OpenshipClient } from "openship";
+
+export async function readImageCatalog(client: OpenshipClient) {
+  return client.http.request("/images");
+}
+```
+
+`http.request<T>(path, init?)` parses the JSON response body; `T` is your assertion, not runtime validation.
+`http.raw(path, init?)` returns a `Response`. `http.events(path, options?)` reads an SSE stream, and
+`http.url(path)` constructs an API URL. These helpers retain the client's URL, credential, and scope
+restrictions. They do not add native support to an HTTP-only feature.
+
+For error handling, see [SDK errors](/docs/api/sdk/errors).

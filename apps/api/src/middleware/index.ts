@@ -6,6 +6,7 @@ export { betterAuthShield } from "./better-auth-shield";
 export { originGuard } from "./origin-guard";
 export { clientIpMiddleware } from "./client-ip";
 export { requireRole } from "./active-organization";
+export { assertInstanceAdmin, requireInstanceAdmin } from "./instance-admin";
 export { migrationGuard } from "./migration-guard";
 export {
   isLoopbackPeer,

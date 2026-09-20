@@ -37,8 +37,6 @@ option to deploy to Cloud and to use Cloud-backed features.
 In the dashboard, go to **Settings** and choose the **Cloud** tab from the left. You'll see a card that says
 **Connect to Cloud** with a **Connect to Openship Cloud** button.
 
-<Callout title="Screenshot">Settings → **Cloud** tab, the "Connect to Cloud" card with the **Connect to Openship Cloud** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -50,8 +48,6 @@ Press **Connect to Openship Cloud**. A window opens on Openship Cloud and asks y
 app to your Google or GitHub account. Say yes.
 
 When the window closes, the card flips to a green **Connected** badge showing the Cloud account you linked.
-
-<Callout title="Screenshot">Settings → Cloud tab after connecting: the green **Connected** badge with the linked cloud account. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -111,8 +107,6 @@ with a **Migrate** button. Pressing it opens the **Move to multi-user mode** cho
 - **Keep local, expose via tunnel** — your data stays on this machine; Openship opens a public tunnel so
   teammates can reach you while your machine is online. (Also requires the Cloud connection.)
 
-<Callout title="Screenshot">The **Move to multi-user mode** modal showing the three path cards: your server, Openship Cloud, and tunnel. *(screenshot pending)*</Callout>
-
 <Callout title="You can switch back" type="info">
 Migration isn't a trap door. Whichever path you pick, your local data stays on disk, and you can return to
 single-user mode later. Moving to Cloud also won't send your secrets — encrypted fields are stripped before
@@ -138,7 +132,7 @@ openship system migration start-tunnel --slug myteam
 openship system migration switch-back
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="There's no Cloud tab in Settings" type="warn">
 The **Cloud** tab only shows on a self-hosted instance. If you're already using Openship Cloud, there's
@@ -157,7 +151,7 @@ sign-in and the **Authorize** step in the popup. If your browser blocks pop-ups,
 and retry.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Cloud as source" href="/docs/architecture/cloud-as-source" description="Why a cloud project is owned by Cloud, and how your instance proxies to it." />

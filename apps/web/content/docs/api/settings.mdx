@@ -1,214 +1,170 @@
 ---
-title: Settings API
-description: Read and update your Openship workspace preferences — build mode, deploy defaults, and git clone credentials.
+title: User settings
+description: Read and update your build, deploy, routing, and Git preferences.
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table';
+User settings apply to the authenticated user. There is no settings ID to select. References to servers
+are checked against the current organization and access grants; an inaccessible default server is hidden.
+Use [installation settings](/docs/api/system) for instance-wide configuration.
 
-The Settings API stores your workspace preferences: which build mode to use by default, the deploy target
-and server to pre-select, and a saved git token for cloning private repos. These follow you across devices
-and sync to Openship Cloud. In the dashboard this is the **Settings** page; there is no dedicated `openship`
-CLI command for these values (the CLI's `openship system settings` manages instance-level settings, a
-[different module](/docs/api)).
+## Read preferences
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/settings`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
 
-Settings is an org-singleton resource: there is no `:id` — the routes always act on the settings row for the
-authenticated user in the current organization (resolved from the `X-Organization-Id` header or your session
-default). Available on both self-hosted and cloud instances.
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/settings` | `settings:read` | Get the current workspace settings (build mode, deploy defaults, clone-credential state). |
-| `PUT /api/settings` | `settings:write` | Create or update workspace settings. |
-| `PATCH /api/settings/build-mode` | `settings:write` | Update only the default build mode. |
-| `PATCH /api/settings/deploy-defaults` | `settings:write` | Set or clear the default deploy target and server. |
-| `PATCH /api/settings/clone-credentials` | `settings:write` | Set, replace, or clear the git clone token. |
-| `PATCH /api/settings/clone-strategy-preference` | `settings:write` | Save the first-time-deploy clone-strategy choice. |
-| `PATCH /api/settings/forward-git` | `settings:write` | Enable/disable forwarding your local git identity to remote build servers. |
-
-## Get settings
-
-Returns the merged view of your preferences. The clone token is **never** returned — only whether one is
-stored, when it was set, and whether it's flagged as the default.
-
+```ts
+const settings = await ship.settings.get();
+console.log(settings.buildMode, settings.defaultDeployTarget);
 ```
-GET /api/settings
-```
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl https://your-host/api/settings \
+curl "$OPENSHIP_URL/api/settings" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-The response includes `buildMode`, `defaultDeployTarget`, `defaultServerId`, a `cloneToken` object
-(`hasToken`, `setAt`, `asDefault`), and `cloneStrategyPreference`.
+</Tab>
+</Tabs>
 
-## Upsert settings
+The result includes build and route strategy, deploy defaults, transfer preferences, and Git options.
+`cloneToken` reports `hasToken`, `setAt`, and `asDefault`; it never contains the token value.
 
-Creates the settings row if it doesn't exist, or updates it. Only `buildMode` is accepted here; use the
-`PATCH` routes below for the other fields.
+## Set build and routing defaults
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.settings.setBuildMode({ buildMode: "server" });
 ```
-PUT /api/settings
-```
 
-<TypeTable
-  type={{
-    buildMode: { type: '"auto" | "server" | "local"', description: 'Where builds run by default.', required: false, default: 'auto' },
-  }}
-/>
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -X PUT https://your-host/api/settings \
+curl -X PATCH "$OPENSHIP_URL/api/settings/build-mode" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"buildMode":"server"}'
 ```
 
-## Update build mode
+</Tab>
+</Tabs>
 
-Sets just the default build mode without touching the other preferences.
+| Method | Input | Values |
+| --- | --- | --- |
+| `setBuildMode` | `buildMode` | `auto`, `server`, or `local`. |
+| `setRouteStrategy` | `routeStrategy` | `auto`, `loopback-port`, or `container-ip`. |
 
+`update({ buildMode })` also creates or updates the settings row; it maps to `PUT /api/settings`.
+Route strategy controls how the edge reaches an application. Provider constraints still apply; for
+example, container-IP routing is unsupported on Docker Desktop.
+
+## Set a deployment destination
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.settings.setDeployDefaults({
+  defaultDeployTarget: "server",
+  defaultServerId: "srv_123",
+});
 ```
-PATCH /api/settings/build-mode
-```
 
-<TypeTable
-  type={{
-    buildMode: { type: '"auto" | "server" | "local"', description: 'Where builds run by default.', required: true },
-  }}
-/>
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -X PATCH https://your-host/api/settings/build-mode \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"buildMode":"local"}'
-```
-
-## Update deploy defaults
-
-Pre-selects a deploy target (and, for `server`, which server) in the deploy picker. Pass `null` to clear.
-An explicit per-deploy choice always wins over these defaults.
-
-```
-PATCH /api/settings/deploy-defaults
-```
-
-<TypeTable
-  type={{
-    defaultDeployTarget: { type: '"local" | "server" | "cloud" | null', description: 'Deploy target to pre-select; null clears it.', required: false },
-    defaultServerId: { type: 'string | null', description: "Server to use — required when defaultDeployTarget is 'server'; forced to null for other targets.", required: false },
-  }}
-/>
-
-```bash
-curl -X PATCH https://your-host/api/settings/deploy-defaults \
+curl -X PATCH "$OPENSHIP_URL/api/settings/deploy-defaults" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"defaultDeployTarget":"server","defaultServerId":"srv_123"}'
 ```
 
-<Callout title="400 — defaultServerId is required" type="warn">
-Setting `defaultDeployTarget: "server"` without a `defaultServerId` returns `400`. For `local`, `cloud`, or
-`null`, any server id you send is ignored and stored as `null`.
-</Callout>
+</Tab>
+</Tabs>
 
-## Update clone credentials
+`defaultDeployTarget` is `server`, `cloud`, or `null`. A server target requires an accessible
+`defaultServerId`. Other targets clear that server reference. Pass `null` to clear a default; omit a
+field to retain its value. `local` is derived from the project at deployment time and is not a selectable
+default destination.
 
-Stores an encrypted git token used to clone private repos, or clears it. The token is encrypted at rest and
-never returned by any endpoint — the response is the same read-only state as `GET /api/settings`.
+## Manage clone credentials
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.settings.setCloneCredentials({ token: "ghp_example", asDefault: true });
 ```
-PATCH /api/settings/clone-credentials
-```
 
-<TypeTable
-  type={{
-    token: { type: 'string | null', description: 'The git token to store. null (or an empty string) clears the stored token. Omit to leave the token untouched.', required: false },
-    asDefault: { type: 'boolean', description: 'When true, the stored token is used automatically during clones; when false it is kept but only used per-deploy.', required: false, default: 'false' },
-  }}
-/>
+</Tab>
+<Tab value="REST API">
 
 ```bash
-# Store a token and use it by default
-curl -X PATCH https://your-host/api/settings/clone-credentials \
+curl -X PATCH "$OPENSHIP_URL/api/settings/clone-credentials" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"token":"ghp_xxx","asDefault":true}'
-
-# Clear the stored token
-curl -X PATCH https://your-host/api/settings/clone-credentials \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"token":null}'
+  -d '{"token":"ghp_example","asDefault":true}'
 ```
 
-## Update clone-strategy preference
+</Tab>
+</Tabs>
 
-Records the choice made on the first-time deploy nudge. Once set to anything other than `prompt`, the nudge
-stops asking.
+Use a real Git token from your secret store. The token is encrypted and never returned. Omit `token` to
+leave it unchanged; send `null` or an empty string to clear it. `asDefault` controls whether it is used
+automatically for clones.
 
+`setCloneStrategy({ preference })` accepts `prompt`, `local`, or `remote-with-token`.
+`setGitForwarding({ enabled })` controls forwarding the local Git identity to an authorized build server
+for the clone. See [Git authentication](/docs/guides/git-authentication).
+
+## Set transfer preferences
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.settings.setTransferPreferences({
+  transferMode: "auto",
+  transferCompression: "zstd",
+});
 ```
-PATCH /api/settings/clone-strategy-preference
-```
 
-<TypeTable
-  type={{
-    preference: { type: '"prompt" | "local" | "remote-with-token"', description: 'The saved clone-strategy choice.', required: true },
-  }}
-/>
+</Tab>
+<Tab value="REST API">
 
 ```bash
-curl -X PATCH https://your-host/api/settings/clone-strategy-preference \
+curl -X PATCH "$OPENSHIP_URL/api/settings/transfer" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"preference":"remote-with-token"}'
+  -d '{"transferMode":"auto","transferCompression":"zstd"}'
 ```
 
-## Forward git identity to build servers
+</Tab>
+</Tabs>
 
-Enables (or disables) forwarding your local `gh` identity to a remote build server for the clone. It's a
-per-operator preference — replacing the old per-deploy `forwardGitCredentials` flag — and is surfaced in
-`GET /api/settings` as `forwardGitToServer`. When on, a server clone tunnels your local git identity over
-SSH just for the clone (nothing is stored on the server). See
-[Git authentication for private repos](/docs/guides/git-authentication).
+Both fields are optional. `transferMode` accepts `auto`, `stream`, `direct`, or `rsync`;
+`transferCompression` accepts `auto`, `zstd`, `gzip`, or `none`. These are defaults for migration volume
+transfers; target capabilities determine the effective transport.
 
-```
-PATCH /api/settings/forward-git
-```
+## Operations
 
-<TypeTable
-  type={{
-    enabled: { type: 'boolean', description: 'Whether to forward your local git identity to remote build servers during a server clone.', required: true },
-  }}
-/>
+{/* api-operations:start */}
 
-```bash
-curl -X PATCH https://your-host/api/settings/forward-git \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled":true}'
-```
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the current user’s preferences and defaults. | `settings.get()` | `GET /api/settings`<br />`settings:read` |
+| Update user settings. | `settings.update(input)` | `PUT /api/settings`<br />`settings:write` |
+| Choose where builds run by default. | `settings.setBuildMode(input)` | `PATCH /api/settings/build-mode`<br />`settings:write` |
+| Choose the default routing strategy. | `settings.setRouteStrategy(input)` | `PATCH /api/settings/route-strategy`<br />`settings:write` |
+| Set the default deployment target and resources. | `settings.setDeployDefaults(input)` | `PATCH /api/settings/deploy-defaults`<br />`settings:write` |
+| Configure credentials for source cloning. | `settings.setCloneCredentials(input)` | `PATCH /api/settings/clone-credentials`<br />`settings:write` |
+| Choose how source is transferred to build servers. | `settings.setCloneStrategy(input)` | `PATCH /api/settings/clone-strategy-preference`<br />`settings:write` |
+| Set source transfer preferences. | `settings.setTransferPreferences(input)` | `PATCH /api/settings/transfer`<br />`settings:write` |
+| Configure forwarding of Git identity to build servers. | `settings.setGitForwarding(input)` | `PATCH /api/settings/forward-git`<br />`settings:write` |
 
-## Errors you might see
-
-<Callout title="400 — invalid enum value" type="warn">
-`buildMode` must be `auto`, `server`, or `local`; `defaultDeployTarget` must be `local`, `server`, `cloud`,
-or `null`; `preference` must be `prompt`, `local`, or `remote-with-token`. Anything else returns `400` with
-an `error` message naming the allowed values.
-</Callout>
-
-<Callout title="403 — missing scope" type="error">
-Reading requires the `settings:read` scope and writing requires `settings:write`. A token without the scope
-gets `403`. Mint one with the right scopes via [`openship token create`](/docs/cli/access), or see
-[authentication](/docs/security/auth).
-</Callout>
+{/* api-operations:end */}

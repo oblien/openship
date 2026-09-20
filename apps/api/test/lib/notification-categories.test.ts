@@ -7,7 +7,7 @@ import {
   EVENT_HEADLINES,
   categoryForEventType,
   findCategory,
-} from "../../src/lib/notification-categories";
+} from "@repo/platform/engine/lib/notification-categories";
 
 /**
  * The category registry is a public contract in three directions at once, and
@@ -23,7 +23,7 @@ import {
  */
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("../../src/lib/notification-categories.ts", import.meta.url)),
+  fileURLToPath(new URL("../../../../packages/platform/src/engine/lib/notification-categories.ts", import.meta.url)),
   "utf8",
 );
 
@@ -72,6 +72,7 @@ describe("notification category registry", () => {
       "member.added",
       "member.removed",
       "invitation.sent",
+      "mail.inbound_received",
       "billing.alert",
       "quota.warning",
     ]);

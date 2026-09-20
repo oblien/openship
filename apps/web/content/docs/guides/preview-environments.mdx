@@ -44,8 +44,6 @@ commands, and settings so you don't set them up again.
 You do this from the project's page, using the **environment switcher** — the little pill at the top that shows
 the current environment's name and its branch.
 
-<Callout title="Screenshot">The project page header showing the environment switcher pill (environment name + branch) with a **+** button beside it. *(screenshot pending)*</Callout>
-
 <Steps>
 
 <Step>
@@ -67,8 +65,6 @@ top to filter a long list. Click the branch you want to base the new environment
 
 Openship creates a fresh copy of the project tied to that branch and drops you onto its page. That's it — you're
 now looking at the new environment.
-
-<Callout title="Screenshot">The Add-branch panel: a **Search branches** box and a list of repository branches, each with a **+** to add it as an environment. *(screenshot pending)*</Callout>
 
 <Callout title="Tip" type="info">
 The name is filled in for you from the branch (a branch called `feature/new-home` becomes "Feature New Home").
@@ -95,15 +91,13 @@ Once you have more than one, click the switcher pill to see the full list. Each 
 and its branch, with a check mark next to the one you're viewing. Click any row to jump to that copy of the
 project — its own deploys, logs, and variables.
 
-<Callout title="Screenshot">The open environment switcher dropdown listing each environment with its branch and a check mark on the current one. *(screenshot pending)*</Callout>
-
 ### Creating one by hand (no branch)
 
 At the bottom of the Add-branch panel there's a **Manual environment** option. Use it when you want an
 environment that isn't tied to a specific branch yet — you give it a name (and, optionally, a **Branch label**)
 and press **Create**. This makes a *development* environment.
 
-## Prefer the terminal?
+## CLI
 
 If you deploy from the CLI, the `deploy` command has an `--env` flag that tells Openship which environment a
 deploy is for. It applies that environment's variables and records the deploy under it.
@@ -130,7 +124,7 @@ openship deploy --project <environment-project-id> --env preview --watch
 
 `--watch` streams the build logs until it finishes, so you can see it go live right there in your terminal.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="No branches show up when I press +" type="warn">
 The environment list is built from your GitHub branches, so the project has to be connected to GitHub and have
@@ -153,7 +147,7 @@ Variables are per-environment — a preview copy doesn't automatically inherit p
 environment and add what it needs. See [Environment variables](/docs/guides/environment-variables).
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Environment variables" href="/docs/guides/environment-variables" description="Give each environment its own secrets and settings." />

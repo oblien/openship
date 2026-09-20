@@ -6,13 +6,27 @@
  */
 
 import { BrowserWindow, nativeTheme } from "electron";
+import { changelogUrl } from "@repo/core";
 import { join } from "node:path";
 import type { UpdateInfo } from "./updater";
 
 function buildHtml(info: UpdateInfo): string {
-  // Values are injected as a JSON blob and written via textContent in the
-  // script, so release-note contents can't inject markup.
-  const payload = JSON.stringify({ version: info.version, notes: info.notes });
+  // Values are injected as a JSON blob and written via textContent, so release
+  // notes can't inject markup — but only once `<` is escaped. JSON.stringify does
+  // not escape it, and the HTML parser ends an inline <script> at the first
+  // `</script` regardless of JS string context, so unescaped notes containing
+  // `</script>` would break out into markup in a window that carries the full
+  // preload bridge.
+  const title = info.announcement?.title || "Update available";
+  const payload = JSON.stringify({
+    version: info.version,
+    title,
+    announcement: (info.announcement?.message || "").trim(),
+    notes:
+      (info.notes || "").trim() ||
+      "Release details are available in the full changelog.",
+    changelogUrl: changelogUrl(`v${info.version}`),
+  }).replace(/</g, "\\u003c");
   // Colors mirror the dashboard theme tokens (apps/dashboard styles/theme.css)
   // and follow the OS light/dark setting via prefers-color-scheme, so the modal
   // reads as part of the app rather than a stock system dialog.
@@ -30,40 +44,57 @@ function buildHtml(info: UpdateInfo): string {
     }}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
       font-family:system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
-    .wrap{display:flex;flex-direction:column;height:100vh;padding:22px 22px 18px;box-sizing:border-box}
+    .wrap{display:flex;flex-direction:column;height:100vh;min-height:0;padding:24px 24px 20px;box-sizing:border-box}
     h1{font-size:16px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
-    .sub{font-size:13px;color:var(--muted);margin:0 0 14px}
-    pre{flex:1;overflow:auto;white-space:pre-wrap;word-break:break-word;
-      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
-      line-height:1.55;color:var(--body);margin:0;padding:12px;border-radius:12px;
+    .sub{font-size:13px;color:var(--muted);margin:0 0 16px}
+    .announcement{font-size:13px;line-height:1.5;color:var(--body);margin:0 0 14px;padding:11px 12px;
+      border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle)}
+    .announcement:empty{display:none}
+    .notes-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+      color:var(--muted);margin:0 0 7px}
+    pre{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;white-space:pre-wrap;word-break:break-word;
+      font-family:system-ui,-apple-system,sans-serif;font-size:12.5px;
+      line-height:1.58;color:var(--body);margin:0;padding:13px 14px;border-radius:12px;
       background:var(--surface);border:1px solid var(--border-subtle)}
     .status{display:none;font-size:12px;color:var(--muted);margin:14px 0 0}
-    .row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+    .row{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:14px}
+    .buttons{display:flex;gap:10px;margin-inline-start:auto}
     button{border-radius:10px;padding:8px 16px;font-size:13px;font-weight:500;font-family:inherit;
       cursor:pointer;border:1px solid transparent;transition:background .15s,border-color .15s,opacity .15s}
+    .changelog{padding-inline:2px;background:transparent;color:var(--body)}
+    .changelog:hover{color:var(--text)}
     .later{background:transparent;color:var(--text);border-color:var(--border)}
     .later:hover{background:var(--ghost-hover)}
     .go{background:var(--btn-bg);color:var(--btn-text)}
     .go:hover{opacity:.9}
     button:disabled{opacity:.5;cursor:default}
   </style></head><body><div class="wrap">
-    <h1 id="title">Update available</h1>
+    <h1 id="title"></h1>
     <p class="sub" id="sub"></p>
+    <p class="announcement" id="announcement"></p>
+    <p class="notes-label">What&rsquo;s new</p>
     <pre id="notes"></pre>
     <p class="status" id="status">Downloading…</p>
     <div class="row" id="actions">
-      <button class="later" id="later">Later</button>
-      <button class="go" id="go">Update now</button>
+      <button class="changelog" id="changelog">View full changelog</button>
+      <div class="buttons">
+        <button class="later" id="later">Later</button>
+        <button class="go" id="go">Update now</button>
+      </div>
     </div>
   </div><script>
     const INFO = ${payload};
     const u = window.desktop && window.desktop.updates;
+    document.getElementById("title").textContent = INFO.title;
     document.getElementById("sub").textContent =
       "Openship " + INFO.version + " is ready to install.";
-    document.getElementById("notes").textContent = (INFO.notes || "").trim() ||
-      "A new version is available.";
+    document.getElementById("announcement").textContent = INFO.announcement;
+    document.getElementById("notes").textContent = INFO.notes;
     const status = document.getElementById("status");
     const actions = document.getElementById("actions");
+    document.getElementById("changelog").onclick = () =>
+      window.desktop && window.desktop.onboarding &&
+      window.desktop.onboarding.openExternal(INFO.changelogUrl);
     document.getElementById("later").onclick = () => u && u.dismiss();
     document.getElementById("go").onclick = () => {
       actions.style.display = "none";
@@ -88,9 +119,11 @@ export function openUpdateWindow(
     return updateWin;
   }
   updateWin = new BrowserWindow({
-    width: 460,
-    height: 380,
-    resizable: false,
+    width: 560,
+    height: 520,
+    minWidth: 460,
+    minHeight: 380,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -104,6 +137,8 @@ export function openUpdateWindow(
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Off for the same reason as the main window (see index.ts) — the preload
+      // requires @repo/onboarding, which a sandboxed preload can't resolve.
       sandbox: false,
     },
   });
@@ -111,6 +146,18 @@ export function openUpdateWindow(
   updateWin.on("closed", () => {
     updateWin = null;
   });
+
+  // This window renders one self-contained document. Its changelog action goes
+  // through the scheme-gated external-browser IPC; any in-window navigation is
+  // therefore something going wrong. Refuse it rather than letting an
+  // off-origin page inherit the preload bridge.
+  const denyNav = (e: Electron.Event, url: string) => {
+    e.preventDefault();
+    console.warn(`[security] blocked update-window navigation to ${url}`);
+  };
+  updateWin.webContents.on("will-navigate", denyNav);
+  updateWin.webContents.on("will-redirect", denyNav);
+  updateWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   void updateWin.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(buildHtml(info))}`,
   );

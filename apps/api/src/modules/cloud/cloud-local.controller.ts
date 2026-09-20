@@ -15,8 +15,8 @@ import { Oblien } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
-import { cloudClient } from "../../lib/cloud/client";
-import { getCloudConnectionStatusForOrg } from "../../lib/cloud/session";
+import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
+import { getCloudConnectionStatusForOrg } from "@repo/platform/engine/lib/cloud/session";
 import { safeErrorMessage } from "@repo/core";
 
 // ─── Cloud workspaces / drift ────────────────────────────────────────────────

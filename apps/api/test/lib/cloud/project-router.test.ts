@@ -15,20 +15,21 @@ vi.mock("@repo/db", () => ({
     domain: { findById: vi.fn() },
   },
 }));
-vi.mock("../../../src/config", () => ({ env: { CLOUD_MODE: false } }));
-vi.mock("../../../src/lib/request-context", () => ({ getRequestContext: vi.fn() }));
-vi.mock("../../../src/lib/cloud/transport", () => ({
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("../../../src/lib/request-context", () => ({ getRequestContext: vi.fn(() => ({ organizationId: "org1", scopeMode: "resource" })) }));
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({
   cloudFetchAsOrgOwner: vi.fn(),
   resolveOrgCloudUserId: vi.fn(),
 }));
 
 import { resolveProjectSource, proxyToSaaS } from "../../../src/lib/cloud/project-router";
 import { repos } from "@repo/db";
-import { env } from "../../../src/config";
+import { env } from "@repo/platform/engine/config/index";
+import { getRequestContext } from "../../../src/lib/request-context";
 import {
   cloudFetchAsOrgOwner,
   resolveOrgCloudUserId,
-} from "../../../src/lib/cloud/transport";
+} from "@repo/platform/engine/lib/cloud/transport";
 
 function fakeCtx(opts: {
   url?: string;
@@ -97,6 +98,12 @@ describe("proxyToSaaS", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (env as { CLOUD_MODE: boolean }).CLOUD_MODE = false;
+  });
+
+  it("refuses fixed tenant forwarding before acquiring or sending an owner credential", async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ organizationId: "org1", scopeMode: "fixed" } as never);
+    await expect(proxyToSaaS(fakeCtx({}), "org1")).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
   });
 
   it("forwards method/path/body but NEVER an identity header", async () => {

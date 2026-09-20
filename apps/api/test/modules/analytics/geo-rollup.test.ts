@@ -32,7 +32,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   resolveProjectTrafficSources: vi.fn(async () => h.sources),
   fetchMgmt: vi.fn(async (_serverId: string, path: string) => {
     for (const [prefix, value] of h.mgmt) {
@@ -42,18 +42,18 @@ vi.mock("../../../src/lib/project-analytics", () => ({
   }),
 }));
 
-vi.mock("../../../src/modules/system/analytics-scraper", () => ({
+vi.mock("@repo/platform/engine/modules/system/analytics-scraper", () => ({
   scrapeServerIfStale: h.scrape,
 }));
 
-vi.mock("../../../src/modules/cloud/cloud-analytics.service", () => ({
+vi.mock("@repo/platform/engine/modules/cloud/cloud-analytics.service", () => ({
   proxyCloudAnalytics: vi.fn(async (_org: string, input: Record<string, unknown>) => {
     h.cloudCalls.push(input);
     return h.cloudResult;
   }),
 }));
 
-const { getProjectGeo } = await import("../../../src/modules/analytics/geo.service");
+const { getProjectGeo } = await import("@repo/platform/engine/modules/analytics/geo.service");
 
 const ctx = { organizationId: "org1" } as never;
 

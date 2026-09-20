@@ -28,9 +28,10 @@
  */
 
 import type { Context } from "hono";
-import { sshManager } from "../../lib/ssh-manager";
-import { auth } from "../../lib/auth";
-import { trustedOrigins } from "../../config/env";
+import { randomUUID } from "node:crypto";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
@@ -180,23 +181,24 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   let ticketServerId: string | null = null;
   // Resolve activeOrganizationId here — the WS upgrade route deliberately
   // skips the HTTP authMiddleware (auth happens inside this factory), so
-  // it's not pre-set on the Hono context. We mirror the middleware's
-  // logic: prefer session.activeOrganizationId, fall back to the user's
-  // oldest membership.
-  // not ctx-scoped: WebSocket upgrade path. This route runs OUTSIDE
-  // the normal Hono auth middleware (Bun WS doesn't carry the same
-  // request lifecycle), so it has to re-derive the active org from
-  // scratch. Both branches funnel through resolveActiveOrganizationId
-  // (the canonical resolver from middleware/active-organization.ts) so
-  // the WS path applies the same team-org-preferred + memberships[0]
-  // fallback as every other authed request — no behavior drift.
+  // it's not pre-set on the Hono context. Two paths, mirroring the
+  // sibling service-terminal controller:
+  //   - Ticket path: the ticket carries (userId, orgId, serverId) baked
+  //     in at mint time, when authMiddleware HAD resolved the org. Use
+  //     that org — re-deriving it here would scope the socket to a
+  //     different tenant than the one the mint-time checks passed in.
+  //   - Cookie path: no ticket, so re-derive from the session through
+  //     resolveActiveOrganizationId (the canonical resolver from
+  //     middleware/active-organization.ts), applying the same
+  //     team-org-preferred + memberships[0] fallback as every other
+  //     authed request.
   // Foreground non-WS callers must NOT duplicate this pattern — they
   // read ctx.organizationId, which authMiddleware already populated.
   let activeOrgId: string | null = null;
   if (ticket) {
     userId = ticket.userId;
     ticketServerId = ticket.serverId;
-    activeOrgId = await resolveActiveOrganizationId(userId, null).catch(() => null);
+    activeOrgId = ticket.organizationId;
   } else {
     try {
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -351,7 +353,8 @@ function buildHandlers(ctx: HandshakeCtx) {
       // ── RESUME path ──────────────────────────────────────────────
       if (ctx.resumeToken) {
         const existing = getSessionByResumeToken(ctx.resumeToken, ctx.userId);
-        if (!existing) {
+        // The handshake authorized this server, not every session the user owns.
+        if (!existing || existing.serverId !== ctx.serverId) {
           // Token doesn't match a live session (expired, idle/cap
           // fired, server restarted, or wrong user). Tell the client
           // so it can drop the stale token from localStorage and try
@@ -449,7 +452,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       state.sessionId = auditId;
 
-      const sessionId = auditId ?? `transient-${Date.now()}`;
+      const sessionId = auditId ?? `transient-${randomUUID()}`;
       const session = registerSession({
         sessionId,
         userId: ctx.userId,
@@ -463,6 +466,25 @@ function buildHandlers(ctx: HandshakeCtx) {
         },
       });
       state.sessionId = sessionId;
+
+      // The WS can go away while we await the SSH channel and the audit-row
+      // insert — @hono/node-ws registers its 'close' listener as soon as this
+      // async onOpen suspends, so onClose runs against a state that has no
+      // sessionId yet. The client never received `ready`, so it holds no
+      // resumeToken and can never reattach: parking would strand the shell and
+      // leave the audit row open forever, permanently burning a slot in the
+      // per-user cap (which counts rows with endedAt IS NULL).
+      if (state.closed) {
+        unregisterSession(sessionId);
+        await teardown(
+          state,
+          "client_close",
+          null,
+          /* alreadyUnregistered */ true,
+          /* forceClose */ true,
+        );
+        return;
+      }
 
       // Pipe remote stdout/stderr → ws via the session manager's
       // dispatcher. The dispatcher drops bytes while the session is
@@ -619,8 +641,15 @@ export async function teardown(
     state.heartbeatTimer = null;
   }
 
+  // No session registered yet: onOpen is still awaiting the SSH channel /
+  // audit-row insert and owns the lifecycle of what it is about to create.
+  // Marking this connection `ended` here would make onOpen's abort check —
+  // and any later idle/cap timeout — a no-op, orphaning the audit row. Leave
+  // `closed` set: that is the flag onOpen reads to abort.
+  if (!state.sessionId) return;
+
   // PARK path - keep the shell + audit row alive for resume.
-  if (!forceClose && state.sessionId) {
+  if (!forceClose) {
     parkSession(state.sessionId);
     return;
   }

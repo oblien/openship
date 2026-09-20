@@ -4,6 +4,7 @@ import { rateLimiter } from "../../middleware/rate-limiter";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudSessionAuth } from "./cloud-session-auth";
 import * as saas from "./cloud-saas.controller";
+import { cloudResourceProxy, cloudRouteRegistry } from "./cloud-resource.controller";
 
 /** SaaS-only cloud routes. */
 const r = secureRouter(new Hono(), {
@@ -61,6 +62,11 @@ r.post("/pages/disable", { tag: "cloud:write" }, saas.pagesDisable);
 r.post("/pages/enable", { tag: "cloud:write" }, saas.pagesEnable);
 r.post("/pages/delete", { tag: "cloud:write" }, saas.pagesDelete);
 
+r.use("/resource-proxy", cloudSessionAuth, rateLimiter, bodyLimit({ maxSize: 256_000 }));
+r.post("/resource-proxy", { tag: "cloud:write" }, cloudResourceProxy);
+r.use("/route-registry", cloudSessionAuth);
+r.get("/route-registry", { tag: "cloud:read" }, cloudRouteRegistry);
+
 r.use("/send-invitation", cloudSessionAuth);
 r.post("/send-invitation", { tag: "cloud:write" }, saas.sendInvitation);
 
@@ -102,7 +108,7 @@ r.post("/teardown-project", { tag: "cloud:admin" }, saas.teardownProjectHandler)
 // directly from github.com / from a popup with no SaaS session cookie.
 // Auth is a single-use random token in the URL. Register these BEFORE
 // the cloudSessionAuth middleware so it isn't gated.
-r.public("get", "/github/install-callback", { reason: "GitHub App install callback - validated by state token in URL" }, saas.githubInstallCallback);
+r.public("get", "/github/install-callback", { reason: "GitHub App install callback - durable state plus GitHub user/App verification" }, saas.githubInstallCallback);
 r.public("get", "/github/oauth-bridge", { reason: "GitHub OAuth bridge redirect - validated by state token, no session" }, saas.githubOauthBridge);
 r.public("get", "/github/oauth-success", { reason: "GitHub OAuth success page - validated by single-use token in URL" }, saas.githubOauthSuccess);
 
@@ -114,4 +120,3 @@ r.post("/github/installation-token", { tag: "cloud:write" }, saas.githubInstalla
 r.get("/github/user-status", { tag: "cloud:read" }, saas.githubUserStatus);
 
 export const cloudSaasRoutes = r.hono;
-

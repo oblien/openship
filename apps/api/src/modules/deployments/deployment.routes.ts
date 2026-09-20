@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudDeploymentProxy, cloudProjectProxyByQuery } from "../../lib/cloud/project-router";
 import * as ctrl from "./deployment.controller";
-import { TriggerDeployBody, BuildAccessBody, PrepareDeployBody, BuildRespondBody } from "./deployment.schema";
+import { TriggerDeployBody, BuildAccessBody, PrepareDeployBody, BuildRespondBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "deployments",
@@ -36,12 +36,13 @@ r.post(
   {
     tag: "deployment:write",
     collection: true,
-    // `ctrl.create` asserts {project, body.projectId, write} itself (projectId is
+    // `ctrl.create` delegates to the shared operation's project-write assertion (projectId is
     // required by TriggerDeployBody), so the collection `"*"` pre-check is
     // redundant — and it was the reason a project-scoped token could never
     // redeploy a project it was granted.
     collectionProject: true,
     body: TriggerDeployBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Git-based deploy — redeploy an already-linked project from its git source. To deploy a LOCAL FOLDER instead, use the folder-upload flow: projects folder/session → (upload) → folder/scan → projects/ensure → deployments/build/access.",
@@ -55,6 +56,7 @@ r.post(
     tag: "deployment:write",
     collection: true,
     body: PrepareDeployBody,
+    auditHandledByOperation: true,
     mcp: { description: "Detect stack/build config for a git repo or local path before deploying." },
   },
   ctrl.prepare,
@@ -70,6 +72,7 @@ r.post(
     // the same flag on POST / above.
     collectionProject: true,
     body: BuildAccessBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Deploy — the wizard 'Deploy' action. Starts the build + deployment. For a folder-upload deploy pass projectId (from projects/ensure) and uploadSessionId (from folder/session). Wizard settings (envVars, publicEndpoints, buildStrategy, runtimeMode, cloudResourceTier) are optional. Returns { success, deployment_id, project_id }. Do NOT set deployTarget:'cloud' on a self-hosted instance — it triggers promote-to-cloud; leave it unset and the upload session mode decides.",
@@ -83,7 +86,7 @@ r.post(
 // in body. Permission required is "read"; readOnly tells the scanner
 // the POST + read combination is intentional.
 r.post("/ssl/status", { tag: "deployment:read", readOnly: true, collection: true }, ctrl.sslStatus);
-r.post("/ssl/renew", { tag: "deployment:write", collection: true }, ctrl.sslRenew);
+r.post("/ssl/renew", { tag: "deployment:write", collection: true, auditHandledByOperation: true }, ctrl.sslRenew);
 
 /* ── Deployment by ID ──────────────────────────────────────────────── */
 // cloudDeploymentProxy (after the permission middleware) forwards the request
@@ -129,10 +132,10 @@ r.get(
   cloudDeploymentProxy,
   ctrl.pendingActions,
 );
-r.post("/:id/build", { tag: "deployment:write" }, cloudDeploymentProxy, ctrl.buildStart);
+r.post("/:id/build", { tag: "deployment:write", auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.buildStart);
 r.post(
   "/:id/redeploy",
-  { tag: "deployment:write", mcp: { description: "Re-run the latest deployment for this project." } },
+  { tag: "deployment:write", mcp: { description: "Re-run the latest deployment for this project." }, auditHandledByOperation: true },
   cloudDeploymentProxy,
   ctrl.buildRedeploy,
 );
@@ -150,43 +153,39 @@ r.get(
 );
 r.post(
   "/:id/rollback",
-  { tag: "deployment:write", mcp: { description: "Roll back to this deployment's artifact/commit." } },
+  { tag: "deployment:write", mcp: { description: "Roll back to this deployment's artifact/commit." }, auditHandledByOperation: true },
   cloudDeploymentProxy,
   ctrl.rollback,
 );
-r.post("/:id/pin", { tag: "deployment:write" }, cloudDeploymentProxy, ctrl.pin);
-r.post("/:id/reject", { tag: "deployment:write", mcp: { description: "Reject a partial-failure deployment awaiting a decision (roll back the changed services)." } }, cloudDeploymentProxy, ctrl.reject);
-r.post("/:id/keep", { tag: "deployment:write", mcp: { description: "Keep a partial-failure deployment awaiting a decision (accept the succeeded services)." } }, cloudDeploymentProxy, ctrl.keep);
+r.post("/:id/pin", { tag: "deployment:write", auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.pin);
+r.post("/:id/reject", { tag: "deployment:write", mcp: { description: "Reject a partial-failure deployment awaiting a decision (roll back the changed services)." }, auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.reject);
+r.post("/:id/keep", { tag: "deployment:write", mcp: { description: "Keep a partial-failure deployment awaiting a decision (accept the succeeded services)." }, auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.keep);
 r.post(
   "/:id/skip-port-check",
-  {
-    tag: "deployment:write",
+  { tag: "deployment:write",
     mcp: {
       description:
         "Dismiss the advisory 'nothing is listening on this port' warning for a target (service id, or the port as a string). Advisory-only — it never changes the deployment's status. Use when the app legitimately listens elsewhere.",
-    },
-  },
+    }, auditHandledByOperation: true },
   cloudDeploymentProxy,
   ctrl.skipPortCheck,
 );
 r.post(
   "/:id/cancel",
-  { tag: "deployment:write", mcp: { description: "Cancel an in-progress deployment." } },
+  { tag: "deployment:write", mcp: { description: "Cancel an in-progress deployment." }, auditHandledByOperation: true },
   cloudDeploymentProxy,
   ctrl.cancel,
 );
-r.delete("/:id", { tag: "deployment:admin" }, cloudDeploymentProxy, ctrl.remove);
-r.post("/:id/restart", { tag: "deployment:write", mcp: { description: "Restart the running container(s) for this deployment." } }, cloudDeploymentProxy, ctrl.restart);
+r.delete("/:id", { tag: "deployment:admin", auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.remove);
+r.post("/:id/restart", { tag: "deployment:write", mcp: { description: "Restart the running container(s) for this deployment." }, auditHandledByOperation: true }, cloudDeploymentProxy, ctrl.restart);
 r.post(
   "/:id/build/respond",
-  {
-    tag: "deployment:write",
+  { tag: "deployment:write",
     body: BuildRespondBody,
     mcp: {
       description:
         "Answer a decision the deploy is HELD on, unblocking the pipeline. `action` must be one of the ids the prompt itself offers (e.g. free_port / abort for a port conflict) — read them from the pending-actions or build-status tool rather than guessing; do not invent an id. The deploy aborts on its own if nobody answers before the prompt's `expiresAt`.",
-    },
-  },
+    }, auditHandledByOperation: true },
   cloudDeploymentProxy,
   ctrl.buildRespond,
 );

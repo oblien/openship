@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { auth } from "../lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { repos } from "@repo/db";
 
 /**

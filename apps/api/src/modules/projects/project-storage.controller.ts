@@ -1,34 +1,23 @@
-/**
- * Object-storage controller — bind an S3 bucket to a project's filesystem
- * config. Routes are project-scoped (`:id` = the app that gets the bucket).
- */
-
 import type { Context } from "hono";
-import { getRequestContext } from "../../lib/request-context";
+import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
-import {
-  bindObjectStorage,
-  getObjectStorage,
-  unbindObjectStorage,
-  type BindObjectStorageInput,
-} from "./project-storage.service";
+import { operationContext, applyOperationContext } from "../../lib/operation-context";
 
-/** GET /api/projects/:id/storage — current binding + what can be bound. */
 export async function get(c: Context) {
-  const ctx = getRequestContext(c);
-  return c.json({ data: await getObjectStorage(ctx, param(c, "id")) });
+  const result = await getPlatformKernel().projects.getStorage(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
 }
 
-/** POST /api/projects/:id/storage — bind a bucket (source app or external S3). */
 export async function bind(c: Context) {
-  const ctx = getRequestContext(c);
-  const body = await c.req.json<BindObjectStorageInput>().catch(() => null);
-  if (!body) return c.json({ error: "A JSON body is required" }, 400);
-  return c.json({ data: await bindObjectStorage(ctx, param(c, "id"), body) });
+  const result = await getPlatformKernel().projects.bindStorage(operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
 }
 
-/** DELETE /api/projects/:id/storage — remove the binding + the env it wrote. */
 export async function unbind(c: Context) {
-  const ctx = getRequestContext(c);
-  return c.json({ data: await unbindObjectStorage(ctx, param(c, "id")) });
+  const result = await getPlatformKernel().projects.unbindStorage(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
 }
+

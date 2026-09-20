@@ -101,6 +101,10 @@
     "serverOnPort": "{port} portundaki sunucu",
     "serverPortNotSet": "Sunucu portu ayarlanmadı",
     "staticFromEdge": "Edge üzerinden sunulan statik içerik",
+    "modeServer": "Sunucu",
+    "modeWorker": "Worker",
+    "modeStatic": "Statik",
+    "workerModeDesc": "Bağlantı noktası veya genel URL olmadan sürekli çalışır — bir kuyruk tüketicisi, cron veya bot.",
     "staticPathHint": "Edge üzerinden statik dosyalar olarak sunulur — hiçbir işlem çalışmaz.",
     "buildSettingsTitle": "Derleme Ayarları"
   },
@@ -120,6 +124,7 @@
     "noneSet": "Hiçbiri ayarlanmadı",
     "pasteEnv": ".env Yapıştır",
     "uploadEnv": ".env Yükle",
+    "downloadEnv": ".env İndir",
     "edit": "Düzenle",
     "cancel": "İptal",
     "saving": "Kaydediliyor...",
@@ -129,7 +134,7 @@
     "valuePlaceholder": "değer",
     "dropHere": ".env dosyasını buraya sürükleyip bırakın",
     "noneTitle": "Ortam değişkeni yok",
-    "emptyHintEditing": "\"Değişken Ekle\"ye tıklayın, \".env Yapıştır\"ı kullanın, bir dosya yükleyin veya bu kutunun içine yapıştırın",
+    "emptyHintEditing": "Bu kutunun içinde herhangi bir yere bir .env bloğu yapıştırın veya buraya bir .env dosyası bırakın.",
     "emptyHintReadonly": "Ortam değişkenlerini yönetmek için \"Düzenle\"ye tıklayın",
     "pasteHint": "Tam bir .env bloğunu bu kutunun içinde herhangi bir yere yapıştırın.",
     "addVariable": "Değişken Ekle",
@@ -141,6 +146,7 @@
       "interpolated": "Değişkenlerden türetildi"
     },
     "toast": {
+      "downloadFailed": "Ortam değişkenleri indirilemedi.",
       "title": "Ortam Değişkenleri",
       "added": "{count} eklendi",
       "updated": "{count} güncellendi",
@@ -204,9 +210,9 @@
       "volumes": "Disk Birimleri (Volumes)",
       "statefulWarnPart1": "Buluttaki durum bilgisi tutan (stateful) servis: veriler çalışma alanının kalıcı diskinde kalır (yeniden başlatmalarda korunur) ancak yedeklemeler etkinleştirilmediği sürece ",
       "statefulWarnBold": "yeniden derlemelerde korunmaz",
-      "statefulWarnPart2": ". Docker volume bağlamaları geçerli değildir.",
+      "statefulWarnPart2": ". Çalışma alanını değiştirmeden önce verileri açıkça yedekleyin ve geri yükleyin.",
       "volumeHint": "Adlandırılmış disk birimi veya sunucu yolu → konteyner yolu.",
-      "volumeCloudNote": "Bulutta bu bağlamalar geçerli değildir — veriler çalışma alanının diskinde kalır (yedekleme olmadan yeniden derlemelerde korunmaz).",
+      "volumeCloudNote": "Openship Cloud kalıcı birim bağlamalarını desteklemez. Birim gerektiren iş yükleri için bir sunucu seçin.",
       "sourcePlaceholder": "Kaynak",
       "containerPathPlaceholder": "Konteyner yolu",
       "readOnlyMount": "Salt okunur bağlama",
@@ -365,9 +371,6 @@
       "successful": "Dağıtım Başarılı",
       "deploying": "Servisler Dağıtılıyor…"
     },
-    "running": "çalışıyor",
-    "buildingSuffix": "· {count} derleniyor",
-    "failedSuffix": "· {count} başarısız",
     "decisionBannerTitle": "İşlem gerekiyor — bazı servisler başarısız oldu",
     "decisionBannerDefaultMsg": "Bu dağıtım bazı servisler başarısız olarak tamamlandı. Dağıtımı koruyup başarısız servisleri daha sonra düzeltebilir veya önceki sürümü geri yüklemek için dağıtımı reddedebilirsiniz.",
     "review": "İncele",
@@ -407,6 +410,12 @@
       "retryOther": "{count} Başarısız Servisi Tekrar Dene"
     }
   },
+  "composeServiceTally": {
+    "running": "çalışıyor",
+    "builtSuffix": "· {count} derlendi",
+    "buildingSuffix": "· {count} derleniyor",
+    "failedSuffix": "· {count} başarısız"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "İptal Edildi",
@@ -417,12 +426,20 @@
     },
     "detailsTitle": "Dağıtım Detayları",
     "rowStatus": "Durum",
+    "rowTarget": "Hedef",
+    "rowBuild": "Derleme",
     "rowBuildTime": "Derleme Süresi",
     "rowServices": "Servisler",
     "rowProject": "Proje",
-    "rowType": "Tür",
-    "running": "çalışıyor",
-    "buildingSuffix": "· {count} derleniyor",
-    "failedSuffix": "· {count} başarısız"
+    "rowType": "Tür"
+  },
+  "configDiagnostics": {
+    "title": "Bu deponun openship.json dosyasının bir kısmı uygulanmadı",
+    "description": "Aşağıda listelenen alanlar atlandı; dosyanın kalanı uygulandı. Dağıtım devam edecek.",
+    "titleWholeFile": "Bu deponun openship.json dosyası yok sayıldı",
+    "descriptionWholeFile": "Dosyanın hiçbir kısmı uygulanmadı. Dağıtım, Openship'in algıladığı ayarlarla devam edecek.",
+    "refused": "Reddedildi",
+    "unrecognized": "Tanınmadı",
+    "hint": "Sonraki dağıtımdan önce dosyayı denetlemek için depoda `openship config validate` komutunu çalıştırın."
   }
 }

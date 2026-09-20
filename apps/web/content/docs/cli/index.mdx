@@ -1,201 +1,52 @@
 ---
-title: CLI overview
-description: Install the openship CLI, log in with a token, understand connection contexts, and find every command at a glance.
+title: Openship CLI
+description: Deploy applications and manage Openship from your terminal.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+Use the CLI to deploy code, inspect releases, manage services, and operate a self-hosted installation.
 
-The `openship` CLI does everything the dashboard does, from your terminal — run the platform, deploy a
-project, tail logs, manage domains, and script it all in CI. It's the same binary you use to install and
-run Openship itself.
-
-<Callout title="Install it first">
-This page assumes the `openship` command is already on your PATH. If not, see
-[Installation](/docs/getting-started/installation) — the short version is `npm i -g openship` (or
-`curl -fsSL https://get.openship.io | sh`).
-</Callout>
-
-Every command supports `--help`, so when in doubt:
+## Install
 
 ```bash
-openship --help              # top-level commands
-openship deploy --help       # flags for one command
-openship domain add --help   # flags for a subcommand
+npm install -g openship
+openship --help
 ```
 
-## Log in with a token
+Node.js 22 or later is required. A local `npm install openship` also provides the command through `npx`.
+The reference follows this repository; use `--help` to check your installed version. Native SDK mode and
+SDK imports require the [preview package](/docs/api/sdk/installation) until its release is published.
 
-The CLI authenticates with a **Personal Access Token (PAT)** — a string that starts with `opsh_pat_`.
-You create one in the dashboard, then hand it to `openship login`.
+## Connect and deploy
 
-<Steps>
-
-<Step>
-
-### Get a token
-
-In the dashboard, open **Settings → Personal Access Tokens** and create one. Copy it — the secret is shown
-only once. (You can also mint tokens from the CLI with [`openship token create`](/docs/cli/access).)
-
-</Step>
-
-<Step>
-
-### Log in
-
-Running `openship login` with no arguments opens that settings page and waits for you to paste the token.
-For scripts and CI, pass it directly:
+Start a [local installation](/docs/cli/run), or connect to an existing one:
 
 ```bash
-# Interactive — opens Settings and prompts for a paste
-openship login
+openship login \
+  --api-url https://ship.example.com \
+  --dashboard-url https://ship.example.com \
+  --context production
 
-# Non-interactive — pass the token (great for CI)
-openship login --token opsh_pat_xxxxxxxxxxxx
-
-# Point at a remote instance instead of localhost
-openship login --token opsh_pat_xxxxxxxxxxxx \
-  --api-url https://your-host --dashboard-url https://your-host
-```
-
-The token is validated against the API and saved to `~/.openship/config.json`.
-
-</Step>
-
-</Steps>
-
-| `openship login` flag | Purpose | Default |
-|---|---|---|
-| `--token <token>` | PAT (`opsh_pat_…`) for non-interactive login. | prompt |
-| `--api-url <url>` | API base URL to authenticate against. | `http://localhost:4000` |
-| `--dashboard-url <url>` | Dashboard base URL (opened for the paste flow). | `http://localhost:3001` |
-| `--context <name>` | Name of the [context](#connection-contexts) to store this login under. | `default` |
-
-<Callout title="Signing out" type="info">
-`openship logout` removes the stored token from the active context.
-</Callout>
-
-## Global flags
-
-These work on every command.
-
-| Flag | Purpose |
-|---|---|
-| `--json` | Machine-readable JSON output on stdout (data only — no spinners or prose). Ideal for piping into `jq` or consuming from scripts. |
-| `--version` | Print the CLI version. |
-| `--help` | Show help for the CLI or any command / subcommand. |
-
-```bash
-# Human-readable
 openship project list
-
-# Same data as JSON for scripting
-openship project list --json | jq '.[].name'
+openship init --project proj_123
+openship deploy --watch
 ```
 
-## Connection contexts
+`login` opens the token settings page and asks for a personal access token. `init` links the current
+directory to a project. `deploy --watch` submits a deployment and follows its progress.
 
-A **context** is a named connection: an API endpoint, a dashboard endpoint, and the token to use with them.
-They let one machine talk to more than one Openship instance — say a local install and a production
-server — and switch between them without re-authenticating each time.
-
-Contexts live in `~/.openship/config.json`. The one marked **current** is what every authenticated command
-uses. `openship login` writes to the `default` context unless you pass `--context <name>`.
-
-```bash
-openship context            # list contexts; the active one is starred
-openship context use prod   # switch the active context to "prod"
-```
-
-### Managing contexts
-
-| Command | Purpose |
-|---|---|
-| `openship context` (alias `ctx`) | Show all contexts; the active row is starred. |
-| `openship context list` (alias `ls`) | List configured contexts. |
-| `openship context use <name>` | Switch the active context. |
-| `openship context add <name>` | Create or update a context's endpoints/token. |
-| `openship context rm <name>` (alias `remove`) | Remove a context (you can't remove the active one). |
-
-Flags for `openship context add`:
-
-| Flag | Purpose |
-|---|---|
-| `--api-url <url>` | API base URL. |
-| `--dashboard-url <url>` | Dashboard base URL. |
-| `--token <token>` | Personal access token to store. |
-| `--use` | Switch to this context immediately after adding it. |
-
-<Callout title="add vs. login" type="info">
-`openship context add` only writes config — it doesn't check the token. Use `openship login` when you want
-the token validated against the API before it's saved.
-</Callout>
-
-## All commands
-
-Twenty-four commands, grouped the same way the reference pages are. Each heading links to the page that
-covers those commands in full; run `openship <command> --help` for the flag list of any one.
-
-### Running & updating — [reference](/docs/cli/run)
-
-Operate Openship itself: the local server, the CLI, and the desktop app.
-
-| Command | Purpose |
-|---|---|
-| `openship up` | Run Openship as a persistent service (starts on boot, auto-restarts). Ports are dynamic — a busy port is switched automatically. Add `--foreground` for a one-off attached run. |
-| `openship stop` | Stop the service started by `openship up` (won't restart or return on reboot); also clears a stale database lock. |
-| `openship reset-admin-password` | Reset the local admin login from this machine, without signing in (forgot-password recovery). |
-| `openship update` | Update the CLI and bundled server to the latest release. |
-| `openship install` | Download and install the Openship desktop app for this OS. |
-| `openship install cache` | Manage the local download cache (list, verify, clean, path). |
-| `openship open` | Open the Openship dashboard in your browser. |
-| `openship status` | Show the local service (installed/running, resolved ports) and the active context's API health. |
-| `openship doctor` | Diagnose the CLI setup (config, active context, runtime). |
-
-### Access & the raw API — [reference](/docs/cli/access)
-
-Who you are, which instance you're talking to, and an escape hatch to any route.
-
-| Command | Purpose |
-|---|---|
-| `openship login` | Authenticate with a Personal Access Token. |
-| `openship logout` | Remove the stored token from the active context. |
-| `openship context` (alias `ctx`) | Manage connection contexts — see [above](#connection-contexts). |
-| `openship token` | Manage personal access tokens (list, create, revoke). |
-| `openship api` | Make an authenticated request to any Openship API route (like `gh api`). |
-
-### Deploying — [reference](/docs/cli/deploy)
-
-| Command | Purpose |
-|---|---|
-| `openship deploy` | Trigger a deployment for the current project. |
-| `openship deployment` (alias `deployments`) | Manage deployments — list, inspect, redeploy, rollback. |
-| `openship logs` | View or stream a deployment's logs. |
-
-### Projects, services & domains — [reference](/docs/cli/projects)
-
-| Command | Purpose |
-|---|---|
-| `openship init` | Link the current directory to a project (writes `.openship/project.json`). |
-| `openship project` (alias `projects`) | Manage Openship projects. |
-| `openship service` (alias `services`) | Manage the services in a compose stack (a multi-service project). |
-| `openship domain` | Manage custom domains, DNS verification, and SSL certificates. |
-
-### Self-host infrastructure — [reference](/docs/cli/self-host)
-
-| Command | Purpose |
-|---|---|
-| `openship server` | Manage self-hosted SSH servers. |
-| `openship system` | Instance settings, onboarding, migration, and data transfer. |
-| `openship mail` | Self-hosted mail server (iRedMail) setup and admin. |
-| `openship backup` | Manage backups — policies, runs, restores, and destinations. |
-
-## Where to next
+## Choose a workflow
 
 <Cards>
-  <Card title="Running & updating" href="/docs/cli/run" description="up, stop, update, install — operate Openship itself." />
-  <Card title="Deploying" href="/docs/cli/deploy" description="deploy, deployment, logs — the full deploy loop." />
-  <Card title="Projects, services & domains" href="/docs/cli/projects" description="init, project, service, and domain commands." />
-  <Card title="Access & the raw API" href="/docs/cli/access" description="login, context, token, api — auth and any route." />
-  <Card title="Self-host infrastructure" href="/docs/cli/self-host" description="server, system, mail, and backup for instances you run." />
+  <Card title="Connect and authenticate" href="/docs/cli/access" description="Manage contexts, tokens, and direct HTTP requests." />
+  <Card title="Deploy and inspect releases" href="/docs/cli/deploy" description="Deploy folders or Git projects, read logs, and roll back." />
+  <Card title="Manage applications" href="/docs/cli/projects" description="Work with projects, services, domains, and catalog apps." />
+  <Card title="Operate infrastructure" href="/docs/cli/self-host" description="Manage servers, backups, mail, and installation settings." />
+  <Card title="Use native SDK mode" href="/docs/cli/native" description="Run supported commands against an explicitly configured native installation." />
+  <Card title="Complete command reference" href="/docs/cli/reference" description="Every command, subcommand, argument, and option, grouped by task." />
 </Cards>
+
+## Scripts and application code
+
+Use `openship --json project list` for machine-readable command output. See [automation](/docs/cli/automation)
+for CI setup and exit handling. To call the same operations directly from JavaScript or TypeScript,
+use the [Node.js SDK](/docs/api/sdk).

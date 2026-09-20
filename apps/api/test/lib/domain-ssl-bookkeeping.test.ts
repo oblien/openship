@@ -43,13 +43,16 @@ vi.mock("@repo/db", () => ({
       })),
     },
     deployment: {
-      findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1", meta: {} })),
+      findById: vi.fn(async (id: string) => ({ id, projectId: "proj_1", organizationId: "org_1", meta: {} })),
     },
     server: { findLocal: vi.fn(async () => null) },
   },
 }));
 
-vi.mock("../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  // domain-ssl resolves a platform for the SSL provider only, then releases the
+  // docker transport it eagerly bound — a no-op stub here.
+  disposePlatform: () => {},
   resolveDeploymentPlatform: vi.fn(async () => ({
     platform: {
       ssl: {
@@ -65,15 +68,15 @@ vi.mock("../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "selfhosted", runtime: {} }),
 }));
 
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: <T,>(fn: () => Promise<T>) => fn() }),
 }));
 
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "selfhosted" },
 }));
 
-import { manageDomainSsl, provisionDomainCertForVerify } from "../../src/lib/domain-ssl";
+import { manageDomainSsl, provisionDomainCertForVerify } from "@repo/platform/engine/lib/domain-ssl";
 
 const HOST = "app.example.com";
 
@@ -203,3 +206,12 @@ describe("the happy path is untouched", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));

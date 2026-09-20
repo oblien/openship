@@ -38,6 +38,7 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
   const c = t.deployments.rollbackConfirm;
   const env = plan?.env;
   const untouched = plan?.untouchedServices ?? [];
+  const ineligible = plan?.mode === "ineligible";
 
   const directionLabel = (direction: string): string => {
     if (direction === "frozen-wins") return c.dirFrozenWins;
@@ -63,6 +64,16 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
           <p className="text-sm text-muted-foreground font-mono break-all">
             {plan.rebuildServices.join(", ")}
           </p>
+        )}
+
+        {ineligible && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{plan.reason || t.deployments.menu.rollbackTitle.notReady}</span>
+          </div>
         )}
 
         {env && (
@@ -133,13 +144,15 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
           >
             {c.cancel}
           </button>
-          <button
-            onClick={onConfirm}
-            disabled={busy}
-            className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {c.confirm}
-          </button>
+          {!ineligible && (
+            <button
+              onClick={onConfirm}
+              disabled={busy}
+              className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {c.confirm}
+            </button>
+          )}
         </div>
       </div>
     </Modal>

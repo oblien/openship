@@ -1,5 +1,61 @@
 import { describe, it, expect } from "vitest";
-import { isBehind, digestSha, identityLabel, type UpdatableIdentity } from "./identity";
+import {
+  compareCommitSha,
+  digestSha,
+  identityLabel,
+  isBehind,
+  isFullCommitSha,
+  type UpdatableIdentity,
+} from "./identity";
+
+/**
+ * The reported failure: a project deployed at `1eeaf76` was offered `1eeaf76` as a
+ * new commit, permanently. The deploy API accepts any git ref as `commitSha`, git
+ * checks an abbreviation out happily, and every surface renders `slice(0, 7)` — so
+ * a byte comparison against the 40-char branch HEAD showed one commit as two and
+ * printed the same sha on both sides of the nudge.
+ */
+describe("compareCommitSha", () => {
+  const FULL = "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5";
+
+  it("an abbreviation names the same commit, in either position", () => {
+    expect(compareCommitSha(FULL, "1eeaf76")).toBe("same");
+    expect(compareCommitSha("1eeaf76", FULL)).toBe("same");
+    expect(compareCommitSha(FULL, FULL)).toBe("same");
+  });
+
+  it("ignores surrounding whitespace and case", () => {
+    expect(compareCommitSha(FULL, ` ${FULL.toUpperCase()}\n`)).toBe("same");
+  });
+
+  it("still reports a real difference", () => {
+    expect(compareCommitSha(FULL, "282619c7aabbccddeeff00112233445566778899")).toBe("different");
+    expect(compareCommitSha(FULL, "282619c")).toBe("different");
+  });
+
+  it("a ref that isn't a sha is unknown, never drift", () => {
+    // A tag or branch pinned as `--commit` can't be compared by value; claiming
+    // "different" is what pins a nudge on forever.
+    expect(compareCommitSha(FULL, "v1.2.3")).toBe("unknown");
+    expect(compareCommitSha(FULL, "HEAD")).toBe("unknown");
+    expect(compareCommitSha(FULL, null)).toBe("unknown");
+    expect(compareCommitSha(null, undefined)).toBe("unknown");
+  });
+
+  it("a prefix below git's abbreviation floor is unknown, not a guess", () => {
+    expect(compareCommitSha(FULL, "1eea")).toBe("unknown");
+    expect(compareCommitSha(FULL, "1eeaf7")).toBe("unknown");
+  });
+});
+
+describe("isFullCommitSha", () => {
+  it("accepts only a canonical 40-hex sha", () => {
+    expect(isFullCommitSha("1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5")).toBe(true);
+    expect(isFullCommitSha("1eeaf76")).toBe(false);
+    expect(isFullCommitSha("v1.2.3")).toBe(false);
+    expect(isFullCommitSha(null)).toBe(false);
+  });
+});
 
 describe("isBehind", () => {
   it("release: lower semver is behind", () => {
@@ -19,6 +75,11 @@ describe("isBehind", () => {
     expect(isBehind({ kind: "commit", sha: "aaa" }, { kind: "commit", sha: "aaa" })).toBe(false);
     // Missing a sha → no evidence → not behind.
     expect(isBehind({ kind: "commit", sha: "" }, { kind: "commit", sha: "bbb" })).toBe(false);
+  });
+
+  it("commit: an abbreviated sha is not a new commit", () => {
+    const full = "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5";
+    expect(isBehind({ kind: "commit", sha: "1eeaf76" }, { kind: "commit", sha: full })).toBe(false);
   });
 
   it("image: compares the sha256 suffix across repo@ / bare forms", () => {

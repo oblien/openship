@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { systemCatalog } from "./catalog";
-import { checkDocker } from "./checks";
+import { checkDocker, needsDockerGroupRefresh } from "./checks";
 import type { CommandExecutor } from "../types";
 
 /**
@@ -30,6 +30,35 @@ function box(answers: Array<[string, string | Error]>): CommandExecutor {
 
 const VERSION = ["docker --version", "Docker version 29.7.1, build abc1234"] as const;
 
+describe("stale Docker login groups", () => {
+  const denied = async () => checkDocker(box([
+    [...VERSION], ["docker info", new Error("permission denied at /var/run/docker.sock")],
+  ]));
+
+  it("detects a newly granted supplementary group", async () => {
+    expect(await needsDockerGroupRefresh(box([["id -G", "1000 100\n1000 100 999\n"]]), [await denied()])).toBe(true);
+  });
+
+  it("does not reconnect just because group order differs", async () => {
+    expect(await needsDockerGroupRefresh(box([["id -G", "1000 999\n999 1000\n"]]), [await denied()])).toBe(false);
+  });
+
+  it.each(["", "1000\n", "1000\npermission denied", "1000\n1000\nextra", new Error("id failed")])(
+    "does not infer changed groups from an unsuccessful probe: %s", async (answer) => {
+      expect(await needsDockerGroupRefresh(box([["id -G", answer]]), [await denied()])).toBe(false);
+    },
+  );
+
+  it("does not probe groups for a healthy or stopped daemon", async () => {
+    const executor = box([]);
+    const healthy = await checkDocker(box([[...VERSION], ["docker info", "29.7.1"]]));
+    const stopped = await checkDocker(box([[...VERSION], ["docker info", new Error("Cannot connect to the Docker daemon")]]));
+    expect(await needsDockerGroupRefresh(executor, [healthy])).toBe(false);
+    expect(await needsDockerGroupRefresh(executor, [stopped])).toBe(false);
+    expect(executor.exec).not.toHaveBeenCalled();
+  });
+});
+
 describe("checkDocker", () => {
   it("reports healthy when the daemon names its version", async () => {
     const status = await checkDocker(box([[...VERSION], ["docker info", "29.7.1"]]));
@@ -41,7 +70,11 @@ describe("checkDocker", () => {
 
   // The #408 report, end to end: the daemon's own refusal reaches the component
   // message instead of being replaced by the static guess.
-  it("surfaces the daemon's refusal in the message", async () => {
+  //
+  // And the headline matches the refusal. This case used to be reported as "the daemon
+  // is not running", which is a different fault with a different fix — the operator was
+  // sent to start a daemon that a socket permission had never let us ask about.
+  it("names a socket refusal as a permission problem, not a stopped daemon", async () => {
     const status = await checkDocker(
       box([
         [...VERSION],
@@ -55,12 +88,17 @@ describe("checkDocker", () => {
     );
 
     expect(status.healthy).toBe(false);
-    expect(status.running).toBe(false);
     // Still installed, at the version we parsed — the daemon is the only unknown.
     expect(status.installed).toBe(true);
     expect(status.version).toBe("29.7.1");
-    expect(status.message).toContain("the daemon is not running");
+    expect(status.message).toContain("not allowed to use its socket");
+    expect(status.message).toContain("`docker` group");
+    // The #408 property itself: the daemon's own words, still carried.
     expect(status.message).toContain("permission denied");
+    expect(status.message).not.toContain("the daemon is not running");
+    // Unknown, not false: a refusal is equally consistent with a healthy daemon, and
+    // the point of this arm is to stop asserting things the probe didn't establish.
+    expect(status.running).toBeUndefined();
   });
 
   // The other live #408 candidate: `docker --version` is client-only and instant,
@@ -116,6 +154,12 @@ describe("checkDocker", () => {
     expect(status.message).toContain("Cannot connect to the Docker daemon");
     expect(status.message).not.toContain("Is the docker daemon running?");
     expect(status.message.split("\n")).toHaveLength(1);
+    // The other side of the permission discriminator, and the reason it is narrow: this
+    // IS a stopped daemon, so it must keep the stopped headline and the `false` that
+    // goes with it. A looser match on the word "docker" would hand this arm the
+    // group-membership remedy, which fixes nothing here.
+    expect(status.message).toContain(systemCatalog.checks.docker.notRunningMessage!);
+    expect(status.running).toBe(false);
   });
 
   it("probes for a server version, not just an exit code", () => {

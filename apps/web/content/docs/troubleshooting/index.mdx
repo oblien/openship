@@ -139,6 +139,65 @@ isn't running, or a login that has expired.
 3. If **api** is red, confirm the instance is actually up (`openship status` shows its health and mode) and
    that the address is the one you expect.
 
+### Symptom: openship up refuses to regenerate secrets
+
+<Callout title='"Refusing to continue: this would regenerate secrets your existing install already has"' type="error">
+A re-run of `openship up` (Compose install) exits without starting anything and names one or more of
+`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `INTERNAL_TOKEN`.
+</Callout>
+
+**What it means** — those secrets are generated once and stored only in `~/.openship/compose/.env`. This run
+couldn't read them there, but the install's database volume is still on the box. Regenerating them cannot work:
+Postgres applies `POSTGRES_PASSWORD` only when it first creates its data directory (the API would fail with
+`password authentication failed for user "openship"`), and `BETTER_AUTH_SECRET` is the key your stored
+environment variables are encrypted with. So the run stops **before writing anything** rather than leaving you
+with a stack that can't start.
+
+**How to fix**
+
+1. Check who you're running as. `sudo openship up` reads `/root/.openship/compose/.env`; without `sudo` it reads
+   the one in your own home. Re-run as the user that owns the install.
+2. If the file is there but unreadable, fix its permissions — don't let the secrets be regenerated instead.
+3. If it was overwritten, restore it. Every `openship up` keeps the `.env` it replaced at
+   `~/.openship/compose/.env.bak`; older values may also survive in a stopped container
+   (`docker inspect <container> --format '{{json .Config.Env}}'`).
+4. Only if the original values are genuinely gone: `openship up --reset-secrets`. The database password is
+   realigned for you, but **every stored environment variable becomes permanently unreadable** — you'll need to
+   re-enter them under each project's Configuration tab.
+
+<Callout title="Preview it first" type="info">
+`openship up --dry-run` lists each secret as `<preserved>` or `<generated on this run>` and warns when a real run
+would refuse — so you can check what a re-run will do before it touches the box.
+</Callout>
+
+### Symptom: the openship command crashes, or vanishes after a Node upgrade
+
+<Callout title='"SyntaxError: Invalid regular expression flags" — or "openship: command not found" right after installing' type="error">
+`npm i -g openship` reported success, but the command either dies instantly with a `SyntaxError`
+pointing at a file you've never heard of (`string-width`, `commander`) or isn't on your `PATH` at all.
+</Callout>
+
+**What it means** — a package-manager install runs on **your** Node, and Openship needs **Node 22+**.
+On Node 18 the install genuinely succeeds and the binary is linked; it's the first dependency it loads
+that can't be parsed by that Node.
+
+Current CLI versions handle this for you: instead of the `SyntaxError` they offer to download an
+official Node 22 into `~/.openship/runtime` and use it for Openship only. So a raw `SyntaxError` means
+you're on an older release — reinstall the CLI and it will offer the fix.
+
+The `command not found` variant usually follows *fixing* the first one: nvm, fnm and volta keep global
+packages **per Node version**, so installing a newer Node leaves the CLI behind with the old one.
+
+**How to fix**
+
+1. Check what you're on: `node --version`. Below 22, either accept the CLI's offer to fetch its own
+   Node, upgrade yourself, or skip the question entirely with
+   `curl -fsSL https://get.openship.io | sh` — that installer never touches the Node you have.
+2. Scripting it? `OPENSHIP_VENDOR_NODE=1` accepts the download without a prompt (`0` declines).
+3. After upgrading Node with a version manager, reinstall the CLI on the new version: `npm i -g openship`.
+4. Still not found? The official installer puts it in `~/.openship/bin` — open a new terminal, or
+   `export PATH="$HOME/.openship/bin:$PATH"`.
+
 ## Jump to the right page
 
 <Cards>
@@ -146,6 +205,7 @@ isn't running, or a login that has expired.
   <Card title="GitHub connection & repos" href="/docs/troubleshooting/github" description="Expired connection, a private repo that won't import, auto-deploy webhooks that never fire." />
   <Card title="Domains, DNS & SSL" href="/docs/troubleshooting/domains-ssl" description="A custom domain that won't verify, DNS that hasn't propagated, a certificate stuck provisioning." />
   <Card title="Servers & SSH" href="/docs/troubleshooting/servers-ssh" description="A server that won't connect over SSH, a component that won't install, missing Docker, port-forward tunnels." />
+  <Card title="Host control channel" href="/docs/troubleshooting/host-channel" description="&quot;This operation targets the HOST machine, but no host channel is configured&quot; — the repair, per install shape." />
   <Card title="Desktop app & local data" href="/docs/troubleshooting/desktop-data" description="Startup problems, the database lock, a stuck update, and where your local data lives." />
   <Card title="Common errors" href="/docs/troubleshooting/common-errors" description="The API error codes and messages you'll actually hit — what each one means and how to fix it." />
 </Cards>

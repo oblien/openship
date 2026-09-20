@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./client", () => ({
   getDriver: mocks.getDriver,
   getPgPool: () => ({ connect: mocks.connect }),
+  PG_POOL_MAX: 2,
 }));
 
-import { tryAcquireAdvisoryLock } from "./advisory-lock";
+import { tryAcquireAdvisoryLock, withAdvisoryLock } from "./advisory-lock";
 
 describe("tryAcquireAdvisoryLock", () => {
   beforeEach(() => {
@@ -80,5 +81,74 @@ describe("tryAcquireAdvisoryLock", () => {
 
     await expect(lock?.release()).rejects.toThrow("connection lost");
     expect(client.release).toHaveBeenCalledWith(unlockError);
+  });
+
+  test("returns null immediately when the lock-client permit is occupied", async () => {
+    const client = {
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+        .mockResolvedValueOnce({ rows: [{ pg_advisory_unlock: true }] }),
+      release: vi.fn(),
+    };
+    mocks.connect.mockResolvedValue(client);
+
+    const held = await tryAcquireAdvisoryLock("held");
+    await expect(tryAcquireAdvisoryLock("skipped")).resolves.toBeNull();
+    expect(mocks.connect).toHaveBeenCalledOnce();
+    await held?.release();
+  });
+});
+
+describe("withAdvisoryLock", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getDriver.mockReturnValue("postgres");
+  });
+
+  test("reserves pool capacity instead of admitting every long-lived lock client", async () => {
+    const clients = [0, 1].map(() => ({
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ pg_advisory_unlock: true }] }),
+      release: vi.fn(),
+    }));
+    mocks.connect.mockImplementation(async () => clients[mocks.connect.mock.calls.length - 1]);
+    let finishFirst!: () => void;
+    const first = withAdvisoryLock(
+      "project-runtime:first",
+      () => new Promise<void>((resolve) => (finishFirst = resolve)),
+    );
+    await vi.waitFor(() => expect(mocks.connect).toHaveBeenCalledOnce());
+
+    const second = withAdvisoryLock("project-runtime:second", async () => {});
+    await Promise.resolve();
+    expect(mocks.connect).toHaveBeenCalledOnce();
+
+    finishFirst();
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+  });
+
+  test("destroys a connection whose unlock failed and releases the permit", async () => {
+    const unlockError = new Error("unlock connection lost");
+    const brokenClient = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(unlockError),
+      release: vi.fn(),
+    };
+    const nextClient = {
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ pg_advisory_unlock: true }] }),
+      release: vi.fn(),
+    };
+    mocks.connect.mockResolvedValueOnce(brokenClient).mockResolvedValueOnce(nextClient);
+
+    await expect(withAdvisoryLock("first", async () => {})).rejects.toThrow(unlockError);
+    expect(brokenClient.release).toHaveBeenCalledWith(unlockError);
+    await expect(withAdvisoryLock("second", async () => "ok")).resolves.toBe("ok");
   });
 });

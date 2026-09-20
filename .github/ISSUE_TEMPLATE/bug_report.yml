@@ -1,0 +1,71 @@
+name: Bug report
+description: Report unexpected or incorrect behavior in OpenShip
+title: "[Bug]: "
+labels: ["bug"]
+type: bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve OpenShip. Please provide enough detail for us to reproduce the problem.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Existing issue
+      description: Search the existing issues before submitting a new report.
+      options:
+        - label: I have searched the existing issues and found no duplicate.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: What happened, and what did you expect to happen instead?
+      placeholder: Describe the problem and its impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest set of steps that reliably reproduces the problem.
+      placeholder: |
+        1. Go to ...
+        2. Configure ...
+        3. Run ...
+        4. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the details that are relevant to this problem.
+      value: |
+        - OpenShip version/commit:
+        - Deployment method:
+        - Operating system:
+        - Browser (if applicable):
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Paste relevant logs or attach screenshots. Remove secrets and other sensitive data first.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other information that may help us investigate.
+    validations:
+      required: false

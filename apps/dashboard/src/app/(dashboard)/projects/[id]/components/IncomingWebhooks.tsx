@@ -13,6 +13,13 @@ import {
 import { servicesApi } from "@/lib/api/services";
 import { jobsApi } from "@/lib/api/jobs";
 import { getApiErrorMessage } from "@/lib/api/client";
+import {
+  canSubmitIncomingWebhook,
+  incomingWebhookTargetIds,
+  toggleIncomingWebhookServiceTarget,
+  type IncomingWebhookServiceSelection,
+  type ServiceOptionsState,
+} from "@/lib/incoming-webhook-form";
 import { useToast } from "@/context/ToastContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -127,7 +134,9 @@ export function IncomingWebhooks() {
 
       {/* Delivery feed — every inbound webhook for this project, paginated. */}
       <WebhookDeliveries
-        fetchPage={(cursor) => incomingWebhooksApi.deliveries(projectId, { cursor }).then((r) => r.data)}
+        fetchPage={(cursor) =>
+          incomingWebhooksApi.deliveries(projectId, { cursor }).then((r) => r.data)
+        }
         subtitle="GitHub pushes and custom hook calls received for this project."
       />
 
@@ -162,11 +171,16 @@ function HookRow({
   const { t } = useI18n();
   const c = t.projects.incomingWebhooks;
   const [showSecret, setShowSecret] = useState(false);
+  const targetIds = incomingWebhookTargetIds(hook.actionConfig);
 
   const actionSummary =
     hook.actionType === "deploy"
-      ? hook.actionConfig.serviceId
-        ? interpolate(c.summaryDeployService, { service: hook.actionConfig.serviceId })
+      ? targetIds.length > 0
+        ? targetIds.length === 1
+          ? c.summaryDeployOne
+          : interpolate(c.summaryDeployServices, {
+              count: String(targetIds.length),
+            })
         : c.summaryDeploy
       : interpolate(c.summaryJob, { job: hook.actionConfig.jobKey ?? "" });
 
@@ -181,6 +195,11 @@ function HookRow({
             </span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">{actionSummary}</p>
+          {hook.actionType === "deploy" && targetIds.length > 0 && (
+            <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+              {targetIds.join(", ")}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -269,7 +288,9 @@ function CopyField({
   };
   return (
     <div className="mt-3">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <div className="mt-1 flex items-center gap-1.5">
         <code
           className={`min-w-0 flex-1 truncate rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground ${mono ? "font-mono" : ""}`}
@@ -308,26 +329,47 @@ function CreateHookModal({
 
   const [name, setName] = useState("");
   const [actionType, setActionType] = useState<IncomingWebhookActionType>("deploy");
-  const [serviceId, setServiceId] = useState("");
+  // null is an explicit whole-project scope; a non-empty array is exact.
+  const [serviceIds, setServiceIds] = useState<IncomingWebhookServiceSelection>(null);
   const [jobKey, setJobKey] = useState("");
   const [authMode, setAuthMode] = useState<IncomingWebhookAuthMode>("token");
   const [busy, setBusy] = useState(false);
 
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
+  const [serviceOptionsState, setServiceOptionsState] = useState<ServiceOptionsState>("loading");
   const [jobs, setJobs] = useState<Array<{ key: string; label: string }>>([]);
 
+  const loadServices = useCallback(async () => {
+    setServiceOptionsState("loading");
+    try {
+      const response = await servicesApi.list(projectId);
+      setServices(
+        (response?.services ?? [])
+          .filter((service) => service.enabled)
+          .map((service) => ({ id: service.id, name: service.name })),
+      );
+      setServiceOptionsState("ready");
+    } catch {
+      setServices([]);
+      setServiceOptionsState("error");
+    }
+  }, [projectId]);
+
   useEffect(() => {
-    servicesApi
-      .list(projectId)
-      .then((r) => setServices((r?.services ?? []).map((s) => ({ id: s.id, name: s.name }))))
-      .catch(() => setServices([]));
+    void loadServices();
     jobsApi
       .list()
       .then((r) => setJobs((r?.data ?? []).map((j) => ({ key: j.key, label: j.label }))))
       .catch(() => setJobs([]));
-  }, [projectId]);
+  }, [loadServices]);
 
-  const canSubmit = name.trim() && (actionType !== "job" || jobKey) && !busy;
+  const canSubmit = canSubmitIncomingWebhook({
+    name,
+    actionType,
+    jobKey,
+    busy,
+    serviceOptionsState,
+  });
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -336,7 +378,8 @@ function CreateHookModal({
       const res = await incomingWebhooksApi.create(projectId, {
         name: name.trim(),
         actionType,
-        actionConfig: actionType === "deploy" ? { serviceId: serviceId || undefined } : { jobKey },
+        actionConfig:
+          actionType === "deploy" ? { serviceIds: serviceIds ?? undefined } : { jobKey },
         authMode,
       });
       showToast(c.created, "success");
@@ -392,14 +435,54 @@ function CreateHookModal({
 
           {actionType === "deploy" ? (
             <Field label={c.serviceLabel}>
-              <CustomSelect
-                value={serviceId}
-                options={[
-                  { value: "", label: c.serviceAll },
-                  ...services.map((s) => ({ value: s.id, label: s.name })),
-                ]}
-                onChange={setServiceId}
-              />
+              <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-border/50 bg-background p-2">
+                {serviceOptionsState === "loading" ? (
+                  <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" /> {t.projects.list.loading}
+                  </div>
+                ) : serviceOptionsState === "error" ? (
+                  <div className="flex items-center justify-between gap-3 px-2 py-2 text-sm text-destructive">
+                    <span>{t.projects.services.failedLoad}</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadServices()}
+                      className="shrink-0 rounded-lg border border-border/60 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/50"
+                    >
+                      {t.projects.services.retry}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-muted/50">
+                      <input
+                        type="checkbox"
+                        checked={serviceIds === null}
+                        onChange={() => setServiceIds(null)}
+                        className="size-4 accent-primary"
+                      />
+                      <span>{c.serviceAll}</span>
+                    </label>
+                    {services.map((service) => (
+                      <label
+                        key={service.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={serviceIds?.includes(service.id) ?? false}
+                          onChange={() =>
+                            setServiceIds((current) =>
+                              toggleIncomingWebhookServiceTarget(current, service.id),
+                            )
+                          }
+                          className="size-4 accent-primary"
+                        />
+                        <span>{service.name}</span>
+                      </label>
+                    ))}
+                  </>
+                )}
+              </div>
             </Field>
           ) : (
             <Field label={c.jobLabel}>
@@ -447,7 +530,9 @@ function CreateHookModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</label>
+      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
       <div className="mt-1">{children}</div>
     </div>
   );

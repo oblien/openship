@@ -69,12 +69,34 @@ interface UpdateOpts {
  * else branch, which is correct. No prompts: composeUpdate → composeUp skips the
  * edge preflight, and restart doesn't prompt.
  */
+/**
+ * Re-probe the container→host SSH channel after a recreate.
+ *
+ * An update is exactly when a working channel silently stops working: the recreate
+ * can land the api container in a different docker subnet than the operator's
+ * existing firewall rule allows, and an update FROM a version that had no channel
+ * provisions one here for the first time — dead on arrival behind a default-deny
+ * firewall, looking identical to a bad key (#490).
+ *
+ * Best-effort, and never under --json: the report is chalk prose that would corrupt
+ * a machine-readable document, and its consent prompt has no business interrupting
+ * a scripted update.
+ */
+export async function verifyHostChannelAfterUpdate(): Promise<void> {
+  if (isJsonMode()) return;
+  const { verifyHostChannel } = await import("../lib/host-channel-preflight");
+  await verifyHostChannel().catch(() => {});
+}
+
 async function runReconcile(): Promise<boolean> {
   if (readInstallMethod() === "compose") {
-    const applied = await composeUpdate();
-    if (isJsonMode()) printJson({ reconciled: applied, method: "compose" });
+    const { applied, refused } = await composeUpdate();
+    if (isJsonMode()) printJson({ reconciled: applied, refused, method: "compose" });
     else if (applied) ok("Compose stack regenerated, images pulled, services recreated.");
-    else err("Bringing the compose stack up failed. Re-run `openship update`, or `openship up` to retry.");
+    // A refusal already printed what's wrong and what to do; "retry" would contradict it.
+    else if (!refused)
+      err("Bringing the compose stack up failed. Re-run `openship update`, or `openship up` to retry.");
+    if (applied) await verifyHostChannelAfterUpdate();
     if (!applied) process.exitCode = 1;
     return applied;
   }
@@ -244,15 +266,18 @@ async function runTarballUpdate(install: CliInstall, opts: UpdateOpts): Promise<
   // Same service reconcile as the release path: compose stack regen, or restart
   // the process service onto the freshly-repointed cli/current bundle.
   if (readInstallMethod() === "compose") {
-    const applied = await composeUpdate(latest);
+    const { applied, refused } = await composeUpdate(latest);
     if (isJsonMode()) {
-      printJson({ updated: true, from: current, to: latest, method: "compose", applied });
+      printJson({ updated: true, from: current, to: latest, method: "compose", applied, refused });
     } else if (applied) {
       ok(`Updated to v${latest} — compose stack regenerated, images pulled, services recreated.`);
     } else {
-      err(`Updated the CLI to v${latest}, but bringing the compose stack up failed. Re-run \`openship update\`, or \`openship up\` to retry.`);
+      if (refused) err(`Updated the CLI to v${latest}, but the stack was left as it is — see above.`);
+      else
+        err(`Updated the CLI to v${latest}, but bringing the compose stack up failed. Re-run \`openship update\`, or \`openship up\` to retry.`);
       process.exitCode = 1;
     }
+    if (applied) await verifyHostChannelAfterUpdate();
     return;
   }
 
@@ -355,15 +380,26 @@ export const updateCommand = new Command("update")
     // it re-rendered .env from flags it wasn't given. Bare install → restart the
     // process service so it picks up the new bundle.
     if (readInstallMethod() === "compose") {
-      const applied = await composeUpdate(latest);
+      const { applied, refused } = await composeUpdate(latest);
       if (isJsonMode()) {
-        printJson({ updated: true, from: current, to: latest, via: pm, method: "compose", applied });
+        printJson({
+          updated: true,
+          from: current,
+          to: latest,
+          via: pm,
+          method: "compose",
+          applied,
+          refused,
+        });
       } else if (applied) {
         ok(`Updated to v${latest} — compose stack regenerated, images pulled, services recreated.`);
       } else {
-        err(`Updated the CLI to v${latest}, but bringing the compose stack up failed. Re-run \`openship update\`, or \`openship up\` to retry.`);
+        if (refused) err(`Updated the CLI to v${latest}, but the stack was left as it is — see above.`);
+        else
+          err(`Updated the CLI to v${latest}, but bringing the compose stack up failed. Re-run \`openship update\`, or \`openship up\` to retry.`);
         process.exitCode = 1;
       }
+      if (applied) await verifyHostChannelAfterUpdate();
       return;
     }
 

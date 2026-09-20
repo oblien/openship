@@ -19,8 +19,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { saveCustomApp } from "../../../src/modules/apps/custom-app.service";
-import { getTemplateForOrg } from "../../../src/modules/apps/catalog-source";
+import { saveCustomApp } from "@repo/platform/engine/modules/apps/custom-app.service";
+import { getTemplateForOrg } from "@repo/platform/engine/modules/apps/catalog-source";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ctx = (organizationId: string) => ({ organizationId, userId: "u1" }) as RequestContext;

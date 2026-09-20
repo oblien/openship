@@ -9,14 +9,14 @@ vi.mock("@repo/adapters", () => ({
   buildImage: vi.fn(async () => {}),
   imageExistsLocally: vi.fn(async () => false),
 }));
-vi.mock("./edge-image", () => ({ edgeBuildSpec: vi.fn() }));
-vi.mock("./mail-image", () => ({ mailBuildSpec: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/edge-image", () => ({ edgeBuildSpec: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/mail-image", () => ({ mailBuildSpec: vi.fn() }));
 
 import { buildImage, imageExistsLocally } from "@repo/adapters";
 
-import { deliverManagedImage } from "./deliver-managed-image";
-import { edgeBuildSpec } from "./edge-image";
-import { mailBuildSpec } from "./mail-image";
+import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
+import { edgeBuildSpec } from "@repo/platform/engine/lib/edge-image";
+import { mailBuildSpec } from "@repo/platform/engine/lib/mail-image";
 
 const SPEC = { context: "/repo", dockerfile: "apps/edge/Dockerfile" };
 const onLog = () => {};

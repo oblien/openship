@@ -61,8 +61,6 @@ Each deployment is given a budget so one app can't starve the others. A budget h
 
 Defaults for a running app are **1 core, 512 MB memory, and 5 GB disk**. Builds get a bigger budget (up to **4 cores and 8 GB**) because bundlers are memory-hungry, then the running app drops back to its production size. You can change a project's budget from its settings, within these ranges: CPU `0.25`–`4`, memory `128`–`8192` MB, disk `64`–`204800` MB.
 
-<Callout title="Screenshot">Project settings → Resources, showing the CPU / memory / disk controls for production and build. *(screenshot pending)*</Callout>
-
 How strictly the budget is enforced depends on the runtime. On Docker, **memory is a hard cap** — cross it and the container is killed and restarted — while **CPU is a relative weight**: under contention a `2`-core app gets roughly twice the CPU time of a `1`-core one, but an idle machine lets either use what's free.
 
 ## How the runtimes compare
@@ -112,7 +110,7 @@ A **custom** tier lets you set exact values. See [the local ↔ cloud boundary](
 
 </Tabs>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Permission model" href="/docs/security/permissions" description="Roles, resource grants, and the single check every request passes through." />

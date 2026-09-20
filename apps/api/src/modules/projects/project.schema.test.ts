@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { CreateProjectBody, EnsureProjectBody, UpdateProjectBody } from "./project.schema";
+import { CreateProjectBody, EnsureProjectBody, UpdateProjectBody } from "@repo/contracts";
 
 /**
  * Mass-assignment guard: `updateProject` builds its DB patch ONLY from the keys
@@ -37,6 +37,22 @@ describe("UpdateProjectBody — mass-assignment allow-list", () => {
   });
 });
 
+describe("registered server targeting (#763)", () => {
+  it("accepts serverId on create and ensure, but never on generic update", () => {
+    expect(Value.Check(CreateProjectBody, { name: "my-app", serverId: "srv_remote" })).toBe(true);
+    expect(Value.Check(EnsureProjectBody, { name: "my-app", serverId: "srv_remote" })).toBe(true);
+    expect(
+      Object.keys(
+        (UpdateProjectBody as unknown as { properties: Record<string, unknown> }).properties,
+      ),
+    ).not.toContain("serverId");
+  });
+
+  it("rejects an empty server id", () => {
+    expect(Value.Check(CreateProjectBody, { name: "my-app", serverId: "" })).toBe(false);
+  });
+});
+
 /**
  * `publicEndpoints: []` is the wire value for "no public route": `updateProject`
  * gates route reconciliation on `data.publicEndpoints !== undefined`, so an
@@ -64,5 +80,24 @@ describe("publicEndpoints — empty set", () => {
     expect(create(tooMany)).toBe(false);
     expect(update(tooMany)).toBe(false);
     expect(ensure(tooMany)).toBe(false);
+  });
+});
+
+describe("EnsureProjectBody — compose build args (#689)", () => {
+  it("accepts the prepare response verbatim, including interpolation provenance", () => {
+    expect(
+      Value.Check(EnsureProjectBody, {
+        name: "my-stack",
+        services: [
+          {
+            name: "api",
+            build: ".",
+            dockerfile: "Dockerfile",
+            buildArgs: { APP_PACKAGE: "@myorg/api", CHANNEL: "${CHANNEL:-stable}" },
+            advanced: { buildArgTemplateKeys: ["CHANNEL"] },
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 });

@@ -3,6 +3,8 @@
     "title": "Capacity & usage",
     "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",
     "routes": "Free routes",
+    "runningServices": "Running services",
+    "projects": "Projects",
     "workspaces": "Workspaces",
     "unlimited": "Unlimited",
     "used": "used",
@@ -33,9 +35,10 @@
     "invoices": "Invoices"
   },
   "portal": {
-    "openButton": "Open Stripe Portal",
+    "openButton": "Open billing portal",
     "errorMissingUrl": "Portal URL missing from response",
-    "errorOpenFailed": "Failed to open Stripe portal"
+    "errorOpenFailed": "Failed to open billing portal",
+    "supportButton": "Contact support"
   },
   "unavailable": {
     "notConnected": {
@@ -57,15 +60,35 @@
       "reconnect": "Reconnect"
     },
     "notEnabled": {
-      "title": "Billing is not enabled for this organization",
-      "description": "Billing is configured but not active for this organization. Contact your administrator to enable it."
+      "title": "Cloud purchases are not available yet",
+      "description": "Openship has not enabled subscriptions and credit purchases yet. Please try again later."
+    },
+    "notConfigured": {
+      "title": "Cloud billing setup is incomplete",
+      "description": "Openship needs to finish setting up billing. Please contact Openship support."
+    },
+    "forbidden": {
+      "title": "You don't have access to billing",
+      "description": "Ask your organization owner to grant you billing access."
+    },
+    "signInRequired": {
+      "title": "Sign in to view billing",
+      "description": "Your session could not be verified. Sign in again to continue.",
+      "signIn": "Sign in"
+    },
+    "loadFailed": {
+      "title": "Couldn't load billing",
+      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact Openship support."
     }
   },
   "plansRoute": {
     "loadError": "Failed to load plans",
     "genericError": "Something went wrong",
     "tryAgain": "Try again",
-    "checkoutError": "Failed to start checkout"
+    "checkoutError": "Failed to start checkout",
+    "changeViaSupport": "Contact support to change or cancel your current subscription.",
+    "billingUnavailable": "Purchases are not available for this account yet.",
+    "replacementNotice": "Changing your plan or billing interval starts a new cycle at the full selected price after payment. There is no automatic proration."
   },
   "pricing": {
     "custom": "Custom",
@@ -74,23 +97,31 @@
     "currentPlan": "Current plan",
     "contactSales": "Contact sales",
     "freeForever": "Free forever",
-    "upgrade": "Upgrade"
+    "upgrade": "Upgrade",
+    "billingInterval": "Billing interval",
+    "monthly": "Monthly",
+    "annual": "Yearly",
+    "billedAnnually": "Billed yearly"
   },
   "topups": {
     "loadError": "Failed to load top-up packs",
-    "title": "Top up credits",
-    "description": "One-time credit packs charged via Stripe. Credits never expire and stack on top of your monthly allowance.",
+    "title": "Add Cloud usage",
+    "description": "One-time usage for your builds and apps. This adds to your balance without increasing project, build time or service limits.",
     "tryAgain": "Try again",
     "credits": "credits",
     "redirecting": "Redirecting…",
     "buy": "Buy",
     "empty": "No top-up packs available right now.",
     "receiptsTitle": "Recent top-ups",
-    "receiptsDescription": "Receipts are managed in Stripe — open the billing portal to view your invoice history and download receipts.",
+    "receiptsDescription": "View receipts for your additional usage purchases.",
     "opening": "Opening…",
-    "openPortal": "Open Stripe Portal",
+    "openPortal": "Open billing portal",
     "checkoutError": "Failed to start checkout",
-    "portalError": "Failed to open billing portal"
+    "portalError": "Failed to open billing portal",
+    "extraUsage": "Extra usage",
+    "prepaidUsage": "Prepaid usage",
+    "allowanceEquivalent": "of one billing cycle’s included usage",
+    "oneTime": "One-time payment"
   },
   "overview": {
     "creditsLeft": "credits left",
@@ -100,7 +131,6 @@
     "resetsInDay": "In {n} day",
     "resetsInDays": "In {n} days",
     "none": "—",
-    "upgradeToPro": "Upgrade to Pro",
     "recentActivity": "Recent activity",
     "last7Days": "Last 7 days",
     "viewFullUsage": "View full usage",
@@ -134,11 +164,11 @@
     },
     "chart": {
       "title": "Usage over time",
-      "subtitle": "Stacked metered units per {unit}."
+      "subtitle": "Cloud credits per {unit}."
     },
     "breakdown": {
       "title": "Resource breakdown",
-      "subtitle": "Credits attributed proportionally to metered resource usage in the selected range.",
+      "subtitle": "Actual resource usage for the selected dates. Total Cloud credits are shown above.",
       "resource": "Resource",
       "units": "Units",
       "credits": "Credits",
@@ -147,10 +177,22 @@
       "empty": "No usage in the selected range."
     },
     "resources": {
-      "cpu": { "label": "CPU time", "units": "vCPU-hours" },
-      "memory": { "label": "Memory", "units": "GB-hours" },
-      "disk": { "label": "Disk IO", "units": "GB" },
-      "network": { "label": "Network", "units": "GB" }
+      "cpu": {
+        "label": "CPU time",
+        "units": "vCPU-hours"
+      },
+      "memory": {
+        "label": "Memory",
+        "units": "GB-hours"
+      },
+      "disk": {
+        "label": "Disk activity",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Data transfer",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Workspace",
@@ -187,15 +229,177 @@
       "incomplete": "Incomplete",
       "incomplete_expired": "Expired",
       "unpaid": "Unpaid",
-      "paused": "Paused"
-    }
+      "paused": "Paused",
+      "credit_exhausted": "Cloud paused"
+    },
+    "includedTitle": "What's included",
+    "perYear": "${price}/yr"
   },
   "paymentPanel": {
     "title": "Payment method",
-    "description": "Cards, bank accounts, and billing details are managed in the Stripe Customer Portal. Open the portal to add, remove, or update your payment methods."
+    "description": "Manage your payment methods and billing details."
   },
   "invoicesPanel": {
     "title": "Invoices",
-    "description": "Invoices and receipts live in the Stripe Customer Portal. Open the portal to view your billing history and download PDF invoices."
+    "description": "View or request your billing history and invoices."
+  },
+  "checkout": {
+    "checking": "Refreshing your Cloud plan and balance. Payment may take a moment to process.",
+    "active": "Your Cloud plan is active.",
+    "pending": "Your payment may still be processing. Refresh this page to check your plan and balance. Contact support if a completed payment is missing.",
+    "support": "Contact support"
+  },
+  "subscription": {
+    "title": "Subscription",
+    "renewsOn": "Renews on {date}",
+    "endsOn": "Renewal stopped. Your subscription ends on {date}.",
+    "endsAtPeriodEnd": "Renewal stopped. Your subscription ends at the end of the paid period.",
+    "renewalEnabled": "Automatic renewal is enabled.",
+    "ended": "Subscription ended. Choose a plan to subscribe again.",
+    "billedMonthly": "Billed monthly",
+    "cancel": "Cancel subscription",
+    "resume": "Resume renewal",
+    "cancelNotice": "Renewal will stop at the end of your paid period. Your subscription stays in place until then.",
+    "confirmCancel": "Stop renewal",
+    "keepPlan": "Keep subscription",
+    "error": "Unable to update your subscription. Please retry."
+  },
+  "deployGate": {
+    "title": "Choose a plan to deploy",
+    "description": "A paid Cloud plan is required to create projects, build your code and run apps.",
+    "preserved": "Your project settings stay here. Checkout opens in a new tab; return here after activating your plan to continue.",
+    "close": "Back to project",
+    "checkPlan": "Check plan",
+    "loading": "Loading your Cloud plan…",
+    "loadError": "Couldn't load your Cloud plan. Try again.",
+    "ownerRequired": "Ask your workspace owner to choose or manage your Cloud plan.",
+    "readyTitle": "Return to your project",
+    "ready": "Your Cloud plan is updated. Close this window and try again.",
+    "pending": "Your plan hasn't changed yet. Finish checkout, then check again.",
+    "blockedTitle": "Your Cloud plan needs attention",
+    "creditsTitle": "Cloud usage allowance reached",
+    "creditsDescription": "Add more usage or choose a larger plan to continue. Extra usage does not raise project, build time or service limits.",
+    "paymentDescription": "Update your payment or subscription details to continue deploying.",
+    "pausedDescription": "Cloud deployment is paused for this workspace. Contact support to restore access.",
+    "upgradeTitle": "This project needs more capacity",
+    "upgradeDescription": "Choose a plan with enough capacity, or adjust your project and try again.",
+    "manageBilling": "Manage billing",
+    "topups": "Add usage",
+    "checkoutOpened": "Checkout is ready in a separate tab. If it did not open, use the link below.",
+    "continueCheckout": "Continue to checkout",
+    "reasons": {
+      "static-only": "Your plan does not include this type of app. Choose a plan that supports it to deploy.",
+      "build-minutes-exhausted": "You've reached your monthly build time limit. Choose a larger plan, or wait for your build allowance to reset.",
+      "free-subdomain-limit": "You've used all the Cloud subdomains in your plan. Choose a larger plan, or remove an unused subdomain.",
+      "resource-tier": "This project needs more CPU or memory than your plan allows. Choose a larger plan, or lower the resources in your project settings.",
+      "running-services": "You've reached your running service limit. Choose a larger plan, or stop a service you no longer need.",
+      "project-limit": "You've reached your project limit. Choose a larger plan, or delete a project you no longer need."
+    }
+  },
+  "resourcesGuide": {
+    "title": "How Cloud usage works",
+    "credits": "Cloud credits",
+    "creditsHint": "Builds and running apps use credits for CPU, memory, disk activity and data transfer. Larger workloads use credits faster.",
+    "creditsPerCycle": "{amount} credits / billing cycle",
+    "buildTime": "Build time",
+    "buildMinutes": "{amount} min / month",
+    "buildHint": "Time spent building your code. A 5-minute build uses 5 build minutes from your monthly allowance.",
+    "apps": "Running services",
+    "appsHint": "Apps, databases and workers running at the same time. Each running Compose service counts toward this limit.",
+    "machine": "CPU & memory per service",
+    "machineHint": "The largest CPU and memory size available for one service. This is a limit, not a shared balance.",
+    "projects": "Projects",
+    "projectsHint": "Projects saved in your workspace, including drafts.",
+    "routesHint": "Public Cloud addresses for your apps.",
+    "unlimited": "No set limit",
+    "notIncluded": "Not included",
+    "noPlan": "No Cloud plan",
+    "setupOnly": "Subscription required",
+    "setupHint": "Choose a Cloud plan to create projects, build your code and run apps.",
+    "includedTitle": "Your resources",
+    "limitsHint": "Projects, running services and monthly build time in your plan.",
+    "balanceRule": "Apps pause when the usage allowance runs out. Add more usage to continue, or upgrade for higher resource limits.",
+    "reset": "Build allowance resets {date}",
+    "cpuHint": "Processing used over time. 1 vCPU running for 1 hour is 1 vCPU-hour.",
+    "memoryHint": "Memory used over time. 1 GB for 1 hour is 1 GB-hour.",
+    "diskHint": "Data read and written by your apps. This is disk activity, not stored disk size.",
+    "networkHint": "Data sent and received by your apps.",
+    "usageMeaning": "How to read it",
+    "selectedRange": "Credits used in this date range",
+    "usageHint": "Actual CPU, memory, disk activity and data transfer for the selected dates.",
+    "creditsChart": "Cloud credits per {unit}.",
+    "allProjects": "All projects",
+    "from": "From (UTC)",
+    "to": "Through (UTC)",
+    "invalidRange": "Choose an end date on or after the start date.",
+    "moreFeatures": "More features",
+    "usageAllowance": "Cloud usage",
+    "usageIncluded": "Shared usage allowance included",
+    "usageSummary": "Builds and running apps share a usage allowance. Larger machines and longer running times use more.",
+    "usageDetails": "Usage details",
+    "usagePercent": "{percent}% used"
+  },
+  "onboarding": {
+    "workspaceDescription": "Choose a Cloud plan to create projects, build your code and run your apps. No projects or compute are included before subscribing.",
+    "includedCredits": "Included Cloud credits",
+    "noFreeCompute": "No free Cloud compute",
+    "planRequired": "Requires a plan",
+    "savedCredits": "Saved usage balance",
+    "savedCreditsHint": "Your prepaid usage stays in this workspace. Choose a plan to use it for Cloud deployments.",
+    "offerTitle": "Launch on Openship Cloud",
+    "offerLabel": "Start deploying",
+    "offerDescription": "A home for your projects, with build time and resources for your apps.",
+    "startingWith": "Start with {name}",
+    "subscribe": "Subscribe to {name}",
+    "compare": "Compare all plans",
+    "checkoutNote": "Review your payment details before subscribing.",
+    "choosePlan": "Choose a plan",
+    "stepsTitle": "From project to production",
+    "stepPlan": "Choose your plan",
+    "stepPlanHint": "Choose the projects, services and build time you need.",
+    "stepCheckout": "Complete checkout",
+    "stepCheckoutHint": "Your Cloud plan activates after payment.",
+    "stepDeploy": "Deploy your project",
+    "stepDeployHint": "Create your project and press Deploy.",
+    "usageTitle": "Your Cloud usage starts here",
+    "usageDescription": "Deploy on a paid plan to see your build and app usage here.",
+    "paymentTitle": "No payment method yet",
+    "paymentDescription": "Add a payment method during checkout. You can manage it here after your first purchase.",
+    "invoicesTitle": "No invoices yet",
+    "invoicesDescription": "Your invoices and receipts appear after your first payment.",
+    "topupsTitle": "Start with a Cloud plan",
+    "topupsDescription": "Your plan includes usage for builds and apps. Add more after your subscription is active.",
+    "compareTitle": "Find the right plan for your projects",
+    "compareDescription": "Compare projects, services, build time, and the CPU and memory available to each app.",
+    "savedProjects": "Saved projects in this workspace: {count}. Subscribe to add more."
+  },
+  "resourceOverview": {
+    "overviewHint": "Your workspace’s usage, remaining allowance and plan limits.",
+    "remaining": "{amount} remaining",
+    "unavailable": "Usage unavailable",
+    "measuredUsage": "Measured this period",
+    "sharedCompute": "Uses your shared compute allowance",
+    "computeTitle": "Compute usage",
+    "computeHint": "CPU, memory, disk activity and app transfer share one allowance. Usage includes builds and running apps.",
+    "cpu": "CPU time",
+    "cpuHint": "1 vCPU-h is one CPU core used for one hour. This measures work done, not app uptime.",
+    "memory": "Memory time",
+    "memoryHint": "1 GB-h is 1 GB of memory allocated for one hour.",
+    "disk": "Disk activity",
+    "diskHint": "Data read from and written to app disks. This is disk activity, not stored disk size.",
+    "transfer": "App data transfer",
+    "transferHint": "Inbound and outbound data from your compute workloads. Edge delivery is shown separately.",
+    "edgeTitle": "Openship Edge",
+    "bandwidth": "Edge bandwidth",
+    "bandwidthHint": "Incoming and outgoing traffic across your workspace’s edge routes. This monthly allowance is separate from compute. Routes pause at the limit until reset or upgrade.",
+    "requests": "Edge requests",
+    "requestsHint": "HTTP requests served through your workspace’s edge routes. These are visitor requests, not billing records or API calls.",
+    "requestsIncluded": "Included in your traffic allowance",
+    "partialError": "Some usage could not be loaded. Refresh to try again.",
+    "refresh": "Refresh resource usage",
+    "period": "{start} – {end}",
+    "currentPeriod": "Current billing period",
+    "viewUsage": "View detailed usage",
+    "bandwidthPerMonth": "{amount} GB / month"
   }
 }

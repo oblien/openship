@@ -19,9 +19,9 @@ vi.mock("@repo/db", async (importOriginal) => {
   return { ...actual, repos: {} };
 });
 
-vi.mock("../../src/lib/cloud/require-cloud", () => ({ requireCloud }));
+vi.mock("@repo/platform/engine/lib/cloud/require-cloud", () => ({ requireCloud }));
 
-import { assertFreeEndpointsAllowed } from "../../src/lib/free-domain-guard";
+import { assertFreeEndpointsAllowed } from "@repo/platform/engine/lib/free-domain-guard";
 
 describe("assertFreeEndpointsAllowed — default/SaaS base (#427)", () => {
   beforeEach(() => {

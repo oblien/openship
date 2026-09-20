@@ -21,6 +21,7 @@ export function createJobRunRepo(db: Database) {
       kind?: string;
       trigger?: string;
       serverId?: string | null;
+      serverIds?: string[];
       attempt?: number;
     }): Promise<JobRun> {
       const id = generateId("jrun");
@@ -31,6 +32,7 @@ export function createJobRunRepo(db: Database) {
         trigger: data.trigger ?? "schedule",
         status: "running",
         serverId: data.serverId ?? null,
+        serverIds: data.serverIds ?? null,
         attempt: data.attempt ?? 1,
       };
       await db.insert(jobRun).values(row);

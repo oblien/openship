@@ -18,6 +18,14 @@ walkthrough see [Deploy to your own server](/docs/guides/custom-servers) and the
 [`openship server`](/docs/cli/self-host).
 </Callout>
 
+<Callout title="Not this page: the box Openship itself runs on" type="info">
+A containerized install reaches **its own host** over a separate SSH channel that Openship provisions
+for itself — no credentials you typed, and nothing on the Servers screens. If your symptom is
+*"This operation targets the HOST machine, but no host channel is configured"*, a server that reads
+**Offline** while its containers are plainly running, or a `:80`/`:443` takeover that won't start, go to
+[Host control channel](/docs/troubleshooting/host-channel) instead.
+</Callout>
+
 ## Two commands that tell you what's wrong
 
 Before fixing anything, find out *which* stage is failing. Two actions answer that:

@@ -20,7 +20,7 @@
  *     (the old agent is stopped first)
  */
 
-import { systemDebug } from "../../lib/system-debug";
+import { systemDebug } from "@repo/platform/engine/lib/system-debug";
 import type { TunnelAgent, TunnelProvider, TunnelRecord } from "./types";
 
 interface ActiveSession {

@@ -93,6 +93,63 @@ describe("scanNginx", () => {
     expect(res.warnings.find((x) => x.includes("path-routes"))).toBeUndefined();
   });
 
+  test("preserves an exact-match location as a clean path plus an exact flag", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name example.com;
+        location = /mcp {
+          proxy_pass http://127.0.0.1:3100;
+        }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].target).toEqual({ kind: "proxy", url: "http://127.0.0.1:3100" });
+    expect(res.sites[0].routes).toEqual([
+      { path: "/mcp", url: "http://127.0.0.1:3100", exact: true },
+    ]);
+    expect(res.warnings).toEqual([]);
+  });
+
+  test("normalizes ^~ prefixes and skips only regex/named proxy locations", async () => {
+    const conf = `
+      server {
+        server_name mixed.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+        location ^~ /assets/ { proxy_pass http://127.0.0.1:3100; }
+        location ~ ^/users/[0-9]+$ { proxy_pass http://127.0.0.1:3200; }
+        location ~* \\.php$ { proxy_pass http://127.0.0.1:3300; }
+        location @fallback { proxy_pass http://127.0.0.1:3400; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].routes).toEqual([
+      { path: "/", url: "http://127.0.0.1:3000" },
+      { path: "/assets/", url: "http://127.0.0.1:3100" },
+    ]);
+    expect(res.warnings).toHaveLength(3);
+    expect(
+      res.warnings.every((w) => w.includes("mixed.example.com") && w.includes("skipped")),
+    ).toBe(true);
+  });
+
+  test("does not widen an unsupported-only location into a root route", async () => {
+    const conf = `
+      server {
+        server_name regex.example.com;
+        location ~ ^/private { proxy_pass http://127.0.0.1:3200; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toEqual([]);
+    expect(res.warnings.some((w) => w.includes('location "~ ^/private"'))).toBe(true);
+  });
+
   test("nested if/location braces don't truncate the block", async () => {
     const conf = `
       server {
@@ -396,6 +453,94 @@ describe("scanNginx", () => {
     const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
     expect(res.sites[0]!.proxy).toEqual({ proxyBusyBuffersSize: "32k" });
     expect(res.sites[0]!.proxyRaw).toEqual({ proxyBusyBuffersSize: "32k" });
+  });
+
+  test("skips nginx's shipped default vhost without warning about it", async () => {
+    // Stock upstream nginx.conf. `server_name localhost` + the prefix-relative
+    // `root html` is a placeholder welcome page, not a site: importing it used to
+    // reach the vhost writer and die on "must be an absolute path", surfacing as
+    // "1 site not served" for something the operator never hosted.
+    const conf = `
+      server {
+        listen 80 default_server;
+        server_name localhost;
+        root html;
+        index index.html;
+      }
+      server {
+        listen 80;
+        server_name real.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites.map((s) => s.serverNames)).toEqual([["real.example.com"]]);
+    // An expected skip, so it must not be reported as a site the operator lost.
+    expect(res.warnings.join("\n")).not.toMatch(/localhost/);
+  });
+
+  test("keeps the real hostname on a vhost that also answers localhost", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name localhost app.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0]!.serverNames).toEqual(["app.example.com"]);
+  });
+
+  test("absolutizes a prefix-relative static root against nginx's --prefix", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name docs.example.com;
+        root html;
+      }
+    `;
+    const res = await scanNginx(
+      makeExecutor([
+        ["nginx -T", conf],
+        ["nginx -V", "nginx version: nginx/1.24.0\nconfigure arguments: --prefix=/usr/share/nginx --with-http_v2_module"],
+      ]),
+    );
+    expect(res.sites[0]!.target).toEqual({ kind: "static", root: "/usr/share/nginx/html" });
+  });
+
+  test("skips a relative static root when no prefix is reported, with a reason", async () => {
+    // Guessing nginx's compiled default would publish the wrong directory.
+    const conf = `
+      server {
+        listen 80;
+        server_name docs.example.com;
+        root html;
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(0);
+    expect(res.warnings.join("\n")).toMatch(/docs\.example\.com.*relative to nginx's compiled prefix/);
+  });
+
+  test("does not run -V when every root is already absolute", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name static.example.com;
+        root /var/www/site;
+      }
+    `;
+    const calls: string[] = [];
+    const executor = {
+      exec: async (cmd: string) => {
+        calls.push(cmd);
+        return cmd.includes("nginx -T") ? conf : "";
+      },
+    } as unknown as CommandExecutor;
+    const res = await scanNginx(executor);
+    expect(res.sites[0]!.target).toEqual({ kind: "static", root: "/var/www/site" });
+    expect(calls.some((c) => c.includes("-V"))).toBe(false);
   });
 });
 

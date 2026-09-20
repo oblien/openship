@@ -1,16 +1,17 @@
 import { describe, it, expect } from "vitest";
 import type { Deployment } from "@repo/db";
-import { computeKeepSet, selectImageRemovalRefs } from "./image-gc";
+import { computeKeepSet, selectImageRemovalRefs } from "@repo/platform/engine/modules/deployments/image-gc";
 
 // Minimal deployment shape for the pure keep-set logic (loaders are injected, so
-// no DB). Casts keep the fixtures terse — computeKeepSet only reads id/imageRef/pinned.
-const asDeps = (rows: Array<Partial<Deployment>>) => rows as unknown as Deployment[];
+// no DB). Include the project/organization binding used by the shared ownership check.
+const asDeps = (projectId: string, rows: Array<Partial<Deployment>>) =>
+  rows.map(row => ({ projectId, organizationId: "org1", status: "ready", ...row })) as Deployment[];
 
 describe("computeKeepSet", () => {
   it("keeps active + newest rollbackWindow unpinned + all pinned; prunes older; unions dep + service imageRefs", async () => {
-    const project = { id: "p1", activeDeploymentId: "d5", rollbackWindow: 2 };
+    const project = { id: "p1", organizationId: "org1", activeDeploymentId: "d5", rollbackWindow: 2 };
     // ready, newest first: d5 (active), d4, d3, d2 (pinned), d1 (oldest, unpinned)
-    const ready = asDeps([
+    const ready = asDeps(project.id, [
       { id: "d5", imageRef: "compose", pinned: false }, // compose sentinel dep.imageRef
       { id: "d4", imageRef: "img-d4", pinned: false },
       { id: "d3", imageRef: "img-d3", pinned: false },
@@ -26,7 +27,7 @@ describe("computeKeepSet", () => {
     };
 
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => ready,
+      listForRetention: async () => ready,
       findById: async (id) => ready.find((d) => d.id === id),
       listByDeployment: async (id) => sds[id] ?? [],
     });
@@ -41,10 +42,10 @@ describe("computeKeepSet", () => {
   });
 
   it("keeps the active deployment even when it's absent from the ready list", async () => {
-    const project = { id: "p2", activeDeploymentId: "dA", rollbackWindow: 1 };
+    const project = { id: "p2", organizationId: "org1", activeDeploymentId: "dA", rollbackWindow: 1 };
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => asDeps([]),
-      findById: async (id) => (id === "dA" ? asDeps([{ id: "dA", imageRef: "img-dA", pinned: false }])[0] : undefined),
+      listForRetention: async () => asDeps(project.id, []),
+      findById: async (id) => (id === "dA" ? asDeps(project.id, [{ id: "dA", imageRef: "img-dA", pinned: false }])[0] : undefined),
       listByDeployment: async (id) => (id === "dA" ? [{ imageRef: "svc-dA" }] : []),
     });
     expect(keep.has("img-dA")).toBe(true);
@@ -52,14 +53,14 @@ describe("computeKeepSet", () => {
   });
 
   it("rollbackWindow 0 keeps only the active + pinned", async () => {
-    const project = { id: "p3", activeDeploymentId: "d3", rollbackWindow: 0 };
-    const ready = asDeps([
+    const project = { id: "p3", organizationId: "org1", activeDeploymentId: "d3", rollbackWindow: 0 };
+    const ready = asDeps(project.id, [
       { id: "d3", imageRef: "img-d3", pinned: false },
       { id: "d2", imageRef: "img-d2", pinned: false },
       { id: "d1", imageRef: "img-d1", pinned: true },
     ]);
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => ready,
+      listForRetention: async () => ready,
       findById: async (id) => ready.find((d) => d.id === id),
       listByDeployment: async () => [],
     });
@@ -74,6 +75,17 @@ describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
 
   it("keeps an image whose tag is in the keep-set", () => {
     expect(selectImageRemovalRefs({ id: "sha1", repoTags: ["openship/app-web:keep"] }, keep)).toEqual([]);
+  });
+
+  it("removes an expired build tag even when its image also has a retained tag", () => {
+    expect(selectImageRemovalRefs({ id: "shared", repoTags: ["openship/app-web:keep", "openship/app-web:bld_old"] }, keep))
+      .toEqual(["openship/app-web:bld_old"]);
+  });
+
+  it("keeps a registry or operator tag inside the openship namespace", () => {
+    expect(selectImageRemovalRefs({ id: "registry", repoTags: ["openship/agent:v1"] }, keep)).toEqual([]);
+    expect(selectImageRemovalRefs({ id: "tagged", repoTags: ["openship/app:bld_old", "openship/app:production"] }, keep))
+      .toEqual(["openship/app:bld_old"]);
   });
 
   it("removes ONLY our openship tags (never by id) for a prunable built image", () => {

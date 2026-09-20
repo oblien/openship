@@ -1,0 +1,58 @@
+---
+title: Compatibility and availability
+description: Check package availability, API protocol support, provider requirements, and current limits.
+---
+
+## Package availability
+
+These docs describe the SDK implemented in the repository. Published `openship@0.7.2` contains the CLI
+without SDK exports. Use the [locally built tarball](/docs/api/sdk/installation) until an SDK-enabled
+release is published. Node.js 22 or later is required.
+
+## Fixed organization scopes
+
+A remote client with `organizationId` checks `/api/health` for this capability before sending a scoped
+application request:
+
+```json
+{ "sdk": { "protocol": 1, "fixedOrganizationScope": true } }
+```
+
+The client sends `X-Organization-Id` and `X-Openship-Scope: fixed`. The API authenticates the caller,
+checks current membership and grants, and keeps access inside that organization. Request headers cannot
+override the client's configured scope.
+
+An incompatible server causes `SDK_SCOPE_UNSUPPORTED`. Upgrade it. Removing `organizationId` changes
+the scope guarantee. A malformed scope header or `fixed` without an organization is rejected with
+`400 VALIDATION_ERROR`.
+
+## Cloud
+
+Use the canonical Cloud API, a Cloud credential, and its organization ID. The deployed API must pass
+the same capability check; SDK support in a checkout does not establish support on a deployed server.
+
+A self-hosted owner's Cloud account link does not currently provide verified tenant mapping. Fixed
+scopes refuse that forwarding with `CLOUD_SCOPE_UNAVAILABLE`. Cloud operations also require the relevant
+provider and account capabilities; host administration remains specific to self-hosted installations.
+
+## Current limits
+
+| Area | Status |
+| --- | --- |
+| Named operations | The [reference](/docs/api) covers all current native and remote groups. Provider and permission checks still apply. |
+| Mail and data transfer | HTTP endpoints exist; complete named native SDK groups are not available. |
+| System and account lifecycle | Remaining setup, self-app, edge/terminal, and account lifecycle coverage is incomplete. Use the documented existing surface. |
+| Native CLI | Resource commands support native mode; some commands and system actions require HTTP. See [native CLI support](/docs/cli/native#supported-commands). |
+| Background work | Native scheduling is disabled by default. Constrained saved principals for all jobs/backups/scans and distributed scheduler ownership remain incomplete. |
+| Dispatch and replay | Durable multi-worker dispatch, idempotent replay, and event replay across restarts remain incomplete. |
+| Billing | Account/payment features need configured hosted billing. Full webhook replay and accounting transaction guarantees remain under migration. |
+| Cloud transfers | Verified tenant mapping, promotion, and reconciliation remain incomplete for fixed SDK scopes. |
+
+Browser login redirects, session cookies, webhook signatures, and terminal handshakes remain their
+respective transport protocols. Native imports do not replace those protocols.
+
+## What has been checked
+
+The public tarball has installed-package checks on Node 22 and 24, including native deployment,
+persistence, resource teardown, ESM/CommonJS, declarations, and CLI invocation. See the
+[runnable example](/docs/api/sdk/examples). Live provider verification remains a separate release gate.

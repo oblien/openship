@@ -78,8 +78,8 @@ export interface ProjectCompositeRoute {
   isCustomDomain: boolean;
   /** Service served at `/` (the route's primary upstream). */
   rootServiceId: string;
-  /** Extra path-prefix locations, resolved to their service's upstream at deploy. */
-  locations: { pathPrefix: string; serviceId: string }[];
+  /** Extra literal-path locations, resolved to their service's upstream at deploy. */
+  locations: { pathPrefix: string; serviceId: string; exact?: boolean }[];
 }
 
 /**

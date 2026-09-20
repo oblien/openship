@@ -3,7 +3,10 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectInfo } from "../../../src/modules/deployments/prepare.service";
+import {
+  resolveProjectInfo,
+  resolveProjectSourceEnv,
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 describe("resolveProjectInfo", () => {
   const tempDirs: string[] = [];
@@ -73,7 +76,141 @@ describe("resolveProjectInfo", () => {
     });
   });
 
-  it("normalizes an undetected package manager to \"npm\" instead of the internal \"unknown\" sentinel (#415)", async () => {
+  it("combines Compose .env and deployment env when resolving an image", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+    await writeFile(join(tempDir, ".env"), "CHANNEL=stable\n");
+    await writeFile(
+      join(tempDir, "compose.yaml"),
+      ["services:", "  api:", "    image: ghcr.io/acme/api:${CHANNEL}-${MY_VERSION}"].join("\n"),
+    );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      env: { MY_VERSION: "1.2.3" },
+    });
+
+    expect(info.services?.[0]).toMatchObject({
+      image: "ghcr.io/acme/api:stable-1.2.3",
+      advanced: {
+        imageTemplate: {
+          expression: "ghcr.io/acme/api:${CHANNEL}-${MY_VERSION}",
+          unresolvedVariables: [],
+          sourceValue: "ghcr.io/acme/api:stable-",
+        },
+      },
+    });
+  });
+
+  it("#795 carries native service build args and source-env provenance", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-build-args-"));
+    tempDirs.push(tempDir);
+    await writeFile(join(tempDir, "Dockerfile"), "FROM node:22-alpine\nARG SERVER_URL\n");
+    await writeFile(
+      join(tempDir, "openship.json"),
+      JSON.stringify({
+        env: {
+          SERVER_URL: "https://source.example.com",
+          PAYLOAD_SECRET: { value: "source-secret", secret: true },
+        },
+        services: [
+          {
+            name: "admin",
+            build: ".",
+            dockerfile: "Dockerfile",
+            buildArgs: { SERVER_URL: null, PAYLOAD_SECRET: null, CHANNEL: "stable" },
+            env: { SERVER_URL: "https://runtime.example.com" },
+          },
+        ],
+      }),
+    );
+
+    const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+    expect(info.projectType).toBe("services");
+    expect(info.rootEnv).toMatchObject({
+      SERVER_URL: "https://source.example.com",
+      PAYLOAD_SECRET: "source-secret",
+    });
+    expect(info.openshipEnv).toEqual({
+      SERVER_URL: "https://source.example.com",
+      PAYLOAD_SECRET: { value: "source-secret", secret: true },
+    });
+    expect(info.services?.[0]).toMatchObject({
+      build: ".",
+      dockerfile: "Dockerfile",
+      buildArgs: { SERVER_URL: null, PAYLOAD_SECRET: null, CHANNEL: "stable" },
+      environment: { SERVER_URL: "https://runtime.example.com" },
+    });
+  });
+
+  it("#795 retains a Compose build-arg template alongside openship.json env", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-compose-build-args-"));
+    tempDirs.push(tempDir);
+    await writeFile(join(tempDir, "Dockerfile"), "FROM node:22-alpine\nARG SERVER_URL\n");
+    await writeFile(
+      join(tempDir, "compose.yaml"),
+      [
+        "services:",
+        "  admin:",
+        "    build:",
+        "      context: .",
+        "      dockerfile: Dockerfile",
+        "      args:",
+        "        SERVER_URL: ${SERVER_URL:?set SERVER_URL}",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(tempDir, "openship.json"),
+      JSON.stringify({ env: { SERVER_URL: "https://source.example.com" } }),
+    );
+
+    const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+    expect(info.services?.[0]).toMatchObject({
+      build: ".",
+      dockerfile: "Dockerfile",
+      // Raw source stays frozen for the final deployment-env interpolation.
+      buildArgs: { SERVER_URL: "${SERVER_URL:?set SERVER_URL}" },
+      advanced: { buildArgTemplateKeys: ["SERVER_URL"] },
+    });
+    expect(info.openshipEnv).toEqual({ SERVER_URL: "https://source.example.com" });
+    expect(info.missingRequiredEnv).toBeUndefined();
+  });
+
+  it("reads single-app source env without parsing an unrelated Compose file", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-source-env-"));
+    tempDirs.push(tempDir);
+    await mkdir(join(tempDir, "apps", "web"), { recursive: true });
+    await writeFile(join(tempDir, "compose.yaml"), "services: [this is not valid");
+    await writeFile(join(tempDir, "apps", "web", ".env"), "LOCAL_DEFAULT=from-dotenv\n");
+    await writeFile(
+      join(tempDir, "OpenShip.json"),
+      JSON.stringify({
+        env: {
+          PUBLIC_URL: "https://app.example.com",
+          AUTH_SECRET: { value: "source-secret", secret: true },
+        },
+      }),
+    );
+
+    await expect(
+      resolveProjectSourceEnv({ source: "local", path: tempDir }, "apps/web"),
+    ).resolves.toEqual({
+      rootEnv: {
+        LOCAL_DEFAULT: "from-dotenv",
+        PUBLIC_URL: "https://app.example.com",
+        AUTH_SECRET: "source-secret",
+      },
+      openshipEnv: {
+        PUBLIC_URL: "https://app.example.com",
+        AUTH_SECRET: { value: "source-secret", secret: true },
+      },
+    });
+  });
+
+  it('normalizes an undetected package manager to "npm" instead of the internal "unknown" sentinel (#415)', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
     tempDirs.push(tempDir);
 
@@ -377,6 +514,177 @@ describe("resolveProjectInfo", () => {
       await expect(
         resolveProjectInfo({ source: "local", path: tempDir, composePath: "deploy" }),
       ).rejects.toThrow(/Could not parse the Docker Compose file at "deploy"/);
+    });
+  });
+
+  /**
+   * #641: the overlay was lenient AND silent — a typo'd openship.json applied
+   * nothing (or only some fields) and said nothing anywhere, so the deploy ran on
+   * heuristics and looked like the file wasn't there. Leniency stays; the silence
+   * doesn't.
+   */
+  describe("openship.json diagnostics (#641)", () => {
+    async function repoWithConfig(contents?: string) {
+      const tempDir = await mkdtemp(join(tmpdir(), "openship-config-diag-"));
+      tempDirs.push(tempDir);
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({ name: "x", scripts: { build: "vite build" } }),
+      );
+      if (contents !== undefined) await writeFile(join(tempDir, "openship.json"), contents);
+      return tempDir;
+    }
+
+    it("reports a refused field and still applies the valid siblings", async () => {
+      const tempDir = await repoWithConfig('{ "framework": "nextjsx", "port": 8080 }');
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      // The leniency is the point: `port` still overlays. What changed is that
+      // the refused `framework` is now reported instead of vanishing.
+      expect(info.port).toBe(8080);
+      expect(info.configDiagnostics?.errors.some((e) => e.startsWith("framework:"))).toBe(true);
+      expect(info.configDiagnostics?.warnings).toEqual([]);
+    });
+
+    it("reports monorepo declarations that cannot be matched to discovered apps (#873)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            apps: [{ name: "worker", rootDirectory: "private-path-SENTINEL" }],
+            workspace: { packageManager: "npm", prepareCommand: "secret-command-SENTINEL" },
+          },
+        }),
+      );
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.monorepoApps).toBeUndefined();
+      expect(info.configDiagnostics?.warnings).toEqual([
+        expect.stringMatching(/^monorepo\.apps\[0\]:.*did not match/),
+        expect.stringMatching(/^monorepo\.workspace:.*no workspace was detected/),
+      ]);
+      expect(JSON.stringify(info.configDiagnostics)).not.toContain("SENTINEL");
+    });
+
+    it("applies matched workspace overrides and reports only the missing app (#873)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            apps: [
+              { name: "web", rootDirectory: "./apps/web/", port: 8080 },
+              { name: "missing", rootDirectory: "apps/missing" },
+            ],
+          },
+        }),
+      );
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({ name: "workspace", workspaces: ["apps/*"] }),
+      );
+      for (const app of ["web", "admin"]) {
+        await mkdir(join(tempDir, "apps", app), { recursive: true });
+        await writeFile(
+          join(tempDir, "apps", app, "package.json"),
+          JSON.stringify({
+            name: app,
+            dependencies: { next: "^15.0.0" },
+            scripts: { build: "next build", start: "next start" },
+          }),
+        );
+        await writeFile(join(tempDir, "apps", app, "package-lock.json"), "{}");
+      }
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.projectType).toBe("monorepo");
+      expect(info.monorepoApps).toHaveLength(2);
+      expect(info.monorepoApps?.find((app) => app.rootDirectory === "apps/web")?.port).toBe(8080);
+      expect(info.configDiagnostics?.warnings).toEqual([
+        expect.stringMatching(/^monorepo\.apps\[1\]:/),
+      ]);
+    });
+
+    it("reports an unrecognized top-level key as a warning, not an error", async () => {
+      // The issue's headline case. `buildComand` produces ZERO errors — it lands
+      // entirely in the warnings channel, so an errors-only fix would not report
+      // the most common real typo at all.
+      const tempDir = await repoWithConfig('{ "buildComand": "npm run b", "port": 3000 }');
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(info.configDiagnostics?.errors).toEqual([]);
+      expect(info.configDiagnostics?.warnings.some((w) => w.includes("buildComand"))).toBe(true);
+    });
+
+    it("reports an unparseable file without echoing its bytes", async () => {
+      // Both V8 and JSC quote the offending token back (JSC unbounded), so
+      // forwarding the engine's message would push openship.json's `env` values
+      // out through the metadata-tier detect endpoint. The message must be ours.
+      const tempDir = await repoWithConfig('{ "env": { "DB": "P@ssw0rd-LEAK-SENTINEL-xyz" }');
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(JSON.stringify(info.configDiagnostics)).not.toContain("LEAK-SENTINEL");
+      expect(info.configDiagnostics?.errors[0]).toMatch(/not valid JSON/);
+      expect(info.configDiagnostics?.wholeFile).toBe(true);
+    });
+
+    it("reports a non-object root as a whole-file failure", async () => {
+      const tempDir = await repoWithConfig("null");
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(info.configDiagnostics?.errors[0]).toMatch(/must be a JSON object/);
+      expect(info.configDiagnostics?.wholeFile).toBe(true);
+    });
+
+    it("does not flag a field-level refusal as a whole-file failure", async () => {
+      // The severity split drives the wizard's copy: "nothing applied" vs "the
+      // rest applied". A partial failure must never claim the louder one.
+      const tempDir = await repoWithConfig('{ "framework": "nextjsx", "port": 8080 }');
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(info.configDiagnostics?.wholeFile).toBeUndefined();
+    });
+
+    it("strips control characters out of the messages", async () => {
+      // These messages quote the repo's own key names back, and they land in a
+      // server log line and a terminal. A newline forges a second log entry; an
+      // ESC[2K repaints the CLI line. Neither may survive to a sink.
+      const esc = String.fromCharCode(27);
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          [`x\n[openship.json] attacker/forged: all clean`]: 1,
+          env: { [`${esc}[2K\r${esc}[32m ok applied cleanly${esc}[0m`]: 5 },
+        }),
+      );
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      const all = [
+        ...(info.configDiagnostics?.errors ?? []),
+        ...(info.configDiagnostics?.warnings ?? []),
+      ];
+      expect(all.length).toBeGreaterThan(0);
+      for (const msg of all) {
+        expect(msg).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+      }
+    });
+
+    it("bounds each message so one cannot become a payload", async () => {
+      const tempDir = await repoWithConfig(JSON.stringify({ ["k".repeat(5000)]: 1 }));
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      const longest = Math.max(...(info.configDiagnostics?.warnings ?? [""]).map((w) => w.length));
+      expect(longest).toBeLessThanOrEqual(240);
+    });
+
+    it("omits configDiagnostics for a clean openship.json", async () => {
+      const tempDir = await repoWithConfig('{ "framework": "vite", "port": 3000 }');
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(info.configDiagnostics).toBeUndefined();
+    });
+
+    it("omits configDiagnostics for a repo with no openship.json", async () => {
+      // The payload for an unaffected repo has to stay exactly what it was.
+      const tempDir = await repoWithConfig();
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+      expect(info.configDiagnostics).toBeUndefined();
+      expect("configDiagnostics" in info).toBe(false);
     });
   });
 });

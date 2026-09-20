@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ENV_MASK } from "../../../src/lib/secret-env";
+import { ENV_MASK } from "@repo/platform/engine/lib/secret-env";
+import { storedDeployment } from "../../../../../packages/platform/test/fixtures";
 
 /**
  * #336 response-contract guard. The prior gap was that NO test drove a handler
@@ -18,8 +19,8 @@ const { getDeployment, listDeployments } = vi.hoisted(() => ({
 }));
 
 // Keep the REAL presenters; stub only the DB-backed fetchers.
-vi.mock("../../../src/modules/deployments/deployment.service", async (importActual) => {
-  const actual = await importActual<typeof import("../../../src/modules/deployments/deployment.service")>();
+vi.mock("@repo/platform/engine/modules/deployments/deployment.service", async (importActual) => {
+  const actual = await importActual<typeof import("@repo/platform/engine/modules/deployments/deployment.service")>();
   return { ...actual, getDeployment, listDeployments };
 });
 
@@ -27,32 +28,42 @@ vi.mock("../../../src/modules/deployments/deployment.service", async (importActu
 // provision-user → @repo/db.schema, plus adapters) — the list/getById handlers
 // under test don't touch any of these.
 vi.mock("@repo/db", () => ({ repos: {}, schema: {} }));
-vi.mock("../../../src/lib/permission", () => ({ permission: { assert: vi.fn().mockResolvedValue(undefined) } }));
-vi.mock("../../../src/modules/deployments/reconcile.service", () => ({ triggerReconcile: vi.fn() }));
-vi.mock("../../../src/modules/deployments/build.service", () => ({ triggerDeployment: vi.fn(), subscribeToBuildSession: vi.fn() }));
-vi.mock("../../../src/modules/deployments/build-status.service", () => ({}));
-vi.mock("../../../src/modules/deployments/ssl.service", () => ({}));
-vi.mock("../../../src/modules/deployments/prepare.service", () => ({ resolveProjectInfo: vi.fn() }));
-vi.mock("../../../src/modules/projects/transfer.service", () => ({ promoteProjectToCloud: vi.fn(), TransferConflictError: class extends Error {} }));
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: {} } }));
+vi.mock("../../../src/lib/permission", () => ({
+  permission: { assert: vi.fn().mockResolvedValue(undefined) },
+  authorization: { authorize: vi.fn(async (ctx) => ctx), resolveScope: vi.fn() },
+}));
+vi.mock("@repo/platform/engine/modules/deployments/reconcile.service", () => ({ triggerReconcile: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({ triggerDeployment: vi.fn(), subscribeToBuildSession: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build-status.service", () => ({}));
+vi.mock("@repo/platform/engine/modules/deployments/ssl.service", () => ({}));
+vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({ resolveProjectInfo: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/projects/transfer.service", () => ({ promoteProjectToCloud: vi.fn(), TransferConflictError: class extends Error {} }));
 vi.mock("../../../src/lib/cloud/project-router", () => ({
   maybeProxyCloudProject: vi.fn().mockResolvedValue(null),
   proxyToSaaS: vi.fn(),
 }));
 // deployment.service's own transitive deps (pulled by importActual).
-vi.mock("../../../src/modules/projects/project-cleanup.service", () => ({ collectDeploymentManifest: vi.fn(), executeCleanup: vi.fn() }));
-vi.mock("../../../src/modules/github/github-access", () => ({ assertGitHubRepoAccess: vi.fn() }));
-vi.mock("../../../src/modules/deployments/rollback", () => ({ rollback: vi.fn(), setPin: vi.fn() }));
-vi.mock("../../../src/lib/deployment-runtime", () => ({ resolveDeploymentRuntime: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", () => ({ collectDeploymentManifest: vi.fn(), executeCleanup: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({ assertGitHubRepoAccess: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/rollback/index", () => ({ rollback: vi.fn(), setPin: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ resolveDeploymentRuntime: vi.fn() }));
 
 import { getById, list } from "../../../src/modules/deployments/deployment.controller";
 
 const depWithSecret = (id: string) => ({
+  ...storedDeployment("project-a", "org-1"),
   id,
+  projectId: "project-1",
   status: "ready",
   meta: {
     previousActiveDeploymentId: "dep_0",
     composeServices: [
-      { name: "web", environment: { API_TOKEN: SECRET, NODE_ENV: "production" } },
+      {
+        name: "web",
+        environment: { API_TOKEN: SECRET, NODE_ENV: "production" },
+        buildArgs: { API_TOKEN: SECRET, EMPTY: "", INHERITED: null },
+      },
       { name: "db", environment: { POSTGRES_PASSWORD: SECRET } },
     ],
   },
@@ -64,12 +75,14 @@ function ctx(params: Record<string, string> = {}, query: Record<string, string> 
     req: {
       param: (n: string) => params[n],
       query: (n: string) => query[n],
+      header: () => undefined,
     },
     json: (obj: unknown) => {
       captured = obj;
       return obj as never;
     },
     get: () => ({ organizationId: "org-1", userId: "u1" }),
+    set: () => undefined,
   } as any;
   return { c, read: () => captured };
 }
@@ -86,6 +99,11 @@ describe("#336 deployment controller masks env in responses", () => {
     const body = read() as any;
     expect(JSON.stringify(body)).not.toContain(SECRET);
     expect(body.data.meta.composeServices[0].environment.API_TOKEN).toBe(ENV_MASK);
+    expect(body.data.meta.composeServices[0].buildArgs).toEqual({
+      API_TOKEN: ENV_MASK,
+      EMPTY: "",
+      INHERITED: null,
+    });
     expect(body.data.meta.composeServices[0].environment.NODE_ENV).toBe(ENV_MASK);
     expect(body.data.meta.composeServices[1].environment.POSTGRES_PASSWORD).toBe(ENV_MASK);
     // non-env meta preserved
@@ -109,4 +127,13 @@ describe("#336 deployment controller masks env in responses", () => {
       }
     }
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn().mockResolvedValue(undefined) },
+  authorization: { authorize: vi.fn(async (ctx) => ctx), resolveScope: vi.fn() },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

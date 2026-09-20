@@ -26,8 +26,10 @@ export interface Deployment {
   /** Monotonic per-project version (v1, v2, …). Null for legacy rows. */
   version: number | null;
   /** `action_required` = failed on a named, clearable cause (see the API's
-   *  blocking-errors module). Settled, like failed — not in flight. */
-  status: "success" | "failed" | "building" | "pending" | "canceled" | "cancelled" | "partial_failure" | "action_required" | "rejected" | "reconciling";
+   *  blocking-errors module). Settled, like failed — not in flight.
+   *  `no_changes` = every service was already up to date, so this deploy shipped
+   *  nothing and the previous release is still live. Settled and HEALTHY. */
+  status: "success" | "failed" | "building" | "pending" | "canceled" | "cancelled" | "partial_failure" | "action_required" | "rejected" | "reconciling" | "no_changes";
   domain: string;
   framework: string;
   commit: {

@@ -11,7 +11,7 @@
 
 import { randomBytes, scryptSync } from "node:crypto";
 
-import { decryptWithKey, encryptWithKey } from "../../../lib/encryption";
+import { decryptWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
 import type { SealedSecrets, SecretBundle } from "./types";
 
 const KDF = { algo: "scrypt" as const, N: 32768, r: 8, p: 1, keyLen: 32 };
@@ -57,4 +57,18 @@ export function openSecretBundle(sealed: SealedSecrets, passphrase: string): Sec
     // "this passphrase can't open this file".
     throw new WrongPassphraseError();
   }
+}
+
+/**
+ * Resolve the optional credential envelope for import. A file without an
+ * envelope is intentionally credential-free; a file with one must always be
+ * unlocked instead of silently importing scrubbed credential columns.
+ */
+export function openTransferSecrets(
+  sealed: SealedSecrets | null,
+  passphrase?: string,
+): SecretBundle | null {
+  if (!sealed) return null;
+  if (!passphrase) throw new WrongPassphraseError();
+  return openSecretBundle(sealed, passphrase);
 }

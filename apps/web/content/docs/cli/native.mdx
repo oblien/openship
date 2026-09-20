@@ -1,0 +1,83 @@
+---
+title: Native CLI mode
+description: Use supported CLI commands with native SDK storage and providers.
+---
+
+`--native-config` runs supported commands through the native SDK. The configuration selects the
+installation, trusted identity, and organization. It is loaded only when you pass it explicitly.
+
+## Create a configuration
+
+Install the [SDK preview package](/docs/api/sdk/installation) and set a persistent
+`OPENSHIP_ENCRYPTION_KEY` of at least 32 bytes. Save this file in your Node project:
+
+```js title="ship-native.config.mjs"
+import { resolve } from "node:path";
+
+const encryptionKey = process.env.OPENSHIP_ENCRYPTION_KEY;
+if (!encryptionKey) throw new Error("Set OPENSHIP_ENCRYPTION_KEY");
+const stateDirectory = resolve("./ship-state");
+/** @type {import("openship/native").VerifiedIdentity | null} */
+let identity = null;
+
+export default {
+  options: {
+    instanceId: "local-cli",
+    stateDirectory,
+    storage: { driver: "pglite", dataDir: resolve(stateDirectory, "database") },
+    encryptionKey,
+    runtime: "bare",
+    routing: "none",
+    administration: true,
+    policy: { allowHostExecution: true, sourceRoots: [process.cwd()] },
+    identity: {
+      resolve: async (/** @type {string} */ assertion) =>
+        assertion === "local-cli" ? identity : null,
+    },
+  },
+  /** @param {import("openship/native").OwnedShip<string>} ship */
+  async scope(ship) {
+    const operator = ship.operator;
+    if (!operator) throw new Error("Native administration is required");
+    const person = await operator.ensureIdentity({
+      issuer: "local-cli",
+      subject: "me",
+      email: "me@example.test",
+    });
+    identity = { user: person.user, sessionId: "local-cli" };
+    return { identity: "local-cli", organizationId: person.personalOrganizationId };
+  },
+};
+```
+
+This trusted host file selects one local user. A multi-user integration should verify identities through
+its own authentication service. Retain the same key, instance ID, and storage when reopening.
+
+## Run a command
+
+```bash
+npx openship --native-config ./ship-native.config.mjs --json project create --name my-app
+npx openship --native-config ./ship-native.config.mjs --json project list
+npx openship --native-config ./ship-native.config.mjs status
+```
+
+The CLI creates and starts the installation, selects the scope, runs the command, and drains the
+worker before exit. Native project links record their instance and organization; a mismatched
+configuration is rejected.
+
+## Supported commands
+
+| Group | Native behavior |
+| --- | --- |
+| `project`, `app`, `service`, `domain` | Named SDK resource operations. |
+| `deploy`, `deployment`, `logs`, `init` | Deployment workflows and project linking. |
+| `server`, `backup` | Available operations subject to host/provider policy. |
+| `system`, `status`, `doctor` | Supported SDK information/settings operations; remaining host/setup actions have command-specific limits. |
+| `edge`, `mail`, `api`, `token`, login/context, and installation commands | Not accepted by the native command gate; use their normal connection or local-installation mode. |
+
+The configuration must be `.mjs`, `.cjs`, or `.js` and export `{ options, scope }`, or a factory returning
+that object. `scope` can be a scope object or an async function. Attached `PlatformKernel` instances
+are not supported by this CLI mode.
+
+See [native configuration](/docs/api/sdk/lifecycle) for options and
+[compatibility](/docs/api/sdk/compatibility) for current platform limits.

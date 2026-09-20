@@ -11,6 +11,8 @@
  * provides HOW to check and install them.
  */
 
+import type { Answer } from "@repo/core";
+
 // ─── Tool status ─────────────────────────────────────────────────────────────
 
 export interface ToolchainStatus {
@@ -64,15 +66,54 @@ export interface ToolchainCheckEntry {
   providedBy?: string;
 }
 
-/** Plan for installing a tool - same shape as system catalog. */
-export interface ToolchainInstallPlan {
-  supported: boolean;
-  unsupportedReason?: string;
-  installCommand?: string;
-  startCommand?: string;
-  verifyCommand?: string;
-  fallbackInstallCommands?: string[];
+/** Who has to run an install step. */
+export type ToolStepUser = "login" | "root";
+
+/** One install step, and the authority it needs. */
+export interface ToolStep {
+  readonly command: string;
+  /**
+   * The asymmetry between the two is deliberate and load-bearing.
+   *
+   * `"root"` is a *requirement subject to host policy*: it writes host-wide (a package
+   * manager lock, /usr/local, a unit file), so it is elevated wherever the host requires
+   * elevation — and on macOS it deliberately isn't, because Homebrew refuses to run
+   * under sudo.
+   *
+   * `"login"` is a *hard constraint*: the step lands inside the SSH login user's own
+   * home, so it must never be elevated. Running it as root produces the worst kind of
+   * green install — sudo rewrites HOME, root creates `~/.bun` / `~/.cargo` / `~/.rustup`,
+   * `verify` passes because it only reads, and then the build's first write into that
+   * tree fails EACCES with nothing pointing at the cause.
+   */
+  readonly as: ToolStepUser;
 }
+
+/** How to install one tool on one host. */
+export interface ToolInstall {
+  /**
+   * Ordered steps. Consecutive steps sharing an authority run as one `&&`-joined script,
+   * so the 13 uniform recipes stay a single round-trip.
+   *
+   * A list of labelled steps rather than one command plus one `privileged` flag: a single
+   * flag cannot describe bun or rustc, which download into the login user's home and then
+   * link the result into /usr/local/bin. One flag forced both halves to the same
+   * authority, and whichever way it was set, one half was wrong.
+   */
+  readonly steps: readonly ToolStep[];
+  /** Proves the tool is on PATH afterwards, and yields a version to parse. Runs as the
+   *  LOGIN user, unelevated — the tool has to work for whoever builds with it. */
+  readonly verifyCommand: string;
+}
+
+/**
+ * An install command for this host, or the reason there isn't one.
+ *
+ * Same two-arm shape as the system catalog's `InstallPlan`. `startCommand` and
+ * `fallbackInstallCommands` are gone: no factory ever set either, so the installer's
+ * handling for them was unreachable — a language runtime is a binary, not a daemon.
+ */
+export type ToolchainInstallPlan = Answer<ToolInstall>;
 
 // ─── Install result ──────────────────────────────────────────────────────────
 

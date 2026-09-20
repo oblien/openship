@@ -1,0 +1,198 @@
+---
+title: edge
+description: Commands, arguments, and options for openship edge.
+cliGroup: openship edge
+---
+
+See the [workflow guide](/docs/cli/edge) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship edge
+
+Install and manage the OpenResty edge (reverse proxy, TLS, per-route rules)
+
+```text
+openship edge [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status`](/docs/cli/reference/edge#openship-edge-status) | Show whether the edge is installed and serving :80/:443 |
+| [`up\|install [options]`](/docs/cli/reference/edge#openship-edge-up) | Ensure the edge is up and serving; optionally enable monitoring (built-in analytics DB) |
+| [`migrate`](/docs/cli/reference/edge#openship-edge-migrate) | Take over :80/:443 and import the existing proxy's sites into the edge |
+| [`takeover`](/docs/cli/reference/edge#openship-edge-takeover) | Free :80/:443 for the edge — whatever holds them is stopped and its sites drop |
+| [`sites\|scan`](/docs/cli/reference/edge#openship-edge-sites) | List reverse-proxy sites on this host that the edge could import |
+| [`repair\|doctor [options]`](/docs/cli/reference/edge#openship-edge-repair) | Diagnose why the edge isn't serving; --fix to resolve a port conflict |
+| [`rules`](/docs/cli/reference/edge/rules#openship-edge-rules) | Per-route edge rules: rate-limit, ban, access control |
+| [`domains\|domain`](/docs/cli/reference/edge#openship-edge-domains) | Domains routed through the edge: list, register on a port, verify SSL, remove |
+| [`traffic [options]`](/docs/cli/reference/edge#openship-edge-traffic) | Traffic overview for a project (requests, bandwidth, hourly periods) |
+| [`analytics [options]`](/docs/cli/reference/edge#openship-edge-analytics) | Per-domain analytics for a project: visitors, countries, top paths |
+| [`logs [options]`](/docs/cli/reference/edge#openship-edge-logs) | Recent HTTP request logs the edge captured for a project |
+
+## openship edge analytics
+
+Per-domain analytics for a project: visitors, countries, top paths
+
+```text
+openship edge analytics [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `--domain <host>` | Scope to a single tracked domain |
+| `--from <ts>` | Window start (ISO 8601 or epoch ms; default 7 days) |
+| `--to <ts>` | Window end |
+
+## openship edge domains
+
+Domains routed through the edge: list, register on a port, verify SSL, remove
+
+```text
+openship edge domains|domain [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/edge#openship-edge-domains-list) | List a project's domains routed through the edge |
+| [`add [options] <hostname>`](/docs/cli/reference/edge#openship-edge-domains-add) | Register a hostname on the edge, bound to a port (auto-verifies SSL) |
+| [`rm [options] <hostname>`](/docs/cli/reference/edge#openship-edge-domains-rm) | Remove a hostname from the edge |
+
+## openship edge domains add
+
+Register a hostname on the edge, bound to a port (auto-verifies SSL)
+
+```text
+openship edge domains add [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Domain hostname (e.g. app.example.com) |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Attach to an existing project (uses its target port) |
+| `--port <n>` | Bind a new tracked project to 127.0.0.1:&lt;n&gt; |
+| `--primary` | Mark this domain as the project's primary (default: false) |
+| `--no-verify` | Skip DNS verification + SSL issuance (just claim the hostname) |
+
+## openship edge domains list
+
+List a project's domains routed through the edge
+
+```text
+openship edge domains list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+
+## openship edge domains rm
+
+Remove a hostname from the edge
+
+```text
+openship edge domains rm [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Domain hostname to remove |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project the domain belongs to |
+
+## openship edge logs
+
+Recent HTTP request logs the edge captured for a project
+
+```text
+openship edge logs [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `--limit <n>` | How many recent entries to fetch (max 200) (default: 50) |
+| `--follow` | Poll for new entries and print them as they arrive (default: false) |
+
+## openship edge migrate
+
+Take over :80/:443 and import the existing proxy's sites into the edge
+
+```text
+openship edge migrate [options]
+```
+
+## openship edge repair
+
+Diagnose why the edge isn't serving; --fix to resolve a port conflict
+
+```text
+openship edge repair|doctor [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--fix` | Attempt to fix a detected conflict (default: migrate its sites) (default: false) |
+| `--migrate` | With --fix: import the existing proxy's sites |
+| `--takeover` | With --fix: stop whatever holds :80/:443 (sites drop) |
+
+## openship edge sites
+
+List reverse-proxy sites on this host that the edge could import
+
+```text
+openship edge sites|scan [options]
+```
+
+## openship edge status
+
+Show whether the edge is installed and serving :80/:443
+
+```text
+openship edge status [options]
+```
+
+## openship edge takeover
+
+Free :80/:443 for the edge — whatever holds them is stopped and its sites drop
+
+```text
+openship edge takeover [options]
+```
+
+## openship edge traffic
+
+Traffic overview for a project (requests, bandwidth, hourly periods)
+
+```text
+openship edge traffic [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `--domain <host>` | Scope to a single tracked domain |
+| `--from <ts>` | Window start (ISO 8601 or epoch minutes) |
+| `--to <ts>` | Window end (ISO 8601 or epoch minutes) |
+
+## openship edge up
+
+Ensure the edge is up and serving; optionally enable monitoring (built-in analytics DB)
+
+```text
+openship edge up|install [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--migrate` | On a port conflict, import the existing proxy's sites and take over |
+| `--takeover` | On a port conflict, stop whatever holds :80/:443 (its sites drop) |
+| `--monitoring` | Also enable monitoring: install the built-in Openship service + embedded DB for analytics |
+| `--no-monitoring` | Edge only — skip the monitoring prompt (the headless default) |
+| `--admin-name <name>` | Admin display name for a fresh monitoring install |
+| `--admin-email <email>` | Admin email for a fresh monitoring install (required when headless) |
+| `--admin-password <pw>` | Admin password (prefer the OPENSHIP_ADMIN_PASSWORD env var) |

@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useState } from "react";
 import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
-import { CloudWaitlistModal } from "./CloudWaitlistModal";
+import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
+import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { useCloneStrategyGate } from "./CloneStrategyNudge";
 import { serviceDisplayHost } from "@/utils/route-display";
@@ -25,6 +26,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { attachDeploymentDomainIds, deploymentDnsTargets } from "@/lib/deployment-dns";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -150,14 +152,26 @@ const ComposeChecklist: React.FC = () => {
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 const Sidebar: React.FC = () => {
-  const { config, state, updateConfig, startDeployment } = useDeployment();
+  const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
+    useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
+  // Desktop mode: the workload can't run on this machine yet (builds still can).
+  const localDeployGate = useLocalDeployGate();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const router = useRouter();
   const isServices = usesServiceDeployment(config);
+  const [branchError, setBranchError] = React.useState<string | null>(null);
+  const handleBranchChange = useCallback(
+    async (branch: string) => {
+      setBranchError(null);
+      const result = await rescanWithBranch(branch);
+      if (!result.success && result.error) setBranchError(result.error);
+    },
+    [rescanWithBranch],
+  );
 
   // Copy a ready-to-run `git clone` command with a short-lived GitHub App
   // installation token. Cloud / GitHub-App mode only — surfaces a clear
@@ -186,32 +200,6 @@ const Sidebar: React.FC = () => {
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
 
-  // Lazy branch list. In config-edit mode the wizard hydrates from saved data
-  // with only the current branch seeded (no repo round-trip on load). The full
-  // list is fetched once, on first open of the branch dropdown — never for
-  // local-sourced projects (no remote repo to list).
-  const branchesFetchedRef = useRef(false);
-  const loadBranches = useCallback(async () => {
-    if (branchesFetchedRef.current) return;
-    if (!config.projectId || !config.owner || config.owner === "local") return;
-    // Only when the list is "thin" (config-edit seeds just the current branch);
-    // the first-deploy path already preloads the full list via prepare.
-    if (config.branches.length > 1) return;
-    branchesFetchedRef.current = true;
-    try {
-      const res = await projectsApi.getBranches(config.projectId);
-      const names: string[] = (res?.data ?? [])
-        .map((b: { name?: string }) => b?.name)
-        .filter((n: unknown): n is string => typeof n === "string" && n.length > 0);
-      if (names.length) {
-        const merged = Array.from(new Set([config.branch, ...names].filter(Boolean)));
-        updateConfig({ branches: merged });
-      }
-    } catch {
-      branchesFetchedRef.current = false; // allow a retry on next open
-    }
-  }, [config.projectId, config.owner, config.branch, config.branches.length, updateConfig]);
-
   const handleOpenEnvironmentCreator = useCallback(() => {
     if (!config.projectId) return;
 
@@ -238,20 +226,21 @@ const Sidebar: React.FC = () => {
     // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
     // A failed attempt just marks the domain Action Required — never blocks the
     // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
-    const custom = selfHosted
-      ? config.publicEndpoints.find((e) => e.domainType === "custom" && e.customDomain?.trim())
-      : undefined;
-    if (custom?.customDomain) {
-      const apex = custom.customDomain.trim().toLowerCase().replace(/^www\./, "");
-      const includeWww = config.publicEndpoints.some(
-        (e) => e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === `www.${apex}`,
-      );
+    let dnsTargets = selfHosted ? deploymentDnsTargets(config) : [];
+    if (dnsTargets.length > 0) {
+      if (config.projectId) {
+        const projectInfo = await projectsApi.getInfo(config.projectId).catch(() => null);
+        const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
+          ? projectInfo.data.project.domains
+          : [];
+        dnsTargets = attachDeploymentDomainIds(dnsTargets, domainRows);
+      }
       let modalId = "";
       modalId = showModal({
         customContent: (
           <DnsRecordsModal
-            hostname={apex}
-            includeWww={includeWww}
+            targets={dnsTargets}
+            serverId={config.deployTarget === "server" ? config.serverId : undefined}
             onConfirm={() => {
               hideModal(modalId);
               void doDeploy(overrides);
@@ -264,18 +253,28 @@ const Sidebar: React.FC = () => {
       return;
     }
     await doDeploy(overrides);
-  }, [doDeploy, selfHosted, config.publicEndpoints, showModal, hideModal]);
+  }, [doDeploy, selfHosted, config, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
-    // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
-    // pressing Deploy on the hosted control plane shows the "Cloud is almost
-    // here" waitlist instead of running a deploy. Self-hosted / desktop deploys
-    // are unaffected. Delete this block (+ CloudWaitlistModal + the
-    // /api/cloud-waitlist route) when Cloud launches.
-    if (!selfHosted) {
+    // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
+    // remote servers; the workload can't run on this machine yet. Scoped to NEW
+    // projects on purpose — a project that already lives locally stays fully
+    // redeployable, so nobody is stranded mid-work. Building locally is
+    // untouched; only the deploy destination is gated.
+    if (
+      !config.projectId &&
+      localDeployGate.blocks({ deployTarget: config.deployTarget, serverId: config.serverId })
+    ) {
       let modalId = "";
       modalId = showModal({
-        customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
+        customContent: (
+          <LocalDeployComingSoonModal
+            onClose={() => hideModal(modalId)}
+            onServerAdded={(server) =>
+              updateConfig({ deployTarget: "server", serverId: server.id })
+            }
+          />
+        ),
         maxWidth: "460px",
       });
       return;
@@ -376,7 +375,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from the project Runtime page with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no
@@ -448,15 +447,16 @@ const Sidebar: React.FC = () => {
           </div>
           {config.branches.length > 0 && (
             <div className="mt-3">
-              <CustomSelect
+              <RepositoryBranchSelect
+                owner={config.owner}
+                repo={config.repo}
+                projectId={config.projectId}
                 value={config.branch}
-                onChange={(val) => updateConfig({ branch: val })}
-                onOpen={loadBranches}
-                options={config.branches.map(branch => ({
-                  value: branch,
-                  label: branch,
-                  icon: <GitBranch className="w-3.5 h-3.5" />
-                }))}
+                onChange={(val) => void handleBranchChange(val)}
+                disabled={isRescanning || isSaving || state.isDeploying}
+                initialBranches={config.branches}
+                initialPage={config.branchPage}
+                initialHasMore={config.branchesHasMore}
                 footerAction={config.projectId
                   ? {
                       label: t.deploy.sidebar.newEnvironment,
@@ -464,9 +464,21 @@ const Sidebar: React.FC = () => {
                       onClick: handleOpenEnvironmentCreator,
                     }
                   : undefined}
-                placeholder={t.deploy.sidebar.selectBranch}
-                className="w-full"
               />
+              {isRescanning && (
+                <p
+                  role="status"
+                  className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
+                >
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  {t.importProject.buildSettings.composePath.scanning}
+                </p>
+              )}
+              {branchError && (
+                <p role="alert" className="mt-2 text-sm text-danger break-words">
+                  {branchError}
+                </p>
+              )}
             </div>
           )}
           {config.branches.length === 0 && config.branch && (
@@ -516,7 +528,7 @@ const Sidebar: React.FC = () => {
       {isConfigMode ? (
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? (
@@ -534,7 +546,7 @@ const Sidebar: React.FC = () => {
       ) : (
         <button
           onClick={handleDeploy}
-          disabled={state.isDeploying}
+          disabled={state.isDeploying || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {state.isDeploying ? (
@@ -565,8 +577,21 @@ function hasConnectedDomain(service: {
   customDomain?: string;
   domain?: string;
   name?: string;
+  publicEndpoints?: Array<{
+    domainType?: "free" | "custom";
+    customDomain?: string;
+    domain?: string;
+  }>;
 }) {
   if (!service.exposed) return false;
+  if (service.publicEndpoints && service.publicEndpoints.length > 0) {
+    const hasEndpointDomain = service.publicEndpoints.some((ep) =>
+      ep.domainType === "custom"
+        ? Boolean(ep.customDomain?.trim())
+        : Boolean(ep.domain?.trim()),
+    );
+    if (hasEndpointDomain) return true;
+  }
   if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
   return Boolean(service.domain?.trim() || service.name?.trim());
 }

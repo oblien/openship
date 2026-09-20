@@ -16,7 +16,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { useSetupStream } from "@/hooks/useSetupStream";
-import { ServerForm } from "../_components/server-form";
+import { ServerForm } from "@/components/servers/server-form";
 import { AutoSetupFlow } from "./_components/auto-setup-flow";
 import { CheckingState } from "./_components/checking-state";
 import { ChooseMode } from "./_components/choose-mode";

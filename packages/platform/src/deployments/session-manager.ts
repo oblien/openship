@@ -1,0 +1,551 @@
+/**
+ * Build session manager - manages active build SSE streams.
+ *
+ * Responsibilities:
+ *   - Track active build sessions with log buffers
+ *   - Broadcast log entries to SSE subscribers
+ *   - Auto-cleanup stale sessions
+ *   - SSE heartbeat keep-alive for proxy compatibility
+ */
+
+import { SYSTEM } from "@repo/core";
+import type { InstallPhaseEvent, InstallPhaseId } from "@repo/core";
+import { TtlCache } from "../state/cache";
+import type { LogEntry, PromptPayload } from "@repo/core";
+import { PromptRegistry } from "../state/prompt-registry";
+import type { PortCheckResult } from "@repo/core";
+import { STEP_INDEX, STEP_PROGRESS, progressForStep } from "./build-steps";
+
+export interface ServiceStatusPayload {
+  serviceName: string;
+  serviceId: string;
+  status: "pending" | "building" | "built" | "deploying" | "running" | "failed";
+  error?: string;
+  containerId?: string;
+  hostPort?: number;
+}
+
+export interface BuildSessionState {
+  deploymentId: string;
+  projectId: string;
+  status: "queued" | "building" | "deploying" | "ready" | "failed" | "cancelled";
+  logs: LogEntry[];
+  warningMessage?: string;
+  errorMessage?: string;
+  /** A partial-failure deploy is HELD for an explicit keep/reject decision
+   *  (#664). Stored — like warningMessage — so a refresh/reconnect replays the
+   *  modal trigger instead of hiding it until the next REST poll. */
+  decisionPending?: boolean;
+  /** Per-service deployment statuses (compose projects only, for replay on reconnect) */
+  serviceStatuses: Map<string, ServiceStatusPayload>;
+  /** Latest state of each install phase (catalog-app installs). Stored — not just
+   *  broadcast — so a page refresh/reconnect replays the stepper. Parallel to the
+   *  low-level build-step/progress model; see @repo/core install-phases. */
+  installPhases: Map<InstallPhaseId, InstallPhaseEvent>;
+  /** The prompt currently awaiting a user decision (e.g. edge 80/443 takeover,
+   *  port conflict). Held here — not just broadcast — so a page refresh /
+   *  reconnect re-shows it (replayed in subscribe). Cleared on response/timeout. */
+  currentPrompt?: PromptPayload;
+  /** SSE writer callbacks for active subscribers */
+  subscribers: Set<SseWriter>;
+  startedAt: number;
+  /** Monotonic counter for per-entry `seq` (the SSE event id). Never reset by
+   *  the ring-buffer trim, so the client's dedup cursor keeps advancing instead
+   *  of plateauing at the buffer cap. */
+  nextSeq: number;
+}
+
+export type SseWriter = (event: string, data: string) => boolean;
+
+// The prompt shape is the ONE shared PromptPayload from @repo/adapters (used by
+// the deploy pipeline, server-setup, CLI, and dashboard modal). Re-exported here
+// so existing importers of session-manager keep working.
+export type { PromptPayload };
+
+export interface SessionManagerOptions {
+  promptTimeoutMs?: number;
+  heartbeatMs?: number;
+}
+
+/** Owns deployment event buffers, decision holds, and heartbeat/sweep timers. */
+export function createSessionManager(options: SessionManagerOptions = {}) {
+  if (
+    options.heartbeatMs !== undefined &&
+    (!Number.isFinite(options.heartbeatMs) || options.heartbeatMs <= 0)
+  )
+    throw new TypeError("Heartbeat interval must be positive");
+  if (
+    options.promptTimeoutMs !== undefined &&
+    (!Number.isFinite(options.promptTimeoutMs) || options.promptTimeoutMs <= 0)
+  )
+    throw new TypeError("Prompt timeout must be positive");
+  let closed = false;
+  /** Convert a LogEntry into the JSON payload the frontend expects. The event id
+   *  is the entry's stable `seq` (assigned in appendLog), NOT the ring-buffer
+   *  index — the index plateaus at the buffer cap and froze the client dedup. */
+  function formatLogPayload(entry: LogEntry): string {
+    // Use native base64 when available (cloud adapter), otherwise encode.
+    // Local/SSH logs are single lines without trailing newlines - append \n
+    // so the terminal renders each entry on its own line.
+    const base64Data = entry.rawData ?? Buffer.from(entry.message + "\n").toString("base64");
+    return JSON.stringify({
+      type: "log",
+      data: base64Data,
+      eventId: entry.seq,
+      step: entry.step,
+      stepStatus: entry.stepStatus,
+      level: entry.level,
+      serviceName: entry.serviceName,
+      serviceId: entry.serviceId,
+    });
+  }
+
+  /** Active sessions cache - keyed by deployment ID (dep_xxx) */
+  const sessions = new TtlCache<BuildSessionState>({
+    maxSize: SYSTEM.SSE.MAX_SESSIONS,
+    sweepIntervalMs: SYSTEM.SSE.SWEEP_INTERVAL_MS,
+  });
+
+  /** Send keep-alive pings to all active subscribers to prevent connection drops */
+  const heartbeatTimer = setInterval(() => {
+    for (const session of sessions.values()) {
+      const dead: SseWriter[] = [];
+      for (const writer of session.subscribers) {
+        const ok = writer("ping", "{}");
+        if (!ok) dead.push(writer);
+      }
+      for (const w of dead) session.subscribers.delete(w);
+    }
+  }, options.heartbeatMs ?? SYSTEM.SSE.HEARTBEAT_INTERVAL_MS);
+
+  // Don't keep the process alive just for heartbeats
+  if (heartbeatTimer.unref) heartbeatTimer.unref();
+
+  /** Create a new build session - keyed by deployment ID (dep_xxx). */
+  function createSession(deploymentId: string, projectId: string): BuildSessionState {
+    if (closed) throw new Error("Session manager is closed");
+    const state: BuildSessionState = {
+      deploymentId,
+      projectId,
+      status: "queued",
+      logs: [],
+      serviceStatuses: new Map(),
+      installPhases: new Map(),
+      subscribers: new Set(),
+      startedAt: Date.now(),
+      nextSeq: 0,
+    };
+    sessions.set(deploymentId, state, SYSTEM.SSE.SESSION_TTL_SECONDS);
+    return state;
+  }
+
+  /** Get an active session */
+  function getSession(sessionId: string): BuildSessionState | null {
+    return sessions.get(sessionId);
+  }
+
+  /** Stop replaying a partial-failure decision after it has been resolved. */
+  function clearDecisionPending(sessionId: string): void {
+    const session = sessions.get(sessionId);
+    if (session) session.decisionPending = undefined;
+  }
+
+  /** Append a log entry and broadcast to subscribers */
+  function appendLog(sessionId: string, entry: LogEntry): void {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    // Assign the stable seq BEFORE the ring-buffer trim so it never plateaus.
+    entry.seq = session.nextSeq++;
+
+    session.logs.push(entry);
+    if (session.logs.length > SYSTEM.SSE.MAX_LOGS_PER_SESSION) {
+      session.logs.splice(0, session.logs.length - SYSTEM.SSE.MAX_LOGS_PER_SESSION);
+    }
+
+    // Step-metadata entries (running/completed/failed) only drive the progress
+    // bar - they should NOT be written to the terminal as log lines.
+    const isStepMeta = !!entry.step && !!entry.stepStatus;
+
+    // Broadcast raw log to terminal (skip step-metadata-only entries)
+    if (!isStepMeta) {
+      const logPayload = formatLogPayload(entry);
+      const dead: SseWriter[] = [];
+      for (const writer of session.subscribers) {
+        const ok = writer("log", logPayload);
+        if (!ok) dead.push(writer);
+      }
+      for (const w of dead) session.subscribers.delete(w);
+    }
+
+    // Emit a progress event for every step metadata update so the UI stays in sync
+    if (entry.step && entry.stepStatus && entry.step in STEP_INDEX) {
+      const progressPayload = JSON.stringify({
+        type: "progress",
+        currentStep: STEP_INDEX[entry.step],
+        progress: progressForStep(entry.step, entry.stepStatus),
+      });
+      for (const writer of session.subscribers) {
+        writer("progress", progressPayload);
+      }
+    }
+  }
+
+  /** Broadcast per-service deployment status to SSE subscribers (compose projects) */
+  function broadcastServiceStatus(sessionId: string, serviceStatus: ServiceStatusPayload): void {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    // Store for replay on reconnect
+    session.serviceStatuses.set(serviceStatus.serviceId, serviceStatus);
+
+    const payload = JSON.stringify({
+      type: "service-status",
+      ...serviceStatus,
+    });
+    const dead: SseWriter[] = [];
+    for (const writer of session.subscribers) {
+      const ok = writer("service-status", payload);
+      if (!ok) dead.push(writer);
+    }
+    for (const w of dead) session.subscribers.delete(w);
+  }
+
+  /** Broadcast an install-phase transition (catalog-app installs). Stored latest-
+   *  per-id for reconnect replay. This is the stepper's source of truth — it does
+   *  NOT touch the build-step/progress model. */
+  function broadcastInstallPhase(sessionId: string, phase: InstallPhaseEvent): void {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    session.installPhases.set(phase.id, phase);
+
+    const payload = JSON.stringify({ type: "install-phase", ...phase });
+    const dead: SseWriter[] = [];
+    for (const writer of session.subscribers) {
+      const ok = writer("install-phase", payload);
+      if (!ok) dead.push(writer);
+    }
+    for (const w of dead) session.subscribers.delete(w);
+  }
+
+  /** Update session status and broadcast typed events */
+  function updateStatus(
+    sessionId: string,
+    status: BuildSessionState["status"],
+    meta?: {
+      errorCode?: string;
+      errorDetails?: Record<string, unknown>;
+      warningMessage?: string;
+      errorMessage?: string;
+      /** Advisory post-deploy port-check results, forwarded on the `complete` event. */
+      portCheck?: PortCheckResult[];
+      /** A partial-failure deploy is being HELD for an explicit keep/reject decision.
+       *  Explicit because nothing else on the event implies it — see setDeploymentStatus. */
+      decisionPending?: boolean;
+    },
+  ): void {
+    // A prompt hold is independent of the SSE session's subscriber set. Always
+    // reject it before broadcasting a terminal cancel so the background worker
+    // cannot remain leased on a promise that no UI can answer anymore.
+    if (status === "cancelled") rejectPendingPrompt(sessionId, "Deployment cancelled");
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    session.status = status;
+    session.warningMessage = meta?.warningMessage;
+    session.errorMessage = meta?.errorMessage;
+    session.decisionPending = meta?.decisionPending;
+
+    // Broadcast typed events matching frontend expectations
+    if (status === "ready") {
+      const payload = JSON.stringify({
+        type: "complete",
+        success: true,
+        ...(session.warningMessage ? { warningMessage: session.warningMessage } : {}),
+        ...(session.decisionPending ? { decisionPending: true } : {}),
+        ...(meta?.portCheck && meta.portCheck.length > 0 ? { portCheck: meta.portCheck } : {}),
+      });
+      for (const writer of session.subscribers) {
+        writer("complete", payload);
+      }
+    } else if (status === "failed") {
+      const lastError = [...session.logs].reverse().find((l) => l.level === "error");
+      const payload = JSON.stringify({
+        type: "complete",
+        success: false,
+        message: session.errorMessage || lastError?.message || "Build failed",
+        ...(meta?.errorCode && { errorCode: meta.errorCode }),
+        ...(meta?.errorDetails && { errorDetails: meta.errorDetails }),
+      });
+      for (const writer of session.subscribers) {
+        writer("complete", payload);
+      }
+    } else if (status === "cancelled") {
+      const payload = JSON.stringify({ type: "cancelled", message: "Build cancelled" });
+      for (const writer of session.subscribers) {
+        writer("cancelled", payload);
+      }
+    }
+
+    // Terminal states: send end event and close all subscribers
+    if (status === "ready" || status === "failed" || status === "cancelled") {
+      const endPayload = JSON.stringify({ type: "end", status });
+      for (const writer of session.subscribers) {
+        writer("end", endPayload);
+      }
+      session.subscribers.clear();
+    }
+  }
+
+  /**
+   * Subscribe a new SSE writer to a session, returns unsubscribe fn.
+   *
+   * `sinceSeq` is the highest `seq` the client already has (from the history
+   * snapshot it fetched before connecting). Entries with `seq <= sinceSeq` are
+   * NOT replayed, so a refresh/reconnect streams only genuinely new events
+   * instead of re-delivering the whole buffer. Omit it for a fresh subscription.
+   */
+  function subscribe(
+    sessionId: string,
+    writer: SseWriter,
+    sinceSeq?: number,
+  ): { success: boolean; unsubscribe: () => void } {
+    const session = sessions.get(sessionId);
+    if (!session) return { success: false, unsubscribe: () => {} };
+
+    // Enforce subscriber limit - evict oldest if full
+    if (session.subscribers.size >= SYSTEM.SSE.MAX_SUBSCRIBERS_PER_SESSION) {
+      const oldest = session.subscribers.values().next().value;
+      if (oldest) {
+        oldest("end", JSON.stringify({ message: "Evicted: subscriber limit reached" }));
+        session.subscribers.delete(oldest);
+      }
+    }
+
+    session.subscribers.add(writer);
+
+    // Replay existing logs in the format the frontend expects
+    // Skip step-metadata entries (same filter as appendLog) - they drive progress, not terminal
+    // Track the highest step seen so we can emit a final progress event after replay
+    let highestStep = -1;
+    let highestStepProgress = 0;
+
+    for (let i = 0; i < session.logs.length; i++) {
+      const entry = session.logs[i];
+      const isStepMeta = !!entry.step && !!entry.stepStatus;
+
+      // Only replay real output entries to the terminal, and skip anything the
+      // client already has (seq <= sinceSeq) so a resume streams only new events.
+      const alreadySeen =
+        sinceSeq !== undefined && entry.seq !== undefined && entry.seq <= sinceSeq;
+      if (!isStepMeta && !alreadySeen) {
+        const ok = writer("log", formatLogPayload(entry));
+        if (!ok) {
+          session.subscribers.delete(writer);
+          return { success: false, unsubscribe: () => {} };
+        }
+      }
+
+      // Track step progress from replayed entries
+      if (entry.step && entry.step in STEP_INDEX) {
+        const idx = STEP_INDEX[entry.step];
+        if (idx > highestStep) {
+          highestStep = idx;
+          highestStepProgress = STEP_PROGRESS[entry.step];
+        }
+      }
+    }
+
+    // Emit a progress event so the frontend knows the current step after replay
+    if (highestStep >= 0) {
+      writer(
+        "progress",
+        JSON.stringify({
+          type: "progress",
+          currentStep: highestStep,
+          progress: highestStepProgress,
+        }),
+      );
+    }
+
+    // Replay per-service statuses (compose projects)
+    for (const svcStatus of session.serviceStatuses.values()) {
+      writer(
+        "service-status",
+        JSON.stringify({
+          type: "service-status",
+          ...svcStatus,
+        }),
+      );
+    }
+
+    // Replay install-phase state (catalog-app installs) so a refresh resumes the stepper
+    for (const phase of session.installPhases.values()) {
+      writer("install-phase", JSON.stringify({ type: "install-phase", ...phase }));
+    }
+
+    // Re-show a still-pending decision prompt (edge takeover, port conflict) so a
+    // refresh/reconnect lands back on the modal instead of a silent stalled build.
+    // Only for a live session — a finished build's prompt is stale.
+    if (session.currentPrompt && !["ready", "failed", "cancelled"].includes(session.status)) {
+      writer("prompt", JSON.stringify({ type: "prompt", ...session.currentPrompt }));
+    }
+
+    // If session already finished, send typed completion + end events
+    if (["ready", "failed", "cancelled"].includes(session.status)) {
+      if (session.status === "ready") {
+        writer(
+          "complete",
+          JSON.stringify({
+            type: "complete",
+            success: true,
+            ...(session.warningMessage ? { warningMessage: session.warningMessage } : {}),
+            ...(session.decisionPending ? { decisionPending: true } : {}),
+          }),
+        );
+      } else if (session.status === "failed") {
+        const lastError = [...session.logs].reverse().find((l) => l.level === "error");
+        writer(
+          "complete",
+          JSON.stringify({
+            type: "complete",
+            success: false,
+            message: session.errorMessage || lastError?.message || "Build failed",
+          }),
+        );
+      } else if (session.status === "cancelled") {
+        writer("cancelled", JSON.stringify({ type: "cancelled", message: "Build cancelled" }));
+      }
+      writer("end", JSON.stringify({ type: "end", status: session.status }));
+      session.subscribers.delete(writer);
+    }
+
+    return {
+      success: true,
+      unsubscribe: () => session.subscribers.delete(writer),
+    };
+  }
+
+  /** Remove a session completely */
+  function removeSession(sessionId: string): void {
+    const session = sessions.get(sessionId);
+    if (session) {
+      for (const writer of session.subscribers) {
+        writer("end", JSON.stringify({ message: "Session ended" }));
+      }
+      session.subscribers.clear();
+    }
+    sessions.delete(sessionId);
+    // Clean up any pending prompt - reject so the pipeline doesn't hang
+    rejectPendingPrompt(sessionId, "Session removed");
+  }
+
+  // The block-on-a-promise + timeout mechanic lives once in PromptRegistry; this
+  // manager keeps only the session-object hold (currentPrompt, for replay) + the
+  // SSE broadcast.
+  const promptRegistry = new PromptRegistry(options.promptTimeoutMs);
+
+  /**
+   * Broadcast a prompt SSE event and block until the user responds.
+   *
+   * Called from the deploy pipeline's preflight (via build.service).
+   * Returns the user's chosen action string (e.g. "free_port", "abort").
+   */
+  async function promptUser(sessionId: string, prompt: PromptPayload): Promise<string> {
+    const session = sessions.get(sessionId);
+    if (!session) throw new Error("No active session for prompt");
+    if (promptRegistry.has(sessionId))
+      throw new Error("A prompt is already pending for this session");
+
+    // Hold the prompt on the session so a refresh/reconnect re-shows it (replayed
+    // in subscribe), not just a one-shot broadcast.
+    //
+    // Stamp the deadline HERE, where the hold actually starts — the raising code
+    // (ensurePortAvailable, the edge-consent flow) doesn't own the timeout. A
+    // client that has to poll to discover this prompt needs to know how long it
+    // has; without it, "waiting" and "about to be aborted" look identical.
+    const held: PromptPayload = { ...prompt, expiresAt: promptRegistry.deadlineFromNow() };
+    session.currentPrompt = held;
+    // Install the hold before notifying subscribers: a native subscriber can
+    // answer synchronously, without the HTTP round trip the old order assumed.
+    const waiting = promptRegistry.wait(sessionId, () => {
+      if (session.currentPrompt?.promptId === prompt.promptId) session.currentPrompt = undefined;
+    });
+    const payload = JSON.stringify({ type: "prompt", ...held });
+    for (const writer of session.subscribers) {
+      try {
+        writer("prompt", payload);
+      } catch {
+        session.subscribers.delete(writer);
+      }
+    }
+    return waiting;
+  }
+
+  /**
+   * Resolve a pending prompt with the user's chosen action.
+   * Called from the API route handler.
+   */
+  function respondToPrompt(sessionId: string, action: string): boolean {
+    const ok = promptRegistry.respond(sessionId, action);
+    if (ok) {
+      const session = sessions.get(sessionId);
+      if (session) session.currentPrompt = undefined;
+    }
+    return ok;
+  }
+
+  /** Reject a pending prompt (cleanup helper). */
+  function rejectPendingPrompt(sessionId: string, reason: string): void {
+    if (!promptRegistry.has(sessionId)) return;
+    const session = sessions.get(sessionId);
+    if (session) session.currentPrompt = undefined;
+    promptRegistry.reject(sessionId, reason);
+  }
+
+  /** Wake a deploy worker blocked on a user-decision prompt when its deployment
+   * is cancelled. A terminal SSE event alone cannot do that: the prompt promise
+   * is independent of the session cache and otherwise keeps the durable worker
+   * lease alive forever. */
+  function cancelPendingPrompt(sessionId: string): void {
+    rejectPendingPrompt(sessionId, "Deployment cancelled");
+  }
+
+  function close(): void {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeatTimer);
+    promptRegistry.dispose("Platform closed");
+    for (const session of sessions.values()) {
+      for (const writer of session.subscribers) {
+        try {
+          writer("end", JSON.stringify({ message: "Platform closed" }));
+        } catch {
+          /* Disconnected subscriber. */
+        }
+      }
+      session.subscribers.clear();
+    }
+    sessions.clear();
+    sessions.dispose();
+  }
+
+  return Object.freeze({
+    createSession,
+    getSession,
+    clearDecisionPending,
+    appendLog,
+    broadcastServiceStatus,
+    broadcastInstallPhase,
+    updateStatus,
+    subscribe,
+    removeSession,
+    promptUser,
+    respondToPrompt,
+    cancelPendingPrompt,
+    close,
+  });
+}
+export type SessionManager = ReturnType<typeof createSessionManager>;

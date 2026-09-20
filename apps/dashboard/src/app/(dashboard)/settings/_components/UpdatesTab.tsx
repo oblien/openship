@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, ShieldCheck, Download, Github, CheckCircle2, Loader2 } from "lucide-react";
+import { RefreshCw, ShieldCheck, Download, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 import { changelogUrl } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsToggleRow } from "./SettingsToggleRow";
@@ -122,7 +122,7 @@ export function UpdatesTab() {
           rel="noopener noreferrer"
           className="mt-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground underline-offset-4 hover:underline"
         >
-          <Github className="size-3.5" />
+          <ExternalLink className="size-3.5" />
           {t.settings.updates.viewChangelog}
         </a>
       </SettingsSection>

@@ -1,6 +1,6 @@
 ---
-title: Backup destinations API
-description: Manage the storage targets (S3-compatible, SFTP, local, or another Openship server) that backups are written to, and run a connectivity preflight.
+title: Backup destinations
+description: Configure and verify storage for backups.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -11,32 +11,38 @@ to. This API creates and manages those targets and runs a **preflight** that pro
 actually reachable (it writes, reads back, and deletes a probe object). Credentials are encrypted at rest;
 serialized destinations never return secret values, only `hasX` flags showing which are configured.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/backup-destinations`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and the [auth model](/docs/security/auth) for details.
-</Callout>
-
 This module is available on both self-hosted and cloud instances. The `local` destination kind is
 self-hosted only — it is rejected in cloud mode and, on self-hosted, must be explicitly enabled (see below).
 
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/backup-destinations` | `backup_destination:list` | List the org's destinations (secrets masked). |
-| `POST /api/backup-destinations` | `backup_destination:write` | Create a destination. |
-| `GET /api/backup-destinations/:id` | `backup_destination:read` | Get a single destination. |
-| `PATCH /api/backup-destinations/:id` | `backup_destination:write` | Update a destination's fields or credentials. |
-| `DELETE /api/backup-destinations/:id` | `backup_destination:admin` | Delete a destination. |
-| `POST /api/backup-destinations/:id/preflight` | `backup_destination:write` | Verify connectivity (write + read + delete a probe). |
-
 ## Create a destination
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.backupDestinations.create({
+  name: "prod-s3",
+  kind: "s3_compatible",
+  bucket: "my-backups",
+  region: "us-east-1",
+  accessKeyId: "AKIA...",
+  secretAccessKey: "...",
+});
+console.log(result);
 ```
-POST /api/backup-destinations
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/backup-destinations" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"prod-s3","kind":"s3_compatible","bucket":"my-backups","region":"us-east-1","accessKeyId":"AKIA...","secretAccessKey":"..."}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -66,29 +72,34 @@ Required fields depend on `kind`:
 - **`openship_server`** — `serverId` (a server in your org).
 - **`local`** — `endpoint` (an absolute path inside `BACKUP_LOCAL_ROOT`).
 
-```bash
-curl -X POST https://your-host/api/backup-destinations \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"prod-s3","kind":"s3_compatible","bucket":"my-backups","region":"us-east-1","accessKeyId":"AKIA...","secretAccessKey":"..."}'
-```
-
-```bash
-# Same thing from the CLI:
-openship backup destination create \
-  --name prod-s3 --kind s3_compatible \
-  --bucket my-backups --region us-east-1 \
-  --access-key-id AKIA... --secret-access-key ...
-```
-
 ## Update a destination
 
 Send only the fields you want to change. For credentials, `undefined` (omitted) leaves the stored value
 unchanged, `null` clears it, and a string replaces it. The `kind` cannot be changed after creation.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.backupDestinations.update("bkd_123", {
+  pathPrefix: "nightly/",
+  isDefault: true,
+});
+console.log(result);
 ```
-PATCH /api/backup-destinations/:id
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X PATCH "$OPENSHIP_URL/api/backup-destinations/bkd_123" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pathPrefix":"nightly/","isDefault":true}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -109,31 +120,29 @@ PATCH /api/backup-destinations/:id
   }}
 />
 
-```bash
-curl -X PATCH https://your-host/api/backup-destinations/bkd_123 \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"pathPrefix":"nightly/","isDefault":true}'
-```
-
 ## Preflight (verify connectivity)
 
 Proves the destination works by writing, reading back, and deleting a small probe object. On success it
 stamps `lastVerifiedAt`; on failure it records the error in `lastVerifyError`.
 
-```
-POST /api/backup-destinations/:id/preflight
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.backupDestinations.preflight("bkd_123");
+console.log(result);
 ```
 
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X POST https://your-host/api/backup-destinations/bkd_123/preflight \
+curl -X POST "$OPENSHIP_URL/api/backup-destinations/bkd_123/preflight" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
-```bash
-# Same thing from the CLI:
-openship backup destination preflight bkd_123
-```
+</Tab>
+</Tabs>
 
 <Callout title="A failed check is still a 200" type="info">
 Preflight returns `200` with `{"ok": false, "reason": "..."}` when the target is unreachable or
@@ -141,7 +150,7 @@ misconfigured — the reason (bad credentials, DNS failure, permission denied) i
 status. A `404` here means the `:id` doesn't belong to your organization.
 </Callout>
 
-## Errors you might see
+## Errors
 
 <Callout title="400 — validation failed" type="warn">
 The body is missing a field required for its `kind` (e.g. an S3 destination without a `bucket` or
@@ -162,3 +171,20 @@ in cloud mode.
 The `:id` doesn't belong to your organization (or was deleted). List your destinations with
 `GET /api/backup-destinations` to get valid IDs.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List backup storage destinations. | `backupDestinations.list()` | `GET /api/backup-destinations`<br />`backup_destination:list` |
+| Create a backup destination. | `backupDestinations.create(input)` | `POST /api/backup-destinations`<br />`backup_destination:write` |
+| Test destination configuration before saving it. | `backupDestinations.preflightDraft(input)` | `POST /api/backup-destinations/preflight`<br />`backup_destination:write` |
+| Read a destination with credentials protected. | `backupDestinations.get(id)` | `GET /api/backup-destinations/:id`<br />`backup_destination:read` |
+| Read destination storage usage. | `backupDestinations.usage(id)` | `GET /api/backup-destinations/:id/usage`<br />`backup_destination:read` |
+| Update destination settings. | `backupDestinations.update(id, input)` | `PATCH /api/backup-destinations/:id`<br />`backup_destination:write` |
+| Remove an eligible destination. | `backupDestinations.remove(id)` | `DELETE /api/backup-destinations/:id`<br />`backup_destination:admin` |
+| Test a saved destination and record its verification state. | `backupDestinations.preflight(id)` | `POST /api/backup-destinations/:id/preflight`<br />`backup_destination:write` |
+
+{/* api-operations:end */}

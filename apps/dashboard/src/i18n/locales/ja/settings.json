@@ -21,6 +21,7 @@
       "cloud": "クラウド",
       "defaults": "デフォルト",
       "settings": "設定",
+      "dns": "DNS",
       "notifications": "通知",
       "team": "チーム",
       "members": "メンバー",
@@ -47,11 +48,12 @@
     "title": "設定",
     "tabs": {
       "general": "一般",
-      "tokens": "トークン",
+      "git": "Git",
+      "tokens": "API トークン",
       "mcp": "MCP",
       "team": "チーム",
       "notifications": "通知",
-      "audit": "監査ログ",
+      "credentials": "認証情報",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
       "instance": "インスタンス"
@@ -113,10 +115,6 @@
     "noServers": "サーバーはまだ構成されていません - デプロイピッカーから追加してください。",
     "clearDefault": "デフォルトをクリア（毎回尋ねる）",
     "targets": {
-      "local": {
-        "label": "このマシン",
-        "desc": "ローカルの Docker / ランタイム"
-      },
       "server": {
         "label": "自分のサーバー",
         "desc": "構成済みの SSH サーバー"
@@ -128,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "自分のサーバー",
-      "cloud": "Openship Cloud",
-      "local": "このマシン"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "まずサーバーを選択してください",
@@ -160,6 +157,64 @@
     "toast": {
       "setTo": "ビルドモードを {mode} に設定しました",
       "failed": "ビルドモードの更新に失敗しました"
+    }
+  },
+  "githubSources": {
+    "title": "セルフホスト GitHub App",
+    "description": "暗号化された App 認証情報、直接 Webhook、短期インストールトークンを使って、このインスタンスの GitHub 接続を管理します。",
+    "publicUrlRequired": "先にこの Openship インスタンスの公開 HTTPS URL を設定してください。GitHub からセットアップコールバックと Webhook に到達できる必要があります。",
+    "createWithGithub": "GitHub で作成",
+    "registerExisting": "既存 App を登録",
+    "manifestHelp": "Openship が最小権限の App マニフェストを GitHub に送信します。GitHub が App を作成して認証情報を一度だけ返し、その後リポジトリへのインストールを開きます。",
+    "nameLabel": "ソース名",
+    "namePlaceholder": "Acme の GitHub",
+    "continueOnGithub": "GitHub で続行",
+    "empty": "ワークスペース所有の GitHub App はまだありません。",
+    "defaultBadge": "既定",
+    "activeBadge": "有効",
+    "invalidBadge": "確認が必要",
+    "webhookChanged": "この App は以前の Webhook URL で登録されています。GitHub 上の Webhook URL とセットアップ URL を更新し、このソースを再保存してください。",
+    "installations": "インストール済みアカウント",
+    "noInstallations": "まだアカウントにインストールされていません。",
+    "suspended": "停止中",
+    "installAccount": "アカウントにインストール",
+    "verify": "検証",
+    "edit": "編集",
+    "makeDefault": "既定にする",
+    "manage": "GitHub で管理",
+    "delete": "削除",
+    "confirmDelete": "Openship から {name} を削除しますか？ローカルの認証情報とインストールの関連付けは削除されますが、GitHub でアンインストールするまで App 自体は残ります。",
+    "editHelp": "暗号化して保存済みの値を維持するには、秘密情報の欄を空のままにしてください。",
+    "manualHelp": "既存の GitHub App の認証情報を入力してください。Openship は保存前に秘密鍵を検証します。",
+    "appIdLabel": "アプリ ID",
+    "clientIdLabel": "クライアント ID",
+    "clientSecretLabel": "クライアントシークレット",
+    "optionalHelp": "インストールトークン認証では省略できます。",
+    "leaveBlank": "保存済みの値を維持するには空のままにします。",
+    "privateKeyLabel": "秘密鍵（PEM）",
+    "privateKeyHelp": "GitHub App の設定で秘密鍵を生成し、PEM ファイル全体を貼り付けてください。",
+    "webhookSecretLabel": "Webhook シークレット",
+    "webhookSecretHelp": "App の Webhook 設定と同じ強力なシークレットを使用してください（16 文字以上）。",
+    "enterpriseSettings": "GitHub Enterprise 設定",
+    "webUrlLabel": "GitHub Web URL",
+    "apiUrlLabel": "GitHub API の URL",
+    "defaultLabel": "この App を既定のソースにする",
+    "setupUrlLabel": "セットアップ URL",
+    "webhookUrlLabel": "Webhook の URL",
+    "registerAndInstall": "登録してインストール",
+    "toast": {
+      "loadFailed": "GitHub App ソースを読み込めませんでした。",
+      "createFailed": "GitHub App の作成を開始できませんでした。",
+      "installFailed": "GitHub App のインストールを開けませんでした。",
+      "verified": "GitHub App を検証しました。",
+      "verifyFailed": "GitHub App の検証に失敗しました。",
+      "defaultChanged": "既定の GitHub App を変更しました。",
+      "defaultFailed": "既定の GitHub App を変更できませんでした。",
+      "deleted": "GitHub App ソースを削除しました。",
+      "deleteFailed": "GitHub App ソースを削除できませんでした。",
+      "updated": "GitHub App ソースを更新しました。",
+      "created": "GitHub App を登録しました。",
+      "saveFailed": "GitHub App ソースを保存できませんでした。"
     }
   },
   "cloneCredentials": {
@@ -286,6 +341,7 @@
     "you": "（あなた）",
     "removeMember": "メンバーを削除",
     "pendingInvitations": "保留中の招待（{count}）",
+    "copyInviteLink": "招待リンクをコピー",
     "invitedAs": "{role} として招待済み - 有効期限 {date}",
     "roles": {
       "owner": "オーナー",
@@ -329,6 +385,7 @@
       "updateRoleFailed": "ロールの更新に失敗しました",
       "removeFailed": "削除に失敗しました",
       "cancelFailed": "キャンセルに失敗しました",
+      "copyInviteFailed": "招待リンクをコピーできませんでした",
       "accessUpdated": "アクセスを更新しました",
       "loadGrantsFailed": "付与の読み込みに失敗しました",
       "deleteFailed": "ワークスペースを削除できませんでした",
@@ -359,9 +416,11 @@
     "pickerTitle": "初期リソースアクセス",
     "pickerDesc": "制限付きメンバーはアクセス権なしで開始します。承認後にこの招待が解放するものを選択してください — 後からメンバーの行でさらに付与できます。",
     "sendInvite": "招待を送信",
+    "createInviteLink": "招待リンクを作成",
     "toast": {
       "failedSend": "招待の送信に失敗しました",
       "invitationSent": "{email} に招待を送信しました",
+      "invitationLinkCreated": "招待リンクを作成しました — 保留中の招待からコピーしてください",
       "personalOrgBlocked": "個人用ワークスペースではメンバーを招待できません。まずチーム組織を作成してから招待を送信してください。",
       "updateMailSourceFailed": "メールソースの更新に失敗しました"
     }
@@ -591,13 +650,31 @@
     "updatesOne": "更新 1 件あり",
     "updatesMany": "更新 {n} 件あり",
     "allHealthy": "すべてのプラットフォームコンポーネントは最新です",
-    "manageLink": "サーバーで管理"
+    "manageLink": "サーバーで管理",
+    "hostControlLabel": "このマシンにデプロイ",
+    "hostControlDesc": "接続済みのサーバーに加えて、OpenShip が動作しているサーバー自身にもアプリをデプロイできるようにします。--no-host-control（コントロールプレーンのみ）でインストールした場合はオフです。オンにするとこのマシンをデプロイ先として追加します。",
+    "hostControlEnvNote": "このマシンはインストール時にコントロールプレーン専用（--no-host-control）に設定されました。オンにするとその設定を上書きし、OpenShip がここにデプロイできるようになります。",
+    "hostControlError": "ホスト制御を変更できませんでした。変更できるのはこのマシンのワークスペースのオーナーだけです。"
   },
   "dataTransfer": {
     "export": {
       "title": "データをエクスポート",
       "description": "インスタンスのデータベース全体をファイルとしてダウンロードします。",
       "intro": "すべての内容（プロジェクト、サーバー、デプロイ、設定）のポータブルなスナップショットを作成します。パスフレーズを設定すると、シークレット（env 変数、トークン、SSH 認証情報）が含まれます。それらはパスフレーズで再暗号化されるため、ファイルを安全に移動できます。シークレットなしでエクスポートするには空欄のままにしてください。",
+      "filterTitle": "任意の履歴",
+      "filterDescription": "設定、プロジェクト、サーバー、ユーザー、認証情報は常に含まれます。不要な履歴の選択を外すと、エクスポートを小さくできます。",
+      "filterAnalytics": "分析と使用量サンプル",
+      "filterActivity": "監査と通知の履歴",
+      "filterBackups": "バックアップと復元の履歴",
+      "filterIncidents": "ヘルスインシデント履歴",
+      "filterMigrations": "Docker 移行履歴",
+      "coreRows": "常に含まれる行",
+      "selectedRows": "選択したエクスポート行",
+      "countUnavailable": "取得不可",
+      "transferSecretNotice": "サーバーの SSH パスワードと鍵、環境変数、トークン、バックアップ認証情報を正しく移行するには、転送シークレットを生成または入力してください。別に保存し、インポート時に同じ値を入力します。インスタンスの BETTER_AUTH_SECRET を移行先へコピーしないでください。",
+      "generateTransferSecret": "転送シークレットを生成",
+      "copyTransferSecret": "転送シークレットをコピー",
+      "copiedTransferSecret": "転送シークレットをコピーしました。インポートまで安全に保管してください。",
       "passphraseLabel": "パスフレーズ（任意）",
       "passphrasePlaceholder": "シークレットを保護します",
       "confirmLabel": "パスフレーズを確認",
@@ -779,6 +856,36 @@
     "toast": {
       "setTo": "ルーティング方式を {mode} に設定しました",
       "failed": "ルーティング方式の更新に失敗しました"
+    }
+  },
+  "credentials": {
+    "title": "認証情報",
+    "description": "Openship があなたの代わりに使うトークンとログイン情報です（プライベートイメージの取得、DNS レコードの書き込みなど）。暗号化して保存され、保存後に再表示されることはありません。",
+    "noProviders": "このインスタンスで利用できるプロバイダーはありません。",
+    "noneForProvider": "まだ追加されていません。",
+    "add": "追加",
+    "edit": "編集",
+    "save": "変更を保存",
+    "connect": "認証情報を追加",
+    "delete": "削除",
+    "verify": "プロバイダーで再確認",
+    "badgeActive": "有効",
+    "badgeInvalid": "確認が必要",
+    "fieldName": "ラベル",
+    "namePlaceholder": "例: GHCR 読み取り専用",
+    "secretKeptPlaceholder": "••••••••（保存済み — 空のままで維持）",
+    "selectPlaceholder": "選択…",
+    "verifyNote": "保存する前に、Openship がプロバイダーへ認証情報を確認します。",
+    "confirmDelete": "「{name}」を削除しますか？これに依存しているものは動作しなくなります。",
+    "toast": {
+      "loadFailed": "認証情報を読み込めませんでした",
+      "created": "認証情報を追加しました",
+      "updated": "認証情報を更新しました",
+      "deleted": "認証情報を削除しました",
+      "saveFailed": "認証情報を保存できませんでした",
+      "deleteFailed": "認証情報を削除できませんでした",
+      "verifyOk": "プロバイダーが認証情報を受け入れました",
+      "verifyFailed": "プロバイダーが認証情報を拒否しました"
     }
   }
 }

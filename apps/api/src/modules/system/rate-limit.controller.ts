@@ -1,113 +1,13 @@
-/**
- * Rate limit controller - manage OpenResty-level rate limiting per server.
- *
- * GET  /system/servers/:id/rate-limit - read current config for a server
- * PATCH /system/servers/:id/rate-limit - update rate limit settings for a server
- *
- * Self-hosted only. OpenResty is the sole source of truth via the parsed
- * `ratelimit.conf` snippet on the target server.
- */
-
+/** HTTP adapters over shared live OpenResty rate-limit operations. */
 import type { Context } from "hono";
-import { repos } from "@repo/db";
-import {
-  type RateLimitConfig,
-} from "@repo/adapters";
-import { env } from "../../config";
-import { withOpenRestyRouting } from "@/lib/openresty-paths";
-import { getRequestContext } from "../../lib/request-context";
-import { permission } from "../../lib/permission";
-import { param, assertNotCloud } from "../../lib/controller-helpers";
-import { safeErrorMessage } from "@repo/core";
+import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
+import { param } from "../../lib/controller-helpers";
+import { operationContext, operationData } from "../../lib/operation-context";
 
-function isValidCidr(cidr: string): boolean {
-  return /^[\da-fA-F.:]+\/\d{1,3}$/.test(cidr) && cidr.length <= 50;
-}
-
+const operations = () => getPlatformKernel().servers;
 export async function getRateLimit(c: Context) {
-  const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
-
-  const organizationId = getRequestContext(c).organizationId;
-  const serverId = param(c, "id");
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "read" });
-
-  const server = await repos.server.getInOrganization(serverId, organizationId);
-  if (!server) return c.json({ error: "Server not found" }, 404);
-
-  try {
-    const config = await withOpenRestyRouting(server.id, (routing) =>
-      routing.getRateLimitConfig(),
-    );
-
-    if (!config) {
-      return c.json({ error: "Failed to parse OpenResty rate limit config" }, 500);
-    }
-
-    return c.json({ config });
-  } catch (err) {
-    const msg = safeErrorMessage(err);
-    return c.json({ error: `Failed to read OpenResty rate limit config: ${msg}` }, 500);
-  }
+  return c.json(await operationData(c, operations().getRateLimit(operationContext(c), param(c, "id"))));
 }
-
 export async function updateRateLimit(c: Context) {
-  const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
-
-  const organizationId = getRequestContext(c).organizationId;
-  const serverId = param(c, "id");
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
-
-  const server = await repos.server.getInOrganization(serverId, organizationId);
-  if (!server) return c.json({ error: "Server not found" }, 404);
-
-  const body = await c.req.json<{
-    rps?: number;
-    burst?: number;
-    whitelist?: string[];
-  }>();
-
-  let isRemoving = false;
-
-  try {
-    const current = await withOpenRestyRouting(serverId, (routing) =>
-      routing.getRateLimitConfig(),
-    );
-
-    if (!current) {
-      return c.json({ success: false, error: "Failed to parse current OpenResty rate limit config" }, 500);
-    }
-
-    const nextConfig: RateLimitConfig = {
-      rps: typeof body.rps === "number" ? Math.max(0, Math.floor(body.rps)) : current.rps,
-      burst: typeof body.burst === "number" ? Math.max(0, Math.floor(body.burst)) : current.burst,
-      whitelist: Array.isArray(body.whitelist)
-        ? body.whitelist.filter(isValidCidr)
-        : current.whitelist,
-    };
-    isRemoving = nextConfig.rps <= 0;
-
-    await withOpenRestyRouting(serverId, (routing) =>
-      routing.applyRateLimit(nextConfig),
-    );
-
-    const config = await withOpenRestyRouting(serverId, (routing) =>
-      routing.getRateLimitConfig(),
-    );
-    if (!config) {
-      return c.json({
-        success: false,
-        error: "OpenResty updated, but the live rate limit config could not be verified afterward.",
-      }, 500);
-    }
-
-    return c.json({ success: true, config });
-  } catch (err) {
-    const msg = safeErrorMessage(err);
-    return c.json({
-      success: false,
-      error: isRemoving
-        ? `Failed to remove rate limit from OpenResty: ${msg}`
-        : `Failed to apply rate limit to OpenResty: ${msg}`,
-    }, 500);
-  }
+  return c.json(await operationData(c, operations().updateRateLimit(operationContext(c), param(c, "id"), await c.req.json())));
 }

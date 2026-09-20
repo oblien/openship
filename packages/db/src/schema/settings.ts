@@ -45,6 +45,24 @@ export const instanceSettings = pgTable("instance_settings", {
    */
   authMode: text("auth_mode").notNull().default("none"),
 
+  /**
+   * Which PRODUCT this instance presents itself as:
+   *   "platform" → the full deploy platform (default)
+   *   "mail"     → Openship Mail: the dashboard's left rail becomes the mail
+   *                control plane and the platform nav (Projects, Apps,
+   *                Deployments, Library) is hidden.
+   *
+   * Nullable ON PURPOSE: null means "no instance override, use OPENSHIP_PRODUCT".
+   * A notNull default would make the env var permanently unreachable, since the
+   * row exists on every instance. Resolved by lib/product-mode.ts — never read
+   * directly, so the CLOUD_MODE rule stays in one place.
+   *
+   * This is presentation scope, NOT authorization: mail mode hides nav entries
+   * and never gates a route (webmail deploys through the normal project
+   * pipeline, so the platform endpoints must stay live).
+   */
+  productMode: text("product_mode"),
+
   // ── Defaults ───────────────────────────────────────────────────────────────
 
   /** Default build mode for new users on this instance */
@@ -194,6 +212,26 @@ export const instanceSettings = pgTable("instance_settings", {
   //     The 6h cron + boot hook run regardless. On by default (cheap probe).
   autoScanInfra: boolean("auto_scan_infra").notNull().default(true),
   lastSeenVersion: text("last_seen_version"),
+
+  // ── Host control ─────────────────────────────────────────────────────────────
+
+  /**
+   * May OpenShip deploy to the machine it runs on ("This Server")?
+   *
+   * Nullable ON PURPOSE — the exact contract as productMode above: null means
+   * "no instance override, use the OPENSHIP_HOST_CONTROL env default" (which the
+   * `openship up --no-host-control` install flag writes). A notNull default would
+   * write a concrete value on every instance and permanently shadow that env var.
+   * Resolved by apps/api/src/lib/host-control.ts, never read directly, so the
+   * env-fallback + selfhosted-target rules live in one place.
+   *
+   * Unlike productMode this DOES gate privileged behavior (host-root deploys via
+   * the container→host SSH channel + mounted docker socket), so the WRITE is
+   * gated to the box-owning org's owner in setup.controller. The precedence still
+   * lets the DB override env — the operator's stated need is to re-enable from
+   * Settings what `--no-host-control` turned off, "from settings again anytime".
+   */
+  hostControlEnabled: boolean("host_control_enabled"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 

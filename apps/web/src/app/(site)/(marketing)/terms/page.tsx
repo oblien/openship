@@ -36,7 +36,7 @@ const SECTIONS = [
     title: "The service",
     body: [
       "We provide infrastructure to build, ship, and run your applications - managed databases, mail, storage, routing, and the platform tooling around it.",
-      "Openship Cloud is not yet generally available. When it launches, any subscription or usage-based pricing will be published in advance. Self-hosted use is free under the Apache 2.0 license.",
+      "Openship Cloud is offered on published subscription plans, listed on our pricing page, with usage-based credits on top. Self-hosted use is free under the Apache 2.0 license.",
       "We may improve the service, fix bugs, or evolve features at any time. Material breaking changes get at least 30 days' notice.",
     ],
   },
@@ -69,15 +69,15 @@ const SECTIONS = [
     id: "billing",
     title: "Billing",
     body: [
-      "Openship Cloud pricing has not been finalized and will be published before the service becomes paid. Self-hosted use is free.",
-      "Once paid plans launch, we'll accept major cards via Stripe, and the billing, dunning, and refund terms in effect at that time will be presented before you're charged.",
+      "Openship Cloud plan prices are published on our pricing page. Paid plans are billed monthly in advance and you may cancel at any time; cancellation takes effect at the end of the period you have already paid for. Self-hosted use is free.",
+      "We accept major cards via Stripe. Price changes to a plan you are on are announced at least 30 days in advance and apply from your next billing period. A failed payment triggers retries and email notice before any suspension.",
     ],
   },
   {
     id: "uptime-sla",
     title: "Uptime and SLA",
     body: [
-      "Once Openship Cloud launches it will target 99.9% monthly uptime on a best-effort basis, with contractual SLAs and service credits available on eligible paid plans.",
+      "Openship Cloud targets 99.9% monthly uptime on a best-effort basis, with contractual SLAs and service credits available on eligible paid plans.",
       "Scheduled maintenance is announced at least 7 days in advance and excluded from uptime calculations.",
     ],
   },

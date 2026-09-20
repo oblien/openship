@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
-import { SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "../../../src/modules/projects/project.schema";
-import { CreateChannelBody, UpsertSubscriptionBody } from "../../../src/modules/notifications/notification.schema";
-import { CreateConnectionBody, CreateBundleBody } from "../../../src/modules/projects/project-connection.schema";
-import { PrepareDeployBody, BuildRespondBody } from "../../../src/modules/deployments/deployment.schema";
+import { SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "@repo/contracts";
+import { CreateChannelBody, UpsertSubscriptionBody } from "@repo/contracts";
+import { CreateConnectionBody, CreateBundleBody } from "@repo/contracts";
+import { PrepareDeployBody, BuildRespondBody } from "@repo/contracts";
 
 /**
  * The MCP write-tool body schemas are wired via `spec.body`, so they both

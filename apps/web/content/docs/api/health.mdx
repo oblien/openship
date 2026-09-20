@@ -1,6 +1,6 @@
 ---
-title: Health API
-description: Public liveness and deployment-info probes for load balancers, Docker health checks, and clients discovering how an instance is configured.
+title: Health
+description: Check installation availability and SDK protocol support.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,21 +10,6 @@ up — its version, auth mode, and which cloud (if any) it targets. Load balance
 hit `GET /api/health`; the CLI and dashboard read `GET /api/health/env` to decide which login flow to show.
 From the terminal it's the [`openship status`](/docs/cli/run) command. Both routes are available on every
 instance (self-hosted, desktop, and cloud).
-
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/health`.
-**Both endpoints are public** — no token or session is required, so probes work before login and from
-load balancers. Authenticated calls elsewhere send a personal access token as a bearer header
-(`Authorization: Bearer <token>`, created with [`openship token create`](/docs/cli/access)); the dashboard
-uses a session cookie. See the [API overview](/docs/api) and [auth model](/docs/security/auth) for details.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/health` | public | Liveness probe — returns `{ status, timestamp }`. |
-| `GET /api/health/env` | public | Static deployment info: mode, version, auth/team mode, and cloud URLs. |
 
 ## Liveness probe
 
@@ -36,15 +21,11 @@ Returns `200` with a fixed body as long as the process is serving requests. Use 
 load-balancer health check — it touches no database and never requires auth.
 
 ```bash
-curl https://your-host/api/health
+curl "$OPENSHIP_URL/api/health"
 # → {"status":"ok","timestamp":"2026-07-19T04:29:00.000Z"}
 ```
 
 ## Deployment info
-
-```
-GET /api/health/env
-```
 
 Static, cache-friendly description of how the instance is configured. Clients read this to pick the right
 login flow and to reach the correct cloud endpoints — the dashboard uses these values rather than a
@@ -52,6 +33,24 @@ hard-coded table. Reads that depend on the database (`teamMode`, migration field
 defaults if the settings table is unavailable mid-migration, so this route stays up.
 
 The response shape:
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.system.info();
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/health/env"
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -69,19 +68,28 @@ The response shape:
   }}
 />
 
-```bash
-curl https://your-host/api/health/env
-```
-
-```bash
-# Same info from the CLI (add --json for the raw payload):
-openship status
-```
-
-## Errors you might see
+## Errors
 
 <Callout title="Connection refused / timeout" type="warn">
 These routes never return an auth or permission error — a failure means the process isn't reachable
 (wrong host/port, container still starting, or the instance is down). `openship status` reports this as
 `Cannot reach the API at <url>`. Confirm the instance is running and the URL is correct, then retry.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read installation and deployment-mode information. | `system.info()` | `GET /api/health/env`<br />`Public` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Liveness probe — returns `{ status, timestamp }`. | HTTP only | `GET /api/health`<br />`Public` |
+
+{/* api-operations:end */}

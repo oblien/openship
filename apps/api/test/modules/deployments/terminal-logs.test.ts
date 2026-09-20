@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "@repo/adapters";
 
-import { collapseTerminalLogs } from "../../../src/modules/deployments/terminal-logs";
+import { collapseTerminalLogs } from "@repo/platform/engine/modules/deployments/terminal-logs";
 
 const entry = (message: string, extra: Partial<LogEntry> = {}): LogEntry => ({
   timestamp: "2026-07-04T00:00:00.000Z",

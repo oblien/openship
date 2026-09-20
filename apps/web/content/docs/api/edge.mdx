@@ -1,0 +1,61 @@
+---
+title: Edge administration
+description: Inspect and adopt existing edge sites on a self-hosted installation.
+---
+
+Inspect or adopt sites already managed by the edge proxy on a self-hosted installation. The SDK exposes
+site inspection and removal through `ship.system`; imports and installation preflight remain HTTP-only. Use [domains](/docs/api/domains) for project hostnames and
+[servers](/docs/api/servers) for edge component installation and updates.
+
+## Inspect existing sites
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const scan = await ship.system.listUntrackedEdgeSites();
+console.log(scan.scanned, scan.orphans);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/system/edge/untracked" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+Site inspection and removal require installation administrator authority. Review discovered sites before
+importing or removing them. Importing associates supported sites with
+Openship projects; removing an untracked site changes the host's edge configuration.
+
+## Installation edge preflight
+
+`POST /api/system/self-edge/preflight` checks the edge configuration needed to expose Openship itself.
+It is separate from attaching a domain to an application project.
+
+For the interactive workflow and command options, see the [Edge guide](/docs/guides/the-edge) and
+[CLI edge reference](/docs/cli/reference/edge).
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List edge sites not tracked by project records. | `system.listUntrackedEdgeSites()` | `GET /api/system/edge/untracked`<br />`settings:read` |
+| Remove an authorized untracked edge site. | `system.removeUntrackedEdgeSite(input)` | `POST /api/system/edge/untracked/remove`<br />`settings:admin` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Import discovered edge sites. | HTTP only | `POST /api/system/edge/import-sites`<br />`Internal operator` · Self-hosted |
+| Check edge readiness for the Openship installation itself. | HTTP only | `POST /api/system/self-edge/preflight`<br />`Internal operator` · Self-hosted |
+
+{/* api-operations:end */}

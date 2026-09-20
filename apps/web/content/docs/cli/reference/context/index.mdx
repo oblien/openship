@@ -1,0 +1,73 @@
+---
+title: context
+description: Commands, arguments, and options for openship context.
+cliGroup: openship context
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship context
+
+Manage connection contexts (list/use/add/rm)
+
+```text
+openship context|ctx [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list\|ls`](/docs/cli/reference/context#openship-context-list) | List configured contexts |
+| [`use <name>`](/docs/cli/reference/context#openship-context-use) | Switch the active context |
+| [`add [options] <name>`](/docs/cli/reference/context#openship-context-add) | Create or update a context's endpoints/token |
+| [`rm\|remove <name>`](/docs/cli/reference/context#openship-context-rm) | Remove a context (cannot remove the active one) |
+
+## openship context add
+
+Create or update a context's endpoints/token
+
+```text
+openship context add [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Context name |
+
+| Option | Meaning |
+| --- | --- |
+| `--api-url <url>` | API base URL |
+| `--dashboard-url <url>` | Dashboard base URL |
+| `--token <token>` | Personal Access Token to store |
+| `--use` | Switch to this context after adding |
+
+## openship context list
+
+List configured contexts
+
+```text
+openship context list|ls [options]
+```
+
+## openship context rm
+
+Remove a context (cannot remove the active one)
+
+```text
+openship context rm|remove [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Context name |
+
+## openship context use
+
+Switch the active context
+
+```text
+openship context use [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Context name |

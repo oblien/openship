@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "./edge-target";
+import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "@repo/platform/engine/lib/edge-target";
 
 /**
  * `isNonPublicHost` is the guard that stops a free `.opsh.io` route from being

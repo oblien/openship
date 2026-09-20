@@ -36,6 +36,14 @@ export function IssueList({
     return out;
   }, [issues]);
 
+  // Advisories wear the amber Updates identity only when nothing louder shares the
+  // page; with an outage or action-required row present they stay muted so the
+  // tiers don't blur. Judged across the whole feed, not per scope panel.
+  const advisoriesStandAlone = useMemo(
+    () => !issues.some((i) => i.severity !== "advisory"),
+    [issues],
+  );
+
   return (
     <div className="space-y-4">
       {SCOPE_ORDER.map((scope) => (
@@ -43,6 +51,7 @@ export function IssueList({
           key={scope}
           scope={scope}
           issues={grouped.get(scope) ?? []}
+          standAlone={advisoriesStandAlone}
           busyId={busyId}
           onResolve={onResolve}
           onInfraFix={onInfraFix}
