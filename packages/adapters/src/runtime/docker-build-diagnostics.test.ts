@@ -165,6 +165,22 @@ describe("Docker build inactivity monitor", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(onTimeout).not.toHaveBeenCalled();
   });
+
+  it("allows a cold base-image pull to stay silent beyond ten minutes by default", async () => {
+    const onTimeout = vi.fn();
+    const monitor = startDockerBuildIdleMonitor({
+      timeoutMs: getDockerBuildIdleTimeoutMs(undefined),
+      onIdle: vi.fn(),
+      onTimeout,
+    });
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+    monitor.stop();
+  });
 });
 
 function buildConfig(): BuildConfig {
