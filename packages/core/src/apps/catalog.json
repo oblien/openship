@@ -4620,7 +4620,7 @@
           "name": "web",
           "image": "ghcr.io/kanbn/kan:latest",
           "ports": [
-            "3000:3000"
+            "3012:3000"
           ],
           "exposedPort": 3000,
           "exposed": true,
@@ -4657,6 +4657,25 @@
           "secret": true
         }
       ],
+      "connection": {
+        "title": "Connect to Kan.bn",
+        "description": "Open the board app and create the first account — Kan.bn ships with no default user.",
+        "guide": {
+          "intro": "Your project gets a self-hosted Kan.bn workspace for boards and cards.",
+          "useHint": "Open the app and sign up with an email and password, then create your first board."
+        },
+        "outputs": [
+          {
+            "id": "boards",
+            "label": "Boards",
+            "source": "publicUrl:web",
+            "kind": "url",
+            "envKey": "KANBN_URL",
+            "recommended": true,
+            "help": "Sign up here — the first account you create is yours."
+          }
+        ]
+      },
       "endpoints": [
         {
           "service": "web",
