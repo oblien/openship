@@ -331,17 +331,24 @@ describe("maskScanService", () => {
   });
 
   test("keeps removed-key ownership internal even without an environment map (#893)", () => {
-    expect(maskScanService({
-      name: "worker", advanced: { environmentOverrideKeys: ["REMOVED_KEY"] },
-    }).advanced).toEqual({});
+    expect(
+      maskScanService({
+        name: "worker",
+        advanced: { environmentOverrideKeys: ["REMOVED_KEY"] },
+      }).advanced,
+    ).toEqual({});
   });
 });
 
 describe("maskDeploymentEnv", () => {
-  test("masks meta.composeServices[].environment, leaves other meta fields", () => {
+  test("omits the encrypted deployment env snapshot and masks nested service maps", () => {
     const dep = {
       id: "dep_1",
       status: "ready",
+      envVars: {
+        PUBLIC_URL: "encrypted-public-value",
+        NON_SECRET_LOOKING_KEY: "encrypted-private-value",
+      },
       meta: {
         previousActiveDeploymentId: "dep_0",
         composeServices: [
@@ -354,10 +361,17 @@ describe("maskDeploymentEnv", () => {
     expect(masked.meta.composeServices[0].environment).toEqual({ API_TOKEN: ENV_MASK });
     expect(masked.meta.composeServices[1].environment).toEqual({ PASSWORD: ENV_MASK });
     expect(masked.meta.previousActiveDeploymentId).toBe("dep_0");
+    expect(masked).not.toHaveProperty("envVars");
+    expect(JSON.stringify(masked)).not.toContain("encrypted-public-value");
+    expect(JSON.stringify(masked)).not.toContain("encrypted-private-value");
     // stored object untouched (rollback reads real values)
+    expect(dep.envVars.NON_SECRET_LOOKING_KEY).toBe("encrypted-private-value");
     expect(dep.meta.composeServices[0].environment.API_TOKEN).toBe("xyz");
   });
-  test("no-op without meta.composeServices", () => {
+  test("omits envVars even without meta.composeServices", () => {
+    expect(
+      maskDeploymentEnv({ id: "d", envVars: { innocuous: "ciphertext" }, meta: { foo: 1 } }),
+    ).toEqual({ id: "d", meta: { foo: 1 } });
     expect(maskDeploymentEnv({ id: "d", meta: { foo: 1 } })).toEqual({ id: "d", meta: { foo: 1 } });
     expect(maskDeploymentEnv(null)).toBeNull();
     expect(maskDeploymentEnv(undefined)).toBeUndefined();

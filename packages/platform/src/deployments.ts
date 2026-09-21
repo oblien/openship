@@ -7,7 +7,10 @@ import {
 } from "@repo/contracts";
 import type { Authorization } from "./authorization";
 import type { ExecutionContext } from "./context";
-import { createDeploymentResourceOperations, type DeploymentResourceDependencies } from "./deployment-resources";
+import {
+  createDeploymentResourceOperations,
+  type DeploymentResourceDependencies,
+} from "./deployment-resources";
 import { createBuildOperations, type BuildDependencies } from "./builds";
 
 /** Existing persistence representation; the presenter converts dates and masks secrets. */
@@ -15,6 +18,8 @@ export type StoredDeployment = Omit<
   Deployment,
   "createdAt" | "updatedAt" | "artifactRetainedAt"
 > & {
+  /** Internal rollback/build snapshot. Public presenters must omit this map. */
+  envVars: unknown;
   createdAt: Date;
   updatedAt: Date;
   artifactRetainedAt: Date | null;
@@ -44,7 +49,11 @@ export interface DeploymentDependencies {
   /** Same best-effort audit semantics as the existing HTTP deployment route. */
   recordAudit(
     ctx: ExecutionContext,
-    event: { eventType: "deployment:write" | "deployment:admin"; resourceType: "deployment"; resourceId: string },
+    event: {
+      eventType: "deployment:write" | "deployment:admin";
+      resourceType: "deployment";
+      resourceId: string;
+    },
   ): void;
 }
 
@@ -62,10 +71,16 @@ export type PlatformDeploymentOperations = {
     ? Promise<OperationResult<T>>
     : ReturnType<DeploymentOperations[K]>;
 } & {
-  create(ctx: ExecutionContext, input: unknown, options?: DeploymentExecutionOptions): Promise<OperationResult<CreateDeploymentResult>>;
+  create(
+    ctx: ExecutionContext,
+    input: unknown,
+    options?: DeploymentExecutionOptions,
+  ): Promise<OperationResult<CreateDeploymentResult>>;
 };
 
-export function createDeploymentOperations(deps: DeploymentDependencies): PlatformDeploymentOperations {
+export function createDeploymentOperations(
+  deps: DeploymentDependencies,
+): PlatformDeploymentOperations {
   return Object.freeze({
     ...createDeploymentResourceOperations(deps),
     ...createBuildOperations(deps.authorization, deps.builds),

@@ -333,26 +333,26 @@ export function maskScanService<T extends Parameters<typeof publicScanService>[0
 }
 
 /**
- * Mask the compose-service env carried in a deployment's `meta` snapshot
- * (`meta.composeServices[].environment` and `buildArgs`). Returns a copy — the stored row/meta
- * is untouched (rollback/redeploy read the real values back). Apply at the
- * shared presentation boundary: `getDeployment` is also used internally and must
- * use the decrypted repository values. No-op when there's no `meta.composeServices`.
+ * Remove the deployment's encrypted `envVars` snapshot and mask compose-service
+ * configuration carried in `meta` (`composeServices[].environment` and
+ * `buildArgs`). Ciphertext is still credential material: returning the map lets
+ * read-only/MCP clients persist and replay it, and key names do not reliably
+ * distinguish secret from non-secret values.
+ *
+ * Returns a copy — the stored row/meta is untouched (rollback/redeploy read the
+ * real values back). Apply at the shared presentation boundary: `getDeployment`
+ * is also used internally and must keep the repository representation.
  */
-export function maskDeploymentEnv<T extends { meta?: unknown } | null | undefined>(dep: T): T {
-  if (
-    !dep ||
-    typeof dep !== "object" ||
-    !("meta" in dep) ||
-    !dep.meta ||
-    typeof dep.meta !== "object"
-  ) {
-    return dep;
-  }
+export function maskDeploymentEnv<
+  T extends { envVars?: unknown; meta?: unknown } | null | undefined,
+>(dep: T): T {
+  if (!dep || typeof dep !== "object") return dep;
+  const { envVars: _envVars, ...publicDeployment } = dep;
+  if (!dep.meta || typeof dep.meta !== "object") return publicDeployment as T;
   const meta = dep.meta as Record<string, unknown>;
-  if (!Array.isArray(meta.composeServices)) return dep;
+  if (!Array.isArray(meta.composeServices)) return publicDeployment as T;
   return {
-    ...dep,
+    ...publicDeployment,
     meta: {
       ...meta,
       composeServices: maskServicesEnv(
@@ -360,7 +360,7 @@ export function maskDeploymentEnv<T extends { meta?: unknown } | null | undefine
         (dep as { projectId?: string }).projectId,
       ),
     },
-  };
+  } as T;
 }
 
 /**

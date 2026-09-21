@@ -1,4 +1,5 @@
 import { app } from "../../app";
+import { ENV_MASK } from "@repo/core";
 import { internalClientHeader, internalSourceHeader } from "../../lib/call-source";
 import type { McpToolDef } from "./mcp-tools";
 
@@ -37,6 +38,65 @@ export interface DispatchOrigin {
 // so the PAT (a non-browser credential) is accepted by authMiddleware.
 const INTERNAL_BASE = "http://mcp.internal";
 
+const SECRET_RESPONSE_KEYS = new Set([
+  "accesskey",
+  "accesstoken",
+  "apikey",
+  "clientsecret",
+  "clonetokenencrypted",
+  "credentials",
+  "envvars",
+  "hmacsecretencrypted",
+  "password",
+  "privatekey",
+  "privatekeypem",
+  "refreshtoken",
+  "secret",
+  "secretsenc",
+  "token",
+  "tokenencrypted",
+  "webhooksecret",
+]);
+
+function normalizedKey(key: string): string {
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+/**
+ * Last-line MCP projection for GET and explicitly read-only tools. HTTP
+ * presenters remain the primary boundary, but an accidental raw repository
+ * field must not reach an assistant transcript or its spillover cache.
+ * Environment/build maps keep only their keys and mask every value; encrypted
+ * snapshots and credential fields are omitted entirely.
+ */
+export function sanitizeReadOnlyToolPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeReadOnlyToolPayload);
+  if (!value || typeof value !== "object") return value;
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const normalized = normalizedKey(key);
+    if (
+      SECRET_RESPONSE_KEYS.has(normalized) ||
+      (typeof child === "string" &&
+        (normalized.endsWith("encrypted") || normalized.endsWith("enc")))
+    )
+      continue;
+    if (
+      (normalized === "environment" || normalized === "buildargs") &&
+      child &&
+      typeof child === "object" &&
+      !Array.isArray(child)
+    ) {
+      output[key] = Object.fromEntries(
+        Object.keys(child as Record<string, unknown>).map((name) => [name, ENV_MASK]),
+      );
+      continue;
+    }
+    output[key] = sanitizeReadOnlyToolPayload(child);
+  }
+  return output;
+}
+
 export async function dispatchTool(
   tool: McpToolDef,
   args: Record<string, unknown>,
@@ -48,7 +108,11 @@ export async function dispatchTool(
   for (const param of tool.pathParams) {
     const value = args[param];
     if (value === undefined || value === null || `${value}` === "") {
-      return { status: 400, ok: false, data: { error: `Missing required path parameter: ${param}` } };
+      return {
+        status: 400,
+        ok: false,
+        data: { error: `Missing required path parameter: ${param}` },
+      };
     }
     path = path.replace(`:${param}`, encodeURIComponent(String(value)));
   }
@@ -87,9 +151,7 @@ export async function dispatchTool(
     body = JSON.stringify(args.body);
   }
 
-  const res = await app.fetch(
-    new Request(url.toString(), { method: tool.method, headers, body }),
-  );
+  const res = await app.fetch(new Request(url.toString(), { method: tool.method, headers, body }));
 
   const text = await res.text();
   let data: unknown = text;
@@ -98,5 +160,12 @@ export async function dispatchTool(
   } catch {
     /* non-JSON response — return the raw text */
   }
-  return { status: res.status, ok: res.ok, data };
+  return {
+    status: res.status,
+    ok: res.ok,
+    data:
+      tool.method === "GET" || tool.annotations.readOnlyHint
+        ? sanitizeReadOnlyToolPayload(data)
+        : data,
+  };
 }

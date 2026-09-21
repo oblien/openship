@@ -8,6 +8,15 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 Soft maintenance patch for Docker build reliability. No breaking API changes or
 database migrations.
 
+### Security
+
+- **Read-only project, deployment, and MCP responses no longer serialize stored
+  credentials or deployment environment snapshots** — project webhook and clone
+  credentials are omitted, deployment environment/build maps are masked or
+  removed, and MCP read tools apply a final fail-closed projection before results
+  can reach assistant transcripts or spillover storage. Internal deployment
+  snapshots remain available to rollback and redeploy paths.
+
 ### Builds
 
 - **Successful Docker builds are no longer rejected by diagnostic log text** —

@@ -11,9 +11,12 @@ export const CreateDeploymentSchema = Type.Object({
   ),
   branch: Type.Optional(Type.String()),
   commitSha: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")], {
-    description: "Variable set within the target project (default production). Preview values require a non-production project; projectId selects the runtime.",
-  })),
+  environment: Type.Optional(
+    Type.Union([Type.Literal("production"), Type.Literal("preview")], {
+      description:
+        "Variable set within the target project (default production). Preview values require a non-production project; projectId selects the runtime.",
+    }),
+  ),
   forceAll: Type.Optional(Type.Boolean({ description: "Rebuild every enabled service." })),
   serviceIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   smartRoute: Type.Optional(
@@ -74,8 +77,6 @@ export const DeploymentSchema = Type.Object({
   url: Type.Union([Type.String(), Type.Null()]),
   /** Public, masked configuration snapshot. */
   meta: Type.Unknown(),
-  /** Existing API field: encrypted environment snapshot, never decrypted here. */
-  envVars: Type.Unknown(),
   errorMessage: Type.Union([Type.String(), Type.Null()]),
   errorCode: Type.Union([Type.String(), Type.Null()]),
   errorDetails: Type.Unknown(),
@@ -113,8 +114,7 @@ export function isCreateDeploymentResult(value: unknown): value is CreateDeploym
   if (!Value.Check(CreateDeploymentResultSchema, value)) return false;
   return (
     !value.deployment ||
-    (value.deployment.id === value.deployment_id &&
-      value.deployment.projectId === value.project_id)
+    (value.deployment.id === value.deployment_id && value.deployment.projectId === value.project_id)
   );
 }
 
