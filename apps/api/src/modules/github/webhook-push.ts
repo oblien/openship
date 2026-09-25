@@ -5,10 +5,7 @@
 import { repos, type Project } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
-import {
-  compareCommits,
-  getRepository,
-} from "@repo/platform/engine/modules/github/github.service";
+import { VcsStrategyFactory } from "@repo/platform/engine/modules/vcs/vcs.factory";
 import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
 import { safeErrorMessage } from "@repo/core";
@@ -20,7 +17,7 @@ import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
 import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
-import type { GitHubPushPayload } from "@repo/contracts";
+import type { VcsPushPayload } from "@repo/platform/engine/modules/vcs/vcs.types";
 
 // ─── Branch deployment events ────────────────────────────────────────────────
 
@@ -53,7 +50,7 @@ function recordPushDelivery(
     .record({
       organizationId: p?.organizationId ?? opts?.organizationId ?? undefined,
       projectId: p?.id ?? undefined,
-      source: "github",
+      source: input.provider,
       event: input.event,
       authResult: "ok",
       outcome,
@@ -70,7 +67,8 @@ function recordPushDelivery(
 }
 
 export async function handlePush(
-  payload: GitHubPushPayload,
+  provider: string,
+  payload: VcsPushPayload,
   handledProjectIds: Set<string> = new Set(),
 ): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
@@ -94,6 +92,7 @@ export async function handlePush(
   const branch = ref.replace("refs/heads/", "");
 
   return triggerBranchDeployments({
+    provider,
     event: "push",
     owner,
     repo,
@@ -108,6 +107,7 @@ export async function handlePush(
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 interface BranchDeploymentTrigger {
+  provider: string;
   event: "push";
   owner: string;
   repo: string;
@@ -116,7 +116,7 @@ interface BranchDeploymentTrigger {
   commitSha?: string;
   commitMessage?: string;
   /** Raw push payload — needed for smart per-service routing. */
-  payload?: GitHubPushPayload;
+  payload?: VcsPushPayload;
 }
 
 async function deployProjectFromPush(
@@ -161,8 +161,8 @@ async function deployProjectFromPush(
         p.framework === "monorepo" || routableServices.length > 0,
       monorepoSharedPaths: p.monorepoSharedPaths,
       compareCommits: async (owner, repo, base, head) =>
-        compareCommits(
-          webhookActorCtx(actorUserId, p.organizationId ?? "", "webhook:compare-commits"),
+        VcsStrategyFactory.getStrategy(input.provider).compareCommits(
+          webhookActorCtx(actorUserId, p.organizationId ?? "", `webhook:${input.provider}-compare-commits`),
           owner,
           repo,
           base,
@@ -233,7 +233,7 @@ async function deployProjectFromPush(
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
   // recompute it here.
   const triggered = await triggerDeployment(
-    webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push"),
+    webhookActorCtx(actorUserId, p.organizationId, `webhook:${input.provider}-push`),
     {
       projectId: p.id,
       branch: input.branch,
@@ -274,7 +274,9 @@ async function triggerBranchDeployments(
   handledProjectIds: Set<string>,
 ): Promise<WebhookHandlerResult> {
   // Dedup lives upstream now (delivery-id claim + commit-sha guard) — no Set here.
-  const projects = await repos.project.findByGitRepo(input.owner, input.repo);
+  const projects = (await repos.project.findByGitRepo(input.owner, input.repo)).filter(
+    (project) => (project.gitProvider ?? "github") === input.provider,
+  );
   const defaultBranch = await resolveDefaultBranch(input, projects);
   const branchProjects = projects.filter(
     (p) => p.autoDeploy && projectWebhookBranch(p, defaultBranch) === input.branch,
@@ -507,8 +509,8 @@ async function resolveDefaultBranch(
   try {
     const owner = await resolveOrgOwner(unbranchedProject.organizationId).catch(() => null);
     if (!owner) return null;
-    const repository = await getRepository(
-      webhookActorCtx(owner.userId, unbranchedProject.organizationId, "webhook:github-resolve-default-branch"),
+    const repository = await VcsStrategyFactory.getStrategy(input.provider).getRepository(
+      webhookActorCtx(owner.userId, unbranchedProject.organizationId, `webhook:${input.provider}-resolve-default-branch`),
       input.owner,
       input.repo,
     );

@@ -146,18 +146,18 @@ export const githubApi = {
    */
   getRepoTree: (owner: string, repo: string, branch?: string) =>
     api.get<{ data: RepoTreeEntry[] }>(
-      endpoints.github.repoTree(owner, repo) +
+      endpoints.vcs.repoTree("github", owner, repo) +
         (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
     ),
 
   /** Repos for a specific GitHub org */
-  getOrgRepos: (owner: string) => api.get<any>(endpoints.github.orgRepos(owner)),
+  getOrgRepos: (owner: string) => api.get<any>(endpoints.vcs.orgRepos("github", owner)),
 
   /** Repos for a specific GitHub user. Server-paginated: pass page/perPage/
    *  search/visibility/sort and read the authoritative `count`/`total` back
    *  (omit the params to get the full set, as MCP + legacy callers do). */
   getUserRepos: (owner: string, params?: RepoListQuery, force = false) =>
-    api.get<RepoPageResponse>(endpoints.github.userRepos, {
+    api.get<RepoPageResponse>(endpoints.vcs.userRepos("github"), {
       params: { owner, ...params },
       dedupe: !force,
     }),
@@ -165,7 +165,7 @@ export const githubApi = {
   /** List a repo's branches (used before a project exists — e.g. the migration
    *  wizard's link-repo step, which can't use projectsApi.getBranches). */
   listBranches: (owner: string, repo: string, page = 1) =>
-    api.get<BranchPageResponse>(endpoints.github.repoBranches(owner, repo), {
+    api.get<BranchPageResponse>(endpoints.vcs.repoBranches("github", owner, repo), {
       params: { page },
     }),
 
@@ -176,7 +176,7 @@ export const githubApi = {
    */
   getCloneToken: (owner: string, repo: string) =>
     api.get<{ token: string; cloneUrl: string; command: string }>(
-      endpoints.github.cloneToken(owner, repo),
+      endpoints.vcs.cloneToken("github", owner, repo),
     ),
 
   /** Check GitHub connection status (live, no dedup). */

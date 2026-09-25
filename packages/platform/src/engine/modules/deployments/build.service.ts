@@ -56,7 +56,7 @@ import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
-import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
 import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts } from "./pinned-artifacts";
@@ -168,10 +168,13 @@ export async function runDeploymentPreflight(
     ctx: RequestContext;
     composeServices?: DeployableService[];
     multiService?: boolean;
+    /** Provider discriminator; GitHub checks must never be inferred from owner. */
+    gitProvider?: string | null;
     /** Git owner of the source repo. Cloud preflight uses it to verify the
      *  GitHub App is installed for this owner before the build pipeline
      *  spends resources cloning a repo it can't access. */
     gitOwner?: string | null;
+    gitRepo?: string | null;
     /** Project id — passed to the remote-clone-token preflight check so
      *  project-scoped clone tokens are considered. */
     projectId?: string;
@@ -191,7 +194,9 @@ export async function runDeploymentPreflight(
     publicEndpoints: routeState.publicEndpoints,
     ...(opts.composeServices ? { composeServices: opts.composeServices } : {}),
     ...(opts.multiService !== undefined ? { multiService: opts.multiService } : {}),
+    ...(opts.gitProvider !== undefined ? { gitProvider: opts.gitProvider } : {}),
     ...(opts.gitOwner !== undefined ? { gitOwner: opts.gitOwner } : {}),
+    ...(opts.gitRepo !== undefined ? { gitRepo: opts.gitRepo } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     ...(opts.appTemplateId !== undefined ? { appTemplateId: opts.appTemplateId } : {}),
     ...(opts.firstDeploy !== undefined ? { firstDeploy: opts.firstDeploy } : {}),
@@ -573,7 +578,8 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
     return {};
   }
 
-  const head = await getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
+  const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+  const head = await vcs.getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
   if (head?.sha && branch === projectBranch(project)) {
     try {
       await repos.updateStatus.upsert({
@@ -619,9 +625,9 @@ async function canonicalizeCommitRef(
   const trimmed = ref?.trim();
   if (!trimmed || isFullCommitSha(trimmed)) return trimmed;
   if (!project.gitOwner || !project.gitRepo) return trimmed;
-  const found = await getCommitByRef(ctx, project.gitOwner, project.gitRepo, trimmed).catch(
-    () => null,
-  );
+  const found = await VcsStrategyFactory.getStrategy(project.gitProvider)
+    .getLatestCommit(ctx, project.gitOwner, project.gitRepo, trimmed)
+    .catch(() => null);
   return found?.sha ?? trimmed;
 }
 
@@ -630,7 +636,8 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
   if (configuredBranch) return configuredBranch;
 
   if (project.gitOwner && project.gitRepo) {
-    const repository = await getRepository(ctx, project.gitOwner, project.gitRepo);
+    const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+    const repository = await vcs.getRepository(ctx, project.gitOwner, project.gitRepo);
     return repository.default_branch;
   }
 
@@ -874,6 +881,7 @@ async function reconcileComposeSource(
         })
       : await resolveProjectInfo({
           source: "github",
+          provider: project.gitProvider || "github",
           owner: project.gitOwner!,
           repo: project.gitRepo!,
           branch,
@@ -927,6 +935,7 @@ async function resolveLifecycleSourceEnv(
       : await resolveProjectSourceEnv(
           {
             source: "github",
+            provider: project.gitProvider || "github",
             owner: project.gitOwner!,
             repo: project.gitRepo!,
             branch,
@@ -2042,7 +2051,9 @@ export async function requestBuildAccess(
     ctx,
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
+    gitProvider: project.gitProvider,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
     projectId: project.id,
     // An app project carries its catalog id; a never-deployed one is the only
     // deploy a host-capacity shortfall is allowed to refuse.
@@ -2815,7 +2826,9 @@ export async function triggerDeployment(
     ctx,
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
+    gitProvider: project.gitProvider,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
     projectId: project.id,
     // An app project carries its catalog id; a never-deployed one is the only
     // deploy a host-capacity shortfall is allowed to refuse.

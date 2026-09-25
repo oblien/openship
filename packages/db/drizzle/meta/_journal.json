@@ -1030,6 +1030,13 @@
       "when": 1790331638892,
       "tag": "0146_billing_plan_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1790331638893,
+      "tag": "0147_checked_git_provider",
+      "breakpoints": true
     }
   ]
 }

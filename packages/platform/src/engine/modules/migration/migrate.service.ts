@@ -16,14 +16,14 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey } from "@repo/core";
+import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey, isSourceProvider } from "@repo/core";
 import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
 import { isControlPlaneProject } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
-import { getFileContent } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import {
   blockingComposeFields,
   describeBlockingComposeFields,
@@ -81,6 +81,7 @@ export async function parseRepoCompose(
   owner: string,
   repo: string,
   branch?: string,
+  provider: string = "github",
 ): Promise<RepoComposeService[]> {
   // NB: we deliberately do NOT read the repo's `.env` for `${VAR}` interpolation.
   // Secrets live in Openship's ENCRYPTED env store — captured from the running
@@ -91,7 +92,13 @@ export async function parseRepoCompose(
   for (const file of REPO_COMPOSE_FILES) {
     let content: string | null = null;
     try {
-      const res = await getFileContent(ctx, owner, repo, file, { branch });
+      const res = await VcsStrategyFactory.getStrategy(provider).getFileContent(
+        ctx,
+        owner,
+        repo,
+        file,
+        { branch },
+      );
       content = res?.content ?? null;
     } catch {
       continue; // not found at this name → try the next
@@ -807,7 +814,7 @@ async function writeAttachedRuntime(opts: {
   serverId: string;
   placements: AttachPlacement[];
   /** The branch to record. Passed explicitly because the two callers legitimately know
-   *  different things: a re-import carries the group's tracked branch, a same-server reuse
+   *  different things: a re-import carries the group's tracked { branch }, a same-server reuse
    *  has no source to read one from. */
   branch: string;
   imageRef: string | null;
@@ -1186,6 +1193,10 @@ export async function reimportOpenshipProject(opts: {
 
   const name = projectName?.trim() || group.suggestedName;
   const anyBuild = chosen.some((s) => !s.image && Boolean(s.build));
+  const sourceProvider = group.source?.gitProvider ?? undefined;
+  if (sourceProvider !== undefined && !isSourceProvider(sourceProvider)) {
+    throw new Error(`Unsupported git provider in server manifest: ${sourceProvider}`);
+  }
   const created = await createServicesProjectWithId({
     id: projectId,
     name,
@@ -1193,10 +1204,11 @@ export async function reimportOpenshipProject(opts: {
     organizationId,
     hasBuild: anyBuild,
     runtimeMode: group.runtimeMode === "bare" ? "bare" : "docker",
-    gitProvider: group.source?.gitProvider ?? undefined,
+    gitProvider: sourceProvider,
     gitOwner: group.source?.gitOwner ?? undefined,
     gitRepo: group.source?.gitRepo ?? undefined,
     gitBranch: group.source?.gitBranch ?? undefined,
+    gitUrl: group.source?.gitUrl ?? undefined,
   });
 
   // Re-import preserves the original service names (from the manifest/labels),

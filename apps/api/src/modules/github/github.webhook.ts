@@ -21,6 +21,7 @@ import { handleInstallation } from "./webhook-installation";
 import { handlePush } from "./webhook-push";
 import { handleCheckRun } from "./webhook-check-run";
 import { collectGitHubSourceWebhookSecrets } from "@repo/platform/engine/modules/github/github-source.service";
+import type { VcsPushPayload } from "@repo/platform/engine/modules/vcs/vcs.types";
 import type {
   WebhookProvider,
   WebhookVerifyResult,
@@ -29,7 +30,6 @@ import type {
 import type {
   GitHubCheckRunPayload,
   GitHubInstallationPayload,
-  GitHubPushPayload,
 } from "@repo/contracts";
 
 // ─── Per-project webhook secret resolution ──────────────────────────────────
@@ -89,6 +89,7 @@ async function collectDeliverySecrets(
 
   const projects = await repos.project.findByGitRepo(owner, repo).catch(() => []);
   for (const p of projects) {
+    if (p.gitProvider && p.gitProvider !== "github") continue;
     if (!p.webhookSecret) continue;
     try {
       secrets.add(decrypt(p.webhookSecret));
@@ -226,7 +227,7 @@ export const githubWebhookProvider: WebhookProvider = {
           result = await handleInstallation(payload as GitHubInstallationPayload);
           break;
         case "push":
-          result = await handlePush(payload as GitHubPushPayload, handledProjectIds);
+          result = await handlePush("github", payload as VcsPushPayload, handledProjectIds);
           break;
         case "check_run":
           result = await handleCheckRun(payload as GitHubCheckRunPayload);

@@ -56,6 +56,7 @@ export interface ManifestProjectEntry {
   gitOwner?: string | null;
   gitRepo?: string | null;
   gitBranch?: string | null;
+  gitUrl?: string | null;
   runtimeMode?: string | null;
   autoDeploy?: boolean;
   environmentSlug?: string | null;

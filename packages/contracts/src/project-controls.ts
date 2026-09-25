@@ -8,6 +8,7 @@ import {
   SetSleepModeBody,
   UpdateResourcesBody,
   LinkRepoBody,
+  SourceProviderEnum,
   SetReleaseSourceBody,
   SetAutoDeployBody,
 } from "./project-inputs";
@@ -37,7 +38,7 @@ export const ProjectEnvironmentSchema = Type.Object({
   primaryDomain: Type.Optional(nullableString),
   version: nullableString,
   isApp: Type.Boolean(),
-  gitProvider: nullableString,
+  gitProvider: Type.Union([SourceProviderEnum(), Type.Null()]),
 });
 export type ProjectEnvironment = Static<typeof ProjectEnvironmentSchema>;
 export const EnvironmentVariableSchema = Type.Object({

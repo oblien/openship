@@ -67,9 +67,10 @@ describe("resolveDeploymentClass — source axis", () => {
     ).toBe("git");
   });
 
-  it("a git provider with no URL still classifies as git (github/gitlab/bitbucket)", () => {
+  it("a git provider with no URL still classifies as git (github/gitlab/bitbucket/self-hosted)", () => {
     expect(resolveDeploymentClass({ gitProvider: "github" }).source).toBe("git");
     expect(resolveDeploymentClass({ gitProvider: "gitlab" }).source).toBe("git");
+    expect(resolveDeploymentClass({ gitProvider: "self-hosted" }).source).toBe("git");
   });
 
   it("uploads and local dirs are not cloned", () => {

@@ -257,6 +257,7 @@ describe("deploy branch detection", () => {
       branch: "openship",
       env: { APP_MODE: "preview" },
       includeEnv: true,
+      provider: "github",
     });
     expect(current.config).toMatchObject({
       projectId: "project-1",

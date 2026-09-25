@@ -145,6 +145,9 @@ export interface PreflightOptions {
   }>;
   composeServices?: DeployableService[];
   multiService?: boolean;
+  /** Source provider. GitHub-only probes and credential planning must not be
+   *  inferred from the presence of an owner because every VCS has one. */
+  gitProvider?: string | null;
   /** Git owner (org / user) for the project's source repo. When the
    *  deployment targets cloud, we check that the GitHub App is installed
    *  on this owner - otherwise the build will fail with a token error
@@ -1555,10 +1558,16 @@ export async function runPreflightChecks(
   // unknown / non-github ⇒ repoIsPublic=false ⇒ existing behavior, nothing
   // regresses. When public, we skip the App-install AND remote-clone-token
   // demands, and the deploy-time clone goes anonymous (clone-auth.ts).
-  const ghRepo = parseGithubOwnerRepo(snapshot.repoUrl, opts?.gitOwner, opts?.gitRepo);
+  const repoIsGithub = opts?.gitProvider === "github";
+  const ghRepo = repoIsGithub
+    ? parseGithubOwnerRepo(snapshot.repoUrl, opts?.gitOwner, opts?.gitRepo)
+    : null;
   const repoIsPublic = ghRepo ? await isPublicRepo(ghRepo.owner, ghRepo.repo) : false;
   const needsGitCredentialPlan =
-    !repoIsPublic && !!opts?.gitOwner && snapshotNeedsGitSource(snapshot, opts?.composeServices);
+    repoIsGithub &&
+    !repoIsPublic &&
+    !!opts?.gitOwner &&
+    snapshotNeedsGitSource(snapshot, opts?.composeServices);
   const runtimeMode = snapshot.runtimeMode ?? "docker";
   const plannedTarget = needsGitCredentialPlan
     ? await resolvePlannedTargetTopology(
@@ -1575,7 +1584,7 @@ export async function runPreflightChecks(
     buildStrategy: effectiveBuildStrategy,
     isDesktop: plat.target === "desktop",
     forwardGitCredentials: snapshot.forwardGitCredentials,
-    repoIsGithub: !!opts?.gitOwner,
+    repoIsGithub,
     dockerTransport: runtimeMode === "docker" ? plannedTarget?.dockerTransport : undefined,
   });
 

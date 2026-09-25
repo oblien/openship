@@ -7,7 +7,6 @@ import { join } from "node:path";
 
 const {
   assertGitHubRepoAccess,
-  getCommitByRef,
   getForwardGitToServer,
   getLatestCommit,
   requireClusterDeploymentTarget,
@@ -25,7 +24,6 @@ const {
   syncProjectRouteState,
 } = vi.hoisted(() => ({
   assertGitHubRepoAccess: vi.fn(),
-  getCommitByRef: vi.fn(),
   getForwardGitToServer: vi.fn(),
   getLatestCommit: vi.fn(),
   requireClusterDeploymentTarget: vi.fn(),
@@ -118,7 +116,6 @@ vi.mock("@repo/platform/engine/modules/github/github-access", () => ({
 }));
 
 vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
-  getCommitByRef,
   getLatestCommit,
   getRepository: vi.fn(),
 }));
@@ -1323,7 +1320,7 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(
       baseProject({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", localPath: null }),
     );
-    getCommitByRef.mockResolvedValue({ sha: full, message: "feat: queue" });
+    getLatestCommit.mockResolvedValue({ sha: full, message: "feat: queue" });
 
     await triggerDeployment(ctx, {
       projectId: "project-1",
@@ -1331,7 +1328,7 @@ describe("triggerDeployment", () => {
       commitSha: "1eeaf76",
     });
 
-    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76");
+    expect(getLatestCommit).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76");
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({ commitSha: full }),
     );
@@ -1341,7 +1338,7 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(
       baseProject({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", localPath: null }),
     );
-    getCommitByRef.mockResolvedValue(null); // rate limited / no credential / bad ref
+    getLatestCommit.mockResolvedValue(null); // rate limited / no credential / bad ref
 
     await triggerDeployment(ctx, {
       projectId: "project-1",
@@ -1362,7 +1359,7 @@ describe("triggerDeployment", () => {
 
     await triggerDeployment(ctx, { projectId: "project-1", branch: "main", commitSha: full });
 
-    expect(getCommitByRef).not.toHaveBeenCalled();
+    expect(getLatestCommit).not.toHaveBeenCalled();
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({ commitSha: full }),
     );
@@ -1479,7 +1476,7 @@ describe("triggerDeployment", () => {
     });
 
     expect(assertGitHubRepoAccess).not.toHaveBeenCalled();
-    expect(getCommitByRef).not.toHaveBeenCalled();
+    expect(getLatestCommit).not.toHaveBeenCalled();
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         commitSha: undefined,
@@ -1726,6 +1723,8 @@ describe("redeployBuildSession environment snapshot", () => {
       id: "project-1",
       organizationId: "org-1",
       activeDeploymentId: "dep-old",
+      gitProvider: "github",
+      localPath: null,
       gitOwner: "oblien",
       gitRepo: "openship",
       gitBranch: "main",

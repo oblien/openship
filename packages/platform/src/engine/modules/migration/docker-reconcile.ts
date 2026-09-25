@@ -147,6 +147,7 @@ export interface OpenshipProjectGroup {
     gitOwner?: string | null;
     gitRepo?: string | null;
     gitBranch?: string | null;
+    gitUrl?: string | null;
   };
   runtimeMode?: string | null;
   /** Whether this project id already exists in this instance's DB. */
@@ -819,6 +820,7 @@ export function reconcileOpenshipProjects(opts: {
             gitOwner: entry.gitOwner,
             gitRepo: entry.gitRepo,
             gitBranch: entry.gitBranch,
+            gitUrl: entry.gitUrl,
           }
         : undefined,
       runtimeMode: entry?.runtimeMode ?? undefined,

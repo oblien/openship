@@ -1,14 +1,16 @@
 /**
  * Webhook types - shared across all webhook providers.
  *
- * Every provider (GitHub, Stripe) implements the WebhookProvider interface
- * so the central dispatcher can handle verification and routing uniformly.
+ * Every registered VCS provider implements the WebhookProvider interface so
+ * the central dispatcher can handle verification and routing uniformly.
  */
+
+import type { VcsProvider } from "@repo/core";
 
 /** Supported webhook providers */
 // Stripe is handled by its own billing route (SDK-verified), not this generic
-// provider registry — so the only provider name here is GitHub.
-export type WebhookProviderName = "github";
+// provider registry. Keep webhook dispatch aligned with the checked VCS union.
+export type WebhookProviderName = VcsProvider;
 
 /** Result of verifying a webhook signature */
 export interface WebhookVerifyResult {
