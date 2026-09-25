@@ -26,6 +26,7 @@ import copyEn from "./locales/en.json";
 import copyAr from "./locales/ar.json";
 import copyDe from "./locales/de.json";
 import copyEs from "./locales/es.json";
+import copyFa from "./locales/fa.json";
 import copyFr from "./locales/fr.json";
 import copyJa from "./locales/ja.json";
 import copyPt from "./locales/pt.json";
@@ -54,7 +55,7 @@ export const DEFAULT_PLAN_TIER: PlanTierId = "free";
 
 /* ─── Locales ─────────────────────────────────────────────────────────────── */
 
-export const PRICING_LOCALES = ["en", "ar", "de", "es", "fr", "ja", "pt", "tr", "zh"] as const;
+export const PRICING_LOCALES = ["en", "ar", "de", "es", "fa", "fr", "ja", "pt", "tr", "zh"] as const;
 export type PricingLocale = (typeof PRICING_LOCALES)[number];
 
 /** English copy — the source of truth and the fallback for every other locale. */
@@ -73,6 +74,7 @@ const COPY: Record<PricingLocale, PartialCopy> = {
   ar: copyAr,
   de: copyDe,
   es: copyEs,
+  fa: copyFa,
   fr: copyFr,
   ja: copyJa,
   pt: copyPt,
@@ -99,7 +101,7 @@ export function toPricingLocale(value: string | null | undefined): PricingLocale
  * in the product is Latin (the dashboard localizes words, not numerals), so
  * pin the numbering system to keep a price legible next to its own currency.
  */
-const NUMBER_LOCALE: Partial<Record<PricingLocale, string>> = { ar: "ar-u-nu-latn" };
+const NUMBER_LOCALE: Partial<Record<PricingLocale, string>> = { ar: "ar-u-nu-latn", fa: "fa-u-nu-latn" };
 
 function formatCount(value: number, locale: PricingLocale): string {
   return new Intl.NumberFormat(NUMBER_LOCALE[locale] ?? locale).format(value);

@@ -30,12 +30,12 @@ const MoonIcon = () => (
 
 /** Each language's own name / short glyph, in its own script (never translated). */
 const LANG_NATIVE: Record<Locale, string> = {
-  en: "English", ar: "العربية", es: "Español", fr: "Français",
+  en: "English", ar: "العربية", fa: "فارسی", es: "Español", fr: "Français",
   de: "Deutsch", pt: "Português", ja: "日本語", zh: "中文",
   tr: "Türkçe",
 };
 const LANG_CODE: Record<Locale, string> = {
-  en: "EN", ar: "ع", es: "ES", fr: "FR", de: "DE", pt: "PT", ja: "日", zh: "中",
+  en: "EN", ar: "ع", fa: "فا", es: "ES", fr: "FR", de: "DE", pt: "PT", ja: "日", zh: "中",
   tr: "TR",
 };
 
