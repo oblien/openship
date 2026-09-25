@@ -486,8 +486,8 @@ function MailStackToolsSection({ serverId }: { serverId: string }) {
         </p>
       </div>
 
-      <div className="bg-card rounded-2xl border border-border/50 p-5">
-        <div className="flex items-start gap-4">
+      <div className="bg-card rounded-2xl border border-border/50 p-5 space-y-4">
+        <div className="flex items-start gap-4 border-b border-border/40 pb-4">
           <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
             <RotateCw
               className="size-5 text-foreground/80"
@@ -513,6 +513,42 @@ function MailStackToolsSection({ serverId }: { serverId: string }) {
               <RotateCw className="size-3.5" strokeWidth={2.25} />
             )}
             {a.restartStack}
+          </button>
+        </div>
+
+        <div className="flex items-start gap-4 pt-1">
+          <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
+            <Wrench className="size-5 text-foreground/80" strokeWidth={1.75} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-semibold text-foreground">
+              Migrate Host Mail to Docker Container
+            </h4>
+            <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+              Convert a legacy host-native (bare-metal systemd) mail installation to a containerized Docker engine with Postgres sidecar without losing accounts or mail.
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              setRestarting(true);
+              try {
+                const res = await mailAdminApi.components.migrateToContainer(serverId);
+                showToast(res.message, res.migrated ? "success" : "error");
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : "Migration failed", "error");
+              } finally {
+                setRestarting(false);
+              }
+            }}
+            disabled={restarting}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {restarting ? (
+              <Loader2 className="size-3.5 animate-spin" strokeWidth={2.25} />
+            ) : (
+              <Wrench className="size-3.5" strokeWidth={2.25} />
+            )}
+            Migrate Engine
           </button>
         </div>
       </div>
