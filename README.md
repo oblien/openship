@@ -36,6 +36,7 @@
   <a href="docs/i18n/README.de.md"><img src="https://img.shields.io/badge/lang-Deutsch-555" alt="Deutsch" /></a>
   <a href="docs/i18n/README.tr.md"><img src="https://img.shields.io/badge/lang-Türkçe-555" alt="Türkçe" /></a>
   <a href="docs/i18n/README.ko.md"><img src="https://img.shields.io/badge/lang-한국어-555" alt="한국어" /></a>
+  <a href="docs/i18n/README.id.md"><img src="https://img.shields.io/badge/lang-Bahasa Indonesia-555" alt="Bahasa Indonesia" /></a>
 </p>
 
 <p align="center">
