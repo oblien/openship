@@ -13,7 +13,11 @@ import {
   PROXY_DIRECTIVES,
   proxyKindRegex,
   MAX_ROLLBACK_WINDOW,
+  SOURCE_PROVIDERS,
+  VCS_PROVIDERS,
   type ResourceTier,
+  type SourceProvider,
+  type VcsProvider,
 } from "@repo/core";
 
 // ─── Shared enums (derived from registry) ────────────────────────────────────
@@ -26,6 +30,24 @@ export const FrameworkEnum = Type.String({
 export const PackageManagerEnum = Type.Union(
   ALL_PACKAGE_MANAGERS.map((pm) => Type.Literal(pm)) as [TLiteral<string>, ...TLiteral<string>[]],
 );
+
+export const SourceProviderEnum = (opts?: { default?: SourceProvider; description?: string }) =>
+  Type.Union(
+    SOURCE_PROVIDERS.map((provider) => Type.Literal(provider)) as [
+      TLiteral<SourceProvider>,
+      ...TLiteral<SourceProvider>[],
+    ],
+    opts,
+  );
+
+export const VcsProviderEnum = (opts?: { default?: VcsProvider; description?: string }) =>
+  Type.Union(
+    VCS_PROVIDERS.map((provider) => Type.Literal(provider)) as [
+      TLiteral<VcsProvider>,
+      ...TLiteral<VcsProvider>[],
+    ],
+    opts,
+  );
 
 /**
  * Resource-tier validators derived from the ONE tier list in @repo/core, the
@@ -368,10 +390,11 @@ export const CreateProjectBody = Type.Object({
   // Local source
   localPath: Type.Optional(Type.String({ maxLength: 1000 })),
   // Git source
-  gitProvider: Type.Optional(Type.String({ default: "github" })),
+  gitProvider: Type.Optional(SourceProviderEnum({ default: "github" })),
   gitOwner: Type.Optional(Type.String({ maxLength: 100 })),
   gitRepo: Type.Optional(Type.String({ maxLength: 100 })),
   gitBranch: Type.Optional(Type.String({ default: "main" })),
+  gitUrl: Type.Optional(Type.String({ maxLength: 2000 })),
   installationId: Type.Optional(Type.Number()),
   // Release/dist source (gitProvider === "release")
   releaseSource: Type.Optional(ReleaseSourceSchema),
@@ -514,9 +537,12 @@ export const CreateProjectBody = Type.Object({
   internalAlias: Type.Optional(Type.Union([Type.String({ maxLength: 100 }), Type.Null()])),
 });
 
-// `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
-// also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+// `serverId` and the provider-owned canonical `gitUrl` are create/ensure-only.
+// Keeping them out of the generic PATCH body prevents target retargeting and
+// source-URL mass assignment; repository changes go through the link route.
+export const UpdateProjectBody = Type.Partial(
+  Type.Omit(CreateProjectBody, ["serverId", "gitUrl"]),
+);
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to
@@ -632,8 +658,12 @@ export const UpdateResourcesBody = Type.Object({
 
 /** POST /:id/git/link — link a git repository to the project. */
 export const LinkRepoBody = Type.Object({
-  owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
-  repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
+  owner: Type.String({ minLength: 1, description: "Repository owner or namespace." }),
+  repo: Type.String({ minLength: 1, description: "Repository name." }),
+  gitProvider: Type.Optional(VcsProviderEnum({ default: "github" })),
+  gitUrl: Type.Optional(
+    Type.String({ minLength: 1, maxLength: 2000, description: "Canonical clone URL." }),
+  ),
   branch: Type.Optional(
     Type.String({ description: "Deploy branch (defaults to the repo default)." }),
   ),

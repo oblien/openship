@@ -16,14 +16,26 @@ async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentI
   const envVars = body.env && Object.keys(body.env).length ? body.env : undefined;
   if (source === "github") {
     if (!body.owner || !body.repo) throw new ValidationError("owner and repo are required");
-    if (body.includeEnv) {
+    const provider = body.provider ?? "github";
+    if (body.includeEnv && provider === "github") {
       // Values can combine Compose, .env and openship.json. A deployment or
-      // metadata grant alone must not expose the contents of those files.
+      // metadata grant alone must not expose the contents of those files. This
+      // check is GitHub-specific; other providers enforce access in their own
+      // strategy before returning source content.
       const { checkSourceTier } = await import("../github/github-access");
       const { ok } = await checkSourceTier(ctx, { owner: body.owner, repo: body.repo }, "content-whole", "");
       if (!ok) throw new NotFoundError("github", `${body.owner}/${body.repo}`);
     }
-    return { source, owner: body.owner, repo: body.repo, branch: body.branch, ctx, composePath, env: envVars };
+    return {
+      source,
+      provider,
+      owner: body.owner,
+      repo: body.repo,
+      branch: body.branch,
+      ctx,
+      composePath,
+      env: envVars,
+    };
   }
   if (source === "local") {
     if (env.CLOUD_MODE) throw new AppError("Local projects are not available in cloud mode", 403);

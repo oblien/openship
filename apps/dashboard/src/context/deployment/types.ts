@@ -13,6 +13,7 @@ import {
   type StackId,
   type RoutingConfig,
   type OpenshipReadiness,
+  type SourceProvider,
   type ResourceTier as CoreResourceTier,
 } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -375,6 +376,10 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  /** Persisted source discriminator. Never infer this from owner/repo. */
+  gitProvider: SourceProvider;
+  /** Canonical clone URL returned by the provider. */
+  gitUrl?: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
   /**
@@ -499,6 +504,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   projectName: "",
   repo: "",
   owner: "",
+  gitProvider: "github",
+  gitUrl: undefined,
   localPath: undefined,
   composePath: undefined,
   uploadSessionId: undefined,

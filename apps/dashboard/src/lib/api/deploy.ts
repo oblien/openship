@@ -7,6 +7,7 @@ import type {
   RoutingConfig,
   OpenshipResourceTier,
   OpenshipReadiness,
+  VcsProvider,
   WorkloadType,
 } from "@repo/core";
 import type {
@@ -59,6 +60,7 @@ export interface RestorePlanUI {
 export type PrepareProjectSource = { includeEnv?: boolean } & (
   | {
       source?: "github";
+      provider?: VcsProvider;
       owner: string;
       repo: string;
       branch?: string;

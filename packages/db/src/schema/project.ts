@@ -8,6 +8,7 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type {
@@ -17,6 +18,7 @@ import type {
   ProjectObjectStorage,
   OpenshipReadiness,
   ClusterWorkloadConfig,
+  SourceProvider,
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
@@ -32,34 +34,43 @@ import { computeCluster } from "./compute-cluster";
  * table remains the deployable environment instance that owns deployments,
  * domains, env vars, logs, analytics, and runtime settings.
  */
-export const projectGroup = pgTable("project_app", {
-  id: text("id").primaryKey(), // "app_..."
-  /** Org that owns this app — THE access primitive. Creator info lives
-   *  in audit_event (event_type='project.create'). */
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organization.id, { onDelete: "cascade" }),
+export const projectGroup = pgTable(
+  "project_app",
+  {
+    id: text("id").primaryKey(), // "app_..."
+    /** Org that owns this app — THE access primitive. Creator info lives
+     *  in audit_event (event_type='project.create'). */
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
 
-  /** Display name shared by all environments */
-  name: text("name").notNull(),
-  /** URL-safe slug shared by the app */
-  slug: text("slug").notNull(),
+    /** Display name shared by all environments */
+    name: text("name").notNull(),
+    /** URL-safe slug shared by the app */
+    slug: text("slug").notNull(),
 
-  /** Shared source identity */
-  gitProvider: text("git_provider").default("github"),
-  gitOwner: text("git_owner"),
-  gitRepo: text("git_repo"),
-  gitUrl: text("git_url"),
-  installationId: integer("installation_id"),
+    /** Shared source identity */
+    gitProvider: text("git_provider").$type<SourceProvider>().default("github"),
+    gitOwner: text("git_owner"),
+    gitRepo: text("git_repo"),
+    gitUrl: text("git_url"),
+    installationId: integer("installation_id"),
 
-  /** Shared favicon cache */
-  favicon: text("favicon"),
-  faviconCheckedAt: timestamp("favicon_checked_at"),
+    /** Shared favicon cache */
+    favicon: text("favicon"),
+    faviconCheckedAt: timestamp("favicon_checked_at"),
 
-  deletedAt: timestamp("deleted_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "project_app_git_provider_check",
+      sql`${table.gitProvider} IS NULL OR ${table.gitProvider} IN ('github','gitlab','bitbucket','self-hosted','local','upload','release')`,
+    ),
+  ],
+);
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
@@ -123,7 +134,7 @@ export const project = pgTable(
      *                Redeploys track a VERSION, not a commit. Config lives in
      *                `releaseSource`.
      */
-    gitProvider: text("git_provider").default("github"),
+    gitProvider: text("git_provider").$type<SourceProvider>().default("github"),
     /** Owner/org on the git provider */
     gitOwner: text("git_owner"),
     /** Repo name on the git provider */
@@ -495,7 +506,13 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    index("project_cluster_idx").on(table.clusterId).where(sql`${table.clusterId} IS NOT NULL`),
+    check(
+      "project_git_provider_check",
+      sql`${table.gitProvider} IS NULL OR ${table.gitProvider} IN ('github','gitlab','bitbucket','self-hosted','local','upload','release')`,
+    ),
+    index("project_cluster_idx")
+      .on(table.clusterId)
+      .where(sql`${table.clusterId} IS NOT NULL`),
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),

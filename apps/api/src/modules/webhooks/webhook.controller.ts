@@ -11,11 +11,9 @@
  */
 
 import type { Context } from "hono";
+import { isVcsProvider } from "@repo/core";
 import { getWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
 import type { WebhookProviderName } from "@repo/platform/engine/modules/webhooks/webhook.types";
-
-/** Allowed provider names - rejects anything else at the route level. */
-const ALLOWED_PROVIDERS = new Set<string>(["github", "gitlab", "self-hosted", "bitbucket"]);
 
 /**
  * Generic webhook handler - looks up the provider by route param
@@ -24,19 +22,11 @@ const ALLOWED_PROVIDERS = new Set<string>(["github", "gitlab", "self-hosted", "b
 export async function handleWebhook(c: Context) {
   const providerName = c.req.param("provider");
 
-  if (!providerName || !ALLOWED_PROVIDERS.has(providerName)) {
+  if (!isVcsProvider(providerName)) {
     return c.json({ error: "Not found" }, 404);
   }
 
-  return dispatchProvider(c, providerName as WebhookProviderName);
-}
-
-/**
- * Legacy webhook handler for /api/webhooks/github.
- * Forwards to the generic dispatch provider using "github" as the provider name.
- */
-export async function handleLegacyWebhook(c: Context) {
-  return dispatchProvider(c, "github");
+  return dispatchProvider(c, providerName);
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────

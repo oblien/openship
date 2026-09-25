@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { SourceProviderEnum } from "./project-inputs";
 import type { TCreateProjectBody, TEnsureProjectBody, TUpdateProjectBody } from "./project-inputs";
 import type { ProjectControlOperations } from "./project-controls";
 import type { ProjectLocalOperations } from "./project-local";
@@ -19,10 +20,11 @@ export const ProjectSchema = Type.Object({
   environmentName: Type.Optional(Type.String()),
   environmentSlug: Type.Optional(Type.String()),
   environmentType: Type.Optional(Type.String()),
-  gitProvider: Type.Optional(nullableString()),
+  gitProvider: Type.Optional(Type.Union([SourceProviderEnum(), Type.Null()])),
   gitOwner: Type.Optional(nullableString()),
   gitRepo: Type.Optional(nullableString()),
   gitBranch: Type.Optional(nullableString()),
+  gitUrl: Type.Optional(nullableString()),
   framework: Type.Optional(nullableString()),
   packageManager: Type.Optional(nullableString()),
   localPath: Type.Optional(nullableString()),

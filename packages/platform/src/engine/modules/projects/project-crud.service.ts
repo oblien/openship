@@ -36,6 +36,8 @@ import {
   resolveWorkload,
   toWorkloadType,
   type ReleaseSource,
+  type SourceProvider,
+  type VcsProvider,
   type UpdatableIdentity,
   type WorkloadType,
   type ProductionMode,
@@ -52,10 +54,11 @@ import { normalizeProjectRootDirectory } from "../../lib/project-root-detector";
 import { env } from "../../config/index";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import { getWebhookStrategy, resolveWebhookStrategy } from "../github/github.service";
+import { getWebhookStrategy } from "../github/github.service";
+import type { WebhookStrategy } from "../vcs/vcs.types";
 import { projectMatchesChanges } from "../github/webhook-changed-files";
 import { getInstallationIdByOrg, resolveInstallUrl } from "../github/github.auth";
-import { hasActiveGitHubSource, resolveGitHubWebBaseUrl } from "../github/github-source.service";
+import { hasActiveGitHubSource } from "../github/github-source.service";
 import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { domainWebhookUrl } from "../../lib/public-url";
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
@@ -378,8 +381,20 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
+function sourceGitUrl(
+  provider: string,
+  explicitUrl: string | null | undefined,
+  owner?: string | null,
+  repo?: string | null,
+) {
+  const stored = explicitUrl?.trim();
+  if (stored) return stored;
+  if (!owner || !repo) return undefined;
+  // Backwards compatibility for the only provider the existing create wizard
+  // can select without first fetching provider metadata. Other providers must
+  // persist their canonical clone URL instead of being coerced to github.com.
+  if (provider === "github") return `https://github.com/${owner}/${repo}.git`;
+  throw new ValidationError(`gitUrl is required for ${provider} repositories.`);
 }
 
 /** Validate and normalize one complete release source before it can become a
@@ -552,12 +567,18 @@ function resolveProjectSource(data: TCreateProjectBody) {
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
 
+  const gitProvider = isRelease
+    ? "release"
+    : safeLocalPath
+      ? "local"
+      : (data.gitProvider ?? "github");
+
   return {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProvider,
+    gitUrl: sourceGitUrl(gitProvider, data.gitUrl, gitOwner, gitRepo),
     releaseSource,
   };
 }
@@ -991,10 +1012,11 @@ export async function createServicesProjectWithId(opts: {
   organizationId: string;
   hasBuild?: boolean;
   runtimeMode?: "bare" | "docker";
-  gitProvider?: string | null;
+  gitProvider?: SourceProvider | null;
   gitOwner?: string | null;
   gitRepo?: string | null;
   gitBranch?: string | null;
+  gitUrl?: string | null;
   autoDeploy?: boolean;
 }): Promise<Project> {
   const { group, slug } = await withProjectCreationLock(opts.organizationId, async () => {
@@ -1007,7 +1029,7 @@ export async function createServicesProjectWithId(opts: {
       gitProvider: opts.gitProvider ?? undefined,
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl: sourceGitUrl(opts.gitProvider ?? "github", opts.gitUrl, opts.gitOwner, opts.gitRepo),
     });
     return { group, slug };
   });
@@ -1027,7 +1049,7 @@ export async function createServicesProjectWithId(opts: {
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
       gitBranch: opts.gitBranch ?? "main",
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl: sourceGitUrl(opts.gitProvider ?? "github", opts.gitUrl, opts.gitOwner, opts.gitRepo),
       autoDeploy: !!opts.autoDeploy,
       framework: "unknown", // services project — the stack lives on each service row
       packageManager: "npm",
@@ -1070,7 +1092,8 @@ export async function linkProjectRepo(
     repo: string;
     branch?: string;
     installationId?: number;
-    gitProvider?: string;
+    gitProvider?: VcsProvider;
+    gitUrl?: string;
   },
 ): Promise<LinkProjectRepoOutcome> {
   const { organizationId } = ctx;
@@ -1088,19 +1111,11 @@ export async function linkProjectRepo(
         return { ok: false, code: "not_found" } as const;
       }
 
-      const gitProvider = input.gitProvider?.trim() || "github";
-      const sourceWebBaseUrl = await resolveGitHubWebBaseUrl(organizationId, owner).catch(
-        () => null,
-      );
-      const gitUrl = sourceWebBaseUrl
-        ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
-        : projectGitUrl(owner, repo);
-      // Keep resolveDefaultBranch's contract: an explicit branch wins, otherwise
-      // fall back to the repository's default.
-      const defaultBranch =
-        input.branch?.trim() ||
-        (await VcsStrategyFactory.getStrategy(gitProvider).getRepository(ctx, owner, repo))
-          .default_branch;
+      const gitProvider = input.gitProvider ?? "github";
+      const vcs = VcsStrategyFactory.getStrategy(gitProvider);
+      const repository = await vcs.getRepository(ctx, owner, repo);
+      const gitUrl = sourceGitUrl(gitProvider, input.gitUrl ?? repository.clone_url, owner, repo);
+      const defaultBranch = input.branch?.trim() || repository.default_branch;
       // A project_app is one source identity even if an old/partial write left its
       // environments inconsistent. Linking Git converges the whole group, so clear
       // release-only class overrides when ANY sibling still carries that source.
@@ -1115,7 +1130,7 @@ export async function linkProjectRepo(
         gitOwner: owner,
         gitRepo: repo,
         gitBranch: defaultBranch,
-        gitUrl,
+        gitUrl: gitUrl ?? null,
         // Source transition: a Git repo and a release image are mutually exclusive.
         // Clear every release-only/clone-bypass override atomically so the next
         // deploy derives its normal source/build class from the linked repository.
@@ -1134,8 +1149,25 @@ export async function linkProjectRepo(
         autoDeploy: false,
       };
 
-      const strategy =
-        await VcsStrategyFactory.getStrategy(gitProvider).resolveWebhookStrategy(project!);
+      // Webhook strategy selection and registration must see the source being
+      // linked, not the project's previously persisted source. The row is only
+      // updated after webhook setup succeeds or falls back to manual deploys.
+      const linkedProject: Project = {
+        ...project!,
+        gitProvider,
+        gitOwner: owner,
+        gitRepo: repo,
+        gitBranch: defaultBranch,
+        gitUrl: gitUrl ?? null,
+        installationId: null,
+        webhookId: null,
+        autoDeploy: false,
+      };
+
+      const strategy = await VcsStrategyFactory.getStrategy(gitProvider).resolveWebhookStrategy(
+        linkedProject,
+        organizationId,
+      );
 
       if (strategy === "app") {
         const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
@@ -1153,7 +1185,7 @@ export async function linkProjectRepo(
         // user can enable it later.
         const webhookUrl =
           strategy === "domain" ? domainWebhookUrl(project!.webhookDomain!) : undefined;
-        const hookId = await ensureSharedWebhook(ctx, project!, owner, repo, webhookUrl).catch(
+        const hookId = await ensureSharedWebhook(ctx, linkedProject, owner, repo, webhookUrl).catch(
           () => null,
         );
         if (hookId) {
@@ -2023,11 +2055,10 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await VcsStrategyFactory.getStrategy(
+    const branch = await VcsStrategyFactory.getStrategy(
       app?.gitProvider ?? base.gitProvider,
-    ).getBranches(ctx, base.gitOwner, base.gitRepo);
-    const exists = branches.some((branch) => branch.name === gitBranch);
-    if (!exists) {
+    ).getBranch(ctx, base.gitOwner, base.gitRepo, gitBranch);
+    if (!branch) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
       );
@@ -2577,7 +2608,7 @@ export async function getGitInfo(projectId: string, organizationId: string) {
  * column), while this answers whether GitHub has somewhere to deliver it.
  */
 export type ProjectWebhookState = {
-  strategy: Awaited<ReturnType<typeof resolveWebhookStrategy>>;
+  strategy: WebhookStrategy;
   webhookActive: boolean;
   installationInstalled: boolean;
   sharedWebhookId: number | null;
@@ -2592,9 +2623,14 @@ export async function resolveProjectWebhookState(
     webhookDomain?: string | null;
     autoDeploy?: boolean | null;
     deployTarget?: string | null;
+    gitProvider?: string | null;
+    organizationId?: string | null;
   },
 ): Promise<ProjectWebhookState> {
-  const strategy = await resolveWebhookStrategy(project, organizationId);
+  const strategy = await VcsStrategyFactory.getStrategy(project.gitProvider).resolveWebhookStrategy(
+    project,
+    organizationId,
+  );
 
   // A native App strategy delivers pushes for every target through this
   // instance's App webhook. In cloud-proxy mode (non-App base strategy), only a
@@ -2608,7 +2644,12 @@ export async function resolveProjectWebhookState(
   // the row that carries its id.
   let sharedWebhookId = project.webhookId ?? null;
   if (!sharedWebhookId && project.gitOwner && project.gitRepo) {
-    sharedWebhookId = await findSharedWebhookId(organizationId, project.gitOwner, project.gitRepo);
+    sharedWebhookId = await findSharedWebhookId(
+      organizationId,
+      project.gitOwner,
+      project.gitRepo,
+      project.gitProvider,
+    );
   }
 
   const webhookActive =

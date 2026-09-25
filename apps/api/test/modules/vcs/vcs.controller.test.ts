@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
 import { vcsRoutes } from "../../../src/modules/vcs/vcs.routes";
-import { VcsStrategyFactory } from "../../../src/modules/vcs/vcs.factory";
-import { VcsProviderStrategy } from "../../../src/modules/vcs/vcs.strategy";
+import { VcsStrategyFactory } from "@repo/platform/engine/modules/vcs/vcs.factory";
+import type { VcsProviderStrategy } from "@repo/platform/engine/modules/vcs/vcs.strategy";
 import { getRequestContext } from "../../../src/lib/request-context";
 import { AppError } from "@repo/core";
 
@@ -46,9 +46,11 @@ describe("VCS Controller", () => {
     app.route("/api/vcs", vcsRoutes);
 
     app.onError((err, c) => {
-      
       if (err instanceof AppError) {
-        return c.json({ error: err.message, code: (err as any).code }, (err as any).statusCode || 400);
+        return c.json(
+          { error: err.message, code: (err as any).code },
+          (err as any).statusCode || 400,
+        );
       }
       return c.json({ error: err.message }, 500);
     });
@@ -59,14 +61,16 @@ describe("VCS Controller", () => {
       listFiles: vi.fn(),
       getTree: vi.fn(),
       listRepositories: vi.fn(),
-      listBranches: vi.fn(),
+      getBranches: vi.fn(),
       getCloneToken: vi.fn(),
       listWebhooks: vi.fn(),
       registerWebhook: vi.fn(),
       deleteWebhook: vi.fn(),
     };
 
-    vi.spyOn(VcsStrategyFactory, "getStrategy").mockReturnValue(mockStrategy as unknown as VcsProviderStrategy);
+    vi.spyOn(VcsStrategyFactory, "getStrategy").mockReturnValue(
+      mockStrategy as unknown as VcsProviderStrategy,
+    );
   });
 
   it("returns 404 client error for unknown provider", async () => {
@@ -80,12 +84,28 @@ describe("VCS Controller", () => {
     mockStrategy.getRepository.mockResolvedValue({ name: "repo1" });
     const res = await app.request("/api/vcs/github/repos/owner1/repo1?branches=true");
     expect(res.status).toBe(200);
-    expect(mockStrategy.getRepository).toHaveBeenCalledWith(
-      expect.anything(),
-      "owner1",
-      "repo1",
-      { withBranches: true }
-    );
+    expect(mockStrategy.getRepository).toHaveBeenCalledWith(expect.anything(), "owner1", "repo1", {
+      withBranches: true,
+    });
+    expect(await res.json()).toEqual({ data: { name: "repo1" } });
+  });
+
+  it("returns paginated branches from the provider strategy", async () => {
+    mockStrategy.getBranches.mockResolvedValue({
+      branches: [{ name: "main", commit: { sha: "abc" } }],
+      page: 2,
+      perPage: 100,
+      hasMore: true,
+    });
+    const res = await app.request("/api/vcs/github/repos/owner1/repo1/branches?page=2");
+    expect(res.status).toBe(200);
+    expect(mockStrategy.getBranches).toHaveBeenCalledWith(expect.anything(), "owner1", "repo1", {
+      page: 2,
+    });
+    expect(await res.json()).toEqual({
+      data: [{ name: "main", commit: { sha: "abc" } }],
+      pagination: { page: 2, perPage: 100, hasMore: true },
+    });
   });
 
   it("getFile parses JSON when path ends in .json", async () => {
@@ -97,20 +117,21 @@ describe("VCS Controller", () => {
       "owner1",
       "repo1",
       "config.json",
-      { branch: undefined, json: true }
+      { branch: undefined, json: true },
     );
+    expect(await res.json()).toEqual({ data: { content: { key: "value" } } });
   });
 
   it("listFiles on a directory path returns entries as array", async () => {
-    mockStrategy.listFiles.mockResolvedValue([{ name: "file1.txt", path: "dir/file1.txt", type: "file" }]);
+    mockStrategy.listFiles.mockResolvedValue([
+      { name: "file1.txt", path: "dir/file1.txt", type: "file" },
+    ]);
     const res = await app.request("/api/vcs/github/repos/owner1/repo1/files?path=dir");
     expect(res.status).toBe(200);
-    expect(mockStrategy.listFiles).toHaveBeenCalledWith(
-      expect.anything(),
-      "owner1",
-      "repo1",
-      { branch: undefined, path: "dir" }
-    );
+    expect(mockStrategy.listFiles).toHaveBeenCalledWith(expect.anything(), "owner1", "repo1", {
+      branch: undefined,
+      path: "dir",
+    });
     const body = await res.json();
     expect(body.data).toEqual([{ name: "file1.txt", path: "dir/file1.txt", type: "file" }]);
   });

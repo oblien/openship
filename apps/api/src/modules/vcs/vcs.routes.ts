@@ -7,30 +7,27 @@ const r = secureRouter(new Hono(), {
   basePath: "/api/vcs",
 });
 
+// Repository grants are still stored under the existing `github:*` permission
+// namespace. Keep those tags for backwards compatibility until provider-aware
+// grants are introduced; the non-GitHub strategies currently fail closed with
+// VCS_OPERATION_NOT_IMPLEMENTED.
+
 /* ─── Accounts / Organisations ─────────────────────────────────────────── */
-r.get(
-  "/:provider/orgs/:org/repos",
-  { tag: "github:list" },
-  (c) => ctrl.listOrgRepos(c.req.param("provider")!)(c),
+r.get("/:provider/orgs/:org/repos", { tag: "github:list" }, (c) =>
+  ctrl.listOrgRepos(c.req.param("provider")!)(c),
 );
 
 /* ─── Repositories ─────────────────────────────────────────────────────── */
-r.get(
-  "/:provider/repos",
-  { tag: "github:list" },
-  (c) => ctrl.listRepos(c.req.param("provider")!)(c),
+r.get("/:provider/repos", { tag: "github:list" }, (c) =>
+  ctrl.listRepos(c.req.param("provider")!)(c),
 );
-r.get(
-  "/:provider/repos/:owner/:repo",
-  { tag: "github:read" },
-  (c) => ctrl.getRepo(c.req.param("provider")!)(c),
+r.get("/:provider/repos/:owner/:repo", { tag: "github:read" }, (c) =>
+  ctrl.getRepo(c.req.param("provider")!)(c),
 );
 
 /* ─── Branches ─────────────────────────────────────────────────────────── */
-r.get(
-  "/:provider/repos/:owner/:repo/branches",
-  { tag: "github:list" },
-  (c) => ctrl.listBranches(c.req.param("provider")!)(c),
+r.get("/:provider/repos/:owner/:repo/branches", { tag: "github:list" }, (c) =>
+  ctrl.listBranches(c.req.param("provider")!)(c),
 );
 
 /* ─── Stack detection ──────────────────────────────────────────────────── */
@@ -58,10 +55,8 @@ r.get(
   },
   (c) => ctrl.listFiles(c.req.param("provider")!)(c),
 );
-r.get(
-  "/:provider/repos/:owner/:repo/tree",
-  { tag: "github:list", source: "content-tree" },
-  (c) => ctrl.listTree(c.req.param("provider")!)(c),
+r.get("/:provider/repos/:owner/:repo/tree", { tag: "github:list", source: "content-tree" }, (c) =>
+  ctrl.listTree(c.req.param("provider")!)(c),
 );
 r.get(
   "/:provider/repos/:owner/:repo/file",
@@ -73,12 +68,14 @@ r.get(
 );
 
 /* ─── Repo Webhooks ────────────────────────────────────────────────────── */
-r.get(
-  "/:provider/repos/:owner/:repo/webhooks",
-  { tag: "github:list" },
-  (c) => ctrl.listWebhooks(c.req.param("provider")!)(c),
+r.get("/:provider/repos/:owner/:repo/webhooks", { tag: "github:list" }, (c) =>
+  ctrl.listWebhooks(c.req.param("provider")!)(c),
 );
-r.post("/:provider/repos/:owner/:repo/webhooks", { tag: "github:write" }, (c) => ctrl.registerWebhook(c.req.param("provider")!)(c));
-r.delete("/:provider/repos/:owner/:repo/webhooks", { tag: "github:admin" }, (c) => ctrl.deleteWebhook(c.req.param("provider")!)(c));
+r.post("/:provider/repos/:owner/:repo/webhooks", { tag: "github:write" }, (c) =>
+  ctrl.registerWebhook(c.req.param("provider")!)(c),
+);
+r.delete("/:provider/repos/:owner/:repo/webhooks", { tag: "github:admin" }, (c) =>
+  ctrl.deleteWebhook(c.req.param("provider")!)(c),
+);
 
 export const vcsRoutes = r.hono;

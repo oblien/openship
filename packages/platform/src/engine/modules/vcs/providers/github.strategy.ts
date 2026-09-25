@@ -7,17 +7,22 @@ import type {
   VcsPushPayload,
   GetCloneCredentialsOptions,
   VcsRepository,
-  VcsBranch,
+  VcsBranchPage,
   VcsCommit,
 } from "../vcs.types";
-import type { RequestContext } from "../../../lib/request-context";
+import type { ExecutionContext as RequestContext } from "../../../../context";
 import * as githubService from "../../github/github.service";
 import * as cloneAuth from "../../github/clone-auth";
-import type { GitHubPushPayload } from "../../github/github.types";
+import type { GitHubPushPayload } from "@repo/contracts";
 import { AppError } from "@repo/core";
 
 export class GitHubStrategy implements VcsProviderStrategy {
-  async getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }) {
+  async getRepository(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { withBranches?: boolean },
+  ) {
     const result = await githubService.getRepository(ctx, owner, repo, opts);
     return result as VcsRepository;
   }
@@ -36,12 +41,25 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return repos as unknown as VcsRepository[];
   }
 
-  async getBranches(ctx: RequestContext, owner: string, repo: string) {
-    const result = await githubService.listBranches(ctx, owner, repo);
-    return result as VcsBranch[];
+  async getBranches(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { page?: number },
+  ): Promise<VcsBranchPage> {
+    return githubService.listBranches(ctx, owner, repo, opts);
   }
 
-  async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> {
+  async getBranch(ctx: RequestContext, owner: string, repo: string, branch: string) {
+    return githubService.getBranch(ctx, owner, repo, branch);
+  }
+
+  async listFiles(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { branch?: string; path?: string },
+  ): Promise<any> {
     return githubService.listFiles(ctx, owner, repo, opts);
   }
 
@@ -76,18 +94,8 @@ export class GitHubStrategy implements VcsProviderStrategy {
   }
 
   async getCloneToken(ctx: RequestContext, owner: string, repo: string) {
-    const githubAuth = await import("../../github/github.auth");
-    const token = await githubAuth.getInstallationToken(ctx, owner, undefined, {
-      repositories: [repo],
-    });
-    if (!token) {
-      throw new AppError(
-        "No GitHub App installation token is available for this owner. Connect the Openship GitHub App (cloud) for this account to use a clone token.",
-        409,
-      );
-    }
-    const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-    return { token, cloneUrl, command: `git clone ${cloneUrl}` };
+    const { getCloneToken } = await import("../../github/github-application.service");
+    return getCloneToken(ctx, { owner, repo });
   }
 
   parseWebhookPayload(payload: unknown, eventType: string): VcsPushPayload | null {
@@ -223,10 +231,14 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return githubService.getWebhookStrategy();
   }
 
-  async resolveWebhookStrategy(project?: {
-    webhookDomain?: string | null;
-  }): Promise<WebhookStrategy> {
-    return githubService.resolveWebhookStrategy(project);
+  async resolveWebhookStrategy(
+    project?: {
+      webhookDomain?: string | null;
+      organizationId?: string | null;
+    },
+    organizationId?: string,
+  ): Promise<WebhookStrategy> {
+    return githubService.resolveWebhookStrategy(project, organizationId);
   }
 
   async getAvailableStrategies(

@@ -16,7 +16,7 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey } from "@repo/core";
+import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey, isSourceProvider } from "@repo/core";
 import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
@@ -1193,6 +1193,10 @@ export async function reimportOpenshipProject(opts: {
 
   const name = projectName?.trim() || group.suggestedName;
   const anyBuild = chosen.some((s) => !s.image && Boolean(s.build));
+  const sourceProvider = group.source?.gitProvider ?? undefined;
+  if (sourceProvider !== undefined && !isSourceProvider(sourceProvider)) {
+    throw new Error(`Unsupported git provider in server manifest: ${sourceProvider}`);
+  }
   const created = await createServicesProjectWithId({
     id: projectId,
     name,
@@ -1200,10 +1204,11 @@ export async function reimportOpenshipProject(opts: {
     organizationId,
     hasBuild: anyBuild,
     runtimeMode: group.runtimeMode === "bare" ? "bare" : "docker",
-    gitProvider: group.source?.gitProvider ?? undefined,
+    gitProvider: sourceProvider,
     gitOwner: group.source?.gitOwner ?? undefined,
     gitRepo: group.source?.gitRepo ?? undefined,
     gitBranch: group.source?.gitBranch ?? undefined,
+    gitUrl: group.source?.gitUrl ?? undefined,
   });
 
   // Re-import preserves the original service names (from the manifest/labels),

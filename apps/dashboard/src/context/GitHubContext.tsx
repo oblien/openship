@@ -40,6 +40,7 @@ export interface GitHubRepo {
   language: string;
   updated_at: string;
   default_branch: string;
+  clone_url?: string;
   owner: { login: string; avatar_url: string } | string;
   html_url?: string;
   /**

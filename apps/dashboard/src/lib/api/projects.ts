@@ -8,6 +8,8 @@ import type {
   OpenshipReadiness,
   WorkloadType,
   DeploymentHistoryQuery,
+  SourceProvider,
+  VcsProvider,
 } from "@repo/core";
 import type { DeploymentPage, RollbackCapacity } from "@repo/contracts";
 import { endpoints } from "./endpoints";
@@ -252,7 +254,9 @@ export const projectsApi = {
     slug?: string;
     gitOwner?: string;
     /** Source discriminator; "upload" for browser folder-upload projects. */
-    gitProvider?: string;
+    gitProvider?: SourceProvider;
+    /** Canonical clone URL returned by the selected source provider. */
+    gitUrl?: string;
     gitRepo?: string;
     gitBranch?: string;
     framework?: string;
@@ -615,10 +619,17 @@ export const projectsApi = {
   /** Get git settings */
   getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
 
-  /** Link a GitHub repo to an existing project + register webhook */
+  /** Link a VCS repository to an existing project + register its webhook. */
   linkRepo: (
     id: string | number,
-    body: { owner: string; repo: string; branch?: string; installationId?: number },
+    body: {
+      owner: string;
+      repo: string;
+      branch?: string;
+      installationId?: number;
+      gitProvider?: VcsProvider;
+      gitUrl?: string;
+    },
   ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** Atomically transition a single-app project to a tracked prebuilt image. */

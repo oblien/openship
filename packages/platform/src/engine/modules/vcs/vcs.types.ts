@@ -1,6 +1,6 @@
 import type { BuildStrategy } from "@repo/core";
 import type { CommandExecutor } from "@repo/adapters";
-import type { RequestContext } from "../../lib/request-context";
+import type { ExecutionContext as RequestContext } from "../../../context";
 
 export interface GetCloneCredentialsOptions {
   ctx: RequestContext;
@@ -29,8 +29,15 @@ export interface VcsRepository {
 
 export interface VcsBranch {
   name: string;
-  commit?: { sha: string };
+  commit: { sha: string };
   protected?: boolean;
+}
+
+export interface VcsBranchPage {
+  branches: VcsBranch[];
+  page: number;
+  perPage: number;
+  hasMore: boolean;
 }
 
 export interface VcsCommit {
@@ -53,6 +60,11 @@ export interface VcsTreeEntry {
 
 export interface VcsTreeResponse {
   tree: VcsTreeEntry[];
+}
+
+export interface VcsCompareResult {
+  files: string[];
+  truncated?: boolean;
 }
 
 export interface VcsWebhook {

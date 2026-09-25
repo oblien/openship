@@ -466,7 +466,7 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
       expect(source).toEqual({
-        source: "github", owner: "acme", repo: "app", branch: "preview",
+        source: "github", provider: "github", owner: "acme", repo: "app", branch: "preview",
         composePath: "deploy/compose.yaml", env: { API_TOKEN: secret }, ctx: expect.any(Object),
       });
       expect(source.ctx).toMatchObject({ userId: "alice", organizationId: "org-a", membershipId: "member-a", role });
@@ -504,7 +504,7 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
-      expect(source).toEqual({ source: "github", owner: "acme", repo: "app", branch: undefined, composePath: undefined, env: undefined, ctx: expect.any(Object) });
+      expect(source).toEqual({ source: "github", provider: "github", owner: "acme", repo: "app", branch: undefined, composePath: undefined, env: undefined, ctx: expect.any(Object) });
     }
   });
 
@@ -566,6 +566,31 @@ describe("deployment preparation HTTP/native parity", () => {
         { name: "web", environment: { API_TOKEN: ENV_MASK } },
         { name: "db", environment: { DB_PASSWORD: ENV_MASK }, buildArgs: { TOKEN: ENV_MASK, INHERITED: null, EMPTY: "" } },
       ] });
+    }
+  });
+
+  it("leaves non-GitHub source authorization to its provider strategy", async () => {
+    const local = await native();
+    const input = {
+      provider: "gitlab" as const,
+      owner: "acme",
+      repo: "app",
+      includeEnv: true,
+    };
+
+    for (const deployments of [remote().deployments, local.deployments]) {
+      await deployments.prepare(input);
+    }
+
+    expect(h.sourceContent).not.toHaveBeenCalled();
+    expect(h.localInfo).toHaveBeenCalledTimes(2);
+    for (const [source] of h.localInfo.mock.calls) {
+      expect(source).toMatchObject({
+        source: "github",
+        provider: "gitlab",
+        owner: "acme",
+        repo: "app",
+      });
     }
   });
 

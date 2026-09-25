@@ -1,8 +1,9 @@
-import type { RequestContext } from "../../lib/request-context";
+import type { ExecutionContext as RequestContext } from "../../../context";
 import type { BuildGitCredential } from "../github/clone-auth";
 import type {
   VcsRepository,
   VcsBranch,
+  VcsBranchPage,
   VcsFileContent,
   VcsPushPayload,
   VcsTreeResponse,
@@ -10,6 +11,7 @@ import type {
   WebhookStrategy,
   GetCloneCredentialsOptions,
   VcsCommit,
+  VcsCompareResult,
 } from "./vcs.types";
 
 export interface VcsCheckRun {
@@ -26,7 +28,12 @@ export interface VcsProviderStrategy {
   /**
    * Fetch detailed information about a single repository.
    */
-  getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }): Promise<VcsRepository>;
+  getRepository(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { withBranches?: boolean },
+  ): Promise<VcsRepository>;
 
   /**
    * List repositories accessible by the current context (user/org).
@@ -37,12 +44,29 @@ export interface VcsProviderStrategy {
   /**
    * Get all branches for a repository.
    */
-  getBranches(ctx: RequestContext, owner: string, repo: string): Promise<VcsBranch[]>;
+  getBranches(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { page?: number },
+  ): Promise<VcsBranchPage>;
+
+  getBranch(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    branch: string,
+  ): Promise<VcsBranch | null>;
 
   /**
    * Retrieve the contents of a specific file.
    */
-  listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any>;
+  listFiles(
+    ctx: RequestContext,
+    owner: string,
+    repo: string,
+    opts?: { branch?: string; path?: string },
+  ): Promise<any>;
 
   getFileContent(
     ctx: RequestContext,
@@ -109,7 +133,7 @@ export interface VcsProviderStrategy {
     repo: string,
     base: string,
     head: string,
-  ): Promise<{ files: string[] } | null>;
+  ): Promise<VcsCompareResult | null>;
 
   /**
    * Parse a repository URL into owner and repo.
@@ -203,7 +227,10 @@ export interface VcsProviderStrategy {
    * can reach us, not of which repo is linked. Widening this to require the
    * project row forced `as any` at every call site that holds only the git slice.
    */
-  resolveWebhookStrategy(project?: { webhookDomain?: string | null }): Promise<WebhookStrategy>;
+  resolveWebhookStrategy(
+    project?: { webhookDomain?: string | null; organizationId?: string | null },
+    organizationId?: string,
+  ): Promise<WebhookStrategy>;
 
   /**
    * Get available strategies for a specific project.

@@ -81,7 +81,6 @@ import {
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resources";
 import { cloneOnServerAvailable, resolveBuildGitToken } from "../github/clone-auth";
-import { resolveGitHubWebBaseUrl } from "../github/github-source.service";
 import { openDeployRelay } from "../../lib/git-forwarding/index";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { resolveAcmeProviderOptions } from "../../lib/acme-config";
@@ -867,21 +866,6 @@ async function executeBuildAndDeploy(
     const orgOwner = await resolveOrgOwner(dep.organizationId).catch(() => null);
     const actorUserId = orgOwner?.userId ?? "";
 
-    // Projects created before a GitHub Enterprise source was connected may
-    // still carry github.com's clone origin. The installation is the durable
-    // source selector, so normalize the frozen snapshot at execution time too;
-    // this covers old projects and source rebindings without a data rewrite.
-    if (project.gitOwner && project.gitRepo) {
-      const webBaseUrl = await resolveGitHubWebBaseUrl(
-        dep.organizationId,
-        project.gitOwner,
-        project.installationId ?? undefined,
-      ).catch(() => null);
-      if (webBaseUrl) {
-        snapshot.repoUrl = `${webBaseUrl.replace(/\/+$/, "")}/${project.gitOwner}/${project.gitRepo}.git`;
-      }
-    }
-
     // Resolved up front so the relay-fallback gate below can exclude
     // multi-service builds (whose clone path differs).
     const { useServicePipeline, servicePreflightServices } = await resolveServicePipelineMode(
@@ -908,7 +892,7 @@ async function executeBuildAndDeploy(
       buildStrategy,
       isDesktop: plat.target === "desktop",
       forwardGitCredentials: snapshot.forwardGitCredentials,
-      repoIsGithub: !!project.gitOwner,
+      repoIsGithub: project.gitProvider === "github",
       dockerTransport: runtime instanceof DockerRuntime ? runtime.transport.kind : undefined,
     });
     const cloneOnTarget = clonePlan.cloneRunsOnTarget;

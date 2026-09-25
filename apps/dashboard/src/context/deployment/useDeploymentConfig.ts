@@ -22,6 +22,7 @@ import {
   type DeployTarget,
   type StackDefinition,
   type StackId,
+  type VcsProvider,
   type WorkloadType,
 } from "@repo/core";
 import type {
@@ -844,6 +845,12 @@ export function useDeploymentConfig() {
           projectId,
           repo: repoName,
           owner,
+          gitProvider: localPath
+            ? "local"
+            : ((project?.gitProvider as VcsProvider | undefined) ?? "github"),
+          gitUrl: localPath
+            ? undefined
+            : (response.repository.clone_url ?? project?.gitUrl ?? prev.gitUrl),
           localPath,
           uploadSessionId,
           projectName: project?.name || repoName,
@@ -985,6 +992,7 @@ export function useDeploymentConfig() {
         const changesSavedBranch = !!project && requestedBranch !== projectBranch;
 
         const preparedSource: PrepareProjectSource = {
+          provider: (project?.gitProvider as VcsProvider | undefined) ?? "github",
           owner: sourceOwner,
           repo: sourceRepo,
           branch: requestedBranch,
@@ -1079,6 +1087,7 @@ export function useDeploymentConfig() {
       setIsRescanning(true);
       try {
         const response = await deployApi.prepare({
+          provider: config.gitProvider as VcsProvider,
           owner: config.owner,
           repo: config.repo,
           branch: requestedBranch,

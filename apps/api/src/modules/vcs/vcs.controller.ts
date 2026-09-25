@@ -1,11 +1,20 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import { AppError } from "@repo/core";
-import { VcsStrategyFactory } from "./vcs.factory";
-import { paginateRepoList, type RepoListParams } from "../github/repo-list";
-import { filterAllowedRepos, filterTreeEntries } from "../github/github-access";
-import { resolveProjectInfo, projectInfoToScanResponse } from "../deployments/prepare.service";
+import { AppError, isVcsProvider } from "@repo/core";
+import { VcsStrategyFactory } from "@repo/platform/engine/modules/vcs/vcs.factory";
+import {
+  paginateRepoList,
+  type RepoListParams,
+} from "@repo/platform/engine/modules/github/repo-list";
+import {
+  filterAllowedRepos,
+  filterTreeEntries,
+} from "@repo/platform/engine/modules/github/github-access";
+import {
+  resolveProjectInfo,
+  projectInfoToScanResponse,
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 /** Map a MappedRepository to the owner/repo key the access filter needs. */
 function repoKey(r: { full_name?: string; owner?: string; name?: string }) {
@@ -14,7 +23,7 @@ function repoKey(r: { full_name?: string; owner?: string; name?: string }) {
 }
 
 function validateProvider(provider: string) {
-  if (provider !== "github" && provider !== "gitlab" && provider !== "self-hosted") {
+  if (!isVcsProvider(provider)) {
     throw new AppError(`Unknown VCS provider: ${provider}`, 404, "NOT_FOUND");
   }
 }
@@ -52,7 +61,7 @@ export const listRepos = (provider: string) => async (c: Context) => {
   const repos = await strategy.listRepositories(ctx, owner);
   const allowed = await filterAllowedRepos(ctx, repos as any, repoKey);
   return c.json(paginateRepoList(allowed as any, parseRepoListParams(c)));
-}
+};
 
 export const listOrgRepos = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -62,7 +71,7 @@ export const listOrgRepos = (provider: string) => async (c: Context) => {
   const repos = await strategy.listRepositories(ctx, org);
   const allowed = await filterAllowedRepos(ctx, repos as any, repoKey);
   return c.json(paginateRepoList(allowed as any, parseRepoListParams(c)));
-}
+};
 
 export const getRepo = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -74,7 +83,7 @@ export const getRepo = (provider: string) => async (c: Context) => {
   const withBranches = c.req.query("branches") === "true";
   const data = await strategy.getRepository(ctx, owner, repo, { withBranches });
   return c.json({ data });
-}
+};
 
 export const listBranches = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -83,9 +92,17 @@ export const listBranches = (provider: string) => async (c: Context) => {
   const repo = param(c, "repo");
 
   const strategy = VcsStrategyFactory.getStrategy(provider);
-  const data = await strategy.getBranches(ctx, owner, repo);
-  return c.json({ data });
-}
+  const page = Number(c.req.query("page") ?? 1);
+  const result = await strategy.getBranches(ctx, owner, repo, { page });
+  return c.json({
+    data: result.branches,
+    pagination: {
+      page: result.page,
+      perPage: result.perPage,
+      hasMore: result.hasMore,
+    },
+  });
+};
 
 export const getCloneToken = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -96,7 +113,7 @@ export const getCloneToken = (provider: string) => async (c: Context) => {
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const result = await strategy.getCloneToken(ctx, owner, repo);
   return c.json(result);
-}
+};
 
 export const detectStack = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -108,7 +125,8 @@ export const detectStack = (provider: string) => async (c: Context) => {
 
   // The prepare.service resolveProjectInfo currently only supports github as a remote source.
   const info = await resolveProjectInfo({
-    source: "github", provider: provider,
+    source: "github",
+    provider: provider,
     owner,
     repo,
     ctx,
@@ -117,7 +135,7 @@ export const detectStack = (provider: string) => async (c: Context) => {
   });
 
   return c.json({ data: projectInfoToScanResponse(info) });
-}
+};
 
 export const listFiles = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -149,7 +167,7 @@ export const listFiles = (provider: string) => async (c: Context) => {
     return c.json({ data: visible[0] });
   }
   return c.json({ data: visible });
-}
+};
 
 export const listTree = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -169,7 +187,7 @@ export const listTree = (provider: string) => async (c: Context) => {
     isDirectory: entry.type === "tree",
   }));
   return c.json({ data: visible });
-}
+};
 
 export const getFile = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -192,7 +210,7 @@ export const getFile = (provider: string) => async (c: Context) => {
     json: file.endsWith(".json"),
   });
   return c.json({ data });
-}
+};
 
 export const listWebhooks = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -203,7 +221,7 @@ export const listWebhooks = (provider: string) => async (c: Context) => {
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const data = await strategy.listWebhooks(ctx, owner, repo);
   return c.json({ data });
-}
+};
 
 export const registerWebhook = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -230,7 +248,7 @@ export const registerWebhook = (provider: string) => async (c: Context) => {
   }
 
   return c.json({ data });
-}
+};
 
 export const deleteWebhook = (provider: string) => async (c: Context) => {
   validateProvider(provider);
@@ -255,4 +273,4 @@ export const deleteWebhook = (provider: string) => async (c: Context) => {
     });
   }
   return c.json({ success: true });
-}
+};

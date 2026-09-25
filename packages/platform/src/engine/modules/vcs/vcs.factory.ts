@@ -22,8 +22,8 @@ export class VcsStrategyFactory {
 
   /**
    * Get the strategy instance for the specified provider.
-   * Defaults to "github" if provider is empty, missing, or unregistered for now,
-   * to ensure backward compatibility as per the plan.
+   * Defaults to "github" only when a legacy row has no provider. Explicit
+   * unknown values fail closed instead of silently hitting GitHub.
    */
   static getStrategy(provider?: string | null): VcsProviderStrategy {
     const safeProvider = provider || "github";

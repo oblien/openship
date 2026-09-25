@@ -1,11 +1,11 @@
 /**
  * Shared repo-webhook reconciliation for push auto-deploy.
  *
- * A GitHub webhook lives on a `(owner, repo)` — so ALL projects in an org that
+ * A VCS webhook lives on a `(provider, owner, repo)` — so ALL projects in an org that
  * point at that repo must share ONE `webhookId`. This is the single home for the
  * register → deactivate-stale → fan-out-webhookId logic, used by BOTH the git
  * linker (`linkProjectRepo`) and the auto-deploy toggle (`setAutoDeploy`) so the
- * two can't drift. Scope is org + repo (case-insensitive), NOT project group —
+ * two can't drift. Scope is org + provider + repo (case-insensitive), NOT project group —
  * a repo can be shared by projects across groups.
  */
 
@@ -13,22 +13,38 @@ import { repos, type Project } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { VcsStrategyFactory } from "../vcs/vcs.factory";
 
-/** Projects in this org pointing at (owner, repo), case-insensitive. */
-export async function listOrgRepoProjects(organizationId: string, owner: string, repo: string) {
+function providerKey(provider?: string | null) {
+  return provider || "github";
+}
+
+/** Projects in this org pointing at (provider, owner, repo), case-insensitive. */
+export async function listOrgRepoProjects(
+  organizationId: string,
+  owner: string,
+  repo: string,
+  provider?: string | null,
+) {
   const ownerKey = owner.toLowerCase();
   const repoKey = repo.toLowerCase();
+  const expectedProvider = providerKey(provider);
   const projects = await repos.project.findByGitRepo(owner, repo);
   return projects.filter(
     (p) =>
       p.organizationId === organizationId &&
+      providerKey(p.gitProvider) === expectedProvider &&
       p.gitOwner?.toLowerCase() === ownerKey &&
       p.gitRepo?.toLowerCase() === repoKey,
   );
 }
 
 /** An existing webhookId already shared across this org's projects on the repo. */
-export async function findSharedWebhookId(organizationId: string, owner: string, repo: string) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
+export async function findSharedWebhookId(
+  organizationId: string,
+  owner: string,
+  repo: string,
+  provider?: string | null,
+) {
+  const projects = await listOrgRepoProjects(organizationId, owner, repo, provider);
   return projects.find((p) => typeof p.webhookId === "number")?.webhookId ?? null;
 }
 
@@ -38,8 +54,9 @@ export async function syncSharedWebhookId(
   owner: string,
   repo: string,
   webhookId: number,
+  provider?: string | null,
 ) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
+  const projects = await listOrgRepoProjects(organizationId, owner, repo, provider);
   await Promise.all(
     projects
       .filter((p) => p.webhookId !== webhookId)
@@ -61,7 +78,8 @@ export async function ensureSharedWebhook(
   webhookUrl?: string,
 ): Promise<number | null> {
   const existingHookId =
-    project.webhookId ?? (await findSharedWebhookId(project.organizationId, owner, repo));
+    project.webhookId ??
+    (await findSharedWebhookId(project.organizationId, owner, repo, project.gitProvider));
   const result = await VcsStrategyFactory.getStrategy(project.gitProvider).registerWebhook(
     ctx,
     owner,
@@ -78,6 +96,6 @@ export async function ensureSharedWebhook(
       .updateWebhook(ctx, owner, repo, existingHookId, { active: false })
       .catch(() => undefined);
   }
-  await syncSharedWebhookId(project.organizationId, owner, repo, result.id);
+  await syncSharedWebhookId(project.organizationId, owner, repo, result.id, project.gitProvider);
   return result.id;
 }
