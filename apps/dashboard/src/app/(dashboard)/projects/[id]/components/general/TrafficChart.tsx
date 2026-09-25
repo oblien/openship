@@ -1,172 +1,172 @@
 "use client";
-import React, { useState } from "react";
-import { BarChart3, TrendingUp } from "lucide-react";
-import { generateIcon } from "@/utils/icons";
-import { SlidingToggle } from "@/components/ui/SlidingToggle";
-import { useI18n } from "@/components/i18n-provider";
 
-interface TrafficData {
-  hour: number;
-  requests: number;
-}
+import { Icon as UiIcon } from "@repo/ui/icons";
+import React, { useId, useMemo, useState } from "react";
+import {
+  Area, Bar, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
+import { useI18n } from "@/components/i18n-provider";
+import type { AnalyticsData } from "@/hooks/useProjectEndpoints";
+import { CHART_CURSOR, CHART_TOOLTIP_LABEL_STYLE, CHART_TOOLTIP_STYLE } from "@/lib/chart-theme";
+import { buildTrafficSeries } from "./traffic-series";
 
 interface Props {
-  trafficData: TrafficData[];
+  trafficData: AnalyticsData["trafficByHour"];
   isLoading: boolean;
-  dateRange?: string;
   totalRequests?: number;
+  scopeLabel?: string;
+  compact?: boolean;
 }
 
+/** Overview and Monitoring render the same timestamped hourly request buckets. */
 export const TrafficChart: React.FC<Props> = ({
-  trafficData,
-  isLoading,
-  dateRange,
-  totalRequests,
+  trafficData, isLoading, totalRequests, scopeLabel, compact = false,
 }) => {
-  const { t } = useI18n();
-  const [chartType, setChartType] = useState<'bar' | 'area'>('area');
-  const hasAnalytics = typeof totalRequests === "number";
-  const displayData = trafficData.length > 0
-    ? trafficData
-    : Array.from({ length: 24 }, (_, i) => ({
-      hour: i,
-      requests: 0,
-    }));
-  const maxRequests = Math.max(...displayData.map((d) => d.requests), 1);
-  const areaData = displayData.length === 1
-    ? [displayData[0], displayData[0]]
-    : displayData;
+  const { t, locale } = useI18n();
+  const labels = t.projectDetail.general.traffic;
+  const [chartType, setChartType] = useState<"bar" | "area">("bar");
+  const gradientId = useId();
+  const data = useMemo(() => buildTrafficSeries(trafficData), [trafficData]);
+  const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
+    hour: "2-digit", minute: "2-digit",
+  }), [locale]);
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  }), [locale]);
+  const first = data[0];
+  const last = data.at(-1);
+  const range = first && last ? `${dateFormat.format(first.from)} – ${dateFormat.format(last.to)}` : undefined;
+  const tickStep = first && last ? Math.max(1, Math.ceil((last.to - first.from) / 3_600_000 / 4)) * 3_600_000 : 0;
+  const ticks: number[] = [];
+  if (first && last) {
+    ticks.push(first.from);
+    for (let time = Math.ceil(first.from / tickStep) * tickStep; time < last.to; time += tickStep) {
+      if (time > first.from) ticks.push(time);
+    }
+    ticks.push(last.to);
+  }
+  const detail = [
+    scopeLabel,
+    range,
+    typeof totalRequests === "number" ? `${totalRequests.toLocaleString(locale)} ${t.projects.monitoring.requests}` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[320px] sm:h-[380px] flex flex-col">
-      <div className="flex items-center justify-between gap-2 sm:gap-0 mb-4 sm:mb-5">
-        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          {generateIcon('chart%204%20line-5-1666004410.png', 24, 'var(--primary)')}
-          <div className="min-w-0">
-            <h3 className="text-sm sm:text-lg font-semibold text-foreground truncate">{t.projectDetail.general.traffic.title}</h3>
-            <p className="text-[10px] sm:text-sm text-muted-foreground/70 truncate">{dateRange || t.projectDetail.general.traffic.last24Hours}</p>
-          </div>
+    <section className={`rounded-2xl bg-card ${compact ? "px-4 py-3.5" : "p-4 sm:p-5"}`}>
+      <div className="mb-2.5 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2" title={detail}>
+          <UiIcon name="chart-bar" className="size-3.5 shrink-0 text-primary" />
+          <h3 className="truncate text-sm font-medium text-foreground">
+            {compact ? t.projects.overview.traffic : labels.title}
+          </h3>
+          <span className="hidden text-xs text-muted-foreground sm:inline">{labels.last24Hours}</span>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Chart Type Selector */}
-          <SlidingToggle
-            options={[
-              {
-                value: 'bar',
-                icon: <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />,
-                label: t.projectDetail.general.traffic.bar,
-              },
-              {
-                value: 'area',
-                icon: <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />,
-                label: t.projectDetail.general.traffic.area,
-              },
-            ]}
-            value={chartType}
-            onChange={(value) => setChartType(value as 'bar' | 'area')}
-            variant="rounded"
-            selectedBg="bg-primary"
-            selectedTextColor="text-primary-foreground"
-            unselectedTextColor="text-muted-foreground"
-            backgroundColor="bg-card"
-            size="sm"
-          />
-         
+        <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/50 p-0.5">
+          {(["area", "bar"] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              aria-pressed={chartType === type}
+              onClick={() => setChartType(type)}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${chartType === type
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {labels[type]}
+            </button>
+          ))}
         </div>
       </div>
-
-      {/* Traffic Chart */}
       {isLoading ? (
-        <div className="flex items-center justify-center flex-1">
-          <div className="text-sm text-muted-foreground/70">{t.projectDetail.general.traffic.loading}</div>
-        </div>
-      ) : !hasAnalytics ? (
-        <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20">
-          <div className="text-center">
-            <p className="text-sm font-medium text-foreground">{t.projectDetail.general.traffic.noDataTitle}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{t.projectDetail.general.traffic.noDataBody}</p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col">
-          <div className="relative flex-1">
-            <svg
-              className="absolute inset-0 w-full h-full text-primary"
-              viewBox="0 0 1000 200"
-              preserveAspectRatio="none"
-              style={{ color: "var(--primary)" }}
-            >
-              <defs>
-                <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="currentColor" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="currentColor" stopOpacity="0.05" />
-                </linearGradient>
-              </defs>
-
-              {chartType === 'bar' && (
-                /* Bar Chart */
-                <>
-                  {displayData.map((d, i) => {
-                    const containerWidth = 1000;
-                    const containerHeight = 200;
-                    const barWidth = containerWidth / displayData.length * 0.7;
-                    const gap = containerWidth / displayData.length * 0.15;
-                    const x = (i / displayData.length) * containerWidth + gap;
-                    const height = (d.requests / maxRequests) * 180;
-                    const y = containerHeight - height;
-
-                    return (
-                      <rect
-                        key={i}
-                        x={x}
-                        y={y}
-                        width={barWidth}
-                        height={height}
-                        fill="url(#trafficGradient)"
-                        rx="4"
-                        ry="4"
-                      />
-                    );
-                  })}
-                </>
-              )}
-
-              {chartType === 'area' && (
-                /* Area Chart with Border Line */
-                <>
-                  {/* Area Fill */}
-                  <path
-                    d={`M 0 200 ${areaData.map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `L ${x} ${y}`;
-                    }).join(' ')} L 1000 200 Z`}
-                    fill="url(#trafficGradient)"
-                  />
-                  {/* Top Border Line */}
-                  <path
-                    d={areaData.map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                    }).join(' ')}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </>
-              )}
-            </svg>
-          </div>
-
-          {/* Hour Labels */}
-          <div className="flex items-center justify-between mt-2 text-[9px] sm:text-[10px] text-muted-foreground">
-            {displayData.filter((_, i) => i % 4 === 0).map((d, i) => (
-              <span key={i}>{d.hour}:00</span>
+        <div className={compact ? "h-[140px]" : "h-[220px]"} role="status">
+          <span className="sr-only">{labels.loading}</span>
+          <div aria-hidden="true" className="flex h-full items-end gap-[3px] px-1 pb-5">
+            {Array.from({ length: 32 }, (_, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-sm bg-muted-foreground/15 animate-pulse motion-reduce:animate-none"
+                style={{
+                  height: `${18 + Math.abs(Math.sin(i * 0.7)) * 70}%`,
+                  animationDelay: `${i * 40}ms`,
+                }}
+              />
             ))}
           </div>
         </div>
+      ) : !first || !last ? (
+        <div className={`flex items-center justify-center text-center ${compact ? "h-[140px]" : "h-[220px]"}`}>
+          <div>
+            <p className="text-xs text-muted-foreground">{labels.noDataTitle}</p>
+            {!compact && <p className="mt-1 text-xs text-muted-foreground">{labels.noDataBody}</p>}
+          </div>
+        </div>
+      ) : (
+        <div className="min-w-0" aria-label={`${labels.title}: ${range}`}>
+          <ResponsiveContainer width="100%" height={compact ? 140 : 220}>
+            <ComposedChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 0 }} accessibilityLayer>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={[first.from, last.to]}
+                ticks={ticks}
+                tickFormatter={(value: number) => timeFormat.format(value)}
+                tick={{ fontSize: "var(--text-xs)", fill: "var(--color-muted-foreground)" }}
+                height={20}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={32}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                hide
+                domain={[0, "auto"]}
+              />
+              <Tooltip
+                contentStyle={{ ...CHART_TOOLTIP_STYLE, fontSize: "var(--text-xs)" }}
+                labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                cursor={CHART_CURSOR}
+                labelFormatter={(_label, payload) => {
+                  const point = payload[0]?.payload;
+                  if (!point) return "";
+                  const currentHour = Math.floor(point.from / 3_600_000) === Math.floor(Date.now() / 3_600_000);
+                  return `${dateFormat.format(point.from)} – ${timeFormat.format(point.to)}` +
+                    (currentHour ? ` · ${t.projects.monitoring.currentHour}` : "");
+                }}
+                formatter={(value) => [Number(value).toLocaleString(locale), t.projects.monitoring.requests]}
+              />
+              {chartType === "bar" ? (
+                <Bar
+                  dataKey="requests"
+                  fill="var(--color-primary)"
+                  fillOpacity={0.7}
+                  maxBarSize={28}
+                  radius={[3, 3, 0, 0]}
+                  isAnimationActive={false}
+                />
+              ) : (
+                <Area
+                  dataKey="requests"
+                  type="linear"
+                  stroke="var(--color-primary)"
+                  fill={`url(#${gradientId})`}
+                  strokeWidth={2}
+                  dot={data.length === 1}
+                  activeDot={{ r: 3 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       )}
-    </div>
+    </section>
   );
 };

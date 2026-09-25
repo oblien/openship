@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
@@ -7,7 +9,6 @@ import { buildAuthPageHref, getCloudDesktopHandoffUrl } from "@/lib/cloud-auth";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { Loader2, Monitor, Check } from "lucide-react";
 
 /**
  * OAuth-style authorize page - shown after login (or immediately if
@@ -23,7 +24,7 @@ export default function AuthorizePage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex items-center justify-center py-8"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex items-center justify-center py-8"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <AuthorizePageInner />
@@ -82,7 +83,7 @@ function AuthorizePageInner() {
     return (
       <AuthShell>
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </div>
       </AuthShell>
     );
@@ -92,7 +93,7 @@ function AuthorizePageInner() {
     <AuthShell>
       <div className="mb-6 text-center">
         <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary shadow-sm">
-          <Monitor className="size-7 text-primary-foreground" />
+          <UiIcon name="monitor" className="size-7 text-primary-foreground" />
         </div>
         <h1 className="text-xl font-semibold">{interpolate(t.misc.authorize.title, { app: appName })}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -110,11 +111,11 @@ function AuthorizePageInner() {
           <p className="text-sm font-medium text-foreground">{t.misc.authorize.willAllow}</p>
           <ul className="space-y-1 text-sm text-muted-foreground">
             <li className="flex items-center gap-2">
-              <Check className="size-3.5 text-success shrink-0" />
+              <UiIcon name="check" className="size-3.5 text-success shrink-0" />
               {t.misc.authorize.permDeploy}
             </li>
             <li className="flex items-center gap-2">
-              <Check className="size-3.5 text-success shrink-0" />
+              <UiIcon name="check" className="size-3.5 text-success shrink-0" />
               {t.misc.authorize.permAccess}
             </li>
           </ul>

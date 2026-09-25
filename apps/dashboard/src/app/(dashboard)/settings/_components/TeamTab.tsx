@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Members page — list, invite, manage roles, remove members in the
  * active organization.
@@ -14,7 +16,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Mail, Trash2, UserPlus, Building2, LogOut, Settings2, MoreVertical, Copy } from "lucide-react";
 import { grantableTypesForMode } from "@repo/core";
 import { authClient, useSession } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
@@ -426,7 +427,7 @@ export function TeamTab() {
             // The full "Create a team organization" reads better as a menu item
             // than the card's short "Create team" button label.
             label: t.settings.team.createTeamCard.title,
-            icon: <Building2 className="size-4" />,
+            icon: <UiIcon name="building" className="size-4" />,
             onClick: () => setCreateTeamOpen(true),
           },
         ]
@@ -436,7 +437,7 @@ export function TeamTab() {
           {
             id: "manage-workspace",
             label: t.settings.team.workspace.manage.title,
-            icon: <Settings2 className="size-4" />,
+            icon: <UiIcon name="sliders" className="size-4" />,
             onClick: () => setManageOpen(true),
           },
         ]
@@ -446,7 +447,7 @@ export function TeamTab() {
           {
             id: "leave-workspace",
             label: t.settings.team.workspace.leaveWorkspace,
-            icon: <LogOut className="size-4" />,
+            icon: <UiIcon name="logout" className="size-4" />,
             variant: "danger" as const,
             onClick: () => void handleLeaveWorkspace(),
           },
@@ -482,7 +483,7 @@ export function TeamTab() {
               aria-expanded={inviteOpen}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <UserPlus className="size-4" />
+              <UiIcon name="user-plus" className="size-4" />
               {t.settings.team.inviteMember}
             </button>
           )}
@@ -490,7 +491,7 @@ export function TeamTab() {
             <DropdownMenu
               actions={workspaceActions}
               align="right"
-              trigger={<MoreVertical className="size-4" />}
+              trigger={<UiIcon name="more-vertical" className="size-4" />}
               triggerClassName="inline-flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             />
           )}
@@ -511,7 +512,7 @@ export function TeamTab() {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <>
@@ -584,7 +585,7 @@ export function TeamTab() {
                         className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                         title={t.settings.team.removeMember}
                       >
-                        <Trash2 className="size-4" />
+                        <UiIcon name="trash" className="size-4" />
                       </button>
                     )}
                   </div>
@@ -607,7 +608,7 @@ export function TeamTab() {
                   .map((inv) => (
                     <div key={inv.id} className="px-5 py-4 flex items-center gap-4">
                       <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                        <Mail className="size-4 text-muted-foreground" />
+                        <UiIcon name="mail" className="size-4 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{inv.email}</p>
@@ -623,7 +624,7 @@ export function TeamTab() {
                             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                             title={t.settings.team.copyInviteLink}
                           >
-                            <Copy className="size-3.5" />
+                            <UiIcon name="copy" className="size-3.5" />
                             {t.settings.common.copy}
                           </button>
                           <button
@@ -684,7 +685,7 @@ export function TeamTab() {
           >
             <div className="flex items-start gap-3">
               <div className="size-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-                <Building2 className="size-4 text-primary" />
+                <UiIcon name="building" className="size-4 text-primary" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-foreground">{t.settings.team.createTeamModal.title}</h3>
@@ -727,7 +728,7 @@ export function TeamTab() {
                 disabled={creatingTeam || !newTeamName.trim()}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {creatingTeam && <Loader2 className="size-4 animate-spin" />}
+                {creatingTeam && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {t.settings.team.createTeamModal.createTeam}
               </button>
             </div>

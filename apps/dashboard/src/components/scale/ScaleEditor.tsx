@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Viewport } from "@xyflow/react";
-import { ArrowRight, GitBranch, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
 import { randomUUID } from "@/lib/random-uuid";
@@ -88,7 +89,7 @@ function ConnectionPreview({
       ].map(({ label, node }, index) => (
         <div key={label} className="contents">
           {index > 0 && (
-            <ArrowRight
+            <UiIcon name="arrow-right"
               className="size-3.5 text-muted-foreground rtl:rotate-180"
               aria-label="connects to"
             />
@@ -577,7 +578,7 @@ export default function ScaleEditor({ storageKey }: { storageKey: string }) {
             className="scale-storage-notice absolute start-4 z-40 max-w-lg rounded-xl border border-warning-border bg-popover p-3 text-sm"
           >
             <div className="flex items-start gap-2 text-muted-foreground">
-              <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+              <UiIcon name="info" className="mt-0.5 size-4 shrink-0 text-warning" />
               <p>{storage.notice}</p>
             </div>
             <div className="mt-2 flex gap-2">
@@ -605,7 +606,7 @@ export default function ScaleEditor({ storageKey }: { storageKey: string }) {
             key={`${scopeKey}:${clusterSettings ? "cluster" : selection?.type}:${clusterSettings ? activeCluster?.id : selection?.id}`}
             title={inspectorTitle}
             kind={activeCluster?.kind ?? selectedNode?.kind ?? "service"}
-            icon={connection ? <GitBranch className="size-5" /> : undefined}
+            icon={connection ? <UiIcon name="git-branch" className="size-5" /> : undefined}
             connectionPreview={
               connection && connectionSource && connectionTarget
                 ? {

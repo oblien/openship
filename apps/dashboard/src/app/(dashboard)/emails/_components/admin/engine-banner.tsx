@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Panel-level mail-engine notice — the answer to "the admin panel is throwing
  * errors and there is nothing I can press".
@@ -23,7 +25,6 @@
  */
 
 import Link from "next/link";
-import { AlertTriangle, RotateCw, Wrench } from "lucide-react";
 
 import type { MailEngineState } from "@/lib/api";
 import { useI18n } from "@/components/i18n-provider";
@@ -66,7 +67,7 @@ export function MailEngineBanner({
       />
       <div className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="size-9 shrink-0 rounded-xl border border-danger-border bg-danger-bg flex items-center justify-center">
-          <AlertTriangle className="size-4 text-danger" strokeWidth={2} />
+          <UiIcon name="warning" className="size-4 text-danger" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold leading-snug text-danger">
@@ -85,7 +86,7 @@ export function MailEngineBanner({
             href={`/emails?serverId=${encodeURIComponent(serverId)}&force=wizard`}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-danger-solid px-3.5 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
-            <RotateCw className="size-3.5" />
+            <UiIcon name="refresh" className="size-3.5" />
             {c.rerunSetup}
           </Link>
         ) : (
@@ -104,7 +105,7 @@ export function MailEngineBanner({
             }
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-danger-solid px-3.5 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
-            <Wrench className="size-3.5" />
+            <UiIcon name="wrench" className="size-3.5" />
             {c.start}
           </button>
         )}

@@ -12,7 +12,7 @@
  *
  * Logos use the simpleicons.org CDN where available (returns a clean,
  * single-color SVG). Entries without a simpleicons slug fall back to
- * lucide-react's Container icon at render time.
+ * catalog's package icon at render time.
  *
  * Default env keys cover the minimum needed to boot the image - the
  * user will paste their real secrets in the configure step.

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
-import { Check, Loader2, Zap, Server, Laptop, Settings2 } from "lucide-react";
 import { settingsApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
 import { useToast } from "@/context/ToastContext";
@@ -10,11 +11,11 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 
 const BUILD_MODES: {
   value: BuildMode;
-  icon: React.ElementType;
+  icon: IconName;
 }[] = [
-  { value: "auto", icon: Zap },
-  { value: "server", icon: Server },
-  { value: "local", icon: Laptop },
+  { value: "auto", icon: "bolt" },
+  { value: "server", icon: "server" },
+  { value: "local", icon: "laptop" },
 ];
 
 export function BuildPreferences() {
@@ -58,7 +59,7 @@ export function BuildPreferences() {
 
   return (
     <SettingsSection
-      icon={Settings2}
+      icon={"sliders"}
       title={t.settings.buildPreferences.title}
       description={t.settings.buildPreferences.description}
       iconBg="bg-orange-500/10"
@@ -68,7 +69,7 @@ export function BuildPreferences() {
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {t.settings.buildPreferences.loading}
         </div>
       ) : (
@@ -91,13 +92,13 @@ export function BuildPreferences() {
                   } disabled:opacity-50`}
                 >
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                    <ModeIcon className="size-4 text-muted-foreground" />
+                    <UiIcon name={ModeIcon} className="size-4 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium text-foreground">{t.settings.buildPreferences.modes[value].label}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{t.settings.buildPreferences.modes[value].desc}</p>
                   {active && (
                     <div className="absolute top-3 end-3">
-                      <Check className="size-4 text-primary" />
+                      <UiIcon name="check" className="size-4 text-primary" />
                     </div>
                   )}
                 </button>

@@ -1,14 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
 import { BlurIp } from "@/components/BlurIp";
-import {
-  Server,
-  CheckCircle2,
-  ChevronDown,
-  Plus,
-  Loader2,
-} from "lucide-react";
 import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useI18n } from "@/components/i18n-provider";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
@@ -168,7 +163,7 @@ export default function ServerSelector({
           </label>
         )}
         <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border/50 bg-muted/20">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
           <span className="text-sm text-muted-foreground">{w.loadingServers}</span>
         </div>
       </div>
@@ -189,7 +184,7 @@ export default function ServerSelector({
           className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-dashed border-border text-start transition-colors hover:bg-muted/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <Plus className="size-4 text-muted-foreground" />
+            <UiIcon name="plus" className="size-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">{w.addServer}</p>
@@ -214,7 +209,7 @@ export default function ServerSelector({
         <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/[0.15] p-4 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-              <Server className="size-4 text-muted-foreground" />
+              <UiIcon name="server" className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
               {/* With `emptyHint` servers DO exist (they were excluded), so the
@@ -236,7 +231,7 @@ export default function ServerSelector({
             disabled={disabled}
             className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus className="size-4" />
+            <UiIcon name="plus" className="size-4" />
             {w.addServer}
           </button>
         </div>
@@ -273,7 +268,7 @@ export default function ServerSelector({
           {selected ? (
             <>
               <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-                <Server className="size-4 text-success" />
+                <UiIcon name="server" className="size-4 text-success" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
@@ -287,12 +282,12 @@ export default function ServerSelector({
           ) : (
             <>
               <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <Server className="size-4 text-muted-foreground" />
+                <UiIcon name="server" className="size-4 text-muted-foreground" />
               </div>
               <span className="text-sm text-muted-foreground">{w.selectServer}</span>
             </>
           )}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
           />
         </button>
@@ -320,7 +315,7 @@ export default function ServerSelector({
                 }`}
               >
                 <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-                  <Server className="size-4 text-success" />
+                  <UiIcon name="server" className="size-4 text-success" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
@@ -329,7 +324,7 @@ export default function ServerSelector({
                   </p>
                 </div>
                 {effectiveValue === s.id && (
-                  <CheckCircle2 className="size-4 text-success shrink-0" />
+                  <UiIcon name="check-circle" className="size-4 text-success shrink-0" />
                 )}
               </button>
             ))}
@@ -344,7 +339,7 @@ export default function ServerSelector({
                 className="w-full flex items-center gap-3 px-3.5 py-3 text-start transition-colors hover:bg-muted/40"
               >
                 <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                  <Plus className="size-4 text-muted-foreground" />
+                  <UiIcon name="plus" className="size-4 text-muted-foreground" />
                 </div>
                 <span className="text-sm text-muted-foreground">{w.addNewServer}</span>
               </button>

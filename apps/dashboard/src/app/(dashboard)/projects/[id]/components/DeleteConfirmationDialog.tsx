@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useRef } from "react";
-import { AlertTriangle } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 interface Props {
@@ -62,7 +63,7 @@ export const DeleteConfirmationDialog = ({ isOpen, onClose, onConfirm, projectNa
       >
         <div className="flex items-center mb-4">
           <div className="p-2 bg-danger-bg rounded-lg me-3 border border-danger-border">
-            <AlertTriangle className="h-6 w-6 text-danger" />
+            <UiIcon name="warning" className="h-6 w-6 text-danger" />
           </div>
           <h3 id={titleId} className="text-lg font-semibold text-foreground">
             {t.projectSettings.deleteDialog.title}

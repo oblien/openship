@@ -1,20 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Loader2,
-  Check,
-  ArrowRight,
-  ArrowLeft,
-  ExternalLink,
-  AlertTriangle,
-  SlidersHorizontal,
-  ChevronDown,
-  ChevronUp,
-  Square,
-  Ban,
-  Clock,
-} from "lucide-react";
 import { INSTALL_PHASES, type InstallPhaseId, type InstallPhaseStatus } from "@repo/core";
 import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -156,7 +144,7 @@ function InstallProgressPanel({
     <div>
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-foreground">
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+          <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-primary" />
           <span className="truncate">{title}</span>
         </span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
@@ -180,7 +168,7 @@ function InstallProgressPanel({
         <span className="min-w-0 truncate">{metaLine}</span>
         {elapsed && (
           <span className="inline-flex shrink-0 items-center gap-1 font-mono tabular-nums">
-            <Clock className="size-3" />
+            <UiIcon name="clock" className="size-3" />
             {elapsed}
           </span>
         )}
@@ -328,7 +316,7 @@ function CollapsibleLogs({
           onClick={() => setOpen((o) => !o)}
           className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          {open ? <UiIcon name="chevron-up" className="size-3.5" /> : <UiIcon name="chevron-down" className="size-3.5" />}
           {open ? hideLabel : showLabel}
         </button>
       </div>
@@ -515,13 +503,13 @@ export function CleanDeployProgressCard({
   // Header status glyph — spinner while working, then a terminal-state mark.
   const statusIcon =
     phase === "installing" ? (
-      <Loader2 className="size-3.5 shrink-0 animate-spin" />
+      <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin" />
     ) : phase === "done" ? (
-      <Check className="size-3.5 shrink-0 text-success" />
+      <UiIcon name="check" className="size-3.5 shrink-0 text-success" />
     ) : cancelled ? (
-      <Ban className="size-3.5 shrink-0 text-muted-foreground" />
+      <UiIcon name="ban" className="size-3.5 shrink-0 text-muted-foreground" />
     ) : (
-      <AlertTriangle className="size-3.5 shrink-0 text-danger" />
+      <UiIcon name="warning" className="size-3.5 shrink-0 text-danger" />
     );
 
   // ── Legacy mail wizard (no phase stepper): original centered layout, untouched.
@@ -565,7 +553,7 @@ export function CleanDeployProgressCard({
             <div className="mt-6 space-y-4">
               <div className="rounded-2xl border border-border/50 bg-card p-6">
                 <div className="flex size-10 items-center justify-center rounded-full bg-success-bg ring-4 ring-success/10">
-                  <Check className="size-5 text-success" />
+                  <UiIcon name="check" className="size-5 text-success" />
                 </div>
                 <h2 className="mt-4 text-base font-semibold text-foreground">{w.progressLive}</h2>
                 {liveHost && (
@@ -579,7 +567,7 @@ export function CleanDeployProgressCard({
                       rel="noreferrer"
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
-                      <ExternalLink className="size-4" /> {w.openApp}
+                      <UiIcon name="external-link" className="size-4" /> {w.openApp}
                     </a>
                   )}
                   <button
@@ -587,7 +575,7 @@ export function CleanDeployProgressCard({
                     onClick={onGoToProject}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
                   >
-                    {w.goToApp} <ArrowRight className="size-4 rtl:rotate-180" />
+                    {w.goToApp} <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                   </button>
                 </div>
               </div>
@@ -620,9 +608,9 @@ export function CleanDeployProgressCard({
                 }`}
               >
                 {cancelled ? (
-                  <Ban className="size-5 text-muted-foreground" />
+                  <UiIcon name="ban" className="size-5 text-muted-foreground" />
                 ) : (
-                  <AlertTriangle className="size-5 text-danger" />
+                  <UiIcon name="warning" className="size-5 text-danger" />
                 )}
               </div>
               <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>
@@ -646,7 +634,7 @@ export function CleanDeployProgressCard({
                     onClick={onViewBuild}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
                   >
-                    <SlidersHorizontal className="size-4" /> {w.viewDetails}
+                    <UiIcon name="sliders" className="size-4" /> {w.viewDetails}
                   </button>
                 )}
                 <button
@@ -654,7 +642,7 @@ export function CleanDeployProgressCard({
                   onClick={onRetry}
                   className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <ArrowLeft className="size-4 rtl:rotate-180" /> {w.back}
+                  <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" /> {w.back}
                 </button>
               </div>
             </div>
@@ -774,24 +762,24 @@ export function CleanDeployProgressCard({
     phase === "installing"
       ? {
           badge: "bg-info-bg text-info",
-          icon: <Loader2 className="size-3 shrink-0 animate-spin" />,
+          icon: <UiIcon name="spinner" className="size-3 shrink-0 animate-spin" />,
           label: w.statusInstalling,
         }
       : phase === "done"
         ? {
             badge: "bg-success-bg text-success",
-            icon: <Check className="size-3 shrink-0" />,
+            icon: <UiIcon name="check" className="size-3 shrink-0" />,
             label: w.statusLive,
           }
         : cancelled
           ? {
               badge: "bg-muted text-muted-foreground",
-              icon: <Ban className="size-3 shrink-0" />,
+              icon: <UiIcon name="ban" className="size-3 shrink-0" />,
               label: w.statusCancelled,
             }
           : {
               badge: "bg-danger-bg text-danger",
-              icon: <AlertTriangle className="size-3 shrink-0" />,
+              icon: <UiIcon name="warning" className="size-3 shrink-0" />,
               label: w.statusFailed,
             };
 
@@ -899,7 +887,7 @@ export function CleanDeployProgressCard({
               : "border-danger/20 bg-danger-bg text-danger hover:bg-danger/15"
           }`}
         >
-          {isStopping ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
+          {isStopping ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="square" className="size-4" />}
           {isStopping ? w.stopping : w.stopInstall}
         </button>
       ) : null
@@ -907,22 +895,22 @@ export function CleanDeployProgressCard({
       <>
         {openHref && (
           <a href={openHref} target="_blank" rel="noreferrer" className={btnPrimary}>
-            <ExternalLink className="size-4" /> {w.openApp}
+            <UiIcon name="external-link" className="size-4" /> {w.openApp}
           </a>
         )}
         <button type="button" onClick={onGoToProject} className={btnSecondary}>
-          {w.goToApp} <ArrowRight className="size-4 rtl:rotate-180" />
+          {w.goToApp} <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
         </button>
       </>
     ) : (
       <>
         {deploymentId && (
           <button type="button" onClick={onViewBuild} className={btnSecondary}>
-            <SlidersHorizontal className="size-4" /> {w.viewDetails}
+            <UiIcon name="sliders" className="size-4" /> {w.viewDetails}
           </button>
         )}
         <button type="button" onClick={onRetry} className={btnGhost}>
-          <ArrowLeft className="size-4 rtl:rotate-180" /> {cancelled ? w.startOver : w.back}
+          <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" /> {cancelled ? w.startOver : w.back}
         </button>
       </>
     );
@@ -973,7 +961,7 @@ export function CleanDeployProgressCard({
         // confirmation so the main column isn't empty.
         <div className="rounded-2xl border border-border/50 bg-card p-6">
           <div className="flex size-10 items-center justify-center rounded-full bg-success-bg ring-4 ring-success/10">
-            <Check className="size-5 text-success" />
+            <UiIcon name="check" className="size-5 text-success" />
           </div>
           <h2 className="mt-4 text-base font-semibold text-foreground">{w.progressLive}</h2>
           {liveHost && (
@@ -990,9 +978,9 @@ export function CleanDeployProgressCard({
             }`}
           >
             {cancelled ? (
-              <Ban className="size-5 text-muted-foreground" />
+              <UiIcon name="ban" className="size-5 text-muted-foreground" />
             ) : (
-              <AlertTriangle className="size-5 text-danger" />
+              <UiIcon name="warning" className="size-5 text-danger" />
             )}
           </div>
           <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>

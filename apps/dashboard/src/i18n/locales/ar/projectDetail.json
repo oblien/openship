@@ -170,6 +170,7 @@
 			"startShellHint": "شغّل الخدمة لفتح جلسة طرفية.",
 			"saveEnvironment": "حفظ البيئة",
 			"environmentState": {
+				"helpTitle": "كيف تعمل متغيرات البيئة",
 				"description": "محفوظة في Openship. تتقدّم تجاوزات الخدمة على قيم Compose ومتغيرات المشروع المشتركة. تعديل قيمة موروثة ينشئ تجاوزًا لهذه الخدمة.",
 				"sources": {
 					"service": "تجاوز خاص بالخدمة",

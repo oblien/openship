@@ -1,7 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DismissiblePopover } from "./Popover";
 
 export interface MenuAction {
@@ -22,6 +24,7 @@ interface DropdownMenuProps {
   align?: "left" | "right";
   className?: string;
   triggerClassName?: string;
+  menuClassName?: string;
   disabled?: boolean;
   /** Accessible name for the icon-only trigger (also its tooltip). */
   triggerLabel?: string;
@@ -33,6 +36,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
   align = "right",
   className = "",
   triggerClassName = "",
+  menuClassName,
   disabled = false,
   triggerLabel,
 }) => {
@@ -95,20 +99,17 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
           backgroundColor: isOpen && !triggerClassName ? "var(--muted)" : undefined,
         }}
       >
-        {trigger || <MoreHorizontal className="w-4 h-4 text-muted-foreground" />}
+        {trigger || <UiIcon name="more" className="w-4 h-4 text-muted-foreground" />}
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`absolute z-50 mt-2 rounded-2xl border border-border/60 bg-popover/70 backdrop-blur-xl shadow-xl shadow-black/[0.08] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${align === "right" ? "end-0" : "start-0"
-            }`}
-          style={{
-            // Frosted-glass surface: `bg-popover/70` (Tailwind v4 color-mix) tints
-            // it translucent and `backdrop-blur-xl` blurs the content behind it.
-            // Elevation via `shadow-xl shadow-black/[0.08]` — matches CustomSelect.
-            minWidth: "220px",
-          }}
+          className={cn(
+            "absolute z-50 mt-2 min-w-[220px] rounded-2xl border border-border/60 bg-popover/70 backdrop-blur-xl shadow-xl shadow-black/[0.08] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200",
+            align === "right" ? "end-0" : "start-0",
+            menuClassName,
+          )}
         >
           <div className="py-2 px-2 flex flex-col">
             {actions.map((action, index) => {
@@ -137,7 +138,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
                         {action.icon}
                       </div>
                     )}
-                    <span className="text-[14px] font-medium truncate">
+                    <span className="text-sm font-medium truncate" title={action.label}>
                       {action.label}
                     </span>
                   </button>

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Layers, Loader2 } from "lucide-react";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -79,7 +80,7 @@ export const ComposePathField: React.FC = () => {
               composeActive ? "w-9 h-9 bg-info/10" : "w-8 h-8 bg-muted/60"
             }`}
           >
-            <Layers
+            <UiIcon name="layers"
               className={composeActive ? "size-[18px] text-info" : "size-4 text-muted-foreground"}
             />
           </div>
@@ -97,9 +98,9 @@ export const ComposePathField: React.FC = () => {
           </div>
         </div>
         {open ? (
-          <ChevronUp className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronDown className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
         )}
       </button>
 
@@ -136,9 +137,9 @@ export const ComposePathField: React.FC = () => {
               className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-medium border border-border/50 text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
             >
               {pending ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Layers className="size-3.5" />
+                <UiIcon name="layers" className="size-3.5" />
               )}
               {pending ? cp.scanning : cp.apply}
             </button>

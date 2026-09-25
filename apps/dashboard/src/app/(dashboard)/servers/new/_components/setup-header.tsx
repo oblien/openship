@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import type { Step, ComponentState } from "./types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -36,7 +36,7 @@ export function SetupHeader({
         onClick={onBack}
         className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
       >
-        <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+        <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
       </button>
       <div>
         <h1

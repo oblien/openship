@@ -26,7 +26,7 @@ vi.mock("@repo/adapters", async (original) => ({
       for await (const chunk of body) chunks.push(Buffer.from(chunk));
       storage.objects.set(key, Buffer.concat(chunks));
       if (key.endsWith("manifest.json")) await storage.onManifest?.();
-      return {};
+      return { bytesWritten: storage.objects.get(key)!.length };
     },
     deleteMany: async (keys: string[]) => {
       if (storage.refuseDelete)

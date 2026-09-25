@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, RefreshCw } from "lucide-react";
 import { systemApi, type ServerContainerStatus } from "@/lib/api/system";
 import { ContainerStatusRow, EdgeInstallRow } from "@/components/infra/ContainerStatusRow";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -116,7 +117,7 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
     <div className="mb-5 rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
-          <Boxes className="size-[18px] text-muted-foreground" />
+          <UiIcon name="server-settings" className="size-[18px] text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold text-foreground">
@@ -136,7 +137,7 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
           disabled={scanning}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
         >
-          <RefreshCw className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
+          <UiIcon name="refresh" className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
           {scanning ? c.scanning : c.scan}
         </button>
       </div>

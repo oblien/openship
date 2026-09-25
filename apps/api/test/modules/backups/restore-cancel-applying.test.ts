@@ -76,13 +76,14 @@ const h = vi.hoisted(() => {
     /** Everything published on the live channel, in order. */
     events: [] as Array<Record<string, unknown>>,
     row: null as Record<string, unknown> | null,
-    claimResult: null as null | "claimed" | "project_unavailable" | "state_changed",
+    claimResult: null as null | "claimed" | "project_unavailable" | "target_unavailable" | "target_busy" | "state_changed",
     cancelInterleaveToApplying: false,
     waiters: [] as Array<{ pred: (t: Tr) => boolean; resolve: (t: Tr) => void }>,
   };
 });
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -365,6 +366,34 @@ describe("cancelling before the first write costs nothing", () => {
     expect(h.transitions).toEqual([]);
   });
 
+  it.each([
+    { claim: "target_busy", code: "RESTORE_TARGET_BUSY", message: /still prepared.*retry/i },
+    { claim: "target_unavailable", code: "RESTORE_TARGET_UNAVAILABLE", message: /target mail server.*available/i },
+  ] as const)("returns an actionable conflict without scheduling work when $claim", async ({ claim, code, message }) => {
+    h.row = {
+      id: "bks_blocked",
+      runId: "bkr_1",
+      projectId: "prj_1",
+      organizationId: "org_1",
+      status: "prepared",
+      confirmationToken: TOKEN,
+      meta: {},
+    };
+    h.claimResult = claim;
+
+    await expect(new RestoreOrchestrator().apply(CTX, "bks_blocked", TOKEN)).rejects.toMatchObject({
+      statusCode: 409,
+      code,
+      message: expect.stringMatching(message),
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(h.row.status).toBe("prepared");
+    expect(h.calls).toEqual([]);
+    expect(h.transitions).toEqual([]);
+    expect(h.events).toEqual([]);
+  });
+
   it("treats a prepared-to-applying race as cooperative, not immediately terminal", async () => {
     h.row = {
       id: "bks_racing",
@@ -438,6 +467,11 @@ describe("cancelling mid-write says so, and leaves the service down", () => {
     // on a half-written volume looks healthy and serves corrupt data.
     expect(h.calls).toEqual(["stop"]);
     expect(h.running).toBe(false);
+    await vi.waitFor(() => expect(h.events).toContainEqual(expect.objectContaining({
+      type: "transition",
+      status: "cancelled",
+      meta: expect.objectContaining({ partialWrite: true, serviceLeftStopped: true }),
+    })));
   });
 
   it("never starts a service that was already down", async () => {

@@ -1,21 +1,13 @@
 "use client";
 
-import {
-  Mail,
-  MessageCircle,
-  MessagesSquare,
-  MessageSquare,
-  Send,
-  Smartphone,
-  Webhook,
-  type LucideIcon,
-} from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import type { ChannelKind } from "@/lib/api/notifications";
 import { AppLogo } from "@/components/AppLogo";
 
 /**
  * The mark for a notification channel — Slack, Discord, Telegram and Teams as their real
- * brand logos, a lucide glyph for the kinds that have none (email, webhook, in-app).
+ * brand logos, a catalog icon for the kinds that have none (email, webhook, in-app).
  *
  * Extracted from `NotificationsTab`, where it lived as a local helper. Anything that lists
  * channels needs it — the settings screen, the mail server's notification rules — and a
@@ -25,14 +17,14 @@ import { AppLogo } from "@/components/AppLogo";
 
 /** Lucide glyph per kind. Exported because `PillSwitcher` takes the slug and the fallback
  *  icon as separate props rather than a rendered node. */
-export const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
-  email: Mail,
-  webhook: Webhook,
-  slack: MessageSquare,
-  discord: MessageCircle,
-  msteams: MessagesSquare,
-  telegram: Send,
-  in_app: Smartphone,
+export const CHANNEL_ICONS: Record<ChannelKind, IconName> = {
+  email: "mail",
+  webhook: "webhook",
+  slack: "message",
+  discord: "message",
+  msteams: "message",
+  telegram: "send",
+  in_app: "smartphone",
 };
 
 /** simpleicons slug per BRANDED kind — AppLogo fetches and brand-colours it. */
@@ -64,5 +56,5 @@ export function ChannelLogo({
   const slug = CHANNEL_LOGOS[kind];
   if (slug) return <AppLogo slug={slug} icon={CHANNEL_ICONS[kind]} className={className} />;
   const Icon = CHANNEL_ICONS[kind];
-  return <Icon className={`${className} text-foreground`} strokeWidth={1.7} />;
+  return <UiIcon name={Icon} className={`${className} text-foreground`} />;
 }

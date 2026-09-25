@@ -17,7 +17,8 @@ import { policyOrganizationId } from "@repo/platform/engine/modules/backups/back
 export async function triggerManualBackup(
   ctx: RequestContext,
   policyId: string,
-): Promise<{ runId: string }> {
+  serviceId?: string,
+): Promise<{ runId: string; runIds: string[] }> {
   const policy = await repos.backupPolicy.findById(policyId);
   if (!policy) {
     throw new Error("Backup policy not found");
@@ -47,6 +48,7 @@ export async function triggerManualBackup(
 
   return backupOrchestrator.enqueue({
     policyId,
+    serviceId,
     trigger: {
       source: "manual",
       userId: ctx.userId,

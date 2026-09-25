@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "外観",
+    "description": "テーマを選択するか、デバイスの外観設定に合わせます。変更はすぐに適用されます。",
+    "themes": {
+      "light": "ライト",
+      "dim": "ディム",
+      "dark": "ダーク",
+      "system": "システム"
+    }
+  },
   "language": {
     "title": "言語",
     "description": "ダッシュボード全体で使用する言語を選択します。"
@@ -60,6 +70,7 @@
     }
   },
   "github": {
+    "tokenCreate": "トークンを作成",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "接続済み · インストールはまだありません",
@@ -219,9 +230,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub クローン認証情報",
-    "description": "GitHub App がインストールされていない場合に、プライベートリポジトリのクローンに使用する個人用トークン",
+    "description": "プライベートリポジトリへの個人アクセス。",
     "loading": "読み込み中…",
-    "intro": "GitHub の個人用アクセストークン（クラシックまたはファイングレインド）を貼り付けてください。クローンモジュールはこれを 2 番目に優先される認証情報として使用します - プロジェクトごとの上書きの後、GitHub App のインストールトークンの前です。",
+    "intro": "プロジェクト固有のトークンが優先されます。有効にすると、このトークンは GitHub App の認証情報より先に使用されます。無効にしてもトークンは保存されたままです。",
     "placeholder": "ghp_… または github_pat_…",
     "showToken": "トークンを表示",
     "hideToken": "トークンを非表示",
@@ -233,8 +244,12 @@
     "justNow": "たった今",
     "replace": "置き換え",
     "clear": "クリア",
-    "useAsDefault": "デフォルトのクローントークンとして使用",
-    "useAsDefaultDesc": "オンにすると、クローンモジュールはこのトークンをチェーンの 2 番目の階層（プロジェクトごとの上書きの後）として使用します。オフにすると、トークンは保存されますが使用されません - 特定のデプロイでのみ有効にしたい場合に便利です。",
+    "useAsDefault": "デフォルトで使用",
+    "useAsDefaultDesc": "プロジェクトに固有のトークンがない場合に使用します。",
+    "tokenLabel": "個人用アクセストークン",
+    "helpTitle": "トークンの権限と使い方",
+    "forwardGitLabel": "ローカルの GitHub アクセスを転送",
+    "forwardGitDesc": "ローカルの GitHub ログインを SSH 経由でリモートのビルドサーバーと共有します。",
     "toast": {
       "pasteFirst": "保存する前にトークンを貼り付けてください",
       "notLikeToken": "これは GitHub トークンには見えません。確かであればそのまま保存してください。",

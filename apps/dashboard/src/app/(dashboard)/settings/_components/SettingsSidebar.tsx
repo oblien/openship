@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Settings sidebar — left-column nav for the tabbed settings page.
  *
@@ -16,7 +18,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
@@ -53,7 +54,7 @@ export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "not
 export interface SettingsTab {
   id: SettingsTabId;
   label: string;
-  icon: typeof SettingsIcon;
+  icon: IconName;
   /** Hidden when false (e.g. cloud tab is self-hosted only). */
   visible: boolean;
   /** Disabled when the user lacks the required role within the active org. */
@@ -75,17 +76,17 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const activeTab: SettingsTabId = requested === "dns" ? "credentials" : requested;
 
   const tabs: SettingsTab[] = [
-    { id: "general", label: t.settings.sidebar.tabs.general, icon: SettingsIcon, visible: true },
+    { id: "general", label: t.settings.sidebar.tabs.general, icon: "settings", visible: true },
     // Git sources, as their own domain rather than a card on General: the App install, the
     // clone PAT and per-server auth are one subject with several shapes, and more providers
     // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
     // mail-only shell, which deploys nothing from source.
-    { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
-    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
-    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
-    { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
-    { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },
-    { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
+    { id: "git", label: t.settings.sidebar.tabs.git, icon: "git-branch", visible: productView !== "mail" },
+    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: "key", visible: true, requiresRole: "admin" },
+    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: "terminal", visible: true },
+    { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: "mcp", visible: true },
+    { id: "team", label: t.settings.sidebar.tabs.team, icon: "users", visible: true },
+    { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: "bell", visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).
     // In Openship Mail it sits next to a whole rail of mail-server surfaces, where
     // "Email" would read as the mail server's own config; "System sender" says
@@ -95,16 +96,16 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
       label: productView === "mail"
         ? t.settings.sidebar.tabs.systemSender
         : t.settings.sidebar.tabs.email,
-      icon: Mail,
+      icon: "mail",
       visible: selfHosted,
       requiresRole: "admin",
     },
-    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted },
+    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: "cloud", visible: selfHosted },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
     // operator-managed infra). See settings/page.tsx.
-    { id: "infrastructure", label: t.settings.sidebar.tabs.infrastructure, icon: Boxes, visible: selfHosted || deployMode === "desktop", requiresRole: "admin" },
-    { id: "instance", label: t.settings.sidebar.tabs.instance, icon: Server, visible: true },
+    { id: "infrastructure", label: t.settings.sidebar.tabs.infrastructure, icon: "server-settings", visible: selfHosted || deployMode === "desktop", requiresRole: "admin" },
+    { id: "instance", label: t.settings.sidebar.tabs.instance, icon: "server", visible: true },
   ];
 
   return { tabs: tabs.filter((t) => t.visible), activeTab };
@@ -136,7 +137,7 @@ export function SettingsSidebar() {
       <div className="bg-card rounded-2xl border border-border/50 p-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
-            <SettingsIcon className="size-4 text-foreground" strokeWidth={1.7} />
+            <UiIcon name="settings" className="size-4 text-foreground" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground truncate">{t.settings.sidebar.title}</p>
@@ -163,7 +164,7 @@ export function SettingsSidebar() {
                     : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                 }`}
               >
-                <Icon className="size-[17px] shrink-0" strokeWidth={1.7} />
+                <UiIcon name={Icon} className="size-[17px] shrink-0" />
                 {tab.label}
                 {tab.id === "infrastructure" && infraIssues > 0 && (
                   <span
@@ -208,7 +209,7 @@ export function SettingsMobileTabs() {
                   : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
               }`}
             >
-              <Icon className="size-[15px]" strokeWidth={1.7} />
+              <UiIcon name={Icon} className="size-[15px]" />
               {tab.label}
               {tab.id === "infrastructure" && infraIssues > 0 && (
                 <span

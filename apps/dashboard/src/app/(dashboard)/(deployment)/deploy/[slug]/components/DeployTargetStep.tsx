@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Cloud, Cpu, GitBranch, Globe, Loader2, Pencil, Plus, RotateCcw, Search, Server, Settings2, ShieldAlert, ShieldCheck, Zap } from "lucide-react";
 import {
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
@@ -117,7 +118,7 @@ const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ s
       <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
         active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
       }`}>
-        <Server className="size-3.5" />
+        <UiIcon name="server" className="size-3.5" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">
@@ -202,12 +203,12 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
           ) : (
             <>
               <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-muted/50 text-muted-foreground">
-                <Server className="size-3.5" />
+                <UiIcon name="server" className="size-3.5" />
               </div>
               <span className="flex-1 text-sm text-muted-foreground">{ts.chooseServer}</span>
             </>
           )}
-          <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+          <UiIcon name="chevron-down" className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
 
         {/* Floating menu — absolute + elevated so it OVERLAYS the cards below
@@ -215,7 +216,7 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
         {open && (
           <div className="absolute inset-x-0 top-full z-50 mt-1.5 rounded-lg border border-border/60 bg-popover p-1.5 space-y-1.5 shadow-xl shadow-black/30">
             <div className="relative">
-              <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <UiIcon name="search" className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={query}
@@ -240,7 +241,7 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
                     }`}
                   >
                     <ServerRowContent server={s} active={isSelected} />
-                    {isSelected && <CheckCircle2 className="size-4 text-primary shrink-0" />}
+                    {isSelected && <UiIcon name="check-circle" className="size-4 text-primary shrink-0" />}
                   </button>
                 );
               })}
@@ -254,7 +255,7 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
                 onClick={onAddServer}
                 className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/50 px-3 py-2.5 text-[13px] text-muted-foreground transition-all hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
               >
-                <Plus className="size-3.5" />
+                <UiIcon name="plus" className="size-3.5" />
                 {ts.addServer}
               </button>
             )}
@@ -316,14 +317,14 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   const { t } = useI18n();
   const { selfHosted } = usePlatform();
   const targetLabels: Record<DeployTarget, { label: string; icon: React.ReactNode }> = {
-    local: { label: t.deploy.summary.targetLocal, icon: <Cpu className="size-3.5" /> },
-    server: { label: t.deploy.summary.targetServer, icon: <Server className="size-3.5" /> },
-    cloud: { label: t.deploy.summary.targetCloud, icon: <Cloud className="size-3.5" /> },
-    cluster: { label: "Server cluster", icon: <Server className="size-3.5" /> },
+    local: { label: t.deploy.summary.targetLocal, icon: <UiIcon name="cpu" className="size-3.5" /> },
+    server: { label: t.deploy.summary.targetServer, icon: <UiIcon name="server" className="size-3.5" /> },
+    cloud: { label: t.deploy.summary.targetCloud, icon: <UiIcon name="cloud" className="size-3.5" /> },
+    cluster: { label: "Server cluster", icon: <UiIcon name="cluster" className="size-3.5" /> },
   };
   const buildLabels: Record<BuildStrategy, { label: string; icon: React.ReactNode }> = {
-    local: { label: t.deploy.summary.buildLocal, icon: <Cpu className="size-3.5" /> },
-    server: { label: t.deploy.summary.buildRemote, icon: <Cloud className="size-3.5" /> },
+    local: { label: t.deploy.summary.buildLocal, icon: <UiIcon name="cpu" className="size-3.5" /> },
+    server: { label: t.deploy.summary.buildRemote, icon: <UiIcon name="cloud" className="size-3.5" /> },
   };
   const tierLabels: Record<string, string> = {
     micro: t.deploy.power.tierMicroLabel,
@@ -342,7 +343,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     buildStrategy === "local"
       ? buildLabels.local
       : deployTarget === "cloud"
-        ? { label: t.deploy.summary.targetCloud, icon: <Cloud className="size-3.5" /> }
+        ? { label: t.deploy.summary.targetCloud, icon: <UiIcon name="cloud" className="size-3.5" /> }
         : buildLabels.server;
   const deployLabel = deployTarget === "server" && serverName
     ? serverName
@@ -371,24 +372,24 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     // (which are unset for compose). Show the tier on cloud, else Sandboxed.
     deployTarget === "cloud" && cloudResourceTier ? (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
-        <Zap className="size-3" />
+        <UiIcon name="bolt" className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
-        <ShieldCheck className="size-3" />
+        <UiIcon name="shield-check" className="size-3" />
         {t.deploy.summary.runtimeSandboxed}
       </span>
     )
   ) : !hasServer ? (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
-      <Globe className="size-3" />
+      <UiIcon name="globe" className="size-3" />
       {t.deploy.summary.runtimeStatic}
     </span>
   ) : deployTarget === "cloud" ? (
     cloudResourceTier ? (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
-        <Zap className="size-3" />
+        <UiIcon name="bolt" className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : null
@@ -397,12 +398,12 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       className="inline-flex items-center gap-1 text-[11px] font-medium text-warning shrink-0"
       title={t.deploy.summary.runtimeDirectHint}
     >
-      <ShieldAlert className="size-3" />
+      <UiIcon name="shield-alert" className="size-3" />
       {t.deploy.summary.runtimeDirectWarning}
     </span>
   ) : deployTarget === "server" && runtimeMode === "docker" ? (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
-      <ShieldCheck className="size-3" />
+      <UiIcon name="shield-check" className="size-3" />
       {t.deploy.summary.runtimeSandboxed}
     </span>
   ) : null;
@@ -422,7 +423,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
           : t.deploy.summary.rollbackGitHint
       }
     >
-      <RotateCcw className="size-3" />
+      <UiIcon name="rotate-left" className="size-3" />
       {rollbackWindow == null
         ? t.deploy.summary.rollbackAuto
         : interpolate(
@@ -448,7 +449,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
           <div className="flex items-center gap-1.5 text-sm min-w-0">
             <div className="flex items-center gap-0.5 text-muted-foreground shrink-0">
               {build.icon}
-              <Plus className="size-2.5" strokeWidth={2.5} />
+              <UiIcon name="plus" className="size-2.5" />
               {target.icon}
             </div>
             <span className="text-muted-foreground">{t.deploy.summary.buildAndDeploy}</span>
@@ -463,7 +464,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
                   <span className="text-muted-foreground">{t.deploy.summary.build}</span>
                   <span className="font-medium text-foreground">{build.label}</span>
                 </div>
-                <ArrowRight className="size-3 text-muted-foreground/50 shrink-0 rtl:rotate-180" />
+                <UiIcon name="arrow-right" className="size-3 text-muted-foreground/50 shrink-0 rtl:rotate-180" />
               </>
             )}
             <div className="flex items-center gap-1.5 text-sm min-w-0">
@@ -476,7 +477,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       </div>
       {runtimeChip}
       {rollbackChip}
-      <Pencil className="size-3.5 text-muted-foreground transition-opacity" />
+      <UiIcon name="edit" className="size-3.5 text-muted-foreground transition-opacity" />
     </button>
   );
 };
@@ -863,7 +864,7 @@ const CloudPowerPicker: React.FC = () => {
         <div className="space-y-3">
             <div>
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <Zap className="size-4 text-warning" />
+                    <UiIcon name="bolt" className="size-4 text-warning" />
                     {t.deploy.power.heading}
                 </h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
@@ -884,7 +885,7 @@ const CloudPowerPicker: React.FC = () => {
                         </div>
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground shrink-0">
                             Change
-                            <ChevronDown className="size-3.5" />
+                            <UiIcon name="chevron-down" className="size-3.5" />
                         </span>
                     </div>
                     <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
@@ -1265,7 +1266,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       // Single server → show directly by name
       deployTargetOptions.push({
         value: "server",
-        icon: <Server className="size-5" />,
+        icon: <UiIcon name="server" className="size-5" />,
         label: servers[0].name || servers[0].sshHost,
         description: ts.options.serverViaSsh,
       });
@@ -1273,7 +1274,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       // Multiple servers → show "Servers" category
       deployTargetOptions.push({
         value: "server",
-        icon: <Server className="size-5" />,
+        icon: <UiIcon name="server" className="size-5" />,
         label: ts.options.servers,
         description: interpolate(ts.options.serversCount, { count: String(servers.length) }),
       });
@@ -1283,7 +1284,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   if (hasCloudOption) {
     deployTargetOptions.push({
       value: "cloud",
-      icon: <Cloud className="size-5" />,
+      icon: <UiIcon name="cloud" className="size-5" />,
       label: ts.options.cloud,
       description: hasCloudConnected
         ? ts.options.cloudConnectedDesc
@@ -1299,13 +1300,13 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   }> = [
     {
       value: "local",
-      icon: <Cpu className="size-5" />,
+      icon: <UiIcon name="cpu" className="size-5" />,
       label: ts.build.localLabel,
       description: ts.build.localDesc,
     },
     {
       value: "server",
-      icon: <Cloud className="size-5" />,
+      icon: <UiIcon name="cloud" className="size-5" />,
       label: ts.build.remoteLabel,
       description: ts.build.remoteDesc,
     },
@@ -1325,7 +1326,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     ? [
         {
           value: "server" as const,
-          icon: <Cloud className="size-5" />,
+          icon: <UiIcon name="cloud" className="size-5" />,
           label: ts.build.cloudLabel,
           description: ts.build.cloudDesc,
         },
@@ -1333,7 +1334,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           ? [
               {
                 value: "local" as const,
-                icon: <Cpu className="size-5" />,
+                icon: <UiIcon name="cpu" className="size-5" />,
                 label: ts.build.cloudLocalLabel,
                 description: ts.build.cloudLocalDesc,
               },
@@ -1367,7 +1368,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   }> = [
     {
       value: "server",
-      icon: <GitBranch className="size-5" />,
+      icon: <UiIcon name="git-branch" className="size-5" />,
       label: ts.clone.serverLabel,
       description: ts.clone.serverDesc,
     },
@@ -1376,7 +1377,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       // The "api host" is the machine running Openship: the user's own device in
       // desktop mode, the Openship orchestrator when self-hosted. Not the cloud —
       // so no cloud icon, and a label that says which machine it actually is.
-      icon: <Cpu className="size-5" />,
+      icon: <UiIcon name="cpu" className="size-5" />,
       label: isDesktop ? ts.clone.apiHostDesktopLabel : ts.clone.apiHostServerLabel,
       description: isDesktop
         ? ts.clone.apiHostDesktopDesc
@@ -1590,7 +1591,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const continueLabel = (
     <>
       {ts.continue}
-      <ArrowRight className="size-4 rtl:rotate-180" />
+      <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
     </>
   );
 
@@ -1675,7 +1676,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     >
       {showLoading && (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-8 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {ts.loadingCheck}
         </div>
       )}
@@ -1731,7 +1732,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               onClick={openAddServer}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-2.5 text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground hover:bg-muted/30 transition-all"
             >
-              <Plus className="size-3.5" />
+              <UiIcon name="plus" className="size-3.5" />
               {ts.addServer}
             </button>
           )}
@@ -1750,7 +1751,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               onClick={openAddServer}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-2.5 text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground hover:bg-muted/30 transition-all"
             >
-              <Plus className="size-3.5" />
+              <UiIcon name="plus" className="size-3.5" />
               {ts.addServer}
             </button>
           )}
@@ -1799,7 +1800,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                    <Settings2 className="size-4 text-muted-foreground" />
+                    <UiIcon name="sliders" className="size-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground">{ts.build.advanced}</p>
@@ -1820,9 +1821,9 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                   </div>
                 </div>
                 {advancedOpen ? (
-                  <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
+                  <UiIcon name="chevron-up" className="size-4 shrink-0 text-muted-foreground" />
                 ) : (
-                  <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                  <UiIcon name="chevron-down" className="size-4 shrink-0 text-muted-foreground" />
                 )}
               </button>
 

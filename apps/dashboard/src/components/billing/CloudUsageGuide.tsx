@@ -1,6 +1,7 @@
 "use client";
 
-import { Clock3, Cpu, Layers3 } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useI18n } from "@/components/i18n-provider";
 
 /** The same explanation on pricing and billing. Credits pay for resources;
@@ -11,12 +12,12 @@ export function CloudUsageGuide({ collapsible = false }: { collapsible?: boolean
   const explanation = <>
       <div className="mt-4 grid gap-5 md:grid-cols-3">
         {[
-          { Icon: Cpu, title: copy.usageAllowance, text: copy.usageSummary },
-          { Icon: Clock3, title: copy.buildTime, text: copy.buildHint },
-          { Icon: Layers3, title: copy.apps, text: copy.appsHint },
+          { Icon: "cpu" as const, title: copy.usageAllowance, text: copy.usageSummary },
+          { Icon: "clock" as const, title: copy.buildTime, text: copy.buildHint },
+          { Icon: "layers" as const, title: copy.apps, text: copy.appsHint },
         ].map(({ Icon, title, text }) => (
           <div key={title}>
-            <div className="flex items-center gap-2 text-sm font-medium"><Icon className="size-4 text-muted-foreground" aria-hidden="true" />{title}</div>
+            <div className="flex items-center gap-2 text-sm font-medium"><UiIcon name={Icon} className="size-4 text-muted-foreground" aria-hidden="true" />{title}</div>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{text}</p>
           </div>
         ))}

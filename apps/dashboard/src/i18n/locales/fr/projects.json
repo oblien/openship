@@ -294,6 +294,8 @@
     "liveHitsWaiting": "En attente de requêtes…",
     "statusesUnclassified": "{count} sans classe de statut",
     "trafficTitle": "Aperçu du trafic",
+    "dailyWindow": "7 jours, aujourd’hui inclus (UTC)",
+    "currentHour": "Heure en cours · comptage en cours",
     "trafficSummary": "{count} requêtes",
     "servicesMore": "+{count} de plus",
     "servicesLess": "Afficher moins",

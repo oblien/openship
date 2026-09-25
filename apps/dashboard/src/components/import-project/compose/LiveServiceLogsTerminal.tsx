@@ -153,6 +153,7 @@ export const LiveServiceLogsTerminal: React.FC<LiveServiceLogsTerminalProps> = (
       aria-hidden={!active}
     >
       <TerminalSurface
+        active={active}
         terminalRef={terminalRef}
         onReady={(terminal) => {
           terminalRef.current = terminal;

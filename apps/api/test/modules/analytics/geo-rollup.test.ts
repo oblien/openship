@@ -46,6 +46,10 @@ vi.mock("@repo/platform/engine/modules/system/analytics-scraper", () => ({
   scrapeServerIfStale: h.scrape,
 }));
 
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: vi.fn(async () => {}) },
+}));
+
 vi.mock("@repo/platform/engine/modules/cloud/cloud-analytics.service", () => ({
   proxyCloudAnalytics: vi.fn(async (_org: string, input: Record<string, unknown>) => {
     h.cloudCalls.push(input);
@@ -74,6 +78,14 @@ beforeEach(() => {
 });
 
 describe("self-hosted daily rollup", () => {
+  it("defaults to exactly seven UTC dates including today, not eight", async () => {
+    const { repos } = await import("@repo/db");
+    const { analyticsDependencies } = await import("@repo/platform/engine/modules/analytics/analytics.operations");
+    await analyticsDependencies.projects.geo(ctx, "p1");
+    expect(repos.analytics.queryGeoRange).toHaveBeenLastCalledWith({
+      serverId: "s1", domain: "a.com", fromDay: dayKey(-6), toDay: dayKey(),
+    });
+  });
   it("does NOT add the live read to today's persisted row — they are the same counter", async () => {
     h.geoRows = [{ day: dayKey(), countries: { US: 100 }, visitors: 40, paths: {}, statuses: {} }];
     h.mgmt.set("/analytics/geo", { countries: { US: 120 }, visitors: 45, paths: {}, statuses: {} });

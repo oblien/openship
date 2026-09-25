@@ -12,7 +12,7 @@ import {
   type CreditPackDefinition,
 } from "@repo/core";
 import { entitlementQuota, syncOblienEntitlement } from "./billing-oblien-quota";
-import { cloudPlan } from "./billing-catalog";
+import { cloudPlan, complimentaryCloudPlan } from "./billing-catalog";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
@@ -64,11 +64,12 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     tier,
     limits: planLimitsForTier,
     subscription: providerSubscription,
+    grant,
   } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
   const [plan, legacySubscriptions] = await Promise.all([
     // A setup-only workspace has no product to look up. Catalog availability
     // must not hide a customer's balance, invoices or subscription controls.
-    tier === "free"
+    grant ? complimentaryCloudPlan(grant) : tier === "free"
       ? null
       : cloudPlan(tier, providerSubscription).catch((error) => {
           console.warn(
@@ -79,7 +80,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     listLiveSubscriptions(orgId),
   ]);
   const subscription = presentCloudSubscription(providerSubscription);
-  const managed = legacySubscriptions.length === 0;
+  const managed = legacySubscriptions.length === 0 && !grant;
   const canTopUp = canTopUpCloudSubscription(providerSubscription, entitlement);
   // A missing free catalog product is intentional: project setup is not a
   // subscription and includes no Cloud credits. Preserve any purchased balance.
@@ -109,6 +110,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     status: entitlement.status,
     plan,
     subscription,
+    complimentary: grant ? { id: grant.id, expiresAt: grant.expiresAt?.toISOString() ?? null } : null,
     capabilities: {
       portal: managed,
       cancellation: managed && subscription !== null && subscription.status !== "canceled",
@@ -116,8 +118,8 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
       subscriptionChange: managed && env.BILLING_ENABLED,
     },
     currentPeriod: {
-      start: entitlement.periodStart ? new Date(entitlement.periodStart) : null,
-      end: entitlement.periodEnd ? new Date(entitlement.periodEnd) : null,
+      start: grant?.period.start ?? (entitlement.periodStart ? new Date(entitlement.periodStart) : null),
+      end: grant?.period.end ?? (entitlement.periodEnd ? new Date(entitlement.periodEnd) : null),
     },
     balance: {
       total: quotaRemaining,

@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { setNetworkConnection, type NetworkAccessPolicy } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -53,7 +54,7 @@ export function NetworkConnectionAccess({
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-2 font-medium">
                 <NetworkDiagnosticText value={source.name} />
-                <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+                <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground" />
                 <NetworkDiagnosticText value={target.name} />
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">

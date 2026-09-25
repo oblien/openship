@@ -1,21 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Search,
-  Lock,
-  Globe,
-  Star,
-  GitFork,
-  ArrowRight,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Github,
-  Plus,
-  AlertTriangle,
-} from "lucide-react";
 import type { GitHubRepo } from "@/context/GitHubContext";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import type { VisibilityFilter, SortBy } from "../types";
@@ -183,7 +171,7 @@ export function RepositoryList({
                   />
                 ) : (
                   <span className="flex w-5 h-5 items-center justify-center rounded-full bg-muted">
-                    <Github className="size-3" />
+                    <UiIcon name="github" className="size-3" />
                   </span>
                 )}
                 {acc.login}
@@ -198,7 +186,7 @@ export function RepositoryList({
                 aria-label={t.library.repositoryList.addAccount}
                 title={t.library.repositoryList.addAccount}
               >
-                <Plus className="size-4" />
+                <UiIcon name="plus" className="size-4" />
               </a>
             ) : null}
           </div>
@@ -207,7 +195,7 @@ export function RepositoryList({
         {/* ── Search + filter row ───────────────────────── */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <UiIcon name="search" className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
               type="text"
               value={search}
@@ -245,7 +233,7 @@ export function RepositoryList({
               <option value="name">{t.library.repositoryList.sort.name}</option>
               <option value="stars">{t.library.repositoryList.sort.stars}</option>
             </select>
-            <ChevronDown className="absolute end-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+            <UiIcon name="chevron-down" className="absolute end-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           </div>
         </div>
       </div>
@@ -269,7 +257,7 @@ export function RepositoryList({
             /* Connected but no installations - prompt to install */
             <>
               <div className="mx-auto w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
-                <Github className="size-6 text-muted-foreground" />
+                <UiIcon name="github" className="size-6 text-muted-foreground" />
               </div>
               <h3 className="text-lg font-medium text-foreground/80 mb-2">
                 {t.library.repositoryList.installTitle}
@@ -283,7 +271,7 @@ export function RepositoryList({
                 disabled={installing}
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-foreground text-background rounded-xl hover:bg-foreground/90 transition-colors disabled:opacity-50"
               >
-                <Github className="size-4" />
+                <UiIcon name="github" className="size-4" />
                 {t.library.repositoryList.installButton}
               </button>
             </>
@@ -336,9 +324,9 @@ export function RepositoryList({
                 >
                   <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
                     {repo.private ? (
-                      <Lock className="size-[18px] text-muted-foreground" />
+                      <UiIcon name="lock" className="size-[18px] text-muted-foreground" />
                     ) : (
-                      <Globe className="size-[18px] text-muted-foreground" />
+                      <UiIcon name="globe" className="size-[18px] text-muted-foreground" />
                     )}
                   </div>
 
@@ -361,7 +349,7 @@ export function RepositoryList({
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-warning-bg text-[10px] font-medium text-warning"
                           title={interpolate(t.library.repositoryList.localOnlyTooltip, { owner: typeof repo.owner === "string" ? repo.owner : repo.owner.login })}
                         >
-                          <AlertTriangle className="size-2.5" />
+                          <UiIcon name="warning" className="size-2.5" />
                           {t.library.repositoryList.localOnly}
                         </span>
                       )}
@@ -387,17 +375,17 @@ export function RepositoryList({
                     )}
                     {stars > 0 && (
                       <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
-                        <Star className="size-3" />
+                        <UiIcon name="star" className="size-3" />
                         {stars}
                       </span>
                     )}
                     {forks > 0 && (
                       <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
-                        <GitFork className="size-3" />
+                        <UiIcon name="git-fork" className="size-3" />
                         {forks}
                       </span>
                     )}
-                    <ArrowRight className="size-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
+                    <UiIcon name="arrow-right" className="size-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
                   </div>
                 </div>
               );
@@ -422,7 +410,7 @@ export function RepositoryList({
                     aria-label={t.library.repositoryList.pagination.previous}
                     className="inline-flex size-7 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   >
-                    <ChevronLeft className="size-4 rtl:rotate-180" />
+                    <UiIcon name="chevron-left" className="size-4 rtl:rotate-180" />
                   </button>
                   <span className="px-1 text-xs text-muted-foreground tabular-nums">
                     {interpolate(t.library.repositoryList.pagination.pageOf, {
@@ -437,7 +425,7 @@ export function RepositoryList({
                     aria-label={t.library.repositoryList.pagination.next}
                     className="inline-flex size-7 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   >
-                    <ChevronRight className="size-4 rtl:rotate-180" />
+                    <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />
                   </button>
                 </div>
               )}

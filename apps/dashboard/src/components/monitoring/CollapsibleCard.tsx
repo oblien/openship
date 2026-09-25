@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * A card that folds away, remembering whether it was open.
  *
@@ -21,7 +23,6 @@
  */
 
 import React, { useState } from "react";
-import { ChevronRight } from "lucide-react";
 
 interface Props {
   title: string;
@@ -72,7 +73,7 @@ export const CollapsibleCard: React.FC<Props> = ({
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-5 py-3.5 text-left"
       >
-        <ChevronRight
+        <UiIcon name="chevron-right"
           aria-hidden
           className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ${
             open ? "rotate-90" : ""

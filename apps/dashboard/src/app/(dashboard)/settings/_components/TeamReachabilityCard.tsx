@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Inline team-invite guidance for a self-hosted instance with no public URL yet.
  *
@@ -11,7 +13,6 @@
  */
 
 import Link from "next/link";
-import { Globe, ArrowRight } from "lucide-react";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -55,7 +56,7 @@ export function TeamReachabilityCard({ reachability }: { reachability: TeamReach
 
   return (
     <SettingsSection
-      icon={Globe}
+      icon={"globe"}
       title={title}
       description={w.description}
       iconBg="bg-primary/10"
@@ -69,7 +70,7 @@ export function TeamReachabilityCard({ reachability }: { reachability: TeamReach
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             {action}
-            <ArrowRight className="size-4 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
           </Link>
         )}
       </div>

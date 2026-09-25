@@ -1,32 +1,24 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPublicFirst, type Service, type ServiceContainer, type ServiceInput } from "@/lib/api/services";
-import { ServiceIcon } from "@/components/services/ServiceIcon";
-import { getServiceStatus, ServiceStatusBadge } from "@/components/services/ServiceStatusBadge";
+import { getServiceStatus } from "@/components/services/ServiceStatusBadge";
+import { Button } from "@/components/ui/button";
 import { getApiErrorMessage, isAbortError } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import { useRouter } from "next/navigation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import {
-  Layers,
-  RefreshCw,
-  Globe,
-  AlertCircle,
-  AlertTriangle,
-  ChevronRight,
-  ArrowLeft,
-  Plus,
-  Waypoints,
-} from "lucide-react";
 
 import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
 import { AddServiceModal } from "./services/AddServiceModal";
 import { LinkedAppsCard } from "./services/LinkedAppsCard";
+import { ServiceListItem } from "./services/ServiceListItem";
 import { ResourceSettings } from "./ResourceSettings";
 
 /** Render a drift diff value (arrays → csv, objects → keys, scalars → string). */
@@ -144,11 +136,6 @@ export const ServicesTab = () => {
       kind: serviceKind(service),
     });
 
-  const openService = (serviceId: string) => {
-    if (!hasProjectId) return;
-    router.push(`/projects/${id}/services/${serviceId}`);
-  };
-
   const closeService = () => {
     if (!hasProjectId) return;
     router.push(`/projects/${id}/services`);
@@ -239,18 +226,23 @@ export const ServicesTab = () => {
   /* ── Loading state ─────────────────────────────────────────────── */
   if (loading) {
     return (
-      <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-card rounded-2xl border border-border/50 p-4 animate-pulse">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-muted" />
-              <div className="flex-1 space-y-2">
-                <div className="h-4 w-32 bg-muted rounded-lg" />
-                <div className="h-3 w-48 bg-muted/60 rounded-lg" />
+      <div className="space-y-5 animate-pulse" aria-busy="true">
+        <div className="flex h-8 items-center justify-between gap-4" aria-hidden="true">
+          <div className="h-4 w-32 rounded bg-muted" />
+          <div className="h-8 w-24 rounded-lg bg-muted" />
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/40" aria-hidden="true">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+              <div className="size-10 shrink-0 rounded-xl bg-muted" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-32 max-w-full rounded bg-muted" />
+                <div className="h-3 w-48 max-w-full rounded bg-muted/60" />
               </div>
+              <div className="h-3 w-14 shrink-0 rounded bg-muted/60" />
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }
@@ -264,14 +256,14 @@ export const ServicesTab = () => {
   if (failure && services.length === 0) {
     return (
       <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
-        <AlertCircle className="size-8 text-danger mx-auto mb-3" />
+        <UiIcon name="alert-circle" className="size-8 text-danger mx-auto mb-3" />
         <p className="text-sm font-medium text-foreground mb-1">{t.projects.services.failedLoad}</p>
         <p className="text-xs text-muted-foreground mb-4">{error || servicesData.error}</p>
         <button
           onClick={fetchData}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
         >
-          <RefreshCw className="size-3.5" />
+          <UiIcon name="refresh" className="size-3.5" />
           {t.projects.services.retry}
         </button>
       </div>
@@ -384,14 +376,14 @@ export const ServicesTab = () => {
               onClick={() => setCreateOpen(true)}
               className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.projects.services.addService}
             </button>
             <button
               onClick={fetchData}
               className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
             >
-              <RefreshCw className="size-4" />
+              <UiIcon name="refresh" className="size-4" />
               {t.projects.services.refresh}
             </button>
           </div>
@@ -414,7 +406,7 @@ export const ServicesTab = () => {
 
   const errorNotice = failure && (
     <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/[0.06] px-3 py-2 text-xs text-danger">
-      <AlertCircle className="size-3.5 shrink-0" />
+      <UiIcon name="alert-circle" className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">{failure}</span>
       <button onClick={fetchData} className="font-medium underline underline-offset-2">
         {t.projects.services.retry}
@@ -426,24 +418,6 @@ export const ServicesTab = () => {
   if (selectedService) {
     return (
       <div className="space-y-4">
-        {/* Slim breadcrumb row — the panel's hero is the single heading. */}
-        <div className="flex items-center justify-between gap-4">
-          <button
-            onClick={closeService}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-          >
-            <ArrowLeft className="size-3.5 rtl:rotate-180" />
-            {t.projects.services.allServices}
-          </button>
-          <button
-            onClick={fetchData}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-          >
-            <RefreshCw className="size-3.5" />
-            {t.projects.services.refresh}
-          </button>
-        </div>
-
         {errorNotice}
         <ServiceDetailPanel
           // Key by service id so switching services (via the header switcher)
@@ -456,6 +430,7 @@ export const ServicesTab = () => {
           projectSlugBase={projectSlugBase}
           initialTab={slug?.[2]}
           onRefresh={fetchData}
+          onBack={closeService}
           onDeleted={closeService}
           projectType={(projectData as { projectType?: string })?.projectType}
           activeDeploymentId={projectData?.activeDeploymentId}
@@ -469,48 +444,36 @@ export const ServicesTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="bg-card rounded-2xl border border-border/50 p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Layers className="size-[18px] text-primary" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">
-                {interpolate(
-                  services.length === 1 ? t.projects.services.countOne : t.projects.services.countOther,
-                  { count: String(services.length) },
-                )}
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {t.projects.services.chooseService}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => router.push(`/projects/${id}/topology`)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-            >
-              <Waypoints className="size-3.5" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-foreground">
+          {interpolate(
+            services.length === 1 ? t.projects.services.countOne : t.projects.services.countOther,
+            { count: String(services.length) },
+          )}
+        </h2>
+        <div className="flex items-center gap-1.5">
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`/projects/${id}/topology`}>
+              <UiIcon name="network" />
               {t.projects.sidebar.tabs.topology}
-            </button>
-            <button
-              onClick={fetchData}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-            >
-              <RefreshCw className="size-3.5" />
-              {t.projects.services.refresh}
-            </button>
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="size-3.5" />
-              {t.projects.services.addService}
-            </button>
-          </div>
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={fetchData}
+            title={t.projects.services.refresh}
+            aria-label={t.projects.services.refresh}
+          >
+            <UiIcon name="refresh" className={containersLoading ? "animate-spin" : undefined} />
+            <span className="sr-only">{t.projects.services.refresh}</span>
+          </Button>
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <UiIcon name="plus" />
+            {t.projects.services.addService}
+          </Button>
         </div>
       </div>
 
@@ -518,7 +481,7 @@ export const ServicesTab = () => {
       {driftedServices.length > 0 && (
         <div className="rounded-2xl border border-warning-border bg-warning-bg p-5">
           <div className="flex items-center gap-2.5">
-            <AlertTriangle className="size-4 text-warning" />
+            <UiIcon name="warning" className="size-4 text-warning" />
             <h4 className="text-sm font-semibold text-foreground">
               {interpolate(
                 driftedServices.length === 1
@@ -561,7 +524,7 @@ export const ServicesTab = () => {
                       <span className="mt-0.5 w-24 shrink-0 font-mono text-muted-foreground">
                         {ch.field}
                       </span>
-                      <span className="min-w-0 flex-1 font-mono">
+                      <span className="min-w-0 flex-1 break-all font-mono">
                         <span className="text-danger/80 line-through">
                           {fmtDriftVal(ch.from)}
                         </span>
@@ -581,112 +544,18 @@ export const ServicesTab = () => {
 
       {errorNotice}
 
-      <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/30 overflow-hidden">
-        {services.map((svc) => {
-          const ct = containerFor(svc.id);
-          const status = getServiceStatus(svc, ct, containersLoading);
-          const resolvedUrl = resolveServiceUrl(svc);
-          const isMonorepo = serviceKind(svc) === "monorepo";
-
-          // Monorepo sub-app subtitle assembled from the metadata each
-          // row already carries: rootDirectory (apps/dashboard) · framework
-          // (Next.js) · port (3202) → resolved URL (example.opsh.io).
-          // Each segment is shown only if present - keeps the line short
-          // for sub-apps that haven't been fully filled in yet.
-          const monorepoBits: string[] = [];
-          if (svc.rootDirectory) monorepoBits.push(svc.rootDirectory);
-          if (svc.framework) monorepoBits.push(svc.framework);
-          if (svc.exposedPort) monorepoBits.push(interpolate(t.projects.services.port, { port: String(svc.exposedPort) }));
-          const subtitle = isMonorepo
-            ? monorepoBits.join(" · ")
-            : svc.image || svc.build || "";
-          const urlHost = resolvedUrl?.replace("https://", "");
-
-          // Published host port (first `host:container` mapping) — what the
-          // service is reachable on off-box; falls back to the managed-route
-          // target port. Surfaced as a chip so port-only services (e.g. Kong on
-          // 8000) show WHERE they listen even without a domain.
-          const hostPort =
-            ((svc.ports as string[] | null) ?? [])
-              .map((p) => {
-                const parts = String(p).split(":");
-                return parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
-              })
-              .find((n) => Number.isFinite(n)) ??
-            (svc.exposedPort ? Number(svc.exposedPort) : undefined);
-
-          return (
-            <button
-              key={svc.id}
-              onClick={() => openService(svc.id)}
-              className="w-full flex items-center gap-4 px-5 py-4 text-start transition-colors hover:bg-foreground/[0.025]"
-            >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted/50 overflow-hidden">
-                <ServiceIcon service={svc} />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[14px] font-semibold text-foreground truncate">
-                    {svc.name}
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] ${svc.exposed ? "bg-success-bg text-success" : "bg-muted/60 text-muted-foreground/70"}`}
-                  >
-                    <Globe className="size-2.5" />
-                    {svc.exposed ? t.projects.services.public : t.projects.services.internal}
-                  </span>
-                  {hostPort !== undefined && Number.isFinite(hostPort) && (
-                    <span className="inline-flex items-center rounded-full bg-muted/60 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground/70">
-                      :{hostPort}
-                    </span>
-                  )}
-                  {svc.drift && svc.drift.changes.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
-                      <AlertTriangle className="size-2.5" />
-                      {t.projects.services.upstreamChange}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[12px] text-muted-foreground truncate mt-1">
-                  {isMonorepo ? (
-                    // Monorepo: "apps/dashboard · Next.js · port 3202 → my-app.opsh.io"
-                    <>
-                      {subtitle}
-                      {urlHost && (
-                        <>
-                          {subtitle && " → "}
-                          <span className="text-foreground/80">{urlHost}</span>
-                        </>
-                      )}
-                      {!subtitle && !urlHost && "-"}
-                    </>
-                  ) : svc.exposed && urlHost ? (
-                    // Exposed compose service — its public URL.
-                    urlHost
-                  ) : (
-                    // Internal service — the STABLE address siblings use to reach
-                    // it (alias:port), NOT the container's ephemeral bridge IP.
-                    // The IP changes every restart and is never what you'd put in
-                    // another service's env; the alias is. Custom alias wins when
-                    // set (effectiveServiceAlias), matching what DNS resolves.
-                    <span className="font-mono">
-                      {internalServiceAddress(
-                        effectiveServiceAlias(svc.name, (svc.advanced as ComposeAdvanced | null)?.alias),
-                        svc.ports as string[],
-                      )}
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                <ServiceStatusBadge status={status} />
-                <ChevronRight className="size-4 text-muted-foreground/50 rtl:rotate-180" />
-              </div>
-            </button>
-          );
-        })}
+      <div className="@container/services-list">
+        <ul className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/40 @lg/services-list:grid-cols-[minmax(0,1fr)_5rem_auto] @2xl/services-list:gap-x-5">
+          {services.map((service) => (
+            <ServiceListItem
+              key={service.id}
+              service={service}
+              status={getServiceStatus(service, containerFor(service.id), containersLoading)}
+              href={`/projects/${id}/services/${service.id}`}
+              resolvedUrl={resolveServiceUrl(service)}
+            />
+          ))}
+        </ul>
       </div>
 
       {/* Apps wired into this project — not services we own (no container, no

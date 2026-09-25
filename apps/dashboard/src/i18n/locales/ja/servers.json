@@ -947,5 +947,12 @@
     "serviceNetwork": "サービスネットワーク",
     "lastChecked": "最終確認",
     "scaleProject": "プロジェクトを選択"
+  },
+  "sshTransport": {
+    "label": "接続",
+    "direct": "直接 SSH",
+    "hostname": "Access ホスト名",
+    "help": "Cloudflare Access のホスト名とサーバーの SSH 認証情報を使用します。OpenShip を実行するマシンで Cloudflare にログインしてください。Windows アプリには必要なクライアントが含まれています。他の環境には cloudflared が必要です。",
+    "openAccess": "Cloudflare Access を開く"
   }
 }

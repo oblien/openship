@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, RotateCw, Save } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ENV_MASK, looksLikeSecretKey } from "@repo/core";
 import type { MergeServiceEnvVarsInput, ServiceEnvironment } from "@repo/contracts";
 import EnvironmentVariables, {
@@ -46,6 +47,8 @@ export function ServiceEnvironmentPanel({
   const { t } = useI18n();
   const copy = t.projectDetail.services.detail;
   const labels = copy.environmentState;
+  const helpId = useId();
+  const [helpOpen, setHelpOpen] = useState(false);
   const { showToast } = useToast();
   const [state, setState] = useState<ServiceEnvironment | null>(null);
   const [rows, setRows] = useState<EnvironmentVariableRow[]>([]);
@@ -249,9 +252,24 @@ export function ServiceEnvironmentPanel({
   return (
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
-        <h3 className="text-sm font-medium text-foreground">
-          {t.importProject.environmentVariables.title}
-        </h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-sm font-medium text-foreground">
+            {t.importProject.environmentVariables.title}
+          </h3>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            aria-label={labels.helpTitle}
+            title={labels.helpTitle}
+            aria-expanded={helpOpen}
+            aria-controls={helpId}
+            onClick={() => setHelpOpen((open) => !open)}
+          >
+            <UiIcon name="info" className="size-4" />
+          </Button>
+        </div>
         <div className="ms-auto flex max-w-full flex-wrap items-center justify-end gap-2">
           <Button
             variant="outline"
@@ -260,7 +278,7 @@ export function ServiceEnvironmentPanel({
             aria-label={copy.saveEnvironment}
             disabled={loading || !!error || busy || !dirty}
           >
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            {saving ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="save" />}
             {t.projectSettings.settingSection.save}
           </Button>
           {(state?.status === "pending" || applying || dirty) && (
@@ -282,14 +300,14 @@ export function ServiceEnvironmentPanel({
                 if (alive.current) await load();
               }}
             >
-              {applying ? <Loader2 className="animate-spin" /> : <RotateCw />}
+              {applying ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="refresh" />}
               {applying ? copy.environmentApply.applying : copy.environmentApply.title}
             </Button>
           )}
         </div>
       </div>
       <div className="px-5 pt-4 text-xs text-muted-foreground space-y-2">
-        <p>{labels.description}</p>
+        <p id={helpId} hidden={!helpOpen}>{labels.description}</p>
         {loading ? (
           <p role="status">{labels.loading}</p>
         ) : error ? (
@@ -327,7 +345,7 @@ export function ServiceEnvironmentPanel({
                     disabled={busy}
                     onClick={() => void recover()}
                   >
-                    {recovering ? <Loader2 className="animate-spin" /> : null}
+                    {recovering ? <UiIcon name="spinner" className="animate-spin" /> : null}
                     {labels.recover}
                   </Button>
                   {unreviewedRuntimeKeys.length > 0 && (

@@ -1,5 +1,5 @@
+import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyRound, Plus, Trash2, Loader2, Eye, EyeOff, RefreshCw, Link2, Network, Globe, ChevronRight } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { AppLogo } from "@/components/AppLogo";
 import { projectsApi, deployApi } from "@/lib/api";
@@ -213,7 +213,7 @@ export function EnvVarsEditor({
               disabled={applying}
               className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3.5 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
             >
-              {applying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {applying ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="refresh" className="size-3.5" />}
               {t.projectSettings.envVars.applyButton}
             </button>
           ) : (
@@ -223,7 +223,7 @@ export function EnvVarsEditor({
               disabled={saving || loading || baseline === null}
               className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3.5 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
             >
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {saving ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : null}
               {t.projectSettings.envVars.saveChanges}
             </button>
           )}
@@ -233,7 +233,7 @@ export function EnvVarsEditor({
       <div className="space-y-4 p-6">
         {pendingApply && (
           <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
-            <RefreshCw className="mt-0.5 size-4 shrink-0 text-primary" />
+            <UiIcon name="refresh" className="mt-0.5 size-4 shrink-0 text-primary" />
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">{t.projectSettings.envVars.applyTitle}</p>
               <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
@@ -244,7 +244,7 @@ export function EnvVarsEditor({
         )}
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
-            <KeyRound className="size-4" />
+            <UiIcon name="key" className="size-4" />
           </div>
           <div className="min-w-0">
             <h3 className="text-[15px] font-semibold text-foreground">{t.projectSettings.envVars.title}</h3>
@@ -256,7 +256,7 @@ export function EnvVarsEditor({
 
         {loading ? (
           <div className="flex items-center justify-center py-10 text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
+            <UiIcon name="spinner" className="size-5 animate-spin" />
           </div>
         ) : (
           <div className="space-y-2">
@@ -285,10 +285,10 @@ export function EnvVarsEditor({
                         </span>
                       </span>
                       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                        <Link2 className="size-3" />
+                        <UiIcon name="link" className="size-3" />
                         {t.projectSettings.envVars.linkedBadge}
                       </span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground" />
                     </button>
                   );
                 }
@@ -317,7 +317,7 @@ export function EnvVarsEditor({
                         className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         aria-label={showValue ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
                       >
-                        {showValue ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                        {showValue ? <UiIcon name="eye-off" className="size-3.5" /> : <UiIcon name="eye" className="size-3.5" />}
                       </button>
                     </div>
                     <button
@@ -330,7 +330,7 @@ export function EnvVarsEditor({
                           : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50"
                       }`}
                     >
-                      <KeyRound className="size-3.5" />
+                      <UiIcon name="key" className="size-3.5" />
                     </button>
                     <button
                       type="button"
@@ -338,7 +338,7 @@ export function EnvVarsEditor({
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger"
                       aria-label={t.projectSettings.envVars.removeVariable}
                     >
-                      <Trash2 className="size-3.5" />
+                      <UiIcon name="trash" className="size-3.5" />
                     </button>
                   </div>
                 );
@@ -350,7 +350,7 @@ export function EnvVarsEditor({
               onClick={addRow}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50"
             >
-              <Plus className="size-3.5" />
+              <UiIcon name="plus" className="size-3.5" />
               {t.projectSettings.envVars.addVariable}
             </button>
           </div>
@@ -384,7 +384,7 @@ export function EnvVarsEditor({
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">{t.projects.connections.modeInternalShort}/{t.projects.connections.modePublicShort}</span>
               <span className="inline-flex items-center gap-1.5 text-foreground">
-                {linkDetail.mode === "internal" ? <Network className="size-3.5" /> : <Globe className="size-3.5" />}
+                {linkDetail.mode === "internal" ? <UiIcon name="network" className="size-3.5" /> : <UiIcon name="globe" className="size-3.5" />}
                 {linkDetail.mode === "internal"
                   ? t.projects.connections.modeInternalShort
                   : t.projects.connections.modePublicShort}
@@ -410,7 +410,7 @@ export function EnvVarsEditor({
               disabled={unlinking}
               className="inline-flex items-center gap-2 rounded-xl border border-danger-border bg-danger-bg px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-solid/15 disabled:opacity-50"
             >
-              {unlinking ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-3.5" />}
+              {unlinking ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="trash" className="size-3.5" />}
               {t.projectSettings.envVars.unlink}
             </button>
           </div>

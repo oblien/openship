@@ -78,7 +78,7 @@ describe("backupRestore.transition — the terminal status is not the payload's 
 const h = vi.hoisted(() => ({
   transition: null as
     | null
-    | ((id: string, status: string, patch?: Record<string, unknown>) => Promise<void>),
+    | ((id: string, status: string, patch?: Record<string, unknown>) => Promise<boolean>),
   restoreRow: null as Record<string, unknown> | null,
   headError: "",
   terminal: null as null | (() => void),
@@ -86,6 +86,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -111,8 +112,9 @@ vi.mock("@repo/db", () => ({
       },
       findById: async () => h.restoreRow,
       transition: async (id: string, status: string, patch?: Record<string, unknown>) => {
-        await h.transition!(id, status, patch);
+        const applied = await h.transition!(id, status, patch);
         if (status === "failed" || status === "succeeded") h.terminal?.();
+        return applied;
       },
     },
     project: {
@@ -138,7 +140,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("@repo/adapters", () => ({
+vi.mock("@repo/adapters", async () => ({
+  ...(await import("../../../../../packages/adapters/src/backup/common/incremental")),
   resolveDestination: () => ({
     head: async () => {
       throw new Error(h.headError);
@@ -208,6 +211,21 @@ beforeEach(() => {
 });
 
 describe("RestoreOrchestrator.beginPrepare — failure reason survives the write", () => {
+  it("does not announce a failure after cancellation already owns the terminal outcome", async () => {
+    h.headError = "Storage disconnected after cancellation";
+    const pg = wireRestore();
+    pg.row.status = "cancelled";
+    const reachedTerminal = new Promise<void>((resolve) => { h.terminal = resolve; });
+    await new RestoreOrchestrator().beginPrepare({
+      runId: "bkr_1",
+      trigger: { source: "manual", userId: "usr_1" } as never,
+      confirmationToken: "t".repeat(32),
+    });
+    await reachedTerminal;
+    expect(pg.row.status).toBe("cancelled");
+    expect(h.notifications).toEqual([]);
+  });
+
   it("records failed with a scrubbed reason when the remote error carries a NUL", async () => {
     h.headError = "tar: /var/vmail:\u0000 Cannot open: Permission denied";
     const pg = wireRestore();

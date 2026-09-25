@@ -974,10 +974,9 @@ describe("Top Paths is opt-in", () => {
       "utf8",
     );
     const empty = readFileSync(new URL("./TopPathsEmptyState.tsx", import.meta.url), "utf8");
-    // Same lucide glyph in both. Also NOT utils/icons: that file is JSX inside a .js, which
-    // the test transform cannot parse, so importing it takes down any test rendering the card.
-    expect(populated).toContain('<TrendingUp className="size-5 text-primary" />');
-    expect(empty).toContain('<TrendingUp className="size-5 text-primary" />');
+    // Both states use the same catalog ID and the same header styling.
+    expect(populated).toContain('<UiIcon name="trending-up" className="size-5 text-primary" />');
+    expect(empty).toContain('<UiIcon name="trending-up" className="size-5 text-primary" />');
     expect(populated).not.toContain("generateIcon");
     expect(empty).not.toContain("generateIcon");
   });

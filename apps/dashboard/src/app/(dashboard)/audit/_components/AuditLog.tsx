@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Audit log — a readable history of who did what in this organization.
  *
@@ -24,27 +26,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { PageContainer } from "@/components/ui/PageContainer";
-import {
-  Activity,
-  Bell,
-  Bot,
-  Check,
-  ChevronDown,
-  Copy,
-  CreditCard,
-  Globe,
-  Loader2,
-  Package,
-  Rocket,
-  Search,
-  Server,
-  Shield,
-  Terminal,
-  User as UserIcon,
-  Users,
-  Webhook,
-  Wrench,
-} from "lucide-react";
 import {
   auditApi,
   getApiErrorMessage,
@@ -80,25 +61,25 @@ type PeriodKey = "all" | "today" | "7d" | "30d" | "90d";
  *  `periodStart` and silently produce an undefined lower bound. */
 const PERIOD_KEYS: readonly PeriodKey[] = ["all", "today", "7d", "30d", "90d"];
 
-const CATEGORY_ICONS: Record<AuditCategoryId, React.ComponentType<{ className?: string }>> = {
-  deployments: Rocket,
-  apps: Package,
-  domains: Globe,
-  servers: Server,
-  members: Users,
-  agent: Bot,
-  security: Shield,
-  billing: CreditCard,
-  system: Wrench,
+const CATEGORY_ICONS: Record<AuditCategoryId, IconName> = {
+  deployments: "rocket",
+  apps: "window",
+  domains: "globe",
+  servers: "server",
+  members: "users",
+  agent: "bot",
+  security: "shield",
+  billing: "credit-card",
+  system: "wrench",
 };
 
-const SOURCE_ICONS: Record<AuditSource, typeof Bot> = {
-  dashboard: Activity,
-  mcp: Bot,
-  cli: Terminal,
-  api: Webhook,
-  webhook: Bell,
-  system: Wrench,
+const SOURCE_ICONS: Record<AuditSource, IconName> = {
+  dashboard: "activity",
+  mcp: "bot",
+  cli: "terminal",
+  api: "webhook",
+  webhook: "bell",
+  system: "wrench",
 };
 
 /** Theme status tokens — never a literal colour, so a theme swap stays coherent. */
@@ -204,7 +185,7 @@ function CopyButton({ value }: { value: string }) {
       aria-label={copied ? t.settings.common.copied : t.settings.common.copy}
       title={copied ? t.settings.common.copied : t.settings.common.copy}
     >
-      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      {copied ? <UiIcon name="check" className="size-3" /> : <UiIcon name="copy" className="size-3" />}
     </button>
   );
 }
@@ -339,7 +320,7 @@ function AuditDetailsBody({
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t.settings.audit.details.technical}
           </span>
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground transition-transform ${showTechnical ? "rotate-180" : ""}`}
           />
         </button>
@@ -418,7 +399,7 @@ function RecordingCard({
           {!canManage && <p className="mt-1 text-xs text-muted-foreground/70">{a.adminOnly}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {saving && <UiIcon name="spinner" className="size-3.5 animate-spin text-muted-foreground" />}
           <Switch
             checked={enabled}
             onChange={onToggle}
@@ -906,7 +887,7 @@ export function AuditLog() {
           <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[220px] flex-1">
-            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <UiIcon name="search" className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
               value={search}
@@ -990,7 +971,7 @@ export function AuditLog() {
                       className="flex w-full items-center gap-4 px-5 py-3.5 text-start transition-colors hover:bg-muted/30 focus:bg-muted/40 focus:outline-none"
                     >
                       <span className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/60">
-                        <UserIcon className="size-3.5 text-muted-foreground" />
+                        <UiIcon name="user" className="size-3.5 text-muted-foreground" />
                         <span
                           className={`absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full ring-2 ring-card ${TONE_DOT[tone]}`}
                         />
@@ -1008,7 +989,7 @@ export function AuditLog() {
                             // connected agents this was, which the generic
                             // "AI assistant" chip never could.
                             <span className="inline-flex max-w-[14rem] items-center gap-1 rounded-md bg-info-bg px-1.5 py-0.5 text-[10px] font-medium text-info">
-                              <Bot className="size-2.5 shrink-0" />
+                              <UiIcon name="bot" className="size-2.5 shrink-0" />
                               <span className="truncate">
                                 {e.sourceClientName || t.settings.audit.sources.mcp}
                               </span>

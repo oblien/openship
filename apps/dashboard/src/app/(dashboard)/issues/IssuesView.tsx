@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, RefreshCw, Search } from "lucide-react";
 
 import {
   getApiErrorMessage,
@@ -273,9 +274,9 @@ export function IssuesView() {
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border/60 bg-card px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-60"
           >
             {rescanning ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <RefreshCw className="size-4" />
+              <UiIcon name="refresh" className="size-4" />
             )}
             {rescanning ? c.rescanning : c.rescan}
           </button>
@@ -373,7 +374,7 @@ export function IssuesView() {
               <>
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="relative w-full sm:flex-1 sm:min-w-[220px]">
-                <Search className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <UiIcon name="search" className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder={c.filters.searchPlaceholder}

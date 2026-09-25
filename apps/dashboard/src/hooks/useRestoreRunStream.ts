@@ -8,8 +8,9 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { getApiBaseUrl, getAuthToken, type BackupRestore } from "@/lib/api";
+import { useState } from "react";
+import type { BackupRestore } from "@/lib/api";
+import { useRunEvents, type RunEventsState } from "./useRunEvents";
 
 export type RestoreRunEvent =
   | { type: "snapshot"; restore: BackupRestore }
@@ -17,6 +18,7 @@ export type RestoreRunEvent =
       type: "transition";
       status: BackupRestore["status"];
       bytesRestored?: number | null;
+      meta?: BackupRestore["meta"];
     }
   /** Non-fatal: the restore continues. An artifact that could only be
    *  size-checked, or a policy that deferred verification to apply time. */
@@ -35,133 +37,72 @@ export type RestoreRunEvent =
       errorMessage?: string | null;
     };
 
-export interface UseRestoreRunStreamResult {
+export interface UseRestoreRunStreamResult extends RunEventsState {
   restore: BackupRestore | null;
-  connected: boolean;
   /** Advisories accumulated over the run — shown alongside progress, not
    *  instead of it, since none of them stop the restore. */
   warnings: string[];
-  error: Error | null;
 }
 
 export function useRestoreRunStream(restoreId: string | null): UseRestoreRunStreamResult {
   const [restore, setRestore] = useState<BackupRestore | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [error, setError] = useState<Error | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (!restoreId) return;
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
-    (async () => {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(
-          `${getApiBaseUrl()}backup-restores/${restoreId}/stream`,
-          {
-            headers: {
-              Accept: "text/event-stream",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            signal: ctrl.signal,
-            credentials: "include",
-          },
-        );
-
-        if (!res.ok || !res.body) {
-          throw new Error(`SSE connection failed: ${res.status}`);
+  const [advisories, setAdvisories] = useState<{ id: string | null; messages: string[] }>({
+    id: null,
+    messages: [],
+  });
+  const stream = useRunEvents<BackupRestore>(
+    restoreId ? `backup-restores/${encodeURIComponent(restoreId)}/stream` : null,
+    (snapshot) => {
+      if (snapshot.id !== restoreId) throw new Error("Restore progress belongs to another run");
+      setRestore(snapshot);
+    },
+    {
+      snapshotKey: "restore",
+      onEvent(message) {
+        const event = message as RestoreRunEvent;
+        if (event.type === "warning") {
+          setAdvisories((previous) => {
+            const messages = previous.id === restoreId ? previous.messages : [];
+            return {
+              id: restoreId,
+              messages: messages.includes(event.message) ? messages : [...messages, event.message],
+            };
+          });
+          return;
         }
-        setConnected(true);
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (!ctrl.signal.aborted) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          let nl: number;
-          while ((nl = buffer.indexOf("\n\n")) >= 0) {
-            const block = buffer.slice(0, nl);
-            buffer = buffer.slice(nl + 2);
-            if (!block.trim()) continue;
-
-            let eventName = "message";
-            let dataLine = "";
-            for (const line of block.split("\n")) {
-              if (line.startsWith("event:")) eventName = line.slice(6).trim();
-              else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
-            }
-            if (eventName === "ping" || !dataLine) continue;
-
-            try {
-              const ev = JSON.parse(dataLine) as RestoreRunEvent;
-              if (ev.type === "snapshot") {
-                setRestore(ev.restore);
-              } else if (ev.type === "transition") {
-                setRestore((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        status: ev.status,
-                        bytesRestored: ev.bytesRestored ?? prev.bytesRestored,
-                      }
-                    : prev,
-                );
-              } else if (ev.type === "warning") {
-                setWarnings((prev) =>
-                  prev.includes(ev.message) ? prev : [...prev, ev.message],
-                );
-              } else if (ev.type === "destructive") {
-                setRestore((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        meta: {
-                          ...(prev.meta ?? {}),
-                          destructive: ev.destructive,
-                          ...(ev.source ? { destructiveSource: ev.source } : {}),
-                        },
-                        cancelRequested: ev.cancelRequested ?? prev.cancelRequested,
-                      }
-                    : prev,
-                );
-              } else if (ev.type === "complete") {
-                setRestore((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        status: ev.status,
-                        errorMessage: ev.errorMessage ?? prev.errorMessage,
-                      }
-                    : prev,
-                );
-                ctrl.abort();
-              }
-            } catch {
-              // ignore malformed events
-            }
-          }
-        }
-      } catch (err: unknown) {
-        if ((err as { name?: string })?.name !== "AbortError") {
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
-      } finally {
-        setConnected(false);
-      }
-    })();
-
-    return () => {
-      ctrl.abort();
-    };
-  }, [restoreId]);
-
-  return { restore, connected, warnings, error };
+        setRestore((previous) => {
+          if (!previous || previous.id !== restoreId) return previous;
+          if (event.type === "transition")
+            return {
+              ...previous,
+              status: event.status,
+              bytesRestored: event.bytesRestored ?? previous.bytesRestored,
+              meta: event.meta === undefined ? previous.meta : event.meta,
+            };
+          if (event.type === "destructive")
+            return {
+              ...previous,
+              meta: {
+                ...(previous.meta ?? {}),
+                destructive: event.destructive,
+                ...(event.source ? { destructiveSource: event.source } : {}),
+              },
+              cancelRequested: event.cancelRequested ?? previous.cancelRequested,
+            };
+          if (event.type === "complete")
+            return {
+              ...previous,
+              status: event.status,
+              errorMessage: event.errorMessage ?? previous.errorMessage,
+            };
+          return previous;
+        });
+      },
+    },
+  );
+  return {
+    restore: restoreId && restore?.id === restoreId ? restore : null,
+    warnings: advisories.id === restoreId ? advisories.messages : [],
+    ...stream,
+  };
 }

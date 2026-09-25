@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   destinations: new Map<string, StoredBackupDestination>(),
   backupPolicies: new Map<string, ReturnType<typeof backupPolicyFixture>>(),
   backupRuns: new Map<string, ReturnType<typeof backupRunFixture>>(),
+  backupHistoryRead: vi.fn(), backupStats: vi.fn(),
   backupRestores: new Map<string, ReturnType<typeof backupRestoreFixture>>(),
   backupPolicyCreate: vi.fn(), backupPolicyUpdate: vi.fn(), backupPolicyDelete: vi.fn(), backupRetentionLock: vi.fn(),
   backupEnqueue: vi.fn(), backupPrepare: vi.fn(), backupApply: vi.fn(), backupCancel: vi.fn(), backupSyncSchedule: vi.fn(), backupRemoveSchedule: vi.fn(),
@@ -127,7 +128,7 @@ vi.mock("@repo/db", () => ({
       create: h.destinationCreate, update: h.destinationUpdate, softDelete: h.destinationDelete, setLastVerified: h.destinationVerify,
     },
     backupRun: {
-      statsByDestination: async () => [], findById: async (id: string) => h.backupRuns.get(id),
+      statsByDestination: h.backupStats, listWithSources: h.backupHistoryRead, findById: async (id: string) => h.backupRuns.get(id),
       listByOrganization: async (org: string, opts: { projectId?: string; serviceId?: string; limit?: number }) => [...h.backupRuns.values()].filter(row => row.organizationId === org && (!opts.projectId || row.projectId === opts.projectId) && (!opts.serviceId || row.serviceId === opts.serviceId)).slice(0, opts.limit),
       setRetentionLock: h.backupRetentionLock,
     },
@@ -374,7 +375,7 @@ import { backupDestinationRoutes } from "../../../src/modules/backup-destination
 import { backupRoutes } from "../../../src/modules/backups/backup.routes";
 import { serverManagementRoutes } from "../../../src/modules/system/server-management.routes";
 import { systemManagementRoutes } from "../../../src/modules/system/system-management.routes";
-import { getInternalSetup } from "../../../src/modules/system/setup.controller";
+import { getInternalSetup, onboardingSetup } from "../../../src/modules/system/setup.controller";
 import { stopAllTunnels } from "@repo/platform/engine/lib/ssh-tunnel-manager";
 import { clearAuthModeCache } from "@repo/platform/engine/lib/auth-mode";
 import { clearProductModeCache } from "@repo/platform/engine/lib/product-mode";
@@ -877,6 +878,53 @@ describe("backup destination HTTP/native parity through retained storage service
     }
   });
 
+  it("shares paginated service/volume history without exposing restore commands through either interface", async () => {
+    const history = ["recent", "previous", "older"].map((id) => ({
+      ...backupRunFixture(id), startedAt: new Date("2026-09-25T11:00:00Z"), finishedAt: new Date("2026-09-25T11:01:00Z"),
+      projectName: "Project A", serviceName: "database", mailServerName: null, destinationName: "Storage A",
+      artifacts: [{ key: "archive", payloadKind: "volume", metadata: { volumeTarget: "/data", restoreCommand: "restore --password=private-restore-secret", storage: { format: "chunks-v1" } } }],
+    }));
+    h.backupHistoryRead.mockResolvedValue(history);
+    const local = await native();
+    const expected = await local.backupDestinations.runs("destination-a", { limit: 2, before: "cursor" });
+    expect(expected.nextCursor).toBe("previous");
+    expect(expected.runs).toHaveLength(2);
+    expect(expected.runs[0]).toMatchObject({ id: "recent", serviceName: "database", payloads: [{ kind: "volume", volumeTarget: "/data", incremental: true }] });
+    expect(JSON.stringify(expected)).not.toContain("private-restore-secret");
+    expect(expected.runs[0]).not.toHaveProperty("artifacts");
+    expect(await remote().backupDestinations.runs("destination-a", { limit: 2, before: "cursor" })).toEqual(expected);
+    expect(h.backupHistoryRead).toHaveBeenLastCalledWith("org-a", { destinationId: "destination-a", before: "cursor", limit: 3 });
+    expect(await remote().backupDestinations.history({ limit: 2 })).toEqual(await local.backupDestinations.history({ limit: 2 }));
+    expect(h.backupHistoryRead).toHaveBeenLastCalledWith("org-a", { destinationId: undefined, before: undefined, limit: 3 });
+    for (const api of [local.backupDestinations, remote().backupDestinations]) {
+      await expect(api.runs("destination-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(api.history({ limit: 0 })).rejects.toMatchObject({ statusCode: 400 });
+    }
+  });
+
+  it("keeps direct destination grants scoped and preserves storage failures as server errors", async () => {
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:backup_destination:destination-a", { permissions: ["read"] });
+    const local = await native();
+    for (const api of [local.backupDestinations, remote().backupDestinations]) {
+      expect(await api.runs("destination-a")).toEqual({ runs: [], nextCursor: null });
+      await expect(api.history()).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(api.runs("destination-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    h.backupStats.mockRejectedValue(new Error("Database temporarily unavailable"));
+    for (const api of [local.backupDestinations, remote().backupDestinations])
+      await expect(api.usage("destination-a")).rejects.toMatchObject({ statusCode: 500, code: "BACKUP_DESTINATION_FAILED" });
+  });
+
+  it("presents outcome counts consistently in list and destination detail", async () => {
+    h.backupStats.mockResolvedValue([{ destinationId: "destination-a", storedBytes: 1200, runCount: 8, savedCount: 2, activeCount: 1, failedCount: 4, cancelledCount: 1, lastRunAt: new Date("2026-09-25T11:00:00Z") }]);
+    for (const api of [(await native()).backupDestinations, remote().backupDestinations]) {
+      const [listed] = await api.list();
+      expect(listed!.stats).toMatchObject({ runCount: 8, savedCount: 2, activeCount: 1, failedCount: 4, cancelledCount: 1 });
+      expect((await api.usage("destination-a")).destination.stats).toEqual(listed!.stats);
+    }
+  });
+
   it("reuses credential encryption and records only create metadata", async () => {
     const local = await native();
     const input = { name: "New storage", kind: "s3_compatible" as const, bucket: "backups", accessKeyId: "fresh-access-key", secretAccessKey: "fresh-storage-secret" };
@@ -976,6 +1024,7 @@ beforeEach(() => {
   h.appEnv.clear();
   h.destinations.clear();
   h.backupPolicies.clear(); h.backupRuns.clear(); h.backupRestores.clear();
+  h.backupHistoryRead.mockResolvedValue([]); h.backupStats.mockResolvedValue([]);
   h.appDraft.mockResolvedValue(null);
   h.appEnvMerge.mockImplementation(async (id, environment, upserts, deletes, service) => {
     const key = `${id}:${environment}:${service}`;
@@ -2221,6 +2270,15 @@ describe("server HTTP/native parity", () => {
 describe("HTTP/native system parity", () => {
   const remote = (organizationId = "org-a") => new OpenshipClient({ baseUrl: "http://openship.test", organizationId, fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
 
+  it("refuses anonymous setup writes without the authorized local first-run posture", async () => {
+    h.servers.clear();
+    const onboarding = new Hono().post("/", onboardingSetup);
+    const res = await onboarding.request("/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sshHost: "attacker.test", tunnelToken: "injected" }) });
+    expect(res.status).toBe(404);
+    expect(h.settingsUpsert).not.toHaveBeenCalled();
+    expect(h.serverCreate).not.toHaveBeenCalled();
+  });
+
   it("preserves the host-token setup read without inventing a user session", async () => {
     h.settings = { tunnelToken: "private-host-token" };
     const internal = new Hono().get("/", getInternalSetup);
@@ -2243,14 +2301,16 @@ describe("HTTP/native system parity", () => {
   });
 
   it("does not turn organization ownership or membership into instance administration", async () => {
-    for (const role of ["owner", "member"]) {
+    for (const role of ["owner", "member", "restricted"]) {
       h.members.set("org-a:alice", { id: "member-a", role });
+      h.grants.set("org-a:alice:settings:*", { permissions: ["admin"] });
       const local = await native();
       for (const system of [local.system, remote().system]) {
         await expect(system.updateSettings({ productMode: "mail" })).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.updateEmailSettings({ host: null })).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.resetSettings()).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.health()).rejects.toMatchObject({ statusCode: 403 });
+        await expect(system.browse({ path: "/" })).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.removeUntrackedEdgeSite({ hostname: "orphan.example.test" })).rejects.toMatchObject({ statusCode: 403 });
       }
@@ -2271,6 +2331,7 @@ describe("HTTP/native system parity", () => {
       expect(await system.getSettings()).toHaveProperty("configured");
       await expect(system.updateSettings({ productMode: "mail" })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(system.browse({ path: "/" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     }
     expect(h.settingsUpsert).not.toHaveBeenCalled();
   });
@@ -2379,6 +2440,7 @@ describe("HTTP/native system parity", () => {
   });
 
   it("confines native directory browsing and excludes symlinks and hidden directories", async () => {
+    h.instanceRoles.set("alice", "admin");
     vi.stubEnv("OPENSHIP_NATIVE", "true");
     const directory = await mkdtemp(join(tmpdir(), "system-parity-"));
     try {

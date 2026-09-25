@@ -8,6 +8,7 @@ import { runEphemeralConnectionTest } from "@repo/platform/engine/modules/system
 import { operationContext, operationData } from "../../lib/operation-context";
 import { operationEvents } from "../../lib/operation-stream";
 import { param } from "../../lib/controller-helpers";
+import { isLocalBootstrapRequest } from "../../middleware/local-bootstrap";
 
 const operations = () => getPlatformKernel().servers;
 function connectionResponse(c: Context, result: { ok: boolean; message: string; code?: string }) {
@@ -56,7 +57,7 @@ export async function onboardingTestConnection(c: Context) {
   // UNauthenticated SSH prober here is an SSRF / port-scan oracle. Those
   // instances must be configured through the authenticated flow — disable the
   // pre-auth variant for them entirely.
-  if (env.OPENSHIP_PUBLIC_URL || env.OPENSHIP_REQUIRE_AUTH) {
+  if (!isLocalBootstrapRequest(c)) {
     return c.json({ error: "Not available" }, 404);
   }
 
@@ -67,9 +68,8 @@ export async function onboardingTestConnection(c: Context) {
 
   // Never let the pre-auth prober reach loopback / link-local / cloud-metadata
   // targets — never a legitimate remote SSH server, and the highest-value SSRF
-  // targets (e.g. 169.254.169.254). Private LAN ranges stay allowed (real
-  // self-hosted servers live there). Hostname→internal-IP rebinding is a known
-  // residual that needs the onboarding auth model to fully close.
+  // targets (e.g. 169.254.169.254). Private LAN ranges stay allowed for the
+  // authorized local operator; anonymous remote callers are rejected above.
   const body = await c.req.json().catch(() => ({}));
   if (isBlockedSshTarget(typeof body?.sshHost === "string" ? body.sshHost.trim() : "")) {
     return c.json({ ok: false, message: "This host is not allowed.", code: "blocked_host" }, 400);

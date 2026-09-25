@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Backup tab — backs up the mail server through openship's GENERAL backup
  * system (same policy → orchestrator → destination pipeline as service
@@ -24,20 +26,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import Link from "next/link";
-import {
-  DatabaseBackup,
-  HardDrive,
-  History,
-  Loader2,
-  Play,
-  Save,
-  ShieldAlert,
-  Check,
-  CircleX,
-  Clock,
-  ArrowRight,
-  ArrowUpRight,
-} from "lucide-react";
 import { DEFAULT_RETAIN_COUNT } from "@repo/core";
 import {
   mailAdminApi,
@@ -216,7 +204,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -239,7 +227,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
       <SectionCard
         title={t.emailsAdmin.backup.whatTitle}
         description={t.emailsAdmin.backup.whatDesc}
-        icon={DatabaseBackup}
+        icon={"database-backup"}
       >
         <div className="space-y-3">
           <CheckRow
@@ -263,7 +251,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
           />
           {keys && (
             <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3.5 py-2.5">
-              <ShieldAlert className="size-4 text-warning mt-0.5 shrink-0" />
+              <UiIcon name="shield-alert" className="size-4 text-warning mt-0.5 shrink-0" />
               <p className="text-xs text-warning leading-relaxed">
                 {t.emailsAdmin.backup.keysWarning}
               </p>
@@ -276,7 +264,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
       <SectionCard
         title={t.emailsAdmin.backup.destTitle}
         description={t.emailsAdmin.backup.destDesc}
-        icon={HardDrive}
+        icon={"hard-drive"}
       >
         {noDestinations ? (
           <Link
@@ -284,7 +272,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
             className="flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 hover:bg-muted/40 transition-colors"
           >
             <p className="text-sm text-muted-foreground">{t.emailsAdmin.backup.noDest}</p>
-            <ArrowRight className="size-4 text-muted-foreground/60 shrink-0 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-4 text-muted-foreground/60 shrink-0 rtl:rotate-180" />
           </Link>
         ) : (
           <div className="space-y-4">
@@ -302,7 +290,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
                       className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                     >
                       {t.emailsAdmin.backup.manageDest}
-                      <ArrowUpRight className="size-3 rtl:-scale-x-100" />
+                      <UiIcon name="arrow-up-right" className="size-3 rtl:-scale-x-100" />
                     </Link>
                   )}
                 </div>
@@ -404,14 +392,14 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
 
             {schedule.frequency !== "manual" && (
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <Clock className="size-3.5 shrink-0" />
+                <UiIcon name="clock" className="size-3.5 shrink-0" />
                 {t.emailsAdmin.backup.scheduleJobHint}
                 <Link
                   href="/jobs"
                   className="inline-flex items-center gap-0.5 font-medium text-primary hover:text-primary/80 transition-colors"
                 >
                   {t.dashboard.nav.jobs}
-                  <ArrowUpRight className="size-3 rtl:-scale-x-100" />
+                  <UiIcon name="arrow-up-right" className="size-3 rtl:-scale-x-100" />
                 </Link>
               </p>
             )}
@@ -426,7 +414,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
         <SectionCard
           title={t.emailsAdmin.backup.retentionTitle}
           description={t.emailsAdmin.backup.retentionDesc}
-          icon={History}
+          icon={"history"}
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="block">
@@ -472,7 +460,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
           </div>
           {!hasRetention && (
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3.5 py-2.5">
-              <ShieldAlert className="size-4 text-warning mt-0.5 shrink-0" />
+              <UiIcon name="shield-alert" className="size-4 text-warning mt-0.5 shrink-0" />
               <p className="text-xs text-warning leading-relaxed">
                 {t.emailsAdmin.backup.retentionUnlimitedWarning}
               </p>
@@ -487,7 +475,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
           disabled={saving || noDestinations || !destinationId}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors disabled:opacity-50"
         >
-          {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+          {saving ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="save" className="size-3.5" />}
           {t.emailsAdmin.backup.saveSettings}
         </button>
         <button
@@ -495,13 +483,13 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
           disabled={running || noDestinations || !destinationId}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+          {running ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="play" className="size-3.5" />}
           {t.emailsAdmin.backup.backupNow}
         </button>
       </div>
 
       {/* Recent runs */}
-      <SectionCard title={t.emailsAdmin.backup.recentTitle} icon={Clock} density="split">
+      <SectionCard title={t.emailsAdmin.backup.recentTitle} icon={"clock"} density="split">
         {runs.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-muted-foreground">
             {t.emailsAdmin.backup.noBackups}
@@ -580,7 +568,7 @@ function RunRow({
   return (
     <div className="flex items-center gap-4 px-5 py-3.5">
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${p.bg}`}>
-        <p.Icon className={`size-4 ${p.color} ${p.spin ? "animate-spin" : ""}`} />
+        <UiIcon name={p.Icon} className={`size-4 ${p.color} ${p.spin ? "animate-spin" : ""}`} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground capitalize">{run.status}</p>
@@ -617,10 +605,10 @@ function RunRow({
 
 function runPresentation(status: BackupRun["status"]) {
   if (status === "succeeded")
-    return { Icon: Check, bg: "bg-success-bg", color: "text-success", spin: false };
+    return { Icon: "check" as const, bg: "bg-success-bg", color: "text-success", spin: false };
   if (status === "failed" || status === "server_error" || status === "cancelled")
-    return { Icon: CircleX, bg: "bg-danger-bg", color: "text-danger", spin: false };
-  return { Icon: Loader2, bg: "bg-info-bg", color: "text-info", spin: true };
+    return { Icon: "x-circle" as const, bg: "bg-danger-bg", color: "text-danger", spin: false };
+  return { Icon: "spinner" as const, bg: "bg-info-bg", color: "text-info", spin: true };
 }
 
 function formatBytes(n: number): string {

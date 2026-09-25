@@ -1,12 +1,13 @@
 "use client";
 
+import { NetworkViewControls } from "./NetworkViewControls";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Network, Server, ShieldCheck } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   ReactFlow,
   useNodesState,
   type Node,
@@ -41,9 +42,9 @@ function NetworkGroupCard({ cluster }: { cluster: ServerCluster }) {
           className={`grid size-10 shrink-0 place-items-center rounded-xl ${managed ? "bg-primary/10 text-primary" : "bg-muted/60"}`}
         >
           {managed ? (
-            <ShieldCheck className="size-5" />
+            <UiIcon name="shield-check" className="size-5" />
           ) : source.providerId === "custom" ? (
-            <Network className="size-5 text-muted-foreground" />
+            <UiIcon name="network" className="size-5 text-muted-foreground" />
           ) : (
             <InfrastructureProviderLogo providerId={source.providerId} />
           )}
@@ -58,7 +59,7 @@ function NetworkGroupCard({ cluster }: { cluster: ServerCluster }) {
         <BlurIp>{cluster.network.cidrs.join(", ")}</BlurIp>
       </p>
       <div className="mt-4 flex items-center gap-2 rounded-lg bg-muted/35 px-3 py-2.5 text-xs">
-        <Server className="size-3.5 shrink-0 text-muted-foreground" />
+        <UiIcon name="server" className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-muted-foreground">
           <NetworkDiagnosticText
             value={
@@ -82,7 +83,7 @@ function NetworkGroupCard({ cluster }: { cluster: ServerCluster }) {
         </span>
         <span className="inline-flex items-center gap-1.5 font-medium text-primary">
           {c.networkGroups.open}
-          <ArrowUpRight className="size-3.5 rtl:-rotate-90" />
+          <UiIcon name="arrow-up-right" className="size-3.5 rtl:-rotate-90" />
         </span>
       </div>
     </Link>
@@ -170,10 +171,7 @@ export function NetworkGroups({ clusters }: { clusters: ServerCluster[] }) {
               size={1}
               color="var(--th-on-10)"
             />
-            <Controls
-              showInteractive={false}
-              className="!overflow-hidden !rounded-xl !border-0 !shadow-none [&>button]:!border-border/30 [&>button]:!bg-popover [&>button]:!text-foreground [&_svg]:!fill-current"
-            />
+            <NetworkViewControls />
           </ReactFlow>
         </div>
       )}

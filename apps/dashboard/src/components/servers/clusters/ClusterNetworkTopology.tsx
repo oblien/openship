@@ -1,12 +1,13 @@
 "use client";
 
+import { NetworkViewControls } from "./NetworkViewControls";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
   BaseEdge,
-  Controls,
   EdgeLabelRenderer,
   Handle,
   MarkerType,
@@ -85,7 +86,7 @@ const ServerNodeView = memo(function ServerNodeView({ data, selected }: NodeProp
         className={`mt-3 flex items-center gap-1.5 text-xs ${data.member.progress?.state === "restored" ? "text-warning" : data.state === "passed" ? "text-success" : data.state === "failed" ? "text-danger" : data.member.progress?.state === "running" ? "text-primary" : "text-muted-foreground"}`}
       >
         {data.member.progress?.state === "running" ? (
-          <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+          <UiIcon name="spinner" className="size-3 shrink-0 animate-spin" aria-hidden="true" />
         ) : (
           <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
         )}
@@ -321,10 +322,7 @@ export function ClusterNetworkTopology({
       >
         <FitNetworkView />
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--th-on-10)" />
-        <Controls
-          showInteractive={false}
-          className="!overflow-hidden !rounded-xl !border-0 !shadow-none [&>button]:!border-border/30 [&>button]:!bg-popover [&>button]:!text-foreground [&_svg]:!fill-current"
-        />
+        <NetworkViewControls />
       </ReactFlow>
     </div>
   );

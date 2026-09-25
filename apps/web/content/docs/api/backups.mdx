@@ -240,7 +240,7 @@ for a bad token. List runs with `GET /api/projects/:projectId/backup-runs` to ge
 | List recorded backup runs using typed filters. | `backups.listRuns(id, input?)` | `GET /api/projects/:projectId/backup-runs`<br />`project:write` |
 | Change a backup policy. | `backups.updatePolicy(id, input)` | `PATCH /api/backup-policies/:policyId`<br />`backup_destination:backup_policy:write` |
 | Remove a backup policy. | `backups.removePolicy(id)` | `DELETE /api/backup-policies/:policyId`<br />`backup_destination:backup_policy:write` |
-| Trigger a policy’s backup now. | `backups.run(id)` | `POST /api/backup-policies/:policyId/run`<br />`backup_destination:backup_policy:write` |
+| Trigger a policy’s backup now. | `backups.run(id, input?)` | `POST /api/backup-policies/:policyId/run`<br />`backup_destination:backup_policy:write` |
 | Read a backup run and its result. | `backups.getRun(id)` | `GET /api/backup-runs/:runId`<br />`backup_destination:backup_run:read` |
 | Protect or unprotect a run from retention pruning. | `backups.protectRun(id, input?)` | `POST /api/backup-runs/:runId/protect`<br />`backup_destination:backup_run:write` |
 | Stage and validate a restore without applying it. | `backups.prepareRestore(id, input?)` | `POST /api/backup-runs/:runId/restore/prepare`<br />`backup_destination:backup_run:admin` |

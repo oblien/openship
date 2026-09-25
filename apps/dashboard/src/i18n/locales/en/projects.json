@@ -351,6 +351,8 @@
     "liveHitsWaiting": "Waiting for requests…",
     "statusesUnclassified": "{count} with no status class",
     "trafficTitle": "Traffic overview",
+    "dailyWindow": "7 days, including today (UTC)",
+    "currentHour": "Current hour · still counting",
     "trafficSummary": "{count} requests",
     "servicesMore": "+{count} more",
     "servicesLess": "Show less",

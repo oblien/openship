@@ -1,7 +1,8 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
-import { TrendingUp, TrendingDown, Bot, Activity } from 'lucide-react';
 import { Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -225,7 +226,7 @@ const OverviewHeroChart: React.FC<OverviewHeroChartProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                <Activity className="w-5 h-5 text-purple-600" />
+                <UiIcon name="activity" className="w-5 h-5 text-purple-600" />
               </div>
               <div>
                 <h3 className="font-semibold text-black">{t.overview.hero.title}</h3>
@@ -270,7 +271,7 @@ const OverviewHeroChart: React.FC<OverviewHeroChartProps> = ({
                 <span className="text-sm font-semibold text-black">{formatNumber(totalTokens)}</span>
                 {tokenTrend !== 0 && (
                   <span className={`flex items-center text-xs font-medium ${tokenTrend > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {tokenTrend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {tokenTrend > 0 ? <UiIcon name="trending-up" className="w-3 h-3" /> : <UiIcon name="trending-down" className="w-3 h-3" />}
                     {Math.abs(tokenTrend)}%
                   </span>
                 )}
@@ -282,7 +283,7 @@ const OverviewHeroChart: React.FC<OverviewHeroChartProps> = ({
                 <span className="text-sm font-semibold text-black">{formatNumber(totalRequests)}</span>
                 {requestTrend !== 0 && (
                   <span className={`flex items-center text-xs font-medium ${requestTrend > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {requestTrend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {requestTrend > 0 ? <UiIcon name="trending-up" className="w-3 h-3" /> : <UiIcon name="trending-down" className="w-3 h-3" />}
                     {Math.abs(requestTrend)}%
                   </span>
                 )}
@@ -300,7 +301,7 @@ const OverviewHeroChart: React.FC<OverviewHeroChartProps> = ({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center">
-              <Bot className="w-4 h-4 text-cyan-600" />
+              <UiIcon name="bot" className="w-4 h-4 text-cyan-600" />
             </div>
             <div>
               <h4 className="text-sm font-semibold text-black">{t.overview.hero.agents}</h4>
@@ -309,7 +310,7 @@ const OverviewHeroChart: React.FC<OverviewHeroChartProps> = ({
           </div>
           {agentTrend !== 0 && (
             <span className={`flex items-center text-xs font-medium px-2 py-1 rounded-full ${agentTrend > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
-              {agentTrend > 0 ? <TrendingUp className="w-3 h-3 me-0.5" /> : <TrendingDown className="w-3 h-3 me-0.5" />}
+              {agentTrend > 0 ? <UiIcon name="trending-up" className="w-3 h-3 me-0.5" /> : <UiIcon name="trending-down" className="w-3 h-3 me-0.5" />}
               {Math.abs(agentTrend)}%
             </span>
           )}

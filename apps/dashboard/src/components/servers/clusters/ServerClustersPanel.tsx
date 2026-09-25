@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { ArrowRight, Boxes, Loader2, Network, Server } from "lucide-react";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -33,7 +34,7 @@ export function ServerClustersPanel({
     <section>
       <NetworkStreamNotice stream={stream} />
       {!(isNetworks ? networks : clusters) && !error && (
-        <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
       )}
       {isNetworks && !!preparations.length && (
         <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -43,7 +44,7 @@ export function ServerClustersPanel({
               className="relative rounded-2xl bg-card p-5 transition-colors hover:bg-muted/40"
             >
               <div className="flex items-center gap-2 pe-8 text-xs text-muted-foreground">
-                {setup.status === "preparing" && <Loader2 className="size-3.5 animate-spin" />}
+                {setup.status === "preparing" && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                 {n.managed.preparationStatus[setup.status]}
               </div>
               <div className="absolute end-3 top-3 z-10">
@@ -64,7 +65,7 @@ export function ServerClustersPanel({
                 className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
               >
                 <span id={`setup-${setup.id}-view`}>{n.managed.viewPreparation}</span>
-                <ArrowRight className="size-3.5 rtl:rotate-180" />
+                <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
               </Link>
             </article>
           ))}
@@ -82,7 +83,7 @@ export function ServerClustersPanel({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="grid size-10 place-items-center rounded-xl bg-primary/8 text-primary">
-                  <Boxes className="size-5" />
+                  <UiIcon name="cluster" className="size-5" />
                 </span>
                 <ClusterScalingStatus cluster={cluster} />
               </div>
@@ -92,21 +93,21 @@ export function ServerClustersPanel({
               </p>
               <div className="my-4 flex items-center gap-4 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
-                  <Server className="size-3.5" />
+                  <UiIcon name="server" className="size-3.5" />
                   {interpolate(cluster.serverIds.length === 1 ? c.memberCountOne : c.memberCount, {
                     count: String(cluster.serverIds.length),
                   })}
                 </span>
               </div>
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Network aria-hidden="true" className="size-3.5" />
+                <UiIcon name="network" aria-hidden="true" className="size-3.5" />
                 {cluster.network.name}
               </span>
               <div className="mt-5 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
                 <span className="truncate font-mono">
                   <BlurIp>{cluster.network.network.cidrs.join(", ")}</BlurIp>
                 </span>
-                <ArrowRight className="ms-3 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                <UiIcon name="arrow-right" className="ms-3 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
               </div>
             </Link>
           ))}

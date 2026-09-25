@@ -133,11 +133,6 @@ export function MonitoringPreview() {
           <TrafficChart
             trafficData={analytics?.trafficByHour ?? []}
             isLoading={loading}
-            dateRange={
-              analytics
-                ? `${new Date(analytics.summary.firstRequest).toLocaleDateString()} - ${new Date(analytics.summary.lastRequest).toLocaleDateString()}`
-                : undefined
-            }
             totalRequests={analytics?.summary.totalRequests}
           />
         }

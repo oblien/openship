@@ -8,7 +8,7 @@
   "license": "Apache-2.0",
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "rm -rf dist && tsc && node scripts/dev.mjs",
+    "dev": "node scripts/dev.mjs",
     "build": "node build/bundle.mjs",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",

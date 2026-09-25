@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Boxes, Loader2, Network, Plus, Server } from "lucide-react";
 import type { ClusterCapabilities, ComputeCluster, PrivateNetwork } from "@repo/contracts";
 import { managedNetworkUnsettled } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -74,7 +75,7 @@ export function ClusterEditor({ id, networkId }: { id?: string; networkId?: stri
         href={id ? `/servers/clusters/${encodeURIComponent(id)}` : "/servers?tab=cluster"}
         className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-4 rtl:rotate-180" />
+        <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
         {c.backToClusters}
       </Link>
       <h1 className="text-2xl font-semibold tracking-tight">
@@ -95,7 +96,7 @@ export function ClusterEditor({ id, networkId }: { id?: string; networkId?: stri
       ) : data ? (
         <ClusterForm key={`${id ?? "new"}:${attempt}`} data={data} networkId={networkId} />
       ) : (
-        <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
       )}
     </PageContainer>
   );
@@ -208,7 +209,7 @@ function ClusterForm({ data, networkId }: { data: EditorData; networkId?: string
                 options={data.networks.map((item) => ({
                   value: item.id,
                   label: item.name,
-                  icon: <Network className="size-4 text-info" />,
+                  icon: <UiIcon name="network" className="size-4 text-info" />,
                   description: interpolate(n.memberCount, { count: String(item.members.length) }),
                 }))}
                 onChange={(id) => {
@@ -224,12 +225,12 @@ function ClusterForm({ data, networkId }: { data: EditorData; networkId?: string
                     href={`/servers/networks/${encodeURIComponent(network.id)}`}
                     className="inline-flex items-center gap-1.5"
                   >
-                    <Network className="size-3.5" />
+                    <UiIcon name="network" className="size-3.5" />
                     {c.manageNetwork}
                   </Link>
                 )}
                 <Link href="/servers/networks/new" className="inline-flex items-center gap-1.5">
-                  <Plus className="size-3.5" />
+                  <UiIcon name="plus" className="size-3.5" />
                   {c.createNetwork}
                 </Link>
               </div>
@@ -265,7 +266,7 @@ function ClusterForm({ data, networkId }: { data: EditorData; networkId?: string
                         }
                       />
                       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/40 text-muted-foreground">
-                        <Server className="size-4" />
+                        <UiIcon name="server" className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -290,7 +291,7 @@ function ClusterForm({ data, networkId }: { data: EditorData; networkId?: string
         </div>
         <aside className="min-w-0 space-y-5 rounded-2xl bg-card p-5 @4xl/cluster-editor:sticky @4xl/cluster-editor:top-6">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Boxes className="size-4 text-primary" />
+            <UiIcon name="cluster" className="size-4 text-primary" />
             {name || c.createCluster}
           </div>
           <p className="text-sm text-muted-foreground">
@@ -319,7 +320,7 @@ function ClusterForm({ data, networkId }: { data: EditorData; networkId?: string
             disabled={!valid || busy}
             onClick={() => void save()}
           >
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
             {data.initial ? c.save : c.createCluster}
           </Button>
           <Button asChild variant="ghost" className="w-full">

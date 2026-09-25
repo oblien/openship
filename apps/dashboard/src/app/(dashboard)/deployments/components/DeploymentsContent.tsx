@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { Rocket, Activity, CheckCircle2, XCircle, Loader2, Zap, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { deployApi, projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { DeploymentsFilters } from "./DeploymentsFilters";
@@ -171,14 +172,14 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                   aria-label={t.deployments.pagination.previous}
                   onClick={() => setQuery((previous) => ({ ...previous, page: previous.page - 1 }))}
                   className="rounded-lg border border-border/60 p-2 enabled:hover:bg-muted disabled:opacity-40">
-                  <ChevronLeft className="size-4 rtl:rotate-180" />
+                  <UiIcon name="chevron-left" className="size-4 rtl:rotate-180" />
                 </button>
                 <span>{interpolate(t.deployments.pagination.pageOf, { page: String(page), total: String(pageCount) })}</span>
                 <button type="button" disabled={isLoading || page >= pageCount}
                   aria-label={t.deployments.pagination.next}
                   onClick={() => setQuery((previous) => ({ ...previous, page: previous.page + 1 }))}
                   className="rounded-lg border border-border/60 p-2 enabled:hover:bg-muted disabled:opacity-40">
-                  <ChevronRight className="size-4 rtl:rotate-180" />
+                  <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />
                 </button>
               </div>
             </nav>
@@ -191,7 +192,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
             {/* Activity Overview */}
             <div className="bg-card rounded-2xl border border-border/50 p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Activity className="size-4 text-muted-foreground" />
+                <UiIcon name="activity" className="size-4 text-muted-foreground" />
                 <h3 className="font-semibold text-foreground text-sm">
                   {t.deployments.sidebar.overview.pageTitle}
                 </h3>
@@ -201,7 +202,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Rocket className="size-4 text-primary" />
+                      <UiIcon name="rocket" className="size-4 text-primary" />
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {t.deployments.sidebar.overview.total}
@@ -215,7 +216,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center">
-                      <CheckCircle2 className="size-4 text-success" />
+                      <UiIcon name="check-circle" className="size-4 text-success" />
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {t.deployments.sidebar.overview.successful}
@@ -229,7 +230,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-danger-bg flex items-center justify-center">
-                      <XCircle className="size-4 text-danger" />
+                      <UiIcon name="x-circle" className="size-4 text-danger" />
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {t.deployments.sidebar.overview.failed}
@@ -244,7 +245,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-warning-bg flex items-center justify-center">
-                        <Loader2 className="size-4 text-warning animate-spin" />
+                        <UiIcon name="spinner" className="size-4 text-warning animate-spin" />
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {t.deployments.sidebar.overview.inProgress}
@@ -285,7 +286,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
             {deployments.length > 0 ? (
               <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <Zap className="size-4 text-primary" />
+                  <UiIcon name="bolt" className="size-4 text-primary" />
                   <h3 className="font-semibold text-foreground text-sm">
                     {t.deployments.sidebar.autoDeploy.title}
                   </h3>
@@ -299,14 +300,14 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                     className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
                   >
                     {t.deployments.sidebar.autoDeploy.cta}
-                    <ArrowRight className="size-3.5 rtl:rotate-180" />
+                    <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                   </Link>
                 )}
               </div>
             ) : (
               <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <Zap className="size-4 text-primary" />
+                  <UiIcon name="bolt" className="size-4 text-primary" />
                   <h3 className="font-semibold text-foreground text-sm">
                     {t.deployments.sidebar.getStarted.title}
                   </h3>
@@ -319,7 +320,7 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                   className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
                 >
                   {t.deployments.sidebar.getStarted.cta}
-                  <ArrowRight className="size-3.5 rtl:rotate-180" />
+                  <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                 </Link>
               </div>
             )}

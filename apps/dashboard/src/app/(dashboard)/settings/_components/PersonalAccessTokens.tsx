@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyRound, Plus, Trash2, Copy, Check, Loader2, ShieldCheck, Lock, SlidersHorizontal } from "lucide-react";
 import { grantableTypesForMode } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
 import {
@@ -160,13 +161,13 @@ export function PersonalAccessTokens() {
 
   return (
     <SettingsSection
-      icon={KeyRound}
+      icon={"key"}
       title={t.settings.tokens.title}
       description={t.settings.tokens.description}
     >
       {/* What a token can actually do — set expectations honestly */}
       <div className="mb-4 flex gap-2.5 rounded-xl border border-border/50 bg-muted/30 p-3">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <UiIcon name="shield-check" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="text-xs leading-relaxed text-muted-foreground">
           {t.settings.tokens.explainer1} <span className="font-medium text-foreground">{t.settings.tokens.explainerActsAsYou}</span> {t.settings.tokens.explainer2}{" "}
           <span className="font-medium text-foreground">{t.settings.tokens.explainerReadOnly}</span> {t.settings.tokens.explainer3}{" "}
@@ -189,7 +190,7 @@ export function PersonalAccessTokens() {
               onClick={copyToken}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              {copied ? <UiIcon name="check" className="size-3.5" /> : <UiIcon name="copy" className="size-3.5" />}
               {copied ? t.settings.common.copied : t.settings.common.copy}
             </button>
           </div>
@@ -242,7 +243,7 @@ export function PersonalAccessTokens() {
                 onChange={(e) => setScopeEnabled(e.target.checked)}
                 className="size-4 rounded border-border/60"
               />
-              <Lock className="size-3.5 text-muted-foreground" />
+              <UiIcon name="lock" className="size-3.5 text-muted-foreground" />
               {t.settings.tokens.limitToResources}
             </label>
             {scopeEnabled && (
@@ -252,7 +253,7 @@ export function PersonalAccessTokens() {
                   onClick={openScopePicker}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-transparent px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 transition-colors"
                 >
-                  <SlidersHorizontal className="size-3.5" />
+                  <UiIcon name="sliders" className="size-3.5" />
                   {t.settings.tokens.chooseResources}
                 </button>
                 <span className="text-xs text-muted-foreground">
@@ -275,7 +276,7 @@ export function PersonalAccessTokens() {
               disabled={creating}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {creating ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
               {t.settings.tokens.createToken}
             </button>
             <button
@@ -291,7 +292,7 @@ export function PersonalAccessTokens() {
           onClick={() => setShowForm(true)}
           className="mb-4 inline-flex items-center gap-2 px-4 py-2 bg-muted/50 text-foreground text-sm font-medium rounded-lg hover:bg-muted transition-colors"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.settings.tokens.newToken}
         </button>
       )}
@@ -299,7 +300,7 @@ export function PersonalAccessTokens() {
       {/* Token list */}
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-          <Loader2 className="size-4 animate-spin" /> {t.settings.tokens.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {t.settings.tokens.loading}
         </div>
       ) : active.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">{t.settings.tokens.noActive}</p>
@@ -307,18 +308,18 @@ export function PersonalAccessTokens() {
         <div className="divide-y divide-border/50">
           {active.map((tok) => (
             <div key={tok.id} className="flex items-center gap-3 py-3">
-              <KeyRound className="size-4 text-muted-foreground shrink-0" />
+              <UiIcon name="key" className="size-4 text-muted-foreground shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-foreground truncate">{tok.name}</p>
                   {tok.readOnly && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      <ShieldCheck className="size-3" /> {t.settings.tokens.badgeReadOnly}
+                      <UiIcon name="shield-check" className="size-3" /> {t.settings.tokens.badgeReadOnly}
                     </span>
                   )}
                   {tok.scoped && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                      <Lock className="size-3" /> {t.settings.tokens.badgeScoped}
+                      <UiIcon name="lock" className="size-3" /> {t.settings.tokens.badgeScoped}
                     </span>
                   )}
                 </div>
@@ -339,7 +340,7 @@ export function PersonalAccessTokens() {
                 onClick={() => void handleRevoke(tok.id, tok.name)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-danger hover:border-danger-border transition-colors"
               >
-                <Trash2 className="size-3.5" />
+                <UiIcon name="trash" className="size-3.5" />
                 {t.settings.tokens.revoke}
               </button>
             </div>

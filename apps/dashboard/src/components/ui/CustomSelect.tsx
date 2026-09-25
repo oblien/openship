@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { inputVariants } from "./input";
 
@@ -42,6 +43,7 @@ export interface CustomSelectProps<T extends string> {
   onChange: (value: T) => void;
   placeholder?: string;
   className?: string;
+  triggerClassName?: string;
   /** Input and filled use the shared Input appearance, with descriptions only in the menu. */
   variant?: "default" | "input" | "filled";
   footerAction?: CustomSelectFooterAction;
@@ -67,6 +69,7 @@ export function CustomSelect<T extends string>({
   onChange,
   placeholder = "Select",
   className = "",
+  triggerClassName,
   variant = "default",
   footerAction,
   onOpen,
@@ -291,7 +294,7 @@ export function CustomSelect<T extends string>({
             {showSearch && (
               <div className="flex-none border-b border-border/50 px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <UiIcon name="search" className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                   <input
                     ref={inputRef}
                     type="text"
@@ -362,7 +365,7 @@ export function CustomSelect<T extends string>({
                         </span>
                       </span>
                       {isSelected && (
-                        <Check className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <UiIcon name="check" className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                       )}
                     </button>
                   );
@@ -385,7 +388,7 @@ export function CustomSelect<T extends string>({
                 role="status"
                 className="flex flex-none items-center justify-center gap-2 border-t border-border/50 px-4 py-2 text-xs text-muted-foreground"
               >
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <UiIcon name="spinner" className="h-3.5 w-3.5 animate-spin" />
                 {loadingMessage}
               </div>
             )}
@@ -440,6 +443,7 @@ export function CustomSelect<T extends string>({
           }
         `,
           "items-center justify-between gap-2",
+          triggerClassName,
         )}
         type="button"
       >
@@ -465,7 +469,7 @@ export function CustomSelect<T extends string>({
             <span className="text-muted-foreground">{placeholder}</span>
           )}
         </span>
-        <ChevronDown
+        <UiIcon name="chevron-down"
           className={`w-4 h-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ${
             isOpen ? "rotate-180" : ""
           }`}

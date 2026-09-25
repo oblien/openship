@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, XCircle, X } from "lucide-react";
 import { jobsApi, getAuthToken } from "@/lib/api";
 import { getActiveOrganizationId } from "@/lib/api/client";
 import { connectToSSE } from "@/lib/sseClient";
@@ -70,11 +71,11 @@ export function JobRunLogs({ runId }: { runId: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2">
         {status === "running" ? (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-warning"><Loader2 className="size-3.5 animate-spin" />{j.logs.streaming}</span>
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-warning"><UiIcon name="spinner" className="size-3.5 animate-spin" />{j.logs.streaming}</span>
         ) : status === "success" ? (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-success"><CheckCircle2 className="size-3.5" />{j.status.success}</span>
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-success"><UiIcon name="check-circle" className="size-3.5" />{j.status.success}</span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-danger"><XCircle className="size-3.5" />{j.status.failed}</span>
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-danger"><UiIcon name="x-circle" className="size-3.5" />{j.status.failed}</span>
         )}
       </div>
       <div className="min-h-[240px] flex-1 overflow-y-auto rounded-xl bg-[#0b0b0c] px-4 py-3 font-mono text-[12px] leading-relaxed text-neutral-200">
@@ -98,7 +99,7 @@ export function JobRunLogsModal({ runId, onClose }: { runId: string; onClose: ()
       <div className="flex max-h-[80vh] flex-col">
         <div className="flex items-center justify-between border-b border-border/50 px-5 py-4">
           <h2 className="text-[15px] font-semibold text-foreground">{j.logs.title}</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"><X className="size-4" /></button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"><UiIcon name="close" className="size-4" /></button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
           <JobRunLogs runId={runId} />

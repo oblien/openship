@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu } from "lucide-react";
 import { Sidebar } from "./sidebar";
 import { Logo } from "./logo";
 import { useBrandName, useI18n } from "./i18n-provider";
@@ -34,7 +35,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <span className="flex items-center gap-2.5 text-sm font-semibold text-foreground"><Logo size={24} />{brand}</span>
       <button ref={trigger} type="button" onClick={() => setMobileOpen(true)} aria-label={t.dashboard.sidebar.expand}
         aria-controls="dashboard-navigation" aria-expanded={mobileOpen} className="flex size-10 items-center justify-center rounded-xl text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary">
-        <Menu className="size-5" aria-hidden="true" />
+        <UiIcon name="menu" className="size-5" aria-hidden="true" />
       </button>
     </header>
     {mobileOpen && <div aria-hidden="true" className="fixed inset-0 z-40 touch-none bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />}

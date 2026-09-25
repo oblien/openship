@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
-import { DatabaseBackup, HardDrive, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { servicesApi, type Service, type ServiceVolumeSizes } from "@/lib/api/services";
@@ -98,7 +99,7 @@ export function ServiceVolumesPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
         <div>
           <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-            <HardDrive className="size-4 text-muted-foreground" />
+            <UiIcon name="hard-drive" className="size-4 text-muted-foreground" />
             {t.projectDetail.services.detail.volumes}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">{copy.description}</p>
@@ -107,16 +108,16 @@ export function ServiceVolumesPanel({
           {onBackup && mounts.length > 0 && !editing && (
             <Button variant="outline" size="sm" disabled={backupBusy} onClick={onBackup}>
               {backupBusy ? (
-                <Loader2 className="size-4 animate-spin" />
+                <UiIcon name="spinner" className="size-4 animate-spin" />
               ) : (
-                <DatabaseBackup className="size-4" />
+                <UiIcon name="database-backup" className="size-4" />
               )}
               {copy.backups}
             </Button>
           )}
           {!editing && (
             <Button variant="outline" size="sm" onClick={startEditing}>
-              {mounts.length ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+              {mounts.length ? <UiIcon name="edit" className="size-4" /> : <UiIcon name="plus" className="size-4" />}
               {mounts.length ? copy.edit : copy.add}
             </Button>
           )}
@@ -139,7 +140,7 @@ export function ServiceVolumesPanel({
                       aria-label={interpolate(copy.removeMount, { n: String(index + 1) })}
                       onClick={() => setDraft((current) => current.filter((_, i) => i !== index))}
                     >
-                      <Trash2 className="size-4" />
+                      <UiIcon name="trash" className="size-4" />
                     </Button>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -217,7 +218,7 @@ export function ServiceVolumesPanel({
               disabled={draft.length >= 50}
               onClick={() => setDraft((current) => [...current, parseVolumeMount("")])}
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {copy.add}
             </Button>
           </fieldset>
@@ -238,7 +239,7 @@ export function ServiceVolumesPanel({
               {copy.cancel}
             </Button>
             <Button type="submit" size="sm" disabled={saving}>
-              {saving && <Loader2 className="size-4 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
               {copy.save}
             </Button>
           </div>
@@ -254,7 +255,7 @@ export function ServiceVolumesPanel({
               </span>
               {deployTarget !== "cloud" && <Button variant="ghost" size="icon" className="size-7" disabled={loading}
                 aria-label={copy.refresh} onClick={() => setRevision((value) => value + 1)}>
-                <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+                <UiIcon name="refresh" className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
               </Button>}
             </div>
           </div>
@@ -292,7 +293,7 @@ export function ServiceVolumesPanel({
                   </div>
                   <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
                     {loading ? (
-                      <Loader2 className="size-4 animate-spin" aria-label={copy.measuring} />
+                      <UiIcon name="spinner" className="size-4 animate-spin" aria-label={copy.measuring} />
                     ) : measured?.bytes != null ? (
                       formatBytes(measured.bytes)
                     ) : (
@@ -306,7 +307,7 @@ export function ServiceVolumesPanel({
         </>
       ) : (
         <div className="border-t border-border/40 px-5 py-10 text-center">
-          <HardDrive className="mx-auto mb-3 size-6 text-muted-foreground/60" />
+          <UiIcon name="hard-drive" className="mx-auto mb-3 size-6 text-muted-foreground/60" />
           <p className="text-sm font-medium text-foreground">{copy.emptyTitle}</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{copy.emptyDescription}</p>
         </div>

@@ -593,6 +593,7 @@ export {
 } from "./network/managed-network";
 export { k3sTools, k3sFirewallScript, type K3sHostContext, type K3sHostInspection } from "./cluster/k3s";
 export * from "./cluster/kubernetes-api";
+export * from "./cluster/kubernetes-label";
 export * from "./cluster/database";
 export * from "./runtime/kubernetes";
 export { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime/runtime-env";

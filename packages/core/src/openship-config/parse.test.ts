@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import { parseOpenshipConfig, parseOpenshipConfigJson } from "./parse";
 
 describe("parseOpenshipConfig", () => {
+  it.each(["web\nEOF\nprintf injected\n#", "web;id", "$(id)", "two services", "-option"])("rejects unsafe service name %s", name => {
+    const { config, errors } = parseOpenshipConfig({ services: [{ name, image: "nginx:alpine" }] });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(config?.services ?? []).toEqual([]);
+  });
   it("accepts a full, valid config and strips undefined fields", () => {
     const { config, errors, warnings } = parseOpenshipConfig({
       framework: "nextjs",

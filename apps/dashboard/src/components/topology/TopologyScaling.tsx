@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { ArrowRightLeft, Copy, Cpu, Loader2 } from "lucide-react";
 import {
   MIN_CPU_CORES,
   MIN_MEMORY_MB,
@@ -92,7 +93,7 @@ export function TopologyScaling({
       )}
       <section className="space-y-3">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Cpu className="size-4 text-muted-foreground" />
+          <UiIcon name="cpu" className="size-4 text-muted-foreground" />
           {project.deployTarget === "cluster" ? "Resources per instance" : "CPU & memory"}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
@@ -110,7 +111,7 @@ export function TopologyScaling({
           <>
             {!view && !error && (
               <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 Loading resource settings…
               </div>
             )}
@@ -228,7 +229,7 @@ export function TopologyScaling({
                 disabled={disabled || placementDisabled}
                 onClick={() => onPlacement("copy", service)}
               >
-                <Copy />
+                <UiIcon name="copy" />
                 {service ? "Clone service to another server" : "Clone to another server"}
               </Button>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -240,7 +241,7 @@ export function TopologyScaling({
                 disabled={disabled || placementDisabled}
                 onClick={() => onPlacement("move")}
               >
-                <ArrowRightLeft />
+                <UiIcon name="arrows-left-right" />
                 Move environment
               </Button>
               {placementDisabled && (

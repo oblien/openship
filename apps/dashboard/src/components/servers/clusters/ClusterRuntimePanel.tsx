@@ -1,18 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  Box,
-  CheckCircle2,
-  ChevronDown,
-  Loader2,
-  Network,
-  Play,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
 import type { ComputeCluster } from "@repo/contracts";
 import { clusterRuntimeConnections, clusterRuntimeRunning, type ClusterRuntime } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
@@ -147,11 +138,11 @@ export function ClusterRuntimePanel({
               className={`grid size-10 shrink-0 place-items-center rounded-xl ${runtime?.status === "ready" ? "bg-success/10 text-success" : "bg-primary/10 text-primary"}`}
             >
               {running || busy ? (
-                <Loader2 className="size-5 animate-spin" />
+                <UiIcon name="spinner" className="size-5 animate-spin" />
               ) : runtime?.status === "ready" ? (
-                <CheckCircle2 className="size-5" />
+                <UiIcon name="check-circle" className="size-5" />
               ) : (
-                <Box className="size-5" />
+                <UiIcon name="server-settings" className="size-5" />
               )}
             </span>
             <div>
@@ -167,13 +158,13 @@ export function ClusterRuntimePanel({
             <div className="flex items-center gap-2">
               {available && (
                 <Button onClick={() => void change("setup")} disabled={busy}>
-                  <Play className="size-4" />
+                  <UiIcon name="play" className="size-4" />
                   {c.setup}
                 </Button>
               )}
               {runtime && ["failed", "interrupted"].includes(runtime.status) && (
                 <Button onClick={() => void change("retry")} disabled={busy}>
-                  <RotateCcw className="size-4" />
+                  <UiIcon name="rotate-left" className="size-4" />
                   {t.servers.clusters.retry}
                 </Button>
               )}
@@ -187,14 +178,14 @@ export function ClusterRuntimePanel({
                   }}
                   aria-label={c.remove}
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                 </Button>
               )}
             </div>
           )}
         </div>
         {runtime === undefined && !error && (
-          <Loader2 className="mt-5 size-4 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="mt-5 size-4 animate-spin text-muted-foreground" />
         )}
         {error && !removal && (
           <div role="alert" className="mt-4 rounded-xl bg-danger/10 p-4 text-sm text-danger">
@@ -223,7 +214,7 @@ export function ClusterRuntimePanel({
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
                 >
                   {c.scaleProject}
-                  <ArrowRight className="size-4 rtl:rotate-180" />
+                  <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                 </Link>
                 {runtime.verifiedAt && (
                   <p className="text-xs text-muted-foreground">
@@ -244,9 +235,9 @@ export function ClusterRuntimePanel({
                     setRulesOpen(!showRules);
                   }}
                 >
-                  <Network className="size-4 text-info" />
+                  <UiIcon name="network" className="size-4 text-info" />
                   {c.privateConnections}
-                  <ChevronDown className="ms-auto size-4 text-muted-foreground" />
+                  <UiIcon name="chevron-down" className="ms-auto size-4 text-muted-foreground" />
                 </summary>
                 <p className="mt-3 text-sm text-muted-foreground">{c.privateHint}</p>
                 <div className="mt-3 divide-y divide-border/50">
@@ -277,7 +268,7 @@ export function ClusterRuntimePanel({
             <details className="group mt-5 text-sm">
               <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground">
                 {c.technicalDetails}
-                <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+                <UiIcon name="chevron-down" className="size-4 transition-transform group-open:rotate-180" />
               </summary>
               <div className="mt-3 space-y-3 text-muted-foreground">
                 <p>{cluster.serverIds.length >= 3 ? c.threeControls : c.oneControl}</p>

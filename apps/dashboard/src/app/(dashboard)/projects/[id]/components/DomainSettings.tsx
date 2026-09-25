@@ -1,25 +1,9 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  ExternalLink,
-  Globe,
-  Info,
-  Link2,
-  Loader2,
-  MonitorSmartphone,
-  Pencil,
-  Plus,
-  RefreshCw,
-  ShieldAlert,
-  ShieldCheck,
-  Star,
-  Trash2,
-} from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
@@ -760,7 +744,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       return (
         <ActionButton
           label={t.projectSettings.domains.edge.checking}
-          icon={Loader2}
+          icon={"spinner"}
           spinning
           disabled
         />
@@ -770,7 +754,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       return (
         <span className="inline-flex items-center gap-2">
           <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-success-bg px-3 py-2 text-[13px] font-medium text-success">
-            <ShieldCheck className="size-3.5" />
+            <UiIcon name="shield-check" className="size-3.5" />
             {t.projectSettings.domains.edge.ready}
           </span>
           <button
@@ -787,7 +771,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       <span className="inline-flex items-center gap-2">
         <ActionButton
           label={t.projectSettings.domains.edge.setUp}
-          icon={ShieldCheck}
+          icon={"shield-check"}
           onClick={openEdge}
         />
         {(edge.classification === "known" || edge.classification === "unknown") && (
@@ -1783,13 +1767,13 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     const m = t.projectSettings.domains.menu;
     const items: MenuAction[] = [];
     if (onEditRoute) {
-      items.push({ id: "edit", label: m.editRoute, icon: <Pencil className="size-4" />, onClick: onEditRoute });
+      items.push({ id: "edit", label: m.editRoute, icon: <UiIcon name="edit" className="size-4" />, onClick: onEditRoute });
     }
     if (onSetPrimary) {
       items.push({
         id: "set-primary",
         label: isSettingPrimary ? m.settingPrimary : m.setPrimary,
-        icon: <Star className={isSettingPrimary ? "size-4 animate-pulse" : "size-4"} />,
+        icon: <UiIcon name="star" className={isSettingPrimary ? "size-4 animate-pulse" : "size-4"} />,
         onClick: onSetPrimary,
         disabled: isSettingPrimary,
       });
@@ -1820,7 +1804,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       items.push({
         id: "renew",
         label: isRenewing ? m.renewing : m.renewSsl,
-        icon: <ShieldAlert className={isRenewing ? "size-4 animate-spin" : "size-4"} />,
+        icon: <UiIcon name="shield-alert" className={isRenewing ? "size-4 animate-spin" : "size-4"} />,
         onClick: () => void handleRenewDomainSsl(domain.hostname),
         disabled: isRenewing,
       });
@@ -1829,7 +1813,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       items.push({
         id: "recheck",
         label: isRechecking ? m.rechecking : m.recheckSsl,
-        icon: <RefreshCw className={isRechecking ? "size-4 animate-spin" : "size-4"} />,
+        icon: <UiIcon name="refresh" className={isRechecking ? "size-4 animate-spin" : "size-4"} />,
         onClick: () => void handleRecheckSsl(domain.domainId!, domain.hostname),
         disabled: isRechecking,
       });
@@ -1838,7 +1822,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       items.push({
         id: "upload-cert",
         label: m.uploadCert,
-        icon: <ShieldCheck className="size-4" />,
+        icon: <UiIcon name="shield-check" className="size-4" />,
         onClick: () => setCertUploadDomain({ domainId: domain.domainId!, hostname: domain.hostname }),
       });
     }
@@ -1850,7 +1834,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     items.push({
       id: "delete",
       label: "Remove route",
-      icon: <Trash2 className="size-4" />,
+      icon: <UiIcon name="trash" className="size-4" />,
       variant: "danger",
       onClick: () => void handleDeleteDomain(domain),
     });
@@ -1890,7 +1874,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       menuActions.push({
         id: "retry-routing",
         label: t.projects.routingRetry.retry,
-        icon: <RefreshCw className="size-4" />,
+        icon: <UiIcon name="refresh" className="size-4" />,
         onClick: retryRouting,
         disabled: !!routingOperation?.running,
       });
@@ -2006,23 +1990,23 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   const singleDomainActions = (
     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
       {currentHref !== "#" ? (
-        <ActionButton href={currentHref} label={t.projectSettings.domains.actions.visit} icon={ExternalLink} />
+        <ActionButton href={currentHref} label={t.projectSettings.domains.actions.visit} icon={"arrow-up-right"} />
       ) : null}
       {canOpenLocal ? (
         <ActionButton
           label={t.projects.connections.openLocalhost}
-          icon={openingLocal ? Loader2 : MonitorSmartphone}
+          icon={openingLocal ? "spinner" : "devices"}
           spinning={openingLocal}
           disabled={openingLocal}
           onClick={openOnLocalhost}
         />
       ) : null}
       {hasProjectLevelRouting ? (
-        <ActionButton label={t.projectSettings.domains.actions.editDomains} icon={Pencil} onClick={handleStartEditingDomains} />
+        <ActionButton label={t.projectSettings.domains.actions.editDomains} icon={"edit"} onClick={handleStartEditingDomains} />
       ) : null}
       <ActionButton
         label={showCustomDomainSection ? t.projectSettings.domains.actions.hideSetup : t.projectSettings.domains.actions.addDomain}
-        icon={Plus}
+        icon={"plus"}
         onClick={handleToggleCustomDomain}
       />
     </div>
@@ -2079,7 +2063,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       {scopedService && !scopedService.exposed && Boolean(scopedEndpointCount) && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
           <span className="text-sm text-muted-foreground">{t.projectDetail.services.detail.networking.paused}</span>
-          <ActionButton label={t.projectDetail.services.detail.networking.enableRouting} icon={Globe}
+          <ActionButton label={t.projectDetail.services.detail.networking.enableRouting} icon={"globe"}
             disabled={routeSavingServiceId === scopedService.id}
             onClick={() => void handleServiceRouteUpdate(scopedService.id, { exposed: true })} />
         </div>
@@ -2126,7 +2110,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           <SectionCard
             title={t.projectSettings.domains.add.title}
             description={t.projectSettings.domains.add.description}
-            icon={Plus}
+            icon={"plus"}
             iconTone="blue"
           >
             <div className="space-y-4">
@@ -2271,9 +2255,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                   className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSubmitting ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <Plus className="size-4" />
+                    <UiIcon name="plus" className="size-4" />
                   )}
                   {isSubmitting ? t.projectSettings.domains.add.adding : t.projectSettings.domains.add.submit}
                 </button>
@@ -2289,7 +2273,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                   ? t.projectSettings.domains.dns.descPreview
                   : t.projectSettings.domains.dns.descApply
               }
-              icon={Link2}
+              icon={"link"}
               iconTone="orange"
             >
               <div className="space-y-3">
@@ -2321,7 +2305,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                           ? t.projectSettings.domains.dns.verifying
                           : interpolate(t.projectSettings.domains.dns.verify, { hostname: pending.hostname })
                       }
-                      icon={verifyingDomainId === pending.id ? Loader2 : RefreshCw}
+                      icon={verifyingDomainId === pending.id ? "spinner" : "refresh"}
                       onClick={() => startVerify(pending.id, pending.hostname)}
                       disabled={verifyingDomainId === pending.id}
                     />
@@ -2347,7 +2331,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         <SectionCard
           title={domainMeta.title}
           description={domainMeta.subtitle}
-          icon={Globe}
+          icon={"globe"}
           iconTone="primary"
           actions={singleDomainActions}
         >
@@ -2383,7 +2367,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             {renderEdgeControl()}
             <ActionButton
               label={showCustomDomainSection ? t.projectSettings.domains.actions.hideSetup : t.projectSettings.domains.actions.addDomain}
-              icon={Plus}
+              icon={"plus"}
               onClick={handleToggleCustomDomain}
             />
           </div>
@@ -2459,9 +2443,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSavingPublicEndpoints ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <CheckCircle2 className="size-4" />
+                  <UiIcon name="check-circle" className="size-4" />
                 )}
                 {isSavingPublicEndpoints ? t.projectSettings.domains.edit.saving : t.projectSettings.domains.edit.save}
               </button>
@@ -2481,7 +2465,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             {renderEdgeControl()}
             <ActionButton
               label={showAddRoute ? t.projectSettings.domains.addRoute.cancel : t.projectSettings.domains.actions.addDomain}
-              icon={Plus}
+              icon={"plus"}
               disabled={addRouteSaving || servicesLoading || !!servicesData.error}
               onClick={() => {
                 setAddRouteError(null);
@@ -2556,7 +2540,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                     disabled={addRouteSaving || servicesLoading || !!servicesData.error}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
                   >
-                    {addRouteSaving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                    {addRouteSaving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
                     {t.projectSettings.domains.addRoute.submit}
                   </button>
                 </div>
@@ -2680,7 +2664,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 disabled={!routeDirty || routeSaving}
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {routeSaving && <Loader2 className="size-3.5 animate-spin" />}
+                {routeSaving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                 {t.projectSettings.domains.editRoute.save}
               </button>
             </div>
@@ -2743,7 +2727,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                   disabled={isUploadingCert || !certPem.trim() || !keyPem.trim()}
                   className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-primary px-4 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {isUploadingCert && <Loader2 className="size-4 animate-spin" />}
+                  {isUploadingCert && <UiIcon name="spinner" className="size-4 animate-spin" />}
                   {isUploadingCert ? t.projectSettings.domains.certUpload.submitting : t.projectSettings.domains.certUpload.submit}
                 </button>
               </div>
@@ -2763,7 +2747,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           >
             <div className="flex items-start gap-3 px-5 pt-5">
               <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-danger-bg text-danger">
-                <Trash2 className="size-4" />
+                <UiIcon name="trash" className="size-4" />
               </span>
               <div className="min-w-0">
                 <h3 className="text-[14px] font-semibold text-foreground">Remove route</h3>
@@ -2788,7 +2772,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 disabled={removing}
                 className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-danger-solid px-4 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
-                {removing && <Loader2 className="size-4 animate-spin" />}
+                {removing && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {removing ? "Removing…" : "Remove route"}
               </button>
             </div>
@@ -2817,7 +2801,7 @@ function SectionCard({
 }: {
   title: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconTone?: keyof typeof ICON_TONES;
   headerBadge?: React.ReactNode;
   actions?: React.ReactNode;
@@ -2830,7 +2814,7 @@ function SectionCard({
           <div
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
           >
-            <Icon className="size-4" />
+            <UiIcon name={Icon} className="size-4" />
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
@@ -2889,8 +2873,8 @@ function StatusPill({
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${styles}`}
     >
-      {tone === "success" ? <CheckCircle2 className="size-3" /> : null}
-      {tone === "warning" || tone === "danger" ? <ShieldAlert className="size-3" /> : null}
+      {tone === "success" ? <UiIcon name="check-circle" className="size-3" /> : null}
+      {tone === "warning" || tone === "danger" ? <UiIcon name="shield-alert" className="size-3" /> : null}
       {children}
     </span>
   );
@@ -2905,7 +2889,7 @@ function ActionButton({
   spinning,
 }: {
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   href?: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -2919,7 +2903,7 @@ function ActionButton({
   if (href) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
-        <Icon className={iconClassName} />
+        <UiIcon name={Icon} className={iconClassName} />
         {label}
       </a>
     );
@@ -2927,7 +2911,7 @@ function ActionButton({
 
   return (
     <button onClick={onClick} disabled={disabled} className={className}>
-      <Icon className={iconClassName} />
+      <UiIcon name={Icon} className={iconClassName} />
       {label}
     </button>
   );
@@ -2971,7 +2955,7 @@ function DiagnosablePill({
       className="inline-flex items-center gap-1 rounded-full transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
     >
       <StatusPill tone={tone}>{label}</StatusPill>
-      <Info className="size-3.5 text-muted-foreground" />
+      <UiIcon name="info" className="size-3.5 text-muted-foreground" />
     </button>
   );
 }
@@ -3089,7 +3073,7 @@ function DomainOverviewCard({
               aria-label={d.overview.visit}
               className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <ExternalLink className="size-4" />
+              <UiIcon name="arrow-up-right" className="size-4" />
             </a>
           ) : null}
           {menuActions.length > 0 ? <DropdownMenu actions={menuActions} align="right" triggerLabel={`${t.projectDetail.services.detail.networking.manage} ${domain.hostname}`} /> : null}
@@ -3144,7 +3128,7 @@ function DomainOverviewCard({
             pill it's acting on; the completion toast still fires as before. */}
         {sslActionBusy ? (
           <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-[12px] text-foreground">
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+            <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-primary" />
             <span>{sslActionLabel}</span>
           </div>
         ) : null}
@@ -3206,9 +3190,9 @@ function DomainOverviewCard({
                 className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {retryBusy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 ) : (
-                  <RefreshCw className="size-3.5" />
+                  <UiIcon name="refresh" className="size-3.5" />
                 )}
                 {retryBusy
                   ? d.diagnosis.checking
@@ -3222,7 +3206,7 @@ function DomainOverviewCard({
 
         {portHint ? (
           <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg/40 px-3 py-2.5 text-[12px] text-warning">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {portHint.serviceName
                 ? interpolate(d.portHint.bodyService, { service: portHint.serviceName, port: String(portHint.port) })
@@ -3233,7 +3217,7 @@ function DomainOverviewCard({
 
         {outputHint ? (
           <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg/40 px-3 py-2.5 text-[12px] text-warning">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {outputHint.kind === "notServed"
                 ? interpolate(d.outputHint.notServed, {
@@ -3254,7 +3238,7 @@ function DomainOverviewCard({
             disabled={retryBusy}
             className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw className="size-3.5" />
+            <UiIcon name="refresh" className="size-3.5" />
             {t.projects.routingRetry.retry}
           </button>
         ) : null}
@@ -3268,7 +3252,7 @@ function DomainOverviewCard({
                 disabled={verifying || retryBusy}
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {verifying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                {verifying ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="refresh" className="size-3.5" />}
                 {verifying ? d.menu.verifying : d.menu.verify}
               </button>
               {loadRecords ? (
@@ -3277,9 +3261,9 @@ function DomainOverviewCard({
                   onClick={() => (recordsOpen ? setRecordsOpen(false) : void openRecords())}
                   className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                 >
-                  <Link2 className="size-3.5" />
+                  <UiIcon name="link" className="size-3.5" />
                   {d.records.toggle}
-                  <ChevronDown className={`size-3.5 transition-transform ${recordsOpen ? "rotate-180" : ""}`} />
+                  <UiIcon name="chevron-down" className={`size-3.5 transition-transform ${recordsOpen ? "rotate-180" : ""}`} />
                 </button>
               ) : null}
             </div>
@@ -3298,7 +3282,7 @@ function DomainOverviewCard({
                 <p className="text-[12px] text-muted-foreground">{d.records.hint}</p>
                 {recordsLoading ? (
                   <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" /> {d.records.loading}
+                    <UiIcon name="spinner" className="size-3.5 animate-spin" /> {d.records.loading}
                   </div>
                 ) : recordsError ? (
                   <div className="flex flex-wrap items-center gap-2 py-2 text-[12px] text-warning">

@@ -1,19 +1,10 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { githubApi } from "@/lib/api";
-import {
-  Github,
-  Lock,
-  Globe,
-  BookOpen,
-  Zap,
-  GitBranch,
-  Cloud,
-  Terminal,
-  Shield,
-} from "lucide-react";
 import type { GitHubRepo, GitHubConnectionState } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -72,14 +63,14 @@ export function LibrarySidebar({
       {connected && total > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 p-5">
           <div className="flex items-center gap-2 mb-4">
-            <BookOpen className="size-4 text-muted-foreground" />
+            <UiIcon name="book" className="size-4 text-muted-foreground" />
             <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.overview}</h3>
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <GitBranch className="size-4 text-primary" />
+                  <UiIcon name="git-branch" className="size-4 text-primary" />
                 </div>
                 <span className="text-sm text-muted-foreground">{t.library.sidebar.total}</span>
               </div>
@@ -88,7 +79,7 @@ export function LibrarySidebar({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <Globe className="size-4 text-blue-500" />
+                  <UiIcon name="globe" className="size-4 text-blue-500" />
                 </div>
                 <span className="text-sm text-muted-foreground">{t.library.sidebar.public}</span>
               </div>
@@ -97,7 +88,7 @@ export function LibrarySidebar({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                  <Lock className="size-4 text-orange-500" />
+                  <UiIcon name="lock" className="size-4 text-orange-500" />
                 </div>
                 <span className="text-sm text-muted-foreground">{t.library.sidebar.private}</span>
               </div>
@@ -110,7 +101,7 @@ export function LibrarySidebar({
       {/* Quick Tip */}
       <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
         <div className="flex items-center gap-2 mb-3">
-          <Zap className="size-4 text-primary" />
+          <UiIcon name="bolt" className="size-4 text-primary" />
           <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.quickTip}</h3>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
@@ -140,11 +131,11 @@ function SaasConnectionCard({
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-4">
-        <Github className="size-4 text-muted-foreground" />
+        <UiIcon name="github" className="size-4 text-muted-foreground" />
         <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
       </div>
       <SourceRow
-        icon={Github}
+        icon={"github"}
         label={t.library.sidebar.openshipGithubApp}
         sublabel={
           connected
@@ -194,7 +185,7 @@ function SelfHostedConnectionCard({
   // Primary row, gated on platform: desktop keeps the gh-CLI framing (Terminal +
   // "Run gh auth login"); a VPS shows the real method (never "gh CLI") and a
   // plain "Not connected" instead of a shell instruction it can't follow.
-  const primaryIcon = isDesktop ? Terminal : Github;
+  const primaryIcon = isDesktop ? "terminal" : "github";
   const primaryLabel = isDesktop
     ? cliLabel
     : cliMethod === "device"
@@ -243,7 +234,7 @@ function SelfHostedConnectionCard({
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-4">
-        <Github className="size-4 text-muted-foreground" />
+        <UiIcon name="github" className="size-4 text-muted-foreground" />
         <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
       </div>
 
@@ -265,7 +256,7 @@ function SelfHostedConnectionCard({
             half-configured. Connecting it lives in Settings. */}
         {appStatus?.connected && (
           <SourceRow
-            icon={Cloud}
+            icon={"cloud"}
             label={t.library.sidebar.openshipCloudApp}
             sublabel={appSublabel}
             connected
@@ -276,7 +267,7 @@ function SelfHostedConnectionCard({
 
       {/* Footnote: the library is gh-driven; App status + install live in Settings */}
       <div className="mt-4 flex items-start gap-2 rounded-xl border border-border/40 bg-muted/30 px-3 py-2.5">
-        <Shield className="size-3.5 text-muted-foreground shrink-0 mt-0.5" />
+        <UiIcon name="shield" className="size-3.5 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground leading-relaxed">
           {t.library.sidebar.footnote}{" "}
           <Link
@@ -299,7 +290,7 @@ function SourceRow({
   connected,
   tone = "primary",
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   label: string;
   sublabel: string;
   connected: boolean;
@@ -314,7 +305,7 @@ function SourceRow({
             connected ? "bg-success-bg" : "bg-muted/60"
           }`}
         >
-          <Icon
+          <UiIcon name={Icon}
             className={`size-4 ${
               connected
                 ? "text-success"

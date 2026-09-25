@@ -244,24 +244,26 @@
   },
   "backup": {
     "live": {
-      "title": "Sauvegarde en direct",
+      "title": "Activité des sauvegardes",
       "description": "Progression en temps réel pour l'exécution que vous venez de lancer. Persiste après l'actualisation de la page.",
       "dismiss": "Ignorer"
     },
     "destinations": {
       "title": "Destinations de sauvegarde",
-      "description": "Cibles de stockage par utilisateur. Ajoutez des buckets compatibles S3, des serveurs SFTP ou des disques locaux.",
+      "description": "Stockage disponible pour ce projet.",
       "manage": "Gérer",
       "loading": "Chargement…",
       "emptyPrefix": "Aucune destination pour le moment. ",
       "emptyLink": "Créez-en une",
       "emptySuffix": " pour commencer à sauvegarder.",
       "verified": "Vérifiée",
-      "failed": "Échouée"
+      "failed": "Échouée",
+      "emptyHint": "Connectez un bucket S3, un hôte SFTP ou un serveur déjà utilisé.",
+      "inUse": "Utilisé"
     },
     "services": {
-      "title": "Services et politiques",
-      "description": "Chaque service peut avoir sa propre politique de sauvegarde (planification + destination). Les valeurs par défaut au niveau du projet arrivent dans le Chunk 2.",
+      "title": "Politiques de sauvegarde",
+      "description": "Choisissez les données à sauvegarder, la fréquence et le stockage.",
       "refresh": "Actualiser",
       "empty": "Ce projet n'a pas encore de services. Les sauvegardes au niveau des services apparaîtront ici une fois que vous en aurez ajouté.",
       "policyLabel": "Politique :",
@@ -273,22 +275,54 @@
       "editPolicy": "Modifier la politique",
       "addDestinationFirst": "Ajoutez d'abord une destination",
       "createPolicyHint": "Créer une politique de sauvegarde pour ce service",
-      "createPolicy": "Créer une politique"
+      "createPolicy": "Créer une politique",
+      "projectHint": "Une politique pour tous les services de ce projet.",
+      "includedInProject": "Inclus dans la politique du projet.",
+      "retainCount": "Conserver {count} sauvegardes",
+      "retainDays": "Jusqu’à {days} jours"
     },
     "recent": {
+      "loadOlder": "Charger les sauvegardes précédentes",
       "title": "Sauvegardes récentes",
-      "description": "Les 25 exécutions les plus récentes pour tous les services de ce projet.",
+      "description": "Exécutions récentes, résultats et options de restauration.",
       "loading": "Chargement…",
       "empty": "Aucune sauvegarde pour le moment.",
       "protectedTitle": "Protégée contre la purge de rétention",
       "protected": "Protégée",
       "restoreTitle": "Restaurer à partir de cette sauvegarde",
       "allowPrune": "Autoriser la rétention à purger",
-      "protectFrom": "Protéger de la rétention"
+      "protectFrom": "Protéger de la rétention",
+      "emptyHint": "Créez une politique, puis lancez votre première sauvegarde ici.",
+      "backup": "Sauvegarde",
+      "viewDetails": "Voir les détails",
+      "restore": "Restaurer",
+      "triggers": {
+        "manual": "À la demande",
+        "cron": "Planifiée",
+        "webhook": "Webhook",
+        "pre_deploy": "Avant le déploiement"
+      }
     },
     "toast": {
       "runFailed": "L'exécution de la sauvegarde a échoué",
       "toggleProtectionFailed": "Échec du basculement de la protection"
+    },
+    "overview": {
+      "description": "Planifiez les sauvegardes et restaurez les données de votre projet.",
+      "lastBackup": "Dernière sauvegarde réussie",
+      "noRecentBackup": "Aucune sauvegarde récente",
+      "scheduledPolicies": "Politiques planifiées",
+      "projectScope": "Projet entier",
+      "serviceBackup": "Sauvegarde du service",
+      "paused": "En pause",
+      "loadFailed": "Impossible de charger les sauvegardes"
+    },
+    "schedule": {
+      "daily": "Chaque jour à {time}",
+      "weekly": "Chaque {day} à {time}",
+      "monthly": "Le {day} de chaque mois, {time}",
+      "custom": "Planification personnalisée",
+      "timezone": "Utilise le fuseau horaire du serveur."
     }
   },
   "build": {
@@ -436,6 +470,7 @@
       "install": "Installer l'application GitHub"
     },
     "webhookBanner": {
+      "summary": "Point d’accès public requis",
       "title": "Activer le déploiement automatique",
       "description": "Le déploiement automatique nécessite un point de terminaison webhook direct. Exposez cette API Openship sur une URL publique ou configurez un domaine webhook vérifié pour une livraison directe."
     },

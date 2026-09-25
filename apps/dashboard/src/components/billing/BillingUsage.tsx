@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
 import { api, getApiErrorMessage } from "@/lib/api/client";
 import { UsageChart } from "./UsageChart";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -94,10 +95,10 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
       </div>
 
       {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/20 bg-danger/5 p-4 text-sm">
-        <p className="flex items-center gap-2 text-danger"><AlertCircle className="size-4 shrink-0" aria-hidden="true" />{error}</p>
+        <p className="flex items-center gap-2 text-danger"><UiIcon name="alert-circle" className="size-4 shrink-0" aria-hidden="true" />{error}</p>
         <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium text-primary hover:underline">{t.billing.plansRoute.tryAgain}</button>
       </div>}
-      {loading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}</p>}
+      {loading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><UiIcon name="spinner" className="size-4 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}</p>}
 
       <div className="rounded-2xl border border-border/50 bg-card p-5 sm:p-6">
         <h2 className="text-base font-semibold">{t.billing.usage.breakdown.title}</h2>
@@ -142,9 +143,9 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
         </div>
         <div className="min-h-[300px]">
           {loading ? <div role="status" className="flex h-[300px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}
+            <UiIcon name="spinner" className="size-5 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}
           </div> : error ? <div role="alert" className="flex h-[300px] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-            <AlertCircle className="size-6" aria-hidden="true" /><p>{error}</p>
+            <UiIcon name="alert-circle" className="size-6" aria-hidden="true" /><p>{error}</p>
             <button type="button" onClick={() => setRetry((value) => value + 1)} className="font-medium text-primary hover:underline">{t.billing.plansRoute.tryAgain}</button>
           </div> : buckets.length === 0 ? <p className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">{t.billing.usage.empty}</p>
             : <UsageChart buckets={buckets} granularity={granularity} />}

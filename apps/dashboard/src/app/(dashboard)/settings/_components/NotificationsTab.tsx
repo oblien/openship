@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * NotificationsTab — full notification preferences UI.
  *
@@ -20,7 +22,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, Mail, Webhook, MessageSquare, MessageCircle, MessagesSquare, Smartphone, Plus, Trash2, Loader2, AlertTriangle, Send, Check, ChevronDown, type LucideIcon } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 import { PillSwitcher } from "@/components/ui/PillSwitcher";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
@@ -119,7 +120,7 @@ function ChannelMultiSelect({
             {interpolate(t.settings.notifications.orgDefaults.nChannels, { n: String(value.length) })}
           </span>
         </span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        <UiIcon name="chevron-down" className="size-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
         // Frosted-glass surface (`bg-popover/70` color-mix + `backdrop-blur-xl`).
@@ -144,7 +145,7 @@ function ChannelMultiSelect({
                       on ? "border-primary bg-primary text-primary-foreground" : "border-border"
                     }`}
                   >
-                    {on && <Check className="size-3" />}
+                    {on && <UiIcon name="check" className="size-3" />}
                   </span>
                   <ChannelLogo kind={k} className="size-4" />
                   <span className="flex-1 text-start">{t.settings.notifications.kinds[k]}</span>
@@ -229,7 +230,7 @@ export function NotificationsTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -297,7 +298,7 @@ function ChannelsCard({
 
   return (
     <SettingsSection
-      icon={Bell}
+      icon={"bell"}
       title={t.settings.notifications.channels.title}
       description={t.settings.notifications.channels.description}
       /* In the header, not under the list: the list grows, so a button below it
@@ -311,7 +312,7 @@ function ChannelsCard({
             onClick={() => setShowForm(true)}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 text-sm hover:bg-foreground/[0.04] transition"
           >
-            <Plus className="size-4" strokeWidth={1.7} />
+            <UiIcon name="plus" className="size-4" />
             {t.settings.notifications.channels.addChannel}
           </button>
         )
@@ -358,9 +359,9 @@ function ChannelsCard({
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition disabled:opacity-50"
                   >
                     {testing === ch.id ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+                      <UiIcon name="spinner" className="size-3.5 animate-spin" />
                     ) : (
-                      <Send className="size-3.5" strokeWidth={1.7} />
+                      <UiIcon name="send" className="size-3.5" />
                     )}
                     {t.settings.notifications.channels.sendTest}
                   </button>
@@ -371,7 +372,7 @@ function ChannelsCard({
                   className="p-1.5 rounded-md hover:bg-foreground/[0.04] text-muted-foreground hover:text-destructive transition"
                   aria-label={t.settings.notifications.channels.deleteChannel}
                 >
-                  <Trash2 className="size-4" strokeWidth={1.7} />
+                  <UiIcon name="trash" className="size-4" />
                 </button>
               </div>
             </li>
@@ -517,7 +518,7 @@ function NewChannelForm({
       )}
       {kind === "email" && emailDeliverable === false && (
         <div className="flex items-start gap-2 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.7} />
+          <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {t.settings.notifications.form.noEmailTransport}{" "}
             <Link
@@ -756,7 +757,7 @@ function EventNotificationsCard({
 
   return (
     <SettingsSection
-      icon={Bell}
+      icon={"bell"}
       title={t.settings.notifications.subscriptions.title}
       description={t.settings.notifications.subscriptions.description}
     >

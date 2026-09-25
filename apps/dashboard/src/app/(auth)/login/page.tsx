@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -12,7 +14,6 @@ import { OAuthButtons } from "@/components/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, ExternalLink } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/api/client";
 import { getApiOrigin } from "@/lib/api/urls";
@@ -35,7 +36,7 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center py-8"><div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></div>
+        <div className="flex justify-center py-8"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <LoginPageInner />
@@ -195,7 +196,7 @@ function LoginPageInner() {
     return (
       <AuthShell>
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </div>
       </AuthShell>
     );
@@ -236,7 +237,7 @@ function LoginPageInner() {
           disabled={loading}
           onClick={() => { void handleCloudSignIn(callbackUrl); }}
         >
-          {loading ? <Loader2 className="me-2 size-4 animate-spin" /> : <ExternalLink className="me-2 size-4" />}
+          {loading ? <UiIcon name="spinner" className="me-2 size-4 animate-spin" /> : <UiIcon name="external-link" className="me-2 size-4" />}
           {loading ? "Opening Openship Cloud..." : "Sign in with Openship"}
         </Button>
       </AuthShell>
@@ -297,13 +298,13 @@ function LoginPageInner() {
               className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
               aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
             </button>
           </div>
         </div>
 
         <Button type="submit" disabled={loading} className="mt-1 w-full">
-          {loading && <Loader2 className="animate-spin" />}
+          {loading && <UiIcon name="spinner" className="animate-spin" />}
           {loading ? t.auth.login.submitting : t.auth.login.submit}
         </Button>
       </form>

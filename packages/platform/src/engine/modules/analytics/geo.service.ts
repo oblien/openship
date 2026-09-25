@@ -216,8 +216,7 @@ async function collectSelfHosted(
   let geoAvailable = true;
   let approximate = false;
 
-  // Viewing IS what drives a scrape (there is no background interval) — same
-  // fire-and-forget, self-throttled call the per-server routes make.
+  // Share the scheduled scraper's throttle when a user views the daily rollup.
   for (const serverId of new Set(sources.map((s) => s.serverId))) {
     void trackBackgroundWork(scrapeServerIfStale(serverId)).catch(() => {});
   }
@@ -359,7 +358,7 @@ async function collectCloud(
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 /**
- * Country + daily-rollup data for a project over a window (defaults: last 7 days).
+ * Country + daily rollups, defaulting to seven UTC dates including today.
  *
  * An unroutable project (no tracked domain, no server) is a legitimate empty, not
  * an error — a fresh project must render a clean zero state.
@@ -377,7 +376,7 @@ export async function getProjectGeo(
   }
 
   const toMs = to ? new Date(to).getTime() : Date.now();
-  const fromMs = from ? new Date(from).getTime() : toMs - 7 * 24 * 60 * 60 * 1000;
+  const fromMs = from ? new Date(from).getTime() : Math.floor(toMs / 86_400_000) * 86_400_000 - 6 * 86_400_000;
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return EMPTY;
 
   // `domain` is validated against the project's tracked domains inside the

@@ -32,7 +32,7 @@ export const getStatusConfig = (status: string) => {
   switch (status) {
     case "success":
       return {
-        icon: 'checkmark-72-1658234612.png',
+        icon: "check" as const,
         color: "var(--color-success)",
         bgColor: "bg-success-bg",
         borderColor: "border-success-border",
@@ -40,7 +40,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "failed":
       return {
-        icon: 'close remove-802-1662363936.png',
+        icon: "close" as const,
         color: "var(--color-danger)",
         bgColor: "bg-danger-bg",
         borderColor: "border-danger-border",
@@ -48,7 +48,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "canceled":
       return {
-        icon: 'close%20circle-73-1658234612.png',
+        icon: "x-circle" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-neutral-bg",
         borderColor: "border-neutral-border",
@@ -57,7 +57,7 @@ export const getStatusConfig = (status: string) => {
     case "no_changes":
       // Settled and healthy: nothing shipped because nothing had changed.
       return {
-        icon: 'checkmark-72-1658234612.png',
+        icon: "check" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-neutral-bg",
         borderColor: "border-neutral-border",
@@ -65,7 +65,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "building":
       return {
-        icon: 'loading-51-1663582768.png',
+        icon: "spinner" as const,
         color: "var(--color-info)",
         bgColor: "bg-info-bg",
         borderColor: "border-info-border",
@@ -73,7 +73,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "reconciling":
       return {
-        icon: 'loading-51-1663582768.png',
+        icon: "spinner" as const,
         color: "var(--color-warning)",
         bgColor: "bg-warning-bg",
         borderColor: "border-warning-border",
@@ -81,7 +81,7 @@ export const getStatusConfig = (status: string) => {
       };
     default:
       return {
-        icon: 'circle%20clock-39-1658435834.png',
+        icon: "clock" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-neutral-bg",
         borderColor: "border-neutral-border",

@@ -1,7 +1,7 @@
+import { Icon as UiIcon } from "@repo/ui/icons";
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Trash2 } from "lucide-react";
 import { DataTable, RowActionsMenu, type DataTableColumn } from "./data-table";
 import { StatusPill } from "./status-pill";
 
@@ -32,7 +32,7 @@ function renderTable() {
             {
               id: "delete",
               label: "Delete",
-              icon: <Trash2 className="size-4" />,
+              icon: <UiIcon name="trash" className="size-4" />,
               variant: "danger",
               onClick: () => {},
             },

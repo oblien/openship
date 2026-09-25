@@ -1,6 +1,7 @@
 "use client";
 
-import { Globe, AlertTriangle } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { DiscoveredStack } from "@/lib/api";
 
@@ -15,7 +16,7 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
     <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3 text-sm">
       {stack.proxy && (
         <div className="flex items-start gap-2.5">
-          <Globe className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+          <UiIcon name="globe" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
           <div className="space-y-1">
             <p className="font-medium text-foreground">
               {interpolate(copy.detected, {
@@ -29,7 +30,7 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
       {warnings.length > 0 && (
         <details>
           <summary className="cursor-pointer text-warning">
-            <AlertTriangle className="inline size-4 mr-2 align-text-bottom" />
+            <UiIcon name="warning" className="inline size-4 mr-2 align-text-bottom" />
             {interpolate(copy.warnings, { count: String(warnings.length) })}
           </summary>
           <ul className="mt-2 space-y-1.5 pl-5 list-disc text-muted-foreground">

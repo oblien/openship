@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import '@xterm/xterm/css/xterm.css';
 import './logs.css';
 import { useLogStream } from "@/hooks/useSSEConnection";
@@ -12,10 +13,13 @@ import { useTheme } from "@/components/theme-provider";
 import { api } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
+import { TerminalSearch } from "@/components/terminal/TerminalSearch";
+import { Button } from "@/components/ui/button";
 
 interface TerminalLogsProps {
     projectId: string;
     projectName: string;
+    title?: React.ReactNode;
     streamTarget: string;
     historyTarget: string;
     onLogsChange: (logs: string[]) => void;
@@ -53,6 +57,7 @@ const decodeLogEntry = (entry: any): string | null => {
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     projectId,
     projectName,
+    title,
     streamTarget,
     historyTarget,
     onLogsChange,
@@ -621,63 +626,17 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     return (
         <TerminalCardShell
             name={projectName || t.projectDetail.logs.terminal.fallbackName}
+            title={title}
             toolbar={
-                <div className="flex-1 max-w-md">
-                    <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                            <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
-                            <input
-                                type="text"
-                                placeholder={t.projectDetail.logs.terminal.searchPlaceholder}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        if (e.shiftKey) {
-                                            handleSearchPrevious();
-                                        } else {
-                                            handleSearchNext();
-                                        }
-                                    }
-                                }}
-                                className="w-full ps-9 pe-8 py-1.5 bg-muted border-border text-foreground placeholder:text-muted-foreground/70 focus:bg-card border rounded-lg text-xs focus:outline-none transition-all"
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => {
-                                        setSearchQuery("");
-                                        setHasMatches(false);
-                                    }}
-                                    className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
-
-                        {searchQuery && (
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={handleSearchPrevious}
-                                    disabled={!hasMatches || isSearching}
-                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
-                                    title={t.projectDetail.logs.terminal.previousMatch}
-                                >
-                                    <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
-                                </button>
-                                <button
-                                    onClick={handleSearchNext}
-                                    disabled={!hasMatches || isSearching}
-                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
-                                    title={t.projectDetail.logs.terminal.nextMatch}
-                                >
-                                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <TerminalSearch
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onNext={handleSearchNext}
+                    onPrevious={handleSearchPrevious}
+                    hasMatches={hasMatches}
+                    searching={isSearching}
+                    disabled={!terminalReady}
+                />
             }
             status={
                 <>
@@ -686,25 +645,29 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                         <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{interpolate(t.projectDetail.logs.terminal.lines, { count: String(terminalLogsData.logs.length) })}</span>
                     </div>
 
-                    <button
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={toggleStreaming}
-                        className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${terminalLogsData.isStreaming
-                            ? 'bg-danger-bg hover:bg-danger-bg text-danger border border-danger-border'
-                            : 'bg-success-bg hover:bg-success-bg text-success border border-success-border'
+                        aria-label={terminalLogsData.isStreaming ? t.projectDetail.logs.terminal.stop : t.projectDetail.logs.terminal.start}
+                        className={`h-9 ${terminalLogsData.isStreaming
+                            ? 'bg-danger-bg text-danger hover:bg-danger-bg hover:text-danger'
+                            : 'bg-success-bg text-success hover:bg-success-bg hover:text-success'
                             }`}
                     >
                         {terminalLogsData.isStreaming ? (
                             <>
-                                <Pause className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{t.projectDetail.logs.terminal.stop}</span>
+                                <UiIcon name="pause" className="w-3.5 h-3.5" />
+                                <span>{t.projectDetail.logs.terminal.stop}</span>
                             </>
                         ) : (
                             <>
-                                <Play className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{t.projectDetail.logs.terminal.start}</span>
+                                <UiIcon name="play" className="w-3.5 h-3.5" />
+                                <span>{t.projectDetail.logs.terminal.start}</span>
                             </>
                         )}
-                    </button>
+                    </Button>
                 </>
             }
             overlay={

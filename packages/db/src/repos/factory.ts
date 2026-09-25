@@ -347,6 +347,7 @@ import {
 import { createStripeTopupGrantRepo } from "./stripe-topup-grant.repo";
 import { createBillingAnniversaryGrantRepo } from "./billing-anniversary-grant.repo";
 import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
+import { createBillingPlanGrantRepo } from "./billing-plan-grant.repo";
 
 import type { ConfigurationEncryption } from "../configuration-secrets";
 import { createConfigurationSecretsRepo } from "./configuration-secrets.repo";
@@ -428,6 +429,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   stripeTopupGrant: createStripeTopupGrantRepo(db),
   billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
   billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
+  billingPlanGrant: createBillingPlanGrantRepo(db),
 } as const;
 }
 

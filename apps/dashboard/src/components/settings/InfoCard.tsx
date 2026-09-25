@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React from "react";
 
 /**
@@ -19,7 +21,7 @@ export function InfoCard({
   footer,
   tone = "neutral",
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   title: string;
   value: string;
   description: string;
@@ -33,7 +35,7 @@ export function InfoCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone === "success" ? "bg-success-bg text-success" : "bg-primary/10 text-primary"}`}>
-            <Icon className="size-4" />
+            <UiIcon name={Icon} className="size-4" />
           </div>
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-foreground">{title}</p>

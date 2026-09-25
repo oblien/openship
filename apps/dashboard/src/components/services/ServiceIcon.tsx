@@ -1,30 +1,15 @@
 "use client";
 
-import {
-  Boxes,
-  Code2,
-  Database,
-  Globe,
-  Layers,
-  Mail,
-  Search,
-  Server,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { AppLogo } from "@/components/AppLogo";
 
 /**
  * The icon for one service row/panel.
  *
- * Every service used to render the same lucide `Container` glyph — an isometric
- * box that, at 18px, is unreadable and tells you nothing about what the row is.
- * Now: a real brand mark when the image names something we can recognize
- * (postgres, redis, mongo, …) and otherwise a glyph chosen by the service's ROLE,
- * so a list of five services is scannable at a glance.
- *
- * Brand marks come from AppLogo (simpleicons CDN, with its own onError fallback),
- * so an air-gapped box degrades to the role glyph instead of a broken image.
+ * Recognized images use their brand mark. Otherwise, the service's role selects
+ * a catalog icon, regardless of whether it builds from source or pulls an image.
+ * AppLogo uses the same role icon if its brand artwork cannot load.
  */
 
 /**
@@ -100,14 +85,14 @@ const IMAGE_BRAND: Record<string, string> = {
 };
 
 /** Role fallbacks, keyed by what the NAME suggests when the image is unknown. */
-const NAME_ROLE: Array<{ re: RegExp; icon: LucideIcon }> = [
-  { re: /(^|[-_])(db|database|postgres|pg|mysql|maria|mongo|sql)([-_]|$)/i, icon: Database },
-  { re: /(^|[-_])(cache|redis|valkey|memcache)([-_]|$)/i, icon: Database },
-  { re: /(^|[-_])(search|index|elastic|meili|typesense)([-_]|$)/i, icon: Search },
-  { re: /(^|[-_])(queue|worker|jobs?|cron|scheduler|consumer)([-_]|$)/i, icon: Workflow },
-  { re: /(^|[-_])(mail|smtp|mailer)([-_]|$)/i, icon: Mail },
-  { re: /(^|[-_])(api|backend|server|gateway)([-_]|$)/i, icon: Server },
-  { re: /(^|[-_])(web|www|site|frontend|dashboard|app|ui)([-_]|$)/i, icon: Globe },
+const NAME_ROLE: Array<{ re: RegExp; icon: IconName }> = [
+  { re: /(^|[-_])(db|database|postgres|pg|mysql|maria|mongo|sql)([-_]|$)/i, icon: "database" },
+  { re: /(^|[-_])(cache|redis|valkey|memcache)([-_]|$)/i, icon: "database" },
+  { re: /(^|[-_])(search|index|elastic|meili|typesense)([-_]|$)/i, icon: "search" },
+  { re: /(^|[-_])(queue|worker|jobs?|cron|scheduler|consumer)([-_]|$)/i, icon: "workflow" },
+  { re: /(^|[-_])(mail|smtp|mailer)([-_]|$)/i, icon: "mail" },
+  { re: /(^|[-_])(api|backend|server|gateway)([-_]|$)/i, icon: "server" },
+  { re: /(^|[-_])(web|www|site|frontend|dashboard|app|ui)([-_]|$)/i, icon: "globe" },
 ];
 
 /** The image's bare repo name: `ghcr.io/oblien/openship-api:0.3.0` → `openship-api`. */
@@ -141,18 +126,12 @@ export function ServiceIcon({
   };
   className?: string;
 }) {
+  const roleIcon = NAME_ROLE.find((r) => r.re.test(service.name))?.icon ??
+    (service.exposed ? "globe" : "window");
   const brand = brandSlugForImage(service.image);
   if (brand) {
-    return <AppLogo slug={brand} className={className} icon={Boxes} />;
+    return <AppLogo slug={brand} className={className} icon={roleIcon} />;
   }
 
-  // Built from source (monorepo sub-app or a compose `build:`) — it's OUR code,
-  // not a third-party image, so say so rather than guessing a brand.
-  const Icon =
-    service.kind === "monorepo" || service.build
-      ? Code2
-      : (NAME_ROLE.find((r) => r.re.test(service.name))?.icon ??
-        (service.exposed ? Globe : Layers));
-
-  return <Icon className={`${className} text-muted-foreground`} />;
+  return <UiIcon name={roleIcon} className={`${className} text-muted-foreground`} />;
 }

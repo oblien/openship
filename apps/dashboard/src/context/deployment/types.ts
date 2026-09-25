@@ -1,3 +1,4 @@
+import type { IconName } from "@repo/ui/icons";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
@@ -1008,6 +1009,6 @@ export interface DeploymentContextType {
 
   // Internal
   _setContainerFailed: (message: string) => void;
-  steps: { label: string; icon: string }[];
+  steps: { label: string; icon: IconName }[];
   deploymentStatus: DeploymentStatus;
 }

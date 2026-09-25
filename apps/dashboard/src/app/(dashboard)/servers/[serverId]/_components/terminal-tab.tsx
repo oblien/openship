@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
-import { Terminal, Maximize2, Minimize2 } from "lucide-react";
 import { ServerTerminalTabs } from "@/components/terminal/ServerTerminalTabs";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -43,7 +44,7 @@ export function TerminalTab({ serverId, serverName, enabled }: TerminalTabProps)
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
           <div className="flex size-9 items-center justify-center rounded-xl bg-muted ring-1 ring-border/50">
-            <Terminal className="size-[18px] text-muted-foreground" />
+            <UiIcon name="terminal" className="size-[18px] text-muted-foreground" />
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold text-foreground">
@@ -61,7 +62,7 @@ export function TerminalTab({ serverId, serverName, enabled }: TerminalTabProps)
             title={expandLabel}
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground ring-1 ring-border/50 transition-colors hover:bg-muted hover:text-foreground"
           >
-            {expanded ? <Minimize2 className="size-[18px]" /> : <Maximize2 className="size-[18px]" />}
+            {expanded ? <UiIcon name="shrink" className="size-[18px]" /> : <UiIcon name="expand" className="size-[18px]" />}
           </button>
         </div>
 

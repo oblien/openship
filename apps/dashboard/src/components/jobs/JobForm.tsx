@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Plus, Trash2, Server as ServerIcon, CalendarClock, ShieldCheck, KeyRound, GitBranch, Bell, ArrowRight, BookOpen, ListChecks, Terminal, FileText, Upload } from "lucide-react";
 import {
   jobsApi,
   notificationsApi,
@@ -171,7 +172,7 @@ export function JobForm({
       {/* ── Left: form ── */}
       <div className="min-w-0 space-y-5">
         {/* Basics */}
-        <Section title={c.sections.basics} icon={Terminal} tone={SECTION_TONES.basics}>
+        <Section title={c.sections.basics} icon={"terminal"} tone={SECTION_TONES.basics}>
           <Field label={c.name}>
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={c.namePlaceholder} className={inputCls} autoFocus />
           </Field>
@@ -183,7 +184,7 @@ export function JobForm({
         </Section>
 
         {/* Schedule */}
-        <Section title={c.sections.schedule} icon={CalendarClock} tone={SECTION_TONES.schedule}>
+        <Section title={c.sections.schedule} icon={"calendar-clock"} tone={SECTION_TONES.schedule}>
           <div className="grid grid-cols-3 gap-2">
             {(["recurring", "once", "manual"] as const).map((st) => (
               <button key={st} type="button" onClick={() => setScheduleType(st)}
@@ -205,16 +206,16 @@ export function JobForm({
         </Section>
 
         {/* Environment + secrets (right after Schedule) */}
-        <Section title={c.sections.environment} icon={KeyRound} tone={SECTION_TONES.environment}>
+        <Section title={c.sections.environment} icon={"key"} tone={SECTION_TONES.environment}>
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-muted-foreground">{c.env}</span>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => void pasteEnv()} className={ghostBtn}>
-                  <FileText className="size-3.5" /> {c.pasteEnv}
+                  <UiIcon name="file-text" className="size-3.5" /> {c.pasteEnv}
                 </button>
                 <button type="button" onClick={() => envFileRef.current?.click()} className={ghostBtn}>
-                  <Upload className="size-3.5" /> {c.uploadEnv}
+                  <UiIcon name="upload" className="size-3.5" /> {c.uploadEnv}
                 </button>
                 <input ref={envFileRef} type="file" accept=".env,text/plain" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) void f.text().then(importEnv); e.target.value = ""; }} />
@@ -238,14 +239,14 @@ export function JobForm({
         </Section>
 
         {/* Servers */}
-        <Section title={c.sections.servers} icon={ServerIcon} tone={SECTION_TONES.servers}>
+        <Section title={c.sections.servers} icon={"server"} tone={SECTION_TONES.servers}>
           {servers.length === 0 ? (
             // A job with no server can't be saved, so this used to be a dead end.
             // Add one right here and it's picked for the job being written.
             <div className="space-y-2.5">
               <p className="text-sm text-muted-foreground/60">{c.noServers}</p>
               <button type="button" onClick={addServer} className={ghostBtn}>
-                <Plus className="size-3.5" /> {t.widgets.shared.serverSelector.addServer}
+                <UiIcon name="plus" className="size-3.5" /> {t.widgets.shared.serverSelector.addServer}
               </button>
             </div>
           ) : (
@@ -258,7 +259,7 @@ export function JobForm({
         </Section>
 
         {/* Reliability */}
-        <Section title={c.sections.reliability} icon={ShieldCheck} tone={SECTION_TONES.reliability}>
+        <Section title={c.sections.reliability} icon={"shield-check"} tone={SECTION_TONES.reliability}>
           <div className="grid grid-cols-3 gap-3">
             <Field label={c.timeout}><input value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)} inputMode="numeric" placeholder="300" className={inputCls} /></Field>
             <Field label={c.retryAttempts}><input value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} inputMode="numeric" className={inputCls} /></Field>
@@ -267,7 +268,7 @@ export function JobForm({
         </Section>
 
         {/* Dependencies + triggers */}
-        <Section title={c.sections.triggers} icon={GitBranch} tone={SECTION_TONES.triggers}>
+        <Section title={c.sections.triggers} icon={"git-branch"} tone={SECTION_TONES.triggers}>
           {otherJobs.length > 0 && (
             <Field label={c.dependencies}>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -301,12 +302,12 @@ export function JobForm({
         </Section>
 
         {/* Notifications */}
-        <Section title={c.sections.notifications} icon={Bell} tone={SECTION_TONES.notifications}>
+        <Section title={c.sections.notifications} icon={"bell"} tone={SECTION_TONES.notifications}>
           {channels.length === 0 ? (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground/60">{c.noChannels}</p>
               <a href="/settings?tab=notifications" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                {c.setupChannel} <ArrowRight className="size-3.5" />
+                {c.setupChannel} <UiIcon name="arrow-right" className="size-3.5" />
               </a>
             </div>
           ) : (
@@ -339,7 +340,7 @@ export function JobForm({
           <button type="button" onClick={onCancel} className="rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted">{c.cancel}</button>
           <button onClick={() => void submit()} disabled={!canSave}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40">
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="check" className="size-4" />}
             {saving ? c.creating : editing ? j.edit.save : c.submit}
           </button>
         </div>
@@ -349,7 +350,7 @@ export function JobForm({
       <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <div className="rounded-2xl border border-border/60 bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
-            <ListChecks className="size-4 text-muted-foreground/70" />
+            <UiIcon name="list-check" className="size-4 text-muted-foreground/70" />
             <h3 className="text-[14px] font-medium text-foreground">{c.summary.title}</h3>
           </div>
           <div className="space-y-2.5">
@@ -364,13 +365,13 @@ export function JobForm({
         <a href={DOCS_URL} target="_blank" rel="noreferrer"
           className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 transition-colors hover:border-border">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted">
-            <BookOpen className="size-[18px] text-muted-foreground" />
+            <UiIcon name="book" className="size-[18px] text-muted-foreground" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground">{c.docsLink}</p>
             <p className="truncate text-xs text-muted-foreground/70">{c.docsBody}</p>
           </div>
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground/40" />
+          <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground/40" />
         </a>
       </div>
     </div>
@@ -405,7 +406,7 @@ function Section({
   children,
 }: {
   title: string;
-  icon?: React.ElementType;
+  icon?: IconName;
   tone?: { bg: string; text: string };
   children: React.ReactNode;
 }) {
@@ -415,7 +416,7 @@ function Section({
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         {Icon && (
           <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${t.bg}`}>
-            <Icon className={`size-[18px] ${t.text}`} />
+            <UiIcon name={Icon} className={`size-[18px] ${t.text}`} />
           </div>
         )}
         <h2 className="text-[15px] font-semibold text-foreground">{title}</h2>
@@ -445,12 +446,12 @@ function KeyValueEditor({ label, rows, setRows, addLabel, secret }: {
           <div key={i} className="flex items-center gap-1.5">
             <input value={r.key} onChange={(e) => set(i, { key: e.target.value })} placeholder="KEY" className={`${inputCls} font-mono text-sm`} />
             <input value={r.value} onChange={(e) => set(i, { value: e.target.value })} placeholder="value" type={secret ? "password" : "text"} className={`${inputCls} font-mono text-sm`} />
-            <button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger-bg hover:text-danger"><Trash2 className="size-3.5" /></button>
+            <button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger-bg hover:text-danger"><UiIcon name="trash" className="size-3.5" /></button>
           </div>
         ))}
         <button type="button" onClick={() => setRows([...rows, { key: "", value: "" }])}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/30 hover:text-foreground">
-          <Plus className="size-4" /> {addLabel}
+          <UiIcon name="plus" className="size-4" /> {addLabel}
         </button>
       </div>
     </Field>

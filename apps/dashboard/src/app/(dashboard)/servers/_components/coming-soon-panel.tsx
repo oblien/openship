@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import {
   PrivateNetworkIllustration,
   ServerClusterIllustration,
@@ -17,7 +17,7 @@ export function ComingSoonPanel({
   body,
   badge,
 }: {
-  icon?: LucideIcon;
+  icon?: IconName;
   art?: "cluster" | "network";
   title: string;
   body: string;
@@ -31,7 +31,7 @@ export function ComingSoonPanel({
         <PrivateNetworkIllustration className="mb-8" />
       ) : Icon ? (
         <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-muted">
-          <Icon className="size-6 text-muted-foreground" />
+          <UiIcon name={Icon} className="size-6 text-muted-foreground" />
         </div>
       ) : null}
 

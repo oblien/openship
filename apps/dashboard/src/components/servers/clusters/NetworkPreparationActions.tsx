@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
 import type { ManagedNetworkPreparation } from "@repo/core";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -82,7 +83,7 @@ export function NetworkPreparationActions({
           {
             id: "discard",
             label: m.discardSetup,
-            icon: <Trash2 className="size-4" />,
+            icon: <UiIcon name="trash" className="size-4" />,
             variant: "danger",
             onClick: () => {
               setError(null);

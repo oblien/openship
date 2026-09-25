@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Container, Hash } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { STACK_ICONS } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
@@ -20,7 +21,7 @@ const DockerSettings: React.FC = () => {
             {iconUrl ? (
               <img src={iconUrl} alt="Docker" className="w-6 h-6" />
             ) : (
-              <Container className="w-6 h-6 text-primary" />
+              <UiIcon name="docker" className="w-6 h-6 text-primary" />
             )}
           </div>
           <div>
@@ -42,7 +43,7 @@ const DockerSettings: React.FC = () => {
         <div>
           <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-2">
             <span className="text-muted-foreground">
-              <Hash className="size-4" />
+              <UiIcon name="hash" className="size-4" />
             </span>
             {t.importProject.dockerSettings.exposedPort}
           </label>

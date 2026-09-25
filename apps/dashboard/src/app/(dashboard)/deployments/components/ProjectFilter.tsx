@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useRef, useEffect } from "react";
-import { ChevronDown, Layers, Check } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import type { Project } from "../types";
 
@@ -42,10 +43,10 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
         className="flex h-10 min-w-[170px] items-center justify-between gap-2 rounded-xl border border-border/50 bg-card px-3.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/25"
       >
         <div className="flex items-center gap-2">
-          <Layers className="size-4 text-muted-foreground" />
+          <UiIcon name="layers" className="size-4 text-muted-foreground" />
           <span className="truncate">{selectedProject.name}</span>
         </div>
-        <ChevronDown 
+        <UiIcon name="chevron-down"
           className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} 
         />
       </button>
@@ -65,12 +66,12 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
             }`}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <Layers className="size-4 text-primary" />
+              <UiIcon name="layers" className="size-4 text-primary" />
             </div>
             <span>{t.deployments.projectFilter.allProjects}</span>
             {selectedProjectId === "all" && (
               <div className="ms-auto">
-                <Check className="size-4 text-primary" />
+                <UiIcon name="check" className="size-4 text-primary" />
               </div>
             )}
           </button>
@@ -93,12 +94,12 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
               }`}
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
-                <Layers className="size-4 text-muted-foreground" />
+                <UiIcon name="layers" className="size-4 text-muted-foreground" />
               </div>
               <span className="truncate flex-1">{project.name}</span>
               {selectedProjectId === project.id && (
                 <div className="flex-shrink-0">
-                  <Check className="size-4 text-primary" />
+                  <UiIcon name="check" className="size-4 text-primary" />
                 </div>
               )}
             </button>

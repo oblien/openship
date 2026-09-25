@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Untracked edge routes — hostnames this machine serves with no Openship record.
  *
@@ -19,7 +21,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, FileWarning, RefreshCw, Route, ServerOff, X } from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -117,7 +118,7 @@ export function UntrackedEdgeRoutes() {
 
   return (
     <SettingsSection
-      icon={Route}
+      icon={"route"}
       title={copy.title}
       description={copy.description}
       iconBg="bg-warning-bg"
@@ -139,7 +140,7 @@ export function UntrackedEdgeRoutes() {
 
         {scan && !scan.scanned && (
           <div className="flex items-start gap-2 rounded-xl bg-muted/30 p-4">
-            <ServerOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <UiIcon name="server-off" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <p className="text-[13px] font-medium text-foreground">{copy.unavailable}</p>
               {scan.reason && <p className="mt-0.5 text-xs text-muted-foreground">{scan.reason}</p>}
@@ -156,9 +157,9 @@ export function UntrackedEdgeRoutes() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {isStatic ? (
-                        <FileWarning className="size-4 shrink-0 text-warning" />
+                        <UiIcon name="file-warning" className="size-4 shrink-0 text-warning" />
                       ) : (
-                        <AlertTriangle className="size-4 shrink-0 text-muted-foreground" />
+                        <UiIcon name="warning" className="size-4 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate font-mono text-[13px] text-foreground">
                         {site.hostname}
@@ -194,7 +195,7 @@ export function UntrackedEdgeRoutes() {
                     disabled={removing === site.hostname}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-[12px] font-medium text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
                   >
-                    <X className="size-3.5" />
+                    <UiIcon name="close" className="size-3.5" />
                     {removing === site.hostname ? copy.stopping : copy.stopServing}
                   </button>
                 </div>
@@ -246,7 +247,7 @@ export function UntrackedEdgeRoutes() {
             disabled={loading}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
           >
-            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            <UiIcon name="refresh" className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
             {loading ? copy.scanning : copy.scan}
           </button>
         </div>

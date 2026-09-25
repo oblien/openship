@@ -195,6 +195,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
       sshPrivateKey: body.sshPrivateKey as string ?? null,
       sshKeyPassphrase: body.sshKeyPassphrase as string ?? null,
       sshJumpHost: body.sshJumpHost as string ?? null,
+      sshTransport: body.sshTransport,
       sshArgs: body.sshArgs as string ?? null,
     });
   } catch (err) {

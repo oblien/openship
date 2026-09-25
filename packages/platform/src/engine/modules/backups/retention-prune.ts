@@ -29,8 +29,8 @@ import { repos, type BackupPolicy, type BackupRun } from "@repo/db";
 import { resolveDestination } from "@repo/adapters";
 import { toAdapterRow } from "@repo/platform/engine/modules/backup-destinations/hydrate-server";
 import { policyOrganizationId } from "@repo/platform/engine/modules/backups/backup.service";
-import { safeErrorMessage } from "@repo/core";
-import { createProvisionLock } from "../../lib/provision-lock";
+import { backupArtifactObjects, safeErrorMessage, type StoredBackupArtifact } from "@repo/core";
+import { withBackupPolicyLock, withBackupRunLock } from "./backup-lock";
 
 export async function runRetentionSweep(): Promise<{
   policiesProcessed: number;
@@ -89,7 +89,7 @@ const PRUNE_PAGE_SIZE = 500;
 export async function prunePolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   // Fan-out children and the fallback sweep may finish together. Serialize
   // their reads and deletes, and re-read settings after waiting for the lock.
-  return createProvisionLock(`backup-retention:${policy.id}`).run(async () => {
+  return withBackupPolicyLock(policy.id, async () => {
     const current = await repos.backupPolicy.findById(policy.id);
     if (!current) return { dropped: 0, deferred: 0, skipped: "policy deleted" };
     if (!current.enabled) return { dropped: 0, deferred: 0, skipped: "policy disabled" };
@@ -112,8 +112,6 @@ async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   if (!retainCount && !retainDays) {
     return { dropped: 0, deferred: 0, skipped: "retention set to unlimited" };
   }
-
-  const destinationId = policy.destinationId;
 
   // Both backup sources page the same run table and delete through the same
   // destination adapter; they differ only in which column scopes the page and
@@ -150,6 +148,7 @@ async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   // co-mingling their retention windows.
   const now = new Date();
   const candidates: BackupRun[] = [];
+  const liveRuns: BackupRun[] = [];
   for (let offset = 0; ; offset += PRUNE_PAGE_SIZE) {
     const page = await repos.backupRun.listByOrganization(organizationId, {
       ...scope,
@@ -158,10 +157,13 @@ async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
     });
     if (page.length === 0) break;
     for (const r of page) {
-      if (r.policyId !== policy.id) continue;
-      if (r.destinationId !== destinationId) continue;
       if (r.status !== "succeeded") continue;
       if (r.deletedAt) continue;
+      liveRuns.push(r);
+      if (r.policyId !== policy.id) continue;
+      // A terminal status is persisted before its artifact payload. Do not
+      // displace an older restore point until the worker finishes that write.
+      if (r.executionStartedAt && !r.executionFinishedAt) continue;
       if (r.retentionLockedUntil && r.retentionLockedUntil > now) continue;
       candidates.push(r);
     }
@@ -203,60 +205,88 @@ async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
 
   if (toDelete.length === 0) return { dropped: 0, deferred: 0, skipped: null };
 
-  const destinationRow = await repos.backupDestination.findById(destinationId);
-  if (!destinationRow) {
-    // The artifacts outlive the destination row, so they are now unreachable
-    // AND unprunable. Worth saying out loud rather than returning zero.
-    return { dropped: 0, deferred: 0, skipped: `destination ${destinationId} is gone` };
+  // Every snapshot owns references, including blocks first uploaded by an older
+  // run. Retiring that run removes only objects no other live snapshot needs.
+  const objects = new Map<string, Set<string>>();
+  const references = new Map<string, number>();
+  const identity = (run: BackupRun, key: string) => `${run.destinationId}:${key}`;
+  for (const run of liveRuns) {
+    const keys = new Set<string>();
+    for (const artifact of (run.artifacts ?? []) as StoredBackupArtifact[]) {
+      for (const key of backupArtifactObjects(artifact).keys()) keys.add(key);
+    }
+    if (run.manifestKey) keys.add(run.manifestKey);
+    objects.set(run.id, keys);
+    for (const key of keys) {
+      const id = identity(run, key);
+      references.set(id, (references.get(id) ?? 0) + 1);
+    }
   }
-  const adapterRow = await toAdapterRow(destinationRow);
-  const destination = resolveDestination(adapterRow);
-
+  const destinations = new Map<string, ReturnType<typeof resolveDestination>>();
   let dropped = 0;
   let deferred = 0;
+  let unavailable: string | null = null;
   for (const run of toDelete) {
     try {
-      const artifactKeys = Array.isArray(run.artifacts)
-        ? run.artifacts
-            .map((a) =>
-              typeof a === "object" && a && "key" in a
-                ? (a as { key: string }).key
-                : null,
-            )
-            .filter((k): k is string => typeof k === "string")
-        : [];
-      if (run.manifestKey) artifactKeys.push(run.manifestKey);
-
-      if (artifactKeys.length > 0) {
-        // `deleteMany` RESOLVES on a partial failure — it reports per-key outcomes
-        // instead of throwing, and all three destinations count "already gone" as
-        // deleted, so a non-empty `failed` means those objects are still there.
-        //
-        // Soft-deleting the row anyway was a one-way leak: the row is the only record
-        // of which keys belong to this run, and every later sweep skips deleted rows,
-        // so nothing would ever retry them. The operator sees the run disappear and
-        // the quota not move, with no way to connect the two.
-        //
-        // Leaving the row alive costs one retained restore point until the next sweep;
-        // dropping it costs the bytes forever.
-        const { failed } = await destination.deleteMany(artifactKeys);
-        if (failed.length > 0) {
-          deferred += 1;
-          console.warn(
-            `[retention-prune] run ${run.id} kept: ${failed.length}/${artifactKeys.length} ` +
-              `object(s) could not be deleted, will retry next sweep — ` +
-              failed.map((f) => `${f.key}: ${f.error}`).join("; "),
-          );
-          continue;
+      await withBackupRunLock(run.id, async () => {
+        const current = await repos.backupRun.findById(run.id);
+        if (!current || current.deletedAt || current.status !== "succeeded" ||
+          (current.executionStartedAt && !current.executionFinishedAt) ||
+          (current.retentionLockedUntil && current.retentionLockedUntil > new Date()) ||
+          await repos.backupRestore.findActiveByRunId(run.id)) return;
+        // A policy can move to new storage; its older backups still live at the
+        // destination recorded on each run and must age out there.
+        const destinationId = run.destinationId;
+        let destination = destinationId ? destinations.get(destinationId) : undefined;
+        if (!destination) {
+          const row = destinationId ? await repos.backupDestination.findById(destinationId) : null;
+          if (!row) {
+            unavailable = `destination ${destinationId} is gone`;
+            deferred += 1;
+            return;
+          }
+          if (row.organizationId !== organizationId) throw new Error("Backup destination belongs to another organization");
+          destination = resolveDestination(await toAdapterRow(row));
+          destinations.set(row.id, destination);
         }
-      }
-      await repos.backupRun.softDelete(run.id);
-      dropped += 1;
+        const allKeys = objects.get(run.id) ?? new Set<string>();
+        const artifactKeys = [...allKeys].filter(key => references.get(identity(run, key)) === 1);
+        if (artifactKeys.length > 0) {
+          // `deleteMany` RESOLVES on a partial failure — it reports per-key outcomes
+          // instead of throwing, and all three destinations count "already gone" as
+          // deleted, so a non-empty `failed` means those objects are still there.
+          //
+          // Soft-deleting the row anyway was a one-way leak: the row is the only record
+          // of which keys belong to this run, and every later sweep skips deleted rows,
+          // so nothing would ever retry them. The operator sees the run disappear and
+          // the quota not move, with no way to connect the two.
+          //
+          // Leaving the row alive costs one retained restore point until the next sweep;
+          // dropping it costs the bytes forever.
+          const { failed } = await destination.deleteMany(artifactKeys);
+          if (failed.length > 0) {
+            deferred += 1;
+            console.warn(
+              `[retention-prune] run ${run.id} kept: ${failed.length}/${artifactKeys.length} ` +
+                `object(s) could not be deleted, will retry next sweep — ` +
+                failed.map((f) => `${f.key}: ${f.error}`).join("; "),
+            );
+            return;
+          }
+        }
+        await repos.backupRun.softDelete(run.id);
+        for (const key of allKeys) {
+          const id = identity(run, key);
+          references.set(id, (references.get(id) ?? 1) - 1);
+        }
+        dropped += 1;
+      });
     } catch (err) {
+      deferred += 1;
       console.warn(
         `[retention-prune] failed to drop run ${run.id}: ${safeErrorMessage(err)}`,
       );
     }
   }
-  return { dropped, deferred, skipped: null };
+  return { dropped, deferred, skipped: dropped === 0 ? unavailable : null };
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * SourceAccessModal — per-repo source access, as a dedicated surface.
  *
@@ -17,7 +19,6 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Plus, X, AlertTriangle, Check, ChevronDown, Search } from "lucide-react";
 import type { SourceAccessScope } from "@repo/core";
 import { permissionsApi, type Permission } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -170,14 +171,14 @@ function RepoCombobox({
         className="flex items-center gap-1.5 rounded-lg bg-background px-2.5 py-1.5 font-mono text-[13px] text-foreground ring-1 ring-inset ring-border/60 transition-colors hover:ring-border"
       >
         {value ?? "—"}
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        <UiIcon name="chevron-down" className="size-3.5 shrink-0 text-muted-foreground" />
       </button>
 
       {open && (
         <>
           <div className="absolute end-0 z-20 mt-1 w-64 overflow-hidden rounded-lg bg-card shadow-lg ring-1 ring-border/60">
             <div className="relative border-b border-border/50">
-              <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <UiIcon name="search" className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <input
                 autoFocus
                 value={query}
@@ -205,7 +206,7 @@ function RepoCombobox({
                       }`}
                     >
                       <span className="truncate">{r}</span>
-                      {r === value && <Check className="size-3.5 shrink-0" />}
+                      {r === value && <UiIcon name="check" className="size-3.5 shrink-0" />}
                     </button>
                   </li>
                 ))
@@ -263,7 +264,7 @@ function PathChips({
                 onClick={() => onChange(removePath(paths, p))}
                 className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
               >
-                <X className="h-3 w-3" />
+                <UiIcon name="close" className="h-3 w-3" />
               </button>
             </li>
           ))}
@@ -328,7 +329,7 @@ function PatternInput({
           onClick={commit}
           className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 px-2.5 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
         >
-          <Plus className="h-3 w-3" />
+          <UiIcon name="plus" className="h-3 w-3" />
           {copy.addPath}
         </button>
       </div>
@@ -363,9 +364,9 @@ function Summary({
             }`}
           >
             {line.tone === "warn" ? (
-              <AlertTriangle className="mt-[1px] h-3 w-3 shrink-0" />
+              <UiIcon name="warning" className="mt-[1px] h-3 w-3 shrink-0" />
             ) : (
-              <Check className="mt-[1px] h-3 w-3 shrink-0" />
+              <UiIcon name="check" className="mt-[1px] h-3 w-3 shrink-0" />
             )}
             <span>{interpolate(copy[SUMMARY_COPY_KEY[line.key]] ?? "", {
               paths: (line.paths ?? []).join(", "),
@@ -593,7 +594,7 @@ export function SourceAccessModal({
             <Summary lines={lines} copy={copy} />
             {blocking.includes("writeNeedsWritePermission") && (
               <p className="flex items-start gap-2 text-[13px] leading-relaxed text-destructive">
-                <AlertTriangle className="mt-[1px] h-3 w-3 shrink-0" />
+                <UiIcon name="warning" className="mt-[1px] h-3 w-3 shrink-0" />
                 {copy.problemWriteNeedsPermission}
               </p>
             )}

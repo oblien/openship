@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Save } from "lucide-react";
 import { deployApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -68,7 +69,7 @@ export function AppSettingsTab() {
   if (s.loading) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
+        <UiIcon name="spinner" className="size-5 animate-spin" />
       </div>
     );
   }
@@ -101,7 +102,7 @@ export function AppSettingsTab() {
           disabled={!s.dirty || s.saving}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {s.saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {s.saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="save" className="size-4" />}
           {s.saving ? ps.saving : ps.saveChanges}
         </button>
 
@@ -112,7 +113,7 @@ export function AppSettingsTab() {
             disabled={applying}
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
           >
-            {applying ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {applying ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="refresh" className="size-4" />}
             {applying ? ps.applying : ps.applyNow}
           </button>
         )}

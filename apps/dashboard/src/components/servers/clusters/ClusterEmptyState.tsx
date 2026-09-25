@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { Plus } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +40,7 @@ export function ClusterEmptyState({
         <div className="mt-7 flex justify-center">
           <Button asChild size="lg">
             <Link href={isNetworks ? "/servers/networks/new" : "/servers/clusters/new"}>
-              <Plus />
+              <UiIcon name="plus" />
               {isNetworks ? n.createCluster : c.createCluster}
             </Link>
           </Button>

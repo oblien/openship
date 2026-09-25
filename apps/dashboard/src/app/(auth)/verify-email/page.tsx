@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,14 +12,13 @@ import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import OTPInput from "@/components/shared/OTPInput";
-import { CheckCircle2, Loader2, Mail, XCircle } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 
 export default function VerifyEmailPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <VerifyEmailContent />
@@ -149,7 +150,7 @@ function VerifyEmailContent() {
     return (
       <AuthShell>
         <div className="flex flex-col items-center text-center">
-          <Loader2 className="mb-4 size-8 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="mb-4 size-8 animate-spin text-muted-foreground" />
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {t.auth.verifyEmail.verifyingTitle}
           </h1>
@@ -166,7 +167,7 @@ function VerifyEmailContent() {
       <AuthShell>
         <div className="text-center">
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-success-bg">
-            <CheckCircle2 className="size-6 text-success" />
+            <UiIcon name="check-circle" className="size-6 text-success" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {t.auth.verifyEmail.verifiedTitle}
@@ -187,7 +188,7 @@ function VerifyEmailContent() {
       <AuthShell>
         <div className="text-center">
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
-            <XCircle className="size-6 text-destructive" />
+            <UiIcon name="x-circle" className="size-6 text-destructive" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {t.auth.verifyEmail.errorTitle}
@@ -198,7 +199,7 @@ function VerifyEmailContent() {
           <div className="mt-6 flex items-center justify-center gap-3">
             {emailParam && (
               <Button variant="outline" onClick={handleResend} disabled={resending}>
-                {resending && <Loader2 className="animate-spin" />}
+                {resending && <UiIcon name="spinner" className="animate-spin" />}
                 {t.auth.verifyEmail.resendEmail}
               </Button>
             )}
@@ -216,7 +217,7 @@ function VerifyEmailContent() {
     <AuthShell>
       <div className="text-center">
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-secondary">
-          <Mail className="size-6 text-foreground" />
+          <UiIcon name="mail" className="size-6 text-foreground" />
         </div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           {t.auth.verifyEmail.pendingTitle}
@@ -240,7 +241,7 @@ function VerifyEmailContent() {
           </div>
           {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
           <Button type="submit" className="w-full" disabled={submitting || code.trim().length < 6}>
-            {submitting && <Loader2 className="animate-spin" />}
+            {submitting && <UiIcon name="spinner" className="animate-spin" />}
             {t.auth.verifyEmail.verifyCode}
           </Button>
         </form>
@@ -252,7 +253,7 @@ function VerifyEmailContent() {
             onClick={handleResend}
             disabled={resending}
           >
-            {resending && <Loader2 className="animate-spin" />}
+            {resending && <UiIcon name="spinner" className="animate-spin" />}
             {t.auth.verifyEmail.resendVerification}
           </Button>
         )}

@@ -62,7 +62,7 @@ export const RemoveEdgeOrphanInputSchema = Type.Object({ hostname: Type.String({
 
 /** Instance authority is additional to the operation's ordinary settings grant. */
 export const SystemOperationSchemas = {
-  browse: { action: "read", input: BrowseDirectoriesInputSchema, optionalInput: true, output: BrowseDirectoriesSchema },
+  browse: { action: "read", instance: true, input: BrowseDirectoriesInputSchema, optionalInput: true, output: BrowseDirectoriesSchema },
   health: { action: "read", instance: true, output: SystemHealthSchema },
   getSettings: { action: "read", output: InstanceSettingsSchema },
   updateSettings: { action: "write", instance: true, input: UpdateInstanceSettingsInputSchema, output: ok },

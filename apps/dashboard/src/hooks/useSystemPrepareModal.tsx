@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * useSystemPrepareModal — ONE reusable driver for any "prepare the system, with
  * consent" flow that streams over SSE and may block on a prompt: a `session`
@@ -18,7 +20,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, ShieldCheck, Copy, RefreshCw, X } from "lucide-react";
 import { useModal } from "@/context/ModalContext";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { InstallStepper } from "@/components/deploy/InstallStepper";
@@ -430,7 +431,7 @@ export function PrepareStreamContent({
             onClick={() => void copyLog()}
             className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <Copy className="size-3" />
+            <UiIcon name="copy" className="size-3" />
             {copied ? "Copied" : "Copy log"}
           </button>
         </div>
@@ -445,7 +446,7 @@ export function PrepareStreamContent({
     <div className="space-y-4 p-6">
       <div className="flex items-center gap-2.5">
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20">
-          <ShieldCheck className="size-[18px] text-primary" />
+          <UiIcon name="shield-check" className="size-[18px] text-primary" />
         </div>
         <h2 className="flex-1 text-base font-semibold text-foreground">
           {opts.title ?? "Prepare"}
@@ -458,7 +459,7 @@ export function PrepareStreamContent({
             disabled={closeDisabled}
             className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <X className="size-4" />
+            <UiIcon name="close" className="size-4" />
           </button>
         )}
       </div>
@@ -490,7 +491,7 @@ export function PrepareStreamContent({
       ) : phase === "completed" ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-xl bg-success-bg px-4 py-3 text-sm text-success">
-            <CheckCircle2 className="size-5 shrink-0" />
+            <UiIcon name="check-circle" className="size-5 shrink-0" />
             <span className="font-medium">{l.done ?? "Done."}</span>
           </div>
           {stepBar}
@@ -508,7 +509,7 @@ export function PrepareStreamContent({
       ) : phase === "failed" || phase === "error" ? (
         <div className="space-y-3">
           <div className="flex items-start gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
             <span className="whitespace-pre-wrap">
               {error || l.failed || "Couldn't finish — nothing was disrupted."}
             </span>
@@ -521,7 +522,7 @@ export function PrepareStreamContent({
               onClick={retry}
               className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              <RefreshCw className="size-3.5" />
+              <UiIcon name="refresh" className="size-3.5" />
               {opts.retryMode === "reattach" ? "Reconnect" : "Try again"}
             </button>
             <button
@@ -536,7 +537,7 @@ export function PrepareStreamContent({
       ) : (
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             <span>{l.working ?? "Working…"}</span>
           </div>
           {stepBar}

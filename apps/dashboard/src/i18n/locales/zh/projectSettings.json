@@ -244,24 +244,26 @@
   },
   "backup": {
     "live": {
-      "title": "实时备份",
+      "title": "备份活动",
       "description": "你刚刚启动的备份任务的实时进度。刷新页面后仍会保留。",
       "dismiss": "关闭"
     },
     "destinations": {
       "title": "备份目标",
-      "description": "每个用户的存储目标。可添加兼容 S3 的存储桶、SFTP 服务器或本地磁盘。",
+      "description": "此项目可用的存储目标。",
       "manage": "管理",
       "loading": "加载中…",
       "emptyPrefix": "还没有备份目标。",
       "emptyLink": "创建一个",
       "emptySuffix": "以开始备份。",
       "verified": "已验证",
-      "failed": "失败"
+      "failed": "失败",
+      "emptyHint": "连接 S3 存储桶、SFTP 主机或已有的服务器。",
+      "inUse": "使用中"
     },
     "services": {
-      "title": "服务与策略",
-      "description": "每个服务都可以有自己的备份策略（计划 + 目标）。项目级默认设置将在第 2 阶段推出。",
+      "title": "备份策略",
+      "description": "选择备份内容、运行时间和存储位置。",
       "refresh": "刷新",
       "empty": "此项目还没有任何服务。添加服务后，服务级备份将显示在这里。",
       "policyLabel": "策略：",
@@ -273,22 +275,54 @@
       "editPolicy": "编辑策略",
       "addDestinationFirst": "请先添加备份目标",
       "createPolicyHint": "为此服务创建备份策略",
-      "createPolicy": "创建策略"
+      "createPolicy": "创建策略",
+      "projectHint": "为此项目的所有服务设置一项策略。",
+      "includedInProject": "已包含在项目策略中。",
+      "retainCount": "保留 {count} 份备份",
+      "retainDays": "最多 {days} 天"
     },
     "recent": {
+      "loadOlder": "加载更早的备份",
       "title": "最近的备份",
-      "description": "此项目中所有服务最近的 25 次备份任务。",
+      "description": "近期运行记录、结果和恢复选项。",
       "loading": "加载中…",
       "empty": "还没有备份。",
       "protectedTitle": "已保护，不受保留清理影响",
       "protected": "已保护",
       "restoreTitle": "从此备份恢复",
       "allowPrune": "允许保留策略清理",
-      "protectFrom": "免于保留清理"
+      "protectFrom": "免于保留清理",
+      "emptyHint": "创建策略，然后在此运行首次备份。",
+      "backup": "备份",
+      "viewDetails": "查看详情",
+      "restore": "恢复",
+      "triggers": {
+        "manual": "按需运行",
+        "cron": "定时运行",
+        "webhook": "Webhook",
+        "pre_deploy": "部署前"
+      }
     },
     "toast": {
       "runFailed": "备份任务失败",
       "toggleProtectionFailed": "切换保护状态失败"
+    },
+    "overview": {
+      "description": "安排备份并恢复项目数据。",
+      "lastBackup": "最近成功的备份",
+      "noRecentBackup": "暂无近期备份",
+      "scheduledPolicies": "定时策略",
+      "projectScope": "整个项目",
+      "serviceBackup": "服务备份",
+      "paused": "已暂停",
+      "loadFailed": "无法加载备份"
+    },
+    "schedule": {
+      "daily": "每天 {time}",
+      "weekly": "每{day} {time}",
+      "monthly": "每月 {day} 日 {time}",
+      "custom": "自定义计划",
+      "timezone": "使用服务器时区。"
     }
   },
   "build": {
@@ -430,6 +464,7 @@
       "install": "安装 GitHub App"
     },
     "webhookBanner": {
+      "summary": "需要公共端点",
       "title": "启用自动部署",
       "description": "自动部署需要一个直接的 webhook 端点。请将此 Openship API 暴露在公网 URL 上，或配置一个已验证的 webhook 域名以进行直接投递。"
     },

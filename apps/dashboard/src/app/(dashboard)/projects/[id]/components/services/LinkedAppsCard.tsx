@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Globe, Loader2, Network, PlugZap, Unplug } from "lucide-react";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
 import { useProjectConnections } from "@/hooks/use-project-connections";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -71,7 +72,7 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
     <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
       <div className="flex items-center gap-3 border-b border-border/40 px-5 py-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-          <PlugZap className="size-4 text-primary" />
+          <UiIcon name="plug" className="size-4 text-primary" />
         </div>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">
@@ -96,7 +97,7 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                   {group.name}
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                  <PlugZap className="size-2.5" />
+                  <UiIcon name="plug" className="size-2.5" />
                   {c.linkedBadge}
                 </span>
               </div>
@@ -107,9 +108,9 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                     <code className="font-mono">{l.envKey}</code>
                     <span className="inline-flex items-center gap-1 text-muted-foreground/60">
                       {l.mode === "internal" ? (
-                        <Network className="size-3" />
+                        <UiIcon name="network" className="size-3" />
                       ) : (
-                        <Globe className="size-3" />
+                        <UiIcon name="globe" className="size-3" />
                       )}
                       {l.mode === "internal" ? c.modeInternalShort : c.modePublicShort}
                     </span>
@@ -128,9 +129,9 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
               >
                 {busy === sourceId ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 ) : (
-                  <Unplug className="size-3.5" />
+                  <UiIcon name="unplug" className="size-3.5" />
                 )}
               </button>
               <Link
@@ -139,7 +140,7 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 title={c.openApp}
                 className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
               >
-                <ArrowUpRight className="size-3.5" />
+                <UiIcon name="arrow-up-right" className="size-3.5" />
               </Link>
             </div>
           </div>

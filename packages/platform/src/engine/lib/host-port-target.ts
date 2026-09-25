@@ -21,6 +21,7 @@ export interface HostPortConnectionLocator {
   sshHost: string;
   sshPort?: number | null;
   sshJumpHost?: string | null;
+  sshTransport?: string | null;
   sshArgs?: string | null;
 }
 
@@ -69,7 +70,8 @@ export function normalizeHostPortConnectionLocator(locator: HostPortConnectionLo
   // Extra connection options can carry a ProxyJump that is not represented by
   // sshJumpHost. Collapse whitespace for stability, but do not lowercase paths.
   const sshArgs = locator.sshArgs?.trim().replace(/\s+/g, " ") ?? "";
-  return `ssh://${host}:${port}?jump=${encodeURIComponent(jumpHost)}&args=${encodeURIComponent(sshArgs)}`;
+  const transport = locator.sshTransport === "cloudflare" ? "&transport=cloudflare" : "";
+  return `ssh://${host}:${port}?jump=${encodeURIComponent(jumpHost)}&args=${encodeURIComponent(sshArgs)}${transport}`;
 }
 
 function fingerprint(

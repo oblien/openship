@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, Search, BookOpen, Plus, X } from "lucide-react";
 import { appsApi, type AppCatalogEntry } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppLogo } from "@/components/AppLogo";
@@ -116,7 +117,7 @@ export function AppCatalog() {
   }, [loading, catalog, searchParams]);
 
   return (
-    <>
+    <div className="@container/app-catalog">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
@@ -131,7 +132,7 @@ export function AppCatalog() {
             onClick={() => setAddOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
           >
-            <Plus className="size-4" /> Add custom
+            <UiIcon name="plus" className="size-4" /> Add custom
           </button>
           {/* The shared help menu, with this page's own guide link on top —
               so Support / Report issue / Docs read identically everywhere. */}
@@ -140,7 +141,7 @@ export function AppCatalog() {
               {
                 id: "guide",
                 label: "How to add an app",
-                icon: <BookOpen className="size-4" />,
+                icon: <UiIcon name="book" className="size-4" />,
                 onClick: () =>
                   window.open(
                     "https://github.com/oblien/openship/tree/main/packages/core/src/apps",
@@ -157,7 +158,7 @@ export function AppCatalog() {
       {!loading && catalog.length > 0 && (
         <div className="mt-6 space-y-4">
           <div className="relative max-w-md">
-            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <UiIcon name="search" className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
               type="text"
               value={query}
@@ -189,7 +190,7 @@ export function AppCatalog() {
       )}
 
       {loading ? (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-4 @xl/app-catalog:grid-cols-2 @4xl/app-catalog:grid-cols-3">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-24 animate-pulse rounded-2xl border border-border/50 bg-card" />
           ))}
@@ -199,7 +200,7 @@ export function AppCatalog() {
           {ap.catalogNoResults}
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 @xl/app-catalog:grid-cols-2 @4xl/app-catalog:grid-cols-3">
           {filtered.map((app) => {
             const busy = installingId === app.id;
             const locked = isLocked(app);
@@ -238,9 +239,9 @@ export function AppCatalog() {
                       ) : app.custom ? (
                         <UnverifiedBadge />
                       ) : busy ? (
-                        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                        <UiIcon name="spinner" className="size-4 shrink-0 animate-spin text-muted-foreground" />
                       ) : (
-                        <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
+                        <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
                       )}
                     </div>
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
@@ -258,7 +259,7 @@ export function AppCatalog() {
                     onClick={() => removeCustomApp(app)}
                     className="absolute end-2 top-2 rounded-md p-1 text-muted-foreground/50 opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover:opacity-100"
                   >
-                    <X className="size-3.5" />
+                    <UiIcon name="close" className="size-3.5" />
                   </button>
                 )}
               </div>
@@ -268,6 +269,6 @@ export function AppCatalog() {
       )}
 
       <AddCustomAppModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => void loadCatalog()} />
-    </>
+    </div>
   );
 }

@@ -9,11 +9,9 @@
  * requires signing). A detached script does the swap because a running app can't
  * overwrite its own bundle.
  *
- * Trust: the release feed and asset host are pinned, and the download must match
- * the release's sha256 sidecar or it is refused. That's integrity only — the
- * sidecar shares the asset's trust domain, so an attacker who can replace the
- * release asset can replace it too. Real code-signature verification is the
- * remaining gap.
+ * Trust: the release feed and every download redirect are pinned. The installer
+ * must match its checksum AND an Ed25519 signature binding its version, name and
+ * digest to the publisher key embedded in this app. Missing proofs fail closed.
  */
 
 import { app, net, shell } from "electron";
@@ -31,16 +29,18 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { advisoryManifestUrl, parseManifest, type AdvisoryManifest } from "@repo/core";
 import { isAllowedUpdateAssetUrl } from "./security";
+import { verifyUpdateSignature } from "./update-signature";
 
 export type UpdateAsset = DesktopUpdateAsset;
 export type UpdateInfo = Extract<DesktopUpdateCheck, { available: true }>;
@@ -149,28 +149,36 @@ async function fetchManifest(tag: string): Promise<AdvisoryManifest | null> {
 /** Download the asset to a temp file, reporting 0..1 progress. Returns the path. */
 export async function downloadUpdate(
   asset: UpdateAsset,
+  version: string,
   onProgress: (fraction: number) => void,
 ): Promise<string> {
   // The release feed comes from the pinned repo, but the asset URL inside it was
   // previously followed wherever it pointed — so a tampered feed could source the
   // installer from any host. Pin it to GitHub's own release hosts.
-  if (!isAllowedUpdateAssetUrl(asset.url)) {
+  const expectedUrl = `https://github.com/oblien/openship/releases/download/v${encodeURIComponent(version)}/${encodeURIComponent(asset.name)}`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(asset.name) || asset.url !== expectedUrl || !isAllowedUpdateAssetUrl(asset.url)) {
     throw new Error(`Refusing to download update from untrusted URL: ${asset.url}`);
   }
 
-  const dir = join(app.getPath("temp"), "openship-update");
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(app.getPath("temp"), "openship-update-"));
   const dest = join(dir, asset.name);
+  try {
+    await downloadVerifiedInstaller(asset, version, onProgress, dest);
+    return dest;
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+}
 
-  const res = await net.fetch(asset.url, {
-    headers: { "User-Agent": "Openship-Desktop" },
-  });
+async function downloadVerifiedInstaller(asset: UpdateAsset, version: string, onProgress: (fraction: number) => void, dest: string): Promise<void> {
+  const res = await fetchUpdateAsset(asset.url, AbortSignal.timeout(10 * 60_000));
   if (!res.ok || !res.body) {
     throw new Error(`Download failed: HTTP ${res.status}`);
   }
 
   const total = Number(res.headers.get("content-length")) || asset.size || 0;
-  const file = createWriteStream(dest);
+  const file = await open(dest, "wx", 0o600);
   const reader = res.body.getReader();
   const hash = createHash("sha256");
   let received = 0;
@@ -180,19 +188,14 @@ export async function downloadUpdate(
       const { done, value } = await reader.read();
       if (done) break;
       hash.update(value);
-      if (!file.write(Buffer.from(value))) {
-        await new Promise<void>((r) => file.once("drain", r));
-      }
+      await file.writeFile(value);
       received += value.length;
       if (total > 0) onProgress(Math.min(1, received / total));
     }
   } finally {
-    file.end();
+    await file.close();
+    await reader.cancel();
   }
-  await new Promise<void>((r, j) => {
-    file.on("finish", () => r());
-    file.on("error", j);
-  });
 
   // Integrity gate: verify the sha256 sidecar the release publishes, and FAIL
   // CLOSED. A mismatch and a missing sidecar are both refusals — treating absence
@@ -201,19 +204,15 @@ export async function downloadUpdate(
   // for every desktop artifact, and the sidecar is always read from the release
   // we're installing, so failing closed can't strand a real release.
   //
-  // This is integrity, NOT authenticity: the sidecar shares the asset's trust
-  // domain. Genuine signature verification is still missing.
+  // The independent publisher signature below supplies authenticity as well.
   const digest = hash.digest("hex");
   let expected: string | null = null;
   let sidecarError = "unreachable";
   try {
-    const shaRes = await net.fetch(`${asset.url}.sha256`, {
-      headers: { "User-Agent": "Openship-Desktop" },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const shaRes = await fetchUpdateAsset(`${asset.url}.sha256`, AbortSignal.timeout(10_000));
     if (!shaRes.ok) sidecarError = `HTTP ${shaRes.status}`;
     else {
-      const tok = (await shaRes.text()).trim().split(/\s+/)[0]?.toLowerCase();
+      const tok = (await readUpdateProof(shaRes)).trim().split(/\s+/)[0]?.toLowerCase();
       if (tok && /^[0-9a-f]{64}$/.test(tok)) expected = tok;
       else sidecarError = "malformed";
     }
@@ -232,7 +231,45 @@ export async function downloadUpdate(
       `Update checksum mismatch — refusing to install ${asset.name} (expected ${expected}, got ${digest}).`,
     );
   }
-  return dest;
+  try {
+    const signature = await fetchUpdateAsset(`${asset.url}.sig`, AbortSignal.timeout(10_000));
+    if (!signature.ok) throw new Error("No publisher signature");
+    verifyUpdateSignature(JSON.parse(await readUpdateProof(signature)), { version, name: asset.name, sha256: digest });
+  } catch {
+    rmSync(dest, { force: true });
+    throw new Error("Update signature is missing or invalid. Refusing to install this update.");
+  }
+}
+
+/** Validate each redirect before issuing the next request, including sidecars. */
+async function fetchUpdateAsset(input: string, signal: AbortSignal): Promise<Response> {
+  let url = input;
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    if (!isAllowedUpdateAssetUrl(url)) throw new Error("Untrusted update download destination.");
+    const response = await net.fetch(url, { redirect: "manual", signal, headers: { "User-Agent": "Openship-Desktop" } });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    await response.body?.cancel();
+    const next = response.headers.get("location");
+    if (!next) throw new Error("Update redirect has no destination.");
+    url = new URL(next, url).href;
+  }
+  throw new Error("Too many update redirects.");
+}
+
+async function readUpdateProof(response: Response): Promise<string> {
+  if (!response.body) throw new Error("Missing update proof.");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks).toString("utf8");
+      size += value.length;
+      if (size > 4096) throw new Error("Invalid update proof size.");
+      chunks.push(value);
+    }
+  } finally { await reader.cancel(); }
 }
 
 /**

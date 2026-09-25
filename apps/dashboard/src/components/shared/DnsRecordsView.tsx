@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Shared DNS-records grid. Renders the 4 required records (MX/SPF/DKIM/
  * DMARC) plus optional A/AAAA host records.
@@ -15,7 +17,6 @@
  */
 
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { DnsRecord, DnsRecords } from "@/lib/api";
 
@@ -165,9 +166,9 @@ function DnsRecordField({
         title={t.widgets.shared.dnsRecords.copy}
       >
         {copied ? (
-          <Check className="size-3.5 text-success" />
+          <UiIcon name="check" className="size-3.5 text-success" />
         ) : (
-          <Copy className="size-3.5" />
+          <UiIcon name="copy" className="size-3.5" />
         )}
       </button>
     </div>

@@ -59,6 +59,7 @@ const h = vi.hoisted(() => ({
   liveContainerId: null as string | null,
   /** Force listSources to fail, standing in for an unreachable host. */
   probeError: null as string | null,
+  offlineVolumeRestore: true,
   /** Force receiveStream to fail with a PLAIN Error, the way a tar failure,
    *  an ENOSPC or the idle watchdog does — after the target was cleared. */
   receiveError: null as string | null,
@@ -77,6 +78,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -164,6 +166,7 @@ vi.mock("@repo/db", () => ({
  * that matching exists to prevent.
  */
 class TestExecutor extends DockerBackupExecutor {
+  get supportsOfflineVolumeRestore() { return h.offlineVolumeRestore; }
   async listSources(service: ServiceHandle) {
     if (h.probeError) throw new Error(h.probeError);
     return super.listSources(service);
@@ -368,6 +371,7 @@ beforeEach(() => {
   h.depContainerId = null;
   h.liveContainerId = null;
   h.probeError = null;
+  h.offlineVolumeRestore = true;
   h.receiveError = null;
   h.receiveOpenError = null;
   h.applyReadError = null;
@@ -381,6 +385,16 @@ beforeEach(() => {
 });
 
 describe("the unrunnable shapes fail in prepare, in seconds", () => {
+  it("refuses an offline volume restore when stopping the service stops filesystem access", async () => {
+    h.offlineVolumeRestore = false;
+    h.volumes = ["pgdata:/var/lib/postgresql/data"];
+    h.artifacts = [volumeArtifact("openship-shop-pgdata")];
+    const last = await prepare();
+    expect(last.status).toBe("failed");
+    expect(last.patch?.errorMessage).toContain("filesystem connection stops with it");
+    expect(h.calls).toEqual([]);
+    expect(h.transitions.map(t => t.status)).not.toContain("applying");
+  });
   it("names both missing facts when there is no container and no declared volume", async () => {
     // #434's row, exactly: nothing on the host, nothing on the service.
     h.artifacts = [volumeArtifact("openship-shop-pgdata")];

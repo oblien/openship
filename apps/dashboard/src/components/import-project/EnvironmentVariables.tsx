@@ -1,23 +1,8 @@
 "use client";
+
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useCallback, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  Eye,
-  EyeOff,
-  FileText,
-  Key,
-  KeyRound,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
 import { ENV_MASK, isMaskedValue, looksLikeSecretKey } from "@repo/core";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useToast } from "@/context/ToastContext";
@@ -700,9 +685,9 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
       className={actionBtn}
     >
       {isDownloading ? (
-        <LoaderCircle className="size-3.5 animate-spin" />
+        <UiIcon name="spinner" className="size-3.5 animate-spin" />
       ) : (
-        <Download className="size-3.5" />
+        <UiIcon name="download" className="size-3.5" />
       )}
       {ev.downloadEnv}
     </button>
@@ -721,7 +706,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           {!hideTitle && (
             <div className="flex min-w-0 items-center gap-3">
               <div className="size-9 shrink-0 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                <Key className="size-[18px] text-violet-500" />
+                <UiIcon name="key" className="size-[18px] text-violet-500" />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{ev.title}</p>
@@ -752,7 +737,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   }}
                   className={actionBtn}
                 >
-                  <FileText className="size-3.5" />
+                  <UiIcon name="file-text" className="size-3.5" />
                   {ev.pasteEnv}
                 </button>
                 <button
@@ -762,12 +747,12 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   }}
                   className={actionBtn}
                 >
-                  <Upload className="size-3.5" />
+                  <UiIcon name="upload" className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
                 {downloadAction}
                 <button onClick={() => setIsEditingMode(true)} className={actionBtn}>
-                  <Pencil className="size-3.5" />
+                  <UiIcon name="edit" className="size-3.5" />
                   {ev.edit}
                 </button>
               </>
@@ -780,15 +765,15 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                     className="p-2 text-muted-foreground hover:text-danger hover:bg-danger-bg rounded-lg transition-colors"
                     title={ev.cancel}
                   >
-                    <X className="size-4" />
+                    <UiIcon name="close" className="size-4" />
                   </button>
                 )}
                 <button onClick={() => void handlePasteFromClipboard()} className={actionBtn}>
-                  <FileText className="size-3.5" />
+                  <UiIcon name="file-text" className="size-3.5" />
                   {ev.pasteEnv}
                 </button>
                 <button onClick={handleUploadClick} className={actionBtn}>
-                  <Upload className="size-3.5" />
+                  <UiIcon name="upload" className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
                 {downloadAction}
@@ -806,11 +791,11 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             {mode === "deploy" && isEditingMode && (
               <>
                 <button onClick={() => void handlePasteFromClipboard()} className={actionBtn}>
-                  <FileText className="size-3.5" />
+                  <UiIcon name="file-text" className="size-3.5" />
                   {ev.pasteEnv}
                 </button>
                 <button onClick={handleUploadClick} className={actionBtn}>
-                  <Upload className="size-3.5" />
+                  <UiIcon name="upload" className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
                 {downloadAction}
@@ -825,7 +810,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 className={actionBtn}
                 title={allShown ? ev.reveal?.hide : ev.reveal?.show}
               >
-                {allShown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                {allShown ? <UiIcon name="eye-off" className="size-3.5" /> : <UiIcon name="eye" className="size-3.5" />}
                 {allShown ? ev.reveal?.hide : ev.reveal?.show}
               </button>
             )}
@@ -836,7 +821,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 aria-label={expanded ? ev.collapse : ev.expand}
               >
-                {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                {expanded ? <UiIcon name="chevron-up" className="size-4" /> : <UiIcon name="chevron-down" className="size-4" />}
               </button>
             )}
           </div>
@@ -890,11 +875,11 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             return (
               <div key={index} data-env-index={index} className="space-y-1.5">
                 {env.originLabel && (
-                  <div className="text-[11px] text-muted-foreground">{env.originLabel}</div>
+                  <div className="text-xs text-muted-foreground">{env.originLabel}</div>
                 )}
                 {resolution && (
                   <div
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium ${resolution.badgeClass}`}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${resolution.badgeClass}`}
                   >
                     <EnvResolutionIcon icon={resolution.icon} />
                     {resolution.label}
@@ -932,11 +917,11 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                         type="button"
                       >
                         {revealingKeys.has(env.key) ? (
-                          <LoaderCircle className="size-3.5 animate-spin" />
+                          <UiIcon name="spinner" className="size-3.5 animate-spin" />
                         ) : showAsText ? (
-                          <EyeOff className="size-3.5" />
+                          <UiIcon name="eye-off" className="size-3.5" />
                         ) : (
-                          <Eye className="size-3.5" />
+                          <UiIcon name="eye" className="size-3.5" />
                         )}
                       </button>
                     )}
@@ -963,7 +948,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                           : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50"
                       } ${!isEditingMode ? "opacity-60 cursor-default" : ""}`}
                     >
-                      <KeyRound className="size-3.5" />
+                      <UiIcon name="key" className="size-3.5" />
                     </button>
                   )}
 
@@ -975,7 +960,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       type="button"
                       title={env.removalLabel ?? ev.delete}
                     >
-                      <Trash2 className="size-3.5" />
+                      <UiIcon name="trash" className="size-3.5" />
                     </button>
                   )}
                 </div>
@@ -997,7 +982,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   isDragging ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground"
                 }`}
               >
-                <Key className="size-[18px]" />
+                <UiIcon name="key" className="size-[18px]" />
               </div>
               <p
                 className={`text-sm font-medium ${isDragging ? "text-primary" : "text-foreground"}`}
@@ -1013,7 +998,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   onClick={addEnvVar}
                   className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  <Plus className="size-3.5" />
+                  <UiIcon name="plus" className="size-3.5" />
                   {ev.addVariable}
                 </button>
               )}
@@ -1027,10 +1012,10 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 onClick={addEnvVar}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
               >
-                <Plus className="size-3.5" />
+                <UiIcon name="plus" className="size-3.5" />
                 {ev.addVariable}
               </button>
-              <p className="text-[11px] text-muted-foreground">{ev.pasteHint}</p>
+              <p className="text-xs text-muted-foreground">{ev.pasteHint}</p>
             </div>
           )}
         </div>
@@ -1093,7 +1078,7 @@ function getEnvResolutionState(
 
   if (isEnvironmentValueMissing(meta, value)) {
     return {
-      icon: AlertTriangle,
+      icon: "warning" as const,
       label: res.needsValue,
       badgeClass: "bg-warning-bg text-warning",
       inputClass: "border-warning-border bg-warning-bg focus:ring-warning-border",
@@ -1102,7 +1087,7 @@ function getEnvResolutionState(
 
   if (meta.source === "default" && value === meta.resolvedValue) {
     return {
-      icon: RotateCcw,
+      icon: "rotate-left" as const,
       label: res.fallbackDefault,
       badgeClass: "bg-info-bg text-info",
       inputClass: "border-info-border bg-info-bg focus:ring-info-border",
@@ -1111,7 +1096,7 @@ function getEnvResolutionState(
 
   if (meta.source === "env-file" && value === meta.resolvedValue) {
     return {
-      icon: FileText,
+      icon: "file-text" as const,
       label: res.loadedFromEnv,
       badgeClass: "bg-success-bg text-success",
       inputClass: "border-success-border bg-success-bg focus:ring-success-border",
@@ -1120,7 +1105,7 @@ function getEnvResolutionState(
 
   if (meta.source === "interpolated" && value === meta.resolvedValue) {
     return {
-      icon: RotateCcw,
+      icon: "rotate-left" as const,
       label: res.interpolated,
       badgeClass: "bg-muted text-muted-foreground",
       inputClass: "border-border/70",
@@ -1130,8 +1115,8 @@ function getEnvResolutionState(
   return null;
 }
 
-function EnvResolutionIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
-  return <Icon className="size-3" />;
+function EnvResolutionIcon({ icon: Icon }: { icon: IconName }) {
+  return <UiIcon name={Icon} className="size-3" />;
 }
 
 export default React.memo(EnvironmentVariables);

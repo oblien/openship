@@ -18,6 +18,17 @@ export const InviteWithGrantsBody = Type.Object({
 });
 export type InviteWithGrantsInput = Static<typeof InviteWithGrantsBody>;
 const stringOrNull = Type.Union([Type.String(), Type.Null()]);
+export const WorkspaceListSchema = Type.Object({
+  currentOrganizationId: Type.String(),
+  boundOrganizationId: stringOrNull,
+  canSwitchOrganization: Type.Boolean(),
+  readOnly: Type.Boolean(),
+  workspaces: Type.Array(Type.Object({
+    organizationId: Type.String(), name: Type.String(), slug: stringOrNull,
+    isTeam: Type.Boolean(), role: MemberRoleSchema,
+  })),
+});
+export type WorkspaceList = Static<typeof WorkspaceListSchema>;
 export const ResourceGrantSchema = Type.Composite([PermissionGrantSchema, Type.Object({
   id: Type.String(), organizationId: Type.String(), userId: Type.String(), grantedByUserId: stringOrNull, createdAt: Type.String(),
 })]);
@@ -30,6 +41,7 @@ const pendingInvitation = Type.Object({
   pendingGrants: Type.Array(PermissionGrantSchema),
 });
 export const PermissionCollectionSchemas = {
+  listWorkspaces: { action: "read", output: WorkspaceListSchema },
   orgMeta: { action: "read", output: Type.Object({ organizationId: Type.String(), isTeam: Type.Boolean(), memberCount: Type.Integer() }) },
   listResources: { action: "read", input: Type.Object({ type: Type.String({ minLength: 1, maxLength: 100 }), owner: Type.Optional(Type.String({ maxLength: 100 })) }), output: Type.Array(Type.Object({ id: Type.String(), label: Type.String(), meta: Type.Optional(Type.Record(Type.String(), Type.Unknown())) })) },
   createTeamOrg: { action: "write", input: Type.Object({ name: Type.String({ minLength: 1, maxLength: 200 }), slug: Type.Optional(Type.String({ minLength: 1, maxLength: 100, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" })) }), output: Type.Object({ id: Type.String(), name: Type.String(), isTeam: Type.Literal(true) }) },

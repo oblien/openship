@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Webmail deploy screen - opinionated picker that hands off to the standard
  * build session UI.
@@ -23,16 +25,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Globe,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  Server,
-  TriangleAlert,
-} from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { OptionCard } from "../[slug]/components/DeployTargetStep";
 import { useToast } from "@/context/ToastContext";
@@ -217,7 +209,7 @@ export default function DeployMailPage() {
           href="/emails"
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
         >
-          <ArrowLeft className="size-3.5 rtl:rotate-180" /> {tm.backToMail}
+          <UiIcon name="arrow-left" className="size-3.5 rtl:rotate-180" /> {tm.backToMail}
         </Link>
       </div>
 
@@ -225,7 +217,7 @@ export default function DeployMailPage() {
         <div className="space-y-6">
           {replacing && (
             <div className="rounded-xl border border-warning-border bg-warning-bg p-4 flex gap-3">
-              <TriangleAlert className="size-4 text-warning shrink-0 mt-0.5" strokeWidth={2} />
+              <UiIcon name="warning" className="size-4 text-warning shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">{tm.legacyTitle}</p>
                 <p className="text-sm text-muted-foreground mt-1">{tm.legacyBody}</p>
@@ -240,17 +232,17 @@ export default function DeployMailPage() {
           >
             {!bootReady ? (
               <div className="rounded-xl border border-border/50 bg-card px-4 py-6 text-sm text-muted-foreground flex items-center gap-2">
-                <Loader2 className="size-4 animate-spin" /> {tm.loadingTargets}
+                <UiIcon name="spinner" className="size-4 animate-spin" /> {tm.loadingTargets}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {targets.map((t) => {
                   const Icon =
                     t.kind === "mail"
-                      ? Inbox
+                      ? "inbox"
                       : t.kind === "server"
-                        ? Server
-                        : Globe;
+                        ? "server"
+                        : "globe";
                   const key = `${t.kind}:${t.serverId}`;
                   return (
                     <OptionCard
@@ -260,7 +252,7 @@ export default function DeployMailPage() {
                       onSelect={() => {
                         if (!t.disabled) setSelectedKey(key);
                       }}
-                      icon={<Icon className="size-5" />}
+                      icon={<UiIcon name={Icon} className="size-5" />}
                       label={t.label}
                       description={
                         t.description ||
@@ -317,17 +309,17 @@ export default function DeployMailPage() {
           >
             {submitting ? (
               <>
-                <Loader2 className="size-4 animate-spin" /> {tm.starting}
+                <UiIcon name="spinner" className="size-4 animate-spin" /> {tm.starting}
               </>
             ) : replacing ? (
               <>
-                <RefreshCw className="size-4" />
+                <UiIcon name="refresh" className="size-4" />
                 {tm.replaceButton}
               </>
             ) : (
               <>
                 {tm.deployButton}
-                <ArrowRight className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
               </>
             )}
           </button>

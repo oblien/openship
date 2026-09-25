@@ -1,8 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useProjectTabNavigation } from "@/hooks/useProjectTabNavigation";
-import { generateIcon } from "@/utils/icons";
+
 import { useEffect } from "react";
 
 export const ProjectsBottomNavigation = () => {
@@ -42,8 +44,8 @@ export const ProjectsBottomNavigation = () => {
                                         onClick={() => handleTabChange(tab.id)}
                                         className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 lg:py-2 rounded-full font-normal text-base transition-all duration-300 whitespace-nowrap ${isActive ? 'bg-background text-foreground shadow-lg': 'text-background'}`}
                                     >
-                                        <span className="lg:hidden">{generateIcon(tab.icon, 22, isActive ? 'currentColor' : 'currentColor')}</span>
-                                        <span className="hidden lg:inline">{generateIcon(tab.icon, 20, isActive ? 'currentColor' : 'currentColor')}</span>
+                                        <span className="lg:hidden"><UiIcon name={tab.icon} size={22} /></span>
+                                        <span className="hidden lg:inline"><UiIcon name={tab.icon} size={20} /></span>
                                         <span className="hidden sm:inline">{tab.label}</span>
                                     </button>
                                 );

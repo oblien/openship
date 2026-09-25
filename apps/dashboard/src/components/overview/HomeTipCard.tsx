@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Zap } from "lucide-react";
 
 import { useGitHub } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -61,7 +62,7 @@ export default function HomeTipCard({ projectCount, loading }: HomeTipCardProps)
   return (
     <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Zap className="size-4 text-primary" />
+        <UiIcon name="bolt" className="size-4 text-primary" />
         <h3 className="font-semibold text-foreground text-sm">{c.quickTip}</h3>
       </div>
       <p className="text-sm text-muted-foreground leading-relaxed">{tip.text}</p>
@@ -70,7 +71,7 @@ export default function HomeTipCard({ projectCount, loading }: HomeTipCardProps)
         className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
       >
         {tip.label}
-        <ArrowRight className="size-3.5 rtl:rotate-180" />
+        <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
       </Link>
     </div>
   );

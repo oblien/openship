@@ -48,7 +48,8 @@ openship server add [options]
 | `--key-path <path>` | Path to private key (key auth) |
 | `--key-passphrase <passphrase>` | Private key passphrase |
 | `--jump-host <host>` | SSH jump / bastion host |
-| `--ssh-args <args>` | Extra raw ssh args |
+| `--ssh-transport <transport>` | SSH transport (direct\|cloudflare) |
+| `--ssh-args <args>` | SSH connection tuning arguments |
 
 ## openship server check
 
@@ -159,7 +160,8 @@ openship server test-connection|test [options]
 | `--key-path <path>` | Path to private key |
 | `--key-passphrase <passphrase>` | Private key passphrase |
 | `--jump-host <host>` | SSH jump / bastion host |
-| `--ssh-args <args>` | Extra raw ssh args |
+| `--ssh-transport <transport>` | SSH transport (direct\|cloudflare) |
+| `--ssh-args <args>` | SSH connection tuning arguments |
 
 ## openship server update
 

@@ -1,20 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowRight,
-  CheckCircle2,
-  Circle,
-  CircleAlert,
-  Database,
-  Layers,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Server,
-} from "lucide-react";
 import type { ComputeCluster, ProjectCluster } from "@repo/contracts";
 import {
   clusterWorkloadNeedsOperator,
@@ -56,7 +46,7 @@ export function TopologyClusterScaling(props: Props) {
     return (
       <section className="space-y-2 rounded-xl bg-muted/40 p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <Database className="size-4 text-info" /> Database scaling
+          <UiIcon name="database" className="size-4 text-info" /> Database scaling
         </h3>
         <p className="text-xs leading-relaxed text-muted-foreground">
           To use a replicated database, add PostgreSQL or Redis from an application's cluster
@@ -165,7 +155,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
   const observed = view?.status ? clusterInstances(view.status) : [];
   const allReady =
     !!view?.status && view.status.desired > 0 && view.status.ready >= view.status.desired;
-  const HealthIcon = allReady ? CheckCircle2 : view?.status?.desired ? CircleAlert : Circle;
+  const HealthIcon = allReady ? "check-circle" : view?.status?.desired ? "alert-circle" : "circle";
   const updateTarget = (next: ProjectCluster) => {
     setView(next);
     onClusterState?.(next);
@@ -228,7 +218,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <Layers className="size-4 text-info" /> Run across servers
+          <UiIcon name="layers" className="size-4 text-info" /> Run across servers
         </h3>
         <Button
           size="icon"
@@ -241,7 +231,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
             setRevision((value) => value + 1);
           }}
         >
-          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+          <UiIcon name="refresh" className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
@@ -251,7 +241,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
       </p>
       {!view && loading && (
         <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading scaling settings…
+          <UiIcon name="spinner" className="size-4 animate-spin" /> Loading scaling settings…
         </div>
       )}
       {view && (
@@ -260,7 +250,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
             <div className="space-y-3 rounded-xl bg-muted/40 p-3">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="flex items-center gap-2">
-                  <HealthIcon
+                  <UiIcon name={HealthIcon}
                     className={`size-4 ${allReady ? "text-success" : view.status.desired ? "text-warning" : "text-muted-foreground"}`}
                   />
                   Ready instances
@@ -275,7 +265,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
               <ul className="space-y-2">
                 {observed.map(({ pod, name, server, state }) => (
                   <li key={pod.name} className="flex items-start gap-2 text-xs">
-                    <Server className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                    <UiIcon name="server" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">
                         {name} · {server}
@@ -335,12 +325,12 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                 {
                   value: "",
                   label: currentServerId ? "Current server" : "This installation's server",
-                  icon: <Server className="size-4" />,
+                  icon: <UiIcon name="server" className="size-4" />,
                 },
                 ...clusters.map((cluster) => ({
                   value: cluster.id,
                   label: cluster.name,
-                  icon: <Layers className="size-4 text-info" />,
+                  icon: <UiIcon name="layers" className="size-4 text-info" />,
                   description: `${cluster.serverIds.length} ${cluster.serverIds.length === 1 ? "server" : "servers"} · ${t.servers.runtime.status[clusterScalingState(cluster)]}`,
                 })),
                 ...(view.clusterId && !clusters.some((cluster) => cluster.id === view.clusterId)
@@ -348,14 +338,14 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                       {
                         value: view.clusterId,
                         label: "Current server cluster",
-                        icon: <Layers className="size-4 text-info" />,
+                        icon: <UiIcon name="layers" className="size-4 text-info" />,
                       },
                     ]
                   : []),
               ]}
               footerAction={{
                 label: "Create server cluster",
-                icon: <Plus className="size-4" />,
+                icon: <UiIcon name="plus" className="size-4" />,
                 onClick: () => router.push("/servers/clusters/new"),
               }}
               onChange={(value) => {
@@ -382,7 +372,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                     href={`/servers/clusters/${selected.id}`}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
                   >
-                    Open cluster setup <ArrowRight className="size-3.5" />
+                    Open cluster setup <UiIcon name="arrow-right" className="size-3.5" />
                   </Link>
                 </>
               )}
@@ -474,7 +464,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
           {(!!clusterId || settingsChanged || destinationPending) && (
             <div className="space-y-2">
               <Button className="w-full" size="sm" disabled={blocked} onClick={() => void apply()}>
-                {busy && <Loader2 className="size-4 animate-spin" />}
+                {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {needsInstanceRelease
                   ? "Apply scaling"
                   : clusterId || !settingsChanged
@@ -546,7 +536,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
           href="/servers/clusters/new"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
         >
-          <Plus className="size-3.5" /> Create server cluster
+          <UiIcon name="plus" className="size-3.5" /> Create server cluster
         </Link>
       )}
     </section>

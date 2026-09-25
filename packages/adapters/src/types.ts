@@ -767,7 +767,9 @@ export interface SshConfig {
   useSystemSsh?: boolean;
   /** Optional jump/bastion host (`ssh -J`). Honored by the system-ssh path. */
   sshJumpHost?: string;
-  /** Extra raw `ssh` CLI arguments. Honored by the system-ssh path. */
+  /** Fixed SSH transport; executable paths and arbitrary proxy commands are never request inputs. */
+  sshTransport?: "direct" | "cloudflare";
+  /** Allowlisted `ssh` connection tuning arguments. Honored by the system-ssh path. */
   sshArgs?: string;
   /**
    * How long to wait for the SSH handshake. Left unset, ssh2's 20s default applies —
@@ -907,6 +909,13 @@ export interface CommandExecutor extends ExecOnly {
 
   /** Clean up connections / resources. */
   dispose(): Promise<void>;
+
+  /**
+   * False when each operation opens its own connection (Windows OpenSSH).
+   * A completed command then proves only past reachability; connection caches
+   * must probe again. Omitted by existing persistent/local executors.
+   */
+  readonly persistentConnection?: boolean;
 
   /**
    * Subscribe to transport-level disconnects (socket close/end/error, or a

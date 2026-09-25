@@ -1,13 +1,13 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Terminal, FolderOutput, Server, Globe, Container, Layers, Hash, Cloud, Monitor } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { getPublicEndpointHosts, usesServiceDeployment } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { STACKS } from "@repo/core";
-import { DockerMark } from "@/components/icons/DockerMark";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 const BuildSummary: React.FC = () => {
@@ -30,16 +30,16 @@ const BuildSummary: React.FC = () => {
   const buildLocation = config.buildStrategy === "local"
     ? {
         label: t.deploy.buildSummary.localMachine,
-        icon: <Monitor className="size-3.5 text-muted-foreground" />,
+        icon: <UiIcon name="monitor" className="size-3.5 text-muted-foreground" />,
       }
     : config.deployTarget === "cloud"
       ? {
           label: t.deploy.buildSummary.cloud,
-          icon: <Cloud className="size-3.5 text-muted-foreground" />,
+          icon: <UiIcon name="cloud" className="size-3.5 text-muted-foreground" />,
         }
       : {
           label: t.deploy.buildSummary.server,
-          icon: <Cloud className="size-3.5 text-muted-foreground" />,
+          icon: <UiIcon name="cloud" className="size-3.5 text-muted-foreground" />,
         };
   const appDetailItems = [
     {
@@ -51,16 +51,16 @@ const BuildSummary: React.FC = () => {
               {fw.icon("var(--foreground)")}
             </span>
           )
-        : <Container className="size-3 text-muted-foreground" />,
+        : <UiIcon name="window" className="size-3 text-muted-foreground" />,
     },
     config.options.installCommand
-      ? { label: t.deploy.buildSummary.install, value: config.options.installCommand, icon: <Server className="size-3 text-muted-foreground" /> }
+      ? { label: t.deploy.buildSummary.install, value: config.options.installCommand, icon: <UiIcon name="server" className="size-3 text-muted-foreground" /> }
       : null,
     config.options.buildCommand
-      ? { label: t.deploy.buildSummary.build, value: config.options.buildCommand, icon: <Terminal className="size-3 text-muted-foreground" /> }
+      ? { label: t.deploy.buildSummary.build, value: config.options.buildCommand, icon: <UiIcon name="terminal" className="size-3 text-muted-foreground" /> }
       : null,
     config.options.outputDirectory
-      ? { label: t.deploy.buildSummary.output, value: config.options.outputDirectory, icon: <FolderOutput className="size-3 text-muted-foreground" /> }
+      ? { label: t.deploy.buildSummary.output, value: config.options.outputDirectory, icon: <UiIcon name="folder-out" className="size-3 text-muted-foreground" /> }
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; icon: React.ReactNode }>;
 
@@ -94,7 +94,7 @@ const BuildSummary: React.FC = () => {
         {domainDisplay && (
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-              <Globe className="size-3.5 text-primary" />
+              <UiIcon name="globe" className="size-3.5 text-primary" />
             </div>
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground">{t.deploy.buildSummary.domain}</p>
@@ -110,7 +110,7 @@ const BuildSummary: React.FC = () => {
         {isServices && (
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-              <Layers className="size-3.5 text-primary" />
+              <UiIcon name="layers" className="size-3.5 text-primary" />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t.deploy.buildSummary.services}</p>
@@ -167,9 +167,9 @@ const BuildSummary: React.FC = () => {
                 {isServices || isDocker ? (
                   // Docker / Compose: the whale in its brand blue on a faint
                   // tinted chip — a light brand touch, not the full logo lockup.
-                  <DockerMark className="size-4 text-[#2496ED]" />
+                  <UiIcon name="docker" className="size-4 text-[#2496ED]" />
                 ) : (
-                  <Container className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="window" className="size-3.5 text-muted-foreground" />
                 )}
               </div>
               <div className="min-w-0">
@@ -188,7 +188,7 @@ const BuildSummary: React.FC = () => {
 
             {isDocker && config.options.productionPort && (
               <div className="flex items-start gap-2 text-xs min-w-0 border-t border-border/30 pt-2">
-                <Hash className="size-3 mt-0.5 text-muted-foreground shrink-0" />
+                <UiIcon name="hash" className="size-3 mt-0.5 text-muted-foreground shrink-0" />
                 <span className="text-muted-foreground shrink-0">{t.deploy.buildSummary.port}</span>
                 <span className="text-foreground font-medium truncate">{config.options.productionPort}</span>
               </div>

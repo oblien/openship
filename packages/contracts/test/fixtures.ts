@@ -120,7 +120,7 @@ export function deploymentFixture(projectId = "project-a", organizationId = "org
 
 export function serverFixture(id = "server-a"): ServerDetail {
   return { id, name: "Production", isLocal: false, sshHost: "203.0.113.10", sshPort: 22, sshUser: "root",
-    sshAuthMethod: "key", sshKeyPath: null, hasStoredKeyMaterial: true, sshJumpHost: null, sshArgs: null,
+    sshAuthMethod: "key", sshKeyPath: null, hasStoredKeyMaterial: true, sshJumpHost: null, sshArgs: null, sshTransport: "direct",
     createdAt: "2026-09-12T00:00:00.000Z", country: null, projectCount: 0, hostChannel: null };
 }
 

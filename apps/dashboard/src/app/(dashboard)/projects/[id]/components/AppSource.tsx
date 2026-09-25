@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Loader2, Check, ArrowUpCircle, ExternalLink } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -133,7 +134,7 @@ export function AppSource() {
               className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary hover:underline"
             >
               {repository.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-              <ExternalLink className="size-3.5 text-muted-foreground" />
+              <UiIcon name="external-link" className="size-3.5 text-muted-foreground" />
             </a>
           </div>
         )}
@@ -146,7 +147,7 @@ export function AppSource() {
           disabled={checking}
           className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
         >
-          {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          {checking ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="refresh" className="size-4" />}
           {s.checkForUpdates}
         </button>
 
@@ -159,14 +160,14 @@ export function AppSource() {
             disabled={applying}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {applying ? <Loader2 className="size-4 animate-spin" /> : <ArrowUpCircle className="size-4" />}
+            {applying ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-up-circle" className="size-4" />}
             {latest ? interpolate(s.updateTo, { version: latest }) : s.update}
           </button>
         ) : (
           hasData &&
           !loading && (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-              <Check className="size-3.5" /> {s.upToDate}
+              <UiIcon name="check" className="size-3.5" /> {s.upToDate}
             </span>
           )
         )}

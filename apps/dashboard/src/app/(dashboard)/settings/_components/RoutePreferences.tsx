@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
-import { Check, Loader2, Zap, ShieldCheck, Network, Waypoints } from "lucide-react";
 import { settingsApi } from "@/lib/api";
 import type { RouteStrategy } from "@/lib/api/settings";
 import { useToast } from "@/context/ToastContext";
@@ -12,11 +13,11 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 const ROUTE_MODES: {
   value: RouteStrategy;
   key: "auto" | "loopbackPort" | "containerIp";
-  icon: React.ElementType;
+  icon: IconName;
 }[] = [
-  { value: "auto", key: "auto", icon: Zap },
-  { value: "loopback-port", key: "loopbackPort", icon: ShieldCheck },
-  { value: "container-ip", key: "containerIp", icon: Network },
+  { value: "auto", key: "auto", icon: "bolt" },
+  { value: "loopback-port", key: "loopbackPort", icon: "shield-check" },
+  { value: "container-ip", key: "containerIp", icon: "network" },
 ];
 
 export function RoutePreferences() {
@@ -65,7 +66,7 @@ export function RoutePreferences() {
 
   return (
     <SettingsSection
-      icon={Waypoints}
+      icon={"network"}
       title={t.settings.routePreferences.title}
       description={t.settings.routePreferences.description}
       iconBg="bg-sky-500/10"
@@ -75,7 +76,7 @@ export function RoutePreferences() {
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {t.settings.routePreferences.loading}
         </div>
       ) : (
@@ -96,7 +97,7 @@ export function RoutePreferences() {
                   } disabled:opacity-50`}
                 >
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                    <ModeIcon className="size-4 text-muted-foreground" />
+                    <UiIcon name={ModeIcon} className="size-4 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium text-foreground">
                     {t.settings.routePreferences.modes[key].label}
@@ -106,7 +107,7 @@ export function RoutePreferences() {
                   </p>
                   {active && (
                     <div className="absolute top-3 end-3">
-                      <Check className="size-4 text-primary" />
+                      <UiIcon name="check" className="size-4 text-primary" />
                     </div>
                   )}
                 </button>

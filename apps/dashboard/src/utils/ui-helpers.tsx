@@ -1,19 +1,19 @@
-import { AlertCircle, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 
 export const getStatusIcon = (status: string) => {
   switch (status) {
     case "success":
     case "live":
-      return <CheckCircle className="w-4 h-4 text-success" />;
+      return <UiIcon name="check-circle" className="w-4 h-4 text-success" />;
     case "failed":
-      return <XCircle className="w-4 h-4 text-danger" />;
+      return <UiIcon name="x-circle" className="w-4 h-4 text-danger" />;
     case "building":
     case "pending":
-      return <AlertCircle className="w-4 h-4 text-warning animate-pulse" />;
+      return <UiIcon name="alert-circle" className="w-4 h-4 text-warning animate-pulse" />;
     case "paused":
-      return <Clock className="w-4 h-4 text-neutral" />;
+      return <UiIcon name="clock" className="w-4 h-4 text-neutral" />;
     default:
-      return <Clock className="w-4 h-4 text-neutral" />;
+      return <UiIcon name="clock" className="w-4 h-4 text-neutral" />;
   }
 };
 

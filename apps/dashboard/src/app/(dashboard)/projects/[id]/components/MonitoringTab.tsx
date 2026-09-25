@@ -12,7 +12,7 @@
  *   useProjectUsageStream  — SSE, ~5s. Live resources; keeps nothing.
  *   useProjectUsageHistory — sampled 5-minute buckets. What the stream forgets.
  *   useAnalyticsGeo        — per-DAY rollups: countries, visitors, paths, statuses.
- *   useAnalyticsData       — per-MINUTE series for the traffic chart.
+ *   useAnalyticsData       — hourly requests over the last 24 hours.
  *
  * The geo/overview split isn't arbitrary: countries, visitors and paths are only
  * aggregated daily at the edge (per-minute would multiply the shared-dict cardinality
@@ -321,10 +321,6 @@ export const MonitoringTab = () => {
     }));
   }, [geo]);
 
-  const dateRange = analytics
-    ? `${new Date(analytics.summary.firstRequest).toLocaleDateString()} - ${new Date(analytics.summary.lastRequest).toLocaleDateString()}`
-    : undefined;
-
   return (
     <MonitoringView
       analytics={analytics}
@@ -357,7 +353,7 @@ export const MonitoringTab = () => {
         <TrafficChart
           trafficData={analytics?.trafficByHour ?? []}
           isLoading={fixture ? false : isLoadingAnalytics}
-          dateRange={dateRange}
+          scopeLabel={domainScope ?? t.projects.monitoring.allDomains}
           totalRequests={analytics?.summary.totalRequests}
         />
       }

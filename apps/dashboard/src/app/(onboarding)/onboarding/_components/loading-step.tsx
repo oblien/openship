@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { OnboardingState } from "@repo/onboarding";
 import { useI18n } from "@/components/i18n-provider";
@@ -62,7 +64,7 @@ export function LoadingStep({ state, onBack }: LoadingStepProps) {
   return (
     <div className="ob-screen">
       <div className="ob-screen-inner">
-        {!failed && <div className="ob-spinner" />}
+        {!failed && <UiIcon name="spinner" className="ob-spinner" />}
 
         <h2>{title}</h2>
         <p className="ob-subtitle">{message}</p>

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSettingsContext";
 import { OverviewTab } from "@/app/(dashboard)/projects/[id]/components/OverviewTab";
-import { invalidateProjectCaches, useAnalyticsOverview, useProjectUsageHistory } from "./useProjectEndpoints";
+import { invalidateProjectCaches, mapAnalyticsData, useAnalyticsOverview, useProjectUsageHistory } from "./useProjectEndpoints";
 
 const h = vi.hoisted(() => ({ get: vi.fn(), info: vi.fn(), services: vi.fn(), router: { replace: vi.fn() } }));
 vi.mock("@/lib/api", () => ({
@@ -59,7 +59,7 @@ async function renderProject(projectId = id, initial = false) {
 }
 function Subscriber({ projectId }: { projectId: string }) {
   const result = useAnalyticsOverview(projectId, "primary.example.com");
-  return <output data-subscriber>{result.data?.summary.totalRequests ?? "loading"}</output>;
+  return <><output data-subscriber>{result.data?.summary.totalRequests ?? "loading"}</output><output data-error>{result.error}</output></>;
 }
 async function renderSubscribers(count: number) {
   await act(async () => root.render(<>{Array.from({ length: count }, (_, i) =>
@@ -80,15 +80,16 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("project analytics requests and recovery (#396)", () => {
-  it.each([false, true])("issues only a scoped first request (initial project present: %s)", async (initial) => {
+  it.each([false, true])("counts all project domains in one first request (initial project present: %s)", async (initial) => {
     await renderProject(id, initial);
     expect(h.get).toHaveBeenCalledOnce();
     expect(h.get).toHaveBeenCalledWith("/analytics/overview", {
-      params: { projectId: id, domain: "primary.example.com" }, timeout: 60_000,
+      params: { projectId: id }, timeout: 60_000,
     });
     expect(container.textContent).toContain("3.1K");
   });
@@ -99,17 +100,17 @@ describe("project analytics requests and recovery (#396)", () => {
     expect(h.get).not.toHaveBeenCalled();
   });
 
-  it("retains a valid explicit selection and falls back immediately if it is removed", async () => {
+  it("keeps Overview project-wide when a different domain is selected for links", async () => {
     await renderProject();
     await act(async () => settings.setSelectedDomain("second.example.com"));
-    expect(h.get.mock.calls.at(-1)?.[1].params.domain).toBe("second.example.com");
+    expect(h.get).toHaveBeenCalledOnce();
     await act(async () => settings.setProjectData((p) => ({ ...p, name: "renamed" })));
     expect(settings.selectedDomain).toBe("second.example.com");
     await act(async () => settings.setProjectData((p) => ({
       ...p, domains: [{ domain: "primary.example.com", primary: true }],
     })));
     expect(settings.selectedDomain).toBe("primary.example.com");
-    expect(h.get.mock.calls.every(([, options]) => !!options.params.domain)).toBe(true);
+    expect(h.get.mock.calls.every(([, options]) => !options.params.domain)).toBe(true);
   });
 
   it("does not carry one project's selected domain into another project's request", async () => {
@@ -119,7 +120,7 @@ describe("project analytics requests and recovery (#396)", () => {
     h.info.mockResolvedValue({ success: true, data: { project: project(nextId, ["next.example.com"]) } });
     await renderProject(nextId);
     const requests = h.get.mock.calls.filter(([, options]) => options.params.projectId === nextId);
-    expect(requests.map(([, options]) => options.params.domain)).toEqual(["next.example.com"]);
+    expect(requests.map(([, options]) => options.params.domain)).toEqual([undefined]);
   });
 
   it("shows a failure instead of zero traffic and retries without remounting the page", async () => {
@@ -152,11 +153,69 @@ describe("project analytics requests and recovery (#396)", () => {
     expect([...container.querySelectorAll('[data-subscriber]')].map((e) => e.textContent))
       .toEqual(["200", "200", "200"]);
   });
+
+  it("shares each minute refresh between subscribers and updates both without remounting", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    await renderSubscribers(2);
+    h.get.mockResolvedValue(response(4000));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(h.get).toHaveBeenCalledTimes(2);
+    expect([...container.querySelectorAll('[data-subscriber]')].map((e) => e.textContent))
+      .toEqual(["4000", "4000"]);
+  });
+
+  it("does not overlap slow polls or replace visible data with a loading state", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    await renderSubscribers(2);
+    const pending = deferred<ReturnType<typeof response>>();
+    h.get.mockReturnValue(pending.promise);
+    await act(async () => vi.advanceTimersByTimeAsync(180_000));
+    expect(h.get).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-subscriber]')?.textContent).toBe("3057");
+    await act(async () => pending.resolve(response(4000)));
+    expect(container.querySelector('[data-subscriber]')?.textContent).toBe("4000");
+  });
+
+  it("refreshes an expired cache when returning to the tab", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    await renderSubscribers(1);
+    await renderSubscribers(0);
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    h.get.mockResolvedValue(response(6000));
+    await renderSubscribers(1);
+    expect(h.get).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-subscriber]')?.textContent).toBe("6000");
+  });
+
+  it("skips hidden-window polling and refreshes on becoming visible", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    await renderSubscribers(1);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await act(async () => vi.advanceTimersByTimeAsync(180_000));
+    expect(h.get).toHaveBeenCalledOnce();
+    visibility.mockReturnValue("visible");
+    h.get.mockResolvedValue(response(7000));
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(h.get).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-subscriber]')?.textContent).toBe("7000");
+  });
+
+  it("reports a failed refresh and recovers on the next poll", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    await renderSubscribers(1);
+    h.get.mockRejectedValueOnce(new Error("edge unavailable"));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(container.querySelector('[data-error]')?.textContent).toBe("edge unavailable");
+    h.get.mockResolvedValue(response(9000));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(container.querySelector('[data-error]')?.textContent).toBe("");
+    expect(container.querySelector('[data-subscriber]')?.textContent).toBe("9000");
+  });
 });
 
 
 it("prevents an older resource poll from undoing an explicit refresh (#396)", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   const history = (minute: number) => ({ data: { buckets: [{ minute }], services: [], granularityMinutes: 5 } });
   const oldPoll = deferred<ReturnType<typeof history>>();
   h.get.mockResolvedValueOnce(history(1)).mockReturnValueOnce(oldPoll.promise).mockResolvedValue(history(3));
@@ -171,4 +230,18 @@ it("prevents an older resource poll from undoing an explicit refresh (#396)", as
   await act(async () => oldPoll.resolve(history(2)));
   expect(container.querySelector('[data-history]')?.textContent).toBe("3");
   expect(h.get).toHaveBeenCalledTimes(3);
+});
+
+it("preserves full hourly intervals across midnight and sorts them chronologically", () => {
+  const period = (from: string, to: string, requests: number) => ({
+    from, to, requests, uniqueVisitors: 0, bandwidthIn: 0, bandwidthOut: 0, avgResponseTimeMs: 0,
+  });
+  const periods = [
+    period("2026-09-25T00:00:00Z", "2026-09-25T01:00:00Z", 7),
+    period("2026-09-24T23:00:00Z", "2026-09-25T00:00:00Z", 5),
+  ];
+  const result = mapAnalyticsData(response(12).data.summary, periods, "");
+  expect(result?.trafficByHour).toEqual([periods[1], periods[0]].map(({ from, to, requests }) => ({ from, to, requests })));
+  expect(result?.summary.timeRangeHours).toBe(2);
+  expect(result?.summary.avgRequestsPerHour).toBe(6);
 });

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useState } from "react";
-import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -63,7 +64,7 @@ const ComposeChecklist: React.FC = () => {
       label: t.deploy.checklist.servicesDetected,
       value: interpolate(t.deploy.checklist.servicesCount, { count: String(services.length) }),
       ok: services.length > 0,
-      icon: Layers,
+      icon: "layers" as const,
     },
     {
       label: t.deploy.checklist.publicDomains,
@@ -72,14 +73,14 @@ const ComposeChecklist: React.FC = () => {
         : interpolate(t.deploy.checklist.canBeExposed, { count: String(exposableServices.length) }),
       ok: exposedServices.length > 0,
       warn: exposedServices.length === 0 && exposableServices.length > 0,
-      icon: Globe,
+      icon: "globe" as const,
     },
     ...(buildServices.length > 0
       ? [{
           label: t.deploy.checklist.buildServices,
           value: interpolate(t.deploy.checklist.toBuild, { count: String(buildServices.length) }),
           ok: true,
-          icon: Container,
+          icon: "layers" as const,
         }]
       : []),
     {
@@ -88,7 +89,7 @@ const ComposeChecklist: React.FC = () => {
         ? interpolate(t.deploy.checklist.varsAcross, { vars: String(totalEnvVars), services: String(envConfigured) })
         : t.deploy.checklist.noEnvVars,
       ok: totalEnvVars > 0,
-      icon: Key,
+      icon: "key" as const,
     },
   ];
 
@@ -110,11 +111,11 @@ const ComposeChecklist: React.FC = () => {
                     : "bg-muted/50 text-muted-foreground/50"
               }`}>
                 {check.ok ? (
-                  <Check className="size-3" />
+                  <UiIcon name="check" className="size-3" />
                 ) : (check as any).warn ? (
-                  <AlertCircle className="size-3" />
+                  <UiIcon name="alert-circle" className="size-3" />
                 ) : (
-                  <Icon className="size-3" />
+                  <UiIcon name={Icon} className="size-3" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -138,7 +139,7 @@ const ComposeChecklist: React.FC = () => {
           </p>
           {routedServices.map(({ svc, host }) => (
             <div key={svc.name} className="flex items-center gap-2">
-              <Globe className="size-3 text-primary" />
+              <UiIcon name="globe" className="size-3 text-primary" />
               <span className="text-sm text-primary font-medium truncate">{host}</span>
               <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
             </div>
@@ -411,7 +412,7 @@ const Sidebar: React.FC = () => {
         </div>
         <div className="p-4 pt-3">
           <div className="flex items-center gap-3">
-            <Github className="size-4 text-muted-foreground shrink-0" />
+            <UiIcon name="github" className="size-4 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               {config.owner && config.owner !== "local" && config.repo ? (
                 <a
@@ -422,7 +423,7 @@ const Sidebar: React.FC = () => {
                   className="group inline-flex max-w-full items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-primary"
                 >
                   <span className="truncate">{config.owner}/{config.repo}</span>
-                  <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
+                  <UiIcon name="external-link" className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
                 </a>
               ) : (
                 <p className="text-sm font-medium text-foreground truncate">
@@ -438,7 +439,7 @@ const Sidebar: React.FC = () => {
                   {
                     id: "clone-token",
                     label: t.deploy.sidebar.copyCloneToken,
-                    icon: <Copy className="size-4" />,
+                    icon: <UiIcon name="copy" className="size-4" />,
                     onClick: handleCopyCloneToken,
                   },
                 ]}
@@ -460,7 +461,7 @@ const Sidebar: React.FC = () => {
                 footerAction={config.projectId
                   ? {
                       label: t.deploy.sidebar.newEnvironment,
-                      icon: <Plus className="w-3.5 h-3.5 text-muted-foreground" />,
+                      icon: <UiIcon name="plus" className="w-3.5 h-3.5 text-muted-foreground" />,
                       onClick: handleOpenEnvironmentCreator,
                     }
                   : undefined}
@@ -470,7 +471,7 @@ const Sidebar: React.FC = () => {
                   role="status"
                   className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
                 >
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" aria-hidden="true" />
                   {t.importProject.buildSettings.composePath.scanning}
                 </p>
               )}
@@ -483,7 +484,7 @@ const Sidebar: React.FC = () => {
           )}
           {config.branches.length === 0 && config.branch && (
             <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-              <GitBranch className="size-3" />
+              <UiIcon name="git-branch" className="size-3" />
               {config.branch}
             </div>
           )}
@@ -533,12 +534,12 @@ const Sidebar: React.FC = () => {
         >
           {isSaving ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
               {t.deploy.sidebar.saving}
             </>
           ) : (
             <>
-              <Check className="size-4" />
+              <UiIcon name="check" className="size-4" />
               {t.deploy.sidebar.saveChanges}
             </>
           )}
@@ -551,12 +552,12 @@ const Sidebar: React.FC = () => {
         >
           {state.isDeploying ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
               {t.deploy.sidebar.deploying}
             </>
           ) : (
             <>
-              <Rocket className="size-4" />
+              <UiIcon name="rocket" className="size-4" />
               {t.deploy.sidebar.deploy}
             </>
           )}

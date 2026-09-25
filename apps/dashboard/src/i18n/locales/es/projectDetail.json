@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Resumen del tráfico",
 			"last24Hours": "Últimas 24 horas",
-			"bar": "Barras",
+			"bar": "Columnas",
 			"area": "Área",
 			"loading": "Cargando analíticas...",
 			"noDataTitle": "Aún no hay datos de tráfico",
@@ -170,6 +170,7 @@
 			"startShellHint": "Inicia el servicio para abrir una shell.",
 			"saveEnvironment": "Guardar entorno",
 			"environmentState": {
+				"helpTitle": "Cómo funcionan las variables de entorno",
 				"description": "Guardadas en Openship. Las sobrescrituras del servicio tienen prioridad sobre Compose y los valores compartidos del proyecto. Editar un valor heredado crea una sobrescritura para este servicio.",
 				"sources": {
 					"service": "Sobrescritura del servicio",

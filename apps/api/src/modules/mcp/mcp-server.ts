@@ -1,7 +1,7 @@
 import { getMcpTools, toClientTool, filterToolsForPrincipal, type McpPrincipal } from "./mcp-tools";
 import { dispatchTool, type DispatchOrigin } from "./mcp-dispatch";
 import type { ToolCallRecord } from "./mcp-audit";
-import { listPrompts, getPrompt } from "./mcp-prompts";
+import { listPrompts, getPrompt, workspaceInstructions } from "./mcp-prompts";
 
 /**
  * Minimal MCP server over JSON-RPC 2.0 (Streamable HTTP transport, stateless).
@@ -38,6 +38,8 @@ export interface McpMessageContext {
   principal: McpPrincipal;
   /** Facts only the outer HTTP request knows — see DispatchOrigin. */
   origin: DispatchOrigin;
+  /** Request default and immutable credential binding, for client guidance. */
+  workspace?: { organizationId: string | null; boundOrganizationId: string | null };
   /** Called once per executed tool call, after it returns. */
   onToolCall?: (record: ToolCallRecord) => void;
 }
@@ -48,7 +50,7 @@ export interface McpMessageContext {
  */
 export async function handleMcpMessage(
   msg: JsonRpcRequest,
-  { bearerToken, principal, origin, onToolCall }: McpMessageContext,
+  { bearerToken, principal, origin, workspace, onToolCall }: McpMessageContext,
 ): Promise<object | null> {
   const isNotification = msg.id === undefined || msg.id === null;
 
@@ -70,6 +72,7 @@ export async function handleMcpMessage(
           prompts: { listChanged: false },
         },
         serverInfo: SERVER_INFO,
+        instructions: workspaceInstructions(workspace),
       });
     }
 
@@ -89,11 +92,14 @@ export async function handleMcpMessage(
 
     case "tools/call": {
       const name = msg.params?.name as string | undefined;
-      const args = (msg.params?.arguments as Record<string, unknown>) ?? {};
+      const args = msg.params?.arguments === undefined ? {} : msg.params.arguments;
+      if (args === null || typeof args !== "object" || Array.isArray(args)) {
+        return jsonRpcError(msg.id, -32602, "Tool arguments must be an object");
+      }
       const tool = getMcpTools().find((t) => t.name === name);
       if (!tool) return jsonRpcError(msg.id, -32602, `Unknown tool: ${name}`);
 
-      const dispatched = await dispatchTool(tool, args, bearerToken, origin);
+      const dispatched = await dispatchTool(tool, args as Record<string, unknown>, bearerToken, origin);
       onToolCall?.({
         tool: tool.name,
         method: tool.method,
@@ -101,6 +107,7 @@ export async function handleMcpMessage(
         action: tool.perm.action,
         status: dispatched.status,
         ok: dispatched.ok,
+        organizationId: dispatched.organizationId,
       });
       return result(msg.id, {
         content: [{ type: "text", text: JSON.stringify(dispatched.data, null, 2) }],

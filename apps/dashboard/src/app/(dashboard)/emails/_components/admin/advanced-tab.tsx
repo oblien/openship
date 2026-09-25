@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Advanced tab - power-user surface.
  *
@@ -19,18 +21,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  Inbox,
-  Lock,
-  Loader2,
-  RotateCw,
-  Send,
-  Settings2,
-  Trash2,
-  Unplug,
-  Wrench,
-} from "lucide-react";
 import {
   mailApi,
   mailAdminApi,
@@ -137,9 +127,8 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
         <section className="space-y-4">
           <div>
             <div className="flex items-center gap-2">
-              <Settings2
+              <UiIcon name="sliders"
                 className="size-4 text-muted-foreground"
-                strokeWidth={2.25}
               />
               <h2 className="text-lg font-semibold text-foreground">
                 {t.emailsAdmin.advanced.protocolTitle}
@@ -160,9 +149,8 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
       <section className="space-y-4">
         <div>
           <div className="flex items-center gap-2">
-            <AlertTriangle
+            <UiIcon name="warning"
               className="size-4 text-warning"
-              strokeWidth={2.25}
             />
             <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.advanced.dangerTitle}</h2>
           </div>
@@ -173,7 +161,7 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
 
         {/* Re-run setup */}
         <DangerCard
-          icon={RotateCw}
+          icon={"refresh"}
           title={t.emailsAdmin.advanced.rerunTitle}
           description={t.emailsAdmin.advanced.rerunDesc}
           action={
@@ -181,7 +169,7 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
               href={`/emails?serverId=${encodeURIComponent(serverId)}&force=wizard`}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors"
             >
-              <RotateCw className="size-3.5" />
+              <UiIcon name="refresh" className="size-3.5" />
               {t.emailsAdmin.advanced.openWizard}
             </Link>
           }
@@ -189,7 +177,7 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
 
         {/* Reset on-server state */}
         <DangerCard
-          icon={Trash2}
+          icon={"trash"}
           title={t.emailsAdmin.advanced.resetCardTitle}
           description={t.emailsAdmin.advanced.resetCardDesc}
           action={
@@ -199,9 +187,9 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-danger-solid text-white hover:bg-danger-solid/90 transition-colors disabled:opacity-50"
             >
               {resetting ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Trash2 className="size-3.5" />
+                <UiIcon name="trash" className="size-3.5" />
               )}
               {t.emailsAdmin.advanced.resetStateBtn}
             </button>
@@ -211,7 +199,7 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
 
         {/* Remove from mail list (DB-only) */}
         <DangerCard
-          icon={Unplug}
+          icon={"unplug"}
           title={t.emailsAdmin.advanced.removeTitle}
           description={t.emailsAdmin.advanced.removeDesc}
           action={
@@ -221,9 +209,9 @@ export function AdvancedTab({ status, serverId, onChanged, onForgotten }: Advanc
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-danger-solid text-white hover:bg-danger-solid/90 transition-colors disabled:opacity-50"
             >
               {forgetting ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Unplug className="size-3.5" />
+                <UiIcon name="unplug" className="size-3.5" />
               )}
               {t.emailsAdmin.advanced.remove}
             </button>
@@ -271,14 +259,14 @@ function ProtocolCard({ credentials }: { credentials: MailCredentials }) {
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <ProtocolBlock
-          icon={Inbox}
+          icon={"inbox"}
           label={t.emailsAdmin.advanced.incoming}
           host={credentials.imapHost}
           port={credentials.imapPort}
           encryption="SSL/TLS"
         />
         <ProtocolBlock
-          icon={Send}
+          icon={"send"}
           label={t.emailsAdmin.advanced.outgoing}
           host={credentials.smtpHost}
           port={credentials.smtpPort}
@@ -287,7 +275,7 @@ function ProtocolCard({ credentials }: { credentials: MailCredentials }) {
       </div>
       <div className="mt-4 rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5">
         <p className="text-xs text-foreground/90 leading-relaxed">
-          <Lock className="inline-block size-3 me-1 -mt-0.5 text-muted-foreground" />
+          <UiIcon name="lock" className="inline-block size-3 me-1 -mt-0.5 text-muted-foreground" />
           {note.p1}<strong>{note.emailAddress}</strong>
           {note.p2}
           <code className="font-mono text-[11.5px] px-1 py-0.5 rounded bg-card border border-border/40">
@@ -307,7 +295,7 @@ function ProtocolBlock({
   port,
   encryption,
 }: {
-  icon: typeof Inbox;
+  icon: IconName;
   label: string;
   host: string;
   port: number;
@@ -317,7 +305,7 @@ function ProtocolBlock({
   return (
     <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
       <div className="flex items-center gap-2 mb-2.5">
-        <Icon className="size-3.5 text-muted-foreground" strokeWidth={2} />
+        <UiIcon name={Icon} className="size-3.5 text-muted-foreground" />
         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
           {label}
         </p>
@@ -347,7 +335,7 @@ function DangerCard({
   action,
   error,
 }: {
-  icon: typeof RotateCw;
+  icon: IconName;
   title: string;
   description: string;
   action: React.ReactNode;
@@ -357,7 +345,7 @@ function DangerCard({
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-start gap-4">
         <div className="w-10 h-10 rounded-xl bg-warning-bg flex items-center justify-center shrink-0">
-          <Icon className="size-5 text-warning" strokeWidth={1.75} />
+          <UiIcon name={Icon} className="size-5 text-warning" />
         </div>
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-foreground">{title}</h4>
@@ -476,7 +464,7 @@ function MailStackToolsSection({ serverId }: { serverId: string }) {
     <section className="space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <Wrench className="size-4 text-muted-foreground" strokeWidth={2.25} />
+          <UiIcon name="wrench" className="size-4 text-muted-foreground" />
           <h2 className="text-lg font-semibold text-foreground">
             {a.toolsTitle}
           </h2>
@@ -489,9 +477,8 @@ function MailStackToolsSection({ serverId }: { serverId: string }) {
       <div className="bg-card rounded-2xl border border-border/50 p-5">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
-            <RotateCw
+            <UiIcon name="refresh"
               className="size-5 text-foreground/80"
-              strokeWidth={1.75}
             />
           </div>
           <div className="flex-1 min-w-0">
@@ -508,9 +495,9 @@ function MailStackToolsSection({ serverId }: { serverId: string }) {
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-50 shrink-0"
           >
             {restarting ? (
-              <Loader2 className="size-3.5 animate-spin" strokeWidth={2.25} />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             ) : (
-              <RotateCw className="size-3.5" strokeWidth={2.25} />
+              <UiIcon name="refresh" className="size-3.5" />
             )}
             {a.restartStack}
           </button>

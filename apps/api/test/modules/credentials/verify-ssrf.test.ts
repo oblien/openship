@@ -31,7 +31,7 @@ const values = (selector: string) => ({
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   h.env.CLOUD_MODE = true;
 });
 
@@ -54,32 +54,34 @@ describe("container-registry credential verification SSRF policy", () => {
     });
   });
 
-  it("applies the hosted-mode guard to an attacker-controlled bearer realm", async () => {
+  it.each(["https://127.0.0.1:8443/token", "https://unrelated.example.test/token", "http://registry.example.com/token", "not-a-url"])("never forwards credentials to an untrusted bearer realm: %s", async realm => {
     h.safeFetch
       .mockResolvedValueOnce(
         response(401, {
           "www-authenticate":
-            'Bearer realm="https://127.0.0.1:8443/token",service="hostile-registry"',
+            `Bearer realm="${realm}",service="hostile-registry"`,
         }),
-      )
-      .mockRejectedValueOnce(new Error("SSRF_BLOCKED"));
+      );
 
     await expect(
       verifyCredentialValues(provider, values("registry.example.com")),
     ).resolves.toMatchObject({ ok: false });
 
-    expect(h.safeFetch).toHaveBeenNthCalledWith(
-      2,
-      "https://127.0.0.1:8443/token?service=hostile-registry",
-      expect.objectContaining({
-        headers: {
-          authorization: `Basic ${Buffer.from("operator:registry-token").toString("base64")}`,
-        },
-        allowHttp: false,
-        allowPrivate: false,
-        maxRedirects: 3,
-      }),
-    );
+    expect(h.safeFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["docker.io", "https://auth.docker.io/token"],
+    ["registry.gitlab.com", "https://gitlab.com/jwt/auth"],
+    ["registry.example.com", "https://registry.example.com/token"],
+  ])("preserves trusted token authentication for %s", async (registry, realm) => {
+    h.safeFetch.mockResolvedValueOnce(response(401, { "www-authenticate": `Bearer realm="${realm}"` }))
+      .mockResolvedValueOnce(response(200));
+    expect(await verifyCredentialValues(provider, values(registry))).toEqual({ ok: true });
+    expect(h.safeFetch).toHaveBeenNthCalledWith(2, realm, expect.objectContaining({
+      headers: { authorization: `Basic ${Buffer.from("operator:registry-token").toString("base64")}` },
+      allowPrivate: false,
+    }));
   });
 
   it("applies the hosted-mode guard to the authenticated basic retry", async () => {

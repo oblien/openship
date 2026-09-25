@@ -1,6 +1,7 @@
 "use client";
 
-import { Network, ShieldCheck } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { INFRASTRUCTURE_PROVIDERS, nativeNetworkSource } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
 import { InfrastructureProviderLogo } from "@/components/servers/InfrastructureProviderLogo";
@@ -22,9 +23,9 @@ export function NetworkSource({
     <span className="inline-flex min-w-0 max-w-full items-center gap-2 text-xs text-muted-foreground">
       {showIcon &&
         (managed ? (
-          <ShieldCheck className="size-4 shrink-0 text-primary" />
+          <UiIcon name="shield-check" className="size-4 shrink-0 text-primary" />
         ) : source.providerId === "custom" ? (
-          <Network className="size-4 shrink-0" />
+          <UiIcon name="network" className="size-4 shrink-0" />
         ) : (
           <InfrastructureProviderLogo providerId={source.providerId} />
         ))}

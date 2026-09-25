@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { ArrowUpRight, Loader2 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -13,7 +14,7 @@ export function OpenStripePortalButton({ label, enabled = false }: { label?: str
 
   if (!enabled) return (
     <a href="mailto:support@openship.io" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-      {t.billing.portal.supportButton}<ArrowUpRight className="size-3.5" />
+      {t.billing.portal.supportButton}<UiIcon name="arrow-up-right" className="size-3.5" />
     </a>
   );
 
@@ -48,9 +49,9 @@ export function OpenStripePortalButton({ label, enabled = false }: { label?: str
         <span className="pointer-events-none absolute -inset-[1px] rounded-xl bg-gradient-to-r from-primary via-blue-500 to-violet-500 opacity-40 blur-[1px] transition-opacity group-hover:opacity-60" />
         <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary to-primary/90" />
         <span className="relative flex items-center gap-1.5">
-          {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {pending ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : null}
           {buttonLabel}
-          {!pending ? <ArrowUpRight className="size-3.5" /> : null}
+          {!pending ? <UiIcon name="arrow-up-right" className="size-3.5" /> : null}
         </span>
       </button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}

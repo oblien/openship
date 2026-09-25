@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The shared access editor, in a modal.
  *
@@ -24,7 +26,6 @@
  */
 
 import { useMemo, useReducer, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
 import {
   reduceSelection,
@@ -134,7 +135,7 @@ export function AccessEditorModal({
               disabled={saving}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {saveLabel ?? t.settings.common.save}
             </button>
           </div>

@@ -244,24 +244,26 @@
   },
   "backup": {
     "live": {
-      "title": "ライブバックアップ",
+      "title": "バックアップのアクティビティ",
       "description": "開始したばかりの実行のリアルタイムの進捗です。ページを更新しても保持されます。",
       "dismiss": "閉じる"
     },
     "destinations": {
       "title": "バックアップ先",
-      "description": "ユーザーごとのストレージ先。S3互換バケット、SFTPサーバー、ローカルディスクを追加できます。",
+      "description": "このプロジェクトで利用できる保存先。",
       "manage": "管理",
       "loading": "読み込み中…",
       "emptyPrefix": "まだバックアップ先がありません。",
       "emptyLink": "作成する",
       "emptySuffix": " とバックアップを開始できます。",
       "verified": "検証済み",
-      "failed": "失敗"
+      "failed": "失敗",
+      "emptyHint": "S3バケット、SFTPホスト、または既存のサーバーに接続します。",
+      "inUse": "使用中"
     },
     "services": {
-      "title": "サービスとポリシー",
-      "description": "各サービスは独自のバックアップポリシー（スケジュール＋バックアップ先）を持てます。プロジェクトレベルのデフォルトは Chunk 2 で提供されます。",
+      "title": "バックアップポリシー",
+      "description": "バックアップ対象、実行日時、保存先を選択します。",
       "refresh": "更新",
       "empty": "このプロジェクトにはまだサービスがありません。サービスを追加すると、サービスレベルのバックアップがここに表示されます。",
       "policyLabel": "ポリシー:",
@@ -273,22 +275,54 @@
       "editPolicy": "ポリシーを編集",
       "addDestinationFirst": "先にバックアップ先を追加してください",
       "createPolicyHint": "このサービスのバックアップポリシーを作成します",
-      "createPolicy": "ポリシーを作成"
+      "createPolicy": "ポリシーを作成",
+      "projectHint": "このプロジェクトの全サービスに適用するポリシー。",
+      "includedInProject": "プロジェクトのポリシーに含まれています。",
+      "retainCount": "{count}件のバックアップを保持",
+      "retainDays": "最大{days}日間"
     },
     "recent": {
+      "loadOlder": "以前のバックアップを読み込む",
       "title": "最近のバックアップ",
-      "description": "このプロジェクトの全サービスにわたる直近25件の実行です。",
+      "description": "最近の実行結果と復元オプション。",
       "loading": "読み込み中…",
       "empty": "まだバックアップがありません。",
       "protectedTitle": "保持期間による削除から保護",
       "protected": "保護済み",
       "restoreTitle": "このバックアップから復元",
       "allowPrune": "保持期間による削除を許可",
-      "protectFrom": "保持期間から保護"
+      "protectFrom": "保持期間から保護",
+      "emptyHint": "ポリシーを作成して、ここから最初のバックアップを実行してください。",
+      "backup": "バックアップ",
+      "viewDetails": "詳細を表示",
+      "restore": "復元",
+      "triggers": {
+        "manual": "手動実行",
+        "cron": "定期実行",
+        "webhook": "Webhook",
+        "pre_deploy": "デプロイ前"
+      }
     },
     "toast": {
       "runFailed": "バックアップの実行に失敗しました",
       "toggleProtectionFailed": "保護の切り替えに失敗しました"
+    },
+    "overview": {
+      "description": "バックアップをスケジュールし、プロジェクトのデータを復元します。",
+      "lastBackup": "最後に成功したバックアップ",
+      "noRecentBackup": "最近のバックアップなし",
+      "scheduledPolicies": "スケジュール済みポリシー",
+      "projectScope": "プロジェクト全体",
+      "serviceBackup": "サービスのバックアップ",
+      "paused": "一時停止中",
+      "loadFailed": "バックアップを読み込めませんでした"
+    },
+    "schedule": {
+      "daily": "毎日 {time}",
+      "weekly": "毎週 {day} {time}",
+      "monthly": "毎月{day}日 {time}",
+      "custom": "カスタムスケジュール",
+      "timezone": "サーバーのタイムゾーンを使用します。"
     }
   },
   "build": {
@@ -430,6 +464,7 @@
       "install": "GitHub App をインストール"
     },
     "webhookBanner": {
+      "summary": "公開エンドポイントが必要です",
       "title": "自動デプロイを有効にする",
       "description": "自動デプロイには直接の webhook エンドポイントが必要です。この Openship API を公開 URL で公開するか、直接配信用の検証済み webhook ドメインを設定してください。"
     },

@@ -1,15 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Server,
-  ArrowLeft,
-  Loader2,
-  KeyRound,
-  Network,
-  Info,
-} from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -273,7 +267,7 @@ export default function AddServerPage() {
   if (!loaded) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -374,7 +368,7 @@ export default function AddServerPage() {
             onClick={() => router.push("/servers")}
             className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
           >
-            <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+            <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
           </button>
           <div>
             <h1
@@ -402,7 +396,7 @@ export default function AddServerPage() {
             <div className="bg-card rounded-2xl border border-border/50">
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
                 <div className="w-9 h-9 bg-warning-bg rounded-xl flex items-center justify-center">
-                  <Info className="size-[18px] text-warning" />
+                  <UiIcon name="info" className="size-[18px] text-warning" />
                 </div>
                 <div>
                   <h2 className="font-semibold text-foreground text-[15px]">
@@ -414,17 +408,17 @@ export default function AddServerPage() {
               <div className="p-5">
                 <ul className="space-y-3 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
-                    <Network className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="network" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>
                       {t.servers.setup.needServer}
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <KeyRound className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="key" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>{t.servers.setup.needAuth}</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <Server className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="server" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>
                       {t.servers.setup.needChecks}
                     </span>

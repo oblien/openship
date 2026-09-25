@@ -44,7 +44,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     }
   }
 
-  async rawExec(command: string): Promise<Awaited<ReturnType<NonNullable<CommandExecutor["rawExec"]>>>> {
+  async rawExec(command: string, opts?: { timeoutSeconds?: number }): Promise<Awaited<ReturnType<NonNullable<CommandExecutor["rawExec"]>>>> {
     const runtime = await this.rt();
     const stdout = new PassThrough({ highWaterMark: 1024 * 1024 });
     const stderr = new PassThrough({ highWaterMark: 1024 * 1024 });
@@ -116,7 +116,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
         // the provider's process/PTY close status.
         const script = `if [ -t 1 ]; then stty -opost -echo <&1 || exit $?; fi\nsh -c ${sq(command)}\nopenship_exec_status=$?\nprintf '\\036${markerName}%s\\037' "$openship_exec_status"\nexit "$openship_exec_status"`;
         for await (const event of runtime.exec.stream(["sh", "-c", script], {
-          execMode: "direct", timeoutSeconds: 3600, keepLogs: false,
+          execMode: "direct", timeoutSeconds: opts?.timeoutSeconds ?? 3600, keepLogs: false,
         })) {
           if (event.event === "task_id") {
             taskId = event.task_id;

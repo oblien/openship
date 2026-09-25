@@ -1,7 +1,7 @@
+import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState } from "react";
 import { Project } from "@/constants/mock";
-import { TrendingUp, BarChart3, Activity, Rocket, CheckCircle2, Clock, Zap } from "lucide-react";
-import { generateIcon } from "@/utils/icons";
+
 import { SlidingToggle } from "@/components/ui/SlidingToggle";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -187,7 +187,7 @@ const ActivityChart: React.FC<ActivityChartProps> = ({ projects, numbers }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-              {generateIcon('space%20rocket-85-1687505546.png', 20, 'var(--th-text-muted)')}
+              <UiIcon name="rocket" size={20} className="text-muted-foreground" />
             </div>
             <div>
               <h3 className="text-sm font-medium text-foreground/80">{t.overview.activity.title}</h3>
@@ -203,11 +203,11 @@ const ActivityChart: React.FC<ActivityChartProps> = ({ projects, numbers }) => {
             options={[
               {
                 value: 'bar',
-                icon: <BarChart3 className="w-4 h-4" />,
+                icon: <UiIcon name="chart-bar" className="w-4 h-4" />,
               },
               {
                 value: 'area',
-                icon: <TrendingUp className="w-4 h-4" />,
+                icon: <UiIcon name="trending-up" className="w-4 h-4" />,
               },
             ]}
             value={chartType}

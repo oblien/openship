@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Loader2, Server, Plug } from "lucide-react";
 import { deployApi, mailApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
@@ -226,7 +227,7 @@ export default function MailWizardPage() {
           onClick={() => (phase === "connect" ? setPhase("choose") : router.push("/apps/new"))}
           className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> {w.back}
+          <UiIcon name="arrow-left" className="size-4" /> {w.back}
         </button>
 
         {/* Header. `shrink-0` on the tile for the same reason as the generic app
@@ -249,7 +250,7 @@ export default function MailWizardPage() {
               value="self"
               selected={false}
               onSelect={() => router.push("/emails")}
-              icon={<Server className="size-4" />}
+              icon={<UiIcon name="server" className="size-4" />}
               label={m.chooseSelf}
               description={m.chooseSelfDesc}
             />
@@ -257,7 +258,7 @@ export default function MailWizardPage() {
               value="connect"
               selected={false}
               onSelect={() => setPhase("connect")}
-              icon={<Plug className="size-4" />}
+              icon={<UiIcon name="plug" className="size-4" />}
               label={m.chooseConnect}
               description={m.chooseConnectDesc}
             />
@@ -404,7 +405,7 @@ export default function MailWizardPage() {
                 disabled={busy || !destination}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4 rtl:rotate-180" />}
+                {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />}
                 {busy ? m.deploying : m.deploy}
               </button>
             </div>

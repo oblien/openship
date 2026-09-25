@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 
 /**
@@ -17,7 +18,7 @@ import { AppLogo } from "@/components/AppLogo";
  * translucent rgba over the page, so no single opaque color lines up with it.
  *
  * Each option renders its real brand logo via `AppLogo` (`logo` = simpleicons
- * slug, `logoSrc` = explicit URL) and falls back to a lucide `icon`.
+ * slug, `logoSrc` = explicit URL) and falls back to a catalog `icon`.
  */
 
 export interface PillOption<T extends string> {
@@ -27,8 +28,8 @@ export interface PillOption<T extends string> {
   logo?: string;
   /** Explicit brand-logo URL — wins over `logo`. */
   logoSrc?: string;
-  /** lucide glyph — the fallback when there's no brand mark. */
-  icon?: LucideIcon;
+  /** catalog icon — the fallback when there's no brand mark. */
+  icon?: IconName;
 }
 
 export function PillSwitcher<T extends string>({
@@ -123,7 +124,7 @@ export function PillSwitcher<T extends string>({
               {o.logo || o.logoSrc ? (
                 <AppLogo slug={o.logo} src={o.logoSrc} icon={Icon} className={iconSize} />
               ) : Icon ? (
-                <Icon className={iconSize} />
+                <UiIcon name={Icon} className={iconSize} />
               ) : null}
               {o.label}
             </button>
@@ -140,7 +141,7 @@ export function PillSwitcher<T extends string>({
           aria-label="Scroll left"
           className="absolute left-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:text-foreground"
         >
-          <ChevronLeft className="size-4" />
+          <UiIcon name="chevron-left" className="size-4" />
         </button>
       )}
 
@@ -151,7 +152,7 @@ export function PillSwitcher<T extends string>({
           aria-label="Scroll right"
           className="absolute right-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:text-foreground"
         >
-          <ChevronRight className="size-4" />
+          <UiIcon name="chevron-right" className="size-4" />
         </button>
       )}
     </div>

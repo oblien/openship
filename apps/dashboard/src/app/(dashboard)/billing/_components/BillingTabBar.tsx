@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
@@ -33,7 +35,7 @@ export function BillingTabBar() {
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
             }`}
           >
-            <Icon className="size-4" />
+            <UiIcon name={Icon} className="size-4" />
             {t.billing.tabs[tab.key]}
             {active && (
               <span className="absolute bottom-0 start-0 end-0 h-0.5 rounded-full bg-primary" />

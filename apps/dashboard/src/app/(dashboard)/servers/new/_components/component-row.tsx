@@ -1,8 +1,4 @@
-import {
-  CheckCircle2,
-  XCircle,
-  Loader2,
-} from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import type { ComponentState } from "./types";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -37,11 +33,11 @@ export function ComponentRow({
     <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-muted/30 transition-colors">
       <div className="shrink-0">
         {isInstalling ? (
-          <Loader2 className="size-5 text-primary animate-spin" />
+          <UiIcon name="spinner" className="size-5 text-primary animate-spin" />
         ) : isInstalled || isHealthy ? (
-          <CheckCircle2 className="size-5 text-success" />
+          <UiIcon name="check-circle" className="size-5 text-success" />
         ) : isFailed ? (
-          <XCircle className="size-5 text-danger" />
+          <UiIcon name="x-circle" className="size-5 text-danger" />
         ) : (
           <div className="size-5 rounded-full border-2 border-border" />
         )}

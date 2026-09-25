@@ -41,6 +41,7 @@ the empty page has an **Add Your First Server** button that does the same thing.
 This is the "who am I connecting to, and how" screen. The fields:
 
 - **Server Name** — an optional label like `Production` or `Staging`, just so you can tell servers apart. Leave it blank and Openship uses the IP address.
+- **Connection** — choose **Direct SSH** or **Cloudflare Access** for an existing Access SSH application.
 - **Server IP Address** — the address of your machine, e.g. `203.0.113.10`.
 - **Port** — the SSH port. Almost always `22` (the default).
 - **Username** — the user to log in as. Usually `root`.
@@ -51,6 +52,19 @@ This is the "who am I connecting to, and how" screen. The fields:
 
 There's an **Advanced** section too, for a **Jump Host** (a bastion server you must hop through first)
 and **Extra SSH Arguments** — you can ignore both unless you know you need them.
+
+For Cloudflare Access, enter the application's hostname (`ssh.example.com`) and your server's SSH
+credentials. Complete the Cloudflare login on the same machine and under the same OS user that runs
+OpenShip. Windows desktop includes the Cloudflare client. For a self-hosted instance or macOS/Linux,
+install `cloudflared` on the machine running the API, or set `OPENSHIP_CLOUDFLARED_PATH` to its absolute
+path. A containerized API needs the client and its authentication inside the container. The server's
+SSH port stays behind the Cloudflare Tunnel; you do not need to expose port 22 publicly for this route.
+
+The CLI uses the same connection setting:
+
+```bash
+openship server add --name Production --host ssh.example.com --ssh-transport cloudflare --auth-method agent
+```
 
 <Callout title="Test before you save" type="info">
 Press **Test Connection** first. Openship tries to log in and reports back without saving anything. A

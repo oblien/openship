@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Visitors-by-country choropleth plus a ranked list.
  *
@@ -18,7 +20,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Globe, Info, List } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { AnalyticsGeoResponse } from "@/hooks/useProjectEndpoints";
 import countryPaths from "./country-paths.json";
@@ -480,17 +481,16 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Globe className="size-4 text-primary" />
+            <UiIcon name="globe" className="size-4 text-primary" />
             <h3 className="text-sm font-medium text-foreground">{m.visitorsTitle}</h3>
           </div>
-          {hasCountries && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {interpolate(m.visitorsSubtitle, {
+          <p className="mt-1 text-xs text-muted-foreground">
+            {hasCountries && <>{interpolate(m.visitorsSubtitle, {
                 total: formatCount(data?.total ?? 0),
                 countries: String(ranked.length),
-              })}
-            </p>
-          )}
+              })} · </>}
+            {m.dailyWindow}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {live && hasCountries && (
@@ -548,7 +548,7 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <List className="size-3.5" />
+                  <UiIcon name="list" className="size-3.5" />
                 </button>
               )}
             </div>
@@ -602,7 +602,7 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
           broken" — the failure mode this whole surface existed with for months. */}
       {data && !data.geoAvailable ? (
         <div className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3">
-          <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+          <UiIcon name="info" className="mt-0.5 size-4 shrink-0 text-warning" />
           <div>
             <p className="text-sm font-medium text-foreground">{m.geoUnavailableTitle}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{m.geoUnavailableBody}</p>

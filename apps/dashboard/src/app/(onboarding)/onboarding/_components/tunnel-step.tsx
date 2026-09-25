@@ -1,49 +1,13 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import type { TunnelConfig } from "@repo/onboarding";
 import type { StepProps } from "./step-props";
 
 type Provider = "edge" | "cloudflare" | "ngrok";
-
-/* ── Inline SVGs matching old design ── */
-const GlobeIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <path d="M2 12h20"/>
-    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-  </svg>
-);
-const BackIcon = () => (
-  <svg className="rtl:rotate-180" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-  </svg>
-);
-const CheckIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-);
-const InfoIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-);
-
-/* ── Tunnel provider icons ── */
-const BoltIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-  </svg>
-);
-const ShieldIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-  </svg>
-);
-const TerminalIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4 17 10 11 4 5"/>
-    <line x1="12" y1="19" x2="20" y2="19"/>
-  </svg>
-);
 
 export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
   const { t } = useI18n();
@@ -52,27 +16,27 @@ export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
     id: Provider;
     title: string;
     desc: string;
-    icon: () => React.JSX.Element;
+    icon: IconName;
     badge?: string;
   }[] = [
     {
       id: "edge",
       title: t.onboarding.tunnel.providers.edge.title,
       desc: t.onboarding.tunnel.providers.edge.desc,
-      icon: BoltIcon,
+      icon: "bolt",
       badge: t.onboarding.tunnel.providers.edge.badge,
     },
     {
       id: "cloudflare",
       title: t.onboarding.tunnel.providers.cloudflare.title,
       desc: t.onboarding.tunnel.providers.cloudflare.desc,
-      icon: ShieldIcon,
+      icon: "shield",
     },
     {
       id: "ngrok",
       title: t.onboarding.tunnel.providers.ngrok.title,
       desc: t.onboarding.tunnel.providers.ngrok.desc,
-      icon: TerminalIcon,
+      icon: "terminal",
     },
   ];
 
@@ -98,12 +62,12 @@ export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
       <div className="ob-screen-inner">
         {onBack && (
           <button className="ob-btn-back" aria-label={t.onboarding.common.goBack} onClick={onBack}>
-            <BackIcon />
+            <UiIcon name="arrow-left" size={18} className="rtl:rotate-180" />
           </button>
         )}
 
         <div className="ob-card-icon ob-card-icon--center">
-          <GlobeIcon />
+          <UiIcon name="globe" size={24} />
         </div>
 
         <h2>{t.onboarding.tunnel.title}</h2>
@@ -121,7 +85,7 @@ export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
                 className={`ob-tunnel-card${isActive ? " active" : ""}`}
                 onClick={() => { setSelected(p.id); setToken(""); }}
               >
-                <div className="ob-tunnel-card-icon"><Icon /></div>
+                <div className="ob-tunnel-card-icon"><UiIcon name={Icon} size={20} /></div>
                 <div className="ob-tunnel-card-content">
                   <div className="ob-tunnel-card-header">
                     <span className="ob-tunnel-card-title">{p.title}</span>
@@ -130,7 +94,7 @@ export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
                   <span className="ob-tunnel-card-desc">{p.desc}</span>
                 </div>
                 <div className="ob-tunnel-card-check">
-                  <CheckIcon />
+                  <UiIcon name="check" size={16} />
                 </div>
               </button>
             );
@@ -158,7 +122,7 @@ export function TunnelStep({ state, onUpdate, onNext, onBack }: StepProps) {
         {/* Edge login hint */}
         {selected === "edge" && (
           <div className="ob-pref-hint">
-            <InfoIcon />
+            <UiIcon name="info" size={14} />
             {t.onboarding.tunnel.edgeHint}
           </div>
         )}

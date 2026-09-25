@@ -800,6 +800,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   // CLOUD_MODE is set, so these tables are unreachable by this path by construction.
   billing_customer: "CLOUD_MODE-only",
   billing_subscription: "CLOUD_MODE-only",
+  billing_plan_grant: "CLOUD_MODE-only; operator grants are not portable tenant data",
   billing_usage_snapshot: "CLOUD_MODE-only",
   billing_anniversary_grant: "CLOUD_MODE-only",
   credit_pack: "CLOUD_MODE-only",

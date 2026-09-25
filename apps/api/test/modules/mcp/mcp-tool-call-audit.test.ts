@@ -85,6 +85,16 @@ describe("the rule: only calls nothing else records", () => {
 });
 
 describe("the row", () => {
+  it("attributes successful explicitly scoped reads to their verified workspace", async () => {
+    const row = await rowFor(call({ organizationId: "org_target" }));
+    expect(row?.organizationId).toBe("org_target");
+  });
+
+  it("keeps a refused destination in the caller's audit trail", async () => {
+    const row = await rowFor(call({ organizationId: "org_forbidden", status: 403, ok: false }));
+    expect(row?.organizationId).toBe(ACTOR.organizationId);
+  });
+
   it("is attributed to the agent, not just to 'an assistant'", async () => {
     const row = await rowFor(call());
     expect(row).toMatchObject({

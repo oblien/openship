@@ -20,6 +20,11 @@ export type Organization = typeof organization.$inferSelect;
 
 export function createOrganizationRepo(db: Database) {
   return {
+    async findBySlug(slug: string): Promise<Organization | null> {
+      const [row] = await db.select().from(organization).where(eq(organization.slug, slug)).limit(1);
+      return row ?? null;
+    },
+
     /** Lookup by primary key. Returns null on miss. */
     async findById(id: string): Promise<Organization | null> {
       const [row] = await db

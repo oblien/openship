@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronDown, ExternalLink, Loader2, RotateCcw, SlidersHorizontal, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { useI18n } from "@/components/i18n-provider";
@@ -23,34 +24,72 @@ function OpenDeploymentSite({ sites }: { sites: DeploymentSite[] }) {
   if (sites.length === 0) return null;
   if (sites.length === 1) {
     return (
-      <Button asChild className="w-full sm:w-auto">
+      <Button asChild className="grow sm:grow-0">
         <a href={`https://${sites[0].hostname}`} target="_blank" rel="noopener noreferrer">
-          {copy.openSite}<ExternalLink />
+          {copy.openSite}
+          <UiIcon name="arrow-up-right" className="size-3.5" />
         </a>
       </Button>
     );
   }
 
   return (
-    <DismissiblePopover open={open} onOpenChange={setOpen} className="relative w-full sm:w-auto">
-      <Button ref={triggerRef} type="button" className="w-full sm:w-auto" aria-label={copy.openSite} aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => setOpen(value => !value)}>
+    <DismissiblePopover open={open} onOpenChange={setOpen} className="relative grow sm:grow-0">
+      <Button
+        ref={triggerRef}
+        type="button"
+        className="w-full sm:w-auto"
+        aria-label={copy.openSite}
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((value) => !value)}
+      >
         {copy.openSite}
-        <span aria-hidden className="tabular-nums">{sites.length}</span>
-        <ChevronDown />
+        <span aria-hidden className="tabular-nums">
+          {sites.length}
+        </span>
+        <UiIcon name="chevron-down" />
       </Button>
       {open && (
-        <nav id={listId} aria-label={copy.detailDomains} className="absolute end-0 z-50 mt-2 w-full max-w-[calc(100vw-2rem)] rounded-2xl bg-popover p-2 shadow-[var(--th-dropdown-shadow)] sm:w-80" onKeyDown={event => {
-          if (event.key === "Escape") { setOpen(false); triggerRef.current?.focus(); }
-        }}>
+        <nav
+          id={listId}
+          aria-label={copy.detailDomains}
+          className="absolute end-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-popover p-2 shadow-[var(--th-dropdown-shadow)]"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
+        >
           <ul className="max-h-72 overflow-y-auto">
-            {sites.map(site => (
+            {sites.map((site) => (
               <li key={site.hostname}>
-                <a href={`https://${site.hostname}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring" onClick={() => { setOpen(false); triggerRef.current?.focus(); }}>
+                <a
+                  href={`https://${site.hostname}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  onClick={() => {
+                    setOpen(false);
+                    triggerRef.current?.focus();
+                  }}
+                >
                   <span className="min-w-0 flex-1">
-                    <span className="block break-all font-medium text-foreground">{site.hostname}</span>
-                    {site.serviceNames.length > 0 && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{site.serviceNames.join(" · ")}</span>}
+                    <span className="block break-all font-medium text-foreground">
+                      {site.hostname}
+                    </span>
+                    {site.serviceNames.length > 0 && (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {site.serviceNames.join(" · ")}
+                      </span>
+                    )}
                   </span>
-                  <ExternalLink className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <UiIcon
+                    name="arrow-up-right"
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
                 </a>
               </li>
             ))}
@@ -62,7 +101,11 @@ function OpenDeploymentSite({ sites }: { sites: DeploymentSite[] }) {
 }
 
 /** One action owner for both build views; a retry remains busy until its request settles. */
-export function DeploymentActions({ onRedeploy }: { onRedeploy: () => void | Promise<string | null> }) {
+export function DeploymentActions({
+  onRedeploy,
+}: {
+  onRedeploy: () => void | Promise<string | null>;
+}) {
   const { config, state, deploymentStatus, stopDeployment } = useDeployment();
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
@@ -72,14 +115,21 @@ export function DeploymentActions({ onRedeploy }: { onRedeploy: () => void | Pro
   const retryInFlight = useRef(false);
   const projectId = state.projectId || config.projectId;
   const working = deploymentStatus === "building" || deploymentStatus === "deploying";
-  const sites = deploymentStatus === "ready" ? getDeploymentSites(config, state.serviceStatuses, baseDomain) : [];
+  const sites =
+    deploymentStatus === "ready"
+      ? getDeploymentSites(config, state.serviceStatuses, baseDomain)
+      : [];
 
   const retry = async () => {
     if (retryInFlight.current) return;
     retryInFlight.current = true;
     setRedeploying(true);
-    try { await onRedeploy(); }
-    finally { retryInFlight.current = false; setRedeploying(false); }
+    try {
+      await onRedeploy();
+    } finally {
+      retryInFlight.current = false;
+      setRedeploying(false);
+    }
   };
   const openProject = () => {
     if (!projectId) return;
@@ -90,19 +140,46 @@ export function DeploymentActions({ onRedeploy }: { onRedeploy: () => void | Pro
   return (
     <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto sm:justify-end">
       {working || state.cancellationPending ? (
-        <Button type="button" variant="secondary" className="w-full text-danger sm:w-auto" onClick={stopDeployment} disabled={state.isStopping || state.cancellationPending}>
-          {state.isStopping || state.cancellationPending ? <Loader2 className="animate-spin" /> : <Square />}
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full text-danger sm:w-auto"
+          onClick={stopDeployment}
+          disabled={state.isStopping || state.cancellationPending}
+        >
+          {state.isStopping || state.cancellationPending ? (
+            <UiIcon name="spinner" className="animate-spin" />
+          ) : (
+            <UiIcon name="square" />
+          )}
           {state.isStopping || state.cancellationPending ? copy.stopping : copy.stopDeployment}
         </Button>
       ) : (
         <>
-          <Button type="button" variant={deploymentStatus === "ready" && sites.length === 0 ? "default" : "secondary"} className="grow sm:grow-0" onClick={openProject} disabled={!projectId}>
-            {copy.openProject}<ArrowRight className="rtl:rotate-180" />
+          <Button
+            type="button"
+            variant={deploymentStatus === "ready" && sites.length === 0 ? "default" : "secondary"}
+            className="grow sm:grow-0"
+            onClick={openProject}
+            disabled={!projectId}
+          >
+            {copy.openProject}
+            <UiIcon name="arrow-right" className="rtl:rotate-180" />
           </Button>
-          <DeploymentConfigurationAction className="grow sm:grow-0" />
-          {deploymentStatus === "ready" ? <OpenDeploymentSite sites={sites} /> : (
-            <Button type="button" className="w-full sm:w-auto" disabled={redeploying} onClick={retry}>
-              {redeploying ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+          {deploymentStatus === "ready" ? (
+            <OpenDeploymentSite sites={sites} />
+          ) : (
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              disabled={redeploying}
+              onClick={retry}
+            >
+              {redeploying ? (
+                <UiIcon name="spinner" className="animate-spin" />
+              ) : (
+                <UiIcon name="rotate-left" />
+              )}
               {redeploying ? copy.redeploying : copy.redeploy}
             </Button>
           )}
@@ -126,9 +203,9 @@ export function DeploymentConfigurationAction({ className }: { className?: strin
   const params = new URLSearchParams({ projectId, mode: "config" });
 
   return (
-    <Button asChild variant="secondary" className={className}>
+    <Button asChild variant="ghost" className={className}>
       <Link href={`/deploy/${slug}?${params.toString()}`}>
-        <SlidersHorizontal />
+        <UiIcon name="sliders" />
         {t.importProject.composeDeployment.editConfiguration}
       </Link>
     </Button>

@@ -3,6 +3,7 @@ import { ClusterDatabaseAdapter, clusterDatabaseHosts, clusterDatabaseUrl } from
 import { prepareDatabaseAddon, ensureClusterAddonObject } from "./database-addons";
 import type { ClusterDatabaseConfig } from "@repo/core";
 import { KubernetesApiError, type KubernetesApi } from "./kubernetes-api";
+import { projectNamespaceManifest } from "./namespace";
 const config: ClusterDatabaseConfig = {
   engine: "postgres",
   mode: "cluster",
@@ -16,12 +17,13 @@ const config: ClusterDatabaseConfig = {
 const adapter = (
   patch: Partial<ClusterDatabaseConfig> = {},
   api = { request: vi.fn() } as unknown as KubernetesApi,
+  projectId = "project",
 ) =>
   new ClusterDatabaseAdapter(
     api,
     {
       id: "db",
-      projectId: "project",
+      projectId,
       runtimeId: "runtime",
       generation: 1,
       config: { ...config, ...patch },
@@ -31,6 +33,16 @@ const adapter = (
     vi.fn(),
   );
 describe("operator database manifests", () => {
+  it("uses the same valid project identity as application namespaces", () => {
+    const projectId = "proj_database_";
+    const database = adapter({}, undefined, projectId).manifest();
+    const namespace = projectNamespaceManifest(projectId, "runtime");
+    const label = database.metadata.labels!["openship.io/project"]!;
+    expect(label).toBe(namespace.metadata.labels!["openship.io/project"]);
+    expect(label).toMatch(/^[a-z0-9](?:[-a-z0-9_.]*[a-z0-9])?$/i);
+    expect(label.length).toBeLessThanOrEqual(63);
+  });
+
   it("uses a primary and synchronous replicas with strict server separation", () => {
     const manifest = adapter().manifest();
     expect(manifest.kind).toBe("Cluster");

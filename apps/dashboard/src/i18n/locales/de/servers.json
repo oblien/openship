@@ -947,5 +947,12 @@
     "serviceNetwork": "Service-Netzwerk",
     "lastChecked": "Zuletzt überprüft",
     "scaleProject": "Projekt auswählen"
+  },
+  "sshTransport": {
+    "label": "Verbindung",
+    "direct": "Direktes SSH",
+    "hostname": "Access-Hostname",
+    "help": "Verwende deinen Cloudflare-Access-Hostnamen und die SSH-Zugangsdaten deines Servers. Melde dich auf dem Rechner mit OpenShip bei Cloudflare an. Die Windows-App enthält den erforderlichen Client; andere Installationen benötigen cloudflared.",
+    "openAccess": "Cloudflare Access öffnen"
   }
 }

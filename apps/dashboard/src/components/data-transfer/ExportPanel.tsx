@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useMemo, useState } from "react";
-import { Clipboard, Download, Loader2 } from "lucide-react";
 import { dataTransferApi, type ExportPreview, type ExportSelection } from "@/lib/api/data-transfer";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -317,7 +318,7 @@ export function ExportPanel({
                 }
               }}
             >
-              <Clipboard className="size-3" />
+              <UiIcon name="clipboard" className="size-3" />
               Copy password
             </button>
           </div>
@@ -340,7 +341,7 @@ export function ExportPanel({
         }
         onClick={() => void download()}
       >
-        {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+        {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="download" className="size-4" />}
         {busy ? "Exporting…" : "Download export"}
       </button>
     </div>

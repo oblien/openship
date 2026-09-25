@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Multi-shell tab strip for a single server.
  *
@@ -24,7 +26,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
 import { ServerTerminal, type ServerTerminalHandle } from "./ServerTerminal";
 import { useTheme } from "@/components/theme-provider";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -239,7 +240,7 @@ export function ServerTerminalTabs({
                       : "opacity-0 group-hover:opacity-70")
                   }
                 >
-                  <X className="size-3" />
+                  <UiIcon name="close" className="size-3" />
                 </button>
               </div>
             );
@@ -257,7 +258,7 @@ export function ServerTerminalTabs({
               : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground")
           }
         >
-          <Plus className="size-3.5" />
+          <UiIcon name="plus" className="size-3.5" />
           {m.newShell}
         </button>
       </div>
@@ -274,7 +275,7 @@ export function ServerTerminalTabs({
               onClick={handleAdd}
               className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/60"
             >
-              <Plus className="size-3.5" />
+              <UiIcon name="plus" className="size-3.5" />
               {m.newShell}
             </button>
           </div>

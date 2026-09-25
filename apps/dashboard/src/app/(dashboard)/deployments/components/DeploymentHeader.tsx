@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Rocket, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface DeploymentHeaderProps {
@@ -28,7 +29,7 @@ export const DeploymentHeader: React.FC<DeploymentHeaderProps> = ({ stats, proje
         {/* Total */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <Rocket className="size-4 text-primary" />
+            <UiIcon name="rocket" className="size-4 text-primary" />
           </div>
           <div>
             <span className="text-sm text-muted-foreground">{t.deployments.stats.total}</span>
@@ -51,7 +52,7 @@ export const DeploymentHeader: React.FC<DeploymentHeaderProps> = ({ stats, proje
         {/* Success */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-            <CheckCircle2 className="size-4 text-success" />
+            <UiIcon name="check-circle" className="size-4 text-success" />
           </div>
           <div>
             <span className="text-sm text-muted-foreground">{t.deployments.stats.success}</span>
@@ -67,7 +68,7 @@ export const DeploymentHeader: React.FC<DeploymentHeaderProps> = ({ stats, proje
         {/* Failed */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-danger-bg flex items-center justify-center shrink-0">
-            <XCircle className="size-4 text-danger" />
+            <UiIcon name="x-circle" className="size-4 text-danger" />
           </div>
           <div>
             <span className="text-sm text-muted-foreground">{t.deployments.stats.failed}</span>
@@ -78,7 +79,7 @@ export const DeploymentHeader: React.FC<DeploymentHeaderProps> = ({ stats, proje
         {/* In Progress */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-warning-bg flex items-center justify-center shrink-0">
-            <Loader2 className={`size-4 text-warning${activeCount > 0 ? " animate-spin" : ""}`} />
+            <UiIcon name="spinner" className={`size-4 text-warning${activeCount > 0 ? " animate-spin" : ""}`} />
           </div>
           <div>
             <span className="text-sm text-muted-foreground">{t.deployments.stats.inProgress}</span>

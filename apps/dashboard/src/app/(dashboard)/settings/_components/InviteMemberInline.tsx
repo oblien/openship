@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Inline "invite a member" composer — lives INSIDE the Team tab, expanded from
  * the header's Invite button, instead of in a modal.
@@ -14,7 +16,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Loader2, Users as UsersIcon, Shield, Lock, Send, Cloud, AlertTriangle } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
 import { systemApi } from "@/lib/api/system";
@@ -212,7 +213,7 @@ export function InviteMemberInline({
               <label className="text-sm font-medium text-foreground block">{t.settings.inviteMember.sendVia}</label>
               <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/50 bg-muted/25 p-1">
                 <SendSegment
-                  icon={Send}
+                  icon={"send"}
                   label={t.settings.inviteMember.yourMailServer}
                   statusText={
                     emailDeliverable === false
@@ -227,7 +228,7 @@ export function InviteMemberInline({
                   onClick={() => changeMailSource("platform")}
                 />
                 <SendSegment
-                  icon={Cloud}
+                  icon={"cloud"}
                   label={t.settings.inviteMember.openshipCloud}
                   statusText={cloudConnected ? t.settings.inviteMember.cloudReady : t.settings.inviteMember.cloudNotReady}
                   tone={cloudConnected ? "ok" : "warn"}
@@ -239,7 +240,7 @@ export function InviteMemberInline({
 
               {mailSource === "platform" && emailDeliverable === false && (
                 <p className="flex items-start gap-1.5 px-1 text-xs text-warning">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.8} />
+                  <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
                   <span>
                     {t.settings.inviteMember.noMailSystem}{" "}
                     <Link
@@ -253,7 +254,7 @@ export function InviteMemberInline({
               )}
               {mailSource === "cloud" && !cloudConnected && (
                 <p className="flex items-start gap-1.5 px-1 text-xs text-warning">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.8} />
+                  <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
                   <span>
                     {t.settings.inviteMember.cloudNotConnected}{" "}
                     <button
@@ -274,7 +275,7 @@ export function InviteMemberInline({
           <label className="text-sm font-medium text-foreground block">{t.settings.inviteMember.role}</label>
           <div className="space-y-2">
             <RoleCard
-              icon={UsersIcon}
+              icon={"users"}
               title={t.settings.inviteMember.roleMemberTitle}
               description={t.settings.inviteMember.roleMemberDesc}
               selected={role === "member"}
@@ -285,7 +286,7 @@ export function InviteMemberInline({
               }}
             />
             <RoleCard
-              icon={Shield}
+              icon={"shield"}
               title={t.settings.inviteMember.roleAdminTitle}
               description={t.settings.inviteMember.roleAdminDesc}
               selected={role === "admin"}
@@ -296,7 +297,7 @@ export function InviteMemberInline({
               }}
             />
             <RoleCard
-              icon={Lock}
+              icon={"lock"}
               title={t.settings.inviteMember.roleRestrictedTitle}
               description={t.settings.inviteMember.roleRestrictedDesc}
               selected={restricted}
@@ -348,7 +349,7 @@ export function InviteMemberInline({
           disabled={inviting || !email.trim()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          {inviting && <Loader2 className="size-4 animate-spin" />}
+          {inviting && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {linkOnly
             ? t.settings.inviteMember.createInviteLink
             : t.settings.inviteMember.sendInvite}
@@ -371,7 +372,7 @@ function SendSegment({
   disabled,
   onClick,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   label: string;
   statusText?: string;
   tone: "ok" | "warn" | "pending";
@@ -391,9 +392,8 @@ function SendSegment({
         selected ? "bg-card shadow-sm ring-1 ring-inset ring-border/70" : "hover:bg-foreground/[0.03]"
       }`}
     >
-      <Icon
+      <UiIcon name={Icon}
         className={`size-4 shrink-0 ${selected ? "text-primary" : "text-muted-foreground"}`}
-        strokeWidth={1.8}
       />
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-[13px] font-medium ${selected ? "text-foreground" : "text-muted-foreground"}`}>
@@ -419,7 +419,7 @@ function RoleCard({
   onClick,
   badge,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   title: string;
   description: string;
   selected: boolean;
@@ -444,7 +444,7 @@ function RoleCard({
           selected ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground"
         }`}
       >
-        <Icon className="size-4" strokeWidth={1.8} />
+        <UiIcon name={Icon} className="size-4" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

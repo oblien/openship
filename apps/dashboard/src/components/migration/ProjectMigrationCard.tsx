@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Boxes, Copy, Loader2, Server, Trash2 } from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -223,7 +224,7 @@ export function ProjectMigrationCard({
           <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{mg.fromLabel}</p>
           <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-3.5 py-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <Server className="size-4 text-muted-foreground" />
+              <UiIcon name="server" className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">
@@ -244,7 +245,7 @@ export function ProjectMigrationCard({
 
         {/* Centred against the boxes, not the column: the label above them is 11px + a
             6px gap, so the arrow drops by half a box height minus that. */}
-        <ArrowRight className="mx-auto mb-5 hidden size-4 shrink-0 text-muted-foreground sm:block" />
+        <UiIcon name="arrow-right" className="mx-auto mb-5 hidden size-4 shrink-0 text-muted-foreground sm:block" />
 
         <div className="min-w-0">
           <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{mg.toLabel}</p>
@@ -294,9 +295,9 @@ export function ProjectMigrationCard({
 
       <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         {intent === "move" ? (
-          <Trash2 className="mt-0.5 size-3 shrink-0" />
+          <UiIcon name="trash" className="mt-0.5 size-3 shrink-0" />
         ) : (
-          <Copy className="mt-0.5 size-3 shrink-0" />
+          <UiIcon name="copy" className="mt-0.5 size-3 shrink-0" />
         )}
         <span>{intent === "move" ? mg.intentMoveHint : mg.intentCopyHint}</span>
       </p>
@@ -310,7 +311,7 @@ export function ProjectMigrationCard({
         <div className="rounded-xl bg-muted/25 p-3.5">
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Boxes className="size-3.5 text-muted-foreground" />
+              <UiIcon name="layers" className="size-3.5 text-muted-foreground" />
               <p className="text-[12px] font-medium text-foreground">{mg.scopeLabel}</p>
               <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
                 {scoped === null ? (services?.length ?? 0) : scoped.size}
@@ -332,7 +333,7 @@ export function ProjectMigrationCard({
           </div>
           {servicesError ? <p role="alert" className="text-xs text-danger">{servicesError}</p> : services === null ? (
             <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">

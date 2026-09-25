@@ -1,26 +1,14 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import {
-  Server,
-  Loader2,
-  Check,
-  FolderOpen,
-  KeyRound,
-  Lock,
-  ChevronDown,
-  Network,
-  X,
-  ClipboardPaste,
-  Upload,
-  Eye,
-  EyeOff,
-} from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ServerInfo, SshProbeInput } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
+import { SshTransportField } from "./ssh-transport-field";
 
 const INPUT =
   "w-full px-3.5 py-2.5 rounded-xl border border-border/50 bg-muted/30 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:ring-2 focus:ring-primary/20";
@@ -67,6 +55,7 @@ export function ServerForm({
 
   const [serverName, setServerName] = useState(server?.name ?? "");
   const [sshHost, setSshHost] = useState(server?.sshHost ?? "");
+  const [sshTransport, setSshTransport] = useState<"direct" | "cloudflare">(server?.sshTransport ?? "direct");
   const [sshPort, setSshPort] = useState(String(server?.sshPort ?? 22));
   const [sshUser, setSshUser] = useState(server?.sshUser ?? "root");
   const [sshAuthMethod, setSshAuthMethod] = useState<"password" | "key" | "agent">(
@@ -199,6 +188,7 @@ export function ServerForm({
         sshPort: currentPort,
         sshUser: trimmedUser,
         sshAuthMethod,
+        sshTransport,
         sshJumpHost: trimmedJumpHost || null,
         sshArgs: trimmedExtraArgs || null,
       };
@@ -271,6 +261,7 @@ export function ServerForm({
         sshPort: parseInt(sshPort, 10) || 22,
         sshUser: sshUser.trim() || "root",
         sshAuthMethod,
+        sshTransport,
       };
       if (sshAuthMethod === "password" && sshPassword) {
         payload.sshPassword = sshPassword;
@@ -326,11 +317,11 @@ export function ServerForm({
         }`}
       >
         {testing ? (
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
         ) : testResult?.ok ? (
-          <Check className="size-4 text-success" />
+          <UiIcon name="check" className="size-4 text-success" />
         ) : (
-          <Network className="size-4" />
+          <UiIcon name="network" className="size-4" />
         )}
         {testing ? t.servers.form.testing : testResult?.ok ? t.servers.form.connected : t.servers.form.testConnection}
       </button>
@@ -346,9 +337,9 @@ export function ServerForm({
         }`}
       >
         {saving ? (
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
         ) : (
-          <Check className="size-4" />
+          <UiIcon name="check" className="size-4" />
         )}
         {saving && isModal ? t.servers.form.savingServer : (submitLabel ?? defaultSubmit)}
       </button>
@@ -369,7 +360,7 @@ export function ServerForm({
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 bg-info-bg rounded-xl flex items-center justify-center shrink-0">
-            <Server className="size-[18px] text-info" />
+            <UiIcon name="server" className="size-[18px] text-info" />
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-foreground text-[15px] truncate">
@@ -387,7 +378,7 @@ export function ServerForm({
             disabled={saving}
             className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors disabled:opacity-50 shrink-0"
           >
-            <X className="size-4 text-muted-foreground" />
+            <UiIcon name="close" className="size-4 text-muted-foreground" />
           </button>
         )}
       </div>
@@ -409,20 +400,26 @@ export function ServerForm({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
+        <SshTransportField value={sshTransport} disabled={saving || testing} onChange={(value) => {
+          setSshTransport(value);
+          if (value === "cloudflare") setJumpHost("");
+          setTestResult(null);
+        }} />
+
+        <div className={`grid grid-cols-1 gap-3 ${sshTransport === "direct" ? "sm:grid-cols-[1fr_120px]" : ""}`}>
           <div>
-            <label className={LABEL}>{t.servers.form.serverIp}</label>
+            <label className={LABEL}>{sshTransport === "cloudflare" ? t.servers.sshTransport.hostname : t.servers.form.serverIp}</label>
             <input
               type="text"
               value={sshHost}
               onChange={(e) => setSshHost(e.target.value)}
-              placeholder="123.45.67.89"
+              placeholder={sshTransport === "cloudflare" ? "ssh.example.com" : "123.45.67.89"}
               spellCheck={false}
               autoComplete="off"
               className={INPUT}
             />
           </div>
-          <div>
+          {sshTransport === "direct" && <div>
             <label className={LABEL}>{t.servers.form.port}</label>
             <input
               type="text"
@@ -431,7 +428,7 @@ export function ServerForm({
               placeholder={t.servers.form.portPlaceholder}
               className={INPUT}
             />
-          </div>
+          </div>}
         </div>
 
         <div>
@@ -459,7 +456,7 @@ export function ServerForm({
                   : "text-muted-foreground hover:text-foreground/70"
               }`}
             >
-              <Lock className="size-3.5" />
+              <UiIcon name="lock" className="size-3.5" />
               {t.servers.form.password}
             </button>
             <button
@@ -471,7 +468,7 @@ export function ServerForm({
                   : "text-muted-foreground hover:text-foreground/70"
               }`}
             >
-              <KeyRound className="size-3.5" />
+              <UiIcon name="key" className="size-3.5" />
               {t.servers.form.sshKey}
             </button>
             <button
@@ -483,7 +480,7 @@ export function ServerForm({
                   : "text-muted-foreground hover:text-foreground/70"
               }`}
             >
-              <Network className="size-3.5" />
+              <UiIcon name="network" className="size-3.5" />
               {t.servers.form.agent}
             </button>
           </div>
@@ -511,13 +508,13 @@ export function ServerForm({
                   className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                   aria-label={showSshPassword ? t.auth.hidePassword : t.auth.showPassword}
                 >
-                  {showSshPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {showSshPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
                 </button>
               </div>
             </div>
           ) : sshAuthMethod === "agent" ? (
             <div className="flex items-start gap-2.5 rounded-xl border border-border/50 bg-muted/30 px-3.5 py-3">
-              <Network className="size-4 shrink-0 mt-0.5 text-primary" />
+              <UiIcon name="network" className="size-4 shrink-0 mt-0.5 text-primary" />
               <p className="text-[13px] leading-relaxed text-muted-foreground">
                 {t.servers.form.agentInfoBefore}<span className="text-foreground/80">ssh-agent</span>{t.servers.form.agentInfoAfter}
               </p>
@@ -540,7 +537,7 @@ export function ServerForm({
                         : "text-muted-foreground hover:text-foreground/70"
                     }`}
                   >
-                    <ClipboardPaste className="size-3.5" />
+                    <UiIcon name="clipboard-paste" className="size-3.5" />
                     {t.servers.form.keyModePaste}
                   </button>
                   <button
@@ -552,7 +549,7 @@ export function ServerForm({
                         : "text-muted-foreground hover:text-foreground/70"
                     }`}
                   >
-                    <FolderOpen className="size-3.5" />
+                    <UiIcon name="folder-open" className="size-3.5" />
                     {t.servers.form.keyModePath}
                   </button>
                 </div>
@@ -583,7 +580,7 @@ export function ServerForm({
                       onClick={() => keyFileInputRef.current?.click()}
                       className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/50 bg-muted/30 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
                     >
-                      <Upload className="size-3.5 text-muted-foreground" />
+                      <UiIcon name="upload" className="size-3.5 text-muted-foreground" />
                       {t.servers.form.keyUploadFile}
                     </button>
                   </div>
@@ -616,7 +613,7 @@ export function ServerForm({
                         onClick={handleBrowseKey}
                         className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-border/50 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
                       >
-                        <FolderOpen className="size-4 text-muted-foreground" />
+                        <UiIcon name="folder-open" className="size-4 text-muted-foreground" />
                         {t.servers.form.keyPathBrowse}
                       </button>
                     )}
@@ -649,7 +646,7 @@ export function ServerForm({
                     className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                     aria-label={showPassphrase ? t.auth.hidePassword : t.auth.showPassword}
                   >
-                    {showPassphrase ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {showPassphrase ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
                   </button>
                 </div>
               </div>
@@ -662,7 +659,7 @@ export function ServerForm({
           onClick={() => setShowAdvanced(!showAdvanced)}
           className="text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
         >
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
           />
           {t.servers.form.advanced}
@@ -670,8 +667,8 @@ export function ServerForm({
 
         {showAdvanced && (
           <div className="space-y-[18px]">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
+            <div className={`grid grid-cols-1 gap-3 ${sshTransport === "direct" ? "sm:grid-cols-2" : ""}`}>
+              {sshTransport === "direct" && <div>
                 <label className={LABEL}>
                   {t.servers.form.jumpHost}{" "}
                   <span className="text-muted-foreground/50 font-normal">
@@ -687,7 +684,7 @@ export function ServerForm({
                   autoComplete="off"
                   className={INPUT}
                 />
-              </div>
+              </div>}
               <div>
                 <label className={LABEL}>
                   {t.servers.form.extraArgs}{" "}
@@ -699,7 +696,7 @@ export function ServerForm({
                   type="text"
                   value={extraArgs}
                   onChange={(e) => setExtraArgs(e.target.value)}
-                  placeholder="-o StrictHostKeyChecking=no"
+                  placeholder="-o ConnectTimeout=30"
                   spellCheck={false}
                   autoComplete="off"
                   className={INPUT}

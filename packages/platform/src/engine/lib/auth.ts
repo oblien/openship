@@ -18,6 +18,7 @@ import {
 } from "./email-templates";
 import { provisionUser } from "./provision-user";
 import { socialProviderCredentials } from "./auth-providers";
+import { isAuthorizedLocalSignup } from "./local-bootstrap";
 
 /**
  * Better Auth - handles registration, login, OAuth, sessions, tokens.
@@ -240,6 +241,11 @@ export const auth = betterAuth({
             // Probe ANY user (not just autoProvisioned=false): a zero-auth box's
             // synthetic user must COUNT, so it doesn't fail open as "no admin".
             const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
+            if (!anyUser && !isAuthorizedLocalSignup()) {
+              throw new APIError("FORBIDDEN", {
+                message: "Initialize this instance through the local setup before signing in.",
+              });
+            }
             if (anyUser) {
               const email = (user.email ?? "").trim().toLowerCase();
               const [invite] = await db

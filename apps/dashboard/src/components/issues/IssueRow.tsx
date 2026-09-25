@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { ArrowRight, Download, Loader2, RefreshCw, Server, Wrench } from "lucide-react";
 
 import type { SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -109,11 +110,11 @@ export function IssueRow({
         ) : issue.infraFix ? (
           <button type="button" onClick={() => onInfraFix(issue)} className={actionClass}>
             {issue.infraFix.action === "update" ? (
-              <RefreshCw className="size-3" />
+              <UiIcon name="refresh" className="size-3" />
             ) : issue.kind === "edge_absent" ? (
-              <Download className="size-3" />
+              <UiIcon name="download" className="size-3" />
             ) : (
-              <Wrench className="size-3" />
+              <UiIcon name="wrench" className="size-3" />
             )}
             {issue.infraFix.action === "update"
               ? c.update
@@ -128,20 +129,20 @@ export function IssueRow({
             disabled={busy}
             className={actionClass}
           >
-            {busy && <Loader2 className="size-3 animate-spin" />}
+            {busy && <UiIcon name="spinner" className="size-3 animate-spin" />}
             {fix.label}
           </button>
         ) : issue.kind === "mail_down" ? (
           // A gone mail engine has no fix from here — recreating it needs the secrets
           // only mail setup holds. Navigation, deliberately the quieter control.
           <Link href={issue.target.href} className={linkClass}>
-            <Server className="size-3" />
+            <UiIcon name="server" className="size-3" />
             {c.mailSetup}
           </Link>
         ) : (
           <Link href={issue.target.href} className={linkClass}>
             {c.view}
-            <ArrowRight className="size-3 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-3 rtl:rotate-180" />
           </Link>
         )
       }

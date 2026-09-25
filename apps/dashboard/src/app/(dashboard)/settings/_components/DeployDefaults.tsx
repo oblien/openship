@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
-import { Check, Loader2, Plus, Server, Cloud, Rocket, X } from "lucide-react";
 import { BlurIp } from "@/components/BlurIp";
 import { settingsApi } from "@/lib/api";
 import { systemApi } from "@/lib/api/system";
@@ -22,10 +23,10 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 // machine; it just derives that instead of storing it.
 const TARGET_OPTIONS: {
   value: DefaultDeployTarget;
-  icon: React.ElementType;
+  icon: IconName;
 }[] = [
-  { value: "server", icon: Server },
-  { value: "cloud", icon: Cloud },
+  { value: "server", icon: "server" },
+  { value: "cloud", icon: "cloud" },
 ];
 
 export function DeployDefaults() {
@@ -95,7 +96,7 @@ export function DeployDefaults() {
 
   return (
     <SettingsSection
-      icon={Rocket}
+      icon={"rocket"}
       title={t.settings.deployDefaults.title}
       description={t.settings.deployDefaults.description}
       iconBg="bg-blue-500/10"
@@ -104,7 +105,7 @@ export function DeployDefaults() {
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {t.settings.deployDefaults.loading}
         </div>
       ) : (
@@ -127,13 +128,13 @@ export function DeployDefaults() {
                   } disabled:opacity-50`}
                 >
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                    <ModeIcon className="size-4 text-muted-foreground" />
+                    <UiIcon name={ModeIcon} className="size-4 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium text-foreground">{t.settings.deployDefaults.targets[value].label}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{t.settings.deployDefaults.targets[value].desc}</p>
                   {active && (
                     <div className="absolute top-3 end-3">
-                      <Check className="size-4 text-primary" />
+                      <UiIcon name="check" className="size-4 text-primary" />
                     </div>
                   )}
                 </button>
@@ -167,7 +168,7 @@ export function DeployDefaults() {
                     }
                     className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
                   >
-                    <Plus className="size-3.5" />
+                    <UiIcon name="plus" className="size-3.5" />
                     {t.widgets.shared.serverSelector.addServer}
                   </button>
                 </div>
@@ -190,7 +191,7 @@ export function DeployDefaults() {
                         <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
                           isSelected ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
                         }`}>
-                          <Server className="size-3.5" />
+                          <UiIcon name="server" className="size-3.5" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">
@@ -201,7 +202,7 @@ export function DeployDefaults() {
                           </p>
                         </div>
                         {isSelected && (
-                          <Check className="size-4 text-primary shrink-0" />
+                          <UiIcon name="check" className="size-4 text-primary shrink-0" />
                         )}
                       </button>
                     );
@@ -219,7 +220,7 @@ export function DeployDefaults() {
               disabled={saving}
               className="mt-4 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
             >
-              <X className="size-3" />
+              <UiIcon name="close" className="size-3" />
               {t.settings.deployDefaults.clearDefault}
             </button>
           )}

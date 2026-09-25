@@ -14,7 +14,8 @@ import type { SshConfig } from "../types";
 import { systemDebug } from "./debug";
 
 function formatSshTarget(config: SshConfig): string {
-  return `${config.username ?? "root"}@${config.host}:${config.port ?? 22}`;
+  const target = `${config.username ?? "root"}@${config.host}`;
+  return config.sshTransport === "cloudflare" ? `${target} (Cloudflare Access)` : `${target}:${config.port ?? 22}`;
 }
 
 /**
@@ -87,6 +88,13 @@ export function describeSshConnectFailure(config: SshConfig, originalMessage: st
       `host firewall dropping traffic from the Docker bridge to the host's SSH port — allow ` +
       `it with:\n${hostFirewallRule("unknown", [], port)}\n` +
       `Or re-run \`openship up\`, which probes this and offers the exact rule. (${originalMessage})`
+    );
+  }
+
+  if (config.sshTransport === "cloudflare") {
+    return (
+      `Cannot reach ${target} over SSH. Check cloudflared sign-in on the machine running OpenShip, ` +
+      `the Access policy, and the tunnel's SSH origin. (${originalMessage})`
     );
   }
 

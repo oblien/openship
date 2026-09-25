@@ -62,6 +62,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -517,7 +518,7 @@ describe("the destination's own manifest is finally consulted", () => {
     h.manifestKey = "org_1/bkr_1/manifest.json";
     // Reachable only through validateManifest — proof it's wired, which it
     // wasn't: the function had zero call sites in the whole repo.
-    h.objects.set(h.manifestKey, Buffer.from(JSON.stringify({ version: 2, artifacts: [] })));
+    h.objects.set(h.manifestKey, Buffer.from(JSON.stringify({ version: 999, artifacts: [] })));
 
     const last = await prepare();
 

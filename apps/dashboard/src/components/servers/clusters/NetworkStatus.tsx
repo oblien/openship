@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clock3, Loader2, CircleAlert } from "lucide-react";
 import type { ServerCluster } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { clusterStatus } from "./model";
@@ -16,17 +17,17 @@ export function NetworkStatus({ cluster }: { cluster: ServerCluster }) {
   const status = clusterStatus(cluster, now);
   const Icon =
     status === "checking"
-      ? Loader2
+      ? "spinner"
       : status === "verified"
-        ? CheckCircle2
+        ? "check-circle"
         : status === "attention" || status === "interrupted"
-          ? CircleAlert
-          : Clock3;
+          ? "alert-circle"
+          : "clock";
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-medium ${status === "verified" ? "text-success" : status === "attention" || status === "interrupted" ? "text-warning" : "text-muted-foreground"}`}
     >
-      <Icon className={`size-3.5 ${status === "checking" ? "animate-spin" : ""}`} />
+      <UiIcon name={Icon} className={`size-3.5 ${status === "checking" ? "animate-spin" : ""}`} />
       {t.servers.networks.status[status]}
     </span>
   );

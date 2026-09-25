@@ -1,16 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Github,
-  KeyRound,
-  Terminal,
-  Copy,
-  Check,
-  Loader2,
-  ExternalLink,
-  Trash2,
-} from "lucide-react";
 import {
   serverGithubApi,
   getApiErrorMessage,
@@ -177,10 +169,10 @@ export function ServerGitHubConnect({
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const TABS: Array<{ id: ServerGithubMode; label: string; icon: typeof Github }> = [
-    { id: "token", label: g.modeToken, icon: Github },
-    { id: "ssh-server-key", label: g.modeSshKey, icon: KeyRound },
-    { id: "ssh-deploy-key", label: g.modeDeployKey, icon: Terminal },
+  const TABS: Array<{ id: ServerGithubMode; label: string; icon: IconName }> = [
+    { id: "token", label: g.modeToken, icon: "github" },
+    { id: "ssh-server-key", label: g.modeSshKey, icon: "key" },
+    { id: "ssh-deploy-key", label: g.modeDeployKey, icon: "terminal" },
   ];
 
   // Card variant mirrors the server "Security" tab: a titled header with an
@@ -199,7 +191,7 @@ export function ServerGitHubConnect({
       >
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex w-9 h-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.06]">
-            <Github className="size-[18px] text-foreground/80" />
+            <UiIcon name="github" className="size-[18px] text-foreground/80" />
           </div>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-foreground">{g.title}</h2>
@@ -208,7 +200,7 @@ export function ServerGitHubConnect({
         </div>
         {status?.connected && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
-            <Check className="size-3" /> {g.connected}
+            <UiIcon name="check" className="size-3" /> {g.connected}
           </span>
         )}
       </div>
@@ -216,7 +208,7 @@ export function ServerGitHubConnect({
       <div className={isCard ? "p-5" : "mt-4"}>
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <>
@@ -235,7 +227,7 @@ export function ServerGitHubConnect({
                         : "border-border/60 text-muted-foreground hover:bg-muted/40"
                     }`}
                   >
-                    <Icon className={`size-3.5 ${on ? "text-primary" : ""}`} /> {label}
+                    <UiIcon name={Icon} className={`size-3.5 ${on ? "text-primary" : ""}`} /> {label}
                   </button>
                 );
               })}
@@ -265,10 +257,10 @@ export function ServerGitHubConnect({
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90"
                       >
-                        {g.open} <ExternalLink className="size-3.5" />
+                        {g.open} <UiIcon name="external-link" className="size-3.5" />
                       </a>
                       <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Loader2 className="size-3 animate-spin" /> {g.connecting}
+                        <UiIcon name="spinner" className="size-3 animate-spin" /> {g.connecting}
                       </p>
                     </div>
                   ) : (
@@ -279,7 +271,7 @@ export function ServerGitHubConnect({
                         disabled={busy}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
                       >
-                        <Github className="size-4" /> {g.connectDevice}
+                        <UiIcon name="github" className="size-4" /> {g.connectDevice}
                       </button>
 
                       <div className="flex items-center gap-3">
@@ -340,9 +332,9 @@ export function ServerGitHubConnect({
                           title={g.copy}
                         >
                           {copied ? (
-                            <Check className="size-4 text-success" />
+                            <UiIcon name="check" className="size-4 text-success" />
                           ) : (
-                            <Copy className="size-4" />
+                            <UiIcon name="copy" className="size-4" />
                           )}
                         </button>
                       </div>
@@ -352,7 +344,7 @@ export function ServerGitHubConnect({
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-[13px] font-medium text-primary hover:underline"
                       >
-                        {g.openGithubKeys} <ExternalLink className="size-3.5" />
+                        {g.openGithubKeys} <UiIcon name="external-link" className="size-3.5" />
                       </a>
                     </>
                   ) : (
@@ -363,9 +355,9 @@ export function ServerGitHubConnect({
                       className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
                       {busy ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <KeyRound className="size-4" />
+                        <UiIcon name="key" className="size-4" />
                       )}
                       {g.sshGenerate}
                     </button>
@@ -389,7 +381,7 @@ export function ServerGitHubConnect({
                       disabled={busy}
                       className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
-                      <Terminal className="size-4" /> {g.deployKeyUse}
+                      <UiIcon name="terminal" className="size-4" /> {g.deployKeyUse}
                     </button>
                   )}
                 </div>
@@ -404,7 +396,7 @@ export function ServerGitHubConnect({
                   disabled={busy}
                   className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
                 >
-                  <Trash2 className="size-3.5" /> {g.disconnect}
+                  <UiIcon name="trash" className="size-3.5" /> {g.disconnect}
                 </button>
               </div>
             )}

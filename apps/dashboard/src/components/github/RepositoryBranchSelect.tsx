@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GitBranch } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { CustomSelect, type CustomSelectProps } from "@/components/ui/CustomSelect";
 import { githubApi } from "@/lib/api/github";
@@ -97,7 +98,7 @@ function BranchSelect({
         options={names.map((name) => ({
           value: name,
           label: name,
-          icon: <GitBranch className="size-3.5" />,
+          icon: <UiIcon name="git-branch" className="size-3.5" />,
         }))}
         footerAction={footerAction}
         placeholder={text.selectBranch}

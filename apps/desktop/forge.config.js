@@ -74,6 +74,7 @@ module.exports = {
       // ssh2 + dockerode (external to the API bundle) — resolved at runtime via
       // NODE_PATH=<Resources>/node_modules in services.ts.
       path.join(RESOURCES, "node_modules"),
+      path.join(RESOURCES, "cloudflared"),
     ],
     ...osxSigning,
   },
@@ -89,7 +90,7 @@ module.exports = {
       execFileSync("bun", ["run", path.join(__dirname, "build/stage.ts")], {
         cwd: __dirname,
         stdio: "inherit",
-        env: { ...process.env, FORGE_ARCH: arch },
+        env: { ...process.env, FORGE_ARCH: arch, FORGE_PLATFORM: _platform },
       });
     },
 

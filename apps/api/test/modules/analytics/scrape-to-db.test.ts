@@ -204,6 +204,32 @@ describe("countries reach the DB", () => {
   });
 });
 
+describe("retained minute history", () => {
+  it.each([null, -30, -3 * 1440])("recovers retained buckets with latest persisted minute %s", async (lastOffset) => {
+    const now = Math.floor(Date.now() / 60_000);
+    h.lastMinute = lastOffset === null ? null : now + lastOffset;
+    const edge = new Map([[now - 300, 40], [now - 2, 8], [now, 3]]);
+    const { postMgmtJson } = await import("@repo/platform/engine/lib/project-analytics");
+    const collect = async (_server: string, _path: string, body: unknown) => {
+      const request = body as { domains: Array<{ domain: string; from: number; to: number }> };
+      const { from, to } = request.domains[0];
+      expect(to - from).toBeLessThan(1440);
+      const buckets = [];
+      for (const [minute, requests] of edge) {
+        if (minute < from || minute > Math.min(to, from + 1440)) continue;
+        buckets.push({ minute, requests, unique_requests: requests, bandwidth_in: 0, bandwidth_out: 0, response_time: 0 });
+        edge.delete(minute);
+      }
+      return { domains: { "shop.example.com": { buckets } } };
+    };
+    vi.mocked(postMgmtJson).mockImplementationOnce(collect).mockImplementationOnce(collect);
+    await scrapeServer("s1");
+    await scrapeServer("s1");
+    expect(h.bucketUpserts.map((row) => [row.minute, row.requests])).toEqual([[now - 300, 40], [now - 2, 8]]);
+    expect([...edge]).toEqual([[now, 3]]); // current minute must keep accumulating
+  });
+});
+
 describe("paths and visitors", () => {
   it("persists normalized paths and the distinct-visitor count", async () => {
     const row = await scrapeAndGetRollup();

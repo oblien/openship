@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "Appearance",
+    "description": "Choose a theme, or follow your device’s appearance. Changes apply immediately.",
+    "themes": {
+      "light": "Light",
+      "dim": "Dim",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
   "language": {
     "title": "Language",
     "description": "Choose the language used across the dashboard."
@@ -191,7 +201,7 @@
     "openGithub": "Open GitHub",
     "copyCode": "Click to copy",
     "tokenConnect": "Connect",
-    "tokenCreate": "Create a token on GitHub",
+    "tokenCreate": "Create token",
     "tokenGhHint": "Already signed in on the server with",
     "tokenSaveFailed": "Could not save the token.",
     "forwardOffHint": "Local builds only. Turn on \"Forward my git identity to build servers\" to use it for remote server deploys too.",
@@ -320,9 +330,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub clone credentials",
-    "description": "Personal token used to clone private repos when the GitHub App isn't installed",
+    "description": "Personal access to private repositories.",
     "loading": "Loading…",
-    "intro": "Paste a GitHub personal access token (classic or fine-grained). The clone module uses it as the second-priority credential - after any per-project override, before the GitHub App installation token.",
+    "intro": "Project tokens take priority. When enabled, this token is used before GitHub App credentials. Turning it off keeps the token saved.",
     "placeholder": "ghp_… or github_pat_…",
     "showToken": "Show token",
     "hideToken": "Hide token",
@@ -334,11 +344,13 @@
     "justNow": "just now",
     "replace": "Replace",
     "clear": "Clear",
-    "useAsDefault": "Use as default clone token",
-    "useAsDefaultDesc": "When on, the clone module uses this token as the second tier in the chain (after per-project overrides). When off, the token is stored but not used - handy if you only want it active for specific deploys.",
-    "forwardGitLabel": "Forward my git identity to build servers",
-    "forwardGitDesc": "When a build runs on a remote server, forward your local GitHub CLI login over the SSH tunnel so private repos clone directly on the server — no GitHub App needed. When off, the server falls back to its own git login, a stored token, or the public/local clone path.",
+    "useAsDefault": "Use by default",
+    "useAsDefaultDesc": "Use this token when a project has no token of its own.",
+    "forwardGitLabel": "Forward local GitHub access",
+    "forwardGitDesc": "Share your local GitHub login with remote build servers over SSH.",
     "forwardGitFailed": "Failed to update git forwarding",
+    "tokenLabel": "Personal access token",
+    "helpTitle": "Token permissions & usage",
     "toast": {
       "pasteFirst": "Paste a token before saving",
       "notLikeToken": "That doesn't look like a GitHub token. Save anyway if you're sure.",

@@ -894,57 +894,62 @@ export class SshExecutor implements CommandExecutor {
    */
   execWithInput(command: string, body: Readable): Promise<{ code: number; stderr: string; stdout: string }> {
     return (async () => {
+      this.throwIfAborted("stdin command");
+      const signal = this.operationSignal();
       const client = await this.connect();
+      this.throwIfAborted("stdin command", signal);
       return new Promise<{ code: number; stderr: string; stdout: string }>((resolve, reject) => {
         let settled = false;
-        const abort = (err: Error) => finish(() => reject(err));
+        let channel: ClientChannel | undefined;
         const finish = (act: () => void) => {
           if (settled) return;
           settled = true;
           this.inflight.delete(abort);
+          signal?.removeEventListener("abort", onAbort);
+          body.off("error", abort);
+          if (channel) body.unpipe(channel);
           act();
         };
+        const abort = (error: Error) => finish(() => {
+          try { channel?.close(); } catch { /* channel already closed */ }
+          reject(error);
+        });
+        const onAbort = () => abort(abortError("stdin command", signal!));
         this.inflight.add(abort);
+        body.on("error", abort);
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) { onAbort(); return; }
+        if (body.errored) { abort(body.errored); return; }
 
         client.exec(command, (err, stream) => {
-          if (err) return finish(() => reject(err));
-
+          if (settled) {
+            try { stream?.close(); } catch { /* late channel after cancellation */ }
+            return;
+          }
+          if (err) return abort(err);
+          channel = stream;
           let stderr = "";
-          stream.stderr.on("data", (d: Buffer) => {
-            stderr += d.toString();
-            if (stderr.length > 16 * 1024) stderr = stderr.slice(-16 * 1024);
-          });
-          // Capture stdout (docker load prints "Loaded image( ID)?: <ref>", which
-          // the caller needs to retag) AND keep the channel flowing so it doesn't
-          // stall on an unread buffer.
           let stdout = "";
-          stream.on("data", (d: Buffer) => {
-            stdout += d.toString();
-            if (stdout.length > 16 * 1024) stdout = stdout.slice(-16 * 1024);
+          stream.stderr.on("data", (data: Buffer) => {
+            stderr = (stderr + data.toString()).slice(-16 * 1024);
           });
-
+          stream.stderr.on("error", abort);
+          stream.on("data", (data: Buffer) => {
+            stdout = (stdout + data.toString()).slice(-16 * 1024);
+          });
           let exitCode: number | null = null;
-          stream.on("exit", (code: number | null) => {
-            exitCode = code;
-          });
-          stream.on("close", (code: number | null) => {
-            finish(() => {
-              const final = typeof code === "number" ? code : exitCode;
-              if (final == null) {
-                reject(
-                  new Error(
-                    "remote channel closed without an exit status — the SSH connection was terminated mid-command",
-                  ),
-                );
-              } else {
-                resolve({ code: final, stderr: stderr.trim(), stdout: stdout.trim() });
-              }
-            });
-          });
-
-          // body → channel stdin; end() sends EOF so the reader exits.
-          body.on("error", (e) => finish(() => { try { stream.close(); } catch {} reject(e); }));
-          stream.on("error", (e: Error) => finish(() => reject(e)));
+          stream.on("exit", (code: number | null) => { exitCode = code; });
+          stream.on("close", (code: number | null) => finish(() => {
+            const final = typeof code === "number" ? code : exitCode;
+            if (final == null) {
+              reject(new Error("remote channel closed without an exit status — the SSH connection was terminated mid-command"));
+            } else {
+              resolve({ code: final, stderr: stderr.trim(), stdout: stdout.trim() });
+            }
+          }));
+          stream.on("error", abort);
+          // EOF alone cannot cancel a loader blocked after reading its input.
+          // The scoped signal above closes only this command's channel.
           body.pipe(stream);
         });
       });

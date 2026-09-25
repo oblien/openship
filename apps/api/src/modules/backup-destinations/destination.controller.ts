@@ -7,6 +7,16 @@ import { operationContext, operationData } from "../../lib/operation-context";
 export async function listAll(c: Context) {
   return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.list(operationContext(c))) });
 }
+function historyQuery(c: Context) {
+  const limit = c.req.query("limit");
+  return { ...(limit !== undefined && { limit: Number(limit) }), before: c.req.query("before") };
+}
+export async function listHistory(c: Context) {
+  return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.history(operationContext(c), historyQuery(c))) });
+}
+export async function listRuns(c: Context) {
+  return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.runs(operationContext(c), param(c, "id"), historyQuery(c))) });
+}
 export async function getOne(c: Context) {
   return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.get(operationContext(c), param(c, "id"))) });
 }

@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { initPlatform, resetPlatform } from "@repo/adapters";
+import { eq } from "@repo/db";
 import { makeApp, seedOwner, seedServer, resetJobs, installFakeRunner, req, db, schema, repos } from "./_harness";
 
 const app = makeApp();
@@ -23,6 +24,26 @@ beforeEach(async () => {
 });
 
 describe("jobs HTTP — auth + CRUD", () => {
+  it("requires explicit administration of every target in addition to a job-write grant", async () => {
+    const actor = await seedOwner();
+    await db.update(schema.member).set({ role: "restricted" }).where(eq(schema.member.userId, actor.userId));
+    const allowed = await seedServer(actor.orgId, "delegated");
+    const other = await seedServer(actor.orgId, "not-delegated");
+    await repos.resourceGrant.upsert({ organizationId: actor.orgId, userId: actor.userId,
+      resourceType: "job", resourceId: "*", permissions: ["write"], grantedByUserId: null });
+    const create = (serverIds: string[]) => req(app, "POST", "/", { auth: actor.auth,
+      body: { label: "delegated-task", command: "true", scheduleType: "manual", serverIds } });
+    expect((await create([allowed])).status).toBe(404);
+    await repos.resourceGrant.upsert({ organizationId: actor.orgId, userId: actor.userId,
+      resourceType: "server", resourceId: allowed, permissions: ["admin"], grantedByUserId: null });
+    const result = await create([allowed]);
+    expect(result.status).toBe(201);
+    expect((await create([other])).status).toBe(404);
+    expect((await create([allowed, other])).status).toBe(404);
+    expect((await req(app, "PATCH", `/${result.body.data.key}`, { auth: actor.auth, body: { serverIds: [other] } })).status).toBe(404);
+    expect((await repos.job.findByKey(result.body.data.key))?.actionConfig).toMatchObject({ serverIds: [allowed] });
+  });
+
   it("rejects unauthenticated requests", async () => {
     expect((await req(app, "GET", "/")).status).toBe(401);
     expect((await req(app, "POST", "/", { body: { label: "x", command: "true" } })).status).toBe(401);

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Clock, Loader2, XCircle } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import { useI18n } from "@/components/i18n-provider";
 import { formatBytes } from "@/lib/formatBytes";
@@ -33,17 +33,17 @@ export const isRunInFlight = (s: MigrationStatus) => IN_FLIGHT.includes(s);
 export function statusTone(status: MigrationStatus): {
   text: string;
   bg: string;
-  Icon: React.ElementType;
+  Icon: IconName;
   spin?: boolean;
 } {
   if (status === "succeeded")
-    return { text: "text-success", bg: "bg-success-bg", Icon: CheckCircle2 };
+    return { text: "text-success", bg: "bg-success-bg", Icon: "check-circle" };
   if (status === "failed" || status === "rolled_back")
-    return { text: "text-danger", bg: "bg-danger-bg", Icon: XCircle };
+    return { text: "text-danger", bg: "bg-danger-bg", Icon: "x-circle" };
   if (status === "awaiting_cutover" || status === "partial")
-    return { text: "text-warning", bg: "bg-warning-bg", Icon: AlertTriangle };
-  if (status === "queued") return { text: "text-muted-foreground", bg: "bg-muted", Icon: Clock };
-  return { text: "text-warning", bg: "bg-warning-bg", Icon: Loader2, spin: true };
+    return { text: "text-warning", bg: "bg-warning-bg", Icon: "warning" };
+  if (status === "queued") return { text: "text-muted-foreground", bg: "bg-muted", Icon: "clock" };
+  return { text: "text-warning", bg: "bg-warning-bg", Icon: "spinner", spin: true };
 }
 
 function relTime(iso?: string | null): string {
@@ -105,7 +105,7 @@ export function MigrationRunList({
             <span
               className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full ${tone.bg} ${tone.text}`}
             >
-              <tone.Icon className={`size-[18px] ${tone.spin ? "animate-spin" : ""}`} />
+              <UiIcon name={tone.Icon} className={`size-[18px] ${tone.spin ? "animate-spin" : ""}`} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -121,7 +121,7 @@ export function MigrationRunList({
                   {path ? (
                     <>
                       {path.from}
-                      <ArrowRight className="size-3" />
+                      <UiIcon name="arrow-right" className="size-3" />
                       {path.to}
                     </>
                   ) : (
@@ -138,7 +138,7 @@ export function MigrationRunList({
                 )}
               </div>
             </div>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground" />
           </button>
         );
       })}

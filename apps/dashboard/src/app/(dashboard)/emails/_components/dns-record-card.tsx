@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface DnsRecord {
@@ -47,9 +48,9 @@ export function DnsRecordCard({ label, record }: { label: string; record: DnsRec
           title={t.emails.recordCard.copyValue}
         >
           {copied ? (
-            <Check className="size-3.5 text-success" />
+            <UiIcon name="check" className="size-3.5 text-success" />
           ) : (
-            <Copy className="size-3.5 text-muted-foreground" />
+            <UiIcon name="copy" className="size-3.5 text-muted-foreground" />
           )}
         </button>
       </div>

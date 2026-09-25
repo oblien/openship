@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "トラフィック概要",
 			"last24Hours": "過去 24 時間",
-			"bar": "棒",
+			"bar": "棒グラフ",
 			"area": "エリア",
 			"loading": "分析データを読み込み中…",
 			"noDataTitle": "まだトラフィックデータがありません",
@@ -170,6 +170,7 @@
 			"startShellHint": "シェルを開くにはサービスを起動してください。",
 			"saveEnvironment": "環境を保存",
 			"environmentState": {
+				"helpTitle": "環境変数の仕組み",
 				"description": "Openship に保存されています。サービスの上書き設定は、Compose とプロジェクトの共有値より優先されます。継承した値を編集すると、このサービスの上書き設定が作成されます。",
 				"sources": {
 					"service": "サービスの上書き設定",

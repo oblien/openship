@@ -5,6 +5,7 @@ import {
   describePath,
   gradeDelivery,
   parseMailQueue,
+  topDeferrals,
   type MailQueueReading,
 } from "../../../src/modules/mail/mail-delivery.service";
 import { mailQueueProbeCommand } from "@repo/platform/engine/modules/mail/mail-engine";
@@ -51,6 +52,12 @@ const AUTH_REFUSAL =
   "host email-smtp.us-east-1.amazonaws.com[203.0.113.9] said: 535 Authentication Credentials Invalid (in reply to AUTH LOGIN command)";
 const GREYLIST_REFUSAL =
   "host mx.receiver.example[198.51.100.4] said: 450 4.2.0 Greylisted, try again later (in reply to end of DATA command)";
+const RELAY_TLS_REFUSAL =
+  "host email-smtp.us-east-1.amazonaws.com[203.0.113.9]: certificate verification failed";
+const BUSY_RECEIVER = "host mx.b.example said: 451 4.3.0 Temporary local problem";
+const FULL_MAILBOX = "host mx.c.example said: 452 4.2.2 Mailbox full";
+const RELAY_NETWORK_REFUSAL =
+  "connect to email-smtp.us-east-1.amazonaws.com[203.0.113.9]:587: Connection timed out";
 
 const RELAY: OutboundRelay = {
   enabled: true,
@@ -147,7 +154,9 @@ describe("parseMailQueue", () => {
     );
 
     expect(parsed?.queued).toBe(6);
-    expect(parsed?.deferrals).toHaveLength(3);
+    const deferrals = parsed?.deferrals ?? [];
+    expect(deferrals).toHaveLength(6);
+    expect(topDeferrals(deferrals)).toEqual(deferrals.slice(0, 3));
   });
 
   /**
@@ -384,6 +393,63 @@ describe("checkMailDelivery", () => {
     expect(health.relayHost).toBe("email-smtp.us-east-1.amazonaws.com:587");
     expect(health.queued).toBe(91);
     expect(health.deferrals[0]?.kind).toBe("auth");
+  });
+
+  const crowdedQueue = (last: string) =>
+    queueOutput([
+      { reason: GREYLIST_REFUSAL },
+      { reason: GREYLIST_REFUSAL },
+      { reason: GREYLIST_REFUSAL },
+      { reason: BUSY_RECEIVER },
+      { reason: BUSY_RECEIVER },
+      { reason: FULL_MAILBOX },
+      { reason: FULL_MAILBOX },
+      { reason: last },
+    ]);
+
+  const crowdedRows = [GREYLIST_REFUSAL, BUSY_RECEIVER, FULL_MAILBOX];
+  const tryLater = (i: number) => `host mx${i}.example said: 451 try later`;
+
+  it.each([
+    ["an auth refusal ranked fourth", RELAY, crowdedQueue(AUTH_REFUSAL), "fail", crowdedRows],
+    [
+      "a TLS failure at the smarthost ranked fourth",
+      RELAY,
+      crowdedQueue(RELAY_TLS_REFUSAL),
+      "fail",
+      crowdedRows,
+    ],
+    [
+      "a connection failure at the smarthost ranked fourth",
+      RELAY,
+      crowdedQueue(RELAY_NETWORK_REFUSAL),
+      "fail",
+      crowdedRows,
+    ],
+    [
+      "an auth refusal ranked thirteenth",
+      RELAY,
+      queueOutput([
+        ...Array.from({ length: 24 }, (_, i) => ({ reason: tryLater(i % 12) })),
+        { reason: AUTH_REFUSAL },
+      ]),
+      "fail",
+      [tryLater(0), tryLater(1), tryLater(2)],
+    ],
+    [
+      "an auth refusal queued after three one-off deferrals",
+      RELAY,
+      queueOutput(
+        [GREYLIST_REFUSAL, BUSY_RECEIVER, FULL_MAILBOX, AUTH_REFUSAL].map((reason) => ({ reason })),
+      ),
+      "fail",
+      crowdedRows,
+    ],
+  ])("grades %s", async (_label, relay, queue, status, shown) => {
+    const health = await checkMailDelivery(box({ relay, queue }));
+
+    expect(health.status).toBe(status);
+    expect(health.deferrals.map((d) => d.reason)).toEqual(shown);
   });
 
   it("probes the queue through the engine, once", async () => {

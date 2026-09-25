@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +14,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
 import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
-import { Rocket, Home, PackageX, RotateCcw, TriangleAlert } from "lucide-react";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -161,7 +162,7 @@ const BuildPage: React.FC = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <ResourceNotFound
-          icon={<TriangleAlert className="size-7" />}
+          icon={<UiIcon name="warning" className="size-7" />}
           title={t.chrome.error.title}
           description={
             <>
@@ -174,13 +175,13 @@ const BuildPage: React.FC = () => {
           actions={[
             {
               label: t.chrome.error.tryAgain,
-              icon: <RotateCcw className="size-4" />,
+              icon: <UiIcon name="rotate-left" className="size-4" />,
               onClick: retryLoadSession,
             },
             {
               href: "/deployments",
               label: t.misc.buildPage.viewDeployments,
-              icon: <Rocket className="size-4" />,
+              icon: <UiIcon name="rocket" className="size-4" />,
             },
             {
               href: "/",
@@ -197,7 +198,7 @@ const BuildPage: React.FC = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <ResourceNotFound
-          icon={<PackageX className="size-7" />}
+          icon={<UiIcon name="file-warning" className="size-7" />}
           title={t.misc.buildPage.notFoundTitle}
           description={t.misc.buildPage.notFoundDescription}
           detail={deploymentId}
@@ -206,12 +207,12 @@ const BuildPage: React.FC = () => {
             {
               href: "/deployments",
               label: t.misc.buildPage.viewDeployments,
-              icon: <Rocket className="size-4" />,
+              icon: <UiIcon name="rocket" className="size-4" />,
             },
             {
               href: "/",
               label: t.misc.buildPage.goHome,
-              icon: <Home className="size-4" />,
+              icon: <UiIcon name="home" className="size-4" />,
               variant: "secondary",
             },
           ]}

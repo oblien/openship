@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useId, type ReactNode } from "react";
-import { Loader2, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
@@ -45,7 +46,7 @@ export function NetworkSetupConfirmation({
         }}
       >
         <div className="mb-4 grid size-10 place-items-center rounded-xl bg-danger/10 text-danger">
-          <Trash2 className="size-5" />
+          <UiIcon name="trash" className="size-5" />
         </div>
         <h2 id={`${id}-title`} className="pe-6 text-lg font-semibold">
           {title}
@@ -68,7 +69,7 @@ export function NetworkSetupConfirmation({
             onClick={onConfirm}
             className="h-auto min-h-10 whitespace-normal"
           >
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
             {confirmLabel}
           </Button>
         </div>

@@ -97,9 +97,7 @@ async function scrapeServer(serverId: string): Promise<void> {
     return;
   }
 
-  // 2. Domain discovery. Still its own call: the collect endpoint needs to be TOLD
-  //    which domains and which minute window, because the window is per-domain
-  //    (each resumes from its own last persisted minute).
+  // 2. Discover domains with retained counters.
   const totalsResult = await fetchMgmt(serverId, "/analytics/totals") as {
     domains?: { domain: string }[];
   } | null;
@@ -110,21 +108,14 @@ async function scrapeServer(serverId: string): Promise<void> {
     return;
   }
 
-  // 3. Per-domain incremental window. `now - 1` because the current minute is still
-  //    accumulating and flushing it would truncate it.
+  // 3. Drain the edge's bounded 24-hour retention window. A highest persisted
+  //    minute does not prove that earlier minutes were collected: the old first
+  //    scrape only kept one hour. Resuming after >24h also sent an expired window
+  //    that the edge capped before reaching any live counters, stalling forever.
+  //    Already-drained counters return nothing, so this also repairs retained gaps
+  //    without recounting them. Keep the current, still-accumulating minute live.
   const now = Math.floor(Date.now() / 60_000);
-  const toMinute = now - 1;
-  const requested: Array<{ domain: string; from: number; to: number }> = [];
-  for (const { domain } of domains) {
-    const lastMinute = await repos.analytics.getLastScrapedMinute(serverId, domain);
-    const fromMinute = lastMinute ? lastMinute + 1 : now - 60; // default: last hour
-    if (fromMinute > toMinute) continue;
-    requested.push({ domain, from: fromMinute, to: toMinute });
-  }
-  if (requested.length === 0) {
-    debug(`scrape:done server=${serverId} - nothing new (${formatDuration(startedAt)})`);
-    return;
-  }
+  const requested = domains.map(({ domain }) => ({ domain, from: now - 1440, to: now - 1 }));
 
   // 4. One call: flushes every domain's minute buckets (read + delete, atomic per
   //    key) and reads every domain's daily rollup, off a single dict scan.

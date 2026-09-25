@@ -21,7 +21,6 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GithubReleasePayload, ReleaseSource } from "@repo/core";
 import { renderAssetName } from "@repo/core";
-import { env } from "../config/env";
 import { APP_VERSION } from "./app-version";
 import { fetchAndExtractRelease } from "./release-download";
 import { safeFetch } from "./safe-fetch";
@@ -295,14 +294,15 @@ export async function resolveLatestVersion(source: ReleaseSource): Promise<strin
 async function fetchVersionFromUrl(url: string): Promise<ResolvedReleaseVersion | null> {
   try {
     // User-controlled URL: safeFetch resolves once, validates + pins the chosen
-    // IP, and repeats that validation for every redirect. Self-hosted installs
-    // may intentionally use a LAN release feed; multi-tenant cloud never may.
+    // IP, and repeats that validation for every redirect. Project-scoped
+    // callers cannot use the control plane to read private network services,
+    // including on self-hosted instances.
     const res = await safeFetch(url, {
       headers: { "User-Agent": "openship" },
       timeoutMs: 10_000,
       maxRedirects: 5,
       maxBodyBytes: 8192,
-      allowPrivate: !env.CLOUD_MODE,
+      allowPrivate: false,
     });
     if (!res.ok) return null;
     const body = (await res.text()).trim();

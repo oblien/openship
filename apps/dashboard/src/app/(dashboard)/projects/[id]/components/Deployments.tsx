@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
@@ -11,7 +13,6 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useRouter } from "next/navigation";
-import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
 import {
@@ -392,7 +393,7 @@ export const Deployments = () => {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Rocket className="size-5" />
+                <UiIcon name="rocket" className="size-5" />
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
@@ -422,12 +423,12 @@ export const Deployments = () => {
                 align="right"
                 disabled={isRedeploying}
                 triggerClassName="inline-flex items-center justify-center rounded-xl border border-border/60 bg-muted/30 p-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                trigger={<ChevronDown className="size-4" />}
+                trigger={<UiIcon name="chevron-down" className="size-4" />}
                 actions={[
                   {
                     id: "refresh",
                     label: t.projects.redeploy.refreshEnv,
-                    icon: <RefreshCw className="size-4" />,
+                    icon: <UiIcon name="refresh" className="size-4" />,
                     onClick: () => runRedeploy("refresh"),
                   },
                   ...(hasMultipleServices
@@ -435,7 +436,7 @@ export const Deployments = () => {
                         {
                           id: "rebuild",
                           label: t.projects.redeploy.rebuildAll,
-                          icon: <Layers className="size-4" />,
+                          icon: <UiIcon name="layers" className="size-4" />,
                           onClick: () => runRedeploy("all"),
                         },
                       ]

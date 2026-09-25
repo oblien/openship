@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { Globe, Shield, Server, Eye, EyeOff, Link2, Hash, CornerUpRight } from "lucide-react";
 import { domainsApi } from "@/lib/api";
 import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
@@ -180,7 +181,7 @@ export function RoutingSettingsCard({
         <div className="p-5">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-              <Server className="size-4 text-primary" />
+              <UiIcon name="server" className="size-4 text-primary" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-foreground">{w.dnsConfiguration}</h3>
@@ -284,7 +285,7 @@ export function RoutingSettingsCard({
     redirect && redirect.targets.length > 0 ? (
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2">
-          <CornerUpRight className="size-3.5 text-muted-foreground" />
+          <UiIcon name="forward" className="size-3.5 text-muted-foreground" />
           <span className="text-[13px] font-medium text-muted-foreground">{w.redirectTo}</span>
         </div>
         <div className="min-w-[190px] flex-1">
@@ -320,7 +321,7 @@ export function RoutingSettingsCard({
       {typeof exposed === "boolean" && onExposedChange && (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {visible ? <Eye className="size-4 text-info" /> : <EyeOff className="size-4 text-muted-foreground" />}
+            {visible ? <UiIcon name="eye" className="size-4 text-info" /> : <UiIcon name="eye-off" className="size-4 text-muted-foreground" />}
             <span className="text-sm font-medium text-foreground">
               {visible ? w.publiclyExposed : w.internalOnly}
             </span>
@@ -451,7 +452,7 @@ export function RoutingSettingsCard({
               {hasRecords && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">
-                    <Server className="size-3 text-muted-foreground shrink-0" />
+                    <UiIcon name="server" className="size-3 text-muted-foreground shrink-0" />
                     <p className="text-sm text-muted-foreground flex-1">
                       {interpolate(w.addRecordHint, {
                         primary: dnsRecords.find((record) => record.type !== "TXT")?.type ?? "",
@@ -478,7 +479,7 @@ export function RoutingSettingsCard({
           {!portInline && showsPortTarget && (
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Hash className="size-3.5 text-muted-foreground" />
+                <UiIcon name="hash" className="size-3.5 text-muted-foreground" />
                 <span className="text-[13px] text-muted-foreground font-medium">{w.exposedPort}</span>
               </div>
               <input
@@ -524,9 +525,9 @@ export function RoutingSettingsCard({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 {readOnlyTarget.icon === "path" ? (
-                  <Link2 className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="link" className="size-3.5 text-muted-foreground" />
                 ) : (
-                  <Hash className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="hash" className="size-3.5 text-muted-foreground" />
                 )}
                 <span className="text-[13px] text-muted-foreground font-medium">
                   {readOnlyTarget.label}
@@ -542,7 +543,7 @@ export function RoutingSettingsCard({
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <Link2 className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="link" className="size-3.5 text-muted-foreground" />
                   <span className="text-[13px] text-muted-foreground font-medium">{w.staticPath}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-1">

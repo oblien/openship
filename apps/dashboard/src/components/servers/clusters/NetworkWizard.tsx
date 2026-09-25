@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Loader2, Network, Plus, Search, Server } from "lucide-react";
 import type { ClusterCapabilities, ServerCluster } from "@repo/contracts";
 import {
   ClusterConfigError,
@@ -478,7 +479,7 @@ export function NetworkWizard({
         disabled={saving}
         className="mb-5 max-w-full justify-start px-0 text-sm font-normal hover:bg-transparent"
       >
-        <ArrowLeft className="size-4 shrink-0 rtl:rotate-180" />
+        <UiIcon name="arrow-left" className="size-4 shrink-0 rtl:rotate-180" />
         <span className="truncate">{baseline?.name || c.backToClusters}</span>
       </Button>
       <h1 id="cluster-wizard-title" className="text-2xl font-semibold tracking-tight">
@@ -643,12 +644,12 @@ export function NetworkWizard({
                     })
                   }
                 >
-                  <Plus className="size-3.5" />
+                  <UiIcon name="plus" className="size-3.5" />
                   {t.servers.list.addServer}
                 </Button>
               </div>
               {loading ? (
-                <Loader2 className="mx-auto my-8 size-5 animate-spin" />
+                <UiIcon name="spinner" className="mx-auto my-8 size-5 animate-spin" />
               ) : (
                 <div className="grid gap-3 @md/cluster-form:grid-cols-2">
                   {servers.map((server) => {
@@ -668,7 +669,7 @@ export function NetworkWizard({
                           onCheckedChange={() => selectServer(server.id)}
                           aria-label={server.name || server.sshHost}
                         />
-                        <Server className="size-4 shrink-0 text-muted-foreground" />
+                        <UiIcon name="server" className="size-4 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 text-sm">
                           {memberLabel(server.id)}
                           {protectedServerIds.includes(server.id) && (
@@ -834,7 +835,7 @@ export function NetworkWizard({
           {step === 1 && mode === "native" && (
             <fieldset disabled={saving || inspecting !== null} className="min-w-0 space-y-5">
               <div className="flex items-start gap-3 rounded-xl bg-muted/50 p-4">
-                <Network className="mt-0.5 size-5 shrink-0 text-primary" />
+                <UiIcon name="network" className="mt-0.5 size-5 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
                   <NetworkSource cluster={draft} />
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
@@ -849,9 +850,9 @@ export function NetworkWizard({
                     disabled={saving || inspecting !== null || !draft.members.length}
                   >
                     {inspecting ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+                      <UiIcon name="spinner" className="size-3.5 animate-spin" />
                     ) : (
-                      <Search className="size-3.5" />
+                      <UiIcon name="search" className="size-3.5" />
                     )}
                     {inspecting
                       ? interpolate(c.detectingNetworks, {
@@ -900,7 +901,7 @@ export function NetworkWizard({
                     <div key={member.serverId} className="rounded-xl bg-muted/40 p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <p className="flex min-w-0 items-center gap-2 text-sm font-medium">
-                          <Server className="size-4 shrink-0 text-muted-foreground" />
+                          <UiIcon name="server" className="size-4 shrink-0 text-muted-foreground" />
                           {memberLabel(member.serverId)}
                         </p>
                         <Button
@@ -911,9 +912,9 @@ export function NetworkWizard({
                           size="sm"
                         >
                           {inspecting?.includes(member.serverId) ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <UiIcon name="spinner" className="size-3.5 animate-spin" />
                           ) : (
-                            <Search className="size-3.5" />
+                            <UiIcon name="search" className="size-3.5" />
                           )}
                           {c.inspect}
                         </Button>
@@ -974,7 +975,7 @@ export function NetworkWizard({
                                 aria-pressed={choice === selectedChoice}
                                 onClick={() => applyDetectedChoice(member.serverId, choice)}
                               >
-                                {choice === selectedChoice && <Check className="size-3.5" />}
+                                {choice === selectedChoice && <UiIcon name="check" className="size-3.5" />}
                                 <span dir="ltr">
                                   <BlurIp>
                                     {choice.privateIp}/{choice.prefixLength}
@@ -1119,7 +1120,7 @@ export function NetworkWizard({
                   <span
                     className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-medium ${index === step ? "bg-primary text-primary-foreground" : index < step ? "bg-primary/10 text-primary" : "bg-muted"}`}
                   >
-                    {index < step ? <Check className="size-3.5" /> : index + 1}
+                    {index < step ? <UiIcon name="check" className="size-3.5" /> : index + 1}
                   </span>
                   <span className="min-w-0 break-words">{label}</span>
                 </button>
@@ -1140,7 +1141,7 @@ export function NetworkWizard({
               aria-busy={saving}
               className="w-full"
             >
-              {saving && <Loader2 className="size-4 shrink-0 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-4 shrink-0 animate-spin" />}
               {mode === "wireguard" && step === 1
                 ? saving
                   ? m.inspecting
@@ -1152,7 +1153,7 @@ export function NetworkWizard({
                     : baseline
                       ? c.saveAndVerify
                       : c.createAndVerify}
-              {step < 2 && <ArrowRight className="size-4 shrink-0 rtl:rotate-180" />}
+              {step < 2 && <UiIcon name="arrow-right" className="size-4 shrink-0 rtl:rotate-180" />}
             </Button>
             {step > 0 && (
               <Button
@@ -1165,7 +1166,7 @@ export function NetworkWizard({
                   setStep((old) => old - 1);
                 }}
               >
-                <ArrowLeft className="size-4 shrink-0 rtl:rotate-180" />
+                <UiIcon name="arrow-left" className="size-4 shrink-0 rtl:rotate-180" />
                 {c.back}
               </Button>
             )}

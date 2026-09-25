@@ -1,18 +1,11 @@
 /**
- * Backup-run SSE channel — mirrors the deployment session-manager pattern.
+ * Process-local backup notifications, keyed by run ID. The orchestrator
+ * persists each transition before publishing its notification here.
  *
- * Each run gets a topic keyed by runId. Subscribers receive every FSM
- * transition + interim progress events; when the run reaches a terminal
- * state, all subscribers get a final event and the channel closes.
- *
- * Survives dashboard refresh:
- *   - The `backup_run` DB row is the source of truth. SSE amplifies it.
- *   - On (re)connect, the route handler first sends a `snapshot` event
- *     with the current DB row, then attaches as a live subscriber for
- *     subsequent events.
- *   - If the run already finished by the time the client reconnects,
- *     the snapshot event has terminal status and the stream closes
- *     cleanly.
+ * The shared run-events adapter subscribes before reading the saved row and
+ * coalesces these hints into durable snapshots. It also reconciles without
+ * notifications, since workers can run in another process. Terminal state,
+ * bytes and timestamps come from storage before a client stream closes.
  */
 
 import type { BackupRun, BackupRunStatus } from "@repo/db";

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
@@ -7,6 +9,7 @@ import { useToast } from "@/context/ToastContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
 import { getServiceStatus, ServiceStatusBadge } from "@/components/services/ServiceStatusBadge";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -18,25 +21,6 @@ import {
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
 import { serviceDisplayUrl } from "@/utils/route-display";
-import {
-  Play,
-  Square,
-  Loader2,
-  ExternalLink,
-  Power,
-  RotateCw,
-  Rocket,
-  ChevronDown,
-  Check,
-  Settings,
-  Trash2,
-  DatabaseBackup,
-  PlayCircle,
-  Plus,
-  Save,
-  MonitorSmartphone,
-  PlugZap,
-} from "lucide-react";
 import { backupsApi, getApiErrorCode, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
@@ -82,6 +66,7 @@ interface ServiceDetailPanelProps {
   /** Tab to open on mount (from the URL: /services/[id]/[tab]). */
   initialTab?: string;
   onRefresh: () => void | Promise<void>;
+  onBack?: () => void;
   onDeleted?: () => void;
   /** Project context — supplied by the caller instead of read from
    *  ProjectSettingsContext, so the panel renders outside the projects route
@@ -111,6 +96,7 @@ export function ServiceDetailPanel({
   projectSlugBase,
   initialTab,
   onRefresh,
+  onBack,
   onDeleted,
   projectType,
   activeDeploymentId,
@@ -272,7 +258,7 @@ export function ServiceDetailPanel({
       .listPolicies(projectId)
       .then((res) => {
         if (!alive) return;
-        const policy = res.data.find((p) => p.serviceId === service.id) ?? null;
+        const policy = res.data.find((p) => p.serviceId === service.id) ?? res.data.find((p) => p.serviceId === null) ?? null;
         setBackupPolicy(policy);
       })
       .catch((error) => {
@@ -291,7 +277,7 @@ export function ServiceDetailPanel({
   const handleBackupNow = async (policy = backupPolicy): Promise<void> => {
     if (
       !policy ||
-      policy.serviceId !== service.id ||
+      (policy.serviceId !== null && policy.serviceId !== service.id) ||
       backupScopeRef.current !== backupScope ||
       backupRequestRef.current
     )
@@ -300,7 +286,9 @@ export function ServiceDetailPanel({
     backupRequestRef.current = request;
     setBackupRunning(true);
     try {
-      const res = await backupsApi.runNow(policy.id);
+      const res = policy.serviceId === null
+        ? await backupsApi.runNow(policy.id, { serviceId: service.id })
+        : await backupsApi.runNow(policy.id);
       if (backupRequestRef.current === request) setActiveBackupRunId(res.data.runId);
     } catch (err) {
       if (backupRequestRef.current === request)
@@ -323,6 +311,14 @@ export function ServiceDetailPanel({
       setBackupAfterSave(true);
       setBackupEditorOpen(true);
     }
+  };
+
+  const handleBackupPolicySaved = async (policy: BackupPolicy, startBackup: boolean) => {
+    if (backupScopeRef.current !== backupScope) return;
+    setBackupEditorOpen(false);
+    setBackupPolicy(policy);
+    await reloadBackupPolicy();
+    if (startBackup) await handleBackupNow(policy);
   };
 
   const backupFeedback =
@@ -349,14 +345,6 @@ export function ServiceDetailPanel({
     baseDomain,
     kind: serviceKind(service),
   });
-
-  // Hero subtitle: the image, or the build context — but not a bare "." (the
-  // default compose build context), which reads as a stray dot.
-  const sourceLabel =
-    service.image?.trim() ||
-    (service.build && service.build.trim() && service.build.trim() !== "."
-      ? service.build.trim()
-      : "");
 
   /* ── Handlers ───────────────────────────────────────────────── */
 
@@ -549,82 +537,118 @@ export function ServiceDetailPanel({
 
   /* ── Render ─────────────────────────────────────────────────── */
 
+  const serviceIdentity = (
+    <>
+      <ServiceIcon service={service} className="size-5 shrink-0" />
+      <span className="truncate" title={service.name}>{service.name}</span>
+    </>
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
-      {/* ── Heading (simple, no card) ──────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-center gap-2.5">
-          {canSwitchService ? (
-            <DropdownMenu
-              align="left"
-              triggerClassName="group inline-flex items-center gap-1.5 rounded-lg -ms-1.5 px-1.5 py-0.5 transition-colors hover:bg-muted/50"
-              trigger={
-                <>
-                  <span className="text-xl font-semibold tracking-tight text-foreground">
-                    {service.name}
-                  </span>
-                  <ChevronDown className="size-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-                </>
-              }
-              actions={switchableServices.map((s) => ({
-                id: s.id,
-                label: s.name,
-                icon:
-                  s.id === service.id ? (
-                    <Check className="size-4 text-primary" />
-                  ) : (
-                    <span
-                      className={`size-1.5 rounded-full ${s.enabled ? "bg-success-solid" : "bg-muted-foreground/40"}`}
-                    />
-                  ),
-                disabled: s.id === service.id,
-                onClick: () => switchService(s.id),
-              }))}
-            />
-          ) : (
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">{service.name}</h2>
+      {/* ── Service identity and actions ──────────────────────── */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-2">
+          {onBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onBack}
+              title={t.projectDetail.services.addModal.allServices}
+              className="shrink-0"
+            >
+              <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
+              <span className="sr-only">{t.projectDetail.services.addModal.allServices}</span>
+            </Button>
           )}
-          <ServiceStatusBadge status={status} />
+          <div className="@container min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2.5">
+              {canSwitchService ? (
+                <>
+                  <h2 className="sr-only">{service.name}</h2>
+                  <DropdownMenu
+                    align="left"
+                    className="min-w-0"
+                    menuClassName="w-[min(18rem,100cqw)] min-w-0"
+                    triggerClassName="group flex h-9 w-full items-center gap-2 rounded-lg text-base font-medium text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    trigger={
+                      <>
+                        {serviceIdentity}
+                        <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                      </>
+                    }
+                    actions={switchableServices.map((s) => ({
+                      id: s.id,
+                      label: s.name,
+                      icon: <ServiceIcon service={s} className="size-4" />,
+                      disabled: s.id === service.id,
+                      onClick: () => switchService(s.id),
+                    }))}
+                  />
+                </>
+              ) : (
+                <h2 className="flex h-9 min-w-0 items-center gap-2 text-base font-medium text-foreground">
+                  {serviceIdentity}
+                </h2>
+              )}
+              <div className="shrink-0"><ServiceStatusBadge status={status} /></div>
+            </div>
+          </div>
         </div>
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
+          {resolvedUrl && (
+            <Button asChild variant="secondary" size="sm" className="h-9">
+              <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" title={resolvedUrl}>
+                {t.projects.connections.openShort}
+                <UiIcon name="arrow-up-right" className="size-3.5" />
+              </a>
+            </Button>
+          )}
           {service.enabled && (
-            <button type="button" onClick={() => setShareOpen(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50">
-              <PlugZap className="size-3.5" />{t.projects.connections.useInProject}
-            </button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="h-9"
+            >
+              <UiIcon name="plug" className="size-3.5" />{t.projects.connections.useInProject}
+            </Button>
           )}
           {canOpenLocal && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={openOnLocalhost}
               disabled={openingLocal}
               title={t.projects.connections.openLocalhost}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-60"
+              className="h-9"
             >
-              <MonitorSmartphone className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
-              {t.projects.connections.openShort}
-            </button>
+              <UiIcon name="devices" className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
+              {t.projects.connections.openLocalhost}
+            </Button>
           )}
-          {resolvedUrl ? (
-            <a
-              href={resolvedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-foreground/70"
-            >
-              <span className="truncate">{resolvedUrl.replace("https://", "")}</span>
-              <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-            </a>
-          ) : sourceLabel ? (
-            <span className="truncate text-sm text-muted-foreground">{sourceLabel}</span>
-          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onRefresh}
+            disabled={containerChecking}
+            title={t.projects.services.refresh}
+            className="shrink-0"
+          >
+            <UiIcon name="refresh" className={`size-4 ${containerChecking ? "animate-spin" : ""}`} />
+            <span className="sr-only">{t.projects.services.refresh}</span>
+          </Button>
         </div>
         {/* Another container on the host also answers to this service — a
             leftover from an adopt/redeploy. It isn't the one we manage, and it
             may still be holding a port or a volume. */}
         {container?.duplicates && container.duplicates.length > 0 && (
-          <p className="mt-1 text-xs text-warning">
+          <p className="w-full text-xs text-warning">
             {interpolate(t.projectDetail.services.detail.duplicateContainers, {
               names: container.duplicates.join(", "),
             })}
@@ -635,7 +659,7 @@ export function ServiceDetailPanel({
       {/* ── Tab strip ──────────────────────────────────────────── */}
       <Tabs
         className="border-b-0"
-        size="sm"
+        size="md"
         fullWidth
         tabs={SERVICE_TAB_DEFS.map((def) => ({
           ...def,
@@ -698,7 +722,7 @@ export function ServiceDetailPanel({
             />
           </div>
         ) : (
-          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/10 text-[12px] text-muted-foreground">
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/10 text-xs text-muted-foreground">
             {status === "checking" || status === "unknown" ? (
               <ServiceStatusBadge status={status} />
             ) : (
@@ -752,7 +776,7 @@ export function ServiceDetailPanel({
                     {status !== "stopped" && status !== "failed" && (
                       <>
                         <ActionButton
-                          icon={Square}
+                          icon={"square"}
                           label={t.projectDetail.services.detail.stop}
                           loading={actionLoading === "stop"}
                           disabled={serviceOperationBusy}
@@ -760,7 +784,7 @@ export function ServiceDetailPanel({
                           variant="danger"
                         />
                         <ActionButton
-                          icon={RotateCw}
+                          icon={"refresh"}
                           label={t.projectDetail.services.detail.restart}
                           loading={actionLoading === "restart"}
                           disabled={serviceOperationBusy}
@@ -771,7 +795,7 @@ export function ServiceDetailPanel({
                     )}
                     {(status === "stopped" || status === "failed") && (
                       <ActionButton
-                        icon={Play}
+                        icon={"play"}
                         label={t.projectDetail.services.detail.start}
                         loading={actionLoading === "start"}
                         disabled={serviceOperationBusy}
@@ -788,7 +812,7 @@ export function ServiceDetailPanel({
                   canStartWithoutBuild &&
                   ["stopped", "failed", "disabled"].includes(status) && (
                     <ActionButton
-                      icon={Play}
+                      icon={"play"}
                       label={
                         deploying
                           ? t.projectDetail.services.detail.starting
@@ -805,7 +829,7 @@ export function ServiceDetailPanel({
                     per-service Redeploy → build page. Image apps never show it. */}
                 {usesDeployPipeline && service.enabled && activeDeploymentId && (
                   <ActionButton
-                    icon={Rocket}
+                    icon={"rocket"}
                     label={
                       redeploying
                         ? t.projectDetail.services.detail.redeploying
@@ -823,16 +847,16 @@ export function ServiceDetailPanel({
                 <button
                   onClick={handleToggleEnabled}
                   disabled={saving}
-                  className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${
+                  className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium transition-colors disabled:opacity-50 ${
                     service.enabled
                       ? "bg-danger-bg text-danger hover:bg-danger-solid/20"
                       : "bg-success-bg text-success hover:bg-success-solid/20"
                   }`}
                 >
                   {saving ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <Power className="size-4" />
+                    <UiIcon name="power" className="size-4" />
                   )}
                   {service.enabled
                     ? t.projectDetail.services.detail.disableService
@@ -840,9 +864,9 @@ export function ServiceDetailPanel({
                 </button>
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium bg-danger-bg text-danger hover:bg-danger-solid/20 transition-colors"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium bg-danger-bg text-danger hover:bg-danger-solid/20 transition-colors"
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                   {t.projectDetail.services.detail.delete}
                 </button>
               </div>
@@ -871,14 +895,14 @@ export function ServiceDetailPanel({
                 ? `${backupPolicy.payloadKind} · ${backupPolicy.cronExpression ? interpolate(t.projectDetail.services.detail.backupSubtitle.cron, { expr: backupPolicy.cronExpression }) : t.projectDetail.services.detail.backupSubtitle.manualOnly}${backupPolicy.triggerOnPreDeploy ? ` · ${t.projectDetail.services.detail.backupSubtitle.preDeploy}` : ""}${backupPolicy.webhookToken ? ` · ${t.projectDetail.services.detail.backupSubtitle.webhook}` : ""}`
                 : !backupLoading && !backupError ? t.projectDetail.services.detail.backupSubtitle.none : undefined
             }
-            icon={DatabaseBackup}
+            icon={"database-backup"}
           />
           <div className="space-y-3">
             {backupFeedback}
 
             {backupLoading ? (
               <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
+                <UiIcon name="spinner" className="size-4 animate-spin" />
                 {t.projectDetail.services.detail.storage.loadingBackups}
               </div>
             ) : (
@@ -889,12 +913,12 @@ export function ServiceDetailPanel({
                       <button
                         onClick={() => void handleBackupNow()}
                         disabled={backupRunning}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
                       >
                         {backupRunning ? (
-                          <Loader2 className="size-4 animate-spin" />
+                          <UiIcon name="spinner" className="size-4 animate-spin" />
                         ) : (
-                          <PlayCircle className="size-4" />
+                          <UiIcon name="play-circle" className="size-4" />
                         )}
                         {t.projectDetail.services.detail.backupNow}
                       </button>
@@ -903,10 +927,10 @@ export function ServiceDetailPanel({
                           setBackupAfterSave(false);
                           setBackupEditorOpen(true);
                         }}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                       >
-                        <Settings className="size-4" />
-                        {t.projectDetail.services.detail.editPolicy}
+                        <UiIcon name="settings" className="size-4" />
+                        {backupPolicy.serviceId === null ? t.projectDetail.services.detail.createPolicy : t.projectDetail.services.detail.editPolicy}
                       </button>
                     </>
                   ) : (
@@ -915,9 +939,9 @@ export function ServiceDetailPanel({
                         setBackupAfterSave(false);
                         setBackupEditorOpen(true);
                       }}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                     >
-                      <Plus className="size-4" />
+                      <UiIcon name="plus" className="size-4" />
                       {t.projectDetail.services.detail.createPolicy}
                     </button>
                   )}
@@ -934,18 +958,17 @@ export function ServiceDetailPanel({
           serviceId={service.id}
           serviceName={service.name}
           serviceImage={service.image}
-          existing={backupPolicy}
+          existing={backupPolicy?.serviceId === service.id ? backupPolicy : null}
           submitLabel={
             backupAfterSave ? t.projectDetail.services.detail.storage.saveAndBackup : undefined
           }
           onClose={() => setBackupEditorOpen(false)}
-          onSaved={async (policy) => {
-            if (backupScopeRef.current !== backupScope) return;
-            setBackupEditorOpen(false);
-            setBackupPolicy(policy);
-            await reloadBackupPolicy();
-            if (backupAfterSave) await handleBackupNow(policy);
-          }}
+          onSaved={(policy) => handleBackupPolicySaved(policy, backupAfterSave)}
+          onSavedAndRun={
+            backupPolicy || backupAfterSave
+              ? undefined
+              : (policy) => handleBackupPolicySaved(policy, true)
+          }
         />
       )}
 
@@ -977,7 +1000,7 @@ export function ServiceDetailPanel({
                 disabled={deleting}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-danger-solid px-4 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
-                {deleting && <Loader2 className="size-4 animate-spin" />}
+                {deleting && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {t.projectDetail.services.detail.deleteConfirm}
               </button>
             </div>
@@ -998,14 +1021,14 @@ function SectionHeader({
 }: {
   title: string;
   subtitle?: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   right?: React.ReactNode;
 }) {
   return (
     <div className="mb-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Icon className="size-4 text-primary" />
+          <UiIcon name={Icon} className="size-4 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         </div>
         {right}
@@ -1025,7 +1048,7 @@ function ActionButton({
   onClick,
   variant,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   label: string;
   loading: boolean;
   disabled?: boolean;
@@ -1045,9 +1068,9 @@ function ActionButton({
         onClick();
       }}
       disabled={loading || disabled}
-      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
+      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}
+      {loading ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name={Icon} className="size-4" />}
       {label}
     </button>
   );

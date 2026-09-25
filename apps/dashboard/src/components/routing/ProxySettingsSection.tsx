@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Reverse-proxy tunables for a project's vhosts, rendered FROM the
  * `PROXY_DIRECTIVES` table in `@repo/core` — the same table the API schema, the
@@ -21,7 +23,6 @@
  */
 
 import React from "react";
-import { ChevronDown, RefreshCw, TriangleAlert } from "lucide-react";
 import {
   PROXY_DIRECTIVES,
   type ProxyDirectiveGroup,
@@ -238,7 +239,7 @@ export const ProxySettingsSection: React.FC<{
             <h4 className="text-[13px] font-semibold text-foreground">{w.proxyLimits}</h4>
             <p className="text-[11px] text-muted-foreground">{w.proxyLimitsHint}</p>
           </div>
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
           />
         </button>
@@ -251,14 +252,14 @@ export const ProxySettingsSection: React.FC<{
             title={w.proxyRefreshLive}
             className="mt-0.5 rounded-md p-1.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground disabled:opacity-40"
           >
-            <RefreshCw className={`size-3.5 ${edgeLoading ? "animate-spin" : ""}`} />
+            <UiIcon name="refresh" className={`size-3.5 ${edgeLoading ? "animate-spin" : ""}`} />
           </button>
         )}
       </div>
 
       {driftKeys.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning-bg px-2.5 py-2">
-          <TriangleAlert className="size-3.5 shrink-0 text-warning" />
+          <UiIcon name="warning" className="size-3.5 shrink-0 text-warning" />
           <p className="flex-1 text-[11px] text-warning">
             {w.proxyDriftSummary}{" "}
             <span className="font-mono">{driftKeys.join(", ")}</span>

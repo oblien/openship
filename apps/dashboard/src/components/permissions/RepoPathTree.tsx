@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * RepoPathTree — browse a repository and pick the paths a grant covers.
  *
@@ -16,7 +18,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, File, Folder, Loader2, Search, Check, Lock } from "lucide-react";
 import { githubApi, getApiErrorMessage, type RepoTreeEntry } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { buildTree, nodeState, searchTree, toggleNode, type TreeNode } from "./path-tree";
@@ -70,8 +71,8 @@ function TreeCheck({
             : "border-border/60 hover:border-primary/60"
       }`}
     >
-      {state === "selected" && <Check className="size-2.5" />}
-      {covered && <Lock className="size-2.5" />}
+      {state === "selected" && <UiIcon name="check" className="size-2.5" />}
+      {covered && <UiIcon name="lock" className="size-2.5" />}
     </button>
   );
 }
@@ -115,9 +116,9 @@ function Row({
             aria-label={node.name}
           >
             {isOpen ? (
-              <ChevronDown className="size-3.5" />
+              <UiIcon name="chevron-down" className="size-3.5" />
             ) : (
-              <ChevronRight className="size-3.5 rtl:rotate-180" />
+              <UiIcon name="chevron-right" className="size-3.5 rtl:rotate-180" />
             )}
           </button>
         ) : (
@@ -132,9 +133,9 @@ function Row({
         />
 
         {node.isDirectory ? (
-          <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
+          <UiIcon name="folder" className="size-3.5 shrink-0 text-muted-foreground/70" />
         ) : (
-          <File className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <UiIcon name="file" className="size-3.5 shrink-0 text-muted-foreground/50" />
         )}
 
         <span
@@ -221,7 +222,7 @@ export function RepoPathTree({
   return (
     <div className={fill ? "flex min-h-0 flex-1 flex-col gap-2" : "space-y-2"}>
       <div className="relative shrink-0">
-        <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        <UiIcon name="search" className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -240,7 +241,7 @@ export function RepoPathTree({
           <p className="px-2 py-6 text-center text-[13px] text-destructive">{error}</p>
         ) : !entries ? (
           <p className="flex items-center justify-center gap-2 px-2 py-6 text-[13px] text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
+            <UiIcon name="spinner" className="size-3.5 animate-spin" />
             {copy.treeLoading}
           </p>
         ) : result.nodes.length === 0 ? (

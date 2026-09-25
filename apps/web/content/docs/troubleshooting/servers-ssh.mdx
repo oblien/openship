@@ -132,6 +132,21 @@ on every check. This is expected — fix the underlying reachability problem, wa
 A single success clears it.
 </Callout>
 
+### Connecting through Cloudflare Access
+
+Select **Cloudflare Access** in the server's **Connection** field. Use the Access application hostname,
+not a URL or a raw `ProxyCommand`. Passwords, encrypted keys and agent authentication are supported.
+
+If OpenShip reports that `cloudflared` is missing, install it on the machine running the API. Windows
+desktop bundles it. An operator can override the executable using the process environment variable
+`OPENSHIP_CLOUDFLARED_PATH`; quote Windows paths containing spaces when setting that variable.
+Finish Cloudflare authentication as the same OS user running OpenShip, then retry **Test Connection**.
+In headless or container installations, an authenticated `cloudflared` session must be available in
+that environment. Check that the Access policy permits the account and that the tunnel points to SSH.
+
+Cloudflare and a jump host are separate connection choices. Raw `ProxyCommand` and other options
+that execute commands locally are rejected in the server form and API.
+
 ### A jump host or extra SSH args seem ignored
 
 <Callout type="error">

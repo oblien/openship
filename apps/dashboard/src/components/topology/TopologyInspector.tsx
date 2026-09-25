@@ -1,23 +1,15 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import type { ProjectCluster } from "@repo/contracts";
 
-import { useState } from "react";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  ChevronUp,
-  FileText,
-  KeyRound,
-  Play,
-  RotateCw,
-  Settings2,
-  Square,
-  Unplug,
-  X,
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import { resolveWorkload, type ProjectResources } from "@repo/core";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/context/ToastContext";
+import { copyText } from "@/lib/clipboard";
 import { ServiceSettingsForm } from "@/app/(dashboard)/projects/[id]/components/services/ServiceSettingsForm";
 import { serviceCanStartWithoutBuild, type Service, type ServiceInput } from "@/lib/api/services";
 import { TopologyResourceIcon, TopologyStatus } from "./TopologyCanvas";
@@ -44,7 +36,7 @@ export function RelationPreview({
       <span className="min-w-0 flex-1 truncate" title={source?.name}>
         {source?.name}
       </span>
-      <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+      <UiIcon name="arrow-right" className="size-3 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate text-end" title={target?.name}>
         {target?.name}
       </span>
@@ -52,12 +44,51 @@ export function RelationPreview({
   );
 }
 
-function Detail({ label, value }: { label: string; value: string | undefined | null }) {
+function Detail({ label, value, copyable = false }: {
+  label: string;
+  value: string | undefined | null;
+  copyable?: boolean;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [copied, setCopied] = useState<{ value: string } | null>(null);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
   if (!value) return null;
+  const isCopied = copied?.value === value;
+  const copyLabel = isCopied
+    ? `${t.settings.common.copied}: ${label}`
+    : interpolate(t.projectDetail.services.detail.networking.copyValue, { label });
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       <dt className="text-[11px] text-muted-foreground">{label}</dt>
-      <dd className="break-words text-xs text-foreground">{value}</dd>
+      <dd className="flex min-w-0 items-center gap-2 text-xs text-foreground">
+        <span className="min-w-0 flex-1 truncate" title={value}>{value}</span>
+        {copyable && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 shrink-0 rounded-md [&_svg]:size-3.5"
+            aria-label={copyLabel}
+            title={copyLabel}
+            onClick={async () => {
+              try {
+                await copyText(value);
+                setCopied({ value });
+              } catch {
+                setCopied(null);
+                showToast(t.projectDetail.services.detail.networking.copyFailed, "error");
+              }
+            }}
+          >
+            <UiIcon name={isCopied ? "check" : "copy"} />
+          </Button>
+        )}
+      </dd>
     </div>
   );
 }
@@ -93,7 +124,6 @@ export function TopologyInspector({
   disabled,
   busy,
   hasPendingChanges,
-  onMinimize,
   onClose,
   onNavigate,
   onSave,
@@ -113,7 +143,6 @@ export function TopologyInspector({
   disabled: boolean;
   busy: boolean;
   hasPendingChanges: boolean;
-  onMinimize: () => void;
   onClose: () => void;
   onNavigate: (href: string) => void;
   onSave: (service: Service, patch: Partial<ServiceInput>) => Promise<void>;
@@ -156,7 +185,7 @@ export function TopologyInspector({
     <aside className="topology-inspector flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-4 py-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-          {resource ? <TopologyResourceIcon resource={resource} /> : <Unplug className="size-4" />}
+          {resource ? <TopologyResourceIcon resource={resource} /> : <UiIcon name="unplug" className="size-4" />}
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{resource?.name || "Connection"}</h2>
@@ -164,11 +193,8 @@ export function TopologyInspector({
             {resource?.description || relation?.label}
           </p>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Minimize settings" onClick={onMinimize}>
-          <ChevronUp />
-        </Button>
         <Button variant="ghost" size="icon" aria-label="Close settings" onClick={onClose}>
-          <X />
+          <UiIcon name="close" />
         </Button>
       </div>
       {editable && (
@@ -198,7 +224,7 @@ export function TopologyInspector({
               <RelationPreview relation={relation} graph={graph} />
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">{relation.description}</p>
-            <dl className="grid gap-4 rounded-xl border border-border/50 bg-muted/20 p-3">
+            <dl className="grid grid-cols-1 gap-4 rounded-xl border border-border/50 bg-muted/20 p-3">
               <Detail
                 label="Connection type"
                 value={
@@ -213,7 +239,7 @@ export function TopologyInspector({
               />
               {relation.connection && (
                 <>
-                  <Detail label="Environment variable" value={relation.connection.envKey} />
+                  <Detail label="Environment variable" value={relation.connection.envKey} copyable />
                   <Detail
                     label="Network"
                     value={relation.connection.mode === "internal" ? "Private" : "Public"}
@@ -236,7 +262,7 @@ export function TopologyInspector({
                 variant="outline"
                 onClick={() => onNavigate(`/projects/${project.id}/domains`)}
               >
-                <Settings2 />
+                <UiIcon name="sliders" />
                 Manage route
               </Button>
             ) : (
@@ -246,7 +272,7 @@ export function TopologyInspector({
                 disabled={disabled || relation.pending}
                 onClick={() => onRemoveRelation(relation)}
               >
-                <Unplug />
+                <UiIcon name="unplug" />
                 {relation.pending ? "Removal staged" : relation.databaseId ? "Manage database connection" : "Remove connection"}
               </Button>
             )}
@@ -258,7 +284,7 @@ export function TopologyInspector({
                   onNavigate(`/projects/${project.id}/services/${relation.serviceId}/env`)
                 }
               >
-                <KeyRound />
+                <UiIcon name="key" />
                 Environment variables
               </Button>
             )}
@@ -287,19 +313,19 @@ export function TopologyInspector({
                 </p>
               ) : null}
             </div>
-            <dl className="grid gap-4">
+            <dl className="grid grid-cols-1 gap-4">
               {resource.clusterPod && (
                 <>
                   <Detail label="Server" value={resource.description} />
                   <Detail label="Restarts" value={String(resource.clusterPod.restarts)} />
                 </>
               )}
-              <Detail label="Running image" value={resource.container?.imageRef} />
+              <Detail label="Running image" value={resource.container?.imageRef} copyable />
               {!resource.container?.imageRef && (
-                <Detail label="Configured image" value={service?.image} />
+                <Detail label="Configured image" value={service?.image} copyable />
               )}
-              <Detail label="Container" value={resource.container?.containerId} />
-              <Detail label="Private address" value={resource.container?.ip} />
+              <Detail label="Container" value={resource.container?.containerId} copyable />
+              <Detail label="Private address" value={resource.container?.ip} copyable />
               <Detail
                 label="Server"
                 value={
@@ -317,7 +343,7 @@ export function TopologyInspector({
                               : "Not selected")
                 }
               />
-              <Detail label="Ports" value={service?.ports?.join(", ")} />
+              <Detail label="Ports" value={service?.ports?.join(", ")} copyable />
               <Detail label="Managed by" value={resource.ownerName} />
             </dl>
             {resource.clusterPod && (
@@ -328,7 +354,7 @@ export function TopologyInspector({
                     variant="outline"
                     onClick={() => onNavigate(`/servers/${resource.clusterPod!.serverId}`)}
                   >
-                    <ArrowUpRight /> Open server
+                    <UiIcon name="arrow-up-right" /> Open server
                   </Button>
                 )}
                 <Button
@@ -336,15 +362,15 @@ export function TopologyInspector({
                   variant="outline"
                   onClick={() => onNavigate(`/projects/${project.id}/logs`)}
                 >
-                  <FileText /> Application logs
+                  <UiIcon name="file-text" /> Application logs
                 </Button>
                 <details className="text-xs">
                   <summary className="cursor-pointer text-muted-foreground">
                     Technical details
                   </summary>
-                  <dl className="mt-3 grid gap-3">
-                    <Detail label="Pod ID" value={resource.clusterPod.name} />
-                    <Detail label="Node ID" value={resource.clusterPod.nodeName} />
+                  <dl className="mt-3 grid grid-cols-1 gap-3">
+                    <Detail label="Pod ID" value={resource.clusterPod.name} copyable />
+                    <Detail label="Node ID" value={resource.clusterPod.nodeName} copyable />
                     <Detail label="Phase" value={resource.clusterPod.phase} />
                   </dl>
                 </details>
@@ -352,7 +378,7 @@ export function TopologyInspector({
             )}
             {sourceHref && (
               <Button variant="outline" className="w-full" onClick={() => onNavigate(sourceHref)}>
-                <ArrowUpRight />
+                <UiIcon name="arrow-up-right" />
                 Open owning project
               </Button>
             )}
@@ -363,7 +389,7 @@ export function TopologyInspector({
                 onClick={() => onNavigate(`/projects/${project.id}/domains`)}
               >
                 Manage domains & routes
-                <ArrowUpRight />
+                <UiIcon name="arrow-up-right" />
               </Button>
             )}
             {resource.kind === "environment" && (
@@ -388,7 +414,7 @@ export function TopologyInspector({
                       disabled={lifecycleDisabled}
                       onClick={() => onLifecycle(service, "restart")}
                     >
-                      <RotateCw />
+                      <UiIcon name="refresh" />
                       Restart
                     </Button>
                     <Button
@@ -396,7 +422,7 @@ export function TopologyInspector({
                       disabled={lifecycleDisabled}
                       onClick={() => onLifecycle(service, "stop")}
                     >
-                      <Square />
+                      <UiIcon name="square" />
                       Stop
                     </Button>
                   </>
@@ -411,7 +437,7 @@ export function TopologyInspector({
                     }
                     onClick={() => onLifecycle(service, "start")}
                   >
-                    <Play />
+                    <UiIcon name="play" />
                     Start service
                   </Button>
                 )}
@@ -420,7 +446,7 @@ export function TopologyInspector({
                   disabled={disabled}
                   onClick={() => onNavigate(`${serviceHref}/logs`)}
                 >
-                  <FileText />
+                  <UiIcon name="file-text" />
                   Logs
                 </Button>
                 <Button
@@ -428,7 +454,7 @@ export function TopologyInspector({
                   disabled={disabled}
                   onClick={() => onNavigate(`${serviceHref}/env`)}
                 >
-                  <KeyRound />
+                  <UiIcon name="key" />
                   Variables
                 </Button>
               </div>
@@ -442,7 +468,7 @@ export function TopologyInspector({
                     disabled={disabled || busy}
                     onClick={() => onDeploy("refresh", service?.id)}
                   >
-                    <RotateCw />
+                    <UiIcon name="refresh" />
                     Redeploy current release
                   </Button>
                 )}
@@ -452,7 +478,7 @@ export function TopologyInspector({
                   disabled={disabled || busy}
                   onClick={() => onDeploy("update", service?.id)}
                 >
-                  <ArrowUpRight />
+                  <UiIcon name="arrow-up-right" />
                   Deploy latest source
                 </Button>
               </div>
@@ -467,7 +493,7 @@ export function TopologyInspector({
                     onClick={() => onSelectRelation(edge.id)}
                   >
                     <span className="truncate">{edge.label}</span>
-                    <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
+                    <UiIcon name="arrow-up-right" className="size-3.5 shrink-0 text-muted-foreground" />
                   </button>
                 ))}
               </section>
@@ -521,7 +547,7 @@ export function TopologyInspector({
                     onClick={() => onNavigate(`/projects/${project.id}/${item.path}`)}
                   >
                     {item.label}
-                    <ArrowUpRight />
+                    <UiIcon name="arrow-up-right" />
                   </Button>
                 ))}
               </>

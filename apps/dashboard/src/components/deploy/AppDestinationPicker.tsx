@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Cloud } from "lucide-react";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import type { DeployTarget } from "@/context/deployment/types";
@@ -90,7 +91,7 @@ export function AppDestinationPicker({
         value="cloud"
         selected={value?.deployTarget === "cloud"}
         onSelect={() => onChange({ deployTarget: "cloud" })}
-        icon={<Cloud className="size-4" />}
+        icon={<UiIcon name="cloud" className="size-4" />}
         label={opt.cloud}
         description={cloudConnected ? opt.cloudConnectedDesc : opt.cloudDisconnectedDesc}
       />

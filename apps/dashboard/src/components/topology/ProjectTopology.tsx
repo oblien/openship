@@ -1,22 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Connection } from "@xyflow/react";
-import {
-  ArrowLeft,
-  ArrowRightLeft,
-  Boxes,
-  Database,
-  Check,
-  ChevronRight,
-  List,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Rocket,
-  Unplug,
-} from "lucide-react";
 import { resolveWorkload, type ProjectResources } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
@@ -65,14 +53,15 @@ import {
   type TopologyChange,
 } from "./changes";
 import { TopologyCanvas, TopologyResourceIcon, type TopologySelection } from "./TopologyCanvas";
-import { RelationPreview, TopologyInspector } from "./TopologyInspector";
+import { TopologySkeleton } from "./TopologySkeleton";
+import { TopologyInspector } from "./TopologyInspector";
 import { TopologyReview } from "./TopologyReview";
 import { TopologyPlacement } from "./TopologyPlacement";
 import { useTopologyData } from "./useTopologyData";
 import { useClusterDatabases } from "./useClusterDatabases";
+import { useTopologyFullscreen } from "./useTopologyFullscreen";
 import { ClusterDatabasePanel } from "./ClusterDatabasePanel";
 import "@/components/scale/scale.css";
-import "./topology.css";
 
 function mergeAdvanced(service: Service, patch: Partial<ServiceInput>): Service {
   const advanced = { ...service.advanced, ...patch.advanced } as Record<string, unknown>;
@@ -106,7 +95,8 @@ export default function ProjectTopology({
   );
   const [changes, setChanges] = useState<TopologyChange[]>([]);
   const [selection, setSelection] = useState<TopologySelection>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const { workspaceRef, toggleRef, trapFocus } = useTopologyFullscreen(fullscreen);
   const [initialTab, setInitialTab] = useState<"overview" | "configuration" | "scaling">(
     "overview",
   );
@@ -252,7 +242,7 @@ export default function ProjectTopology({
   const relation =
     selection?.kind === "edge" ? graph.edges.find((edge) => edge.id === selection.id) : undefined;
   const hasSelection = !!resource || !!relation;
-  const inspectorExpanded = (hasSelection || (adding && clusterTarget)) && expanded;
+  const inspectorOpen = hasSelection || (adding && clusterTarget);
   const currentService = reviewServiceId
     ? servicesData.services.find((service) => service.id === reviewServiceId)
     : undefined;
@@ -276,13 +266,11 @@ export default function ProjectTopology({
   const select = useCallback((next: TopologySelection) => {
     setAdding(false);
     setSelection(next);
-    setExpanded(false);
     setInitialTab("overview");
   }, []);
   const back = useCallback(() => {
     setInstanceServiceId(null);
     setSelection(null);
-    setExpanded(false);
   }, []);
   const openNode = useCallback(
     (nodeId: string) => {
@@ -293,15 +281,12 @@ export default function ProjectTopology({
       ) {
         setInstanceServiceId(node.id);
         setSelection(null);
-        setExpanded(false);
       } else if (node?.kind === "service" && node.container?.containerId && !node.pending) {
         setInstanceServiceId(node.serviceId!);
         setSelection(null);
-        setExpanded(false);
       } else {
         setSelection({ kind: "node", id: nodeId });
         setInitialTab("configuration");
-        setExpanded(true);
       }
     },
     [graph.nodes],
@@ -342,7 +327,7 @@ export default function ProjectTopology({
   useEffect(() => {
     const onLink = (event: MouseEvent) => {
       if (
-        !changesRef.current.length ||
+        (!changesRef.current.length && !applyingRef.current) ||
         event.button !== 0 ||
         event.metaKey ||
         event.ctrlKey ||
@@ -401,8 +386,7 @@ export default function ProjectTopology({
           true,
         ),
       );
-      setSelection({ kind: "edge", id: `dependency:${source.id}:${target.id}` });
-      setExpanded(false);
+      setSelection(null);
       showToast(`Startup dependency staged for ${source.name}.`, "success");
     },
     [busy, hasSavedChanges, graph.nodes, previewServices, showToast],
@@ -413,7 +397,6 @@ export default function ProjectTopology({
       if (busy || hasSavedChanges) return;
       if (edge.databaseId) {
         setSelection({ kind: "node", id: databaseNodeId(edge.databaseId) });
-        setExpanded(true);
         return;
       }
       if (edge.kind === "binding" && edge.connection) {
@@ -438,7 +421,6 @@ export default function ProjectTopology({
           ),
         );
         setSelection(null);
-        setExpanded(false);
       }
     },
     [busy, hasSavedChanges, previewServices],
@@ -512,7 +494,6 @@ export default function ProjectTopology({
         await runtime.refresh();
         setSelection({ kind: "node", id: serviceNodeId(result.startedServices[0]) });
         setInitialTab("overview");
-        setExpanded(true);
         showToast("Services started.", "success");
       } else openTriggeredBuild(router, result.deployment, id);
       setChanges([]);
@@ -603,11 +584,6 @@ export default function ProjectTopology({
   const serviceCount = fullGraph.nodes.filter(
     (node) => ["service", "application"].includes(node.kind) && !node.isNew,
   ).length;
-  const panelSummary = resource?.pending
-    ? "Pending changes · Configure"
-    : resource?.kind === "application" && resource.version
-      ? `${resource.version} · Configuration & scaling`
-      : `${resource?.description ?? ""} · Settings`;
   const reviewScopeName =
     currentService?.name ||
     (!changesAffectEnvironment(changes) &&
@@ -623,13 +599,13 @@ export default function ProjectTopology({
     {
       id: "services",
       label: t.projects.sidebar.tabs.services,
-      icon: <List className="size-4" />,
+      icon: <UiIcon name="list" className="size-4" />,
       onClick: () => navigate(`/projects/${id}/services`),
     },
     {
       id: "deployments",
       label: t.projects.sidebar.tabs.deployments,
-      icon: <Rocket className="size-4" />,
+      icon: <UiIcon name="rocket" className="size-4" />,
       onClick: () => navigate(`/projects/${id}/deployments`),
     },
   ];
@@ -643,43 +619,58 @@ export default function ProjectTopology({
     topologyActions.push({
       id: "placement",
       label: "Clone or move environment",
-      icon: <ArrowRightLeft className="size-4" />,
+      icon: <UiIcon name="arrows-left-right" className="size-4" />,
       disabled: busy || changes.length > 0,
       onClick: () => openPlacement("copy"),
     });
   }
 
   return (
-    <div className="topology-page flex h-full min-h-[540px] w-full flex-col p-3 text-foreground sm:p-4">
+    <div
+      ref={workspaceRef}
+      className="topology-page flex min-h-0 w-full flex-1 flex-col text-foreground"
+      data-fullscreen={fullscreen}
+      role={fullscreen ? "dialog" : undefined}
+      aria-modal={fullscreen ? true : undefined}
+      aria-label={fullscreen ? "Project topology" : undefined}
+      onKeyDown={(event) => {
+        trapFocus(event);
+        if (
+          fullscreen && event.key === "Escape" && !event.defaultPrevented &&
+          event.currentTarget.contains(event.target as Node) &&
+          !inspectorOpen && !adding && !reviewing && !placement &&
+          !event.currentTarget.querySelector('[aria-expanded="true"]')
+        ) {
+          event.preventDefault();
+          setFullscreen(false);
+        }
+      }}
+    >
       <section
-        className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border/50 bg-background"
+        className="flex min-h-0 flex-1 flex-col rounded-2xl bg-card"
         aria-label="Project topology workspace"
       >
-        <header className="topology-page-header relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-t-2xl border-b border-border/50 px-3 py-3 sm:px-4">
-          <div className="flex min-w-0 flex-1 basis-60 items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              title={instanceServiceId ? "Back to overview" : "Back to project"}
-              aria-label={instanceServiceId ? "Back to overview" : "Back to project"}
-              onClick={instanceServiceId ? back : () => navigate(`/projects/${id}/overview`)}
-              disabled={!!instanceServiceId && inspectorExpanded}
-            >
-              <ArrowLeft className="rtl:rotate-180" />
-            </Button>
+        <header className="topology-page-header relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {instanceServiceId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                title="Back to topology"
+                aria-label="Back to topology"
+                onClick={back}
+                disabled={inspectorOpen}
+              >
+                <UiIcon name="arrow-left" className="rtl:rotate-180" />
+              </Button>
+            )}
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="min-w-0 truncate text-sm text-muted-foreground">
-                  {instanceServiceId
-                    ? t.projects.sidebar.tabs.topology
-                    : projectData.name || t.projects.detail.projectFallback}
-                </span>
-                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 rtl:rotate-180" />
-                <h1 className="max-w-[60%] shrink-0 truncate text-base font-semibold text-foreground">
-                  {instanceService?.name || t.projects.sidebar.tabs.topology}
-                </h1>
-              </div>
+              {(fullscreen || instanceServiceId) && (
+                <h2 className="truncate text-sm font-medium text-foreground">
+                  {instanceService?.name || projectData.name || t.projects.detail.projectFallback}
+                </h2>
+              )}
               <p className="topology-summary truncate text-[13px] leading-5 text-muted-foreground">
                 {instanceServiceId
                   ? runtime.cluster?.observedAt
@@ -689,12 +680,12 @@ export default function ProjectTopology({
               </p>
             </div>
           </div>
-          <div
-            className={`topology-toolbar flex min-w-0 flex-wrap items-center gap-2 transition-opacity ${inspectorExpanded ? "opacity-50" : ""}`}
-            inert={inspectorExpanded}
-          >
-            <div className="topology-environment min-w-0">{environmentControl}</div>
-            <div className="topology-actions flex shrink-0 items-center gap-1.5">
+          <div className="topology-toolbar flex min-w-0 flex-wrap items-center gap-2">
+            {fullscreen && <div className="topology-environment min-w-0" inert={inspectorOpen}>{environmentControl}</div>}
+            <div
+              className={`topology-actions flex items-center gap-1.5 transition-opacity ${inspectorOpen ? "opacity-50" : ""}`}
+              inert={inspectorOpen}
+            >
               <Button
                 variant="ghost"
                 size="icon"
@@ -708,19 +699,18 @@ export default function ProjectTopology({
                   void databases.refresh();
                 }}
               >
-                <RefreshCw className={runtime.loading ? "animate-spin" : ""} />
+                <UiIcon name="refresh" className={runtime.loading ? "animate-spin" : ""} />
               </Button>
               {!instanceServiceId && (
                 <Button
-                  className="topology-add-service h-9 px-3"
+                  className="topology-add-service h-8 px-3 text-xs"
                   disabled={busy || hasSavedChanges || !!servicesData.error}
                   onClick={() => {
                     setSelection(null);
                     setAdding(true);
-                    if (clusterTarget) setExpanded(true);
                   }}
                 >
-                  <Plus />
+                  <UiIcon name="plus" />
                   {clusterTarget ? "Add database" : "Add service"}
                 </Button>
               )}
@@ -730,11 +720,24 @@ export default function ProjectTopology({
                 triggerClassName={buttonVariants({ variant: "ghost", size: "icon" })}
               />
             </div>
+            <Button
+              ref={toggleRef}
+              variant="ghost"
+              size="sm"
+              className="ms-auto shrink-0"
+              aria-label={fullscreen ? "Exit full screen" : "Expand topology"}
+              aria-pressed={fullscreen}
+              title={fullscreen ? "Exit full screen (Esc)" : "Expand topology"}
+              onClick={() => setFullscreen((current) => !current)}
+            >
+              <UiIcon name={fullscreen ? "shrink" : "expand"} className="size-3.5" />
+              {fullscreen ? "Exit full screen" : "Expand"}
+            </Button>
           </div>
         </header>
         <div
           className="scale-workspace topology-workspace relative isolate flex-1 overflow-hidden rounded-b-2xl"
-          data-inspector={hasSelection ? (expanded ? "expanded" : "minimized") : undefined}
+          data-inspector={inspectorOpen ? "expanded" : undefined}
         >
           <div className="absolute inset-0">
             {runtime.ready ? (
@@ -743,26 +746,21 @@ export default function ProjectTopology({
                 layoutKey={`openship:topology-layout:v1:${id}:${instanceServiceId ?? "overview"}`}
                 graph={graph}
                 selection={selection}
-                inert={inspectorExpanded}
+                fullscreen={fullscreen}
+                inert={inspectorOpen}
                 onSelect={select}
                 onOpen={openNode}
                 onConnect={connect}
               />
             ) : (
-              <div
-                role="status"
-                className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
-              >
-                <Loader2 className="size-4 animate-spin" />
-                Loading services & connections…
-              </div>
+              <TopologySkeleton />
             )}
           </div>
           {issues.length > 0 && (
             <div
               className="topology-notice absolute start-4 z-20 max-w-[min(500px,calc(100%-32px))] rounded-xl border border-warning/25 bg-card px-3 py-2 text-xs text-warning"
               role="alert"
-              inert={inspectorExpanded}
+              inert={inspectorOpen}
             >
               {issues.join(" ")}
               <button className="ms-2 underline" onClick={() => void runtime.refresh()}>
@@ -773,7 +771,7 @@ export default function ProjectTopology({
           {activeMigration && (
             <div
               className="absolute bottom-20 start-4 z-20 rounded-xl border border-border/60 bg-card p-3 text-xs"
-              inert={inspectorExpanded}
+              inert={inspectorOpen}
             >
               A migration is active.
               <Button
@@ -791,7 +789,7 @@ export default function ProjectTopology({
             !servicesData.error && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
                 <div className="pointer-events-auto max-w-sm rounded-2xl border border-border/50 bg-card p-6 text-center">
-                  <Boxes className="mx-auto mb-3 size-8 text-muted-foreground" />
+                  <UiIcon name="layers" className="mx-auto mb-3 size-8 text-muted-foreground" />
                   <h2 className="text-sm font-semibold">
                     {instanceServiceId ? "No instances running" : "Build this environment"}
                   </h2>
@@ -807,7 +805,7 @@ export default function ProjectTopology({
                       disabled={busy}
                       onClick={() => setAdding(true)}
                     >
-                      <Plus />
+                      <UiIcon name="plus" />
                       Add service
                     </Button>
                   )}
@@ -817,7 +815,7 @@ export default function ProjectTopology({
           {changes.length > 0 ? (
             <div
               className="topology-pending absolute bottom-4 end-4 z-30 flex items-center gap-3 rounded-2xl border border-primary/25 bg-card p-2.5"
-              inert={inspectorExpanded}
+              inert={inspectorOpen}
             >
               <span className="ms-1 flex items-center gap-2 text-xs">
                 <span className="size-2 rounded-full bg-warning" />
@@ -835,14 +833,14 @@ export default function ProjectTopology({
                 Discard
               </Button>
               <Button size="sm" disabled={busy || issues.length > 0} onClick={() => review()}>
-                <Check />
+                <UiIcon name="check" />
                 Review & apply
               </Button>
             </div>
-          ) : (
+          ) : runtime.ready && (
             <div
               className="topology-hint absolute bottom-5 end-5 z-10 text-xs text-muted-foreground"
-              inert={inspectorExpanded}
+              inert={inspectorOpen}
             >
               {deploymentBusy
                 ? "Deployment in progress"
@@ -855,47 +853,19 @@ export default function ProjectTopology({
           )}
           <button
             className="scale-inspector-backdrop"
-            data-open={inspectorExpanded}
-            tabIndex={inspectorExpanded ? 0 : -1}
-            aria-label="Minimize settings to return to topology"
-            aria-hidden={!inspectorExpanded}
-            onClick={() => setExpanded(false)}
+            data-open={inspectorOpen}
+            tabIndex={inspectorOpen ? 0 : -1}
+            aria-label="Close settings to return to topology"
+            aria-hidden={!inspectorOpen}
+            onClick={() => select(null)}
           />
           {hasSelection && (
             <ScaleDetailsPanel
               key={`${selection!.kind}:${selection!.id}`}
               title={resource?.name || "Connection"}
-              summary={panelSummary}
               kind={resource?.tone ?? "service"}
-              icon={
-                resource ? (
-                  <TopologyResourceIcon resource={resource} />
-                ) : (
-                  <Unplug className="size-4" />
-                )
-              }
-              open={expanded}
-              onOpen={() => setExpanded(true)}
-              onMinimize={() => setExpanded(false)}
               onClose={() => select(null)}
               onBack={instanceServiceId ? back : undefined}
-              connectionPreview={
-                relation
-                  ? {
-                      content: <RelationPreview relation={relation} graph={graph} />,
-                      description:
-                        relation.kind === "binding"
-                          ? "Environment binding"
-                          : relation.kind === "dependency"
-                            ? "Startup dependency"
-                            : "Public route",
-                      onRemove:
-                        relation.kind !== "route" && !busy && !hasSavedChanges && !relation.pending
-                          ? () => removeRelation(relation)
-                          : undefined,
-                    }
-                  : undefined
-              }
             >
               {resource?.database ? (
                 <ClusterDatabasePanel
@@ -907,11 +877,9 @@ export default function ProjectTopology({
                     if (database.id !== resource.database!.id) {
                       setInstanceServiceId(null);
                       setSelection({ kind: "node", id: databaseNodeId(database.id) });
-                      setExpanded(true);
                     }
                   }}
                   onClose={() => select(null)}
-                  onMinimize={() => setExpanded(false)}
                   onDeploy={() => review("refresh")}
                 />
               ) : (
@@ -924,7 +892,6 @@ export default function ProjectTopology({
                   disabled={busy || hasSavedChanges}
                   busy={lifecycleBusy}
                   hasPendingChanges={changes.length > 0}
-                  onMinimize={() => setExpanded(false)}
                   onClose={() => select(null)}
                   onNavigate={navigate}
                   onSave={stagePatch}
@@ -936,7 +903,6 @@ export default function ProjectTopology({
                   onRemoveRelation={removeRelation}
                   onSelectRelation={(edgeId) => {
                     setSelection({ kind: "edge", id: edgeId });
-                    setExpanded(false);
                   }}
                 />
               )}
@@ -945,25 +911,18 @@ export default function ProjectTopology({
           {adding && clusterTarget && (
             <ScaleDetailsPanel
               title="Add database"
-              summary="Choose a database and configure its deployment"
               kind="postgres"
-              icon={<Database className="size-4" />}
-              open={expanded}
-              onOpen={() => setExpanded(true)}
-              onMinimize={() => setExpanded(false)}
               onClose={() => setAdding(false)}
             >
               <ClusterDatabasePanel
                 projectId={id}
                 disabled={busy}
                 onClose={() => setAdding(false)}
-                onMinimize={() => setExpanded(false)}
                 onDeploy={() => review("refresh")}
                 onSaved={(database) => {
                   databases.update(database);
                   setAdding(false);
                   setSelection({ kind: "node", id: databaseNodeId(database.id) });
-                  setExpanded(true);
                 }}
               />
             </ScaleDetailsPanel>
@@ -988,7 +947,6 @@ export default function ProjectTopology({
           setAdding(false);
           setSelection({ kind: "node", id: serviceNodeId(temporaryId) });
           setInitialTab("configuration");
-          setExpanded(true);
         }}
       />
       <TopologyReview

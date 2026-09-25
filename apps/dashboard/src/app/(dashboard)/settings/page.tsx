@@ -1,11 +1,13 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings — tabbed layout with left sidebar (desktop) + horizontal
  * scroll tabs (mobile). Mirrors the project-detail page pattern.
  *
  * Tabs:
- *   - general        → GitHub connection, deploy defaults, build preferences
+ *   - general        → appearance, build preferences, language, interface, preferences
  *   - tokens         → clone credentials, API access tokens
  *   - mcp             → MCP connection (endpoint + client config)
  *   - team           → organization members + invitations (moved from /members)
@@ -25,6 +27,7 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
+import { AppearanceSetting } from "./_components/AppearanceSetting";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
@@ -59,7 +62,7 @@ export default function SettingsPage() {
     <Suspense
       fallback={
         <PageContainer>
-          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </PageContainer>
       }
     >
@@ -129,6 +132,7 @@ function SettingsPageInner() {
         <div className="space-y-6 min-w-0">
           {activeTab === "general" && (
             <>
+              <AppearanceSetting />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
                   and both keep a per-project override; re-enable by uncommenting. */}

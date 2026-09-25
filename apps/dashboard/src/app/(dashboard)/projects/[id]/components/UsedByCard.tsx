@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { ArrowUpRight, Globe, Network, Share2 } from "lucide-react";
 import { type ConnectionConsumer } from "@/lib/api/connections";
 import { useProjectConnections } from "@/hooks/use-project-connections";
 import { useI18n } from "@/components/i18n-provider";
@@ -37,7 +38,7 @@ export function UsedByCard({ projectId, serviceId }: { projectId: string; servic
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="mb-1 flex items-center gap-2">
-        <Share2 className="size-4 text-primary" />
+        <UiIcon name="share" className="size-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">{c.usedByTitle}</h3>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
@@ -54,9 +55,9 @@ export function UsedByCard({ projectId, serviceId }: { projectId: string; servic
                     <code className="font-mono">{l.envKey}</code>
                     <span className="inline-flex items-center gap-1 text-muted-foreground/60">
                       {l.mode === "internal" ? (
-                        <Network className="size-3" />
+                        <UiIcon name="network" className="size-3" />
                       ) : (
-                        <Globe className="size-3" />
+                        <UiIcon name="globe" className="size-3" />
                       )}
                       {l.mode === "internal" ? c.modeInternalShort : c.modePublicShort}
                     </span>
@@ -69,7 +70,7 @@ export function UsedByCard({ projectId, serviceId }: { projectId: string; servic
               aria-label={c.usedByOpen}
               className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <ArrowUpRight className="size-3.5" />
+              <UiIcon name="arrow-up-right" className="size-3.5" />
             </Link>
           </div>
         ))}

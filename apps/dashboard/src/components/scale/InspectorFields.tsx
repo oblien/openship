@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { Info, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -32,7 +33,7 @@ export function Section({
 export function Note({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-      <Info className="mt-0.5 size-3.5 shrink-0" />
+      <UiIcon name="info" className="mt-0.5 size-3.5 shrink-0" />
       <p>{children}</p>
     </div>
   );
@@ -129,7 +130,7 @@ export function NumberField({
           disabled={value <= min}
           onClick={() => onChange(Math.max(min, value - step))}
         >
-          <Minus />
+          <UiIcon name="minus" />
         </Button>
         <Input
           id={id}
@@ -157,7 +158,7 @@ export function NumberField({
           disabled={value >= max}
           onClick={() => onChange(Math.min(max, value + step))}
         >
-          <Plus />
+          <UiIcon name="plus" />
         </Button>
       </div>
     </div>

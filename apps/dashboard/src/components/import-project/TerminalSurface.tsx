@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
+import type { ITheme, Terminal } from "@xterm/xterm";
+import { useTheme } from "@/components/theme-provider";
+import { useLogTerminal } from "@/components/terminal/LogTerminalContext";
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalTheme = "light" | "dark";
@@ -11,58 +14,57 @@ interface TerminalSurfaceProps {
   onReady?: (terminal: any) => void;
   className?: string;
   theme?: TerminalTheme;
+  /** Only the visible terminal supplies its containing log panel's actions. */
+  active?: boolean;
 }
 
-const lightTheme = {
-  background: "#ffffff",
-  foreground: "#1a1a1a",
-  cursor: "#000000",
-  cursorAccent: "#ffffff",
-  selectionBackground: "#d1d5da",
-  black: "#1a1a1a",
-  red: "#d73a49",
-  green: "#22863a",
-  yellow: "#b08800",
-  blue: "#0366d6",
-  magenta: "#6f42c1",
-  cyan: "#1b7c83",
-  white: "#6a737d",
-  brightBlack: "#959da5",
-  brightRed: "#cb2431",
-  brightGreen: "#22863a",
-  brightYellow: "#dbab09",
-  brightBlue: "#0366d6",
-  brightMagenta: "#6f42c1",
-  brightCyan: "#1b7c83",
-  brightWhite: "#1a1a1a",
-};
-
-const darkTheme = {
-  background: "#000000",
-  foreground: "#cccccc",
-  cursor: "#ffffff",
-  cursorAccent: "#000000",
-  selectionBackground: "#444444",
-  black: "#000000",
-  red: "#cd3131",
-  green: "#0dbc79",
-  yellow: "#e5e510",
-  blue: "#2472c8",
-  magenta: "#bc3fbc",
-  cyan: "#11a8cd",
-  white: "#e5e5e5",
-  brightBlack: "#666666",
-  brightRed: "#f14c4c",
-  brightGreen: "#23d18b",
-  brightYellow: "#f5f543",
-  brightBlue: "#3b8eea",
-  brightMagenta: "#d670d6",
-  brightCyan: "#29b8db",
-  brightWhite: "#e5e5e5",
-};
-
-function themeFor(mode: TerminalTheme) {
-  return mode === "light" ? lightTheme : darkTheme;
+/** xterm paints its own surface, so resolve the app's CSS tokens for it too.
+ *  Computed colors normalize HSL/alpha tokens to the RGB form xterm accepts. */
+function themeFor(element: HTMLElement): ITheme {
+  const probe = document.createElement("span");
+  probe.hidden = true;
+  element.append(probe);
+  const color = (token: string) => {
+    probe.style.color = `var(${token})`;
+    return getComputedStyle(probe).color;
+  };
+  const background = color("--th-card-on-page");
+  const foreground = color("--foreground");
+  const red = color("--danger");
+  const green = color("--success");
+  const yellow = color("--warning");
+  const blue = color("--info");
+  const magenta = color("--th-terminal-magenta");
+  const cyan = color("--th-terminal-cyan");
+  const theme: ITheme = {
+    background,
+    foreground,
+    cursor: foreground,
+    cursorAccent: background,
+    selectionBackground: color("--info-bg"),
+    selectionForeground: foreground,
+    scrollbarSliderBackground: color("--th-on-16"),
+    scrollbarSliderHoverBackground: color("--th-on-25"),
+    scrollbarSliderActiveBackground: color("--th-on-30"),
+    black: color("--th-terminal-black"),
+    red,
+    green,
+    yellow,
+    blue,
+    magenta,
+    cyan,
+    white: color("--th-terminal-white"),
+    brightBlack: color("--muted-foreground"),
+    brightRed: red,
+    brightGreen: green,
+    brightYellow: yellow,
+    brightBlue: blue,
+    brightMagenta: magenta,
+    brightCyan: cyan,
+    brightWhite: foreground,
+  };
+  probe.remove();
+  return theme;
 }
 
 const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
@@ -70,10 +72,14 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
   onReady,
   className = "",
   theme = "light",
+  active = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const internalTerminalRef = useRef<any | null>(null);
   const targetRef = terminalRef ?? internalTerminalRef;
+  const { resolvedTheme } = useTheme();
+  const [readyTerminal, setReadyTerminal] = useState<Terminal | null>(null);
+  useLogTerminal(readyTerminal, active);
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -88,12 +94,13 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
 
       if (cancelled || !containerRef.current) return;
 
+      const textStyle = getComputedStyle(containerRef.current);
       const terminal = new Terminal({
-        fontFamily: "Consolas, monospace",
-        fontSize: 14,
-        lineHeight: 1.0,
+        fontFamily: textStyle.fontFamily,
+        fontSize: parseFloat(textStyle.fontSize),
+        lineHeight: 1.45,
         letterSpacing: 0,
-        theme: themeFor(theme),
+        theme: themeFor(containerRef.current),
         cursorBlink: true,
         scrollback: 1000,
         convertEol: true,
@@ -104,6 +111,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
       terminal.loadAddon(new WebLinksAddon());
       terminal.open(containerRef.current);
       targetRef.current = terminal;
+      setReadyTerminal(terminal);
 
       const containerElement = containerRef.current;
       const fit = () => {
@@ -125,7 +133,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
         }
       };
 
-      window.setTimeout(fit, 100);
+      const fitTimer = window.setTimeout(fit, 100);
       const resizeObserver = new ResizeObserver(fit);
       resizeObserver.observe(containerElement);
       window.addEventListener("resize", fit);
@@ -133,6 +141,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
       onReady?.(terminal);
 
       cleanup = () => {
+        window.clearTimeout(fitTimer);
         resizeObserver.disconnect();
         window.removeEventListener("resize", fit);
         terminal.dispose();
@@ -152,24 +161,18 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
 
   useEffect(() => {
     const terminal = targetRef.current;
-    if (!terminal) return;
-    terminal.options.theme = themeFor(theme);
-  }, [theme, targetRef]);
+    if (!terminal || !containerRef.current) return;
+    terminal.options.theme = themeFor(containerRef.current);
+  }, [theme, resolvedTheme, targetRef]);
 
   return (
     <div
-      ref={containerRef}
-      className={`terminal-container w-full h-full ${className}`}
-      style={{
-        height: "100%",
-        width: "100%",
-        overflow: "hidden",
-        padding: "8px",
-        fontSmooth: "antialiased",
-        WebkitFontSmoothing: "antialiased",
-        MozOsxFontSmoothing: "grayscale",
-      }}
-    />
+      dir="ltr"
+      className={`terminal-container h-full w-full overflow-hidden bg-[var(--th-card-on-page)] p-4 font-mono text-sm antialiased sm:p-5 [&_.slider]:rounded-full ${className}`}
+    >
+      {/* FitAddon measures its parent; keep padding outside that measured area. */}
+      <div ref={containerRef} className="h-full w-full min-w-0 overflow-hidden" />
+    </div>
   );
 };
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Instance-tab section (self-hosted, instance administrators) — export the
  * instance or selected projects and import them on another install: migrating
@@ -13,7 +15,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Clipboard, Download, Upload, Loader2, Send } from "lucide-react";
 
 import { SettingsSection } from "./SettingsSection";
 import { ExportPanel } from "@/components/data-transfer/ExportPanel";
@@ -141,7 +142,7 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
 
   return (
     <SettingsSection
-      icon={ArrowRightLeft}
+      icon={"arrows-left-right"}
       title="Move directly to another instance"
       description="Transfer the Openship database and credentials securely without downloading a file or managing an encryption password."
       iconBg="bg-primary/10"
@@ -187,7 +188,7 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
               disabled={creating}
               className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/50 disabled:opacity-50"
             >
-              {creating && <Loader2 className="size-3.5 animate-spin" />}
+              {creating && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {creating ? "Creating…" : "Generate receive code"}
             </button>
             {receiveCode && (
@@ -208,7 +209,7 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
                     onClick={() => void copyReceiveCode()}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    <Clipboard className="size-3.5" /> Copy code
+                    <UiIcon name="clipboard" className="size-3.5" /> Copy code
                   </button>
                 </div>
               </div>
@@ -253,7 +254,7 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
               disabled={sending || !destinationInfo}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {sending ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="send" className="size-4" />}
               {sending ? "Encrypting and moving…" : "Move to destination"}
             </button>
           </div>
@@ -268,7 +269,7 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
 function ExportCard(_props: { onToast: Toast }) {
   return (
     <SettingsSection
-      icon={Download}
+      icon={"download"}
       title="Export instance or projects"
       description="Choose a complete instance or selected projects, with their environments and dependencies."
     >
@@ -283,7 +284,7 @@ function ImportCard({ onToast }: { onToast: Toast }) {
 
   return (
     <SettingsSection
-      icon={Upload}
+      icon={"upload"}
       title={t.settings.dataTransfer.import.title}
       description={t.settings.dataTransfer.import.description}
       iconBg="bg-primary/10"
@@ -298,7 +299,7 @@ function ImportCard({ onToast }: { onToast: Toast }) {
           onClick={() => setOpen(true)}
           className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
         >
-          <Upload className="size-4" />
+          <UiIcon name="upload" className="size-4" />
           {t.settings.dataTransfer.import.importFromFile}
         </button>
       </div>

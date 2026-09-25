@@ -1,18 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Github,
-  ExternalLink,
-  Unplug,
-  RefreshCw,
-  Download,
-  Terminal,
-  Key,
-  KeyRound,
-  Loader2,
-  ChevronDown,
-} from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   useGitHub,
@@ -32,6 +22,7 @@ import {
 
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
 
 const EMPTY_STATE: GitHubConnectionState = {
   sources: { openshipApp: { connected: false }, ghCli: { available: false } },
@@ -274,7 +265,7 @@ export function GitHubConnection() {
 
   return (
     <SettingsSection
-      icon={Github}
+      icon={"github"}
       title={t.settings.github.title}
       description={
         loading
@@ -298,7 +289,7 @@ export function GitHubConnection() {
         />
       ) : loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
           {t.settings.github.checkingConnection}
         </div>
       ) : anyConnected ? (
@@ -306,7 +297,7 @@ export function GitHubConnection() {
           {/* The identity that is actually authorizing clones, first. */}
           {ghConnected && (
             <ActiveIdentity
-              icon={Terminal}
+              icon={"terminal"}
               label={ghLogin ? `@${ghLogin}` : ghMethodLabel}
               avatarUrl={state.sources.ghCli.avatarUrl}
               method={ghMethodLabel}
@@ -324,7 +315,7 @@ export function GitHubConnection() {
           {appConnected && !customSourcesConfigured && (
             <div className="space-y-3">
               <ActiveIdentity
-                icon={Github}
+                icon={"github"}
                 label={appLogin ? `@${appLogin}` : t.settings.github.methodApp}
                 method={t.settings.github.methodApp}
                 active={!activeIsGh}
@@ -345,7 +336,7 @@ export function GitHubConnection() {
                         />
                       ) : (
                         <div className="size-7 rounded-full bg-muted flex items-center justify-center">
-                          <Github className="size-3.5 text-muted-foreground" />
+                          <UiIcon name="github" className="size-3.5 text-muted-foreground" />
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
@@ -371,7 +362,7 @@ export function GitHubConnection() {
                     }}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                   >
-                    <Download className="size-3.5" />
+                    <UiIcon name="download" className="size-3.5" />
                     {t.settings.github.addAccount}
                   </a>
                 )}
@@ -383,9 +374,9 @@ export function GitHubConnection() {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                   >
                     {connecting ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+                      <UiIcon name="spinner" className="size-3.5 animate-spin" />
                     ) : (
-                      <Download className="size-3.5" />
+                      <UiIcon name="download" className="size-3.5" />
                     )}
                     {t.settings.github.installApp}
                   </button>
@@ -397,7 +388,7 @@ export function GitHubConnection() {
                   className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   {t.settings.github.manageOnGithub}
-                  <ExternalLink className="size-3" />
+                  <UiIcon name="arrow-up-right" className="size-3" />
                 </a>
               </div>
             </div>
@@ -418,7 +409,7 @@ export function GitHubConnection() {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
               >
                 {t.settings.github.changeMethod}
-                <ChevronDown
+                <UiIcon name="chevron-down"
                   className={`size-3.5 transition-transform ${showChangeMethod ? "rotate-180" : ""}`}
                 />
               </button>
@@ -433,7 +424,7 @@ export function GitHubConnection() {
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   {ghManageLabel}
-                  <ExternalLink className="size-3" />
+                  <UiIcon name="arrow-up-right" className="size-3" />
                 </a>
               )}
               {(activeIsGh || !customSourcesConfigured) && (
@@ -451,7 +442,7 @@ export function GitHubConnection() {
                   }
                   className="ms-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-bg"
                 >
-                  <Unplug className="size-3.5" />
+                  <UiIcon name="unplug" className="size-3.5" />
                   {t.settings.github.disconnect}
                 </button>
               )}
@@ -560,9 +551,9 @@ function CredentialProblem(props: {
       }`}
     >
       {rejected ? (
-        <KeyRound className="size-4 mt-0.5 shrink-0 text-danger" />
+        <UiIcon name="key" className="size-4 mt-0.5 shrink-0 text-danger" />
       ) : (
-        <KeyRound className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+        <UiIcon name="key" className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
       )}
       <div className="min-w-0 space-y-1">
         <p className={`text-sm font-medium ${rejected ? "text-danger" : "text-foreground"}`}>
@@ -587,7 +578,7 @@ function CredentialProblem(props: {
               className="inline-flex items-center gap-1 text-xs font-medium text-foreground underline underline-offset-2 hover:text-primary"
             >
               {manageLabel}
-              <ExternalLink className="size-3" />
+              <UiIcon name="arrow-up-right" className="size-3" />
             </a>
           )}
           <button
@@ -595,7 +586,7 @@ function CredentialProblem(props: {
             onClick={onRecheck}
             className="inline-flex items-center gap-1 text-xs font-medium text-foreground underline underline-offset-2 hover:text-primary"
           >
-            <RefreshCw className="size-3" />
+            <UiIcon name="refresh" className="size-3" />
             {t.settings.github.ghCli.recheck}
           </button>
           {checked && (
@@ -617,7 +608,7 @@ function CredentialProblem(props: {
  * lifts that) survive as a single inline note.
  */
 function ActiveIdentity(props: {
-  icon: typeof Github;
+  icon: IconName;
   label: string;
   method: string;
   active: boolean;
@@ -651,7 +642,7 @@ function ActiveIdentity(props: {
           <img src={avatarUrl} alt={label} className="size-8 shrink-0 rounded-full" />
         ) : (
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-            <Icon className="size-4 text-muted-foreground" />
+            <UiIcon name={Icon} className="size-4 text-muted-foreground" />
           </span>
         )}
         <div className="min-w-0 flex-1">
@@ -674,7 +665,7 @@ function ActiveIdentity(props: {
             self-hosted → give each server its own credential (no relay there) */}
       {forwardEnabled === false && onManageForward && (
         <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-muted-foreground">
-          <KeyRound className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+          <UiIcon name="key" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
           <span>
             {t.settings.github.forwardOffHint}{" "}
             <button
@@ -689,7 +680,7 @@ function ActiveIdentity(props: {
       )}
       {remoteNeedsOwnCredential && (
         <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-muted-foreground">
-          <KeyRound className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+          <UiIcon name="key" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
           <span>{t.settings.github.remoteCredentialHint}</span>
         </p>
       )}
@@ -750,12 +741,12 @@ function DeviceFlowPanel(props: {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
           >
-            <ExternalLink className="size-4" />
             {t.settings.github.openGithub}
+            <UiIcon name="arrow-up-right" className="size-3" />
           </a>
         </div>
         <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
+          <UiIcon name="spinner" className="size-3.5 animate-spin" />
           {t.settings.github.ghCli.waiting}
         </p>
       </div>
@@ -772,7 +763,7 @@ function DeviceFlowPanel(props: {
         onClick={onRefresh}
         className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
       >
-        <RefreshCw className="size-4" />
+        <UiIcon name="refresh" className="size-4" />
         {t.settings.github.ghCli.recheck}
       </button>
     </div>
@@ -785,7 +776,7 @@ function MethodDisclosure(props: { summary: string; children: React.ReactNode })
     <details className="group w-full">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
         {props.summary}
-        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+        <UiIcon name="chevron-down" className="size-3.5 transition-transform group-open:rotate-180" />
       </summary>
       <div className="mt-3">{props.children}</div>
     </details>
@@ -831,7 +822,7 @@ function MethodChooser(props: {
 
   const row = (
     key: string,
-    Icon: typeof Github,
+    Icon: IconName,
     label: string,
     desc: string,
     onClick: () => void,
@@ -842,7 +833,7 @@ function MethodChooser(props: {
       disabled={connecting}
       className="flex w-full items-start gap-3 rounded-xl bg-muted/30 px-3.5 py-2.5 text-start transition-colors hover:bg-muted/60 disabled:opacity-50"
     >
-      <Icon className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+      <UiIcon name={Icon} className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0">
         <span className="block text-sm font-medium text-foreground">{label}</span>
         <span className="block text-xs text-muted-foreground leading-relaxed">{desc}</span>
@@ -855,7 +846,7 @@ function MethodChooser(props: {
   const needsCloudFirst = appRequiresCloud && !cloudConnected;
   const appRow = row(
     "app",
-    Github,
+    "github",
     t.settings.github.methodApp,
     needsCloudFirst ? t.settings.github.requiresCloud : t.settings.github.methodAppDesc,
     needsCloudFirst ? onConnectCloud : onConnectApp,
@@ -869,7 +860,7 @@ function MethodChooser(props: {
       ? [
           row(
             "ssh",
-            KeyRound,
+            "key",
             t.settings.github.useSshPerServer,
             t.settings.github.methodSshDesc,
             onSsh,
@@ -877,7 +868,7 @@ function MethodChooser(props: {
         ]
       : []),
     ...(can("token")
-      ? [row("pat", Key, t.settings.github.usePat, t.settings.github.methodTokenDesc, onToken)]
+      ? [row("pat", "key", t.settings.github.usePat, t.settings.github.methodTokenDesc, onToken)]
       : []),
   ];
 
@@ -886,7 +877,7 @@ function MethodChooser(props: {
       <div className="space-y-2">
         {showSignIn &&
           can("device") &&
-          row("signin", Github, t.settings.github.signIn, t.settings.github.signInDesc, onSignIn)}
+          row("signin", "github", t.settings.github.signIn, t.settings.github.signInDesc, onSignIn)}
         {others}
       </div>
     );
@@ -900,7 +891,7 @@ function MethodChooser(props: {
           disabled={connecting}
           className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {connecting ? <Loader2 className="size-4 animate-spin" /> : <Github className="size-4" />}
+          {connecting ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="github" className="size-4" />}
           {t.settings.github.signIn}
         </button>
         <p className="text-xs text-muted-foreground leading-relaxed">
@@ -972,21 +963,16 @@ function TokenForm(props: { message: string; hint?: string; onSaved: () => void 
           disabled={!token.trim() || saving}
           className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {saving && <Loader2 className="size-4 animate-spin" />}
+          {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {t.settings.github.tokenConnect}
         </button>
       </div>
       {error && <p className="text-xs text-danger leading-relaxed">{error}</p>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/70">
-        <a
-          href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Openship"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:text-primary"
-        >
-          {t.settings.github.tokenCreate}
-          <ExternalLink className="size-3" />
-        </a>
+        <CreateGitHubTokenLink
+          label={t.settings.github.tokenCreate}
+          className="text-foreground hover:text-primary"
+        />
         {hint && (
           <span>
             {t.settings.github.tokenGhHint}{" "}

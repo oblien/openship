@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Mailboxes tab - list + create/edit/delete for vmail.mailbox rows.
  *
@@ -9,15 +11,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Check,
-  Copy,
-  KeyRound,
-  Pencil,
-  Plus,
-  Trash2,
-  UserRound,
-} from "lucide-react";
 import {
   getApiErrorMessage,
   mailAdminApi,
@@ -202,9 +195,8 @@ export function MailboxesTab({
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <UserRound
+            <UiIcon name="user"
               className="size-4 text-muted-foreground"
-              strokeWidth={2}
             />
           </div>
           <div className="min-w-0">
@@ -279,7 +271,7 @@ export function MailboxesTab({
               onClick={openRotatePlatform}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-muted text-foreground text-sm font-medium rounded-xl hover:bg-muted/80 border border-border transition-colors shrink-0"
             >
-              <KeyRound className="size-4" />
+              <UiIcon name="key" className="size-4" />
               {t.emailsAdmin.mailboxes.rotateAction}
             </button>
           )}
@@ -288,7 +280,7 @@ export function MailboxesTab({
             disabled={!activeDomain}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none shrink-0"
           >
-            <Plus className="size-4" />
+            <UiIcon name="plus" className="size-4" />
             {t.emailsAdmin.mailboxes.addMailbox}
           </button>
         </div>
@@ -331,14 +323,14 @@ export function MailboxesTab({
                 {
                   id: "edit",
                   label: t.emailsAdmin.mailboxes.editAction,
-                  icon: <Pencil className="size-4" />,
+                  icon: <UiIcon name="edit" className="size-4" />,
                   onClick: () => openEdit(row),
                 },
                 { id: "sep", divider: true },
                 {
                   id: "delete",
                   label: t.emailsAdmin.mailboxes.deleteAction,
-                  icon: <Trash2 className="size-4" />,
+                  icon: <UiIcon name="trash" className="size-4" />,
                   variant: "danger",
                   onClick: () => openDelete(row),
                 },
@@ -347,7 +339,7 @@ export function MailboxesTab({
           )
         }
         empty={{
-          icon: UserRound,
+          icon: "user",
           title: t.emailsAdmin.mailboxes.emptyTitle,
           description: interpolate(t.emailsAdmin.mailboxes.emptyDesc, { domain: activeDomain }),
           action: (
@@ -356,7 +348,7 @@ export function MailboxesTab({
               disabled={!activeDomain}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.emailsAdmin.mailboxes.addMailbox}
             </button>
           ),
@@ -504,7 +496,7 @@ function CreateMailboxForm({
             onClick={generatePassword}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors whitespace-nowrap"
           >
-            <KeyRound className="size-3.5" />
+            <UiIcon name="key" className="size-3.5" />
             {t.emailsAdmin.mailboxes.create.generate}
           </button>
         </div>
@@ -571,9 +563,9 @@ function PasswordPreview({
         aria-label={t.emailsAdmin.mailboxes.create.copyPassword}
       >
         {copied ? (
-          <Check className="size-3.5 text-success" />
+          <UiIcon name="check" className="size-3.5 text-success" />
         ) : (
-          <Copy className="size-3.5" />
+          <UiIcon name="copy" className="size-3.5" />
         )}
       </button>
     </div>

@@ -11,6 +11,7 @@
  */
 
 import { repos, type BackupDestination } from "@repo/db";
+import type { BackupDestinationStats, BackupDestinationHistory, ListBackupDestinationRunsInput } from "@repo/contracts";
 import { type DestinationKind, type BackupDestinationRow } from "@repo/adapters";
 import crypto from "node:crypto";
 import { encryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
@@ -106,12 +107,12 @@ export interface SerializedDestination {
   updatedAt: string;
   /** Storage rollup (bytes stored, backup count, last run). Populated by the
    *  list endpoint; null on single-destination fetches. */
-  stats: { storedBytes: number; runCount: number; lastRunAt: string | null } | null;
+  stats: BackupDestinationStats | null;
 }
 
 export function serializeDestination(
   row: BackupDestination,
-  stats: SerializedDestination["stats"] = null,
+  stats?: Awaited<ReturnType<typeof repos.backupRun.statsByDestination>>[number],
 ): SerializedDestination {
   return {
     id: row.id,
@@ -135,7 +136,15 @@ export function serializeDestination(
     isDefault: row.isDefault,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    stats,
+    stats: stats ? {
+      storedBytes: stats.storedBytes,
+      runCount: stats.runCount,
+      lastRunAt: stats.lastRunAt?.toISOString() ?? null,
+      savedCount: stats.savedCount,
+      activeCount: stats.activeCount,
+      failedCount: stats.failedCount,
+      cancelledCount: stats.cancelledCount,
+    } : null,
   };
 }
 
@@ -147,13 +156,7 @@ export async function listDestinations(ctx: RequestContext): Promise<SerializedD
     repos.backupRun.statsByDestination(ctx.organizationId),
   ]);
   const statsById = new Map(stats.filter((s) => s.destinationId).map((s) => [s.destinationId!, s]));
-  return rows.map((row) => {
-    const s = statsById.get(row.id);
-    return serializeDestination(
-      row,
-      s ? { storedBytes: s.storedBytes, runCount: s.runCount, lastRunAt: s.lastRunAt?.toISOString() ?? null } : null,
-    );
-  });
+  return rows.map((row) => serializeDestination(row, statsById.get(row.id)));
 }
 
 export async function getDestination(
@@ -202,11 +205,7 @@ export async function getDestinationUsage(ctx: RequestContext, id: string): Prom
     repos.backupRun.statsByDestination(ctx.organizationId),
     repos.backupPolicy.listByDestination(id),
   ]);
-  const st = stats.find((s) => s.destinationId === id) ?? null;
-  const destination = serializeDestination(
-    row,
-    st ? { storedBytes: st.storedBytes, runCount: st.runCount, lastRunAt: st.lastRunAt?.toISOString() ?? null } : null,
-  );
+  const destination = serializeDestination(row, stats.find((s) => s.destinationId === id));
 
   const projectCache = new Map<string, Awaited<ReturnType<typeof repos.project.findById>>>();
   const serviceCache = new Map<string, Awaited<ReturnType<typeof repos.service.findById>>>();
@@ -222,7 +221,9 @@ export async function getDestinationUsage(ctx: RequestContext, id: string): Prom
       if (!serviceCache.has(p.serviceId)) serviceCache.set(p.serviceId, await repos.service.findById(p.serviceId));
       service = serviceCache.get(p.serviceId);
     }
-    const lastRun = await repos.backupRun.latestByPolicy(p.id);
+    // A moved policy may have a newer run in another destination. Only show
+    // outcomes from storage this page actually represents.
+    const lastRun = await repos.backupRun.latestByPolicy(p.id, id);
     out.push({
       policyId: p.id,
       sourceKind: p.sourceKind,
@@ -247,6 +248,46 @@ export async function getDestinationUsage(ctx: RequestContext, id: string): Prom
     });
   }
   return { destination, policies: out };
+}
+
+/** Actual runs, independent of whether their policy still points here or exists.
+ *  One bounded read model serves HTTP, native/desktop, and both dashboard views. */
+export async function listDestinationHistory(
+  ctx: RequestContext,
+  destinationId: string | undefined,
+  input: ListBackupDestinationRunsInput = {},
+): Promise<BackupDestinationHistory> {
+  if (destinationId) await getDestination(ctx, destinationId);
+  const limit = input.limit ?? 10;
+  const rows = await repos.backupRun.listWithSources(ctx.organizationId, {
+    destinationId, before: input.before, limit: limit + 1,
+  });
+  const page = rows.slice(0, limit);
+  return {
+    nextCursor: rows.length > limit ? page.at(-1)!.id : null,
+    runs: page.map((row) => ({
+      id: row.id, destinationId: row.destinationId, destinationName: row.destinationName,
+      projectId: row.projectId, projectName: row.projectName, serviceId: row.serviceId, serviceName: row.serviceName,
+      mailServerId: row.mailServerId, mailServerName: row.mailServerName, sourceKind: row.sourceKind,
+      status: row.status as BackupDestinationHistory["runs"][number]["status"],
+      triggeredBy: row.triggeredBy, startedAt: row.startedAt.toISOString(), finishedAt: row.finishedAt?.toISOString() ?? null,
+      bytesTransferred: row.bytesTransferred, errorMessage: row.errorMessage,
+      // Project only display fields. Artifact metadata may contain commands
+      // and secrets needed for restore; those never belong in an overview.
+      payloads: (row.artifacts ?? []).flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const artifact = value as Record<string, unknown>;
+        if (typeof artifact.payloadKind !== "string") return [];
+        const metadata = artifact.metadata as Record<string, unknown> | null;
+        const storage = metadata?.storage as { format?: unknown } | null;
+        return [{
+          kind: artifact.payloadKind,
+          volumeTarget: typeof metadata?.volumeTarget === "string" ? metadata.volumeTarget : null,
+          incremental: storage?.format === "chunks-v1",
+        }];
+      }),
+    })),
+  };
 }
 
 /**

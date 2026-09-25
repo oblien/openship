@@ -31,6 +31,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { expect } from "vitest";
 import { repos, type BackupRestore, type BackupRestoreStatus } from "@repo/db";
+import { backupArtifactObjects } from "@repo/core";
 import type { RequestContext } from "../../src/lib/request-context";
 import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
 import { restoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
@@ -66,6 +67,18 @@ const TERMINAL: ReadonlySet<BackupRestoreStatus> = new Set<BackupRestoreStatus>(
 ]);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function waitForBackup(runId: string, want = "succeeded") {
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    const row = await repos.backupRun.findById(runId);
+    if (row?.status === want) return row;
+    if (row && TERMINAL.has(row.status as BackupRestoreStatus))
+      throw new Error(`backup ${runId} reached ${row.status}: ${row.errorMessage ?? "no error recorded"}`);
+    if (Date.now() > deadline) throw new Error(`backup ${runId} stuck in ${row?.status}`);
+    await sleep(200);
+  }
+}
 
 export function backupE2EHarness(read: () => BackupE2EContext) {
   /**
@@ -130,7 +143,8 @@ export function backupE2EHarness(read: () => BackupE2EContext) {
     expect((await stat(join(destRoot, row.manifestKey!))).size).toBeGreaterThan(0);
     for (const a of artifacts) {
       expect(a.sha256, `sha256 for ${a.key}`).toMatch(/^[0-9a-f]{64}$/);
-      expect((await stat(join(destRoot, a.key))).size, `size of ${a.key}`).toBe(a.sizeBytes);
+      for (const [key, size] of backupArtifactObjects(a))
+        expect((await stat(join(destRoot, key))).size, `size of ${key}`).toBe(size);
     }
     return { runId: row.id, artifacts };
   };

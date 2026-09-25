@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useState } from "react";
-import { Server, Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { domainsApi } from "@/lib/api";
 import type { DomainDnsRecord } from "@/lib/api/domains";
@@ -97,7 +98,7 @@ export default function DnsRecordsModal({
           the "auto-configure" row were redundant chrome. */}
       <div className="mb-4 flex items-center gap-3">
         <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-          <Server className="size-4 text-primary" />
+          <UiIcon name="server" className="size-4 text-primary" />
         </div>
         <div>
           <h2 className="text-sm font-semibold text-foreground">{d.title}</h2>
@@ -116,7 +117,7 @@ export default function DnsRecordsModal({
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {d.loadingRecords}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {d.loadingRecords}
         </div>
       ) : (
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pe-1">

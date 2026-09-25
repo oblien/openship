@@ -1,4 +1,4 @@
-import { Network } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 
 export function ScaleLoading() {
   return (
@@ -7,7 +7,7 @@ export function ScaleLoading() {
       role="status"
     >
       <div className="flex flex-col items-center gap-3">
-        <Network className="size-7" strokeWidth={1.5} />
+        <UiIcon name="network" className="size-7" />
         <span className="text-sm">Preparing your scaling workspace…</span>
       </div>
     </div>

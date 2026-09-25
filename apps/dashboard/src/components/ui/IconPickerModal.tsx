@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon, IconArtwork } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Loader2, X } from 'lucide-react';
 import { iconsApi } from '@/lib/api';
-import generateIcon from '@/utils/icons';
+
 import { useI18n, interpolate } from '@/components/i18n-provider';
 
 interface IconResult {
@@ -152,7 +153,7 @@ export function IconPickerModal({
 
                     {/* Search Box - inline with header */}
                     <div className="flex-1 relative">
-                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <UiIcon name="search" className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <input
                             type="text"
                             value={searchTerm}
@@ -173,7 +174,7 @@ export function IconPickerModal({
                             onClick={handleClose}
                             className="p-1.5 rounded-xl bg-card hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                         >
-                            <X className="w-5 h-5" />
+                            <UiIcon name="close" className="w-5 h-5" />
                         </button>
                     </div>
                 </div>
@@ -188,20 +189,20 @@ export function IconPickerModal({
                 {!searchTerm.trim() ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
                         <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center mb-3">
-                            <Search className="w-8 h-8 text-muted-foreground" />
+                            <UiIcon name="search" className="w-8 h-8 text-muted-foreground" />
                         </div>
                         <h3 className="text-base font-medium text-muted-foreground mb-1">{ip.startSearching}</h3>
                         <p className="text-sm text-muted-foreground">{ip.startSearchingHint}</p>
                     </div>
                 ) : isSearching && icons.length === 0 ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-6">
-                        <Loader2 className="w-8 h-8 text-muted-foreground animate-spin mb-3" />
+                        <UiIcon name="spinner" className="w-8 h-8 text-muted-foreground animate-spin mb-3" />
                         <p className="text-sm text-muted-foreground">{ip.searching}</p>
                     </div>
                 ) : icons.length === 0 ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
                         <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center mb-3">
-                            <Search className="w-8 h-8 text-muted-foreground" />
+                            <UiIcon name="search" className="w-8 h-8 text-muted-foreground" />
                         </div>
                         <h3 className="text-base font-medium text-muted-foreground mb-1">{ip.noIconsFound}</h3>
                         <p className="text-sm text-muted-foreground">{ip.noIconsHint}</p>
@@ -227,7 +228,7 @@ export function IconPickerModal({
                                                 : 'group-hover:scale-105'
                                             }`}>
                                             <div className="scale-[0.75]">
-                                                {generateIcon(filename, 40, isSelected ? 'var(--primary-foreground)' : 'var(--foreground)')}
+                                                <IconArtwork src={icon.url} mode="mask" size={40} className={isSelected ? "text-primary-foreground" : "text-foreground"} />
                                             </div>
                                         </div>
                                     </button>
@@ -238,7 +239,7 @@ export function IconPickerModal({
                         {/* Loading More Indicator */}
                         {isSearching && icons.length > 0 && (
                             <div className="flex justify-center items-center py-6">
-                                <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                                <UiIcon name="spinner" className="w-5 h-5 text-muted-foreground animate-spin" />
                                 <span className="ms-2 text-xs text-muted-foreground">{ip.loadingMore}</span>
                             </div>
                         )}

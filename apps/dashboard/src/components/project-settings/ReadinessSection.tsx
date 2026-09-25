@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The deploy-time readiness gate, as one collapsed-by-default section.
  *
@@ -14,7 +16,6 @@
  */
 
 import React, { useState } from "react";
-import { Activity, ChevronDown, ChevronUp } from "lucide-react";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useI18n } from "@/components/i18n-provider";
 import type { OpenshipReadiness } from "@repo/core";
@@ -210,7 +211,7 @@ const ReadinessSection: React.FC<Props> = ({
               anyOn ? "w-9 h-9 bg-info/10" : "w-8 h-8 bg-muted/60"
             }`}
           >
-            <Activity
+            <UiIcon name="activity"
               className={anyOn ? "size-[18px] text-info" : "size-4 text-muted-foreground"}
             />
           </div>
@@ -230,9 +231,9 @@ const ReadinessSection: React.FC<Props> = ({
           </div>
         </div>
         {open ? (
-          <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
+          <UiIcon name="chevron-up" className="size-4 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          <UiIcon name="chevron-down" className="size-4 shrink-0 text-muted-foreground" />
         )}
       </button>
       {open && body}

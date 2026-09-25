@@ -12,6 +12,7 @@
     "build-release": "bun scripts/build-release.ts",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "cloud:check": "bun scripts/cloud-readiness.ts",
+    "billing:grant": "bun scripts/plan-grant.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",

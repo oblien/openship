@@ -147,7 +147,12 @@ export async function checkMailDelivery(exec: CommandExecutor): Promise<MailDeli
   if (queue === null) {
     return { ...base, ...unread, detail: firstLine(raw) };
   }
-  return { ...base, ...queue, status: gradeDelivery(queue, relay) };
+  return {
+    ...base,
+    ...queue,
+    deferrals: topDeferrals(queue.deferrals),
+    status: gradeDelivery(queue, relay),
+  };
 }
 
 /** Which send hop the state file describes — pure, so the UI shape is testable. */
@@ -241,10 +246,14 @@ export function parseMailQueue(raw: string): MailQueueReading | null {
   }
   const deferrals: MailDeferral[] = [...tally.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_DEFERRALS)
     .map(([reason, count]) => ({ kind: classifyReason(reason), count, reason }));
 
   return { queued, sampled, deferrals };
+}
+
+/** The deferral rows we report. `gradeDelivery` reads the uncapped list. */
+export function topDeferrals(deferrals: readonly MailDeferral[]): MailDeferral[] {
+  return deferrals.slice(0, MAX_DEFERRALS);
 }
 
 /**

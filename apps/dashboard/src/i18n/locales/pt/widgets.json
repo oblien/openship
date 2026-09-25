@@ -102,10 +102,12 @@
       "phase": {
         "queued": "Aguardando um worker…",
         "preparing": "Resolvendo destino + serviço…",
-        "snapshotting": "Produzindo artefatos (executando pre-hook)…",
+        "snapshotting": "Preparando a captura dos dados…",
         "uploading": "Transmitindo para o destino…",
         "verifying": "Gravando manifesto…"
-      }
+      },
+      "reconnecting": "Reconectando ao progresso…",
+      "reconnect": "Reconectar"
     },
     "policyEditor": {
       "presetHourly": "A cada hora",
@@ -200,7 +202,32 @@
       "compressionNone": "nenhuma — sem compressão",
       "compressionHint": "zstd comprime melhor; gzip está embutido em toda imagem, então não exige download e funciona em um host sem internet.",
       "compressionAuto": "Automático — usar o que o serviço tiver",
-      "summaryPath": "Arquivos e pastas"
+      "summaryPath": "Arquivos e pastas",
+      "quick": {
+        "contents": "O que copiar",
+        "volumesTitle": "Volumes do serviço",
+        "volumesDescription": "Todos os volumes persistentes e montagens vinculadas a este serviço.",
+        "selectedVolumesDescription": "Apenas os volumes selecionados nas opções avançadas.",
+        "databaseTitle": "Dados de {name}",
+        "databaseDescription": "Usa a ferramenta de backup do próprio banco de dados para manter a consistência.",
+        "projectTitle": "Dados do projeto",
+        "projectDescription": "Faz backup do banco de dados ou dos volumes persistentes de cada serviço.",
+        "filesDescription": "Faz backup das pastas selecionadas nas opções avançadas.",
+        "customDescription": "Usa os comandos de backup e restauração configurados.",
+        "onDemand": "Sob demanda",
+        "onDemandHint": "Inicie um backup quando precisar.",
+        "frequency": "Quando fazer backup",
+        "history": "Histórico de backups",
+        "keepBackups": "Últimos {count} backups",
+        "historyHint": "Os backups mais antigos são removidos automaticamente.",
+        "customSchedule": "Agendamento personalizado",
+        "customRetention": "Retenção personalizada",
+        "advancedHint": "Método de backup, volumes selecionados, agendamentos e hooks.",
+        "saveAndBackup": "Salvar e fazer backup",
+        "invalidRetention": "Insira um número inteiro maior que zero ou deixe em branco para manter todos os backups."
+      },
+      "incrementalLabel": "Backups incrementais",
+      "incrementalHint": "Envie apenas os blocos alterados. Cada backup continua sendo um ponto de restauração completo; exportações de bancos de dados podem economizar menos espaço."
     }
   },
   "cloud": {

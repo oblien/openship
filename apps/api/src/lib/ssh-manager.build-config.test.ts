@@ -78,6 +78,17 @@ describe("native SSH host policy", () => {
 });
 
 describe("buildSshConfig — pasted/uploaded key material", () => {
+  it("carries Cloudflare through password, encrypted-key and agent authentication", async () => {
+    const settings = { sshHost: "ssh.example.test", sshTransport: "cloudflare" };
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "password", sshPassword: encryptSecretField("password") }))
+      .toMatchObject({ sshTransport: "cloudflare", password: "password" });
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "key", sshPrivateKey: encryptSecretField("key"), sshKeyPassphrase: encryptSecretField("passphrase") }))
+      .toMatchObject({ sshTransport: "cloudflare", privateKey: "key", privateKeyPassphrase: "passphrase" });
+    vi.stubEnv("SSH_AUTH_SOCK", "/tmp/test-agent.sock");
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "agent" }))
+      .toMatchObject({ sshTransport: "cloudflare", useSystemSsh: true, sshAgent: "/tmp/test-agent.sock" });
+  });
+
   it("decrypts stored material into privateKey and never reads a file", async () => {
     const config = await buildSshConfig({
       ...base,

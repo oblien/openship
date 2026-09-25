@@ -8,7 +8,8 @@ import {
 } from "../../types";
 import type { WorkspaceRuntimePlan } from "../../dockerfile";
 import { sq, type BuildLogger } from "../build-pipeline";
-import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { SYSTEM, isValidServiceName, safeErrorMessage } from "@repo/core";
+import { renderServiceDiscoveryScript } from "./service-discovery";
 import type {
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
@@ -203,6 +204,7 @@ export class CloudComposeSupport {
     config: MultiServiceDeployConfig,
     onLog?: LogCallback,
   ): Promise<MultiServiceDeployResult> {
+    if (!isValidServiceName(config.serviceName)) throw new Error("Invalid service name.");
     if (config.volumes?.length) {
       throw new Error("Compose volume mounts require a Cloud Docker workspace. Deploy this service as a Compose project, or use a server.");
     }
@@ -585,10 +587,9 @@ export class CloudComposeSupport {
     if (services.length === 0) return;
 
     const workspaceIds = [...new Set(services.map((service) => service.workspaceId))];
-    const hostsLines = services.map(
-      (service) => `${service.ip} ${service.serviceName} # openship-compose:${group.id}`,
-    );
-    const hostsBlock = hostsLines.join("\n");
+    const script = renderServiceDiscoveryScript(group.id, services.map(service => ({
+      serviceName: service.serviceName, ip: service.ip!,
+    })));
 
     for (const service of services) {
       const ws = this.deps.workspace(service.workspaceId);
@@ -626,14 +627,6 @@ export class CloudComposeSupport {
 
       try {
         const rt = await ws.runtime();
-        const script = `set -e
-tmp=$(mktemp)
-grep -v ' # openship-compose:${group.id}' /etc/hosts > "$tmp" || true
-cat >> "$tmp" <<'EOF'
-${hostsBlock}
-EOF
-cat "$tmp" > /etc/hosts
-rm -f "$tmp"`;
         await this.deps.execAndStream(rt, ["sh", "-c", script], onLog);
       } catch (err) {
         onLog({

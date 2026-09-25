@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Terminal, Server } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useState, useCallback, useEffect, useId, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
@@ -10,6 +11,8 @@ import { TerminalLogs } from "./logs/TerminalLogs";
 import { ServerLogs } from "./logs/ServerLogs";
 import { LogsActions } from "./logs/LogsActions";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Tabs } from "@/components/ui/Tabs";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { endpoints } from "@/lib/api/endpoints";
 import { sortServicesByPublicFirst } from "@/lib/api/services";
 
@@ -27,6 +30,7 @@ export const LogsSettings = () => {
     servicesData,
   } = useProjectSettings();
   const { t } = useI18n();
+  const tabsId = useId();
   const hasProjectId = Boolean(id && id !== "undefined");
   const hasResolvedServerMode =
     typeof projectData?.options?.hasServer === "boolean" ||
@@ -260,7 +264,7 @@ export const LogsSettings = () => {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Terminal className="size-5" />
+          <UiIcon name="terminal" className="size-5" />
         </div>
         <h3 className="text-sm font-semibold text-foreground">{t.projectSettings.logs.noRuntime}</h3>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -271,44 +275,20 @@ export const LogsSettings = () => {
   }
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex min-w-0 flex-col h-full gap-4">
       {/* Tabs + Actions */}
-      <div className="flex items-center justify-between border-b border-border/50">
-        <div className="flex items-center gap-1">
-          {canShowTerminal && (
-            <button
-              onClick={() => switchTab("terminal")}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                activeTab === "terminal"
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground/70"
-              }`}
-            >
-              <Terminal className="size-4" />
-              {t.projectSettings.logs.terminal}
-              {activeTab === "terminal" && (
-                <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
-              )}
-            </button>
-          )}
-          <button
-            onClick={() => switchTab("server")}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "server"
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground/70"
-            }`}
-          >
-            <Server className="size-4" />
-            {/* Rename to "Requests" when there's no runtime — the
-                same endpoint backs both, but for static apps it's
-                purely edge access logs, not server logs. */}
-            {isRequestLogsOnly ? t.projectSettings.logs.requests : t.projectSettings.logs.server}
-            {activeTab === "server" && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-            )}
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Tabs<LogsTab>
+          idPrefix={tabsId}
+          ariaLabel={t.projectDetail.services.detail.tabs.logs}
+          className="border-b-0"
+          tabs={[
+            { key: "terminal", label: t.projectSettings.logs.terminal, icon: "terminal", hidden: !canShowTerminal },
+            { key: "server", label: isRequestLogsOnly ? t.projectSettings.logs.requests : t.projectSettings.logs.server, icon: "server" },
+          ]}
+          value={activeTab}
+          onChange={switchTab}
+        />
 
         <LogsActions
           onCopy={copyLogs}
@@ -320,63 +300,63 @@ export const LogsSettings = () => {
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-[460px]">
-        {activeTab === "terminal" && canShowTerminal && (
-          <div className="space-y-4">
-            {hasMultipleLogTargets && (
-              <div className="rounded-2xl border border-border/60 bg-card/70 p-4">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{t.projectSettings.logs.target}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {hasProjectRuntime
-                        ? t.projectSettings.logs.targetDescProject
-                        : t.projectSettings.logs.targetDescService}
-                    </p>
-                  </div>
-                  <div className="min-w-[220px]">
-                    <CustomSelect
-                      value={selectedServiceId ?? ""}
-                      onChange={(value) => setSelectedServiceId(value || null)}
-                      options={[
-                        ...(hasProjectRuntime
-                          ? [{ value: "", label: t.projectSettings.logs.projectRuntime, icon: <Server className="size-4" /> }]
-                          : []),
-                        ...services.map((service) => ({
-                          value: service.id,
-                          label: service.name,
-                          icon: <Server className="size-4" />,
-                        })),
-                      ]}
-                      placeholder={t.projectSettings.logs.selectService}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {hasMultipleLogTargets && !hasProjectRuntime && !selectedService ? (
-              <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-border/50 bg-card text-sm text-muted-foreground">
+      <div className="min-w-0 flex-1 min-h-[460px]">
+        <div
+          id={`${tabsId}-panel-terminal`}
+          role="tabpanel"
+          aria-labelledby={`${tabsId}-tab-terminal`}
+          hidden={activeTab !== "terminal" || !canShowTerminal}
+        >
+          {activeTab === "terminal" && canShowTerminal && (
+            hasMultipleLogTargets && !hasProjectRuntime && !selectedService ? (
+              <div className="flex min-h-[420px] items-center justify-center rounded-2xl bg-card text-sm text-muted-foreground">
                 {t.projectSettings.logs.selectService}
               </div>
             ) : (
               <TerminalLogs
                 projectId={id}
                 projectName={terminalService?.name || projectData?.name || t.projectSettings.logs.projectFallback}
+                title={hasMultipleLogTargets ? (
+                  <CustomSelect
+                    aria-label={t.projectSettings.logs.target}
+                    variant="filled"
+                    triggerClassName="h-9 font-medium"
+                    value={selectedServiceId ?? ""}
+                    onChange={(value) => setSelectedServiceId(value || null)}
+                    options={[
+                      ...(hasProjectRuntime
+                        ? [{ value: "", label: t.projectSettings.logs.projectRuntime, icon: <UiIcon name="server" className="size-4" /> }]
+                        : []),
+                      ...services.map((service) => ({
+                        value: service.id,
+                        label: service.name,
+                        icon: <ServiceIcon service={service} className="size-4 shrink-0" />,
+                      })),
+                    ]}
+                    placeholder={t.projectSettings.logs.selectService}
+                  />
+                ) : undefined}
                 streamTarget={terminalStreamTarget}
                 historyTarget={terminalHistoryTarget}
                 onLogsChange={handleLogsChange}
               />
-            )}
-          </div>
-        )}
-        {activeTab === "server" && canShowLogs && hasProjectId && (
-          <ServerLogs
-            projectId={id}
-            projectName={projectData?.name || t.projectSettings.logs.projectFallback}
-            onLogsChange={handleLogsChange}
-          />
-        )}
+            )
+          )}
+        </div>
+        <div
+          id={`${tabsId}-panel-server`}
+          role="tabpanel"
+          aria-labelledby={`${tabsId}-tab-server`}
+          hidden={activeTab !== "server"}
+        >
+          {activeTab === "server" && canShowLogs && hasProjectId && (
+            <ServerLogs
+              projectId={id}
+              projectName={projectData?.name || t.projectSettings.logs.projectFallback}
+              onLogsChange={handleLogsChange}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

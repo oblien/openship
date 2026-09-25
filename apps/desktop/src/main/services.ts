@@ -112,6 +112,7 @@ function resourcePaths() {
     // ssh2 + dockerode live here (external to the API bundle); the API resolves
     // them via NODE_PATH — see startApi below.
     nodeModulesDir: join(root, "node_modules"),
+    cloudflaredPath: join(root, "cloudflared", "cloudflared.exe"),
   };
 }
 
@@ -278,7 +279,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
 
-  const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir } =
+  const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir, cloudflaredPath } =
     resourcePaths();
   const userData = app.getPath("userData");
   const dataDir = join(userData, "data");
@@ -362,6 +363,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       // actually there, so a stale/partial Resources dir falls back to geo-ip's
       // own download path instead of pinning a bad override.
       ...(existsSync(geoipDb) ? { OPENSHIP_GEOIP_DB: geoipDb } : {}),
+      ...(process.platform === "win32" && existsSync(cloudflaredPath) ? { OPENSHIP_CLOUDFLARED_PATH: cloudflaredPath } : {}),
       // Pin the mail-server install source to the staged engine tree. Gated on
       // existsSync so a stale/partial Resources dir falls back to the resolver's
       // default rather than pinning a path that definitely isn't there.

@@ -1,12 +1,13 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { DeploymentMenu } from "./DeploymentMenu";
 import { CommitDetailsModal } from "./CommitDetailsModal";
 import type { Deployment } from "../types";
 import { formatDistanceToNow, formatBuildTime, getStatusConfig } from "../utils";
-import { GitBranch, Clock, ExternalLink, MoreVertical, Archive, Pin, Activity } from "lucide-react";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { AppLogo } from "@/components/AppLogo";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -202,7 +203,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-success"
               title={t.deployments.card.activeTitle}
             >
-              <Activity className="size-2.5" />
+              <UiIcon name="activity" className="size-2.5" />
               {t.deployments.card.active}
             </span>
           )}
@@ -211,7 +212,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning"
               title={t.deployments.card.pinnedTitle}
             >
-              <Pin className="size-2.5" />
+              <UiIcon name="pin" className="size-2.5" />
               {t.deployments.card.pinned}
             </span>
           )}
@@ -221,7 +222,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
               title={t.deployments.card.snapshottedTitle}
             >
-              <Archive className="size-2.5" />
+              <UiIcon name="archive" className="size-2.5" />
               {t.deployments.card.snapshotted}
             </span>
           )}
@@ -272,7 +273,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             <>
               <span className="text-muted-foreground/40">·</span>
               <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
-                <Clock className="size-3" />
+                <UiIcon name="clock" className="size-3" />
                 {formatBuildTime(deployment.buildTime)}
               </span>
             </>
@@ -281,7 +282,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             <>
               <span className="text-muted-foreground/40 hidden sm:inline">·</span>
               <span className="min-w-0 max-w-full text-xs text-muted-foreground items-center gap-1 hidden sm:flex">
-                <GitBranch className="size-3 shrink-0" />
+                <UiIcon name="git-branch" className="size-3 shrink-0" />
                 <span className="truncate">{deployment.branch}</span>
               </span>
             </>
@@ -314,7 +315,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             {deployment.commit.hash.slice(0, 7)}
-            {deployment.owner && deployment.repo && <ExternalLink className="size-3" />}
+            {deployment.owner && deployment.repo && <UiIcon name="external-link" className="size-3" />}
           </button>
         )}
 

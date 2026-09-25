@@ -1,15 +1,7 @@
 "use client";
 
-import {
-  Activity,
-  AlertCircle,
-  ArrowRight,
-  Loader2,
-  Mail,
-  Plus,
-  Server,
-  Trash2,
-} from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -77,7 +69,7 @@ export function MailServerList({
             onClick={onAddNew}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
           >
-            <Plus className="size-4" />
+            <UiIcon name="plus" className="size-4" />
             {sl.addServer}
           </button>
         </div>
@@ -93,14 +85,14 @@ export function MailServerList({
                 {
                   id: "open",
                   label: sl.open,
-                  icon: <ArrowRight className="size-4 rtl:rotate-180" />,
+                  icon: <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />,
                   onClick: () => onOpen(s.id),
                 },
                 { id: "sep", divider: true },
                 {
                   id: "remove",
                   label: sl.removeFromList,
-                  icon: <Trash2 className="size-4" />,
+                  icon: <UiIcon name="trash" className="size-4" />,
                   variant: "danger",
                   onClick: () => onRemove(s),
                 },
@@ -120,7 +112,7 @@ export function MailServerList({
                   />
 
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-                    <Mail className="size-4" />
+                    <UiIcon name="mail" className="size-4" />
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -165,7 +157,7 @@ export function MailServerList({
                       actions={actions}
                       triggerLabel={interpolate(sl.actionsAria, { name: label })}
                     />
-                    <ArrowRight className="size-4 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/60 rtl:rotate-180" />
+                    <UiIcon name="arrow-right" className="size-4 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/60 rtl:rotate-180" />
                   </div>
                 </li>
               );
@@ -178,7 +170,7 @@ export function MailServerList({
       <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <div className="rounded-2xl border border-border/50 bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
-            <Activity className="size-4 text-muted-foreground" />
+            <UiIcon name="activity" className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">{sl.overviewTitle}</h3>
           </div>
 
@@ -201,12 +193,12 @@ export function MailServerList({
           </div>
 
           <div className="mt-4 space-y-0.5 border-t border-border/50 pt-4">
-            <StatRow icon={Server} label={sl.title} value={servers.length} />
+            <StatRow icon={"server"} label={sl.title} value={servers.length} />
             {installing > 0 && (
-              <StatRow icon={Loader2} spin tone="text-info" label={sl.installing} value={installing} />
+              <StatRow icon={"spinner"} spin tone="text-info" label={sl.installing} value={installing} />
             )}
             {incomplete > 0 && (
-              <StatRow icon={AlertCircle} tone="text-warning" label={sl.incomplete} value={incomplete} />
+              <StatRow icon={"alert-circle"} tone="text-warning" label={sl.incomplete} value={incomplete} />
             )}
           </div>
 
@@ -224,7 +216,7 @@ function StatRow({
   tone,
   spin,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   label: string;
   value: number;
   tone?: string;
@@ -233,7 +225,7 @@ function StatRow({
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className={`inline-flex items-center gap-2.5 text-sm ${tone ?? "text-muted-foreground"}`}>
-        <Icon
+        <UiIcon name={Icon}
           className={`size-4 ${tone ?? "text-muted-foreground/60"} ${spin ? "animate-spin" : ""}`}
         />
         {label}

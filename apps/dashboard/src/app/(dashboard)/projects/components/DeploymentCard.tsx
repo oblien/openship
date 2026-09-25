@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Deployment } from "@/constants/mock";
 import { formatDate } from "@/utils/date";
-import { ExternalLink, GitBranch, Clock } from "lucide-react";
 import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -47,12 +48,12 @@ const DeploymentCard = ({ deployment }: Props) => {
 
           <div className="flex items-center gap-4 text-xs text-gray-500">
             <span className="flex items-center gap-1.5">
-              <GitBranch className="w-3.5 h-3.5" />
+              <UiIcon name="git-branch" className="w-3.5 h-3.5" />
               {deployment.branch}
             </span>
             <span>{formatDate(deployment.createdAt)}</span>
             <span className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
+              <UiIcon name="clock" className="w-3.5 h-3.5" />
               {deployment.duration}
             </span>
           </div>
@@ -65,7 +66,7 @@ const DeploymentCard = ({ deployment }: Props) => {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-sm rounded-md transition-colors"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
+            <UiIcon name="external-link" className="w-3.5 h-3.5" />
             {t.projects.deploymentCard.visit}
           </a>
         )}

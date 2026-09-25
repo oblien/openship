@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -22,15 +24,6 @@ import {
   type Viewport,
   type FitViewOptions,
 } from "@xyflow/react";
-import {
-  LockKeyhole,
-  Map as MapIcon,
-  Maximize,
-  Minus,
-  Network,
-  Plus,
-  UnlockKeyhole,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResourceNode, type ScaleFlowNode } from "./ResourceNode";
 import { ClusterNode, type ClusterFlowNode } from "./ClusterNode";
@@ -103,7 +96,7 @@ function CanvasTools({
         aria-label="Zoom out"
         onClick={() => zoomOut()}
       >
-        <Minus />
+        <UiIcon name="minus" />
       </Button>
       <span className="w-10 text-center text-xs tabular-nums text-foreground/70">
         {Math.round(zoom * 100)}%
@@ -115,7 +108,7 @@ function CanvasTools({
         aria-label="Zoom in"
         onClick={() => zoomIn()}
       >
-        <Plus />
+        <UiIcon name="plus" />
       </Button>
       <span className="mx-1 h-5 w-px bg-border/70" aria-hidden="true" />
       <Button
@@ -125,7 +118,7 @@ function CanvasTools({
         aria-label="Fit topology to view"
         onClick={() => fitView(fitOptions)}
       >
-        <Maximize />
+        <UiIcon name="expand" />
       </Button>
       <span className="mx-1 h-5 w-px bg-border/70" aria-hidden="true" />
       <Button
@@ -136,7 +129,7 @@ function CanvasTools({
         aria-pressed={locked}
         onClick={onToggleLock}
       >
-        {locked ? <LockKeyhole /> : <UnlockKeyhole />}
+        {locked ? <UiIcon name="lock" /> : <UiIcon name="unlock" />}
       </Button>
       <Button
         variant="ghost"
@@ -146,7 +139,7 @@ function CanvasTools({
         aria-pressed={showMap}
         onClick={onToggleMap}
       >
-        <MapIcon />
+        <UiIcon name="map" />
       </Button>
     </Panel>
   );
@@ -431,7 +424,7 @@ function Canvas({
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--th-on-12)" />
         {!cluster && !draft.nodes.length && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-            <Network className="size-8 text-muted-foreground/50" />
+            <UiIcon name="network" className="size-8 text-muted-foreground/50" />
             <h3 className="text-lg font-medium text-foreground/80">No resources yet</h3>
             <p className="max-w-xs text-sm leading-relaxed text-muted-foreground">
               Add an edge, application, or cluster to start your topology.

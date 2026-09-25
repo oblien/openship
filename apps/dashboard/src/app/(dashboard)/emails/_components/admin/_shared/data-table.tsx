@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Proper data table for admin lists (Domains, Mailboxes, Aliases, etc.).
  *
@@ -18,7 +20,6 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { Skeleton } from "./skeleton";
 
@@ -49,7 +50,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /** Empty state when rows.length === 0 and not loading. */
   empty?: {
-    icon?: LucideIcon;
+    icon?: IconName;
     title: string;
     description?: string;
     action?: React.ReactNode;
@@ -213,7 +214,7 @@ function DataTableEmpty({
   description,
   action,
 }: {
-  icon?: LucideIcon;
+  icon?: IconName;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -222,9 +223,8 @@ function DataTableEmpty({
     <div className="bg-card rounded-2xl border border-border/50 py-16 px-6 text-center">
       {Icon && (
         <div className="mx-auto w-16 h-16 rounded-full bg-muted/60 flex items-center justify-center mb-5">
-          <Icon
+          <UiIcon name={Icon}
             className="size-7 text-muted-foreground/60"
-            strokeWidth={1.5}
           />
         </div>
       )}

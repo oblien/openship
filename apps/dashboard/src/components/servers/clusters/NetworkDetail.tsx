@@ -1,20 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowLeft,
-  Boxes,
-  Check,
-  CircleAlert,
-  Loader2,
-  Network,
-  Play,
-  Server,
-  Settings2,
-  Trash2,
-} from "lucide-react";
 import type { ClusterCapabilities, ServerCluster, ComputeCluster } from "@repo/contracts";
 import {
   managedNetworkUnsettled,
@@ -171,7 +161,7 @@ export function NetworkDetail({ id }: { id: string }) {
         href={overviewHref}
         className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-4" />
+        <UiIcon name="arrow-left" className="size-4" />
         {c.networkGroups.back}
       </Link>
       <NetworkStreamNotice stream={stream} />
@@ -187,14 +177,14 @@ export function NetworkDetail({ id }: { id: string }) {
         </div>
       )}
       {!cluster && !error && (
-        <Loader2 className="mx-auto my-20 size-6 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="mx-auto my-20 size-6 animate-spin text-muted-foreground" />
       )}
       {cluster && (
         <>
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-primary">
-                <Network className="size-6" />
+                <UiIcon name="network" className="size-6" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">{cluster.name}</h1>
@@ -213,7 +203,7 @@ export function NetworkDetail({ id }: { id: string }) {
                   onClick={() => router.push(`/servers/networks/${id}/edit`)}
                   className="rounded-lg border border-border p-2.5 text-muted-foreground hover:bg-muted disabled:opacity-40"
                 >
-                  <Settings2 className="size-4" />
+                  <UiIcon name="sliders" className="size-4" />
                 </button>
                 <Button
                   type="button"
@@ -231,7 +221,7 @@ export function NetworkDetail({ id }: { id: string }) {
                   }
                   className="h-auto min-h-10 whitespace-normal py-2.5 hover:bg-danger/10 hover:text-danger"
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                   {unsettled && cluster.operation?.plan.baseRevision === null
                     ? c.managed.cleanupSetup
                     : c.removeCluster}
@@ -243,9 +233,9 @@ export function NetworkDetail({ id }: { id: string }) {
                   className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 >
                   {running || busy ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <Play className="size-4" />
+                    <UiIcon name="play" className="size-4" />
                   )}
                   {c.verify}
                 </button>
@@ -312,7 +302,7 @@ export function NetworkDetail({ id }: { id: string }) {
             <div className="mb-5">
               <Button asChild variant="secondary">
                 <Link href={`/servers/clusters/new?networkId=${encodeURIComponent(id)}`}>
-                  <Boxes className="size-4" />
+                  <UiIcon name="cluster" className="size-4" />
                   {t.servers.clusters.createCluster}
                 </Link>
               </Button>
@@ -325,8 +315,8 @@ export function NetworkDetail({ id }: { id: string }) {
               router.replace(`/servers/networks/${id}?${query}`);
             }}
             tabs={[
-              { key: "network", label: c.diagnostics.topologyTab, icon: Network },
-              { key: "members", label: c.members, icon: Server },
+              { key: "network", label: c.diagnostics.topologyTab, icon: "network" },
+              { key: "members", label: c.members, icon: "server" },
             ]}
             className="mb-5"
           />
@@ -335,7 +325,7 @@ export function NetworkDetail({ id }: { id: string }) {
               role="status"
               className="mb-5 flex items-center gap-3 rounded-xl bg-primary/5 p-4 text-sm"
             >
-              <Loader2 className="size-4 animate-spin text-primary" />
+              <UiIcon name="spinner" className="size-4 animate-spin text-primary" />
               <span>
                 {report?.stage === "inspecting"
                   ? c.inspectingHosts
@@ -363,7 +353,7 @@ export function NetworkDetail({ id }: { id: string }) {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
-                        <Server className="size-4 shrink-0 text-muted-foreground" />
+                        <UiIcon name="server" className="size-4 shrink-0 text-muted-foreground" />
                         <Link
                           href={`/servers/${member.serverId}`}
                           className="truncate font-medium hover:text-primary"
@@ -406,9 +396,9 @@ export function NetworkDetail({ id }: { id: string }) {
                           className={`flex items-start gap-1.5 ${hostCheck.ok ? "text-success" : "text-warning"}`}
                         >
                           {hostCheck.ok ? (
-                            <Check className="size-3.5 shrink-0" />
+                            <UiIcon name="check" className="size-3.5 shrink-0" />
                           ) : (
-                            <CircleAlert className="size-3.5 shrink-0" />
+                            <UiIcon name="alert-circle" className="size-3.5 shrink-0" />
                           )}
                           {hostCheck.ok ? c.interfaceVerified : hostCheck.message}
                         </span>
@@ -493,7 +483,7 @@ export function NetworkDetail({ id }: { id: string }) {
                     className="inline-flex items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm text-white"
                     onClick={() => void remove()}
                   >
-                    {busy && <Loader2 className="size-4 animate-spin" />}
+                    {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                     {c.removeCluster}
                   </button>
                 </div>

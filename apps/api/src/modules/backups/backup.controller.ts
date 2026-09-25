@@ -1,5 +1,6 @@
 /** HTTP paths/envelopes over the same authorized operations used by the native SDK. */
 import type { Context } from "hono";
+import { ValidationError } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { getRequestContext } from "../../lib/request-context";
 import { param } from "../../lib/controller-helpers";
@@ -20,12 +21,16 @@ export async function removePolicy(c: Context) {
   return c.json({ data: await operationData(c, backups().removePolicy(getRequestContext(c), param(c, "policyId"))) });
 }
 export async function triggerManual(c: Context) {
-  return c.json({ data: await operationData(c, backups().run(getRequestContext(c), param(c, "policyId"))) });
+  return c.json({ data: await operationData(c, backups().run(getRequestContext(c), param(c, "policyId"), await c.req.json().catch(() => ({})))) });
 }
 export async function listRuns(c: Context) {
   const limit = c.req.query("limit");
+  const active = c.req.query("active");
+  if (active !== undefined && active !== "true" && active !== "false")
+    throw new ValidationError("active must be true or false");
   return c.json({ data: await operationData(c, backups().listRuns(getRequestContext(c), param(c, "projectId"), {
-    ...(limit !== undefined && { limit: Number(limit) }), serviceId: c.req.query("serviceId"),
+    ...(limit !== undefined && { limit: Number(limit) }), serviceId: c.req.query("serviceId"), before: c.req.query("before"),
+    ...(active !== undefined && { active: active === "true" }),
   })) });
 }
 export async function getOneRun(c: Context) {

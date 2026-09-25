@@ -1,16 +1,16 @@
 /**
  * Oblien Mode B owns charges, grants, renewals, quotas and suspension.
- * Openship only reads that authority and mirrors application permissions.
+ * Openship mirrors that authority. Explicit complimentary plans use Mode A.
  */
 import { AppError, safeErrorMessage, type PlanTierId, type PlanLimits } from "@repo/core";
 import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 import { env } from "../../config/env";
 import { getOblienBillingApi, getOblienClient } from "../../lib/oblien-client";
-import { assertOblienEntitlementMatchesSubscription, type OblienEntitlement, type OblienSubscription } from "../../lib/oblien-billing-api";
+import { type OblienEntitlement, type OblienSubscription } from "../../lib/oblien-billing-api";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
-import { subscriptionPlan } from "./billing-catalog";
+import { cloudBillingLockKey, effectiveCloudPlan, readProviderBilling, reconcilePlanGrant, type ResolvedPlanGrant } from "./billing-plan-grants";
 import { fromOblienCredits } from "./billing-credit-units";
 
 export { toOblienCredits, fromOblienCredits } from "./billing-credit-units";
@@ -56,6 +56,7 @@ export interface SyncedCloudEntitlement {
   subscription: OblienSubscription;
   tier: PlanTierId;
   limits: PlanLimits;
+  grant: ResolvedPlanGrant | null;
   drift: EntitlementDrift;
 }
 
@@ -68,7 +69,7 @@ interface EntitlementSyncOptions {
 export async function withCloudBillingLock<T>(organizationId: string, work: (
   sync: (options?: EntitlementSyncOptions) => Promise<SyncedCloudEntitlement>,
 ) => Promise<T>): Promise<T> {
-  return createProvisionLock(`billing:entitlement:${organizationId}`).run(() =>
+  return createProvisionLock(cloudBillingLockKey(organizationId)).run(() =>
     work(options => readAndMirrorEntitlement(organizationId, options)));
 }
 
@@ -82,18 +83,15 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
       throw new AppError("Cloud namespace is not ready", 503, "CLOUD_NAMESPACE_REQUIRED");
     }
     const billing = getOblienBillingApi();
-    const [entitlement, state] = await Promise.all([
-      billing.getEntitlement(org.oblienNamespace), billing.getSubscription(org.oblienNamespace),
-    ]);
+    const state = await readProviderBilling(billing, org.oblienNamespace);
     // A provider may echo the requested namespace while falling back to the
     // API-key owner's tier/period. Verify the namespace's subscription before
     // mirroring paid access or issuing a customer token.
-    assertOblienEntitlementMatchesSubscription(entitlement, state.subscription);
-    const { tier, limits, resourceLimits } = subscriptionPlan(
-      state.subscription,
-      organizationId,
-      org.oblienNamespace,
-    );
+    const resolved = await reconcilePlanGrant({
+      organizationId, namespace: org.oblienNamespace, grants: repos.billingPlanGrant, billing, state,
+    });
+    const { entitlement, subscription, grant } = resolved;
+    const { tier, limits, resourceLimits, currentPeriodStart, currentPeriodEnd } = effectiveCloudPlan(resolved, grant, organizationId);
     // Positive entitlements must have provider-enforced resource ceilings before
     // issuing a token or allowing another deployment. Exhausted/suspended
     // customers can still obtain management access to stop/delete resources.
@@ -101,8 +99,6 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
     if (options.syncResourceLimits !== false && entitlement.status === "active" && tier !== "free") {
       await syncCloudResourceLimits(org.oblienNamespace, tier, resourceLimits);
     }
-    const currentPeriodStart = entitlement.periodStart ? new Date(entitlement.periodStart) : null;
-    const currentPeriodEnd = entitlement.periodEnd ? new Date(entitlement.periodEnd) : null;
     const changed = org.planTierId !== tier || org.subscriptionStatus !== entitlement.status ||
       (org.currentPeriodStart?.getTime() ?? null) !== (currentPeriodStart?.getTime() ?? null) ||
       (org.currentPeriodEnd?.getTime() ?? null) !== (currentPeriodEnd?.getTime() ?? null);
@@ -114,7 +110,8 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
     }
     return {
       entitlement,
-      subscription: state.subscription,
+      subscription,
+      grant,
       tier,
       limits,
       drift: {

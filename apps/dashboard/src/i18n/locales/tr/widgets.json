@@ -102,10 +102,12 @@
       "phase": {
         "queued": "Uygun bir worker bekleniyor…",
         "preparing": "Hedef ve servis çözümleniyor…",
-        "snapshotting": "Yedek çıktıları oluşturuluyor (ön işlem çalışıyor)…",
+        "snapshotting": "Veri yedekleme hazırlanıyor…",
         "uploading": "Hedefe aktarılıyor…",
         "verifying": "Manifest yazılıyor…"
-      }
+      },
+      "reconnecting": "İlerlemeye yeniden bağlanılıyor…",
+      "reconnect": "Yeniden bağlan"
     },
     "policyEditor": {
       "presetHourly": "Saatlik",
@@ -200,7 +202,32 @@
       "compressionNone": "yok — sıkıştırma yapılmaz",
       "compressionHint": "En iyi sıkıştırmayı zstd yapar; gzip her imajın içinde gelir, bu yüzden indirme gerektirmez ve internetsiz bir makinede de çalışır.",
       "compressionAuto": "Otomatik — serviste ne varsa kullan",
-      "summaryPath": "Dosyalar ve klasörler"
+      "summaryPath": "Dosyalar ve klasörler",
+      "quick": {
+        "contents": "Yedeklenecek veriler",
+        "volumesTitle": "Servis birimleri",
+        "volumesDescription": "Bu servise bağlı tüm kalıcı birimler ve bağlama dizinleri.",
+        "selectedVolumesDescription": "Yalnızca gelişmiş seçeneklerde seçilen birimler.",
+        "databaseTitle": "{name} verileri",
+        "databaseDescription": "Tutarlı veriler için veritabanının kendi yedekleme aracını kullanır.",
+        "projectTitle": "Proje verileri",
+        "projectDescription": "Her servisin veritabanını veya kalıcı birimlerini yedekler.",
+        "filesDescription": "Gelişmiş seçeneklerde seçilen klasörleri yedekler.",
+        "customDescription": "Yapılandırdığınız yedekleme ve geri yükleme komutlarını kullanır.",
+        "onDemand": "İsteğe bağlı",
+        "onDemandHint": "İhtiyacınız olduğunda bir yedekleme başlatın.",
+        "frequency": "Yedekleme zamanı",
+        "history": "Yedekleme geçmişi",
+        "keepBackups": "Son {count} yedek",
+        "historyHint": "Eski yedekler otomatik olarak silinir.",
+        "customSchedule": "Özel zamanlama",
+        "customRetention": "Özel saklama",
+        "advancedHint": "Yedekleme yöntemi, seçili birimler, zamanlamalar ve kancalar.",
+        "saveAndBackup": "Kaydet ve yedekle",
+        "invalidRetention": "Sıfırdan büyük bir tam sayı girin veya tüm yedekleri saklamak için boş bırakın."
+      },
+      "incrementalLabel": "Artımlı yedekler",
+      "incrementalHint": "Yalnızca değişen blokları yükleyin. Her yedek tam bir geri yükleme noktası olarak kalır; veritabanı dışa aktarımları daha az alan tasarrufu sağlayabilir."
     }
   },
   "cloud": {

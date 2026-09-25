@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -113,7 +114,7 @@ export function Modal({
             onClick={onClose}
             className="absolute top-4 end-4 z-10 p-1.5 rounded-lg bg-card hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shadow-sm"
           >
-            <X className="w-5 h-5" />
+            <UiIcon name="close" className="w-5 h-5" />
           </button>
         )}
 

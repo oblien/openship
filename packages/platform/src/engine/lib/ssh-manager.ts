@@ -47,7 +47,7 @@ import { formatDuration, systemDebug } from "./system-debug";
 import { decryptSecretField } from "./credential-encryption";
 import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "./ssh-key-path";
 import { isLocalHostRow } from "./box-org";
-import { safeErrorMessage } from "@repo/core";
+import { assertSshDestination, normalizeSshTransport, parseSshTuningArgs, safeErrorMessage } from "@repo/core";
 import { assertNativeSshSettings } from "../native/execution-policy";
 
 const execFileAsync = promisify(execFile);
@@ -91,10 +91,7 @@ async function resolveSshAuthSock(): Promise<string | null> {
       // systemctl missing (non-systemd) / no value — fall through.
     }
   }
-  // Windows: the OpenSSH agent is a named pipe, not a socket, and the
-  // system-ssh path isn't supported there — return null. The caller still
-  // proceeds; `ssh` resolves auth itself (default keys / config) or fails
-  // with a clear error.
+  // Windows OpenSSH resolves its agent named pipe and user configuration itself.
   return null;
 }
 
@@ -113,6 +110,7 @@ export interface SshSettingsInput {
   sshPrivateKey?: string | null;
   sshKeyPassphrase?: string | null;
   sshJumpHost?: string | null;
+  sshTransport?: string | null;
   sshArgs?: string | null;
 }
 
@@ -133,10 +131,14 @@ export async function buildSshConfig(
     port: settings.sshPort ?? 22,
     username: settings.sshUser ?? "root",
   };
+  const transport = normalizeSshTransport(settings.sshTransport);
+  if (transport !== "direct") config.sshTransport = transport;
 
   // Jump host / extra args are honored by the system-ssh path (agent auth).
   if (settings.sshJumpHost?.trim()) config.sshJumpHost = settings.sshJumpHost.trim();
   if (settings.sshArgs?.trim()) config.sshArgs = settings.sshArgs.trim();
+  assertSshDestination(config);
+  parseSshTuningArgs(config.sshArgs);
 
   if (settings.sshAuthMethod === "password" && settings.sshPassword) {
     // Stored encrypted on insert; decrypted only here at the moment we
@@ -899,17 +901,19 @@ export class SshConnectionManager {
 
   /** Whether there's an active connection for a given server. */
   isConnected(serverId: string): boolean {
-    return this.servers.has(serverId);
+    const connection = this.servers.get(serverId);
+    return !!connection?.proven && connection.executor.persistentConnection !== false;
   }
 
   /**
-   * Cheap reachability check that never establishes or caches an SSH session.
+   * Reachability check using a TCP probe for direct connections and a bounded
+   * SSH command for routes that require Cloudflare, a jump host, or agent config.
    * This is the single source of truth for "can we reach this server right
    * now" — delete/reconcile use it to fast-fail an unreachable host in ~2.5s
    * instead of paying the 15-20s SSH connect timeout per resource.
    *
-   *   - PROVEN cached connection → reachable (don't disturb it). A merely-cached
-   *                                one isn't evidence — see ServerConnection.proven.
+   *   - PROVEN persistent connection → reachable (don't disturb it). A merely-cached
+   *                                    one isn't evidence — see ServerConnection.proven.
    *   - breaker in cooldown      → unreachable, WITHOUT any connection attempt
    *                                (the "no avoidable connection" fast path).
    *   - otherwise                → a bounded TCP probe to the SSH port; the
@@ -937,7 +941,7 @@ export class SshConnectionManager {
    */
   async diagnoseReachability(serverId: string, timeoutMs = 2500): Promise<ReachabilityDiagnosis> {
     if (this.destroyed) return { reachable: false, code: "unknown" };
-    if (this.servers.get(serverId)?.proven) return { reachable: true, code: "ok" };
+    if (this.isConnected(serverId)) return { reachable: true, code: "ok" };
 
     // Read the cooldown BEFORE the row so a remote box in cooldown still pays no
     // probe; the row read that follows is a local DB hit, and it's what decides
@@ -998,6 +1002,17 @@ export class SshConnectionManager {
     const port = server.sshPort ?? 22;
     const endpoint = { target: `${server.sshUser ?? "root"}@${host}:${port}`, host, port };
     if (inCooldown) return { reachable: false, code: "cooldown", ...endpoint };
+
+    if (server.sshTransport === "cloudflare" || server.sshJumpHost?.trim() || server.sshAuthMethod === "agent") {
+      // An Access application answers HTTPS and a bastion has its own endpoint.
+      // Prove the saved SSH route instead of declaring a blocked public :22 offline.
+      try {
+        await this.withExecutor(serverId, executor => executor.exec("true", { timeout: timeoutMs }));
+        return { reachable: true, code: "ok" };
+      } catch (error) {
+        return { reachable: false, code: "unreachable", hint: safeErrorMessage(error) };
+      }
+    }
 
     const ok = await probeTcp(host, port, timeoutMs);
     if (ok) this.recordSuccess(serverId);

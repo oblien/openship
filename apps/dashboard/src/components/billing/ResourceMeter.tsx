@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import type { ReactNode } from "react";
-import { CircleHelp } from "lucide-react";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { formatBillingNumber } from "@/lib/billing-usage";
 
@@ -10,7 +11,7 @@ export function ResourceLabel({ label, hint }: { label: string; hint: string }) 
     if (event.key === "Escape") event.currentTarget.open = false;
   }}>
     <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-xs font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-      {label}<CircleHelp className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+      {label}<UiIcon name="help-circle" className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
     </summary>
     <p className="absolute start-0 top-full z-10 mt-2 w-56 max-w-[calc(100vw-5rem)] rounded-xl border border-border/50 bg-popover p-3 text-xs leading-relaxed text-muted-foreground shadow-lg">{hint}</p>
   </details>;

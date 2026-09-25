@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -18,21 +20,8 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import {
-  ArrowUpRight,
-  Box,
-  Boxes,
-  Database,
-  Globe,
-  Layers,
-  Maximize,
-  Minus,
-  Network,
-  Plus,
-  Server,
-  Settings2,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ResourceIcon } from "@/components/scale/ResourceIcon";
 import { TrafficEdge, type ScaleFlowEdge } from "@/components/scale/TrafficEdge";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
@@ -70,115 +59,109 @@ export function TopologyResourceIcon({
   className?: string;
 }) {
   if (resource.service) return <ServiceIcon service={resource.service} className={className} />;
+  if (resource.database || (resource.clusterPod && resource.tone !== "service")) {
+    return <ResourceIcon kind={resource.tone} className={className} />;
+  }
   const Icon =
     resource.kind === "edge"
-      ? Globe
+      ? "globe"
       : resource.kind === "linked"
-        ? Database
+        ? "database"
         : resource.kind === "environment" || resource.kind === "traffic"
-          ? Layers
-          : resource.kind === "instance"
-            ? Box
-            : Boxes;
-  return <Icon className={className} />;
+          ? "layers"
+          : "window";
+  return <UiIcon name={Icon} className={className} />;
 }
 
 export function TopologyStatus({ state }: { state: TopologyState }) {
   return (
     <span
-      className="topology-status inline-flex items-center gap-1.5 text-[11px]"
+      className="topology-status text-[11px] font-medium"
       data-state={state}
     >
-      <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
       {stateLabels[state]}
     </span>
   );
 }
 
-const Resource = memo(function Resource({ data, selected }: NodeProps<ResourceFlowNode>) {
+const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
   const { resource, onOpen } = data;
   const isService = resource.kind === "service";
   const canInspectInstance =
-    (isService && !!resource.container?.containerId) || !!resource.replicaStatus || !!resource.database?.observation?.pods.length;
+    (isService && !!resource.container?.containerId && !resource.pending) || !!resource.replicaStatus || !!resource.database?.observation?.pods.length;
   const applicationRelease =
-    resource.kind === "application" && !resource.replicaStatus && resource.version;
+    resource.kind === "application" && !resource.replicaStatus && resource.state !== "disabled" && resource.version;
   return (
     <article
-      className="topology-node scale-resource-node scale-resource-tone w-[250px] overflow-hidden rounded-2xl border text-start"
+      className="topology-node scale-resource-tone w-[250px] rounded-2xl text-start"
       data-kind={resource.tone}
-      data-selected={selected}
       data-pending={resource.pending}
-      aria-label={`${resource.name}, ${resource.pending ? "pending changes" : applicationRelease ? `deployed ${resource.version}` : stateLabels[resource.state]}`}
+      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
     >
       <Handle type="target" position={Position.Left} isConnectable={isService} />
-      <div className="flex items-center gap-3 px-4 pb-3 pt-4">
-        <span className="scale-resource-icon flex size-10 shrink-0 items-center justify-center rounded-xl">
+      <div className="flex items-center gap-3 p-4 pb-3">
+        <span className="topology-node-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
           <TopologyResourceIcon resource={resource} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[13px] font-semibold text-foreground" title={resource.name}>
+          <h3 className="truncate text-sm font-medium text-foreground" title={resource.name}>
             {resource.name}
           </h3>
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground" title={resource.description}>
             {resource.description}
           </p>
         </div>
-        {resource.pending && (
-          <span className="size-2 shrink-0 rounded-full bg-warning" title="Pending changes" />
-        )}
       </div>
-      <div className="space-y-2 px-4 pb-3">
-        {resource.image && (
-          <p
-            className="truncate font-mono text-[10px] text-muted-foreground"
-            title={resource.image}
-          >
-            {resource.image}
-          </p>
-        )}
-        {resource.ownerName && (
-          <p className="truncate text-[11px] text-muted-foreground">From {resource.ownerName}</p>
-        )}
-        <div className="flex items-center justify-between gap-2">
-          {applicationRelease && resource.state !== "disabled" ? (
-            <span className="text-[11px] text-muted-foreground">Deployed {resource.version}</span>
-          ) : (
-            <TopologyStatus state={resource.pending ? "pending" : resource.state} />
+      {(resource.ownerName || resource.pending) && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
+          {resource.ownerName && (
+            <p className="truncate text-[11px] text-muted-foreground">From {resource.ownerName}</p>
           )}
-          {resource.instances !== undefined && (
-            <span className="text-[11px] text-muted-foreground">{resource.instances} running</span>
+          {resource.pending && (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning">
+              <UiIcon name="edit" className="size-2.5" />
+              Pending changes
+            </span>
           )}
         </div>
+      )}
+      <div className="px-3 pb-3">
+        <button
+          type="button"
+          className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(resource.id);
+          }}
+          aria-label={
+            canInspectInstance
+              ? `View instances of ${resource.name}`
+              : resource.clusterPod
+                ? `Inspect ${resource.name}`
+                : `Configure ${resource.name}`
+          }
+        >
+          <span className="min-w-0 truncate">
+            {canInspectInstance
+              ? "Instances"
+              : resource.clusterPod
+                ? "Inspect instance"
+                : resource.kind === "traffic"
+                  ? "View traffic"
+                  : resource.kind === "linked"
+                    ? "View connection"
+                    : "Configuration"}
+          </span>
+          <span className="flex shrink-0 items-center gap-2">
+            {applicationRelease ? (
+              <span className="text-[11px] text-muted-foreground">Deployed {resource.version}</span>
+            ) : (
+              <TopologyStatus state={resource.state} />
+            )}
+            <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />
+          </span>
+        </button>
       </div>
-      <button
-        type="button"
-        className="nodrag nopan flex w-full items-center justify-between border-t border-border/40 bg-muted/20 px-4 py-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpen(resource.id);
-        }}
-        aria-label={
-          canInspectInstance
-            ? `View instances of ${resource.name}`
-            : resource.clusterPod
-              ? `Inspect ${resource.name}`
-              : `Configure ${resource.name}`
-        }
-      >
-        <span className="flex items-center gap-1.5">
-          {canInspectInstance ? <Server className="size-3" /> : <Settings2 className="size-3" />}
-          {canInspectInstance
-            ? "View instances"
-            : resource.clusterPod
-              ? "Inspect instance"
-              : resource.kind === "traffic"
-                ? "View traffic"
-                : resource.kind === "linked"
-                  ? "View connection"
-                  : "Configuration"}
-        </span>
-        <ArrowUpRight className="size-3" />
-      </button>
       <Handle type="source" position={Position.Right} isConnectable={isService} />
     </article>
   );
@@ -186,6 +169,11 @@ const Resource = memo(function Resource({ data, selected }: NodeProps<ResourceFl
 
 const nodeTypes = { resource: Resource };
 const edgeTypes = { traffic: TrafficEdge };
+const fitViewOptions = { padding: 0.2, maxZoom: 1 };
+const ariaLabelConfig = {
+  "node.a11yDescription.default": "Press Enter or Space to open details.",
+  "edge.a11yDescription.default": "Press Enter or Space to open details.",
+};
 const defaultEdgeOptions = {
   type: "traffic",
   markerEnd: { type: MarkerType.ArrowClosed, color: "var(--th-on-30)", width: 15, height: 15 },
@@ -197,16 +185,16 @@ function CanvasTools({ onArrange }: { onArrange: () => void }) {
   return (
     <Panel
       position="bottom-left"
-      className="scale-canvas-controls flex items-center gap-0.5 rounded-xl border border-border/60 p-1"
+      className="topology-canvas-controls flex items-center gap-0.5 rounded-xl p-1"
     >
       <Button variant="ghost" size="icon" aria-label="Zoom out" onClick={() => void zoomOut()}>
-        <Minus />
+        <UiIcon name="minus" />
       </Button>
       <span className="w-10 text-center text-xs tabular-nums text-muted-foreground">
         {Math.round(zoom * 100)}%
       </span>
       <Button variant="ghost" size="icon" aria-label="Zoom in" onClick={() => void zoomIn()}>
-        <Plus />
+        <UiIcon name="plus" />
       </Button>
       <span className="mx-1 h-5 w-px bg-border/60" />
       <Button
@@ -214,9 +202,9 @@ function CanvasTools({ onArrange }: { onArrange: () => void }) {
         size="icon"
         title="Fit topology to view"
         aria-label="Fit topology to view"
-        onClick={() => void fitView({ padding: 0.2, maxZoom: 1, duration: 200 })}
+        onClick={() => void fitView({ ...fitViewOptions, duration: 200 })}
       >
-        <Maximize />
+        <UiIcon name="scan" />
       </Button>
       <Button
         variant="ghost"
@@ -225,24 +213,27 @@ function CanvasTools({ onArrange }: { onArrange: () => void }) {
         aria-label="Arrange services"
         onClick={onArrange}
       >
-        <Network />
+        <UiIcon name="topology" />
       </Button>
     </Panel>
   );
 }
 
-function InitialFit({ revision }: { revision: number }) {
+function FitOnChange({ revision, fullscreen }: { revision: number; fullscreen: boolean }) {
   const initialized = useNodesInitialized();
   const { fitView } = useReactFlow();
-  const fitted = useRef(-1);
+  // React Flow fits the initial measurements before revealing the nodes.
+  // A separate initial fit would first paint them in the default viewport.
+  const fitted = useRef(`${revision}:${fullscreen}`);
   useEffect(() => {
-    if (!initialized || fitted.current === revision) return;
+    const view = `${revision}:${fullscreen}`;
+    if (!initialized || fitted.current === view) return;
     const frame = requestAnimationFrame(() => {
-      fitted.current = revision;
-      void fitView({ padding: 0.2, maxZoom: 1, duration: revision === 0 ? 0 : 200 });
+      fitted.current = view;
+      void fitView({ ...fitViewOptions, duration: revision === 0 ? 0 : 200 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [initialized, revision, fitView]);
+  }, [initialized, revision, fullscreen, fitView]);
   return null;
 }
 
@@ -250,6 +241,7 @@ interface TopologyCanvasProps {
   layoutKey: string;
   graph: ProjectTopologyGraph;
   selection: TopologySelection;
+  fullscreen: boolean;
   inert: boolean;
   onSelect: (selection: TopologySelection) => void;
   onOpen: (id: string) => void;
@@ -260,6 +252,7 @@ function Canvas({
   layoutKey,
   graph,
   selection,
+  fullscreen,
   inert,
   onSelect,
   onOpen,
@@ -278,7 +271,8 @@ function Canvas({
         .filter((node) => graph.nodes.some((resource) => resource.id === node.id))
         .map((node) => node.position);
       return graph.nodes.map((resource) => {
-        let position = byId.get(resource.id)?.position ?? storedPositions.current?.[resource.id];
+        const existing = byId.get(resource.id);
+        let position = existing?.position ?? storedPositions.current?.[resource.id];
         if (!position) {
           position = { ...positions[resource.id] };
           // New nodes must not cover a service whose position was preserved
@@ -293,10 +287,11 @@ function Canvas({
           occupied.push(position);
         }
         return {
+          // Keep measured dimensions so selection and refresh do not hide existing nodes.
+          ...existing,
           id: resource.id,
           type: "resource" as const,
           position,
-          selected: selection?.kind === "node" && selection.id === resource.id,
           data: { resource, onOpen },
         };
       });
@@ -308,7 +303,7 @@ function Canvas({
     if (previousIds.current && previousIds.current !== ids)
       setFitRevision((revision) => revision + 1);
     previousIds.current = ids;
-  }, [graph, positions, selection, onOpen]);
+  }, [graph, positions, onOpen]);
   const edges = useMemo<ScaleFlowEdge[]>(
     () =>
       graph.edges.map((relation) => ({
@@ -328,7 +323,19 @@ function Canvas({
   );
 
   return (
-    <div className="scale-canvas h-full w-full" inert={inert}>
+    <div
+      className="scale-canvas h-full w-full"
+      inert={inert}
+      onKeyDown={(event) => {
+        if (inert || event.defaultPrevented || (event.key !== "Enter" && event.key !== " ")) return;
+        const target = event.target;
+        if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge")) return;
+        const id = target.getAttribute("data-id");
+        if (!id) return;
+        event.preventDefault();
+        onSelect({ kind: target.classList.contains("react-flow__node") ? "node" : "edge", id });
+      }}
+    >
       <ReactFlow<ResourceFlowNode, ScaleFlowEdge>
         nodes={nodes}
         edges={edges}
@@ -342,24 +349,33 @@ function Canvas({
           storedPositions.current = next;
           saveTopologyPositions(layoutKey, next);
         }}
-        onNodeClick={(_, node) => onSelect({ kind: "node", id: node.id })}
-        onEdgeClick={(_, edge) => onSelect({ kind: "edge", id: edge.id })}
+        onNodeClick={(event, node) => {
+          (event.currentTarget as HTMLElement).focus({ preventScroll: true });
+          onSelect({ kind: "node", id: node.id });
+        }}
+        onEdgeClick={(event, edge) => {
+          (event.currentTarget as SVGElement).focus({ preventScroll: true });
+          onSelect({ kind: "edge", id: edge.id });
+        }}
         onPaneClick={() => onSelect(null)}
         onConnect={onConnect}
-        onNodeDoubleClick={(_, node) => onOpen(node.id)}
         deleteKeyCode={null}
+        fitView
+        fitViewOptions={fitViewOptions}
         minZoom={0.25}
         maxZoom={1.6}
         nodesDraggable={!inert}
         nodesConnectable={!inert}
-        elementsSelectable={!inert}
+        elementsSelectable={false}
+        selectNodesOnDrag={false}
         panOnDrag={!inert}
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
         aria-label="Project topology"
+        ariaLabelConfig={ariaLabelConfig}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--th-on-10)" />
-        <InitialFit revision={fitRevision} />
+        <FitOnChange revision={fitRevision} fullscreen={fullscreen} />
         <CanvasTools
           onArrange={() => {
             storedPositions.current = positions;

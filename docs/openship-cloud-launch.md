@@ -1,10 +1,15 @@
 # Openship Cloud release gate
 
-Cloud uses Oblien Mode B. Oblien owns hosted checkout, payment collection,
+Paid Cloud subscriptions use Oblien Mode B. Oblien owns hosted checkout, payment collection,
 subscription renewals, credit grants, usage enforcement, and workspace lifecycle.
 Openship owns its prices, product copy, namespace allowances and application limits,
 customer identity, project/build orchestration, and the dashboard. It calls the provider APIs for infrastructure;
 it does not operate a hypervisor or maintain an independent payment ledger.
+
+Operators can also issue [complimentary Cloud plans](complimentary-cloud-plans.md).
+These have a separate, audited grant and a zero customer price. Their finite
+monthly allowances use Oblien Mode A; ordinary paid subscriptions keep the
+provider-managed checkout and renewal flow.
 
 The Docker deployment path passed 31 live staging checks on 2026-09-17, including
 rollback, volume restore, cold restart, HTTPS and resource cleanup. After Oblien's

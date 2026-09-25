@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Copy, Check, RefreshCw, Trash2, Webhook, Eye, EyeOff } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import {
@@ -91,7 +92,7 @@ export function IncomingWebhooks() {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Webhook className="size-[18px]" />
+              <UiIcon name="webhook" className="size-[18px]" />
             </div>
             <div>
               <h2 className="text-[15px] font-semibold text-foreground">{c.title}</h2>
@@ -103,14 +104,14 @@ export function IncomingWebhooks() {
             onClick={() => setCreating(true)}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-foreground px-3 py-2 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
           >
-            <Plus className="size-4" /> {c.create}
+            <UiIcon name="plus" className="size-4" /> {c.create}
           </button>
         </div>
 
         <div className="mt-4">
           {loading ? (
             <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> {c.loading}
+              <UiIcon name="spinner" className="size-4 animate-spin" /> {c.loading}
             </div>
           ) : hooks.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border/50 px-4 py-6 text-center text-sm text-muted-foreground">
@@ -215,10 +216,10 @@ function HookRow({
             />
           </button>
           <IconBtn title={c.rotate} onClick={onRotate}>
-            <RefreshCw className="size-3.5" />
+            <UiIcon name="refresh" className="size-3.5" />
           </IconBtn>
           <IconBtn title={c.delete} onClick={onDelete} destructive>
-            <Trash2 className="size-3.5" />
+            <UiIcon name="trash" className="size-3.5" />
           </IconBtn>
         </div>
       </div>
@@ -299,11 +300,11 @@ function CopyField({
         </code>
         {onToggleMask && (
           <IconBtn title={masked ? c.reveal : c.hide} onClick={onToggleMask}>
-            {masked ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            {masked ? <UiIcon name="eye" className="size-3.5" /> : <UiIcon name="eye-off" className="size-3.5" />}
           </IconBtn>
         )}
         <IconBtn title={copied ? c.copied : c.copy} onClick={copy}>
-          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+          {copied ? <UiIcon name="check" className="size-3.5 text-success" /> : <UiIcon name="copy" className="size-3.5" />}
         </IconBtn>
       </div>
     </div>
@@ -438,7 +439,7 @@ function CreateHookModal({
               <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-border/50 bg-background p-2">
                 {serviceOptionsState === "loading" ? (
                   <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" /> {t.projects.list.loading}
+                    <UiIcon name="spinner" className="size-4 animate-spin" /> {t.projects.list.loading}
                   </div>
                 ) : serviceOptionsState === "error" ? (
                   <div className="flex items-center justify-between gap-3 px-2 py-2 text-sm text-destructive">
@@ -518,7 +519,7 @@ function CreateHookModal({
             disabled={!canSubmit}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
             {c.create}
           </button>
         </div>

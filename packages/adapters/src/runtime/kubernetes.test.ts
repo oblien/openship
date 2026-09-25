@@ -163,6 +163,42 @@ function discoverForCleanup(
 }
 
 describe("Kubernetes workload lifecycle", () => {
+  it.each(["_", "-", ".", "a".repeat(80)])("routes and manages IDs ending in %s through valid, consistent labels", async (suffix) => {
+    const projectId = `proj_label${suffix}`;
+    const deploymentId = `dep_label${suffix}`;
+    const { create, resources, request } = setup();
+    const runtime = create(projectId);
+    const result = await runtime.deploy({ ...config(deploymentId), projectId });
+    expect(result.deploymentId).toBe(deploymentId);
+    const values = [...resources.values()];
+    const workload = values.find((value) => value.kind === "Deployment")!;
+    const projectLabel = workload.metadata.labels!["openship.io/project"];
+    const deploymentLabel = workload.metadata.labels!["openship.io/deployment"];
+    for (const value of values) {
+      for (const label of Object.values(value.metadata.labels ?? {})) {
+        expect(label).toMatch(/^[a-z0-9](?:[-a-z0-9_.]*[a-z0-9])?$/i);
+        expect(label.length).toBeLessThanOrEqual(63);
+      }
+      expect(value.metadata.labels!["openship.io/project"]).toBe(projectLabel);
+      if (value.kind === "Service")
+        expect(value.spec.selector).toEqual({ "openship.io/deployment": deploymentLabel });
+    }
+    expect(workload.spec.template.metadata.labels).toEqual(workload.metadata.labels);
+    expect(workload.spec.selector.matchLabels).toEqual({ "openship.io/deployment": deploymentLabel });
+    expect(workload.spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels)
+      .toEqual({ "openship.io/project": projectLabel });
+    expect(await runtime.listProjectContainerIds(projectId)).toEqual([result.containerId]);
+    expect(request.mock.calls.at(-1)?.[1]).toContain(
+      `labelSelector=${encodeURIComponent(`openship.io/project=${projectLabel}`)}`,
+    );
+    await runtime.stop(result.containerId!);
+    await runtime.start(result.containerId!);
+    expect(await runtime.getContainerInfo(result.containerId!)).toMatchObject({ status: "running" });
+    await runtime.destroy(result.containerId!);
+    expect(await runtime.listProjectContainerIds(projectId)).toEqual([]);
+    await runtime.dispose();
+  });
+
   it("creates isolated replicas, pins the architecture and waits before exposing a stable service", async () => {
     const { runtime, resources, watch } = setup();
     const result = await runtime.deploy(config());

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useState } from "react";
-import { Archive, ExternalLink } from "lucide-react";
 import { MAX_ROLLBACK_WINDOW, DEFAULT_ROLLBACK_WINDOW } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useDeployment } from "@/context/DeploymentContext";
@@ -132,7 +133,7 @@ export function RollbackBackupPanel({
         <div className="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Archive className="size-4" />
+              <UiIcon name="archive" className="size-4" />
             </div>
             <p className="truncate text-[12px] text-muted-foreground">{backupSummary}</p>
           </div>
@@ -142,7 +143,7 @@ export function RollbackBackupPanel({
             className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
           >
             {ts.backupManage}
-            <ExternalLink className="size-3.5" />
+            <UiIcon name="external-link" className="size-3.5" />
           </button>
         </div>
       ) : (

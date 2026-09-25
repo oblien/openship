@@ -1,4 +1,4 @@
-import { Hammer, Play } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
  * @param {object} props
@@ -35,7 +35,7 @@ export const DeploymentModeSwitch = ({
     <div className={`flex gap-2 ${className}`}>
       <div className="flex-1 flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
         <div className="flex items-center gap-2">
-          <Hammer className="w-3.5 h-3.5 text-muted-foreground" />
+          <UiIcon name="wrench" className="w-3.5 h-3.5 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium text-foreground">Build</p>
             <p className="text-[11px] text-muted-foreground leading-tight">
@@ -47,7 +47,7 @@ export const DeploymentModeSwitch = ({
       </div>
       <div className="flex-1 flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
         <div className="flex items-center gap-2">
-          <Play className="w-3.5 h-3.5 text-muted-foreground" />
+          <UiIcon name="play" className="w-3.5 h-3.5 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium text-foreground">Start</p>
             <p className="text-[11px] text-muted-foreground leading-tight">

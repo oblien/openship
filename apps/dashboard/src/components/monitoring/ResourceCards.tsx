@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Live resource usage: one overall card plus a dot per container/service.
  *
@@ -13,16 +15,6 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Cpu,
-  MemoryStick,
-  Network,
-  HardDrive,
-  Info,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type {
   ProjectUsage,
@@ -86,7 +78,7 @@ const OfflineNotice: React.FC<{ onReconnect: () => void }> = ({ onReconnect }) =
         onClick={onReconnect}
         className="ml-1 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
-        <RefreshCw className="size-3" />
+        <UiIcon name="refresh" className="size-3" />
         {m.reconnect}
       </button>
     </div>
@@ -176,10 +168,10 @@ const ServiceStrip: React.FC<{
       {(canLeft || canRight) && (
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" aria-label={m.scrollServicesLeft} disabled={!canLeft} onClick={() => nudge(-1)} className={arrowBtn}>
-            <ChevronLeft className="size-3.5" />
+            <UiIcon name="chevron-left" className="size-3.5" />
           </button>
           <button type="button" aria-label={m.scrollServicesRight} disabled={!canRight} onClick={() => nudge(1)} className={arrowBtn}>
-            <ChevronRight className="size-3.5" />
+            <UiIcon name="chevron-right" className="size-3.5" />
           </button>
         </div>
       )}
@@ -281,7 +273,7 @@ export const ResourceCards: React.FC<Props> = ({
     return (
       <>
         <div className="flex items-start gap-2">
-          <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <UiIcon name="info" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium text-foreground">{m.unsupportedTitle}</p>
             {usage.reason && (
@@ -303,7 +295,7 @@ export const ResourceCards: React.FC<Props> = ({
               onClick={onReconnect}
               className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <RefreshCw className="size-3" />
+              <UiIcon name="refresh" className="size-3" />
               {m.reconnect}
             </button>
           )}
@@ -347,7 +339,7 @@ export const ResourceCards: React.FC<Props> = ({
             pill now sits on the services row, which had empty space to the right of it. */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Metric
-            icon={<Cpu className="size-4" />}
+            icon={<UiIcon name="cpu" className="size-4" />}
             label={m.cpu}
             value={`${o.cpuPercent.toFixed(1)}%`}
             // Percent is per-core, so a 4-core box tops out at 400% — divide by the
@@ -356,20 +348,20 @@ export const ResourceCards: React.FC<Props> = ({
             subtext={cores ? interpolate(m.ofCores, { cores: String(cores) }) : undefined}
           />
           <Metric
-            icon={<MemoryStick className="size-4" />}
+            icon={<UiIcon name="memory" className="size-4" />}
             label={m.memory}
             value={formatMb(o.memoryMb)}
             fill={memTotal ? o.memoryMb / memTotal : undefined}
             subtext={memTotal ? interpolate(m.ofMemory, { total: formatMb(memTotal) }) : undefined}
           />
           <Metric
-            icon={<Network className="size-4" />}
+            icon={<UiIcon name="network" className="size-4" />}
             label={m.network}
             value={formatBytes(o.networkRxBytes + o.networkTxBytes)}
             subtext={`↓ ${formatBytes(o.networkRxBytes)} · ↑ ${formatBytes(o.networkTxBytes)}`}
           />
           <Metric
-            icon={<HardDrive className="size-4" />}
+            icon={<UiIcon name="hard-drive" className="size-4" />}
             label={m.diskIo}
             value={formatMb(o.diskMb)}
             // Labelled I/O, not "disk", on purpose: the runtimes report CUMULATIVE

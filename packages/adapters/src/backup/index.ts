@@ -13,6 +13,8 @@
  */
 
 // Types
+export { uploadIncrementalArtifact, headBackupArtifact, openBackupArtifact } from "./common/incremental";
+export type { RecordedBackupArtifact } from "./common/incremental";
 export type {
   ArtifactRef,
   Artifact,

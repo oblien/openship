@@ -1,15 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  GitBranch,
-  Lock,
-  ArrowLeft,
-  Plus,
-  HelpCircle,
-  ExternalLink,
-} from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -34,52 +27,52 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
 
   const ERROR_CONFIGS = {
     "repo-not-found": {
-      icon: GitBranch,
+      icon: "git-branch" as const,
       iconColor: "text-destructive",
       iconBg: "bg-destructive/10",
       title: w.repoNotFound.title,
       subtitle: w.repoNotFound.subtitle,
       hints: w.repoNotFound.hints,
       actions: [
-        { label: w.repoNotFound.backToLibrary, icon: ArrowLeft, variant: "secondary" as const, path: "/library" },
-        { label: w.repoNotFound.importRepository, icon: Plus, variant: "primary" as const, path: "/library" },
+        { label: w.repoNotFound.backToLibrary, icon: "arrow-left" as const, variant: "secondary" as const, path: "/library" },
+        { label: w.repoNotFound.importRepository, icon: "plus" as const, variant: "primary" as const, path: "/library" },
       ],
     },
     "project-not-found": {
-      icon: AlertTriangle,
+      icon: "warning" as const,
       iconColor: "text-destructive",
       iconBg: "bg-destructive/10",
       title: w.projectNotFound.title,
       subtitle: w.projectNotFound.subtitle,
       hints: w.projectNotFound.hints,
       actions: [
-        { label: w.projectNotFound.backToDashboard, icon: ArrowLeft, variant: "secondary" as const, path: "/" },
-        { label: w.projectNotFound.createNewProject, icon: Plus, variant: "primary" as const, path: "/library" },
+        { label: w.projectNotFound.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
+        { label: w.projectNotFound.createNewProject, icon: "plus" as const, variant: "primary" as const, path: "/library" },
       ],
     },
     "access-denied": {
-      icon: Lock,
+      icon: "lock" as const,
       iconColor: "text-warning",
       iconBg: "bg-warning-bg",
       title: w.accessDenied.title,
       subtitle: w.accessDenied.subtitle,
       hints: w.accessDenied.hints,
       actions: [
-        { label: w.accessDenied.backToDashboard, icon: ArrowLeft, variant: "secondary" as const, path: "/" },
+        { label: w.accessDenied.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
       ],
     },
     // A non-404 fetch failure (cloud unreachable, network, 5xx). The caller
     // passes the real reason via `error.details` so the actual message (e.g. a
     // cloud-connection error) shows instead of a misleading "draft" screen.
     "load-failed": {
-      icon: AlertTriangle,
+      icon: "warning" as const,
       iconColor: "text-destructive",
       iconBg: "bg-destructive/10",
       title: w.loadFailed.title,
       subtitle: w.loadFailed.subtitle,
       hints: [] as string[],
       actions: [
-        { label: w.projectNotFound.backToDashboard, icon: ArrowLeft, variant: "secondary" as const, path: "/" },
+        { label: w.projectNotFound.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
       ],
     },
   };
@@ -100,7 +93,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
             <div className="px-6 py-5 border-b border-border/50">
               <div className="flex items-center gap-4">
                 <div className={`w-11 h-11 rounded-xl ${config.iconBg} flex items-center justify-center`}>
-                  <Icon className={`size-5 ${config.iconColor}`} />
+                  <UiIcon name={Icon} className={`size-5 ${config.iconColor}`} />
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">{title}</h2>
@@ -140,7 +133,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
                           : "bg-muted/60 text-foreground hover:bg-muted"
                       }`}
                     >
-                      <ActionIcon className={`size-4 ${ActionIcon === ArrowLeft ? "rtl:rotate-180" : ""}`} />
+                      <UiIcon name={ActionIcon} className={`size-4 ${ActionIcon === "arrow-left" ? "rtl:rotate-180" : ""}`} />
                       {action.label}
                     </button>
                   );
@@ -153,7 +146,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
           <div className="bg-card rounded-2xl border border-border/50 mt-4 px-5 py-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <HelpCircle className="size-[18px] text-primary" />
+                <UiIcon name="help-circle" className="size-[18px] text-primary" />
               </div>
               <div>
                 <h3 className="text-sm font-medium text-foreground mb-1">{w.needHelp}</h3>
@@ -167,7 +160,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
                     rel="noopener noreferrer"
                     className="text-xs font-medium text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
                   >
-                    {w.documentation} <ExternalLink className="size-3" />
+                    {w.documentation} <UiIcon name="external-link" className="size-3" />
                   </a>
                 </div>
               </div>

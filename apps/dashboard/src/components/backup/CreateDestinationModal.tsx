@@ -1,19 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  Cloud,
-  Server,
-  ServerCog,
-  HardDrive,
-  Database,
-  Lock,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import ServerSelector from "@/components/shared/ServerSelector";
@@ -29,20 +18,20 @@ type Kind = Exclude<BackupDestinationSummary["kind"], "http_upload" | "local">;
 
 interface KindOption {
   kind: Kind;
-  icon: LucideIcon;
+  icon: IconName;
 }
 
 const KIND_OPTIONS: KindOption[] = [
-  { kind: "s3_compatible", icon: Cloud },
-  { kind: "sftp", icon: Server },
-  { kind: "openship_server", icon: ServerCog },
+  { kind: "s3_compatible", icon: "cloud" },
+  { kind: "sftp", icon: "server" },
+  { kind: "openship_server", icon: "server-settings" },
 ];
 
 // ─── S3 providers ────────────────────────────────────────────────────────────
 // The provider is UI sugar: it decides how the canonical `endpoint`/`region`
 // stored on the destination are built, and which helper field the user fills.
 // Brand marks come from the simpleicons CDN (brand color by default), falling
-// back to a tinted lucide glyph when a slug is missing / offline.
+// back to a tinted catalog icon when a slug is missing / offline.
 
 type S3ProviderId = "aws" | "r2" | "b2" | "wasabi" | "do" | "minio";
 
@@ -55,18 +44,18 @@ interface S3Provider {
   label: string;
   slug?: string;
   color: string;
-  icon: LucideIcon;
+  icon: IconName;
   mode: S3Mode;
   regionPlaceholder?: string;
 }
 
 const S3_PROVIDERS: S3Provider[] = [
-  { id: "aws", label: "AWS S3", slug: "amazons3", color: "#569A31", icon: Cloud, mode: "region", regionPlaceholder: "us-east-1" },
-  { id: "r2", label: "Cloudflare R2", slug: "cloudflare", color: "#F38020", icon: Cloud, mode: "accountId" },
-  { id: "b2", label: "Backblaze B2", slug: "backblaze", color: "#E21E29", icon: HardDrive, mode: "region", regionPlaceholder: "us-west-004" },
-  { id: "wasabi", label: "Wasabi", color: "#01CD3E", icon: Database, mode: "region", regionPlaceholder: "us-east-1" },
-  { id: "do", label: "DigitalOcean Spaces", slug: "digitalocean", color: "#0080FF", icon: Cloud, mode: "region", regionPlaceholder: "nyc3" },
-  { id: "minio", label: "MinIO / Custom", slug: "minio", color: "#C72E49", icon: Server, mode: "endpoint" },
+  { id: "aws", label: "AWS S3", slug: "amazons3", color: "#569A31", icon: "cloud", mode: "region", regionPlaceholder: "us-east-1" },
+  { id: "r2", label: "Cloudflare R2", slug: "cloudflare", color: "#F38020", icon: "cloud", mode: "accountId" },
+  { id: "b2", label: "Backblaze B2", slug: "backblaze", color: "#E21E29", icon: "hard-drive", mode: "region", regionPlaceholder: "us-west-004" },
+  { id: "wasabi", label: "Wasabi", color: "#01CD3E", icon: "database", mode: "region", regionPlaceholder: "us-east-1" },
+  { id: "do", label: "DigitalOcean Spaces", slug: "digitalocean", color: "#0080FF", icon: "cloud", mode: "region", regionPlaceholder: "nyc3" },
+  { id: "minio", label: "MinIO / Custom", slug: "minio", color: "#C72E49", icon: "server", mode: "endpoint" },
 ];
 
 /** provider id → misc.backups i18n key (the dict is flat string→string). */
@@ -138,16 +127,16 @@ function deriveS3Provider(
   return { provider: "minio", region: region ?? "", accountId: "", endpoint: ep };
 }
 
-/** Brand mark: simpleicons CDN (brand-colored) with a tinted lucide fallback. */
+/** Brand mark: simpleicons CDN (brand-colored) with a catalog icon fallback. */
 function ProviderMark({
   slug,
   color,
-  icon: Icon = Database,
+  icon: Icon = "database",
   className = "size-5",
 }: {
   slug?: string;
   color?: string;
-  icon?: LucideIcon;
+  icon?: IconName;
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -162,7 +151,7 @@ function ProviderMark({
       />
     );
   }
-  return <Icon className={className} style={color ? { color } : undefined} />;
+  return <UiIcon name={Icon} className={className} style={color ? { color } : undefined} />;
 }
 
 /** Translated display title for a destination kind. */
@@ -250,7 +239,7 @@ export function CreateDestinationModal({ isOpen, onClose, onSaved, destination }
                 className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label={m.backToPicker}
               >
-                <ArrowLeft className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
               </button>
             )}
             <div className="min-w-0">
@@ -269,7 +258,7 @@ export function CreateDestinationModal({ isOpen, onClose, onSaved, destination }
             </div>
           </div>
           <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-            <Lock className="size-3.5" />
+            <UiIcon name="lock" className="size-3.5" />
             {m.encryptedAtRest}
           </div>
         </div>
@@ -318,7 +307,7 @@ function KindPicker({ onPick }: { onPick: (kind: Kind) => void }) {
             className="group flex items-start gap-4 rounded-2xl border border-border/60 bg-card p-5 text-start transition-all hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5"
           >
             <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground transition-transform group-hover:scale-105">
-              <Icon className="size-5" />
+              <UiIcon name={Icon} className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold text-foreground">
@@ -705,9 +694,9 @@ function ConfigureForm({
                 : "border-border/50 bg-muted/20 text-muted-foreground"
           }`}
         >
-          {test.status === "testing" && <Loader2 className="size-4 mt-0.5 shrink-0 animate-spin" />}
-          {test.status === "ok" && <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
-          {test.status === "fail" && <XCircle className="size-4 mt-0.5 shrink-0" />}
+          {test.status === "testing" && <UiIcon name="spinner" className="size-4 mt-0.5 shrink-0 animate-spin" />}
+          {test.status === "ok" && <UiIcon name="check-circle" className="size-4 mt-0.5 shrink-0" />}
+          {test.status === "fail" && <UiIcon name="x-circle" className="size-4 mt-0.5 shrink-0" />}
           <span className="min-w-0">
             {test.status === "testing"
               ? m.testing
@@ -726,9 +715,9 @@ function ConfigureForm({
           disabled={busy || test.status === "testing" || !name.trim()}
         >
           {test.status === "testing" ? (
-            <Loader2 className="animate-spin" />
+            <UiIcon name="spinner" className="animate-spin" />
           ) : (
-            <CheckCircle2 />
+            <UiIcon name="check-circle" />
           )}
           {m.testConnection}
         </Button>

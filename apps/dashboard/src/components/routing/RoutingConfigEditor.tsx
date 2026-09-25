@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Controlled editor for a project's vercel.json-derived routing config
  * (rewrites / redirects / headers / cleanUrls / trailingSlash). Used in BOTH the
@@ -11,7 +13,6 @@
  */
 
 import React, { useCallback } from "react";
-import { Plus, Trash2, ArrowRight } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import type { RoutingConfig } from "@repo/core";
 import type { EdgeConfigReport } from "@/lib/api/projects";
@@ -71,7 +72,7 @@ const RowShell: React.FC<{ onRemove: () => void; children: React.ReactNode; disa
         className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger-bg disabled:opacity-40"
         aria-label={t.widgets.routing.configEditor.remove}
       >
-        <Trash2 className="size-3.5" />
+        <UiIcon name="trash" className="size-3.5" />
       </button>
     </div>
   );
@@ -96,7 +97,7 @@ const SectionHeader: React.FC<{ title: string; hint: string; onAdd: () => void; 
         disabled={disabled}
         className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-40"
       >
-        <Plus className="size-3.5" /> {t.widgets.routing.configEditor.add}
+        <UiIcon name="plus" className="size-3.5" /> {t.widgets.routing.configEditor.add}
       </button>
     </div>
   );
@@ -166,7 +167,7 @@ export const RoutingConfigEditor: React.FC<{
                 patch({ rewrites: rewrites.map((r, j) => (j === i ? { ...r, source: e.target.value } : r)) })
               }
             />
-            <ArrowRight className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
             <input
               className={inputCls}
               placeholder="/index.html or https://backend"
@@ -205,7 +206,7 @@ export const RoutingConfigEditor: React.FC<{
                 patch({ redirects: redirects.map((r, j) => (j === i ? { ...r, source: e.target.value } : r)) })
               }
             />
-            <ArrowRight className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
             <input
               className={inputCls}
               placeholder="/new"
@@ -308,7 +309,7 @@ export const RoutingConfigEditor: React.FC<{
                     className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger-bg disabled:opacity-40"
                     aria-label={w.removeHeader}
                   >
-                    <Trash2 className="size-3.5" />
+                    <UiIcon name="trash" className="size-3.5" />
                   </button>
                 </div>
               ))}
@@ -324,7 +325,7 @@ export const RoutingConfigEditor: React.FC<{
                 }
                 className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-40"
               >
-                <Plus className="size-3" /> {w.addHeader}
+                <UiIcon name="plus" className="size-3" /> {w.addHeader}
               </button>
             </div>
           </div>

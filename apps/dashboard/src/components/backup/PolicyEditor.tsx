@@ -1,20 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Copy,
-  RefreshCw,
-  Globe,
-  Clock,
-  Calendar,
-  Sparkles,
-  HardDrive,
-  Terminal,
-  ChevronDown,
-  Database,
-  FolderTree,
-  Plus,
-} from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
+import React, { useEffect, useId, useRef, useState } from "react";
 import {
   backupsApi,
   backupDestinationsApi,
@@ -24,12 +12,18 @@ import {
   type BackupPolicy,
 } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Input, inputVariants } from "@/components/ui/input";
+import { Toggle } from "@/components/project-settings/ServerSideSwitch";
+import { cn } from "@/lib/utils";
 import { CreateDestinationModal } from "./CreateDestinationModal";
+import { kindLabel } from "./destinationDisplay";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import {
   PAYLOAD_COMPRESSION_CODECS,
   PAYLOAD_KIND_AUTO,
+  DEFAULT_RETAIN_COUNT,
   detectDbImage,
   isPolicyPayloadKind,
   operatorSelectableKinds,
@@ -50,9 +44,14 @@ interface Props {
    *  the user sees what "Auto" will do. The backend stays the source of truth. */
   serviceImage?: string | null;
   existing?: BackupPolicy | null;
+  /** Keep storage created from the project panel selected in a new policy. */
+  initialDestination?: BackupDestinationSummary | null;
+  onDestinationSaved?: (destination: BackupDestinationSummary) => void;
   submitLabel?: string;
   onClose: () => void;
   onSaved: (policy: BackupPolicy) => void | Promise<void>;
+  /** Optional first-backup action. Ordinary saves never start a run. */
+  onSavedAndRun?: (policy: BackupPolicy) => void | Promise<void>;
 }
 
 /**
@@ -100,14 +99,14 @@ const SHAPE_ORDER: Record<BackupPayloadSpec["shape"], number> = {
   opaque: 2,
 };
 
-const SHAPE_ICONS: Record<BackupPayloadSpec["shape"], typeof Sparkles> = {
-  database: Database,
-  filesystem: HardDrive,
-  opaque: Terminal,
+const SHAPE_ICONS: Record<BackupPayloadSpec["shape"], IconName> = {
+  database: "database",
+  filesystem: "hard-drive",
+  opaque: "terminal",
 };
 
 /** A nicer icon than the kind's shape implies. Opt-in; the shape default is fine. */
-const KIND_ICONS: Partial<Record<PayloadKind, typeof Sparkles>> = { path: FolderTree };
+const KIND_ICONS: Partial<Record<PayloadKind, IconName>> = { path: "folder-tree" };
 
 /**
  * Every `payloadConfig` option, and whether this dialog renders a control for it.
@@ -143,6 +142,7 @@ type CompressionChoice = "" | PayloadCompression;
 
 /** `payloadConfig` as this form reads it. Every field is untrusted jsonb. */
 interface StoredConfig {
+  incremental?: unknown;
   produceCommand?: unknown;
   command?: unknown;
   restoreCommand?: unknown;
@@ -173,12 +173,19 @@ export function PolicyEditor({
   serviceName,
   serviceImage,
   existing,
+  initialDestination,
+  onDestinationSaved,
   submitLabel,
   onClose,
   onSaved,
+  onSavedAndRun,
 }: Props): React.JSX.Element {
   const { t } = useI18n();
   const w = t.widgets.backup.policyEditor;
+  const q = w.quick;
+  const titleId = useId();
+  const advancedId = useId();
+  const detected = detectDb(serviceImage);
   const CRON_PRESETS = [
     { label: w.presetHourly, value: "7 * * * *" },
     { label: w.presetDaily, value: "17 3 * * *" },
@@ -199,8 +206,12 @@ export function PolicyEditor({
 
   const stored = (existing?.payloadConfig ?? {}) as StoredConfig;
 
-  const [destinations, setDestinations] = useState<BackupDestinationSummary[]>([]);
-  const [destinationId, setDestinationId] = useState(existing?.destinationId ?? "");
+  const [destinations, setDestinations] = useState<BackupDestinationSummary[]>(
+    initialDestination ? [initialDestination] : [],
+  );
+  const [destinationId, setDestinationId] = useState(
+    existing?.destinationId ?? initialDestination?.id ?? "",
+  );
   const [showDestinationEditor, setShowDestinationEditor] = useState(false);
   const [destinationsLoading, setDestinationsLoading] = useState(true);
   const [destinationsError, setDestinationsError] = useState<string | null>(null);
@@ -211,7 +222,11 @@ export function PolicyEditor({
    * three-way mapping showed as "Auto" and rewrote to `auto` on save.
    */
   const [kind, setKind] = useState<PolicyPayloadKind>(
-    isPolicyPayloadKind(existing?.payloadKind) ? existing.payloadKind : PAYLOAD_KIND_AUTO,
+    isPolicyPayloadKind(existing?.payloadKind)
+      ? existing.payloadKind
+      : serviceId
+        ? (detected?.payloadKind ?? "volume")
+        : PAYLOAD_KIND_AUTO,
   );
   /** Both key spellings: `command` is what this form used to write. */
   const [customCommand, setCustomCommand] = useState(
@@ -222,22 +237,26 @@ export function PolicyEditor({
   const [excludeText, setExcludeText] = useState(toText(stored.exclude));
   const [sourceIdsText, setSourceIdsText] = useState(toText(stored.sourceIds));
   const [quiesce, setQuiesce] = useState(stored.quiesce === true);
+  const [incremental, setIncremental] = useState(stored.incremental === true);
   const [clearPath, setClearPath] = useState(stored.clearPath === true);
   const [compression, setCompression] = useState<CompressionChoice>(
     PAYLOAD_COMPRESSION_CODECS.find((codec) => codec === stored.compression) ?? "",
   );
   const [cronExpression, setCronExpression] = useState(existing?.cronExpression ?? "");
-  const [triggerOnPreDeploy, setTriggerOnPreDeploy] = useState(existing?.triggerOnPreDeploy ?? false);
+  const [triggerOnPreDeploy, setTriggerOnPreDeploy] = useState(
+    existing?.triggerOnPreDeploy ?? false,
+  );
   const [enableWebhook, setEnableWebhook] = useState(!!existing?.webhookToken);
-  const [retainCount, setRetainCount] = useState<number | "">(existing?.retainCount ?? 7);
+  const [retainCount, setRetainCount] = useState<number | "">(
+    existing ? (existing.retainCount ?? "") : DEFAULT_RETAIN_COUNT,
+  );
   const [retainDays, setRetainDays] = useState<number | "">(existing?.retainDays ?? "");
   const [preHook, setPreHook] = useState(existing?.preHook ?? "");
   const [postHook, setPostHook] = useState(existing?.postHook ?? "");
   const [enabled, setEnabled] = useState(existing?.enabled ?? true);
-  // Open Advanced by default when an existing policy already uses any of it.
-  const [showAdvanced, setShowAdvanced] = useState(
-    !!(existing?.triggerOnPreDeploy || existing?.webhookToken || existing?.preHook || existing?.postHook),
-  );
+  // Collapsing the controls never resets a saved policy or an in-progress draft.
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
 
@@ -254,7 +273,14 @@ export function PolicyEditor({
           ...res.data,
           ...current.filter((destination) => !res.data.some((item) => item.id === destination.id)),
         ]);
-        if (!existing) setDestinationId((current) => current || res.data[0]?.id || "");
+        if (!existing)
+          setDestinationId(
+            (current) =>
+              current ||
+              res.data.find((destination) => destination.isDefault)?.id ||
+              res.data[0]?.id ||
+              "",
+          );
       })
       .catch((error) => {
         if (!cancelled) setDestinationsError(getApiErrorMessage(error, w.failedLoadDestinations));
@@ -267,16 +293,18 @@ export function PolicyEditor({
     };
   }, [existing, destinationRequest, w.failedLoadDestinations]);
 
-  const detected = detectDb(serviceImage);
   const webhookUrl = existing?.webhookToken
     ? `${getApiBaseUrl()}webhooks/backup/${existing.webhookToken}`
     : null;
 
-  const activeSpec: BackupPayloadSpec | null = kind === PAYLOAD_KIND_AUTO ? null : payloadSpec(kind);
+  const activeSpec: BackupPayloadSpec | null =
+    kind === PAYLOAD_KIND_AUTO ? null : payloadSpec(kind);
   const activeCard: CardId =
-    activeSpec === null ? PAYLOAD_KIND_AUTO
-    : activeSpec.shape === "database" ? "database"
-    : activeSpec.kind;
+    activeSpec === null
+      ? PAYLOAD_KIND_AUTO
+      : activeSpec.shape === "database"
+        ? "database"
+        : activeSpec.kind;
 
   /**
    * Which options this kind actually has — the catalog's answer, not a per-card list.
@@ -307,15 +335,13 @@ export function PolicyEditor({
         : w.summaryVolume
       : activeSpec.shape === "database"
         ? interpolate(w.summaryLogical, { label: activeSpec.label })
-        : activeSpec.kind === "path" ? w.summaryPath
-        : activeSpec.kind === "volume" ? w.summaryVolume
-        : activeSpec.kind === "custom_command" ? w.summaryCustom
-        : activeSpec.label;
-  const scheduleSummary =
-    cronExpression === ""
-      ? w.summaryScheduleManual
-      : CRON_PRESETS.find((p) => p.value === cronExpression)?.label ?? cronExpression;
-  const destName = destinations.find((d) => d.id === destinationId)?.name ?? "—";
+        : activeSpec.kind === "path"
+          ? w.summaryPath
+          : activeSpec.kind === "volume"
+            ? w.summaryVolume
+            : activeSpec.kind === "custom_command"
+              ? w.summaryCustom
+              : activeSpec.label;
   const retentionSummary =
     [
       retainCount !== "" ? interpolate(w.keepN, { n: String(retainCount) }) : null,
@@ -324,18 +350,18 @@ export function PolicyEditor({
       .filter(Boolean)
       .join(" · ") || w.retentionUnlimited;
 
-  const cardCopy = (id: CardId): { label: string; desc: string; icon: typeof Sparkles } => {
+  const cardCopy = (id: CardId): { label: string; desc: string; icon: IconName } => {
     switch (id) {
       case PAYLOAD_KIND_AUTO:
-        return { label: w.methodAuto, desc: w.methodAutoDesc, icon: Sparkles };
+        return { label: w.methodAuto, desc: w.methodAutoDesc, icon: "sparkles" };
       case "database":
-        return { label: w.methodDatabase, desc: w.methodDatabaseDesc, icon: Database };
+        return { label: w.methodDatabase, desc: w.methodDatabaseDesc, icon: "database" };
       case "path":
-        return { label: w.methodPath, desc: w.methodPathDesc, icon: FolderTree };
+        return { label: w.methodPath, desc: w.methodPathDesc, icon: "folder-tree" };
       case "volume":
-        return { label: w.methodVolume, desc: w.methodVolumeDesc, icon: HardDrive };
+        return { label: w.methodVolume, desc: w.methodVolumeDesc, icon: "hard-drive" };
       case "custom_command":
-        return { label: w.methodCustom, desc: w.methodCustomDesc, icon: Terminal };
+        return { label: w.methodCustom, desc: w.methodCustomDesc, icon: "terminal" };
       default: {
         // A kind added to the catalog but not yet to this file's copy. It appears with
         // its catalog label — untranslated, and better than the alternative: the `path`
@@ -367,8 +393,10 @@ export function PolicyEditor({
    * opposite of the top-level rule below, where a cleared field must be sent as null.
    */
   const buildPayloadConfig = (): Record<string, unknown> | undefined => {
-    if (!activeSpec || activeSpec.configKeys.length === 0) return undefined;
+    if ((!activeSpec || activeSpec.configKeys.length === 0) && incremental === (stored.incremental === true)) return undefined;
     const next: Record<string, unknown> = { ...(existing?.payloadConfig ?? {}) };
+    if (incremental) next.incremental = true;
+    else delete next.incremental;
     const set = (key: PayloadConfigKey, value: unknown) => {
       if (!shows(key)) return;
       if (value === undefined) delete next[key];
@@ -393,16 +421,18 @@ export function PolicyEditor({
     return next;
   };
 
-  const submit = async () => {
+  const submit = async (runAfterSave = false) => {
     if (submitting.current) return;
+    setFormError(null);
     if (!destinationId) {
-      window.alert(w.selectDestinationAlert);
+      setFormError(w.selectDestinationAlert);
       return;
     }
     // Field-specific and translated for the three empty-field mistakes, which are the
     // ones an operator makes while filling this in.
     if (shows("produceCommand") && !customCommand.trim()) {
-      window.alert(w.customCommandRequired);
+      setShowAdvanced(true);
+      setFormError(w.customCommandRequired);
       return;
     }
     // A custom backup with no restore command captures artifacts nothing can put
@@ -411,11 +441,22 @@ export function PolicyEditor({
     // is recoverable. Read off the catalog, so a future kind that also needs its
     // inverse recorded is covered without touching this line.
     if (activeSpec?.requiresRestoreCommand && !restoreCommand.trim()) {
-      window.alert(w.restoreCommandRequired);
+      setShowAdvanced(true);
+      setFormError(w.restoreCommandRequired);
       return;
     }
     if (shows("paths") && toList(pathsText).length === 0) {
-      window.alert(w.pathsRequired);
+      setShowAdvanced(true);
+      setFormError(w.pathsRequired);
+      return;
+    }
+    if (
+      [retainCount, retainDays].some(
+        (value) => value !== "" && (!Number.isInteger(value) || value < 1),
+      )
+    ) {
+      setShowAdvanced(true);
+      setFormError(q.invalidRetention);
       return;
     }
     const config = buildPayloadConfig();
@@ -430,7 +471,8 @@ export function PolicyEditor({
      */
     const invalid = validatePolicyPayload(kind, config ?? existing?.payloadConfig ?? null);
     if (invalid) {
-      window.alert(invalid);
+      setShowAdvanced(true);
+      setFormError(invalid);
       return;
     }
     submitting.current = true;
@@ -472,9 +514,9 @@ export function PolicyEditor({
       const saved = existing
         ? await backupsApi.updatePolicy(existing.id, payload)
         : await backupsApi.createPolicy(projectId, payload);
-      await onSaved(saved.data);
+      await (runAfterSave && onSavedAndRun ? onSavedAndRun : onSaved)(saved.data);
     } catch (err) {
-      window.alert(getApiErrorMessage(err, w.failedSave));
+      setFormError(getApiErrorMessage(err, w.failedSave));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -488,16 +530,16 @@ export function PolicyEditor({
       const saved = await backupsApi.updatePolicy(existing.id, { rotateWebhookToken: true });
       await onSaved(saved.data);
     } catch (err) {
-      window.alert(getApiErrorMessage(err, w.failedRotate));
+      setFormError(getApiErrorMessage(err, w.failedRotate));
     } finally {
       setBusy(false);
     }
   };
 
-  const inputClass =
-    "w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all";
-  const commandClass =
-    "w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20";
+  const commandClass = cn(
+    inputVariants({ variant: "filled" }),
+    "h-auto min-h-20 resize-y font-mono",
+  );
 
   const compressionOptions: Array<{ value: CompressionChoice; label: string }> = [
     { value: "", label: w.compressionAuto },
@@ -518,10 +560,48 @@ export function PolicyEditor({
           ]);
           setDestinationId(destination.id);
           setShowDestinationEditor(false);
+          onDestinationSaved?.(destination);
         }}
       />
     );
   }
+
+  const quickScheduleOptions = [
+    ...CRON_PRESETS.map((preset) => ({
+      value: preset.value,
+      label: preset.value ? preset.label : q.onDemand,
+    })),
+    ...(!CRON_PRESETS.some((preset) => preset.value === cronExpression)
+      ? [{ value: cronExpression, label: q.customSchedule }]
+      : []),
+  ];
+  const retentionPresets = [DEFAULT_RETAIN_COUNT, 14, 30];
+  const retentionPreset =
+    retainDays === "" && retainCount !== "" && retentionPresets.includes(retainCount)
+      ? String(retainCount)
+      : "custom";
+  const isProjectAuto = !serviceId && kind === PAYLOAD_KIND_AUTO;
+  const isDatabase = activeSpec?.shape === "database" || (kind === PAYLOAD_KIND_AUTO && !!detected);
+  const isVolume = kind === "volume" || (kind === PAYLOAD_KIND_AUTO && !detected && !!serviceId);
+  const presetTitle = isProjectAuto
+    ? q.projectTitle
+    : isDatabase
+      ? interpolate(q.databaseTitle, { name: activeSpec?.label ?? detected!.label })
+      : isVolume
+        ? q.volumesTitle
+        : methodSummary;
+  const presetDescription = isProjectAuto
+    ? q.projectDescription
+    : isDatabase
+      ? q.databaseDescription
+      : isVolume
+        ? toList(sourceIdsText).length
+          ? q.selectedVolumesDescription
+          : q.volumesDescription
+        : kind === "path"
+          ? q.filesDescription
+          : q.customDescription;
+  const canSaveAndRun = !existing && !!onSavedAndRun && !submitLabel;
 
   return (
     <Modal
@@ -529,392 +609,561 @@ export function PolicyEditor({
       onClose={onClose}
       closable={!busy}
       showCloseButton={!busy}
-      width="1200px"
+      width={showAdvanced ? "1120px" : "600px"}
+      height={showAdvanced ? "min(780px, calc(100dvh - 2rem))" : "auto"}
       maxWidth="100%"
-      height="760px"
-      maxHeight="calc(100dvh - 4rem)"
+      maxHeight="calc(100dvh - 2rem)"
       overflow="hidden"
     >
-      {/* Header */}
-      <div className="shrink-0 border-b border-border/50 px-5 pt-6 pb-5 pe-14 sm:px-8 sm:pe-14">
-        <h2 className="text-xl font-semibold text-foreground">
-          {existing ? w.editTitle : w.createTitle}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {serviceName ? interpolate(w.serviceLabel, { name: serviceName }) : w.projectLevel}
-        </p>
-      </div>
-
-      {/* One scroll area keeps every field reachable on smaller screens. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Left: policy configuration */}
-        <div className="min-w-0 space-y-7 px-5 py-6 sm:px-8">
-          {/* Method — the hero */}
-          <div>
-            <label className="mb-2 block text-xs font-medium text-foreground/80">{w.methodLabel}</label>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-              {cards.map((id) => {
-                const active = activeCard === id;
-                const { label, desc, icon: Icon } = cardCopy(id);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => selectCard(id)}
-                    className={`flex flex-col items-start gap-1.5 rounded-xl border p-3 text-start transition-colors ${
-                      active ? "border-primary/60 bg-primary/[0.08]" : "border-border/50 hover:bg-muted/40"
-                    }`}
-                  >
-                    <Icon className={`size-4 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                    <span className="text-[13px] font-medium text-foreground">{label}</span>
-                    <span className="text-[11px] leading-tight text-muted-foreground">{desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* The chosen kind's own hint, then its own options. */}
-            {activeCard === PAYLOAD_KIND_AUTO && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {detected
-                  ? interpolate(w.detected, { label: detected.label, method: detected.method })
-                  : w.autoNoDb}
-              </p>
-            )}
-            {activeCard === "database" && activeSpec && (
-              <div className="mt-3 space-y-3">
-                <Field label={w.engineLabel} hint={w.engineHint}>
-                  <CustomSelect<PayloadKind>
-                    value={activeSpec.kind}
-                    onChange={setKind}
-                    options={dbSpecs.map((spec) => ({
-                      value: spec.kind,
-                      label: spec.label,
-                      description: spec.method,
-                    }))}
-                  />
-                </Field>
-                <p className="text-xs text-muted-foreground">
-                  {interpolate(w.databaseHint, { method: activeSpec.method })}
-                </p>
-              </div>
-            )}
-            {activeCard === "path" && <p className="mt-2 text-xs text-muted-foreground">{w.pathHint}</p>}
-            {activeCard === "volume" && <p className="mt-2 text-xs text-muted-foreground">{w.volumeHint}</p>}
-
-            <div className="mt-3 space-y-3">
-              {shows("paths") && (
-                <Field label={w.pathsLabel} hint={w.pathsHint}>
-                  <textarea
-                    value={pathsText}
-                    onChange={(e) => setPathsText(e.target.value)}
-                    rows={3}
-                    placeholder={"/var/www/html\n/data/uploads"}
-                    className={commandClass}
-                  />
-                </Field>
-              )}
-              {shows("sourceIds") && (
-                <Field label={w.sourceIdsLabel} hint={w.sourceIdsHint}>
-                  <textarea
-                    value={sourceIdsText}
-                    onChange={(e) => setSourceIdsText(e.target.value)}
-                    rows={2}
-                    className={commandClass}
-                  />
-                </Field>
-              )}
-              {shows("produceCommand") && (
-                <Field label={w.customCommandLabel} hint={w.customCommandHint}>
-                  <textarea
-                    value={customCommand}
-                    onChange={(e) => setCustomCommand(e.target.value)}
-                    rows={2}
-                    placeholder="pg_dump -Fc -U $POSTGRES_USER $POSTGRES_DB"
-                    className={commandClass}
-                  />
-                </Field>
-              )}
-              {shows("restoreCommand") && (
-                <Field label={w.restoreCommandLabel} hint={w.restoreCommandHint}>
-                  <textarea
-                    value={restoreCommand}
-                    onChange={(e) => setRestoreCommand(e.target.value)}
-                    rows={2}
-                    placeholder="pg_restore -c -U $POSTGRES_USER -d $POSTGRES_DB"
-                    className={commandClass}
-                  />
-                </Field>
-              )}
-              {shows("exclude") && (
-                <Field label={w.excludeLabel} hint={w.excludeHint}>
-                  <textarea
-                    value={excludeText}
-                    onChange={(e) => setExcludeText(e.target.value)}
-                    rows={2}
-                    className={commandClass}
-                  />
-                </Field>
-              )}
-              {shows("compression") && (
-                <Field label={w.compressionLabel} hint={w.compressionHint}>
-                  <CustomSelect<CompressionChoice>
-                    value={compression}
-                    onChange={setCompression}
-                    options={compressionOptions}
-                  />
-                </Field>
-              )}
-              {shows("quiesce") && (
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={quiesce}
-                    onChange={(e) => setQuiesce(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span className="text-sm text-foreground/80">
-                    <span className="font-medium">{w.quiesceLabel}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{w.quiesceHint}</span>
-                  </span>
-                </label>
-              )}
-              {shows("clearPath") && (
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={clearPath}
-                    onChange={(e) => setClearPath(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span className="text-sm text-foreground/80">
-                    <span className="font-medium">{w.clearPathLabel}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{w.clearPathHint}</span>
-                  </span>
-                </label>
-              )}
-            </div>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        noValidate
+        className="flex min-h-0 max-h-[calc(100dvh-2rem)] flex-1 flex-col"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit(canSaveAndRun);
+        }}
+      >
+        <div className="flex shrink-0 items-center gap-3 px-5 py-5 pe-14 sm:px-6 sm:pe-14">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-foreground">
+            <UiIcon name="archive" className="size-5" />
           </div>
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-lg font-semibold text-foreground">
+              {existing ? w.editTitle : w.createTitle}
+            </h2>
+            <p className="mt-1 break-words text-sm text-muted-foreground">
+              {serviceName
+                ? interpolate(w.serviceLabel, { name: serviceName })
+                : serviceId
+                  ? t.projectSettings.backup.overview.serviceBackup
+                  : q.projectTitle}
+            </p>
+          </div>
+        </div>
 
-          <Field label={w.destination}>
-            <CustomSelect<string>
-              aria-label={w.destination}
-              disabled={busy}
-              value={destinationId}
-              onChange={setDestinationId}
-              placeholder={
-                destinationsLoading ? t.projectSettings.backup.destinations.loading : w.selectOption
-              }
-              options={destinations.map((d) => ({
-                value: d.id,
-                label: d.name,
-                description: d.kind,
-              }))}
-              emptyMessage={
-                destinationsLoading
-                  ? t.projectSettings.backup.destinations.loading
-                  : (destinationsError ?? t.misc.backups.emptyTitle)
-              }
-              footerAction={{
-                label: w.addDestination,
-                icon: <Plus className="size-4" />,
-                onClick: () => setShowDestinationEditor(true),
-              }}
-            />
-            {destinationsError && (
-              <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-danger">
-                <span className="flex-1">{destinationsError}</span>
-                <button
-                  type="button"
-                  onClick={() => setDestinationRequest((current) => current + 1)}
-                  className="shrink-0 underline"
-                >
-                  {w.retry}
-                </button>
-              </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-6">
+          <fieldset
+            disabled={busy}
+            className={cn(
+              "min-w-0",
+              showAdvanced &&
+                "grid items-start gap-6 md:grid-cols-[16rem_minmax(0,1fr)] lg:grid-cols-[18rem_minmax(0,1fr)]",
             )}
-          </Field>
-
-          <Field label={w.schedule}>
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {CRON_PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => setCronExpression(p.value)}
-                    className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-                      cronExpression === p.value
-                        ? "border-primary/60 bg-primary/10 text-primary"
-                        : "border-border/50 text-muted-foreground hover:bg-muted/50"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <input
-                value={cronExpression}
-                onChange={(e) => setCronExpression(e.target.value)}
-                placeholder={w.cronPlaceholder}
-                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20"
-              />
-            </div>
-          </Field>
-
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="flex items-center gap-1.5 text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
-            >
-              <ChevronDown className={`size-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
-              {w.advanced}
-            </button>
-
-            {showAdvanced && (
-              <div className="mt-4 space-y-5">
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={triggerOnPreDeploy}
-                    onChange={(e) => setTriggerOnPreDeploy(e.target.checked)}
-                    className="mt-0.5"
+          >
+            <div className="min-w-0 space-y-5">
+              <div className="flex items-start gap-3 rounded-2xl bg-muted/30 p-4">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card text-muted-foreground">
+                  <UiIcon
+                    name={
+                      isProjectAuto
+                        ? "layers"
+                        : isDatabase
+                          ? "database"
+                          : isVolume
+                            ? "hard-drive"
+                            : "folder-tree"
+                    }
+                    className="size-4"
                   />
-                  <span className="text-sm text-foreground/80">
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <Calendar className="size-3.5" />
-                      {w.preDeployTrigger}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{w.preDeployHint}</span>
-                  </span>
-                </label>
-
-                <div>
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={enableWebhook}
-                      onChange={(e) => setEnableWebhook(e.target.checked)}
-                      className="mt-0.5"
-                    />
-                    <span className="text-sm text-foreground/80">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <Globe className="size-3.5" />
-                        {w.webhookTrigger}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{w.webhookHint}</span>
-                    </span>
-                  </label>
-                  {webhookUrl && (
-                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 font-mono text-[11px]">
-                      <code className="flex-1 truncate">{webhookUrl}</code>
-                      <button onClick={() => navigator.clipboard.writeText(webhookUrl)} className="rounded p-1 hover:bg-background" title={w.copyUrl}>
-                        <Copy className="size-3" />
-                      </button>
-                      <button onClick={rotateToken} className="rounded p-1 hover:bg-background" title={w.rotateToken}>
-                        <RefreshCw className="size-3" />
-                      </button>
-                    </div>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{q.contents}</p>
+                  <p className="mt-0.5 text-sm font-medium text-foreground">{presetTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {presetDescription}
+                  </p>
+                  {!enabled && (
+                    <p className="mt-2 text-xs text-warning">
+                      {t.projectSettings.backup.overview.paused}
+                    </p>
                   )}
                 </div>
+              </div>
 
-                <Field
-                  label={
-                    <span className="flex items-center gap-1.5">
-                      <Clock className="size-3.5" />
-                      {w.preHook}
-                    </span>
+              <Field label={w.destination}>
+                <CustomSelect<string>
+                  aria-label={w.destination}
+                  variant="filled"
+                  disabled={busy}
+                  value={destinationId}
+                  onChange={setDestinationId}
+                  placeholder={
+                    destinationsLoading
+                      ? t.projectSettings.backup.destinations.loading
+                      : w.selectOption
                   }
-                  hint={w.preHookHint}
-                >
-                  <textarea
-                    value={preHook}
-                    onChange={(e) => setPreHook(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20"
-                  />
-                </Field>
+                  options={destinations.map((d) => ({
+                    value: d.id,
+                    label: d.name,
+                    description: kindLabel(d.kind, t.misc.backups),
+                  }))}
+                  emptyMessage={
+                    destinationsLoading
+                      ? t.projectSettings.backup.destinations.loading
+                      : (destinationsError ?? t.misc.backups.emptyTitle)
+                  }
+                  footerAction={{
+                    label: w.addDestination,
+                    icon: <UiIcon name="plus" className="size-4" />,
+                    onClick: () => setShowDestinationEditor(true),
+                  }}
+                />
+                {destinationsError && (
+                  <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-danger">
+                    <span className="flex-1">{destinationsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDestinationRequest((current) => current + 1)}
+                      className="shrink-0 underline"
+                    >
+                      {w.retry}
+                    </button>
+                  </div>
+                )}
+              </Field>
 
-                <Field label={w.postHook} hint={w.postHookHint}>
-                  <textarea
-                    value={postHook}
-                    onChange={(e) => setPostHook(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20"
+              <div className={cn("grid gap-4 sm:grid-cols-2", showAdvanced && "md:grid-cols-1")}>
+                <Field label={q.frequency}>
+                  <CustomSelect<string>
+                    aria-label={q.frequency}
+                    variant="filled"
+                    disabled={busy}
+                    value={cronExpression}
+                    onChange={setCronExpression}
+                    options={quickScheduleOptions}
                   />
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {cronExpression ? t.projectSettings.backup.schedule.timezone : q.onDemandHint}
+                  </p>
+                </Field>
+                <Field label={q.history}>
+                  <CustomSelect<string>
+                    aria-label={q.history}
+                    variant="filled"
+                    disabled={busy}
+                    value={retentionPreset}
+                    onChange={(value) => {
+                      if (value === "custom") return;
+                      setRetainCount(Number(value));
+                      setRetainDays("");
+                    }}
+                    options={[
+                      ...retentionPresets.map((count) => ({
+                        value: String(count),
+                        label: interpolate(q.keepBackups, { count: String(count) }),
+                      })),
+                      ...(retentionPreset === "custom"
+                        ? [
+                            {
+                              value: "custom",
+                              label: q.customRetention,
+                              description: retentionSummary,
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {retentionPreset === "custom" ? retentionSummary : q.historyHint}
+                  </p>
                 </Field>
               </div>
+
+              <div>
+                <button
+                  type="button"
+                  aria-label={w.advanced}
+                  aria-expanded={showAdvanced}
+                  aria-controls={advancedId}
+                  onClick={() => setShowAdvanced((value) => !value)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    showAdvanced ? "bg-muted/50" : "bg-muted/20 hover:bg-muted/40",
+                  )}
+                >
+                  <UiIcon name="settings" className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{w.advanced}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {q.advancedHint}
+                    </span>
+                  </span>
+                  <UiIcon
+                    name="chevron-down"
+                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </div>
+            </div>
+            {showAdvanced && (
+              <div id={advancedId} className="@container min-w-0 space-y-5">
+                <section className="rounded-2xl bg-muted/20 p-4 sm:p-5">
+                  <ToggleField
+                    label={w.incrementalLabel}
+                    hint={w.incrementalHint}
+                    checked={incremental}
+                    onChange={setIncremental}
+                    disabled={busy}
+                  />
+                </section>
+                <section className="rounded-2xl bg-muted/20 p-4 sm:p-5">
+                  <h3 className="mb-3 text-sm font-medium text-foreground">{w.methodLabel}</h3>
+                  <div className="grid grid-cols-2 gap-2 @xl:grid-cols-3">
+                    {cards.map((id) => {
+                      const active = activeCard === id;
+                      const { label, desc, icon: Icon } = cardCopy(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => selectCard(id)}
+                          className={`flex min-w-0 flex-col items-start gap-1.5 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                            active ? "bg-primary/10" : "bg-background hover:bg-background/70"
+                          }`}
+                        >
+                          <span className="mb-1 flex w-full items-center justify-between gap-2">
+                            <UiIcon
+                              name={Icon}
+                              className={`size-4 ${active ? "text-primary" : "text-muted-foreground"}`}
+                            />
+                            {active && <UiIcon name="check" className="size-3.5 text-primary" />}
+                          </span>
+                          <span className="text-sm font-medium text-foreground">{label}</span>
+                          <span className="text-xs leading-relaxed text-muted-foreground">
+                            {desc}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* The chosen kind's own hint, then its own options. */}
+                  {activeCard === PAYLOAD_KIND_AUTO && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {detected
+                        ? interpolate(w.detected, {
+                            label: detected.label,
+                            method: detected.method,
+                          })
+                        : w.autoNoDb}
+                    </p>
+                  )}
+                  {activeCard === "database" && activeSpec && (
+                    <div className="mt-3 space-y-3">
+                      <Field label={w.engineLabel} hint={w.engineHint}>
+                        <CustomSelect<PayloadKind>
+                          aria-label={w.engineLabel}
+                          variant="filled"
+                          value={activeSpec.kind}
+                          onChange={setKind}
+                          options={dbSpecs.map((spec) => ({
+                            value: spec.kind,
+                            label: spec.label,
+                            description: spec.method,
+                          }))}
+                        />
+                      </Field>
+                      <p className="text-xs text-muted-foreground">
+                        {interpolate(w.databaseHint, { method: activeSpec.method })}
+                      </p>
+                    </div>
+                  )}
+                  {activeCard === "path" && (
+                    <p className="mt-2 text-xs text-muted-foreground">{w.pathHint}</p>
+                  )}
+                  {activeCard === "volume" && (
+                    <p className="mt-2 text-xs text-muted-foreground">{w.volumeHint}</p>
+                  )}
+
+                  <div className="mt-3 space-y-3">
+                    {shows("paths") && (
+                      <Field label={w.pathsLabel} hint={w.pathsHint}>
+                        <textarea
+                          aria-label={w.pathsLabel}
+                          value={pathsText}
+                          onChange={(e) => setPathsText(e.target.value)}
+                          rows={3}
+                          placeholder={"/var/www/html\n/data/uploads"}
+                          className={commandClass}
+                        />
+                      </Field>
+                    )}
+                    {shows("sourceIds") && (
+                      <Field label={w.sourceIdsLabel} hint={w.sourceIdsHint}>
+                        <textarea
+                          aria-label={w.sourceIdsLabel}
+                          value={sourceIdsText}
+                          onChange={(e) => setSourceIdsText(e.target.value)}
+                          rows={2}
+                          className={commandClass}
+                        />
+                      </Field>
+                    )}
+                    {shows("produceCommand") && (
+                      <Field label={w.customCommandLabel} hint={w.customCommandHint}>
+                        <textarea
+                          aria-label={w.customCommandLabel}
+                          value={customCommand}
+                          onChange={(e) => setCustomCommand(e.target.value)}
+                          rows={2}
+                          placeholder="pg_dump -Fc -U $POSTGRES_USER $POSTGRES_DB"
+                          className={commandClass}
+                        />
+                      </Field>
+                    )}
+                    {shows("restoreCommand") && (
+                      <Field label={w.restoreCommandLabel} hint={w.restoreCommandHint}>
+                        <textarea
+                          aria-label={w.restoreCommandLabel}
+                          value={restoreCommand}
+                          onChange={(e) => setRestoreCommand(e.target.value)}
+                          rows={2}
+                          placeholder="pg_restore -c -U $POSTGRES_USER -d $POSTGRES_DB"
+                          className={commandClass}
+                        />
+                      </Field>
+                    )}
+                    {shows("exclude") && (
+                      <Field label={w.excludeLabel} hint={w.excludeHint}>
+                        <textarea
+                          aria-label={w.excludeLabel}
+                          value={excludeText}
+                          onChange={(e) => setExcludeText(e.target.value)}
+                          rows={2}
+                          className={commandClass}
+                        />
+                      </Field>
+                    )}
+                    {shows("compression") && (
+                      <Field label={w.compressionLabel} hint={w.compressionHint}>
+                        <CustomSelect<CompressionChoice>
+                          aria-label={w.compressionLabel}
+                          variant="filled"
+                          value={compression}
+                          disabled={incremental}
+                          onChange={setCompression}
+                          options={compressionOptions}
+                        />
+                      </Field>
+                    )}
+                    {shows("quiesce") && (
+                      <ToggleField
+                        label={w.quiesceLabel}
+                        hint={w.quiesceHint}
+                        checked={quiesce}
+                        onChange={setQuiesce}
+                        disabled={busy}
+                      />
+                    )}
+                    {shows("clearPath") && (
+                      <ToggleField
+                        label={w.clearPathLabel}
+                        hint={w.clearPathHint}
+                        checked={clearPath}
+                        onChange={setClearPath}
+                        disabled={busy}
+                      />
+                    )}
+                  </div>
+                </section>
+
+                <section className="space-y-5 rounded-2xl bg-muted/20 p-4 sm:p-5">
+                  <Field label={q.customSchedule} hint={t.projectSettings.backup.schedule.timezone}>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {CRON_PRESETS.map((p) => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            aria-pressed={cronExpression === p.value}
+                            onClick={() => setCronExpression(p.value)}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                              cronExpression === p.value
+                                ? "bg-primary/10 text-foreground"
+                                : "bg-background text-muted-foreground hover:bg-background/70"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <Input
+                        aria-label={q.customSchedule}
+                        variant="filled"
+                        value={cronExpression}
+                        onChange={(e) => setCronExpression(e.target.value)}
+                        placeholder={w.cronPlaceholder}
+                        className="font-mono"
+                      />
+                    </div>
+                  </Field>
+
+                  <div className="grid gap-4 @sm:grid-cols-2">
+                    <Field label={w.retainCount} hint={w.retainCountHint}>
+                      <Input
+                        aria-label={w.retainCount}
+                        variant="filled"
+                        type="number"
+                        value={retainCount}
+                        onChange={(e) =>
+                          setRetainCount(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        min={1}
+                      />
+                    </Field>
+                    <Field label={w.retainDays} hint={w.retainDaysHint}>
+                      <Input
+                        aria-label={w.retainDays}
+                        variant="filled"
+                        type="number"
+                        value={retainDays}
+                        onChange={(e) =>
+                          setRetainDays(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        min={1}
+                      />
+                    </Field>
+                  </div>
+                </section>
+
+                <section className="space-y-5 rounded-2xl bg-muted/20 p-4 sm:p-5">
+                  <ToggleField
+                    label={w.preDeployTrigger}
+                    hint={w.preDeployHint}
+                    icon="calendar"
+                    checked={triggerOnPreDeploy}
+                    onChange={setTriggerOnPreDeploy}
+                    disabled={busy}
+                  />
+
+                  <div>
+                    <ToggleField
+                      label={w.webhookTrigger}
+                      hint={w.webhookHint}
+                      icon="globe"
+                      checked={enableWebhook}
+                      onChange={setEnableWebhook}
+                      disabled={busy}
+                    />
+                    {webhookUrl && (
+                      <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl bg-background px-3 py-2 font-mono text-xs">
+                        <code className="min-w-0 flex-1 truncate" title={webhookUrl}>
+                          {webhookUrl}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => navigator.clipboard.writeText(webhookUrl)}
+                          className="size-8 shrink-0"
+                          title={w.copyUrl}
+                          aria-label={w.copyUrl}
+                        >
+                          <UiIcon name="copy" className="size-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={rotateToken}
+                          className="size-8 shrink-0"
+                          title={w.rotateToken}
+                          aria-label={w.rotateToken}
+                        >
+                          <UiIcon name="refresh" className="size-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <Field
+                    label={
+                      <span className="flex items-center gap-1.5">
+                        <UiIcon name="clock" className="size-3.5" />
+                        {w.preHook}
+                      </span>
+                    }
+                    hint={w.preHookHint}
+                  >
+                    <textarea
+                      aria-label={w.preHook}
+                      value={preHook}
+                      onChange={(e) => setPreHook(e.target.value)}
+                      rows={2}
+                      className={commandClass}
+                    />
+                  </Field>
+
+                  <Field label={w.postHook} hint={w.postHookHint}>
+                    <textarea
+                      aria-label={w.postHook}
+                      value={postHook}
+                      onChange={(e) => setPostHook(e.target.value)}
+                      rows={2}
+                      className={commandClass}
+                    />
+                  </Field>
+                  <ToggleField
+                    label={w.policyEnabled}
+                    checked={enabled}
+                    onChange={setEnabled}
+                    disabled={busy}
+                  />
+                </section>
+              </div>
             )}
-          </div>
+          </fieldset>
         </div>
 
-        {/* Right: live summary + retention */}
-        <div className="min-w-0 space-y-6 border-t border-border/50 bg-muted/[0.15] px-5 py-6 sm:px-6 lg:border-s lg:border-t-0">
-          <div className="rounded-xl border border-border/50 bg-card p-4">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-              {w.summaryTitle}
+        <div className="shrink-0 space-y-3 border-t border-border/50 px-5 py-4 sm:px-6">
+          {formError && (
+            <p role="alert" className="text-sm text-danger">
+              {formError}
             </p>
-            <dl className="space-y-2.5 text-sm">
-              <SummaryRow label={w.summaryMethod} value={methodSummary} />
-              <SummaryRow label={w.schedule} value={scheduleSummary} />
-              <SummaryRow label={w.destination} value={destName} />
-              <SummaryRow label={w.retainCount} value={retentionSummary} />
-            </dl>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={w.retainCount} hint={w.retainCountHint}>
-              <input
-                type="number"
-                value={retainCount}
-                onChange={(e) => setRetainCount(e.target.value === "" ? "" : Number(e.target.value))}
-                min={1}
-                className={inputClass}
-              />
-            </Field>
-            <Field label={w.retainDays} hint={w.retainDaysHint}>
-              <input
-                type="number"
-                value={retainDays}
-                onChange={(e) => setRetainDays(e.target.value === "" ? "" : Number(e.target.value))}
-                min={1}
-                className={inputClass}
-              />
-            </Field>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={busy}
+              className="px-3 text-xs sm:px-4 sm:text-sm"
+            >
+              {w.cancel}
+            </Button>
+            <div className="flex flex-1 flex-wrap justify-end gap-2">
+              {canSaveAndRun && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="px-3 text-xs sm:px-4 sm:text-sm"
+                  disabled={busy || !destinationId}
+                  onClick={() => void submit()}
+                >
+                  {w.createPolicy}
+                </Button>
+              )}
+              <Button
+                type="submit"
+                className="px-3 text-xs sm:px-4 sm:text-sm"
+                disabled={busy || !destinationId}
+              >
+                {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : null}
+                {busy
+                  ? w.saving
+                  : canSaveAndRun
+                    ? q.saveAndBackup
+                    : (submitLabel ?? (existing ? w.saveChanges : w.createPolicy))}
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex shrink-0 flex-col gap-3 border-t border-border/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <label className="flex items-center gap-2 text-sm text-foreground/80">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          {w.policyEnabled}
-        </label>
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
-            {w.cancel}
-          </button>
-          <button
-            onClick={submit}
-            disabled={busy || !destinationId}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {busy ? w.saving : submitLabel ?? (existing ? w.saveChanges : w.createPolicy)}
-          </button>
-        </div>
-      </div>
+      </form>
     </Modal>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }): React.JSX.Element {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 truncate text-end text-[13px] font-medium text-foreground">{value}</dd>
-    </div>
   );
 }
 
@@ -928,10 +1177,41 @@ function Field({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div>
-      <label className="block text-xs font-medium text-foreground/80">{label}</label>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-      <div className="mt-1.5">{children}</div>
+    <div className="min-w-0">
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function ToggleField({
+  label,
+  hint,
+  icon,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  hint?: string;
+  icon?: IconName;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled: boolean;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+          {icon && <UiIcon name={icon} className="size-4 shrink-0 text-muted-foreground" />}
+          {label}
+        </p>
+        {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="mt-0.5">
+        <Toggle checked={checked} onChange={onChange} disabled={disabled} aria-label={label} />
+      </div>
     </div>
   );
 }

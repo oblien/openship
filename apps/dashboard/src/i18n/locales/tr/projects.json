@@ -294,6 +294,8 @@
     "liveHitsWaiting": "İstekler bekleniyor…",
     "statusesUnclassified": "{count} durum sınıfı olmayan",
     "trafficTitle": "Trafik özeti",
+    "dailyWindow": "Bugün dahil 7 gün (UTC)",
+    "currentHour": "Geçerli saat · sayım sürüyor",
     "trafficSummary": "{count} istek",
     "servicesMore": "+{count} daha",
     "servicesLess": "Daha az göster",

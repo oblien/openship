@@ -947,5 +947,12 @@
     "serviceNetwork": "شبكة الخدمات",
     "lastChecked": "آخر تحقق",
     "scaleProject": "اختيار مشروع"
+  },
+  "sshTransport": {
+    "label": "الاتصال",
+    "direct": "SSH مباشر",
+    "hostname": "اسم مضيف Access",
+    "help": "استخدم اسم مضيف Cloudflare Access وبيانات SSH لخادمك. أكمل تسجيل الدخول إلى Cloudflare على الجهاز الذي يشغّل OpenShip. يتضمن تطبيق Windows العميل المطلوب؛ وتحتاج التثبيتات الأخرى إلى cloudflared.",
+    "openAccess": "فتح Cloudflare Access"
   }
 }

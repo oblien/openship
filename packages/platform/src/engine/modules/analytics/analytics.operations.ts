@@ -48,7 +48,13 @@ export const analyticsDependencies: AnalyticsDependencies = {
     async summary(ctx, id, input = {}) { await trafficRead(ctx, id); return (await service.getAnalyticsOverview(ctx, id, undefined, undefined, input.domain)).summary; },
     async periods(ctx, id, input = {}) { await trafficRead(ctx, id); const range = checkedRange(input); return (await service.getAnalyticsOverview(ctx, id, range.from, range.to, input.domain)).periods; },
     async overview(ctx, id, input = {}) { await trafficRead(ctx, id); const range = checkedRange(input); return service.getAnalyticsOverview(ctx, id, range.from, range.to, input.domain); },
-    async geo(ctx, id, input = {}) { await trafficRead(ctx, id); const range = checkedRange(input, 7); return getProjectGeo(ctx, id, range.from, range.to, input.domain); },
+    async geo(ctx, id, input = {}) {
+      await trafficRead(ctx, id);
+      const range = checkedRange(input, 7);
+      // Daily rollups choose seven UTC dates, rather than eight dates touched
+      // by a rolling 168-hour range. Preserve an explicitly requested start.
+      return getProjectGeo(ctx, id, input.from === undefined ? undefined : range.from, range.to, input.domain);
+    },
     async deploymentStats(ctx, id) { await analyticsRead(ctx); return service.getDeploymentStats(ctx, id); },
     async usage(ctx, id) { await analyticsRead(ctx); const usage = await collectProjectUsage(ctx, id); return usage.supported ? usage.overall : null; },
     async resources(ctx, id) { await analyticsRead(ctx); return collectProjectUsage(ctx, id); },

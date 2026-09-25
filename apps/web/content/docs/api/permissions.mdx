@@ -15,6 +15,22 @@ User grants give a `restricted` member access to specific resources. Roles also 
 permissions. Token grants and read-only restrictions are an additional limit for every role. A user
 grant is `(user, resourceType, resourceId, permissions[])`; `resourceId: "*"` applies across the organization.
 
+## List workspaces
+
+`GET /api/permissions/workspaces` (SDK: `ship.permissions.listWorkspaces()`) returns workspace names,
+`organizationId` values, slugs, team status, and effective roles, including workspaces with no projects.
+The response also identifies `currentOrganizationId`, `boundOrganizationId`, `canSwitchOrganization`,
+and `readOnly`. It is a membership discovery operation available to every authenticated member,
+including restricted and read-only credentials.
+
+Organization-bound credentials only see their own workspace. Unbound requests list the user's
+memberships; an explicitly fixed SDK or HTTP scope returns only its selected workspace.
+`canSwitchOrganization` describes whether the credential permits selecting other memberships.
+The response contains workspace identity metadata, without billing credentials or runtime namespace details.
+
+Through MCP, call `get_permissions_workspaces` with `{}`, then pass the chosen `organizationId` as a
+top-level argument when creating an app or Compose project. See [MCP workspace selection](/docs/api/mcp#discover-and-select-a-workspace).
+
 ## Create a team organization
 
 Creates a brand-new organization, marks it as a team, and sets the caller as its owner. Personal workspaces
@@ -295,6 +311,7 @@ you can't touch another tenant's rows even by guessing the id).
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
+| List available workspace IDs, names, roles, and credential scope. | `permissions.listWorkspaces()` | `GET /api/permissions/workspaces`<br />`permissions:read` |
 | Read the selected organization’s permission metadata. | `permissions.orgMeta()` | `GET /api/permissions/org-meta`<br />`permissions:read` |
 | List resources available for permission grants. | `permissions.listResources(input)` | `GET /api/permissions/resources`<br />`permissions:read` |
 | Create a team organization with the caller as its owner. | `permissions.createTeamOrg(input)` | `POST /api/permissions/create-team-org`<br />`permissions:write` |

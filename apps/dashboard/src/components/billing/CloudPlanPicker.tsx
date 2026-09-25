@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
 import { PricingCards } from "@/components/billing/PricingCards";
 import type { PlanTierId } from "@repo/core";
-import { Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import type { BillingSubscription } from "@repo/contracts";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
@@ -32,7 +33,7 @@ export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = fa
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }

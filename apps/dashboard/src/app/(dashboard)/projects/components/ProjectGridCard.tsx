@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, FolderOpen, GitBranch, Globe, Server } from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
@@ -114,29 +115,29 @@ const ProjectGridCard: React.FC<{
 
         {isLocal ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs" title={t.projects.card.sourceLocal}>
-            <FolderOpen className="size-3.5 shrink-0" />
+            <UiIcon name="folder-open" className="size-3.5 shrink-0" />
             <span className="truncate">{t.projects.card.sourceLocal}</span>
           </span>
         ) : hasRepo ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs" title={`${project.gitOwner}/${project.gitRepo}`}>
-            <GitBranch className="size-3.5 shrink-0" />
+            <UiIcon name="git-branch" className="size-3.5 shrink-0" />
             <span className="truncate">{project.gitRepo}</span>
           </span>
         ) : null}
 
         {!hasMultipleServices && (project.workloadType === "worker" ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs" title={t.projects.card.worker}>
-            <Server className="size-3.5 shrink-0" />
+            <UiIcon name="server" className="size-3.5 shrink-0" />
             <span className="truncate">{t.projects.card.worker}</span>
           </span>
         ) : project.hasServer === false ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs" title={t.projects.card.static}>
-            <Globe className="size-3.5 shrink-0" />
+            <UiIcon name="globe" className="size-3.5 shrink-0" />
             <span className="truncate">{t.projects.card.static}</span>
           </span>
         ) : project.productionMode === "standalone" ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs" title={t.projects.card.standalone}>
-            <Server className="size-3.5 shrink-0" />
+            <UiIcon name="server" className="size-3.5 shrink-0" />
             <span className="truncate">{t.projects.card.standalone}</span>
           </span>
         ) : null)}
@@ -152,7 +153,7 @@ const ProjectGridCard: React.FC<{
           <span className="truncate text-xs text-muted-foreground">
             {timeAgo(project.updatedAt || project.createdAt, t)}
           </span>
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
         </div>
       </div>
     </div>

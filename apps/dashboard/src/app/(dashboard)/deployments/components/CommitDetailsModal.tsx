@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
-import { X, Github, GitCommit, ExternalLink, User, Calendar } from "lucide-react";
 import { formatDate } from "@/utils/date";
 import FileIcon from "@/components/ui/FileIcon";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -67,7 +68,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
           <div className="sticky top-0 bg-card border-b border-border/50 px-6 py-5 flex items-center justify-between z-10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <GitCommit className="w-5 h-5 text-primary" />
+                <UiIcon name="git-commit" className="w-5 h-5 text-primary" />
               </div>
               <div>
                 <h2 className="text-xl font-bold text-foreground">{t.deployments.modal.title}</h2>
@@ -80,7 +81,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
               onClick={onClose}
               className="w-10 h-10 rounded-full hover:bg-muted flex items-center justify-center transition-colors"
             >
-              <X className="w-5 h-5 text-muted-foreground" />
+              <UiIcon name="close" className="w-5 h-5 text-muted-foreground" />
             </button>
           </div>
 
@@ -92,7 +93,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
                 <div className="bg-primary/5 rounded-2xl p-5 border border-primary/10">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-card flex items-center justify-center flex-shrink-0 shadow-sm border border-border/50">
-                      <GitCommit className="w-5 h-5 text-primary" />
+                      <UiIcon name="git-commit" className="w-5 h-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-semibold text-foreground mb-2">
@@ -100,12 +101,12 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
                       </p>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1.5">
-                          <User className="w-4 h-4" />
+                          <UiIcon name="user" className="w-4 h-4" />
                           <span>{deployment.commit.author}</span>
                         </div>
                         <span className="text-muted-foreground/30">•</span>
                         <div className="flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4" />
+                          <UiIcon name="calendar" className="w-4 h-4" />
                           <span>{formatDate(deployment.commit.timestamp, undefined, undefined, true)}</span>
                         </div>
                       </div>
@@ -199,7 +200,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
                       rel="noopener noreferrer"
                       className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 bg-foreground text-background rounded-xl font-medium text-sm hover:opacity-90 transition-all"
                     >
-                      <Github className="w-4 h-4" />
+                      <UiIcon name="github" className="w-4 h-4" />
                       {t.deployments.modal.viewOnGithub}
                     </a>
                   )}
@@ -210,7 +211,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
                       rel="noopener noreferrer"
                       className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <UiIcon name="external-link" className="w-4 h-4" />
                       {t.deployments.modal.visitSite}
                     </a>
                   )}
@@ -220,7 +221,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
               /* Manual Deployment */
               <div className="text-center py-12">
                 <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                  <GitCommit className="w-8 h-8 text-muted-foreground/50" />
+                  <UiIcon name="git-commit" className="w-8 h-8 text-muted-foreground/50" />
                 </div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">
                   {t.deployments.modal.manual.title}

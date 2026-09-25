@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import dynamic from "next/dynamic";
 import { useState } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCard";
@@ -18,7 +19,7 @@ const ServerMigrationWizard = dynamic(
   {
     loading: () => (
       <div role="status" className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
+        <UiIcon name="spinner" className="size-4 animate-spin" />
         Loading migration…
       </div>
     ),
@@ -60,7 +61,7 @@ export function TopologyPlacement({
       <div className="space-y-5 p-6">
         <div className="space-y-1.5 pe-8">
           <Button className="mb-2 -ms-2 gap-1.5" variant="ghost" size="sm" onClick={close}>
-            <ArrowLeft />
+            <UiIcon name="arrow-left" />
             Back to topology
           </Button>
           <h2 className="text-lg font-semibold">

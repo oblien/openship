@@ -37,6 +37,7 @@ vi.mock("@repo/db", () => ({
       iterateEnabledForRetention: async function* () {},
     },
     backupRun: {
+      findById: async (id: string) => h.runs.find(run => run.id === id),
       listByOrganization: vi.fn(
         async (organizationId: string, opts: Record<string, unknown>) => {
           h.listCalls.push({ organizationId, ...opts });
@@ -48,6 +49,7 @@ vi.mock("@repo/db", () => ({
         h.softDeleted.push(id);
       }),
     },
+    backupRestore: { findActiveByRunId: async () => undefined },
     backupDestination: { findById: vi.fn(async () => h.destination) },
   },
 }));
@@ -103,7 +105,7 @@ const run = (id: string, ageDays: number, over: Record<string, unknown> = {}) =>
   deletedAt: null,
   retentionLockedUntil: null,
   finishedAt: new Date(Date.now() - ageDays * 86_400_000),
-  artifacts: [{ key: `mail/${id}.tar.zst` }],
+  artifacts: [{ key: `mail/${id}.tar.zst`, sizeBytes: 1234 }],
   manifestKey: `mail/${id}.json`,
   ...over,
 });
@@ -115,7 +117,7 @@ beforeEach(() => {
   h.deletedKeys = [];
   h.mailServer = { organizationId: "org1" };
   h.project = undefined;
-  h.destination = { id: "dest1", kind: "s3" };
+  h.destination = { id: "dest1", organizationId: "org1", kind: "s3" };
 });
 
 describe("prunePolicy — mail-server policies", () => {
@@ -197,6 +199,7 @@ describe("prunePolicy — mail-server policies", () => {
 
   it("still prunes project policies by projectId", async () => {
     h.project = { organizationId: "org2" };
+    h.destination!.organizationId = "org2";
     h.runs = [
       run("p_new", 1, { projectId: "prj1", mailServerId: null, policyId: "bkp_prj" }),
       run("p_old", 9, { projectId: "prj1", mailServerId: null, policyId: "bkp_prj" }),

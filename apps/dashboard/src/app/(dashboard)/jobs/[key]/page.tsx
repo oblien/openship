@@ -1,11 +1,9 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  ArrowLeft, Clock, Loader2, Play, Settings2, Trash2,
-  Server as ServerIcon, GitBranch, Bell, Zap, ScrollText,
-} from "lucide-react";
 import { jobsApi, getApiErrorMessage, type JobView, type JobRunSummary } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobRunLogsModal } from "@/components/jobs/JobRunLogs";
@@ -95,7 +93,7 @@ export default function JobDetailPage() {
   };
 
   if (loading) {
-    return <PageContainer><div className="flex items-center justify-center py-20"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div></PageContainer>;
+    return <PageContainer><div className="flex items-center justify-center py-20"><UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" /></div></PageContainer>;
   }
   if (!job) {
     return <PageContainer><p className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p></PageContainer>;
@@ -112,7 +110,7 @@ export default function JobDetailPage() {
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <button onClick={() => router.push("/jobs")} className="flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted">
-          <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -127,12 +125,12 @@ export default function JobDetailPage() {
         <div className="flex shrink-0 items-center gap-1.5">
           <button onClick={() => void handleRun()} disabled={busy}
             className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} {j.actions.run}
+            {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="play" className="size-4" />} {j.actions.run}
           </button>
           {isCustom && (
             <button onClick={() => router.push(`/jobs/${encodeURIComponent(job.key)}/edit`)}
               className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">
-              <Settings2 className="size-4" /> {j.edit.action}
+              <UiIcon name="sliders" className="size-4" /> {j.edit.action}
             </button>
           )}
           <button onClick={() => void handleToggle()} disabled={busy} title={job.enabled ? j.actions.disable : j.actions.enable}
@@ -142,7 +140,7 @@ export default function JobDetailPage() {
           {isCustom && (
             <button onClick={() => void handleDelete()} disabled={busy} title={j.delete.action}
               className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50">
-              <Trash2 className="size-4" />
+              <UiIcon name="trash" className="size-4" />
             </button>
           )}
         </div>
@@ -161,23 +159,23 @@ export default function JobDetailPage() {
 
       {tab === "overview" ? (
         <div className="max-w-3xl space-y-3">
-          <InfoRow icon={Clock} label={j.fields.schedule} value={<code className="font-mono text-[12px]">{scheduleText}</code>} />
-          <InfoRow icon={Clock} label={j.fields.nextRun} value={job.enabled ? fmtTime(job.nextRunAt) : j.fields.notScheduled} />
+          <InfoRow icon={"clock"} label={j.fields.schedule} value={<code className="font-mono text-[12px]">{scheduleText}</code>} />
+          <InfoRow icon={"clock"} label={j.fields.nextRun} value={job.enabled ? fmtTime(job.nextRunAt) : j.fields.notScheduled} />
           {isCustom && (
             <>
-              <InfoRow icon={ServerIcon} label={j.detail.servers} value={(cfg.serverIds ?? (cfg.serverId ? [cfg.serverId] : [])).join(", ") || "—"} />
+              <InfoRow icon={"server"} label={j.detail.servers} value={(cfg.serverIds ?? (cfg.serverId ? [cfg.serverId] : [])).join(", ") || "—"} />
               <div className="rounded-xl border border-border/50 bg-card p-4">
                 <p className="mb-2 text-[12px] font-medium text-muted-foreground">{j.create.command}</p>
                 <pre className="overflow-x-auto rounded-lg bg-[#0b0b0c] px-3 py-2.5 font-mono text-[12px] text-neutral-200">{cfg.command}</pre>
               </div>
-              {cfg.retry && <InfoRow icon={Zap} label={j.detail.retry} value={interpolate(j.detail.retryValue, { n: String(cfg.retry.maxAttempts), s: String(cfg.retry.backoffSeconds) })} />}
-              {cfg.timeoutMs && <InfoRow icon={Clock} label={j.create.timeout} value={`${Math.round(cfg.timeoutMs / 1000)}s`} />}
-              {cfg.env && Object.keys(cfg.env).length > 0 && <InfoRow icon={GitBranch} label={j.create.env} value={Object.keys(cfg.env).join(", ")} />}
-              {cfg.secrets && Object.keys(cfg.secrets).length > 0 && <InfoRow icon={GitBranch} label={j.create.secrets} value={Object.keys(cfg.secrets).map((k) => `${k}=••••`).join(", ")} />}
-              {job.dependsOn && job.dependsOn.length > 0 && <InfoRow icon={GitBranch} label={j.create.dependencies} value={job.dependsOn.join(", ")} />}
-              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={Zap} label={j.create.triggers} value={job.triggerEvents.join(", ")} />}
+              {cfg.retry && <InfoRow icon={"bolt"} label={j.detail.retry} value={interpolate(j.detail.retryValue, { n: String(cfg.retry.maxAttempts), s: String(cfg.retry.backoffSeconds) })} />}
+              {cfg.timeoutMs && <InfoRow icon={"clock"} label={j.create.timeout} value={`${Math.round(cfg.timeoutMs / 1000)}s`} />}
+              {cfg.env && Object.keys(cfg.env).length > 0 && <InfoRow icon={"git-branch"} label={j.create.env} value={Object.keys(cfg.env).join(", ")} />}
+              {cfg.secrets && Object.keys(cfg.secrets).length > 0 && <InfoRow icon={"git-branch"} label={j.create.secrets} value={Object.keys(cfg.secrets).map((k) => `${k}=••••`).join(", ")} />}
+              {job.dependsOn && job.dependsOn.length > 0 && <InfoRow icon={"git-branch"} label={j.create.dependencies} value={job.dependsOn.join(", ")} />}
+              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.join(", ")} />}
               {job.notifyConfig && job.notifyConfig.channels.length > 0 && (
-                <InfoRow icon={Bell} label={j.create.notifications} value={interpolate(j.detail.notifyValue, { c: String(job.notifyConfig.channels.length), s: job.notifyConfig.states.join(", ") })} />
+                <InfoRow icon={"bell"} label={j.create.notifications} value={interpolate(j.detail.notifyValue, { c: String(job.notifyConfig.channels.length), s: job.notifyConfig.states.join(", ") })} />
               )}
             </>
           )}
@@ -206,16 +204,16 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
   const Icon = statusIcon(status);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${map[status] ?? "bg-muted text-muted-foreground"}`}>
-      <Icon className={`size-3 ${status === "running" ? "animate-spin" : ""}`} />
+      <UiIcon name={Icon} className={`size-3 ${status === "running" ? "animate-spin" : ""}`} />
       {label}
     </span>
   );
 }
 
-function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
+function InfoRow({ icon: Icon, label, value }: { icon: IconName; label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border/50 bg-card px-4 py-3">
-      <Icon className="mt-0.5 size-4 text-muted-foreground/60" />
+      <UiIcon name={Icon} className="mt-0.5 size-4 text-muted-foreground/60" />
       <span className="w-28 shrink-0 text-[12px] text-muted-foreground/70">{label}</span>
       <span className="min-w-0 flex-1 break-words text-[13px] text-foreground">{value}</span>
     </div>
@@ -227,12 +225,12 @@ function RunRow({ run, onOpen }: { run: JobRunSummary; onOpen: () => void }) {
   const Icon = statusIcon(run.status);
   return (
     <button onClick={onOpen} className="flex w-full items-center gap-3 rounded-xl border border-border/50 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40">
-      <Icon className={`size-4 shrink-0 ${tone} ${run.status === "running" ? "animate-spin" : ""}`} />
+      <UiIcon name={Icon} className={`size-4 shrink-0 ${tone} ${run.status === "running" ? "animate-spin" : ""}`} />
       <span className="w-40 shrink-0 text-[13px] text-foreground">{fmtTime(run.startedAt)}</span>
       <span className="w-16 shrink-0 text-[12px] text-muted-foreground/70">{fmtDur(run.durationMs)}</span>
       <span className="w-24 shrink-0 text-[12px] text-muted-foreground/70">{run.trigger}{run.attempt > 1 ? ` #${run.attempt}` : ""}</span>
       {run.serverId && <span className="truncate text-[12px] text-muted-foreground/60">{run.serverId}</span>}
-      <ScrollText className="ml-auto size-3.5 shrink-0 text-muted-foreground/50" />
+      <UiIcon name="file-text" className="ml-auto size-3.5 shrink-0 text-muted-foreground/50" />
     </button>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
-import { ChevronDown, Globe, Plus, Trash2 } from "lucide-react";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { Switch } from "@/components/ui/Switch";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -254,7 +255,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         onClick={handleAddEndpoint}
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
       >
-        <Plus className="size-4" />
+        <UiIcon name="plus" className="size-4" />
         {w.addDomain}
       </button>
     );
@@ -268,7 +269,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
       title={w.addDomain}
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/50 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
     >
-      <Plus className="size-4" />
+      <UiIcon name="plus" className="size-4" />
     </button>
   );
 
@@ -282,7 +283,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
       title={w.remove}
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/50 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
-      <Trash2 className="size-4" />
+      <UiIcon name="trash" className="size-4" />
     </button>
   );
 
@@ -308,7 +309,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                       aria-expanded={isOpen}
                       className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                     >
-                      <ChevronDown
+                      <UiIcon name="chevron-down"
                         className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`}
                       />
                       <span className="min-w-0">
@@ -326,7 +327,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                       disabled={endpoints.length <= 1}
                       className="inline-flex shrink-0 items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
                     >
-                      <Trash2 className="size-3.5" />
+                      <UiIcon name="trash" className="size-3.5" />
                       {w.remove}
                     </button>
                   </div>
@@ -339,7 +340,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
               onClick={handleAddEndpoint}
               className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {w.addDomain}
             </button>
           </>
@@ -360,7 +361,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     <div className="bg-card rounded-xl border border-border/50 overflow-hidden">
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border/40">
         <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Globe className="size-3.5 text-primary" />
+          <UiIcon name="globe" className="size-3.5 text-primary" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-foreground leading-tight">{w.domain}</h3>
@@ -377,7 +378,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
           aria-label={w.addDomain}
           title={w.addDomain}
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
         </button>
       </div>
 
@@ -396,7 +397,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                   aria-expanded={isOpen}
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <ChevronDown
+                  <UiIcon name="chevron-down"
                     className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`}
                   />
                   <span className="min-w-0">
@@ -414,7 +415,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                   disabled={endpoints.length <= 1}
                   className="inline-flex shrink-0 items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
                 >
-                  <Trash2 className="size-3.5" />
+                  <UiIcon name="trash" className="size-3.5" />
                   {w.remove}
                 </button>
               </div>

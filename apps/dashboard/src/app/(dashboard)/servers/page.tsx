@@ -1,30 +1,11 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { BlurIp } from "@/components/BlurIp";
-import {
-  Server,
-  Plus,
-  Loader2,
-  ArrowRight,
-  KeyRound,
-  Lock,
-  Network,
-  Boxes,
-  Activity,
-  Container,
-  Globe,
-  GitBranch,
-  BookOpen,
-  ExternalLink,
-  Layers,
-  MapPin,
-  HardDrive,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -331,18 +312,18 @@ export default function ServersPage() {
   const showFilters = infraEnabled && servers.length > 6;
 
   const tabs: TabDef<ServersTab>[] = [
-    { key: "servers", label: t.servers.tabsNav.servers, icon: Server },
+    { key: "servers", label: t.servers.tabsNav.servers, icon: "server" },
     {
       key: "cluster",
       label: t.servers.tabsNav.cluster,
-      icon: Boxes,
+      icon: "cluster",
       hidden: !clustersEligible,
       href: "/servers?tab=cluster",
     },
     {
       key: "networking",
       label: t.servers.tabsNav.networking,
-      icon: Network,
+      icon: "network",
       hidden: !clustersEligible,
       href: "/servers?tab=networking",
     },
@@ -367,7 +348,7 @@ export default function ServersPage() {
               triggerClassName="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
               trigger={
                 <>
-                  <Plus className="size-4" />
+                  <UiIcon name="plus" className="size-4" />
                   {t.servers.list.addServer}
                 </>
               }
@@ -375,13 +356,13 @@ export default function ServersPage() {
                 {
                   id: "remote",
                   label: t.servers.list.addRemoteServer,
-                  icon: <Server className="size-4" />,
+                  icon: <UiIcon name="server" className="size-4" />,
                   onClick: () => router.push("/servers/new"),
                 },
                 {
                   id: "this-machine",
                   label: t.servers.list.addThisMachine,
-                  icon: <HardDrive className="size-4" />,
+                  icon: <UiIcon name="hard-drive" className="size-4" />,
                   onClick: () => void addThisMachine(),
                 },
               ]}
@@ -391,7 +372,7 @@ export default function ServersPage() {
               onClick={() => router.push("/servers/new")}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.servers.list.addServer}
             </button>
           ))}
@@ -406,14 +387,14 @@ export default function ServersPage() {
               aria-label={t.servers.networks.refresh}
               title={t.servers.networks.refresh}
             >
-              <RefreshCw
+              <UiIcon name="refresh"
                 className={`size-4 ${clusterOverview.refreshing ? "animate-spin" : ""}`}
               />
             </Button>
             {clusterCapabilities.canManage && (
               <Button asChild>
                 <Link href={activeTab === "networking" ? "/servers/networks/new" : "/servers/clusters/new"}>
-                  <Plus className="size-4" />
+                  <UiIcon name="plus" className="size-4" />
                   {activeTab === "networking" ? t.servers.networks.createCluster : t.servers.clusters.createCluster}
                 </Link>
               </Button>
@@ -445,7 +426,7 @@ export default function ServersPage() {
             className="flex justify-center py-16"
             aria-label={activeTab === "networking" ? t.servers.networks.listTitle : t.servers.clusters.listTitle}
           >
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : clusterCapabilities.available ? (
           <ServerClustersPanel
@@ -513,7 +494,7 @@ export default function ServersPage() {
                       : server.auth === "key"
                         ? t.servers.list.authKey
                         : null;
-                  const AuthIcon = server.auth === "password" ? Lock : KeyRound;
+                  const AuthIcon = server.auth === "password" ? "lock" : "key";
                   const fwd = forwardCounts[server.id] ?? 0;
                   // Component chip: one per row at most, and only when there IS
                   // something to say (same rule as the project count below —
@@ -546,7 +527,7 @@ export default function ServersPage() {
                             </div>
                           ) : (
                             <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 transition-colors group-hover:bg-muted">
-                              <Server className="size-[18px] text-foreground/70" />
+                              <UiIcon name="server" className="size-[18px] text-foreground/70" />
                             </div>
                           );
                         })()}
@@ -590,7 +571,7 @@ export default function ServersPage() {
                             // Mid-apply outranks the drift it is fixing: the row would
                             // otherwise keep offering "1 update" for a swap already running.
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-info-bg px-2 py-0.5 text-xs font-medium text-info">
-                              <Loader2 className="size-3 animate-spin" />
+                              <UiIcon name="spinner" className="size-3 animate-spin" />
                               {ic.chipUpdating}
                             </span>
                           ) : comp && comp.updates > 0 ? (
@@ -602,13 +583,13 @@ export default function ServersPage() {
                           ) : null}
                           {authLabel && (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                              <AuthIcon className="size-3.5" />
+                              <UiIcon name={AuthIcon} className="size-3.5" />
                               {authLabel}
                             </span>
                           )}
                           {isDesktop && fwd > 0 && (
                             <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
-                              <Network className="size-3.5" />
+                              <UiIcon name="network" className="size-3.5" />
                               {interpolate(t.servers.list.forwarding, { n: String(fwd) })}
                             </span>
                           )}
@@ -623,7 +604,7 @@ export default function ServersPage() {
                             <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
                             {t.servers.list[state]}
                           </span>
-                          <ArrowRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
+                          <UiIcon name="arrow-right" className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
                         </div>
                       </Link>
                       <DropdownMenu
@@ -631,7 +612,7 @@ export default function ServersPage() {
                         actions={[{
                           id: "remove",
                           label: t.servers.detail.removeServer,
-                          icon: <Trash2 className="size-4" />,
+                          icon: <UiIcon name="trash" className="size-4" />,
                           variant: "danger",
                           onClick: () => setRemoveServer(server),
                         }]}
@@ -647,7 +628,7 @@ export default function ServersPage() {
             <div className="bg-card rounded-2xl border border-border/50">
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
                 <div className="w-9 h-9 bg-muted rounded-xl flex items-center justify-center">
-                  <Activity className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="activity" className="size-[18px] text-muted-foreground" />
                 </div>
                 <div>
                   <h2 className="font-semibold text-foreground text-[15px]">{t.servers.list.quickInfo}</h2>
@@ -683,13 +664,13 @@ export default function ServersPage() {
                 {/* Fleet stats. */}
                 <div className="space-y-0.5 border-t border-border/50 pt-4">
                   {[
-                    { icon: Server, label: t.servers.list.totalServers, value: servers.length },
-                    { icon: Layers, label: t.servers.list.projects, value: totalProjects },
-                    { icon: MapPin, label: t.servers.list.regions, value: regionCount },
+                    { icon: "server" as const, label: t.servers.list.totalServers, value: servers.length },
+                    { icon: "layers" as const, label: t.servers.list.projects, value: totalProjects },
+                    { icon: "map-pin" as const, label: t.servers.list.regions, value: regionCount },
                   ].map((row) => (
                     <div key={row.label} className="flex items-center justify-between py-1.5">
                       <span className="inline-flex items-center gap-2.5 text-sm text-muted-foreground">
-                        <row.icon className="size-4 text-muted-foreground/60" />
+                        <UiIcon name={row.icon} className="size-4 text-muted-foreground/60" />
                         {row.label}
                       </span>
                       <span className="text-sm font-medium text-foreground tabular-nums">{row.value}</span>
@@ -792,7 +773,7 @@ function EmptyState({
           onClick={onAdd}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.servers.list.addFirstServer}
         </button>
         {onAddThisMachine && (
@@ -800,7 +781,7 @@ function EmptyState({
             onClick={onAddThisMachine}
             className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
-            <HardDrive className="size-4" />
+            <UiIcon name="hard-drive" className="size-4" />
             {t.servers.list.addThisMachine}
           </button>
         )}
@@ -810,9 +791,9 @@ function EmptyState({
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
         >
-          <BookOpen className="size-4" />
+          <UiIcon name="book" className="size-4" />
           {t.servers.list.seeDocs}
-          <ExternalLink className="size-3.5 opacity-60" />
+          <UiIcon name="external-link" className="size-3.5 opacity-60" />
         </a>
       </div>
 
@@ -822,14 +803,14 @@ function EmptyState({
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: t.servers.list.featContainer, desc: t.servers.list.featContainerDesc, Icon: Container },
-            { label: t.servers.list.featProxy, desc: t.servers.list.featProxyDesc, Icon: Globe },
-            { label: t.servers.list.monitoring, desc: t.servers.list.monitoringDesc, Icon: Activity },
-            { label: "Git", desc: t.servers.list.gitDesc, Icon: GitBranch },
+            { label: t.servers.list.featContainer, desc: t.servers.list.featContainerDesc, Icon: "docker" as const },
+            { label: t.servers.list.featProxy, desc: t.servers.list.featProxyDesc, Icon: "globe" as const },
+            { label: t.servers.list.monitoring, desc: t.servers.list.monitoringDesc, Icon: "activity" as const },
+            { label: "Git", desc: t.servers.list.gitDesc, Icon: "git-branch" as const },
           ].map((f) => (
             <div key={f.label} className="bg-card border border-border/50 rounded-xl p-4 text-start">
               <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                <f.Icon className="size-4 text-muted-foreground" />
+                <UiIcon name={f.Icon} className="size-4 text-muted-foreground" />
               </div>
               <p className="text-sm font-medium text-foreground">{f.label}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>

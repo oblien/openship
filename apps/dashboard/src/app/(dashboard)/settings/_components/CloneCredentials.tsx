@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Key, Loader2, Check, Trash2, Eye, EyeOff } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { useCallback, useEffect, useId, useState } from "react";
 import { settingsApi, githubApi, type CloneCredentialsState } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
+import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
+import { Toggle } from "@/components/project-settings/ServerSideSwitch";
+import { Button } from "@/components/ui/button";
 
 /**
  * GitHub clone credentials - user-global PAT for cloning private repos.
@@ -20,6 +24,8 @@ import { useI18n } from "@/components/i18n-provider";
 export function CloneCredentials() {
   const { showToast } = useToast();
   const { t } = useI18n();
+  const copy = t.settings.cloneCredentials;
+  const tokenInputId = useId();
   const { deployMode } = usePlatform();
   // Whether identity forwarding applies is the BACKEND's call (it mirrors
   // relayConfigEligible). `deployMode` is only the pre-load fallback so a slow
@@ -34,6 +40,7 @@ export function CloneCredentials() {
   const [togglingDefault, setTogglingDefault] = useState(false);
   const [forwardGit, setForwardGit] = useState(false);
   const [togglingForward, setTogglingForward] = useState(false);
+  const tokenBusy = saving || togglingDefault;
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +95,7 @@ export function CloneCredentials() {
       });
       setState(next.cloneToken);
       setTokenInput("");
+      setShowToken(false);
       setEditing(false);
       showToast(t.settings.cloneCredentials.toast.saved, "success", t.settings.common.toast.cloneCredentials);
     } catch (err) {
@@ -103,6 +111,7 @@ export function CloneCredentials() {
       const next = await settingsApi.updateCloneCredentials({ token: null });
       setState(next.cloneToken);
       setTokenInput("");
+      setShowToken(false);
       setEditing(false);
       showToast(t.settings.cloneCredentials.toast.cleared, "success", t.settings.common.toast.cloneCredentials);
     } catch (err) {
@@ -140,149 +149,158 @@ export function CloneCredentials() {
 
   return (
     <SettingsSection
-      icon={Key}
-      title={t.settings.cloneCredentials.title}
-      description={t.settings.cloneCredentials.description}
-      iconBg="bg-violet-500/10"
-      iconColor="text-violet-500"
+      icon="key"
+      title={copy.title}
+      description={copy.description}
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <Loader2 className="size-4 animate-spin" />
-          {t.settings.cloneCredentials.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" />
+          {copy.loading}
         </div>
       ) : (
-        <div className="space-y-3.5">
-          <p className="text-sm text-muted-foreground">
-            {t.settings.cloneCredentials.intro}
-          </p>
-
+        <div className="space-y-5">
           {!state?.hasToken || editing ? (
-            <div className="space-y-2">
+            <form
+              className="space-y-3"
+              aria-busy={tokenBusy}
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!tokenBusy) void handleSave();
+              }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label htmlFor={tokenInputId} className="text-sm font-medium text-foreground">
+                  {copy.tokenLabel}
+                </label>
+                <CreateGitHubTokenLink label={t.settings.github.tokenCreate} />
+              </div>
               <div className="relative">
                 <input
+                  id={tokenInputId}
                   type={showToken ? "text" : "password"}
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder={t.settings.cloneCredentials.placeholder}
+                  placeholder={copy.placeholder}
+                  disabled={tokenBusy}
                   spellCheck={false}
                   autoComplete="off"
-                  className="h-10 w-full rounded-xl border border-border/50 bg-muted/20 px-3 pe-10 text-sm font-mono text-foreground outline-none transition-colors focus:border-primary/40"
+                  autoCapitalize="none"
+                  dir="ltr"
+                  className="h-10 w-full rounded-xl border border-border/50 bg-muted/20 ps-3 pe-10 text-sm font-mono text-foreground outline-none transition-colors focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-50"
                 />
                 <button
                   type="button"
                   onClick={() => setShowToken((s) => !s)}
-                  className="absolute end-2 top-1/2 -translate-y-1/2 size-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
-                  aria-label={showToken ? t.settings.cloneCredentials.hideToken : t.settings.cloneCredentials.showToken}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 size-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  aria-label={showToken ? copy.hideToken : copy.showToken}
                 >
-                  {showToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                  {showToken ? <UiIcon name="eye-off" className="size-3.5" /> : <UiIcon name="eye" className="size-3.5" />}
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || !tokenInput.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                  {t.settings.cloneCredentials.saveToken}
-                </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {editing && (
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     onClick={() => {
                       setEditing(false);
                       setTokenInput("");
+                      setShowToken(false);
                     }}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                    disabled={tokenBusy}
                   >
                     {t.settings.common.cancel}
-                  </button>
+                  </Button>
                 )}
+                <Button type="submit" size="sm" disabled={tokenBusy || !tokenInput.trim()}>
+                  {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
+                  {copy.saveToken}
+                </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {t.settings.cloneCredentials.scopeHintPrefix} <span className="font-mono">repo</span> {t.settings.cloneCredentials.scopeHintSuffix}
-              </p>
-            </div>
+            </form>
           ) : (
-            <div className="rounded-xl border border-border/50 bg-muted/15 p-3.5 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{t.settings.cloneCredentials.tokenSaved}</p>
-                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                    {t.settings.cloneCredentials.lastUpdated}{" "}
-                    {state.setAt
-                      ? new Date(state.setAt).toLocaleString()
-                      : t.settings.cloneCredentials.justNow}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-                  >
-                    {t.settings.cloneCredentials.replace}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleClear}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-[12px] font-medium text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
-                  >
-                    <Trash2 className="size-3" />
-                    {t.settings.cloneCredentials.clear}
-                  </button>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-3.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{copy.tokenSaved}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {copy.lastUpdated}{" "}
+                  {state.setAt ? new Date(state.setAt).toLocaleString() : copy.justNow}
+                </p>
               </div>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={state.asDefault}
-                  onChange={(e) => handleToggleDefault(e.target.checked)}
-                  disabled={togglingDefault}
-                  className="mt-0.5 size-4 rounded border-border/60 accent-primary"
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-foreground">
-                    {t.settings.cloneCredentials.useAsDefault}
-                  </span>
-                  <span className="block text-[12px] text-muted-foreground/80 mt-0.5 leading-relaxed">
-                    {t.settings.cloneCredentials.useAsDefaultDesc}
-                  </span>
-                </span>
-              </label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setEditing(true)}
+                  disabled={tokenBusy}
+                >
+                  {copy.replace}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClear}
+                  disabled={tokenBusy}
+                  className="text-danger hover:bg-danger-bg hover:text-danger"
+                >
+                  <UiIcon name={saving ? "spinner" : "trash"} className={`size-3.5 ${saving ? "animate-spin" : ""}`} />
+                  {copy.clear}
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* DESKTOP ONLY. `relayConfigEligible` (api: deployments/clone-plan.ts)
-              hard-requires isDesktop, and that is load-bearing rather than
-              incidental: the relay vends the operator's account-wide token on
-              demand over the SSH tunnel, whose trust boundary is "my machine → my
-              server". A self-hosted box has no such boundary and uses per-server
-              credentials instead — so on self-hosted this checkbox was flippable
-              but could never take effect. */}
-          {forwardingAvailable && (
-          <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-border/50 bg-muted/15 p-3.5">
-            <input
-              type="checkbox"
-              checked={forwardGit}
-              onChange={(e) => handleToggleForward(e.target.checked)}
-              disabled={togglingForward}
-              className="mt-0.5 size-4 rounded border-border/60 accent-primary"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">
-                {t.settings.cloneCredentials.forwardGitLabel}
-              </span>
-              <span className="block text-[12px] text-muted-foreground/80 mt-0.5 leading-relaxed">
-                {t.settings.cloneCredentials.forwardGitDesc}
-              </span>
-            </span>
-          </label>
+          {((state?.hasToken && !editing) || forwardingAvailable) && (
+            <div className="divide-y divide-border/50">
+              {state?.hasToken && !editing && (
+                <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{copy.useAsDefault}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{copy.useAsDefaultDesc}</p>
+                  </div>
+                  <Toggle
+                    checked={state.asDefault}
+                    onChange={handleToggleDefault}
+                    disabled={tokenBusy}
+                    aria-label={copy.useAsDefault}
+                  />
+                </div>
+              )}
+              {/* Desktop relay only: the backend owns forwarding availability. */}
+              {forwardingAvailable && (
+                <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{copy.forwardGitLabel}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{copy.forwardGitDesc}</p>
+                  </div>
+                  <Toggle
+                    checked={forwardGit}
+                    onChange={handleToggleForward}
+                    disabled={togglingForward}
+                    aria-label={copy.forwardGitLabel}
+                  />
+                </div>
+              )}
+            </div>
           )}
+
+          <details className="group text-xs text-muted-foreground">
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+              <UiIcon name="info" className="size-3.5 shrink-0" />
+              {copy.helpTitle}
+              <UiIcon name="chevron-down" className="size-3 shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 space-y-2 leading-relaxed">
+              <p>
+                {copy.scopeHintPrefix} <span className="font-mono">repo</span> {copy.scopeHintSuffix}
+              </p>
+              <p>{copy.intro}</p>
+            </div>
+          </details>
         </div>
       )}
     </SettingsSection>

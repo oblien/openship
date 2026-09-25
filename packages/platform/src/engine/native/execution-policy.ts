@@ -30,8 +30,9 @@ export function assertNativeSshSettings(settings: {
   sshAuthMethod?: string | null;
   sshPrivateKey?: string | null;
   sshKeyPath?: string | null;
+  sshTransport?: string | null;
 }): void {
-  if (settings.sshAuthMethod === "agent" ||
+  if (settings.sshTransport === "cloudflare" || settings.sshAuthMethod === "agent" ||
       (settings.sshAuthMethod === "key" && !settings.sshPrivateKey && settings.sshKeyPath))
     assertNativeHostExecution();
 }

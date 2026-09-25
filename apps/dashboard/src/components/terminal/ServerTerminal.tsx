@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Interactive terminal surface for a single server.
  *
@@ -29,7 +31,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { RotateCw, Terminal as TerminalIcon } from "lucide-react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
 import type { TerminalErrorCode } from "@/lib/api";
 import "@xterm/xterm/css/xterm.css";
@@ -448,7 +449,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
           }
         >
           <div className="flex items-center gap-2">
-            <TerminalIcon className="size-3.5" />
+            <UiIcon name="terminal" className="size-3.5" />
             <span>{banner.message}</span>
           </div>
           {banner.showReconnect && (
@@ -457,7 +458,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
               onClick={handleReconnect}
               className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-background/60"
             >
-              <RotateCw className="size-3" />
+              <UiIcon name="refresh" className="size-3" />
               Reconnect
             </button>
           )}

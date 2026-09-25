@@ -1,19 +1,8 @@
 "use client";
+
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useRef, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ChevronUp,
-  Database,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-  Trash2,
-  Unplug,
-  X,
-  Zap,
-} from "lucide-react";
 import {
   CLUSTER_DATABASE_TEMPLATES,
   CLUSTER_DATABASE_STEPS,
@@ -27,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ResourceIcon } from "@/components/scale/ResourceIcon";
 import { NetworkSetupProgress } from "@/components/servers/clusters/NetworkSetupProgress";
 import { clusterDatabasesApi } from "@/lib/api/cluster-databases";
 import { getApiErrorMessage } from "@/lib/api";
@@ -66,7 +56,7 @@ export function ClusterDatabasePanel({
   database?: ClusterDatabase;
   onSaved: (row: ClusterDatabase) => void;
   onClose: () => void;
-  onMinimize: () => void;
+  onMinimize?: () => void;
   onDeploy: () => void;
   disabled?: boolean;
 }) {
@@ -142,9 +132,10 @@ export function ClusterDatabasePanel({
     <aside className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-3 px-4 py-3">
         <span
-          className={`flex size-9 items-center justify-center rounded-xl ${config?.engine === "redis" ? "bg-rose-500/10 text-rose-500" : "bg-blue-500/10 text-blue-500"}`}
+          className="scale-resource-tone scale-resource-icon flex size-9 items-center justify-center rounded-xl"
+          data-kind={config?.engine ?? "postgres"}
         >
-          <Database className="size-4" />
+          <ResourceIcon kind={config?.engine ?? "postgres"} className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{database?.name ?? "Add database"}</h2>
@@ -152,16 +143,18 @@ export function ClusterDatabasePanel({
             {template?.name ?? "Choose a database for this project"}
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Minimize database settings"
-          onClick={onMinimize}
-        >
-          <ChevronUp />
-        </Button>
+        {onMinimize && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Minimize database settings"
+            onClick={onMinimize}
+          >
+            <UiIcon name="chevron-up" />
+          </Button>
+        )}
         <Button variant="ghost" size="icon" aria-label="Close database settings" onClick={onClose}>
-          <X />
+          <UiIcon name="close" />
         </Button>
       </div>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
@@ -174,7 +167,7 @@ export function ClusterDatabasePanel({
           <div role="status" className="space-y-2 rounded-xl bg-success/10 p-3 text-sm">
             <p>{notice}</p>
             <Button size="sm" onClick={onDeploy} disabled={locked}>
-              Review application deployment <ArrowRight />
+              Review application deployment <UiIcon name="arrow-right" />
             </Button>
           </div>
         )}
@@ -191,13 +184,10 @@ export function ClusterDatabasePanel({
                 }}
               >
                 <span
-                  className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${item.id === "postgres" ? "bg-blue-500/10 text-blue-500" : "bg-rose-500/10 text-rose-500"}`}
+                  className="scale-resource-tone scale-resource-icon flex size-10 shrink-0 items-center justify-center rounded-xl"
+                  data-kind={item.id}
                 >
-                  {item.id === "postgres" ? (
-                    <Database className="size-5" />
-                  ) : (
-                    <Zap className="size-5" />
-                  )}
+                  <ResourceIcon kind={item.id} className="size-5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{item.name}</span>
@@ -207,7 +197,7 @@ export function ClusterDatabasePanel({
                       : "Caching and data structures, with optional sharding."}
                   </span>
                 </span>
-                <ArrowRight className="size-4 text-muted-foreground" />
+                <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
               </button>
             ))}
           </div>
@@ -228,7 +218,7 @@ export function ClusterDatabasePanel({
                 onClick={() => setConfig(null)}
                 disabled={locked}
               >
-                <ArrowLeft /> Databases
+                <UiIcon name="arrow-left" /> Databases
               </Button>
             )}
             <label className="block space-y-1.5 text-sm">
@@ -417,7 +407,7 @@ export function ClusterDatabasePanel({
                   !clusterClient)
               }
             >
-              {busy ? <Loader2 className="animate-spin" /> : <Database />}
+              {busy ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="database" />}
               {database ? "Apply database settings" : "Create database"}
             </Button>
             {database && (
@@ -465,7 +455,7 @@ export function ClusterDatabasePanel({
                 aria-label="Refresh database status"
                 onClick={() => void run(() => clusterDatabasesApi.inspect(projectId, database.id))}
               >
-                {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                {busy ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="refresh" />}
               </Button>
             </div>
             {database.error && (
@@ -483,7 +473,7 @@ export function ClusterDatabasePanel({
                     key={pod.name}
                     className="flex items-center gap-3 rounded-xl bg-muted/30 p-3"
                   >
-                    <CheckCircle2
+                    <UiIcon name="check-circle"
                       className={`size-4 ${pod.ready ? "text-success" : "text-warning"}`}
                     />
                     <span className="min-w-0 flex-1">
@@ -538,7 +528,7 @@ export function ClusterDatabasePanel({
                 className="w-full"
                 onClick={() => void run(() => clusterDatabasesApi.retry(projectId, database))}
               >
-                <RotateCcw />{" "}
+                <UiIcon name="rotate-left" />{" "}
                 {database.intent === "remove"
                   ? "Retry removal"
                   : database.intent === "backup"
@@ -569,7 +559,7 @@ export function ClusterDatabasePanel({
                           )
                         }
                       >
-                        <Unplug />
+                        <UiIcon name="unplug" />
                       </Button>
                     </div>
                   ) : (
@@ -672,7 +662,7 @@ export function ClusterDatabasePanel({
                   disabled={locked}
                   onClick={() => setRemoving(!removing)}
                 >
-                  <Trash2 /> Remove database
+                  <UiIcon name="trash" /> Remove database
                 </Button>
                 {removing && (
                   <div className="mt-3 space-y-3 rounded-xl bg-muted/30 p-3 text-sm">

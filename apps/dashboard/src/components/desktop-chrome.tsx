@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, MoreHorizontal, RefreshCw, Wrench } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useHelpMenuActions } from "@/components/HelpMenu";
 import { useI18n } from "@/components/i18n-provider";
@@ -114,13 +115,13 @@ export function DesktopChrome() {
     {
       id: "reload",
       label: w.reload,
-      icon: <RefreshCw className="size-4" />,
+      icon: <UiIcon name="refresh" className="size-4" />,
       onClick: () => void bridge()?.window?.reload(),
     },
     {
       id: "devtools",
       label: w.devTools,
-      icon: <Wrench className="size-4" />,
+      icon: <UiIcon name="wrench" className="size-4" />,
       onClick: () => void bridge()?.window?.toggleDevTools(),
     },
     { id: "devtools-divider", divider: true },
@@ -141,7 +142,7 @@ export function DesktopChrome() {
           aria-label={w.back}
           title={w.back}
         >
-          <ChevronLeft className="size-[21px]" strokeWidth={1.5} />
+          <UiIcon name="chevron-left" className="size-[21px]" />
         </button>
         <button
           type="button"
@@ -151,7 +152,7 @@ export function DesktopChrome() {
           aria-label={w.forward}
           title={w.forward}
         >
-          <ChevronRight className="size-[21px]" strokeWidth={1.5} />
+          <UiIcon name="chevron-right" className="size-[21px]" />
         </button>
       </nav>
 
@@ -171,7 +172,7 @@ export function DesktopChrome() {
             actions={menuActions}
             align="right"
             className="app-titlebar-menu"
-            trigger={<MoreHorizontal className="size-[17px]" strokeWidth={1.7} />}
+            trigger={<UiIcon name="more" className="size-[17px]" />}
           />
         )}
 
@@ -184,9 +185,7 @@ export function DesktopChrome() {
               aria-label={w.minimize}
               title={w.minimize}
             >
-              <svg viewBox="0 0 12 12" aria-hidden="true" className="app-titlebar-wc">
-                <path d="M2 6h8" />
-              </svg>
+              <UiIcon name="minus" className="app-titlebar-wc" />
             </button>
             <button
               type="button"
@@ -197,14 +196,9 @@ export function DesktopChrome() {
             >
               {maximized ? (
                 /* Overlapping squares = restore down, the standard Windows glyph. */
-                <svg viewBox="0 0 12 12" aria-hidden="true" className="app-titlebar-wc">
-                  <path d="M3.5 3.5V2.5h6v6h-1" />
-                  <rect x="2.5" y="4.5" width="5" height="5" />
-                </svg>
+                <UiIcon name="copy" className="app-titlebar-wc" />
               ) : (
-                <svg viewBox="0 0 12 12" aria-hidden="true" className="app-titlebar-wc">
-                  <rect x="2.5" y="2.5" width="7" height="7" />
-                </svg>
+                <UiIcon name="square" className="app-titlebar-wc" />
               )}
             </button>
             <button
@@ -214,9 +208,7 @@ export function DesktopChrome() {
               aria-label={w.close}
               title={w.close}
             >
-              <svg viewBox="0 0 12 12" aria-hidden="true" className="app-titlebar-wc">
-                <path d="M3 3l6 6M9 3l-6 6" />
-              </svg>
+              <UiIcon name="close" className="app-titlebar-wc" />
             </button>
           </div>
         )}

@@ -1,18 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Circle,
-  CircleAlert,
-  Loader2,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { managedNetworkInProgress } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
@@ -202,7 +194,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
           href="/servers?tab=networking"
           className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4 rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
           {c.backToClusters}
         </Link>
         <h1 id="network-operation-title" className="text-2xl font-semibold tracking-tight">
@@ -234,7 +226,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
               </div>
             )}
             {!operation && !error && !stream.error && (
-              <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
+              <UiIcon name="spinner" className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
             )}
             {operation && (
               <div className="mt-6 grid items-start gap-6 @4xl/network-operation:grid-cols-[minmax(0,1fr)_340px]">
@@ -305,10 +297,10 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                               )!;
                               const Icon =
                                 host.stage === "failed"
-                                  ? CircleAlert
+                                  ? "alert-circle"
                                   : host.stage === "pending"
-                                    ? Circle
-                                    : Check;
+                                    ? "circle"
+                                    : "check";
                               const problem =
                                 host.error ||
                                 operation.report?.hosts.find(
@@ -322,7 +314,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                                   <span
                                     className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-full ${host.stage === "failed" ? "bg-warning/10 text-warning" : host.stage === "committed" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}
                                   >
-                                    <Icon className="size-3.5" />
+                                    <UiIcon name={Icon} className="size-3.5" />
                                   </span>
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -355,13 +347,13 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                 >
                   <div role="status" className="flex items-center gap-2 text-sm font-semibold">
                     {running ? (
-                      <Loader2 className="size-4 animate-spin text-primary" />
+                      <UiIcon name="spinner" className="size-4 animate-spin text-primary" />
                     ) : recoverable ? (
-                      <CircleAlert className="size-4 text-warning" />
+                      <UiIcon name="alert-circle" className="size-4 text-warning" />
                     ) : operation.status === "rolled_back" || operation.status === "cancelled" ? (
-                      <CircleAlert className="size-4 text-warning" />
+                      <UiIcon name="alert-circle" className="size-4 text-warning" />
                     ) : operation.status !== "planned" ? (
-                      <Check className="size-4 text-success" />
+                      <UiIcon name="check" className="size-4 text-success" />
                     ) : null}
                     {m.status[operation.status]}
                   </div>
@@ -399,7 +391,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                           href={`/servers/networks/preparations/${operation.replacementPreparationId}`}
                         >
                           {m.viewUpdatedSetup}
-                          <ArrowRight className="size-4 rtl:rotate-180" />
+                          <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                         </Link>
                       </Button>
                     </div>
@@ -429,7 +421,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                       }
                       onClick={() => void apply("apply")}
                     >
-                      {busy && <Loader2 className="size-4 animate-spin" />}
+                      {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                       {operation.plan.intent === "remove" ? m.removalApply : m.apply}
                     </Button>
                   )}
@@ -441,7 +433,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                           disabled={busy || (requiresFirewallConfirmation && !firewall.checked)}
                           onClick={() => void apply("resume")}
                         >
-                          {busy && <Loader2 className="size-4 animate-spin" />}
+                          {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                           {operation.plan.intent === "remove" ? m.retryCleanup : m.resume}
                         </Button>
                       )}
@@ -455,9 +447,9 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         }}
                       >
                         {operation.plan.baseRevision === null ? (
-                          <Trash2 className="size-4" />
+                          <UiIcon name="trash" className="size-4" />
                         ) : (
-                          <RotateCcw className="size-4" />
+                          <UiIcon name="rotate-left" className="size-4" />
                         )}
                         {operation.plan.baseRevision === null ? m.cleanupSetup : m.restore}
                       </Button>
@@ -467,7 +459,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                     <Button className="h-auto min-h-10 w-full whitespace-normal py-2" asChild>
                       <Link href={`/servers/networks/${operation.clusterId}`}>
                         {m.viewCluster}
-                        <ArrowRight className="size-4 rtl:rotate-180" />
+                        <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                       </Link>
                     </Button>
                   )}
@@ -492,7 +484,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         setConfirmation("discard");
                       }}
                     >
-                      <Trash2 className="size-4" />
+                      <UiIcon name="trash" className="size-4" />
                       {m.discardPlan}
                     </Button>
                   )}

@@ -101,11 +101,13 @@
       },
       "phase": {
         "queued": "Waiting for a worker…",
-        "preparing": "Resolving destination + service…",
-        "snapshotting": "Producing artifacts (pre-hook running)…",
-        "uploading": "Streaming to destination…",
-        "verifying": "Writing manifest…"
-      }
+        "preparing": "Checking the source and destination…",
+        "snapshotting": "Preparing the data capture…",
+        "uploading": "Transferring backup data…",
+        "verifying": "Finalizing the backup manifest…"
+      },
+      "reconnecting": "Reconnecting to progress…",
+      "reconnect": "Reconnect"
     },
     "policyEditor": {
       "presetHourly": "Hourly",
@@ -200,7 +202,32 @@
       "compressionNone": "none — no compression",
       "compressionHint": "zstd compresses best; gzip is built into every image, so it needs no download and works on an air-gapped host.",
       "compressionAuto": "Auto — use what the service has",
-      "summaryPath": "Files and folders"
+      "summaryPath": "Files and folders",
+      "quick": {
+        "contents": "What to back up",
+        "volumesTitle": "Service volumes",
+        "volumesDescription": "All persistent volumes and bind mounts attached to this service.",
+        "selectedVolumesDescription": "Only the volumes selected in Advanced options.",
+        "databaseTitle": "{name} data",
+        "databaseDescription": "Use the database’s own backup tool for consistent data.",
+        "projectTitle": "Project data",
+        "projectDescription": "Back up each service’s database or persistent volumes.",
+        "filesDescription": "Back up the folders selected in Advanced options.",
+        "customDescription": "Use your configured backup and restore commands.",
+        "onDemand": "On demand",
+        "onDemandHint": "Run a backup whenever you need one.",
+        "frequency": "When to back up",
+        "history": "Backup history",
+        "keepBackups": "Last {count} backups",
+        "historyHint": "Older backups are cleaned up automatically.",
+        "customSchedule": "Custom schedule",
+        "customRetention": "Custom retention",
+        "advancedHint": "Backup method, selected volumes, schedules, and hooks.",
+        "saveAndBackup": "Save and back up",
+        "invalidRetention": "Enter a whole number greater than zero, or leave blank to keep all backups."
+      },
+      "incrementalLabel": "Incremental backups",
+      "incrementalHint": "Upload only changed blocks. Each backup remains a complete restore point; database exports may save less space."
     }
   },
   "cloud": {

@@ -1596,6 +1596,18 @@
       "description": "Test destination configuration before saving it.",
       "route": "POST /api/backup-destinations/preflight"
     },
+    "backupDestinations.history": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "List backup history across storage destinations.",
+      "route": "GET /api/backup-destinations/history"
+    },
+    "backupDestinations.runs": {
+      "page": "backup-destinations",
+      "section": "Operations",
+      "description": "List backup runs stored in one destination.",
+      "route": "GET /api/backup-destinations/:id/runs"
+    },
     "backupDestinations.get": {
       "page": "backup-destinations",
       "section": "Operations",
@@ -1979,6 +1991,12 @@
       "section": "GitHub App sources",
       "description": "Remove a GitHub App source.",
       "route": "DELETE /api/github/sources/:id"
+    },
+    "permissions.listWorkspaces": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "List available workspace IDs, names, roles, and credential scope.",
+      "route": "GET /api/permissions/workspaces"
     },
     "permissions.orgMeta": {
       "page": "permissions",

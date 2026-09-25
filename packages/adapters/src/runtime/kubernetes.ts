@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { listNamespaceResources, kubernetesProjectNamespace, projectNamespaceManifest } from "../cluster/namespace";
+import { kubernetesIdLabel } from "../cluster/kubernetes-label";
 import {
   AppError,
   clusterWorkloadNeedsOperator,
@@ -123,9 +124,9 @@ export class KubernetesRuntime implements RuntimeAdapter {
   private labels(deploymentId?: string) {
     return {
       "app.kubernetes.io/managed-by": "openship",
-      "openship.io/project": this.options.projectId,
+      "openship.io/project": kubernetesIdLabel(this.options.projectId),
       "openship.io/runtime": this.options.runtimeId,
-      ...(deploymentId ? { "openship.io/deployment": deploymentId } : {}),
+      ...(deploymentId ? { "openship.io/deployment": kubernetesIdLabel(deploymentId) } : {}),
     };
   }
   private assertOwned(object: KubernetesObject) {
@@ -322,7 +323,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
       revisionHistoryLimit: 2,
       progressDeadlineSeconds: 300,
       minReadySeconds: 5,
-      selector: { matchLabels: { "openship.io/deployment": config.deploymentId } },
+      selector: { matchLabels: { "openship.io/deployment": kubernetesIdLabel(config.deploymentId) } },
       template: {
         metadata: { labels },
         spec: {
@@ -337,7 +338,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
               maxSkew: 1,
               topologyKey: "kubernetes.io/hostname",
               whenUnsatisfiable: "ScheduleAnyway",
-              labelSelector: { matchLabels: { "openship.io/project": this.options.projectId } },
+              labelSelector: { matchLabels: { "openship.io/project": kubernetesIdLabel(this.options.projectId) } },
             },
           ],
           ...(pullData ? { imagePullSecrets: [{ name: `${name}-registry` }] } : {}),
@@ -422,7 +423,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
           metadata: { ...metadata, ownerReferences },
           spec: {
             type: "ClusterIP",
-            selector: { "openship.io/deployment": config.deploymentId },
+            selector: { "openship.io/deployment": kubernetesIdLabel(config.deploymentId) },
             ports: ports.map((port) => ({
               name: `tcp-${port}`,
               port,
@@ -734,7 +735,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
     try {
       const list = await this.options.api.request<{ items: KubernetesObject[] }>(
         "GET",
-        `${this.base}?labelSelector=${encodeURIComponent(`openship.io/project=${projectId}`)}`,
+        `${this.base}?labelSelector=${encodeURIComponent(`openship.io/project=${kubernetesIdLabel(projectId)}`)}`,
         undefined,
         this.lifetime.signal,
       );

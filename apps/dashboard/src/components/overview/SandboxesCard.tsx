@@ -1,8 +1,9 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
 import Link from 'next/link';
-import { Box, ArrowUpRight, Play, Square, AlertCircle } from 'lucide-react';
 import { SandboxData } from './types';
 import { useI18n, interpolate } from '@/components/i18n-provider';
 
@@ -35,11 +36,11 @@ const SandboxesCard: React.FC<SandboxesCardProps> = ({ data, isLoading = false }
   const getStatusIcon = (status: 'running' | 'stopped' | 'error') => {
     switch (status) {
       case 'running':
-        return <Play className="w-3 h-3 text-success fill-current" />;
+        return <UiIcon name="play" className="w-3 h-3 text-success" />;
       case 'stopped':
-        return <Square className="w-3 h-3 text-neutral" />;
+        return <UiIcon name="square" className="w-3 h-3 text-neutral" />;
       case 'error':
-        return <AlertCircle className="w-3 h-3 text-danger" />;
+        return <UiIcon name="alert-circle" className="w-3 h-3 text-danger" />;
     }
   };
 
@@ -74,7 +75,7 @@ const SandboxesCard: React.FC<SandboxesCardProps> = ({ data, isLoading = false }
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center">
-            <Box className="w-5 h-5 text-cyan-600" />
+            <UiIcon name="terminal" className="w-5 h-5 text-cyan-600" />
           </div>
           <div>
             <h3 className="font-semibold text-black">{t.overview.sandboxes.title}</h3>
@@ -86,7 +87,7 @@ const SandboxesCard: React.FC<SandboxesCardProps> = ({ data, isLoading = false }
           href="/projects"
           className="p-2 hover:bg-cyan-100 rounded-lg transition-colors group"
         >
-          <ArrowUpRight className="w-4 h-4 text-cyan-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          <UiIcon name="arrow-up-right" className="w-4 h-4 text-cyan-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </Link>
       </div>
 
@@ -149,4 +150,3 @@ const SandboxesCard: React.FC<SandboxesCardProps> = ({ data, isLoading = false }
 };
 
 export default SandboxesCard;
-

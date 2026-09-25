@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import {
   createContext,
   useContext,
@@ -9,7 +11,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
 import { defaultDomainType } from "@/lib/default-domain-type";
 import {
@@ -91,10 +92,10 @@ export function useDefaultDomainType(): "free" | "custom" {
 /* ------------------------------------------------------------------ */
 
 const FEATURES = [
-  { icon: Rocket, label: "Cloud deployments" },
-  { icon: Shield, label: "Managed infrastructure" },
-  { icon: Globe, label: "Automatic SSL & domains" },
-  { icon: Zap, label: "Global CDN" },
+  { icon: "rocket" as const, label: "Cloud deployments" },
+  { icon: "shield" as const, label: "Managed infrastructure" },
+  { icon: "globe" as const, label: "Automatic SSL & domains" },
+  { icon: "bolt" as const, label: "Global CDN" },
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
@@ -408,12 +409,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               onClick={dismissCloudModal}
               className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted"
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
 
             {/* Icon */}
             <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary shadow-sm shadow-primary/20">
-              <Cloud className="size-7 text-primary-foreground" />
+              <UiIcon name="cloud" className="size-7 text-primary-foreground" />
             </div>
 
             {/* Title */}
@@ -443,7 +444,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               {FEATURES.map(({ icon: Icon, label }) => (
                 <div key={label} className="flex items-center gap-2.5 text-sm text-muted-foreground">
                   <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon className="size-3.5 text-primary" />
+                    <UiIcon name={Icon} className="size-3.5 text-primary" />
                   </div>
                   <span>{label}</span>
                 </div>
@@ -463,9 +464,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
                 }}
               >
                 {connecting ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <ExternalLink className="size-4" />
+                  <UiIcon name="external-link" className="size-4" />
                 )}
                 {connecting ? "Waiting for sign in…" : (modalFeature.ctaLabel ?? "Connect to Openship Cloud")}
               </Button>

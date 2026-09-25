@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Top-level mail admin panel - shown on /emails once the server is fully
  * provisioned. Tab state lives in the URL so refreshes and back/forward
@@ -20,19 +22,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  LayoutDashboard,
-  Globe,
-  UserRound,
-  Forward,
-  Bell,
-  FileText,
-  HeartPulse,
-  Settings,
-  DatabaseBackup,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react";
 import type { MailSetupStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/components/i18n-provider";
@@ -64,7 +53,7 @@ interface MailAdminPanelProps {
 
 interface TabDef {
   key: MailTabKey;
-  icon: LucideIcon;
+  icon: IconName;
 }
 
 /**
@@ -79,17 +68,17 @@ interface TabDef {
  * gets, so a new section is a type error here rather than a tab that silently
  * never renders.
  */
-const TAB_ICONS: Record<MailTabKey, LucideIcon> = {
-  overview: LayoutDashboard,
-  domains: Globe,
-  mailboxes: UserRound,
-  aliases: Forward,
-  notifications: Bell,
-  sending: Waypoints,
-  dns: FileText,
-  health: HeartPulse,
-  backup: DatabaseBackup,
-  advanced: Settings,
+const TAB_ICONS: Record<MailTabKey, IconName> = {
+  overview: "dashboard",
+  domains: "globe",
+  mailboxes: "user",
+  aliases: "forward",
+  notifications: "bell",
+  sending: "network",
+  dns: "file-text",
+  health: "activity",
+  backup: "database-backup",
+  advanced: "settings",
 };
 
 const TABS: TabDef[] = MAIL_TAB_KEYS.map((key) => ({ key, icon: TAB_ICONS[key] }));
@@ -269,7 +258,7 @@ function TabBar({
                 : "text-muted-foreground hover:text-foreground/70",
             )}
           >
-            <Icon className="size-4" strokeWidth={2} />
+            <UiIcon name={Icon} className="size-4" />
             {t.emailsAdmin.panel.tabs[tab.key]}
             {isActive && (
               <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />

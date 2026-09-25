@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The Monitoring tab's layout, with every input arriving as a PROP.
  *
@@ -27,7 +29,6 @@
  */
 
 import React from "react";
-import { ArrowUpDown, Gauge, Server, Users } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AnalyticsError } from "./AnalyticsError";
 import { ResourceCards } from "./ResourceCards";
@@ -218,7 +219,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
       {!showAnalyticsError && (
         <div className="grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:grid-cols-4 sm:divide-x">
           <StatTile
-            icon={<Server className="size-4" />}
+            icon={<UiIcon name="server" className="size-4" />}
             label={t.projects.stats.serverRequests}
             value={hasAnalytics ? formatCount(analytics!.summary.totalRequests) : isLoadingAnalytics ? "…" : "0"}
             hint={
@@ -231,13 +232,16 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
             }
           />
           <StatTile
-            icon={<Users className="size-4" />}
+            icon={<UiIcon name="users" className="size-4" />}
             label={visitorsLabel}
             value={visitors == null ? (isLoadingGeo ? "…" : "0") : formatCount(visitors)}
-            hint={geo?.approximate ? m.approximate : undefined}
+            hint={[
+              isCloudGeo ? t.projectDetail.general.traffic.last24Hours : m.dailyWindow,
+              geo?.approximate ? m.approximate : null,
+            ].filter(Boolean).join(" · ")}
           />
           <StatTile
-            icon={<Gauge className="size-4" />}
+            icon={<UiIcon name="gauge" className="size-4" />}
             label={t.projects.stats.avgResponse}
             value={
               hasAnalytics
@@ -249,7 +253,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
             hint={t.projects.stats.responseTime}
           />
           <StatTile
-            icon={<ArrowUpDown className="size-4" />}
+            icon={<UiIcon name="arrows-up-down" className="size-4" />}
             label={t.projects.stats.bandwidthOut}
             value={hasAnalytics ? analytics!.bandwidth.totalOutFormatted : isLoadingAnalytics ? "…" : "0 B"}
             hint={
@@ -343,13 +347,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
         }
       />
 
-      {/* Traffic over time, COLLAPSED by default.
-          The Overview tab already draws this series, so expanded it was ~300px of
-          duplication between the map and the two lists below it. Not deleted, because the
-          two are not equivalent: Overview's is a 120px hand-rolled sparkline with no
-          tooltip pinned to the primary domain, while this one has tooltips and follows the
-          domain-scope selector above. So it folds down to one header row that still states
-          the total, and the choice is remembered. */}
+      {/* The same 24-hour series as Overview, optionally scoped to one domain.
+          Keep the remembered fold state for users who only need its total here. */}
       {!showAnalyticsError && (
         <CollapsibleCard
           title={m.trafficTitle}

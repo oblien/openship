@@ -1,12 +1,13 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { needsCloudPlan } from "@/lib/billing-presentation";
 import { randomUUID } from "@/lib/random-uuid";
 import { BillingEmptyState } from "./BillingEmptyState";
 import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, ExternalLink, Receipt } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
@@ -151,7 +152,7 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : error && !packs ? (
           <div className="rounded-xl border border-border/50 bg-muted/30 px-4 py-6 text-center">
@@ -178,7 +179,7 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
                 >
                   <p className="text-xs font-medium text-muted-foreground">{t.billing.topups.extraUsage}</p>
                   <div className="mt-3 flex items-baseline gap-1 text-3xl font-semibold tabular-nums text-foreground">
-                    {percent ? <><Plus className="size-5 text-primary" aria-hidden="true" /><bdi>{percent}</bdi></>
+                    {percent ? <><UiIcon name="plus" className="size-5 text-primary" aria-hidden="true" /><bdi>{percent}</bdi></>
                       : <span className="text-lg">{t.billing.topups.prepaidUsage}</span>}
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{percent ? t.billing.topups.allowanceEquivalent : t.billing.resourcesGuide.usageSummary}</p>
@@ -199,7 +200,7 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
                     >
                       {isBuying ? (
                         <>
-                          <Loader2 className="size-4 animate-spin" />
+                          <UiIcon name="spinner" className="size-4 animate-spin" />
                           {t.billing.topups.redirecting}
                         </>
                       ) : (
@@ -236,7 +237,7 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="rounded-xl border border-border/50 bg-muted/30 p-2">
-              <Receipt className="size-5 text-muted-foreground" />
+              <UiIcon name="receipt" className="size-5 text-muted-foreground" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-foreground">{t.billing.topups.receiptsTitle}</h3>
@@ -253,13 +254,13 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
           >
             {openingPortal ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <UiIcon name="spinner" className="size-4 animate-spin" />
                 {t.billing.topups.opening}
               </>
             ) : (
               <>
                 {t.billing.topups.openPortal}
-                <ExternalLink className="size-3.5" />
+                <UiIcon name="external-link" className="size-3.5" />
               </>
             )}
           </button> : <a href="mailto:support@openship.io" className="text-sm font-medium text-primary hover:underline">{t.billing.portal.supportButton}</a>}

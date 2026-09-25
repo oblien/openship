@@ -1,10 +1,11 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
- * The chrome shared by the Logs and Terminal panels: a framed card with a
- * macOS-style titlebar (traffic lights + terminal icon + name), an optional
- * center toolbar slot, an optional right status slot, a body that hosts the
- * xterm mount, and an optional centered overlay for empty/idle states.
+ * Shared layout for Logs and Terminal panels: a service identity or picker,
+ * optional search and status controls, the xterm mount, and an optional
+ * centered overlay for empty/idle states.
  *
  * It is purely presentational — every consumer keeps its own transport
  * (SSE for logs, WebSocket PTY for the interactive shell) and just renders
@@ -12,12 +13,13 @@
  */
 
 import type { ReactNode } from "react";
-import { Terminal as TerminalIcon } from "lucide-react";
 
 interface TerminalCardShellProps {
     /** Titlebar label, e.g. the project or service name. */
     name: string;
-    /** Center slot — search, filters, etc. Pass the sizing wrapper yourself. */
+    /** Optional service picker in place of the default icon and name. */
+    title?: ReactNode;
+    /** Search or filters; moves below the identity on narrow panels. */
     toolbar?: ReactNode;
     /** Right slot — streaming state, line count, start/stop, reconnect. */
     status?: ReactNode;
@@ -31,6 +33,7 @@ interface TerminalCardShellProps {
 
 export function TerminalCardShell({
     name,
+    title,
     toolbar,
     status,
     overlay,
@@ -38,28 +41,27 @@ export function TerminalCardShell({
     children,
 }: TerminalCardShellProps) {
     return (
-        <div className={`flex flex-col h-full min-h-[460px] ${className ?? ""}`}>
+        <div className={`flex min-w-0 flex-col h-full min-h-[460px] ${className ?? ""}`}>
             <div className="flex-1 flex flex-col min-h-0">
-                <div className="bg-card rounded-2xl overflow-hidden border border-border/50 flex-1 flex flex-col min-h-0">
+                <div className="@container bg-card rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
                     {/* Titlebar */}
-                    <div className="px-5 py-3 border-b border-border/50">
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="flex gap-2">
-                                    <div className="w-3 h-3 rounded-full bg-gradient-to-br from-red-400 to-red-500 shadow-sm"></div>
-                                    <div className="w-3 h-3 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 shadow-sm"></div>
-                                    <div className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-sm"></div>
+                    <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+                        <div className="min-w-0 flex-1 @3xl:w-52 @3xl:flex-none">
+                            {title ?? (
+                                <div className="flex h-9 min-w-0 items-center gap-2.5">
+                                    <UiIcon name="terminal" className="size-4 shrink-0 text-muted-foreground" />
+                                    <span className="truncate text-sm font-medium text-foreground" title={name}>{name}</span>
                                 </div>
-                                <TerminalIcon className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-sm font-medium text-foreground/80">{name}</span>
-                            </div>
-
-                            {toolbar}
-
-                            {status ? (
-                                <div className="flex items-center gap-2 sm:gap-3">{status}</div>
-                            ) : null}
+                            )}
                         </div>
+
+                        {toolbar ? (
+                            <div className="order-last w-full min-w-0 @3xl:order-none @3xl:w-auto @3xl:flex-1">{toolbar}</div>
+                        ) : null}
+
+                        {status ? (
+                            <div className="ms-auto flex shrink-0 items-center gap-2 sm:gap-3">{status}</div>
+                        ) : null}
                     </div>
 
                     {/* Body */}

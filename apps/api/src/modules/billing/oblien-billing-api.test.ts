@@ -17,6 +17,21 @@ function setup(body: unknown, status = 200) {
   return { api, fetcher };
 }
 describe("Oblien 2.4 billing SDK and transport contract", () => {
+  it("scopes complimentary policy writes to the requested namespace and validates the response", async () => {
+    const policy = { quotaLimit: 3000, overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" as const };
+    const result = { success: true, namespace: "os-one", service: "workspace_vm", ...policy };
+    const { api, fetcher } = setup(result);
+    expect(await api.setPolicy("os-one", policy)).toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/policy/os-one", expect.objectContaining({ method: "PUT", body: JSON.stringify(policy) }));
+    await expect(api.setPolicy("os-two", policy)).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
+  });
+  it("keeps the same provider reset key on retry and rejects an unscoped reset response", async () => {
+    const { api, fetcher } = setup({ success: true, namespace: "os-one", applied: false });
+    expect(await api.resetQuota("os-one", "2026-10-25T14:00:00.000Z")).toMatchObject({ applied: false });
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/policy/os-one/reset", expect.objectContaining({ method: "POST", body: JSON.stringify({ periodEnd: "2026-10-25T14:00:00.000Z" }) }));
+    await expect(setup({ success: true, applied: true }).api.resetQuota("os-one", "2026-10-25T14:00:00.000Z"))
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+  });
   it("requires the generic saved-policy contract before enabling new Cloud offers", async () => {
     const catalog = { success: true, plans: [], creditPacks: [] };
     await expect(setup(catalog).api.assertResellerSupport()).rejects.toMatchObject({

@@ -2,11 +2,10 @@
  * Build and validate backup manifest.json — the canonical pointer to
  * a run's artifacts on the destination.
  *
- * The manifest is the LAST artifact a backup writes. A run is only
- * considered "complete" if its manifest.json exists at the destination.
- * Partial-upload visibility is handled at the artifact level by atomic
- * upload semantics in each destination adapter; this file is just the
- * top-level marker.
+ * The manifest is written last and cross-checked during restore. The run's
+ * durable succeeded status admits restore; older runs may have no manifest.
+ * Version 2 records incremental blocks so older binaries refuse that format
+ * instead of treating a block index as a tar archive.
  */
 
 import type { BackupManifest } from "../types";
@@ -24,7 +23,7 @@ export function buildManifest(opts: {
   serviceConfig: BackupManifest["serviceConfig"];
 }): BackupManifest {
   return {
-    version: 1,
+    version: opts.artifacts.some(artifact => artifact.metadata.storage !== undefined) ? 2 : 1,
     runId: opts.runId,
     projectId: opts.projectId,
     projectSlug: opts.projectSlug,
@@ -38,13 +37,13 @@ export function buildManifest(opts: {
   };
 }
 
-/** Throws on a parsed JSON that doesn't match the v1 manifest shape. */
+/** Throws on an unsupported manifest version or invalid common envelope. */
 export function validateManifest(value: unknown): BackupManifest {
   if (!value || typeof value !== "object") {
     throw new Error("Invalid manifest: not an object");
   }
   const v = value as Record<string, unknown>;
-  if (v.version !== 1) {
+  if (v.version !== 1 && v.version !== 2) {
     throw new Error(`Unsupported manifest version: ${String(v.version)}`);
   }
   for (const field of ["runId", "projectId", "serviceId", "capturedAt"]) {

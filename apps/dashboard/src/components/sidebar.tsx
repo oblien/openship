@@ -1,24 +1,13 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  LogOut,
-  Loader2,
-  Moon,
-  Sun,
-  SunMoon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-  Building2,
-  ChevronsUpDown,
-  Check,
-  X,
-} from "lucide-react";
 import { authClient, signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
+import { ThemeIcon } from "@/components/theme-icon";
 import { useBrandName, useI18n, interpolate } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/context/AuthContext";
@@ -118,11 +107,11 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { resolvedTheme, toggle } = useTheme();
+  const { toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
   const { collapsed: desktopCollapsed, toggleCollapsed } = useSidebarCollapse(
-    pathname === "/scale" || pathname.startsWith("/scale/") || /^\/projects\/[^/]+\/topology(?:\/|$)/.test(pathname),
+    pathname === "/scale" || pathname.startsWith("/scale/"),
   );
   const collapsed = !mobileOpen && desktopCollapsed;
   const [loggingOut, setLoggingOut] = useState(false);
@@ -330,13 +319,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
             title={t.auth.toggleTheme}
           >
             {/* Icon shows the CURRENT theme; clicking cycles light → dim → dark. */}
-            {resolvedTheme === "light" ? (
-              <Sun className="size-4" />
-            ) : resolvedTheme === "dim" ? (
-              <SunMoon className="size-4" />
-            ) : (
-              <Moon className="size-4" />
-            )}
+            <ThemeIcon className="size-4" />
           </button>
           <button
             type="button"
@@ -347,10 +330,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
             title={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
             className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
           >
-            {mobileOpen ? <X className="size-4" /> : collapsed ? (
-              <PanelLeftOpen className="size-4 rtl:rotate-180" />
+            {mobileOpen ? <UiIcon name="close" className="size-4" /> : collapsed ? (
+              <UiIcon name="sidebar-open" className="size-4 rtl:rotate-180" />
             ) : (
-              <PanelLeftClose className="size-4 rtl:rotate-180" />
+              <UiIcon name="sidebar-close" className="size-4 rtl:rotate-180" />
             )}
           </button>
         </div>
@@ -392,7 +375,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                         collapsed ? "justify-center" : "gap-3"
                       }`}
                     >
-                      <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
+                      <UiIcon name={Icon} className="size-5 shrink-0" />
                       {!collapsed && (
                         <span className="flex-1 truncate">{label(key, labelSource)}</span>
                       )}
@@ -434,7 +417,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
             title={collapsed ? label(cta.labelKey) : undefined}
             className="th-btn-accent flex items-center justify-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all overflow-hidden hover:brightness-110"
           >
-            <Plus className="size-4" strokeWidth={2.5} />
+            <UiIcon name="plus" className="size-4" />
             {!collapsed && <span>{label(cta.labelKey)}</span>}
           </Link>
         </div>
@@ -464,7 +447,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
             >
               {/* Org avatar / initial */}
               <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.08] text-sm font-semibold uppercase text-foreground">
-                {activeOrg?.name?.[0] ?? <Building2 className="size-4" />}
+                {activeOrg?.name?.[0] ?? <UiIcon name="building" className="size-4" />}
               </div>
 
               {!collapsed && (
@@ -481,7 +464,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                         : displayEmail}
                     </p>
                   </div>
-                  <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                  <UiIcon name="chevrons-up-down" className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
                 </>
               )}
             </button>
@@ -516,7 +499,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                         }`}
                       >
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.08] text-[12px] font-semibold uppercase text-foreground">
-                          {o.name?.[0] ?? <Building2 className="size-3.5" />}
+                          {o.name?.[0] ?? <UiIcon name="building" className="size-3.5" />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[13px] font-medium leading-tight text-foreground">
@@ -541,10 +524,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                           </p>
                         </div>
                         {isCurrent && !isSwitching && (
-                          <Check className="size-4 shrink-0 text-primary" />
+                          <UiIcon name="check" className="size-4 shrink-0 text-primary" />
                         )}
                         {isSwitching && (
-                          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                          <UiIcon name="spinner" className="size-4 shrink-0 animate-spin text-muted-foreground" />
                         )}
                       </button>
                     );
@@ -583,9 +566,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                     className="mt-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
                   >
                     {loggingOut ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <LogOut className="size-4" />
+                      <UiIcon name="logout" className="size-4" />
                     )}
                     {isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
                   </button>
@@ -635,9 +618,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                     title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
                   >
                     {loggingOut ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <LogOut className="size-4" />
+                      <UiIcon name="logout" className="size-4" />
                     )}
                   </button>
                 </>
@@ -652,9 +635,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                 title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
               >
                 {loggingOut ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <LogOut className="size-4" />
+                  <UiIcon name="logout" className="size-4" />
                 )}
               </button>
             )}
@@ -672,9 +655,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
             title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
           >
             {loggingOut ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <LogOut className="size-4" />
+              <UiIcon name="logout" className="size-4" />
             )}
           </button>
         )}

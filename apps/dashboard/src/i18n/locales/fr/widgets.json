@@ -102,10 +102,12 @@
       "phase": {
         "queued": "En attente d'un worker…",
         "preparing": "Résolution de la destination et du service…",
-        "snapshotting": "Production des artefacts (pré-hook en cours)…",
+        "snapshotting": "Préparation de la capture des données…",
         "uploading": "Diffusion vers la destination…",
         "verifying": "Écriture du manifeste…"
-      }
+      },
+      "reconnecting": "Reconnexion à la progression…",
+      "reconnect": "Reconnecter"
     },
     "policyEditor": {
       "presetHourly": "Toutes les heures",
@@ -200,7 +202,32 @@
       "compressionNone": "aucune — sans compression",
       "compressionHint": "zstd compresse le mieux ; gzip est intégré à chaque image, donc sans téléchargement et opérationnel sur un hôte isolé.",
       "compressionAuto": "Auto — utiliser ce dont dispose le service",
-      "summaryPath": "Fichiers et dossiers"
+      "summaryPath": "Fichiers et dossiers",
+      "quick": {
+        "contents": "Données à sauvegarder",
+        "volumesTitle": "Volumes du service",
+        "volumesDescription": "Tous les volumes persistants et montages liés à ce service.",
+        "selectedVolumesDescription": "Uniquement les volumes sélectionnés dans les options avancées.",
+        "databaseTitle": "Données {name}",
+        "databaseDescription": "Utiliser l’outil de sauvegarde de la base de données pour garantir la cohérence des données.",
+        "projectTitle": "Données du projet",
+        "projectDescription": "Sauvegarder la base de données ou les volumes persistants de chaque service.",
+        "filesDescription": "Sauvegarder les dossiers sélectionnés dans les options avancées.",
+        "customDescription": "Utiliser vos commandes de sauvegarde et de restauration configurées.",
+        "onDemand": "À la demande",
+        "onDemandHint": "Lancez une sauvegarde quand vous en avez besoin.",
+        "frequency": "Quand sauvegarder",
+        "history": "Historique des sauvegardes",
+        "keepBackups": "{count} dernières sauvegardes",
+        "historyHint": "Les anciennes sauvegardes sont supprimées automatiquement.",
+        "customSchedule": "Planification personnalisée",
+        "customRetention": "Conservation personnalisée",
+        "advancedHint": "Méthode, volumes sélectionnés, planification et hooks.",
+        "saveAndBackup": "Enregistrer et sauvegarder",
+        "invalidRetention": "Saisissez un entier supérieur à zéro, ou laissez le champ vide pour conserver toutes les sauvegardes."
+      },
+      "incrementalLabel": "Sauvegardes incrémentielles",
+      "incrementalHint": "Transférer uniquement les blocs modifiés. Chaque sauvegarde reste un point de restauration complet ; les exports de bases de données peuvent économiser moins d’espace."
     }
   },
   "cloud": {

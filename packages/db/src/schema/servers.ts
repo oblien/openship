@@ -1,4 +1,5 @@
-import { pgTable, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, integer, timestamp, boolean, check } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
 // ─── Servers ─────────────────────────────────────────────────────────────────
@@ -50,10 +51,14 @@ export const servers = pgTable("servers", {
   sshPrivateKey: text("ssh_private_key"),
   sshKeyPassphrase: text("ssh_key_passphrase"),
   sshJumpHost: text("ssh_jump_host"),
+  /** Transport is structured; arbitrary local ProxyCommand values are not stored. */
+  sshTransport: text("ssh_transport", { enum: ["direct", "cloudflare"] }).notNull().default("direct"),
   sshArgs: text("ssh_args"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  check("servers_ssh_transport_check", sql`${table.sshTransport} IN ('direct', 'cloudflare')`),
+]);

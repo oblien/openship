@@ -1,11 +1,12 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 // TODO: removed — temporary SaaS "Cloud is almost here" waitlist gate.
 // Delete this file, the /api/cloud-waitlist route, and the gate in Sidebar's
 // handleDeploy when Openship Cloud opens for real deploys.
 
 import { useState } from "react";
-import { Cloud, Check, Loader2 } from "lucide-react";
 
 /**
  * SaaS-only "Openship Cloud is almost here" gate. Shown instead of running a
@@ -47,7 +48,7 @@ export function CloudWaitlistModal({ onClose }: { onClose: () => void }) {
     <div className="space-y-5 p-6">
       <div className="flex items-start gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-          <Cloud className="size-5" />
+          <UiIcon name="cloud" className="size-5" />
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">Openship Cloud is almost here</h3>
@@ -60,7 +61,7 @@ export function CloudWaitlistModal({ onClose }: { onClose: () => void }) {
 
       {status === "done" ? (
         <div className="flex items-center gap-2.5 rounded-xl bg-success-bg px-4 py-3 text-sm text-success">
-          <Check className="size-4 shrink-0" />
+          <UiIcon name="check" className="size-4 shrink-0" />
           Thank you — we&apos;ll email you the moment Openship Cloud is ready.
         </div>
       ) : (
@@ -91,7 +92,7 @@ export function CloudWaitlistModal({ onClose }: { onClose: () => void }) {
               disabled={!valid || status === "sending"}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {status === "sending" && <Loader2 className="size-4 animate-spin" />}
+              {status === "sending" && <UiIcon name="spinner" className="size-4 animate-spin" />}
               Notify me
             </button>
           </div>

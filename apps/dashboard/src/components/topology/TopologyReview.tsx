@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Loader2, Rocket } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { formatCpuCores, formatMemoryMb } from "@repo/core";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
@@ -111,7 +112,7 @@ export function TopologyReview({
       <div className="space-y-5 p-6">
         <div className="space-y-1.5 pe-8">
           <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Rocket className="size-5" />
+            <UiIcon name="rocket" className="size-5" />
           </div>
           <h2 className="text-lg font-semibold">
             {changes.length ? "Review topology changes" : "Review deployment"}
@@ -144,7 +145,7 @@ export function TopologyReview({
               <li key={change.id} className="flex items-start gap-3 p-3">
                 <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
                   {change.saved ? (
-                    <Check className="size-3 text-success" />
+                    <UiIcon name="check" className="size-3 text-success" />
                   ) : (
                     <span className="size-1.5 rounded-full bg-warning" />
                   )}
@@ -258,7 +259,7 @@ export function TopologyReview({
           >
             {applying ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <UiIcon name="spinner" className="size-4 animate-spin" />
                 Applying…
               </>
             ) : directStart ? (

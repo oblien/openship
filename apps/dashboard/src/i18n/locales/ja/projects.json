@@ -294,6 +294,8 @@
     "liveHitsWaiting": "リクエストを待機中…",
     "statusesUnclassified": "ステータスクラスなし: {count}",
     "trafficTitle": "トラフィック概要",
+    "dailyWindow": "今日を含む7日間（UTC）",
+    "currentHour": "現在の時間帯 · 集計中",
     "trafficSummary": "{count} リクエスト",
     "servicesMore": "他 {count} 件",
     "servicesLess": "表示を減らす",

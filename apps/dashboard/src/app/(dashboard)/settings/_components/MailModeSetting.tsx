@@ -21,7 +21,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { LayoutTemplate, Mail } from "lucide-react";
 
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -120,15 +119,15 @@ export function MailModeSetting() {
   const choices: Array<ModeChoice<ProductView>> = [
     {
       value: "platform",
-      icon: LayoutTemplate,
+      icon: "layout",
       label: copy.platformLabel,
       description: copy.platformDesc,
     },
-    { value: "mail", icon: Mail, label: copy.mailLabel, description: copy.mailDesc },
+    { value: "mail", icon: "mail", label: copy.mailLabel, description: copy.mailDesc },
   ];
 
   return (
-    <SettingsSection icon={Mail} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"mail"} title={copy.title} description={copy.description}>
       <ModeChoiceCards
         choices={choices}
         value={mode}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IconProvider } from "@repo/ui/icons";
 import { cookies, headers } from "next/headers";
 import "./globals.css";
 import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
@@ -128,23 +129,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : null}
       </head>
       <body>
-        <ThemeProvider>
-          <AuthProvider>
-            <I18nProvider
-              initialLocale={locale}
-              initialDictionary={initialDictionary}
-              productView={productView}
-            >
-              <ToastProvider>
-                <ModalProvider>
-                  <DesktopChrome />
-                  <NetworkErrorHandler />
-                  {children}
-                </ModalProvider>
-              </ToastProvider>
-            </I18nProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <IconProvider baseUrl={process.env.OPENSHIP_ICON_BASE_URL}>
+          <ThemeProvider>
+            <AuthProvider>
+              <I18nProvider
+                initialLocale={locale}
+                initialDictionary={initialDictionary}
+                productView={productView}
+              >
+                <ToastProvider>
+                  <ModalProvider>
+                    <DesktopChrome />
+                    <NetworkErrorHandler />
+                    {children}
+                  </ModalProvider>
+                </ToastProvider>
+              </I18nProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </IconProvider>
       </body>
     </html>
   );

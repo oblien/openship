@@ -37,6 +37,8 @@ import { repos, type BackupRestore, type BackupRun, type BackupRestoreStatus } f
 import { liveContainerForService } from "../services/service-container";
 import {
   HashingPassthrough,
+  headBackupArtifact,
+  openBackupArtifact,
   matchBackupSource,
   resolveDestination,
   resolveExecutor,
@@ -58,6 +60,7 @@ import {
   resolveTargetPlatform,
 } from "../../lib/deployment-runtime";
 import {
+  AppError,
   isPayloadKind,
   restoreAppliesAfterBounce,
   restoreClearsTarget,
@@ -73,6 +76,7 @@ import { notification } from "../../lib/notification-dispatcher";
 import { boundedStorableText } from "../deployments/build-log-sanitize";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
+import { withBackupRunLock } from "./backup-lock";
 
 const TRUNCATE_ERROR = 4096;
 
@@ -257,6 +261,10 @@ export class RestoreOrchestrator {
   async beginPrepare(
     opts: PrepareRestoreInput,
   ): Promise<{ restoreId: string; confirmationToken: string }> {
+    return withBackupRunLock(opts.runId, () => this.beginPrepareLocked(opts));
+  }
+
+  private async beginPrepareLocked(opts: PrepareRestoreInput): Promise<{ restoreId: string; confirmationToken: string }> {
     assertNativeJobs();
     const sourceRun = await repos.backupRun.findById(opts.runId);
     if (!sourceRun) throw new Error(`Backup run ${opts.runId} not found`);
@@ -361,9 +369,8 @@ export class RestoreOrchestrator {
 
     // A prepared row can wait for hours, so its creation-time admission lock no
     // longer proves the target project is still available. Claim the destructive
-    // phase through the same project-row lock as deletion BEFORE acknowledging
-    // this request or scheduling any work. Whichever side wins establishes a
-    // durable fact the other side observes: `applying`, or deletion-in-progress.
+    // phase through the same project-row lock as deletion before scheduling work.
+    // Admission also excludes another applying restore on that project/mail target.
     const sourceRun = await repos.backupRun.findById(restore.runId);
     if (!sourceRun) throw new Error("Source backup run disappeared");
     const projectId = sourceRun.sourceKind === "mail_server" ? null : restore.projectId;
@@ -376,7 +383,25 @@ export class RestoreOrchestrator {
       restore.organizationId,
     );
     if (claim === "project_unavailable") {
-      throw new Error("Cannot apply restore: project is being deleted or no longer exists");
+      throw new AppError(
+        "Cannot apply restore: project is being deleted or no longer exists",
+        409,
+        "RESTORE_TARGET_UNAVAILABLE",
+      );
+    }
+    if (claim === "target_unavailable") {
+      throw new AppError(
+        "Cannot apply restore: the target mail server is no longer available. Prepare a restore with an available target.",
+        409,
+        "RESTORE_TARGET_UNAVAILABLE",
+      );
+    }
+    if (claim === "target_busy") {
+      throw new AppError(
+        "Another restore is applying to this target. This backup is still prepared; retry after the active restore finishes.",
+        409,
+        "RESTORE_TARGET_BUSY",
+      );
     }
     if (claim !== "claimed") {
       const current = await repos.backupRestore.findById(restoreId).catch(() => undefined);
@@ -647,6 +672,8 @@ export class RestoreOrchestrator {
       const needsContainer = artifacts.filter((a) => needsLiveContainer(a.payloadKind));
       const volumeArtifacts = artifacts.filter((a) => a.payloadKind === "volume");
 
+      this.assertOfflineVolumeRestore(executor, volumeArtifacts.length > 0);
+
       if (restorable.length === 0 && volumeArtifacts.length > 0) {
         if (probeError) {
           throw new Error(
@@ -855,7 +882,7 @@ export class RestoreOrchestrator {
     for (const artifact of artifacts) {
       // Presence + size first: it's one cheap round trip, and a pruned artifact
       // should say "pruned" rather than fail mid-download.
-      const head = await destination.head(artifact.key);
+      const head = await headBackupArtifact(destination, artifact);
       if (!head) {
         throw new Error(
           `Artifact ${artifact.key} missing from destination — backup may have been pruned`,
@@ -876,7 +903,7 @@ export class RestoreOrchestrator {
       }
 
       const hasher = new HashingPassthrough();
-      await pipelineP(await destination.get(artifact.key), hasher, discardingSink());
+      await pipelineP(await openBackupArtifact(destination, artifact), hasher, discardingSink());
       const { sha256, bytesWritten } = hasher.summary();
       if (sha256 !== expected) {
         // Hard fail, and it happens here — before anything is stopped or
@@ -1012,12 +1039,12 @@ export class RestoreOrchestrator {
       // A volume restore is the opposite: it wants the writer stopped, and it does not need
       // the container at all because the volume is mounted into a separate helper.
       const artifactKinds = recordedArtifacts(sourceRun).map((a) => a.payloadKind);
+      this.assertOfflineVolumeRestore(executor, artifactKinds.includes("volume"));
       const restoresThroughContainer = artifactKinds.some(needsLiveContainer);
-      const wasRunning = await executor.isRunning(serviceHandle).catch(() => false);
+      const wasRunning = await executor.isRunning(serviceHandle);
       // Seeded from the service's actual state, so a restore into something that was
-      // already down reports it. `catch(() => false)` above means an executor we could
-      // not ask reads as running, which keeps an unknown from producing a "your service
-      // is down" claim we cannot support.
+      // already down reports it. An unreachable runtime must fail before we stop
+      // or write anything, rather than being treated as a stopped service.
       serviceDown = !wasRunning;
       const stoppedByUs = wasRunning && !restoresThroughContainer;
       if (stoppedByUs) {
@@ -1098,7 +1125,7 @@ export class RestoreOrchestrator {
                   // Producers finish their preflight before opening the artifact.
                   // An AOF/credential refusal must not claim it damaged Redis data.
                   await this.throwIfCancelRequested(restoreId, wroteInto);
-                  const body = await destination.get(recorded.key);
+                  const body = await openBackupArtifact(destination, recorded);
                   // Forward download errors to the producer and close both streams
                   // together. pipe() alone leaves source errors unhandled.
                   download = pipelineP(body, hasher);
@@ -1372,12 +1399,23 @@ export class RestoreOrchestrator {
 
   // ── Helpers ──────────────────────────────────────────────────────
 
+  private assertOfflineVolumeRestore(executor: BackupExecutor, hasVolumes: boolean): void {
+    if (hasVolumes && executor.supportsOfflineVolumeRestore === false) {
+      throw new Error(
+        "This legacy Cloud workspace cannot restore a volume while stopped: its filesystem " +
+          "connection stops with it. Nothing was changed. Use a Files and folders backup for " +
+          "an online restore, or move the service to the Docker runtime for volume restores.",
+      );
+    }
+  }
+
   private async transition(
     restoreId: string,
     status: BackupRestoreStatus,
     patch?: Parameters<typeof repos.backupRestore.transition>[2],
   ): Promise<void> {
-    await repos.backupRestore.transition(restoreId, status, patch);
+    const applied = await repos.backupRestore.transition(restoreId, status, patch);
+    if (applied === false) return;
     this.publishTransitionEvent(restoreId, status, patch);
 
     // Notify on the terminal restore outcome (best-effort; never blocks the
@@ -1422,6 +1460,7 @@ export class RestoreOrchestrator {
         type: "transition",
         status,
         bytesRestored: typeof patch?.bytesRestored === "number" ? patch.bytesRestored : undefined,
+        meta: patch?.meta,
       });
       const TERMINAL: BackupRestoreStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
       if (TERMINAL.includes(status)) {

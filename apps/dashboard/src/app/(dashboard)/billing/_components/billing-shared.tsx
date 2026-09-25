@@ -1,8 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { ArrowRight, BarChart3, Check, Coins, CreditCard, Crown, LayoutDashboard, Receipt } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { PLANS } from "@repo/core";
 import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
@@ -15,13 +15,13 @@ import { OpenStripePortalButton } from "./OpenStripePortalButton";
 export type { BillingState };
 export type BillingTab = "overview" | "usage" | "plans" | "topups" | "payment" | "invoices";
 
-export const BILLING_TABS: Array<{ key: BillingTab; label: string; href: string; icon: LucideIcon }> = [
-  { key: "overview", label: "Overview", href: "/billing/overview", icon: LayoutDashboard },
-  { key: "usage", label: "Usage", href: "/billing/usage", icon: BarChart3 },
-  { key: "plans", label: "Plans", href: "/billing/plans", icon: Crown },
-  { key: "topups", label: "Top-ups", href: "/billing/topups", icon: Coins },
-  { key: "payment", label: "Payment Method", href: "/billing/payment", icon: CreditCard },
-  { key: "invoices", label: "Invoices", href: "/billing/invoices", icon: Receipt },
+export const BILLING_TABS: Array<{ key: BillingTab; label: string; href: string; icon: IconName }> = [
+  { key: "overview", label: "Overview", href: "/billing/overview", icon: "dashboard" },
+  { key: "usage", label: "Usage", href: "/billing/usage", icon: "chart-bar" },
+  { key: "plans", label: "Plans", href: "/billing/plans", icon: "star" },
+  { key: "topups", label: "Top-ups", href: "/billing/topups", icon: "coins" },
+  { key: "payment", label: "Payment Method", href: "/billing/payment", icon: "credit-card" },
+  { key: "invoices", label: "Invoices", href: "/billing/invoices", icon: "receipt" },
 ];
 
 /** A subscription offer before purchase; a single plan summary after purchase. */
@@ -54,13 +54,13 @@ export function BillingSidebar({ state }: { state: BillingState }) {
         <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t.billing.resourcesGuide.moreFeatures}</summary>
         <ul className="mt-3 space-y-2.5">
         {plan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground">
-          <Check className="mt-1 size-3.5 shrink-0 text-primary" aria-hidden="true" /><span>{feature}</span>
+          <UiIcon name="check" className="mt-1 size-3.5 shrink-0 text-primary" aria-hidden="true" /><span>{feature}</span>
         </li>)}
         </ul>
       </details>}
     </>}
     <Link href="/billing/plans" className="mt-4 flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/40">
-      {t.billing.onboarding.compare}<ArrowRight className="size-3.5 rtl:rotate-180" aria-hidden="true" />
+      {t.billing.onboarding.compare}<UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" aria-hidden="true" />
     </Link>
   </section>;
 }

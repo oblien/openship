@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * /emails/webmail — the rail's Webmail entry, and nothing more than a signpost.
  *
@@ -29,7 +31,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpRight, ChevronRight, Inbox, Loader2, MailPlus, Upload } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Skeleton } from "../_components/admin/_shared/skeleton";
 import { interpolate, useI18n } from "@/components/i18n-provider";
@@ -150,7 +151,7 @@ export default function WebmailPage() {
           nothing here to act on and the URL is already changing. */}
       {view.kind === "opening" && (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/50 bg-card px-6 py-12 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {tw.opening}
         </div>
       )}
@@ -161,7 +162,7 @@ export default function WebmailPage() {
           body={tw.noServerBody}
           action={
             <Link href="/emails" className={primaryButtonClass}>
-              <MailPlus className="size-4" />
+              <UiIcon name="mail-plus" className="size-4" />
               {t.dashboard.nav.mailSetup}
             </Link>
           }
@@ -178,7 +179,7 @@ export default function WebmailPage() {
               className={primaryButtonClass}
             >
               {tw.incompleteAction}
-              <ChevronRight className="size-4 rtl:rotate-180" />
+              <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />
             </Link>
           }
         />
@@ -195,7 +196,7 @@ export default function WebmailPage() {
               href={`/deploy/mail?serverId=${encodeURIComponent(view.server.id)}`}
               className={primaryButtonClass}
             >
-              <Upload className="size-4" />
+              <UiIcon name="upload" className="size-4" />
               {t.emailsAdmin.overview.deployWebmail}
             </Link>
           }
@@ -210,7 +211,7 @@ export default function WebmailPage() {
                   className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
                 >
                   {t.emailsAdmin.overview.openWebmail}
-                  <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
+                  <UiIcon name="arrow-up-right" className="size-3.5" />
                 </a>
               </>
             ) : null
@@ -230,7 +231,7 @@ export default function WebmailPage() {
                 className="group flex items-center gap-3 rounded-xl border border-border/50 bg-background/40 px-4 py-3 transition-colors hover:border-border hover:bg-muted/40"
               >
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Inbox className="size-4" strokeWidth={1.8} />
+                  <UiIcon name="inbox" className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{label(s)}</p>
@@ -238,7 +239,7 @@ export default function WebmailPage() {
                     {s.completed ? s.host : t.chrome.mailRail.setupIncomplete}
                   </p>
                 </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground rtl:rotate-180" />
+                <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground rtl:rotate-180" />
               </Link>
             ))}
           </div>

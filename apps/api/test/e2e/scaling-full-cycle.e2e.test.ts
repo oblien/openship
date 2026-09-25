@@ -17,6 +17,7 @@ import {
   DockerRuntime,
   KubernetesRuntime,
   NoopInfraProvider,
+  kubernetesIdLabel,
   kubernetesProjectNamespace,
 } from "@repo/adapters";
 import { db, repos, schema, type Deployment, type Project } from "@repo/db";
@@ -320,6 +321,8 @@ describeDockerE2E.sequential("application scaling through the complete deploymen
         organizationId: org.organizationId,
       });
       project = await seedProject(org.organizationId, {
+        // A valid OpenShip ID that Kubernetes cannot use directly as a label.
+        id: `proj_${lab.id}_`,
         name: "Scaling acceptance API",
         slug: lab.id,
         framework: "docker",
@@ -638,7 +641,7 @@ describeDockerE2E.sequential("application scaling through the complete deploymen
         if (stopped(state.deploymentStatus)) return { state, workload: undefined };
         const list = await lab.api.request<{ items: KubernetesObject[] }>(
           "GET",
-          `/apis/apps/v1/namespaces/${namespace}/deployments?labelSelector=${encodeURIComponent(`openship.io/deployment=${id}`)}`,
+          `/apis/apps/v1/namespaces/${namespace}/deployments?labelSelector=${encodeURIComponent(`openship.io/deployment=${kubernetesIdLabel(id)}`)}`,
         );
         return { state, workload: list.items[0] };
       },
@@ -710,10 +713,10 @@ describeDockerE2E.sequential("application scaling through the complete deploymen
     const namespace = kubernetesProjectNamespace(project.id);
     const services = await lab.api.request<{ items: KubernetesObject[] }>(
       "GET",
-      `/api/v1/namespaces/${namespace}/services?labelSelector=${encodeURIComponent(`openship.io/deployment=${scaled.deploymentId}`)}`,
+      `/api/v1/namespaces/${namespace}/services?labelSelector=${encodeURIComponent(`openship.io/deployment=${kubernetesIdLabel(scaled.deploymentId)}`)}`,
     );
     const serviceName = services.items.find(
-      (service) => service.spec.selector?.["openship.io/deployment"] === scaled.deploymentId,
+      (service) => service.spec.selector?.["openship.io/deployment"] === kubernetesIdLabel(scaled.deploymentId),
     )?.metadata.name;
     expect(serviceName).toBeTruthy();
     const outageStarted = Date.now();

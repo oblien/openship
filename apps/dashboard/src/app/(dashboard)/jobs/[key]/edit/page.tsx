@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { jobsApi, getApiErrorMessage, type JobView } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
@@ -45,7 +46,7 @@ export default function EditJobPage() {
     <PageContainer>
       <div className="mb-6 flex items-center gap-3">
         <button onClick={backToDetail} className="flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted">
-          <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
         </button>
         <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
           {j.edit.title}{job ? ` · ${job.label}` : ""}
@@ -53,7 +54,7 @@ export default function EditJobPage() {
       </div>
 
       {loading || !job ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+        <div className="flex items-center justify-center py-20"><UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <JobForm
           job={job}

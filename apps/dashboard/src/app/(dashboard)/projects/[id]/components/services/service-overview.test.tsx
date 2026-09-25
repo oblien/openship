@@ -105,6 +105,26 @@ async function editMount(n: number, side: "host" | "service", value: string) {
 }
 
 describe("service overview and volumes", () => {
+  it("uses the project policy for the selected service's one-click backup", async () => {
+    mocks.policies.mockResolvedValue({ data: [{ ...policy, serviceId: null }] });
+    await render("volumes");
+    await click(copy.storage.backups);
+    expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected", { serviceId: "svc-api" });
+    expect(mocks.createPolicy).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("run-selected-service");
+  });
+
+  it("creates a service policy when customizing inherited project rules", async () => {
+    mocks.policies.mockResolvedValue({ data: [{ ...policy, serviceId: null }] });
+    await render("backup");
+    await click(copy.createPolicy);
+    const save = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].at(-1)!;
+    expect(save).toBeDefined();
+    await act(async () => save.click());
+    expect(mocks.createPolicy).toHaveBeenCalledExactlyOnceWith("project-stack", expect.objectContaining({ serviceId: "svc-api" }));
+    expect(mocks.backup).not.toHaveBeenCalled();
+  });
+
   it("keeps mounts and runtime details out of the initial overview, without measuring volumes or loading backups", async () => {
     await render();
     expect(host.textContent).toContain("api.example.com");
@@ -203,13 +223,30 @@ describe("service overview and volumes", () => {
       expect.objectContaining({
         serviceId: "svc-api",
         destinationId: "dest-1",
-        payloadKind: "auto",
+        payloadKind: "volume",
+        payloadConfig: {},
+        cronExpression: null,
+        retainCount: 7,
       }),
     );
     expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
     expect(host.textContent).toContain("run-selected-service");
     expect(host.textContent).toContain(copy.storage.description);
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("offers the simple first-backup action from the service Backup tab", async () => {
+    await render("backup");
+    await click(copy.createPolicy);
+    const editor = baseDictionary.widgets.backup.policyEditor;
+    expect(document.querySelector(`button[aria-label="${editor.advanced}"]`)?.getAttribute("aria-expanded")).toBe("false");
+    await click(editor.quick.saveAndBackup);
+    expect(mocks.createPolicy).toHaveBeenCalledExactlyOnceWith(
+      "project-stack",
+      expect.objectContaining({ serviceId: "svc-api", payloadKind: "volume", retainCount: 7 }),
+    );
+    expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
+    expect(host.textContent).toContain("run-selected-service");
   });
 
   it("admits only one backup request when the shortcut is clicked twice", async () => {

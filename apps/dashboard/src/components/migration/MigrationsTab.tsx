@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
 import { dockerMigrationApi, type MigrationRun } from "@/lib/api/server-migration";
 import { systemApi } from "@/lib/api";
 import { useI18n } from "@/components/i18n-provider";
@@ -97,7 +98,7 @@ export function MigrationsTab({
   if (runs === null) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-border/50 bg-card py-16 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
+        <UiIcon name="spinner" className="size-5 animate-spin" />
       </div>
     );
   }
@@ -131,7 +132,7 @@ export function MigrationsTab({
           onClick={() => setFlow({})}
           className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {tab.new}
         </button>
       </div>

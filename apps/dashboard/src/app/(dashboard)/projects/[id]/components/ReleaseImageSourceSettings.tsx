@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Container, Github, Globe2, Loader2, Save } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi } from "@/lib/api";
@@ -171,7 +172,7 @@ export function ReleaseImageSourceSettings({
         <section className="overflow-hidden rounded-2xl border border-border/50 bg-card">
           <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Container className="size-4" />
+              <UiIcon name="docker" className="size-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -188,7 +189,7 @@ export function ReleaseImageSourceSettings({
                 onClick={onSwitchToGit}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
               >
-                <Github className="size-3.5" />
+                <UiIcon name="github" className="size-3.5" />
                 {copy.summary.linkGit}
               </button>
             )}
@@ -232,14 +233,14 @@ export function ReleaseImageSourceSettings({
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <ModeButton
                 active={draft.mode === "github"}
-                icon={Github}
+                icon={"github"}
                 title={copy.editor.githubTitle}
                 description={copy.editor.githubDescription}
                 onClick={() => set("mode", "github")}
               />
               <ModeButton
                 active={draft.mode === "url"}
-                icon={Globe2}
+                icon={"globe"}
                 title={copy.editor.urlTitle}
                 description={copy.editor.urlDescription}
                 onClick={() => set("mode", "url")}
@@ -309,7 +310,7 @@ export function ReleaseImageSourceSettings({
               disabled={!dirty || saving}
               className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="save" className="size-4" />}
               {saving ? copy.editor.saving : copy.editor.save}
             </button>
           </div>
@@ -357,7 +358,7 @@ function ModeButton({
   onClick,
 }: {
   active: boolean;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   title: string;
   description: string;
   onClick: () => void;
@@ -373,7 +374,7 @@ function ModeButton({
           : "border-border/50 bg-background hover:bg-muted/30"
       }`}
     >
-      <Icon
+      <UiIcon name={Icon}
         className={`mt-0.5 size-4 shrink-0 ${active ? "text-primary" : "text-muted-foreground"}`}
       />
       <span>

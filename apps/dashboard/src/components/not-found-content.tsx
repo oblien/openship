@@ -1,6 +1,7 @@
 "use client";
 
-import { Home, Rocket } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { NotFoundView } from "@/components/not-found-view";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -18,8 +19,8 @@ export function NotFoundContent({ variant = "global" }: { variant?: "global" | "
       title={nf.title}
       description={variant === "dashboard" ? nf.descDashboard : nf.descGlobal}
       actions={[
-        { href: "/", label: nf.backToDashboard, icon: <Home className="size-4" /> },
-        { href: "/deployments", label: nf.viewDeployments, icon: <Rocket className="size-4" />, variant: "secondary" },
+        { href: "/", label: nf.backToDashboard, icon: <UiIcon name="home" className="size-4" /> },
+        { href: "/deployments", label: nf.viewDeployments, icon: <UiIcon name="rocket" className="size-4" />, variant: "secondary" },
       ]}
     />
   );

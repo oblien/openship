@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "Darstellung",
+    "description": "Wählen Sie ein Design oder folgen Sie den Geräteeinstellungen. Änderungen gelten sofort.",
+    "themes": {
+      "light": "Hell",
+      "dim": "Gedimmt",
+      "dark": "Dunkel",
+      "system": "System"
+    }
+  },
   "language": {
     "title": "Sprache",
     "description": "Wähle die im gesamten Dashboard verwendete Sprache."
@@ -60,6 +70,7 @@
     }
   },
   "github": {
+    "tokenCreate": "Token erstellen",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "Verbunden · Noch keine Installationen",
@@ -219,9 +230,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub-Klon-Anmeldedaten",
-    "description": "Persönliches Token zum Klonen privater Repos, wenn die GitHub-App nicht installiert ist",
+    "description": "Persönlicher Zugriff auf private Repositorys.",
     "loading": "Wird geladen…",
-    "intro": "Füge ein persönliches GitHub-Zugriffstoken ein (klassisch oder fein granular). Das Klon-Modul verwendet es als Anmeldedaten zweiter Priorität – nach etwaigen projektspezifischen Überschreibungen, vor dem Installations-Token der GitHub-App.",
+    "intro": "Projektspezifische Token haben Vorrang. Wenn aktiviert, wird dieses Token vor den Zugangsdaten der GitHub App verwendet. Beim Deaktivieren bleibt das Token gespeichert.",
     "placeholder": "ghp_… oder github_pat_…",
     "showToken": "Token anzeigen",
     "hideToken": "Token verbergen",
@@ -233,8 +244,12 @@
     "justNow": "gerade eben",
     "replace": "Ersetzen",
     "clear": "Löschen",
-    "useAsDefault": "Als Standard-Klon-Token verwenden",
-    "useAsDefaultDesc": "Wenn aktiviert, verwendet das Klon-Modul dieses Token als zweite Stufe in der Kette (nach projektspezifischen Überschreibungen). Wenn deaktiviert, wird das Token gespeichert, aber nicht verwendet – praktisch, wenn du es nur für bestimmte Deployments aktiv haben möchtest.",
+    "useAsDefault": "Standardmäßig verwenden",
+    "useAsDefaultDesc": "Dieses Token verwenden, wenn ein Projekt kein eigenes hat.",
+    "tokenLabel": "Persönliches Zugriffstoken",
+    "helpTitle": "Token-Berechtigungen und Nutzung",
+    "forwardGitLabel": "Lokalen GitHub-Zugang weiterleiten",
+    "forwardGitDesc": "Deine lokale GitHub-Anmeldung über SSH für entfernte Build-Server freigeben.",
     "toast": {
       "pasteFirst": "Füge vor dem Speichern ein Token ein",
       "notLikeToken": "Das sieht nicht nach einem GitHub-Token aus. Trotzdem speichern, wenn du sicher bist.",

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Copy, ExternalLink, Eye, EyeOff, Loader2, Link2, MonitorSmartphone, PlugZap } from "lucide-react";
 import { hasUnresolvedPlaceholder, resolveLocalized } from "@repo/core";
 import { appsApi, type AppConnectionOutput, type AppConnectionView } from "@/lib/api/apps";
 import { useI18n } from "@/components/i18n-provider";
@@ -130,7 +131,7 @@ export function ConnectionCard({
       <div className="mb-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Link2 className="size-4 text-primary" />
+            <UiIcon name="link" className="size-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           </div>
           {injectable.length > 0 && (
@@ -139,7 +140,7 @@ export function ConnectionCard({
               onClick={() => setLinkOpen(true)}
               className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
             >
-              <PlugZap className="size-4" /> {c.useInProject}
+              <UiIcon name="plug" className="size-4" /> {c.useInProject}
             </button>
           )}
         </div>
@@ -317,7 +318,7 @@ function OutputRow({
             is routed — unlike the desktop-only localhost forward below. */}
         {canOpen && value && (
           <FieldAction onClick={openInTab} label={c.openUrl} text={c.openShort}>
-            <ExternalLink className="size-4" />
+            <UiIcon name="arrow-up-right" className="size-4" />
           </FieldAction>
         )}
         {/* Labelled, not a bare glyph: port-forwarding a remote service onto this
@@ -326,20 +327,20 @@ function OutputRow({
         {canForwardThis && value && (
           <FieldAction onClick={doForward} disabled={forwarding} label={forwardLabel} text={forwardText}>
             {forwarding ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <MonitorSmartphone className="size-4" />
+              <UiIcon name="devices" className="size-4" />
             )}
           </FieldAction>
         )}
         {output.secret && value && (
           <FieldAction onClick={() => setRevealed((r) => !r)} label={revealed ? c.hide : c.reveal}>
-            {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            {revealed ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
           </FieldAction>
         )}
         {value && (
           <FieldAction onClick={copy} label={copied ? c.copied : c.copy}>
-            {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
+            {copied ? <UiIcon name="check" className="size-4 text-success" /> : <UiIcon name="copy" className="size-4" />}
           </FieldAction>
         )}
       </div>

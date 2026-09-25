@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { OpenStripePortalButton } from "@/app/(dashboard)/billing/_components/OpenStripePortalButton";
@@ -57,7 +58,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
       <div className="flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={() => void updateRenewal("cancel")}
           className="inline-flex items-center gap-2 rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger disabled:opacity-50">
-          {busy && <Loader2 aria-hidden className="size-4 animate-spin" />}{copy.confirmCancel}
+          {busy && <UiIcon name="spinner" aria-hidden className="size-4 animate-spin" />}{copy.confirmCancel}
         </button>
         <button type="button" disabled={busy} onClick={() => setConfirming(false)} className="px-3 py-2 text-sm text-muted-foreground">
           {copy.keepPlan}
@@ -68,7 +69,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
       {canManage && <button type="button" disabled={busy}
         onClick={() => ending ? void updateRenewal("resume") : setConfirming(true)}
         className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50">
-        {busy && <Loader2 aria-hidden className="size-4 animate-spin" />}{ending ? copy.resume : copy.cancel}
+        {busy && <UiIcon name="spinner" aria-hidden className="size-4 animate-spin" />}{ending ? copy.resume : copy.cancel}
       </button>}
     </div>}
   </div>;

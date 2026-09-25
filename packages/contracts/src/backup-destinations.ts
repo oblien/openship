@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ConnectivityCode } from "@repo/core";
 import type { ResourceOperationSchema, ResourceOperations, ScopedOperations } from "./resource-operations";
+import { ListBackupRunsSchema, BackupRunStatusSchema } from "./backups";
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableNumber = Type.Union([Type.Number(), Type.Null()]);
@@ -27,6 +28,20 @@ export type CreateBackupDestinationInput = Static<typeof CreateBackupDestination
 export type UpdateBackupDestinationInput = Static<typeof UpdateBackupDestinationSchema>;
 export type PreflightBackupDestinationInput = Static<typeof PreflightBackupDestinationSchema>;
 
+export const BackupDestinationStatsSchema = Type.Object({
+  storedBytes: Type.Number(),
+  /** All non-deleted attempts, including failures and runs still in progress. */
+  runCount: Type.Number(),
+  lastRunAt: nullableString,
+  // Optional for clients connected to an older server. Missing counts are
+  // unknown, not zero and not interchangeable with the attempt count.
+  savedCount: Type.Optional(Type.Number()),
+  activeCount: Type.Optional(Type.Number()),
+  failedCount: Type.Optional(Type.Number()),
+  cancelledCount: Type.Optional(Type.Number()),
+});
+export type BackupDestinationStats = Static<typeof BackupDestinationStatsSchema>;
+
 /** Public destination presentation contains credential-presence flags only. */
 export const BackupDestinationSchema = Type.Object({
   id: Type.String(), name: Type.String(), kind: Type.String(),
@@ -34,7 +49,7 @@ export const BackupDestinationSchema = Type.Object({
   sshHost: nullableString, sshPort: nullableNumber, sshUser: nullableString, serverId: nullableString,
   hasAccessKeyId: Type.Boolean(), hasSecretAccessKey: Type.Boolean(), hasSftpPassword: Type.Boolean(), hasSftpPrivateKey: Type.Boolean(), hasSftpKeyPassphrase: Type.Boolean(),
   lastVerifiedAt: nullableString, lastVerifyError: nullableString, isDefault: Type.Boolean(), createdAt: Type.String(), updatedAt: Type.String(),
-  stats: Type.Union([Type.Object({ storedBytes: Type.Number(), runCount: Type.Number(), lastRunAt: nullableString }), Type.Null()]),
+  stats: Type.Union([BackupDestinationStatsSchema, Type.Null()]),
 }, { additionalProperties: false });
 export type BackupDestination = Static<typeof BackupDestinationSchema>;
 export const BackupDestinationUsageSchema = Type.Object({
@@ -46,17 +61,35 @@ export const BackupDestinationUsageSchema = Type.Object({
   })),
 });
 export type BackupDestinationUsage = Static<typeof BackupDestinationUsageSchema>;
+export const ListBackupDestinationRunsSchema = Type.Pick(ListBackupRunsSchema, ["limit", "before"]);
+export type ListBackupDestinationRunsInput = Static<typeof ListBackupDestinationRunsSchema>;
+/** A history row has presentation metadata only; no credentials or restore commands. */
+export const BackupDestinationRunSchema = Type.Object({
+  id: Type.String(), destinationId: nullableString, destinationName: nullableString,
+  projectId: nullableString, projectName: nullableString, serviceId: nullableString, serviceName: nullableString,
+  mailServerId: nullableString, mailServerName: nullableString, sourceKind: Type.String(),
+  status: BackupRunStatusSchema, triggeredBy: Type.String(), startedAt: Type.String(), finishedAt: nullableString,
+  bytesTransferred: nullableNumber, errorMessage: nullableString,
+  payloads: Type.Array(Type.Object({ kind: Type.String(), volumeTarget: nullableString, incremental: Type.Boolean() })),
+});
+export type BackupDestinationRun = Static<typeof BackupDestinationRunSchema>;
+export const BackupDestinationHistorySchema = Type.Object({
+  runs: Type.Array(BackupDestinationRunSchema), nextCursor: nullableString,
+});
+export type BackupDestinationHistory = Static<typeof BackupDestinationHistorySchema>;
 export const BackupDestinationPreflightSchema = Type.Object({
   ok: Type.Boolean(), reason: Type.Optional(Type.String()), code: Type.Optional(Type.Unsafe<ConnectivityCode>(Type.String())),
 });
 export const BackupDestinationCollectionSchemas = {
   list: { action: "read", scope: "list", output: Type.Array(BackupDestinationSchema) },
+  history: { action: "read", scope: "all", input: ListBackupDestinationRunsSchema, optionalInput: true, output: BackupDestinationHistorySchema },
   create: { action: "write", input: CreateBackupDestinationSchema, output: BackupDestinationSchema },
   preflightDraft: { action: "write", input: PreflightBackupDestinationSchema, output: BackupDestinationPreflightSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BackupDestinationResourceSchemas = {
   get: { action: "read", output: BackupDestinationSchema },
   usage: { action: "read", output: BackupDestinationUsageSchema },
+  runs: { action: "read", input: ListBackupDestinationRunsSchema, optionalInput: true, output: BackupDestinationHistorySchema },
   update: { action: "write", input: UpdateBackupDestinationSchema, output: BackupDestinationSchema },
   remove: { action: "admin", output: Type.Object({ ok: Type.Literal(true) }) },
   preflight: { action: "write", output: BackupDestinationPreflightSchema },

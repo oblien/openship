@@ -1,13 +1,4 @@
-import {
-  Cpu,
-  HardDrive,
-  MemoryStick,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Activity,
-} from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import type { ComponentStatus, ServerStats } from "@/lib/api/system";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -58,7 +49,7 @@ function StatCard({
   sub,
   pct,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   label: string;
   value: string;
   sub?: string;
@@ -67,9 +58,8 @@ function StatCard({
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Icon
+        <UiIcon name={Icon}
           className="size-4 text-muted-foreground"
-          strokeWidth={2}
         />
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {label}
@@ -120,7 +110,7 @@ export function OverviewTab({
           stands out. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          icon={Cpu}
+          icon={"cpu"}
           label={t.servers.overview.cpu}
           value={stats ? `${stats.cpu}%` : "-"}
           sub={
@@ -135,7 +125,7 @@ export function OverviewTab({
           pct={stats?.cpu ?? undefined}
         />
         <StatCard
-          icon={MemoryStick}
+          icon={"memory"}
           label={t.servers.overview.memory}
           value={stats ? `${memPct}%` : "-"}
           sub={
@@ -149,7 +139,7 @@ export function OverviewTab({
           pct={memPct ?? undefined}
         />
         <StatCard
-          icon={HardDrive}
+          icon={"hard-drive"}
           label={t.servers.overview.disk}
           value={stats ? `${diskPct}%` : "-"}
           sub={
@@ -163,7 +153,7 @@ export function OverviewTab({
           pct={diskPct ?? undefined}
         />
         <StatCard
-          icon={Clock}
+          icon={"clock"}
           label={t.servers.overview.uptime}
           value={stats ? formatUptime(stats.uptime) : "-"}
           sub={stats ? t.servers.overview.sinceLastBoot : undefined}
@@ -176,9 +166,8 @@ export function OverviewTab({
       <div className="bg-card rounded-2xl border border-border/50 p-5">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2 min-w-0">
-            <Activity
+            <UiIcon name="activity"
               className="size-4 text-muted-foreground shrink-0"
-              strokeWidth={2}
             />
             <h2 className="font-semibold text-foreground text-sm">
               {t.servers.overview.components}
@@ -200,7 +189,7 @@ export function OverviewTab({
 
         {checking && totalCount === 0 ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
           </div>
         ) : totalCount > 0 ? (
           <div className="divide-y divide-border/40 -mx-5">
@@ -210,14 +199,12 @@ export function OverviewTab({
                 className="flex items-center gap-3 px-5 py-3"
               >
                 {comp.healthy ? (
-                  <CheckCircle2
+                  <UiIcon name="check-circle"
                     className="size-4 text-success shrink-0"
-                    strokeWidth={2}
                   />
                 ) : (
-                  <XCircle
+                  <UiIcon name="x-circle"
                     className="size-4 text-danger shrink-0"
-                    strokeWidth={2}
                   />
                 )}
                 <span className="text-sm text-foreground flex-1 truncate">

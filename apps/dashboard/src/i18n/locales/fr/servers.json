@@ -947,5 +947,12 @@
     "serviceNetwork": "Réseau des services",
     "lastChecked": "Dernière vérification",
     "scaleProject": "Choisir un projet"
+  },
+  "sshTransport": {
+    "label": "Connexion",
+    "direct": "SSH direct",
+    "hostname": "Nom d’hôte Access",
+    "help": "Utilisez votre nom d’hôte Cloudflare Access et les identifiants SSH du serveur. Connectez-vous à Cloudflare sur la machine exécutant OpenShip. L’application Windows inclut le client requis ; les autres installations nécessitent cloudflared.",
+    "openAccess": "Ouvrir Cloudflare Access"
   }
 }

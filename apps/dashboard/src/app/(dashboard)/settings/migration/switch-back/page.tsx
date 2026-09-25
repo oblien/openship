@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Switch-back page — reverse a team-mode migration and put this instance
  * back into single_user mode.
@@ -23,13 +25,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Loader2,
-  AlertTriangle,
-  RotateCcw,
-  CheckCircle2,
-  ChevronLeft,
-} from "lucide-react";
 import { migrationApi, api, getApiErrorMessage } from "@/lib/api";
 import type { SwitchBackResult } from "@/lib/api/migration";
 import { useToast } from "@/context/ToastContext";
@@ -108,7 +103,7 @@ export default function SwitchBackPage() {
   if (loading) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -118,7 +113,7 @@ export default function SwitchBackPage() {
       <div className="flex min-h-dvh items-center justify-center bg-background p-6">
         <div className="max-w-md space-y-4 text-center">
           <div className="mx-auto size-12 rounded-2xl bg-muted/40 flex items-center justify-center">
-            <CheckCircle2 className="size-6 text-success" />
+            <UiIcon name="check-circle" className="size-6 text-success" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-foreground">
@@ -145,7 +140,7 @@ export default function SwitchBackPage() {
       <div className="flex min-h-dvh items-center justify-center bg-background p-6">
         <div className="w-full max-w-lg space-y-5 rounded-2xl border border-border/50 bg-card p-6">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="size-6 text-success shrink-0 mt-0.5" />
+            <UiIcon name="check-circle" className="size-6 text-success shrink-0 mt-0.5" />
             <div>
               <h1 className="text-xl font-semibold text-foreground">
                 {t.settings.switchBack.resultTitle}
@@ -163,7 +158,7 @@ export default function SwitchBackPage() {
           {result.strippedEncryptedFields.length > 0 && (
             <div className="rounded-xl border border-warning-border bg-warning-bg p-4 space-y-2">
               <div className="flex items-center gap-2 text-warning">
-                <AlertTriangle className="size-4" />
+                <UiIcon name="warning" className="size-4" />
                 <p className="text-sm font-medium">{t.settings.switchBack.relinkTitle}</p>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -206,14 +201,14 @@ export default function SwitchBackPage() {
           onClick={() => router.back()}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ChevronLeft className="size-4 rtl:rotate-180" />
+          <UiIcon name="chevron-left" className="size-4 rtl:rotate-180" />
           {t.settings.switchBack.back}
         </button>
 
         <div className="rounded-2xl border border-border/50 bg-card p-6 space-y-5">
           <div className="flex items-start gap-3">
             <div className="size-10 rounded-xl bg-warning-bg text-warning flex items-center justify-center shrink-0">
-              <RotateCcw className="size-5" />
+              <UiIcon name="rotate-left" className="size-5" />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">
@@ -236,7 +231,7 @@ export default function SwitchBackPage() {
 
           <div className="rounded-xl border border-destructive/30 bg-destructive/[0.04] p-4 space-y-2">
             <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="size-4" />
+              <UiIcon name="warning" className="size-4" />
               <p className="text-sm font-medium">{t.settings.switchBack.teammatesLoseAccess}</p>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -279,7 +274,7 @@ export default function SwitchBackPage() {
               disabled={submitting}
               className="inline-flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-xl text-sm font-medium hover:bg-destructive/90 disabled:opacity-50"
             >
-              {submitting && <Loader2 className="size-4 animate-spin" />}
+              {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
               {submitting
                 ? isTunnel
                   ? t.settings.switchBack.tearingDown

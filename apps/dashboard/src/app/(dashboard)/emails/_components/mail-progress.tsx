@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Live-progress view for /emails - logs only.
  *
@@ -9,7 +11,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { XCircle, ArrowDown, Trash2 } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface LogEntry {
@@ -119,7 +120,7 @@ export function MailProgress({
                 onClick={onCancel}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-danger-border text-danger hover:bg-danger-bg transition-colors"
               >
-                <XCircle className="size-3.5" />
+                <UiIcon name="x-circle" className="size-3.5" />
                 {t.emails.progress.cancel}
               </button>
             ) : (
@@ -133,7 +134,7 @@ export function MailProgress({
                   }`}
                   title={t.emails.progress.resetTitle}
                 >
-                  <Trash2 className="size-3.5" />
+                  <UiIcon name="trash" className="size-3.5" />
                   {confirmReset ? t.emails.progress.confirmReset : t.emails.progress.reset}
                 </button>
               )
@@ -184,7 +185,7 @@ export function MailProgress({
             onClick={jumpToLatest}
             className="absolute left-1/2 -translate-x-1/2 bottom-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-foreground text-background shadow-lg hover:bg-foreground/90 transition-colors"
           >
-            <ArrowDown className="size-3.5" />
+            <UiIcon name="arrow-down" className="size-3.5" />
             {t.emails.progress.jumpToLatest}
           </button>
         )}

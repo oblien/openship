@@ -1,17 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import {
-  ArrowUpCircle,
-  Boxes,
-  CheckCircle2,
-  Loader2,
-  RefreshCw,
-  ScrollText,
-  ShieldAlert,
-  TriangleAlert,
-  Wrench,
-} from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
@@ -80,7 +71,7 @@ export function InfraFleetCard({
     <div className="rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
-          <Boxes className="size-[18px] text-muted-foreground" />
+          <UiIcon name="server-settings" className="size-[18px] text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-foreground">{c.title}</h2>
@@ -95,11 +86,11 @@ export function InfraFleetCard({
             aria-label={c.scan}
             className={ICON_BUTTON}
           >
-            <RefreshCw className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
+            <UiIcon name="refresh" className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
           </button>
           {/* This roll-up says how many boxes need attention; the tracker says what. */}
           <Link href="/monitoring" title={t.issues.title} aria-label={t.issues.title} className={ICON_BUTTON}>
-            <ShieldAlert className="size-3.5" />
+            <UiIcon name="shield-alert" className="size-3.5" />
           </Link>
         </div>
       </div>
@@ -140,7 +131,7 @@ export function InfraFleetCard({
           <div className="space-y-1">
             {outcome.done > 0 && (
               <p className="inline-flex items-center gap-2 text-[13px] text-success">
-                <CheckCircle2 className="size-4 shrink-0" />
+                <UiIcon name="check-circle" className="size-4 shrink-0" />
                 {interpolate(outcome.done === 1 ? c.doneOne : c.doneMany, {
                   n: String(outcome.done),
                 })}
@@ -149,7 +140,7 @@ export function InfraFleetCard({
             {outcome.failed > 0 && (
               <>
                 <p className="inline-flex items-center gap-2 text-[13px] text-danger">
-                  <TriangleAlert className="size-4 shrink-0" />
+                  <UiIcon name="warning" className="size-4 shrink-0" />
                   {interpolate(outcome.failed === 1 ? c.failedOne : c.failedMany, {
                     n: String(outcome.failed),
                   })}
@@ -165,7 +156,7 @@ export function InfraFleetCard({
         {/* Nothing to report and nothing happening — the resting state. */}
         {clean && !inFlight && !outcome && (
           <p className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
-            <CheckCircle2 className="size-4 shrink-0 text-success" />
+            <UiIcon name="check-circle" className="size-4 shrink-0 text-success" />
             {c.allHealthy}
           </p>
         )}
@@ -180,9 +171,9 @@ export function InfraFleetCard({
                 className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-warning-bg px-3 py-2 text-[12.5px] font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
               >
                 {applying === "update" ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 ) : (
-                  <ArrowUpCircle className="size-3.5" />
+                  <UiIcon name="arrow-up-circle" className="size-3.5" />
                 )}
                 {interpolate(c.updateAll, { n: String(counts.behind) })}
               </button>
@@ -195,9 +186,9 @@ export function InfraFleetCard({
                 className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-danger-bg px-3 py-2 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
               >
                 {applying === "repair" ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 ) : (
-                  <Wrench className="size-3.5" />
+                  <UiIcon name="wrench" className="size-3.5" />
                 )}
                 {interpolate(c.restartStopped, { n: String(counts.stopped) })}
               </button>
@@ -257,7 +248,7 @@ function ApplyingBlock({
     <div>
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-foreground">
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+          <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-primary" />
           <span className="truncate">{interpolate(head, { n: String(active.length) })}</span>
         </span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
@@ -308,7 +299,7 @@ function ApplyingBlock({
           onClick={() => onViewLogs(watchable)}
           className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -mx-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <ScrollText className="size-3.5" />
+          <UiIcon name="file-text" className="size-3.5" />
           {c.viewLogs}
         </button>
       )}

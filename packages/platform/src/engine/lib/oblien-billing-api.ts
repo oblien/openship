@@ -342,6 +342,17 @@ export class OblienBillingApi {
     return this.validate(this.billing.policy(slug), policySchema.extend({ namespace }), slug);
   }
 
+  /** Mode A only: the complimentary-plan service owns these explicit grants. */
+  setPolicy(slug: string, input: Pick<OblienBillingPolicy, "quotaLimit" | "overdraft" | "suspendThreshold" | "onOverdraftAction">) {
+    return this.validate(this.billing.setPolicy(slug, input), policySchema.extend({ namespace }), slug);
+  }
+
+  resetQuota(slug: string, periodEnd: string) {
+    return this.validate(this.billing.resetQuota(slug, { periodEnd }), z.object({
+      success: z.literal(true), namespace, applied: z.boolean(),
+    }), slug);
+  }
+
   getSubscription(slug: string) {
     return this.validate(this.billing.subscription(slug), oblienSubscriptionSchema, slug);
   }

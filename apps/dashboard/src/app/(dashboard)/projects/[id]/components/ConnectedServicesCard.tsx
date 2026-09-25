@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { Loader2, Trash2, Network, Globe, PlugZap } from "lucide-react";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
 import { useProjectConnections } from "@/hooks/use-project-connections";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -43,7 +44,7 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="mb-1 flex items-center gap-2">
-        <PlugZap className="size-4 text-primary" />
+        <UiIcon name="plug" className="size-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">{c.cardTitle}</h3>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-muted-foreground">{c.redeployHint}</p>
@@ -59,9 +60,9 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
                 <code className="font-mono">{l.envKey}</code>
                 <span className="inline-flex items-center gap-1 text-muted-foreground/60">
                   {l.mode === "internal" ? (
-                    <Network className="size-3" />
+                    <UiIcon name="network" className="size-3" />
                   ) : (
-                    <Globe className="size-3" />
+                    <UiIcon name="globe" className="size-3" />
                   )}
                   {l.mode === "internal" ? c.modeInternalShort : c.modePublicShort}
                 </span>
@@ -75,9 +76,9 @@ export function ConnectedServicesCard({ projectId }: { projectId: string }) {
               className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
             >
               {removing === l.id ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Trash2 className="size-3.5" />
+                <UiIcon name="trash" className="size-3.5" />
               )}
             </button>
           </div>

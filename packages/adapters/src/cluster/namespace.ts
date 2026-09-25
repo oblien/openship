@@ -1,5 +1,6 @@
 import type { KubernetesApi, KubernetesObject } from "./kubernetes-api";
 import { createHash } from "node:crypto";
+import { kubernetesIdLabel } from "./kubernetes-label";
 
 export const kubernetesProjectNamespace = (id: string) =>
   `os-${createHash("sha256").update(id).digest("hex").slice(0, 24)}`;
@@ -11,7 +12,7 @@ export function projectNamespaceManifest(projectId: string, runtimeId: string): 
       name: kubernetesProjectNamespace(projectId),
       labels: {
         "app.kubernetes.io/managed-by": "openship",
-        "openship.io/project": projectId,
+        "openship.io/project": kubernetesIdLabel(projectId),
         "openship.io/runtime": runtimeId,
         "pod-security.kubernetes.io/enforce": "baseline",
       },

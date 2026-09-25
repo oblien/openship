@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Small identity glyph for a granted resource.
  *
@@ -13,42 +15,26 @@
  */
 
 import { useState } from "react";
-import {
-  Activity,
-  ArrowUpCircle,
-  Bell,
-  Boxes,
-  Cloud,
-  CreditCard,
-  Database,
-  Github,
-  HardDrive,
-  Mail,
-  ScrollText,
-  Settings,
-  Timer,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { ResourceType } from "@/lib/api";
 
 // Every grantable type needs an entry or it renders as a generic box, which makes
 // a 14-tab picker unreadable. Keyed by the full ResourceType so adding a grantable
 // type without an icon is visible here rather than in the UI.
-const FALLBACK_ICON: Record<ResourceType, LucideIcon> = {
-  project: Boxes,
-  github_installation: Github,
-  github_repository: Github,
-  server: HardDrive,
-  mail_server: Mail,
-  backup_destination: Database,
-  job: Timer,
-  notifications: Bell,
-  analytics: Activity,
-  settings: Settings,
-  updates: ArrowUpCircle,
-  cloud: Cloud,
-  audit: ScrollText,
-  billing: CreditCard,
+const FALLBACK_ICON: Record<ResourceType, IconName> = {
+  project: "project",
+  github_installation: "github",
+  github_repository: "github",
+  server: "hard-drive",
+  mail_server: "mail",
+  backup_destination: "database",
+  job: "timer",
+  notifications: "bell",
+  analytics: "activity",
+  settings: "settings",
+  updates: "arrow-up-circle",
+  cloud: "cloud",
+  audit: "file-text",
+  billing: "credit-card",
 };
 
 /** GitHub avatar for an account login, or the owner of an "owner/repo" id. */
@@ -93,13 +79,13 @@ export function ResourceAvatar({
     );
   }
 
-  const Icon = FALLBACK_ICON[resourceType] ?? Boxes;
+  const Icon = FALLBACK_ICON[resourceType] ?? "help-circle";
   return (
     <span
       aria-hidden
       className={`${className} flex shrink-0 items-center justify-center rounded-full bg-muted/60 text-muted-foreground`}
     >
-      <Icon className="size-3" strokeWidth={1.8} />
+      <UiIcon name={Icon} className="size-3" />
     </span>
   );
 }

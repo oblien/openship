@@ -7,6 +7,8 @@ export * from "./env-file";
 export * from "./object-storage";
 export * from "./constants";
 export * from "./shell-split";
+export * from "./ssh-options";
+export * from "./service-name";
 export * from "./edge-image-ref";
 export * from "./mail-image-ref";
 // `image-ref` was internal (only the two wrappers above used `buildImageRef`). Exported
@@ -29,6 +31,7 @@ export * from "./edge-orphans";
 export * from "./service-status";
 export * from "./backup-catalog";
 export * from "./backup-image-detect";
+export * from "./backup-storage";
 export * from "./runtime-config";
 export * from "./resources";
 export * from "./rollback-window";

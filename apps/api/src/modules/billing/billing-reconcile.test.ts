@@ -4,13 +4,14 @@ const h = vi.hoisted(() => ({
   org: {} as Record<string, unknown>,
   entitlement: vi.fn(), subscription: vi.fn(), balance: vi.fn(), defaults: vi.fn(), mirror: vi.fn(), limits: vi.fn(),
   setQuota: vi.fn(), resetQuota: vi.fn(), setDefaultQuota: vi.fn(),
+  grant: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: true } }));
 vi.mock("@repo/db", () => ({
   repos: { organization: {
     findById: async () => ({ ...h.org }),
     setBillingEntitlement: h.mirror,
-  } },
+  }, billingPlanGrant: { current: h.grant } },
   withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
@@ -30,7 +31,9 @@ import {
   subscriptionOffer,
   subscriptionMetadata,
   cloudPlan,
+  complimentaryCloudPlan,
 } from "@repo/platform/engine/modules/billing/billing-catalog";
+import { planGrantPeriod } from "@repo/platform/engine/modules/billing/billing-plan-grants";
 
 const entitlement = () => ({
   success: true as const, namespace: "os-customer", tierId: "pro", status: "active" as const,
@@ -39,6 +42,7 @@ const entitlement = () => ({
 });
 beforeEach(() => {
   vi.resetAllMocks();
+  h.grant.mockResolvedValue(null);
   h.org = { id: "org_1", oblienNamespace: "os-customer", planTierId: "free", subscriptionStatus: "credit_exhausted", currentPeriodStart: null, currentPeriodEnd: null };
   h.entitlement.mockResolvedValue(entitlement());
   h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: {
@@ -49,6 +53,27 @@ beforeEach(() => {
   h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 0, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" });
 });
 describe("Oblien-managed entitlements", () => {
+  it("keeps complimentary Pro through provider reconciliation while enforcing the real credit balance", async () => {
+    const createdAt = new Date(Date.now() - 86_400_000);
+    const period = planGrantPeriod(createdAt, new Date());
+    h.grant.mockResolvedValue({
+      id: "bpg-test", organizationId: "org_1", namespace: "os-customer", planTierId: "pro",
+      offer: subscriptionOffer("pro", "monthly"), limits: planLimits("pro"),
+      createdAt, expiresAt: null, revokedAt: null, releasedAt: null, appliedPeriodEnd: period.end,
+    });
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "free", periodStart: null, periodEnd: null });
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });
+    const result = await syncOblienEntitlement("org_1");
+    expect(result).toMatchObject({ tier: "pro", subscription: null, grant: { id: "bpg-test" } });
+    expect(h.mirror).toHaveBeenCalledWith("org_1", "os-customer", {
+      planTierId: "pro", subscriptionStatus: "active", currentPeriodStart: period.start, currentPeriodEnd: period.end,
+    });
+    expect(complimentaryCloudPlan(result.grant!)).toMatchObject({ price: { monthly: 0 }, monthlyCredits: 3_000_000 });
+    await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
+    h.balance.mockResolvedValue({ namespace: "os-customer", balance: 0, blocking: true });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.resetQuota).not.toHaveBeenCalled();
+  });
   it.each(["customDomains", "seats"])("cannot accept a saved offer claiming an unenforced finite %s quota", async (field) => {
     h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "reseller" });
     h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: {

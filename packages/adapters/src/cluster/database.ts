@@ -21,6 +21,7 @@ import {
   type ClusterDatabaseBackupStorage,
 } from "./database-backups";
 import { kubernetesPodIssue, kubernetesPodPhase } from "./kubernetes-health";
+import { kubernetesIdLabel } from "./kubernetes-label";
 export type { ClusterDatabaseBackupStorage } from "./database-backups";
 
 export const DATABASE_IMAGES = {
@@ -77,7 +78,7 @@ export class ClusterDatabaseAdapter {
     this.namespace = clusterDatabaseNamespace(target.id);
     this.labels = {
       [managed]: target.id,
-      "openship.io/project": target.projectId,
+      "openship.io/project": kubernetesIdLabel(target.projectId),
       "openship.io/runtime": target.runtimeId,
     };
     this.archive = new PostgresArchive(

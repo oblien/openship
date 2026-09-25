@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Entry-point organization picker.
  *
@@ -23,7 +25,6 @@ import { useRouter } from "next/navigation";
 import { authClient, signOut } from "@/lib/auth-client";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { AuthShell } from "@/components/auth-shell";
-import { Building2, ChevronRight, Loader2, Plus, User } from "lucide-react";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 
@@ -229,7 +230,7 @@ export default function SelectOrganizationPage() {
     return (
       <AuthShell maxWidth="max-w-[440px]">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           <p className="mt-4 text-sm text-muted-foreground">
             Setting up your workspace...
           </p>
@@ -258,12 +259,12 @@ export default function SelectOrganizationPage() {
       <div className="overflow-hidden rounded-2xl border border-border">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <ul className="max-h-[440px] divide-y divide-border overflow-y-auto">
             {sorted.map((o) => {
-              const Icon = o.isTeam ? Building2 : User;
+              const Icon = o.isTeam ? "building" : "user";
               const isPicking = picking === o.id;
               const disabled = picking !== null && !isPicking;
               return (
@@ -275,7 +276,7 @@ export default function SelectOrganizationPage() {
                     className="flex w-full items-center gap-3 px-4 py-3.5 text-start transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-                      <Icon className="size-5 text-foreground" />
+                      <UiIcon name={Icon} className="size-5 text-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] font-medium text-foreground">
@@ -291,9 +292,9 @@ export default function SelectOrganizationPage() {
                       </p>
                     </div>
                     {isPicking ? (
-                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                      <UiIcon name="spinner" className="size-4 shrink-0 animate-spin text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+                      <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
                     )}
                   </button>
                 </li>
@@ -307,7 +308,7 @@ export default function SelectOrganizationPage() {
         href="/settings?tab=team"
         className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
       >
-        <Plus className="size-4" />
+        <UiIcon name="plus" className="size-4" />
         Create new organization
       </Link>
 

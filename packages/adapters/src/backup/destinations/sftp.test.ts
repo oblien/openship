@@ -56,9 +56,17 @@ function makeSftp() {
   const sftp = {
     mkdir: vi.fn((_path: string, callback: (error?: Error | null) => void) => callback(null)),
     stat: vi.fn(),
-    createWriteStream: vi.fn((_path: string) => {
+    createReadStream: vi.fn((_path: string) => Readable.from([Buffer.from("payload")])),
+    createWriteStream: vi.fn((_path: string, options?: { autoClose?: boolean }) => {
       let stream: TestWriteStream;
       stream = new Writable({
+        autoDestroy: false,
+        // ssh2 closes from _final with its default autoClose, which suppresses
+        // finish on current Node. Model the dependency's actual lifecycle.
+        final(callback) {
+          if (options?.autoClose !== false) stream.destroy();
+          callback();
+        },
         write(chunk: Buffer, _encoding, callback) {
           if (fake.mode === "stream-failure") {
             callback(new Error("upload failed"));
@@ -126,6 +134,18 @@ afterEach(() => {
 });
 
 describe("SFTP destination control deadlines and temporary uploads", () => {
+  it("can write to a destination rooted at the filesystem root", async () => {
+    expect(await resolveDestination({ ...row, pathPrefix: "/" }).put("artifact", Readable.from(["payload"]), {}))
+      .toEqual({ bytesWritten: 7 });
+    expect(fake.renamed[0]?.[1]).toBe("/artifact");
+  });
+
+  it("verifies a complete probe and removes it after the remote handle closes", async () => {
+    expect(await resolveDestination(row).preflight()).toEqual({ ok: true });
+    expect(fake.unlinked).toEqual([expect.stringMatching(/\/\.openship-probe-/)]);
+    expect(fake.clients.every(client => client.ended)).toBe(true);
+  });
+
   it("does not report a successful preflight when the probe stream closes early", async () => {
     fake.mode = "stream-close";
     expect(await resolveDestination(row).preflight()).toMatchObject({
@@ -312,5 +332,64 @@ describe("SFTP destination control deadlines and temporary uploads", () => {
     );
     expect(fake.unlinked).toHaveLength(1);
     expect(console.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("SFTP restore stream lifecycle", () => {
+  async function read(stream: Readable) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks).toString();
+  }
+
+  it("delivers all bytes and closes the connection", async () => {
+    expect(await read(await resolveDestination(row).get("artifact"))).toBe("payload");
+    await vi.waitFor(() => expect(fake.clients.every(client => client.ended)).toBe(true));
+  });
+
+  it("fails instead of waiting for EOF after the SSH connection drops", async () => {
+    const sftp = makeSftp();
+    const source = new PassThrough();
+    sftp.createReadStream.mockReturnValue(source);
+    const result = read(await resolveDestination(row).get("artifact"));
+    const failure = expect(result).rejects.toThrow(/connection closed/);
+    await vi.waitFor(() => expect(sftp.createReadStream).toHaveBeenCalled());
+    source.write("partial data");
+    fake.clients[0]!.emit("close");
+    await failure;
+    expect(source.destroyed).toBe(true);
+  });
+
+  it("closes storage when the restore consumer cancels", async () => {
+    const sftp = makeSftp();
+    const source = new PassThrough();
+    sftp.createReadStream.mockReturnValue(source);
+    const output = await resolveDestination(row).get("artifact");
+    await vi.waitFor(() => expect(sftp.createReadStream).toHaveBeenCalled());
+    output.destroy();
+    await vi.waitFor(() => expect(fake.clients.every(client => client.ended)).toBe(true));
+    expect(source.destroyed).toBe(true);
+  });
+
+  it("bounds a download that never produces another byte", async () => {
+    vi.useFakeTimers();
+    const sftp = makeSftp();
+    const source = new PassThrough();
+    sftp.createReadStream.mockReturnValue(source);
+    const output = await resolveDestination(row).get("artifact");
+    const failure = expect(read(output)).rejects.toThrow(/download stalled/);
+    await vi.advanceTimersByTimeAsync(600_001);
+    await failure;
+    expect(source.destroyed).toBe(true);
+    expect(fake.clients.every(client => client.ended)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("distinguishes a missing object from unreachable storage", async () => {
+    const sftp = makeSftp();
+    sftp.stat.mockImplementation((_path, callback) => callback(new Error("Permission denied")));
+    await expect(resolveDestination(row).head("artifact")).rejects.toThrow("Permission denied");
+    sftp.stat.mockImplementation((_path, callback) => callback(Object.assign(new Error("Missing"), { code: 2 })));
+    expect(await resolveDestination(row).head("artifact")).toBeNull();
   });
 });

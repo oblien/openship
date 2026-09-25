@@ -1,0 +1,15 @@
+{
+  "version": "2026.9.3",
+  "files": [
+    {
+      "name": "cloudflared.exe",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
+      "sha256": "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2"
+    },
+    {
+      "name": "LICENSE",
+      "url": "https://raw.githubusercontent.com/cloudflare/cloudflared/2026.9.3/LICENSE",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    }
+  ]
+}

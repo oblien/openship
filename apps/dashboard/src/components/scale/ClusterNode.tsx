@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { GitBranch, MapPin } from "lucide-react";
 import { ResourceIcon } from "./ResourceIcon";
 import { REGIONS, type DatabaseKind } from "./topology";
 import type { ClusterMember } from "./clusterTopology";
@@ -46,7 +47,7 @@ export const ClusterNode = memo(function ClusterNode({
         </div>
       </div>
       <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <GitBranch className="size-3 shrink-0" />
+        <UiIcon name="git-branch" className="size-3 shrink-0" />
         {slots ? (
           <span className="tabular-nums">
             Slots {slots.start}–{slots.end}
@@ -62,7 +63,7 @@ export const ClusterNode = memo(function ClusterNode({
         )}
       </div>
       <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-3 text-xs text-muted-foreground/70">
-        <MapPin className="size-3" />
+        <UiIcon name="map-pin" className="size-3" />
         <span>{REGIONS.find((region) => region.id === member.region)?.short}</span>
         {!primary && !connected && <span className="ms-auto text-warning">Unconnected</span>}
       </div>

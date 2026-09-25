@@ -1,5 +1,6 @@
 "use client";
 
+import type { IconName } from "@repo/ui/icons";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
@@ -209,13 +210,13 @@ function mapBuildLogsFromStatus(data: any): BuildLog[] {
   return [];
 }
 
-const STEPS = [
-  { label: "Preparing", icon: "server-59-1658435258.png" },
-  { label: "Cloning", icon: "git%20branch-159-1658431404.png" },
-  { label: "Installing", icon: "npm-184-1693375161.png" },
-  { label: "Building", icon: "tools-118-1658432731.png" },
-  { label: "Deploying", icon: "space%20rocket-85-1687505546.png" },
-  { label: "Ready", icon: "check%20circle-68-1658234612.png" },
+const STEPS: { label: string; icon: IconName }[] = [
+  { label: "Preparing", icon: "server" },
+  { label: "Cloning", icon: "git-branch" },
+  { label: "Installing", icon: "download" },
+  { label: "Building", icon: "wrench" },
+  { label: "Deploying", icon: "rocket" },
+  { label: "Ready", icon: "check-circle" },
 ];
 
 /**

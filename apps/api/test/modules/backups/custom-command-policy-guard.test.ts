@@ -111,9 +111,11 @@ describe("createPolicy refuses a custom_command policy it could never restore", 
     expect(row.payloadConfig).toMatchObject({ command: PRODUCE });
   });
 
-  it("leaves auto and volume policies alone", async () => {
-    await expect(create("auto", undefined)).resolves.toBeTruthy();
-    await expect(create("volume", { sourceIds: ["vol_a"] })).resolves.toBeTruthy();
+  it.each([
+    ["auto", undefined],
+    ["volume", { sourceIds: ["vol_a"] }],
+  ] as const)("leaves %s policies alone", async (kind, config) => {
+    await expect(create(kind, config)).resolves.toBeTruthy();
   });
 });
 

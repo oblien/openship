@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { UploadCloud, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { isValidAppTemplate } from "@repo/core";
 import { Modal } from "@/components/ui/Modal";
 import { appsApi } from "@/lib/api";
@@ -98,7 +99,7 @@ export function AddCustomAppModal({
           }}
           className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-background px-4 py-8 text-center transition-colors hover:border-primary/40"
         >
-          <UploadCloud className="size-6 text-muted-foreground" />
+          <UiIcon name="cloud-upload" className="size-6 text-muted-foreground" />
           <span className="text-sm text-foreground">
             Drop <code className="font-mono text-[12px]">app.json</code> here, or{" "}
             <span className="text-primary">browse</span>
@@ -113,20 +114,20 @@ export function AddCustomAppModal({
 
         {error && (
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/40 bg-danger/[0.05] px-3 py-2.5 text-sm text-danger">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
         {template != null && !error && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/[0.05] px-3 py-2.5 text-sm text-success">
-              <CheckCircle2 className="size-4 shrink-0" />
+              <UiIcon name="check-circle" className="size-4 shrink-0" />
               <span>
                 Valid app definition — <span className="font-medium">{name}</span>
               </span>
             </div>
             <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/[0.05] px-3 py-2.5 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
               <span>
                 <span className="font-semibold">Unverified.</span> This deploys images you provided — not
                 an official, reviewed app. Review the definition and only add apps you trust.
@@ -149,7 +150,7 @@ export function AddCustomAppModal({
             disabled={!template || busy}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {busy && <Loader2 className="size-4 animate-spin" />} Add app
+            {busy && <UiIcon name="spinner" className="size-4 animate-spin" />} Add app
           </button>
         </div>
       </div>

@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
@@ -89,7 +90,7 @@ export function RemoveSetupServerButton({
             setOpen(true);
           }}
         >
-          <Trash2 className="size-4" aria-hidden="true" />
+          <UiIcon name="trash" className="size-4" aria-hidden="true" />
           <span className="sr-only">{m.removeFromSetup}</span>
         </Button>
         {memberCount < 3 && (

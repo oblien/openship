@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Health tab — the incidents the container health watch recorded for this project.
  *
@@ -11,16 +13,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Activity,
-  AlertTriangle,
-  ChevronDown,
-  HeartPulse,
-  RefreshCw,
-  RotateCw,
-  ServerOff,
-  ShieldAlert,
-} from "lucide-react";
 import Link from "next/link";
 import { projectsApi, type ServiceIncidentRow } from "@/lib/api/projects";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -51,11 +43,11 @@ const KIND_TONE: Record<IncidentKind, string> = {
   server_unreachable: "bg-danger-bg text-danger",
 };
 
-const KIND_ICON: Record<IncidentKind, typeof Activity> = {
-  down: ShieldAlert,
-  crash_loop: RotateCw,
-  unhealthy: AlertTriangle,
-  server_unreachable: ServerOff,
+const KIND_ICON: Record<IncidentKind, IconName> = {
+  down: "shield-alert",
+  crash_loop: "refresh",
+  unhealthy: "warning",
+  server_unreachable: "server-off",
 };
 
 function kindLabel(kind: IncidentKind, c: Dictionary["projects"]["health"]): string {
@@ -107,7 +99,7 @@ export function HealthTab() {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <HeartPulse className="size-[18px]" />
+              <UiIcon name="activity" className="size-[18px]" />
             </div>
             <div>
               <h2 className="text-[15px] font-semibold text-foreground">{c.title}</h2>
@@ -122,7 +114,7 @@ export function HealthTab() {
             }}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border/60 px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50"
           >
-            <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} /> {c.refresh}
+            <UiIcon name="refresh" className={`size-4 ${refreshing ? "animate-spin" : ""}`} /> {c.refresh}
           </button>
         </div>
 
@@ -130,7 +122,7 @@ export function HealthTab() {
             watch being off means nothing can ever appear, and an unreachable box
             means the watcher froze every row it has for this project. */}
         {!watching && (
-          <Banner tone="warning" icon={AlertTriangle} title={c.watchOffTitle} body={c.watchOffBody}>
+          <Banner tone="warning" icon={"warning"} title={c.watchOffTitle} body={c.watchOffBody}>
             <Link href="/jobs" className="font-medium underline underline-offset-2">
               {c.watchOffCta}
             </Link>
@@ -139,14 +131,14 @@ export function HealthTab() {
         {serverUnreachable && (
           <Banner
             tone="danger"
-            icon={ServerOff}
+            icon={"server-off"}
             title={c.serverDownTitle}
             body={interpolate(c.serverDownBody, {
               duration: formatDowntime(Date.now() - new Date(serverUnreachable.openedAt).getTime()),
             })}
           />
         )}
-        {failed && <Banner tone="warning" icon={AlertTriangle} title={c.loadFailed} body="" />}
+        {failed && <Banner tone="warning" icon={"warning"} title={c.loadFailed} body="" />}
 
         <div className="mt-4">
           <SectionLabel>{c.openTitle}</SectionLabel>
@@ -189,7 +181,7 @@ function IncidentRow({ row }: { row: ServiceIncidentRow }) {
   const c = t.projects.health;
   const [showLog, setShowLog] = useState(false);
 
-  const Icon = KIND_ICON[row.kind] ?? Activity;
+  const Icon = KIND_ICON[row.kind] ?? "activity";
   const isOpen = row.status === "open";
   const duration = row.resolvedAt
     ? formatDowntime(new Date(row.resolvedAt).getTime() - new Date(row.openedAt).getTime())
@@ -211,7 +203,7 @@ function IncidentRow({ row }: { row: ServiceIncidentRow }) {
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${KIND_TONE[row.kind] ?? "bg-neutral-bg text-neutral"}`}
             >
-              <Icon className="size-3" />
+              <UiIcon name={Icon} className="size-3" />
               {kindLabel(row.kind, c)}
             </span>
             <span className="truncate text-sm font-medium text-foreground">{row.serviceName}</span>
@@ -245,7 +237,7 @@ function IncidentRow({ row }: { row: ServiceIncidentRow }) {
             onClick={() => setShowLog((v) => !v)}
             className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ChevronDown className={`size-3.5 transition-transform ${showLog ? "rotate-180" : ""}`} />
+            <UiIcon name="chevron-down" className={`size-3.5 transition-transform ${showLog ? "rotate-180" : ""}`} />
             {showLog ? c.hideLog : c.showLog}
           </button>
           {showLog && (
@@ -277,7 +269,7 @@ function Banner({
   children,
 }: {
   tone: "warning" | "danger";
-  icon: typeof Activity;
+  icon: IconName;
   title: string;
   body: string;
   children?: React.ReactNode;
@@ -288,7 +280,7 @@ function Banner({
       : "border-warning-border bg-warning-bg text-warning";
   return (
     <div className={`mt-4 flex items-start gap-2.5 rounded-xl border px-3 py-2.5 ${cls}`}>
-      <Icon className="mt-px size-4 shrink-0" />
+      <UiIcon name={Icon} className="mt-px size-4 shrink-0" />
       <div className="min-w-0 text-xs">
         <p className="font-semibold">{title}</p>
         {body && <p className="mt-0.5 opacity-90">{body}</p>}

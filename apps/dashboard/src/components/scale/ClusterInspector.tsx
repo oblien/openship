@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo } from "react";
-import { ArrowUpRight, ChevronUp, GitBranch, Settings2, Trash2, Unplug, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section, SelectField, TextField } from "./InspectorFields";
 import { ResourceIcon } from "./ResourceIcon";
@@ -97,7 +98,7 @@ function ReplicationSettings({
             className="w-full"
             onClick={() => onChange((current) => setReplicationSource(current, member.id, ""))}
           >
-            <Unplug />
+            <UiIcon name="unplug" />
             Disconnect replication
           </Button>
         </>
@@ -152,7 +153,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
           {member ? (
             <ResourceIcon kind={cluster.kind} className="size-5" />
           ) : (
-            <GitBranch className="size-5" />
+            <UiIcon name="git-branch" className="size-5" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -175,7 +176,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
               aria-label="Minimize inspector"
               title="Minimize panel (Esc)"
             >
-              <ChevronUp />
+              <UiIcon name="chevron-up" />
             </Button>
           )}
           <Button
@@ -185,7 +186,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
             aria-label="Close inspector"
             title="Close panel"
           >
-            <X />
+            <UiIcon name="close" />
           </Button>
         </div>
       </div>
@@ -249,7 +250,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
                             aria-label={`Configure replication to ${target.name}`}
                             onClick={() => onSelect({ type: "edge", id: edge.id })}
                           >
-                            <ArrowUpRight />
+                            <UiIcon name="arrow-up-right" />
                           </Button>
                         </div>
                       );
@@ -267,7 +268,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
         {replica && <ReplicationSettings cluster={cluster} member={replica} onChange={onChange} />}
         <div className="space-y-2 border-t border-border/50 pt-5">
           <Button variant="ghost" className="w-full justify-start" onClick={props.onConfigure}>
-            <Settings2 />
+            <UiIcon name="sliders" />
             Cluster settings
           </Button>
           {member && canRemoveClusterMember(cluster, member) && (
@@ -276,7 +277,7 @@ export default memo(function ClusterInspector(props: ClusterInspectorProps) {
               className="w-full justify-start text-muted-foreground hover:text-danger"
               onClick={() => props.onRemoveNodes([member.id])}
             >
-              <Trash2 />
+              <UiIcon name="trash" />
               {cluster.kind === "redis" ? "Remove shard and its replicas" : "Remove replica"}
             </Button>
           )}

@@ -1,16 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import {
-  ArrowDownLeft,
-  ArrowLeftRight,
-  ArrowUpRight,
-  Check,
-  ChevronDown,
-  CircleAlert,
-  Copy,
-  Shield,
-} from "lucide-react";
 import {
   networkFirewallRules,
   networkFirewallTemplate,
@@ -22,33 +14,13 @@ import {
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
+import { copyText } from "@/lib/clipboard";
 import { InfrastructureProviderLogo } from "../InfrastructureProviderLogo";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 
 export interface NetworkFirewallServer extends NetworkFirewallMember {
   name: string;
   providerId?: InfrastructureProviderId;
-}
-
-/** Also support dashboards served over HTTP, where the Clipboard API is unavailable. */
-async function copyText(value: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-  const previous = document.activeElement;
-  const field = document.createElement("textarea");
-  field.value = value;
-  field.readOnly = true;
-  field.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
-  document.body.appendChild(field);
-  try {
-    field.select();
-    if (!document.execCommand("copy")) throw new Error("Clipboard unavailable");
-  } finally {
-    field.remove();
-    if (previous instanceof HTMLElement) previous.focus({ preventScroll: true });
-  }
 }
 
 /** All server rules remain visible, shared by final review and connection diagnostics. */
@@ -122,7 +94,7 @@ export function NetworkFirewallRules({
           title={copied === key ? f.copied : f.copy}
           onClick={() => void copy(key, value)}
         >
-          {copied === key ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied === key ? <UiIcon name="check" className="size-3.5" /> : <UiIcon name="copy" className="size-3.5" />}
         </button>
       </span>
     );
@@ -138,7 +110,7 @@ export function NetworkFirewallRules({
           <span
             className={`grid size-9 shrink-0 place-items-center rounded-xl ${isolated ? "bg-muted text-muted-foreground" : "bg-warning/10 text-warning"}`}
           >
-            <Shield className="size-4" aria-hidden="true" />
+            <UiIcon name="shield" className="size-4" aria-hidden="true" />
           </span>
           <div>
             <h3 id={`${id}-title`} className="text-lg font-semibold">
@@ -159,7 +131,7 @@ export function NetworkFirewallRules({
             disabled={!completeTemplate}
             onClick={() => completeTemplate && void copy("all", completeTemplate)}
           >
-            {copied === "all" ? <Check /> : <Copy />}
+            {copied === "all" ? <UiIcon name="check" /> : <UiIcon name="copy" />}
             {copied === "all" ? f.copied : f.copyAllRules}
           </Button>
         )}
@@ -169,7 +141,7 @@ export function NetworkFirewallRules({
           role="alert"
           className="flex items-start gap-2.5 rounded-xl bg-warning/5 p-3 text-sm leading-relaxed"
         >
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
           <div>
             <p className="font-medium text-warning">{m.transportFailedTitle}</p>
             <p className="mt-1 text-muted-foreground">
@@ -225,7 +197,7 @@ export function NetworkFirewallRules({
                       disabled={!template}
                       onClick={() => template && void copy(server.serverId, template)}
                     >
-                      {copied === server.serverId ? <Check /> : <Copy />}
+                      {copied === server.serverId ? <UiIcon name="check" /> : <UiIcon name="copy" />}
                       {copied === server.serverId ? f.copied : f.copyRules}
                     </Button>
                   )}
@@ -275,7 +247,7 @@ export function NetworkFirewallRules({
                 {rules.length > 0 && (
                   <div className="grid gap-3 @xl/firewall:grid-cols-2">
                     {(["inbound", "outbound"] as const).map((direction) => {
-                      const DirectionIcon = direction === "inbound" ? ArrowDownLeft : ArrowUpRight;
+                      const DirectionIcon = direction === "inbound" ? "arrow-down-left" : "arrow-up-right";
                       const peerLabel = direction === "inbound" ? f.sourceCidr : f.destinationCidr;
                       // Native TCP and UDP probes share the same addresses and ports.
                       const visibleRules = rules.filter(
@@ -291,7 +263,7 @@ export function NetworkFirewallRules({
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <span className="grid size-6 shrink-0 place-items-center rounded-md bg-info/10 text-info">
-                                <DirectionIcon className="size-3.5" aria-hidden="true" />
+                                <UiIcon name={DirectionIcon} className="size-3.5" aria-hidden="true" />
                               </span>
                               <h5
                                 id={`${serverTitle}-${direction}`}
@@ -356,7 +328,7 @@ export function NetworkFirewallRules({
       <details className="group/firewall-guidance">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
           {f.guidanceTitle}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             aria-hidden="true"
             className="size-4 shrink-0 transition-transform group-open/firewall-guidance:rotate-180"
           />
@@ -373,7 +345,7 @@ export function NetworkFirewallRules({
           )}
           {native && (
             <div className="flex items-start gap-2.5 rounded-xl bg-muted/25 p-3">
-              <ArrowLeftRight className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+              <UiIcon name="arrows-left-right" className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
               <div className="min-w-0 space-y-1.5">
                 <p className="font-medium text-foreground">
                   {f.returnTraffic} · {f.inbound} / {f.outbound}

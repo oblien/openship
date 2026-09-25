@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Manage a TEAM workspace (owner-only): rename it, pause every project to
  * come back later, or delete it.
@@ -12,7 +14,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Loader2, Trash2, Pencil, Square, FolderOpen } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -190,7 +191,7 @@ export function WorkspaceManageModal({
             className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
             disabled={busy}
           >
-            <X className="size-4" />
+            <UiIcon name="close" className="size-4" />
           </button>
         </div>
 
@@ -210,7 +211,7 @@ export function WorkspaceManageModal({
                 disabled={busy || !name.trim() || name.trim() === organizationName}
                 className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-muted/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
               >
-                {renaming ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}
+                {renaming ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="edit" className="size-4" />}
                 {m.rename}
               </button>
             </div>
@@ -224,7 +225,7 @@ export function WorkspaceManageModal({
             <div className="overflow-hidden rounded-xl border border-border/50">
               {loadingProjects ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
                 </div>
               ) : projects.length === 0 ? (
                 <div className="px-4 py-6 text-center text-xs text-muted-foreground">{m.noProjects}</div>
@@ -232,7 +233,7 @@ export function WorkspaceManageModal({
                 <div className="divide-y divide-border/40">
                   {projects.map((p) => (
                     <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
+                      <UiIcon name="folder-open" className="size-4 shrink-0 text-muted-foreground" />
                       <span className="flex-1 truncate text-sm text-foreground">{p.name}</span>
                       <span
                         className={`text-[11px] font-medium uppercase tracking-wide ${
@@ -262,7 +263,7 @@ export function WorkspaceManageModal({
                 disabled={busy || runningCount === 0}
                 className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border/60 bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
               >
-                {pausing ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
+                {pausing ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="square" className="size-4" />}
                 {m.pauseButton}
               </button>
             </div>
@@ -293,7 +294,7 @@ export function WorkspaceManageModal({
                 disabled={!confirmMatches || busy}
                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-destructive px-4 py-2.5 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
               >
-                {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                {deleting ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="trash" className="size-4" />}
                 {deleting ? progress ?? m.deleting : t.settings.team.workspace.deleteWorkspace}
               </button>
             </div>

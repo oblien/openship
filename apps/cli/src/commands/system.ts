@@ -147,7 +147,8 @@ onboardingCommand
   .option("--ssh-key-path <path>", "SSH private key path")
   .option("--ssh-key-passphrase <pass>", "SSH key passphrase")
   .option("--ssh-jump-host <host>", "SSH jump host")
-  .option("--ssh-args <args>", "Extra SSH args")
+  .option("--ssh-transport <transport>", "SSH transport (direct|cloudflare)")
+  .option("--ssh-args <args>", "SSH connection tuning arguments")
   .option("--server-name <name>", "Display name for the server")
   .option("--auth-mode <mode>", "Initial auth mode: none | local | cloud")
   .option("--tunnel-provider <provider>", "Tunnel provider")
@@ -171,6 +172,7 @@ onboardingCommand
         sshKeyPath: opts.sshKeyPath,
         sshKeyPassphrase: opts.sshKeyPassphrase,
         sshJumpHost: opts.sshJumpHost,
+        sshTransport: opts.sshTransport,
         sshArgs: opts.sshArgs,
       };
 

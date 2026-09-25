@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Check, X } from "lucide-react";
 import { authClient, useSession } from "@/lib/auth-client";
 import { api } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -228,7 +229,7 @@ export default function AcceptInvitePage() {
       <div className="w-full max-w-md rounded-2xl border border-border/50 bg-card p-6 space-y-5">
         {state.kind === "loading" || sessionLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : state.kind === "needs-login" ? (
           <>
@@ -298,7 +299,7 @@ export default function AcceptInvitePage() {
                   disabled={signupBusy}
                   className="flex items-center justify-center gap-2 w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
                 >
-                  {signupBusy && <Loader2 className="size-4 animate-spin" />}
+                  {signupBusy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                   {m.createAccount}
                 </button>
                 <button
@@ -372,13 +373,13 @@ export default function AcceptInvitePage() {
           </>
         ) : state.kind === "accepting" ? (
           <div className="flex items-center justify-center py-8 gap-3 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
+            <UiIcon name="spinner" className="size-5 animate-spin" />
             {m.joining}
           </div>
         ) : state.kind === "accepted" ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <div className="w-12 h-12 rounded-full bg-success-bg flex items-center justify-center">
-              <Check className="size-6 text-success" />
+              <UiIcon name="check" className="size-6 text-success" />
             </div>
             <p className="text-base font-medium text-foreground">{m.acceptedTitle}</p>
             <p className="text-sm text-muted-foreground">{m.acceptedRedirect}</p>
@@ -386,7 +387,7 @@ export default function AcceptInvitePage() {
         ) : (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
-              <X className="size-6 text-destructive" />
+              <UiIcon name="close" className="size-6 text-destructive" />
             </div>
             <p className="text-base font-medium text-foreground">{m.errorTitle}</p>
             <p className="text-sm text-muted-foreground">{state.message}</p>

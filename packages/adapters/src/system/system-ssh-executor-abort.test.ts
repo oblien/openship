@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
   stderr = new EventEmitter();
-  stdin = { write: vi.fn(), end: vi.fn() };
+  stdin = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() });
   kill = vi.fn((_signal?: string) => {
     // Real ssh dies and the close event carries no exit code.
     this.emit("close", null);

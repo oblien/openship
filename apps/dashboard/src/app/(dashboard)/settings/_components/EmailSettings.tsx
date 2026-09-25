@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Mail, Send, Check } from "lucide-react";
 import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -173,10 +174,10 @@ export function EmailSettings() {
   }
 
   return (
-    <SettingsSection icon={Mail} title={e.title} description={e.description}>
+    <SettingsSection icon={"mail"} title={e.title} description={e.description}>
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {e.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {e.loading}
         </div>
       ) : (
         <>
@@ -184,7 +185,7 @@ export function EmailSettings() {
 
           {configured ? (
             <span className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-success-bg px-2.5 py-1 text-xs font-medium text-success">
-              <Check className="size-3.5" /> {e.configuredBadge}
+              <UiIcon name="check" className="size-3.5" /> {e.configuredBadge}
             </span>
           ) : (
             <p className="mb-4 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning">{e.notConfigured}</p>
@@ -275,7 +276,7 @@ export function EmailSettings() {
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving && <Loader2 className="size-4 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
               {saving ? e.saving : e.save}
             </button>
             {configured && (
@@ -307,7 +308,7 @@ export function EmailSettings() {
                 disabled={testing || !configured || !testTo.trim()}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
               >
-                {testing ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {testing ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="send" className="size-4" />}
                 {testing ? e.sending : e.sendTest}
               </button>
             </div>

@@ -1,16 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo, useState } from "react";
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  ChevronDown,
-  ChevronUp,
-  Plus,
-  Trash2,
-  Unplug,
-  X,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/Tabs";
 import { ResourceIcon } from "./ResourceIcon";
@@ -389,7 +381,7 @@ function Configuration({
             onClick={() => setShowSlots(!showSlots)}
           >
             Slot allocation
-            <ChevronDown className={showSlots ? "rotate-180" : ""} />
+            <UiIcon name="chevron-down" className={showSlots ? "rotate-180" : ""} />
           </Button>
           {showSlots && (
             <div className="divide-y divide-border/50">
@@ -445,9 +437,9 @@ function Connections({
               return (
                 <div className="flex items-center gap-2 py-3" key={edge.id}>
                   {incoming ? (
-                    <ArrowDownLeft className="size-4 shrink-0 text-muted-foreground" />
+                    <UiIcon name="arrow-down-left" className="size-4 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+                    <UiIcon name="arrow-up-right" className="size-4 shrink-0 text-muted-foreground" />
                   )}
                   <button
                     type="button"
@@ -468,7 +460,7 @@ function Connections({
                     aria-label={`Disconnect ${other.name}`}
                     onClick={() => onRemoveEdges([edge.id])}
                   >
-                    <Unplug />
+                    <UiIcon name="unplug" />
                   </Button>
                 </div>
               );
@@ -498,7 +490,7 @@ function Connections({
               setTargetId("");
             }}
           >
-            <Plus />
+            <UiIcon name="plus" />
             Connect
           </Button>
           {!targets.length && (
@@ -538,7 +530,7 @@ function ResourceInspector({ resource, ...props }: InspectorProps & { resource: 
             onClick={() => props.onOpenCluster?.(resource.id)}
           >
             Open cluster
-            <ArrowUpRight />
+            <UiIcon name="arrow-up-right" />
           </Button>
         )}
         {tab === "configuration" ? (
@@ -552,7 +544,7 @@ function ResourceInspector({ resource, ...props }: InspectorProps & { resource: 
             className="w-full justify-start text-muted-foreground hover:text-danger"
             onClick={() => props.onRemoveNodes([resource.id])}
           >
-            <Trash2 />
+            <UiIcon name="trash" />
             {resource.kind === "service" ? "Remove this instance" : "Remove resource"}
           </Button>
           {siblings.length > 1 && (
@@ -561,7 +553,7 @@ function ResourceInspector({ resource, ...props }: InspectorProps & { resource: 
               className="w-full justify-start text-muted-foreground hover:text-danger"
               onClick={() => props.onRemoveNodes(siblings.map((node) => node.id))}
             >
-              <Trash2 />
+              <UiIcon name="trash" />
               Remove application
             </Button>
           )}
@@ -606,7 +598,7 @@ export default memo(function ScaleInspector(props: InspectorProps) {
               aria-label="Minimize inspector"
               title="Minimize panel (Esc)"
             >
-              <ChevronUp />
+              <UiIcon name="chevron-up" />
             </Button>
           )}
           <Button
@@ -616,7 +608,7 @@ export default memo(function ScaleInspector(props: InspectorProps) {
             aria-label="Close inspector"
             title="Close panel"
           >
-            <X />
+            <UiIcon name="close" />
           </Button>
         </div>
       </div>

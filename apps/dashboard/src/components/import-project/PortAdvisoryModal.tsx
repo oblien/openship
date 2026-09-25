@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -80,7 +81,7 @@ export function PortAdvisoryModal({
   return (
     <>
       <div className="mt-4 flex items-center gap-3 rounded-xl border border-warning-border bg-warning-bg px-4 py-3">
-        <AlertTriangle className="size-4 shrink-0 text-warning" />
+        <UiIcon name="warning" className="size-4 shrink-0 text-warning" />
         <span className="flex-1 text-sm font-medium text-warning">{pa.bannerTitle}</span>
         <button
           type="button"
@@ -95,7 +96,7 @@ export function PortAdvisoryModal({
         <div className="flex flex-col gap-4 p-6">
           <div className="flex items-start gap-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-warning-bg">
-              <AlertTriangle className="size-5 text-warning" />
+              <UiIcon name="warning" className="size-5 text-warning" />
             </div>
             <div>
               <h2 className="text-base font-semibold text-foreground">{pa.title}</h2>
@@ -200,7 +201,7 @@ function AdvisoryRow({ check, isCompose, strings, onChangePort, onSkip }: Adviso
           }}
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+          {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-right" className="size-4" />}
           {strings.changePort}
         </button>
         <button

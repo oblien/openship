@@ -16,7 +16,7 @@ import { operationContext, operationData } from "../../lib/operation-context";
 import type { Context } from "hono";
 import { setSignedCookie } from "hono/cookie";
 import { db, repos, schema, eq, and } from "@repo/db";
-import { generateId, normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
+import { assertSshSettings, generateId, normalizeRollbackWindow, normalizeSshTransport, safeErrorMessage } from "@repo/core";
 import { hashPassword } from "better-auth/crypto";
 import { invalidateOpenRestyPaths } from "@repo/platform/engine/lib/openresty-paths";
 import { env } from "@repo/platform/engine/config/index";
@@ -29,6 +29,7 @@ import {
 import { assertNotCloud } from "../../lib/controller-helpers";
 import { assertInstanceAdmin } from "../../middleware/instance-admin";
 import { zeroAuthAllowed } from "../../middleware/zero-auth-guard";
+import { isLocalBootstrapRequest } from "../../middleware/local-bootstrap";
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { encryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 import { ensureLocalUser, invalidateLocalUserCache } from "../../lib/local-user";
@@ -50,6 +51,14 @@ export async function setup(c: Context) {
   if (cloudGuard) return cloudGuard;
 
   const body = await c.req.json();
+
+  let sshTransport;
+  try {
+    sshTransport = normalizeSshTransport(body.sshTransport);
+    if (body.sshHost) assertSshSettings(body);
+  } catch (error) {
+    return c.json({ error: safeErrorMessage(error) }, 400);
+  }
 
   // Instance-level config (non-SSH) → instance_settings table.
   // authMode is security-sensitive and this handler is ALSO reachable
@@ -105,6 +114,7 @@ export async function setup(c: Context) {
         sshKeyPath: body.sshKeyPath || null,
         sshKeyPassphrase: encryptedKeyPassphrase,
         sshJumpHost: body.sshJumpHost || null,
+        sshTransport,
         sshArgs: body.sshArgs || null,
       });
       serverId = existing.id;
@@ -126,6 +136,7 @@ export async function setup(c: Context) {
         sshKeyPath: body.sshKeyPath || null,
         sshKeyPassphrase: encryptedKeyPassphrase,
         sshJumpHost: body.sshJumpHost || null,
+        sshTransport,
         sshArgs: body.sshArgs || null,
       });
       serverId = created.id;
@@ -603,6 +614,7 @@ export async function upgradeToAuth(c: Context) {
 export async function onboardingSetup(c: Context) {
   const cloudGuard = assertNotCloud(c);
   if (cloudGuard) return cloudGuard;
+  if (!isLocalBootstrapRequest(c)) return c.json({ error: "Not available" }, 404);
 
   const servers = await repos.server.list();
   if (servers.length > 0) {

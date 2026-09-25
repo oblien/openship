@@ -1,15 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleHelp,
-  HeartPulse,
-  RefreshCw,
-  ServerOff,
-} from "lucide-react";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import {
@@ -29,11 +23,11 @@ import type { MonitoringHealthSnapshot } from "@/lib/api/issues";
 import { AutomaticMonitoringCard } from "./AutomaticMonitoringCard";
 
 const tone = {
-  healthy: { Icon: CheckCircle2, className: "text-success bg-success-bg", label: "Healthy" },
-  unhealthy: { Icon: AlertTriangle, className: "text-warning bg-warning-bg", label: "Unhealthy" },
-  crash_loop: { Icon: AlertTriangle, className: "text-danger bg-danger-bg", label: "Crash loop" },
-  down: { Icon: ServerOff, className: "text-danger bg-danger-bg", label: "Down" },
-  unknown: { Icon: CircleHelp, className: "text-muted-foreground bg-muted", label: "Unknown" },
+  healthy: { Icon: "check-circle", className: "text-success bg-success-bg", label: "Healthy" },
+  unhealthy: { Icon: "warning", className: "text-warning bg-warning-bg", label: "Unhealthy" },
+  crash_loop: { Icon: "warning", className: "text-danger bg-danger-bg", label: "Crash loop" },
+  down: { Icon: "server-off", className: "text-danger bg-danger-bg", label: "Down" },
+  unknown: { Icon: "help-circle", className: "text-muted-foreground bg-muted", label: "Unknown" },
 } as const;
 
 /** Fleet health reads a cached snapshot produced by the server-grouped watcher.
@@ -221,7 +215,7 @@ export function MonitoringHealth() {
       <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-card p-5 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className={`flex size-10 items-center justify-center rounded-xl ${partialCoverage ? "bg-warning-bg text-warning" : problems > 0 ? "bg-danger-bg text-danger" : rows.length > 0 ? "bg-success-bg text-success" : "bg-primary/10 text-primary"}`}>
-            <HeartPulse className="size-[19px]" />
+            <UiIcon name="activity" className="size-[19px]" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -243,7 +237,7 @@ export function MonitoringHealth() {
         <div className="flex flex-wrap gap-2">
           {!loading && currentAvailable && (
             <Button variant="outline" onClick={() => void checkHealthNow()} disabled={scanning || enabling}>
-              <RefreshCw className={scanning ? "animate-spin" : ""} />
+              <UiIcon name="refresh" className={scanning ? "animate-spin" : ""} />
               {scanning ? "Checking…" : "Check now"}
             </Button>
           )}
@@ -252,14 +246,14 @@ export function MonitoringHealth() {
 
       {scanError && (
         <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
           <div><p className="font-medium">Current health check failed</p><p className="mt-0.5 text-xs text-danger/80">{scanError}</p></div>
         </div>
       )}
 
       {latestManualScan && hasPartialCoverage(latestManualScan) && (
         <div className="flex items-start gap-2.5 rounded-xl border border-warning-border bg-warning-bg px-4 py-3 text-warning">
-          <CircleHelp className="mt-0.5 size-4 shrink-0" />
+          <UiIcon name="help-circle" className="mt-0.5 size-4 shrink-0" />
           <div>
             <p className="text-sm font-medium">Current check completed with partial coverage</p>
             <p className="mt-0.5 text-xs leading-relaxed">
@@ -272,14 +266,14 @@ export function MonitoringHealth() {
       {loadError && (
         <div role="alert" className="flex flex-col gap-3 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 sm:flex-row sm:items-center">
           <div className="flex min-w-0 flex-1 items-start gap-2.5">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+            <UiIcon name="warning" className="mt-0.5 size-4 shrink-0 text-danger" />
             <div>
               <p className="text-sm font-medium text-danger">Health data is temporarily unavailable</p>
               <p className="mt-0.5 text-xs text-danger/80">{loadError}</p>
             </div>
           </div>
           <button type="button" onClick={() => void load(true)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger-border px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10">
-            <RefreshCw className="size-3.5" /> Retry
+            <UiIcon name="refresh" className="size-3.5" /> Retry
           </button>
         </div>
       )}
@@ -353,7 +347,7 @@ export function MonitoringHealth() {
           <ul className="divide-y divide-border/50">{visible.map((row) => {
             const status = tone[row.state]; const Icon = status.Icon;
             return <li key={`${row.projectId}:${row.serviceKey}`} className="flex items-center gap-3 px-4 py-3">
-              <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${status.className}`}><Icon className="size-4" /></span>
+              <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${status.className}`}><UiIcon name={Icon} className="size-4" /></span>
               <div className="min-w-0 flex-1"><Link href={`/projects/${row.projectId}/health`} className="text-sm font-medium hover:underline">{row.serviceName}</Link><p className="truncate text-xs text-muted-foreground">{row.projectName} · {row.serverName}</p></div>
               <div className="text-end"><p className={`text-xs font-medium ${status.className.split(" ")[0]}`}>{status.label}</p><p className="text-[11px] text-muted-foreground">{timeAgo(row.observedAt, t)}</p></div>
             </li>;
@@ -390,7 +384,7 @@ function HealthEmptyState({
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
       <div className={`flex size-11 items-center justify-center rounded-2xl ${watching ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-        <HeartPulse className="size-5" />
+        <UiIcon name="activity" className="size-5" />
       </div>
       <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
       <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">

@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Boxes, Network } from "lucide-react";
 import type { ServerInfrastructure as Infrastructure } from "@repo/contracts";
 import { systemApi } from "@/lib/api/system";
 import { useI18n } from "@/components/i18n-provider";
@@ -35,7 +36,7 @@ export function ServerInfrastructure({ serverId }: { serverId: string }) {
         className="flex min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-muted transition-colors"
       >
         {children}
-        <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
+        <UiIcon name="arrow-up-right" className="size-3.5 shrink-0 text-muted-foreground" />
       </Link>
     ) : (
       <div className="flex min-w-0 items-center gap-3 px-2 py-2">{children}</div>
@@ -45,7 +46,7 @@ export function ServerInfrastructure({ serverId }: { serverId: string }) {
       {value.cluster && (
         <section>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <Boxes className="size-4 text-primary" />
+            <UiIcon name="cluster" className="size-4 text-primary" />
             {t.servers.tabsNav.cluster}
           </h3>
           {reference(
@@ -57,7 +58,7 @@ export function ServerInfrastructure({ serverId }: { serverId: string }) {
       {!!value.networks.length && (
         <section className={value.cluster ? "border-t border-border/50 pt-4" : undefined}>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <Network className="size-4 text-primary" />
+            <UiIcon name="network" className="size-4 text-primary" />
             {t.servers.tabsNav.networking}
           </h3>
           <ul>

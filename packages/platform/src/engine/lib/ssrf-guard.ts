@@ -51,7 +51,7 @@ export function isPrivateIp(ipRaw: string): boolean {
 
 /** A hostname literal (not an IP) that must never be reached. */
 export function isBlockedHostname(host: string): boolean {
-  const h = host.toLowerCase();
+  const h = normalizeHost(host);
   return (
     h === "localhost" ||
     h === "ip6-localhost" ||
@@ -62,7 +62,7 @@ export function isBlockedHostname(host: string): boolean {
 }
 
 function normalizeHost(host: string): string {
-  return host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return host.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
 }
 
 /** Sync literal-only host guard (no DNS). Throws SsrfError if blocked. */

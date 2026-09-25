@@ -8,13 +8,7 @@ import { describeBuildTarget } from "./deploy-target-label";
 
 /**
  * WHERE this deploy lands, as a value for a details row — and a LINK to the machine when it is
- * one of yours.
- *
- * A component rather than a second string in `deploy-target-label`, because linking needs the
- * server ID and both progress screens (the single-app `DeploymentProcessing` and the compose
- * `ComposeSidebar`) render the same fact in the same place. They already shared the label
- * resolver and diverged on nothing else; one of them growing a link would be the start of "Server
- * · box-1" vs "box-1" drifting apart again.
+ * one of yours. Shared by deployment details and deployment configuration.
  *
  * Only a server target links. Openship Cloud has no per-instance page to open, and `local` is the
  * box the dashboard is already running on — a link to "here" is a dead end dressed as an action.

@@ -1,18 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  GitBranch,
-  Globe,
-  Server,
-  FolderOpen,
-  Cloud,
-  HardDrive,
-  MoreHorizontal,
-  Trash2,
-} from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
@@ -40,14 +31,14 @@ export function getHostingLabel(
 ): { icon: React.ReactNode; label: string } | null {
   if (!deployTarget) return null;
   if (deployTarget === "cloud")
-    return { icon: <Cloud className="size-3.5 shrink-0" />, label: t.projects.hosting.cloud };
+    return { icon: <UiIcon name="cloud" className="size-3.5 shrink-0" />, label: t.projects.hosting.cloud };
   if (deployTarget === "server")
     return {
-      icon: <Server className="size-3.5 shrink-0" />,
+      icon: <UiIcon name="server" className="size-3.5 shrink-0" />,
       label: serverName || t.projects.hosting.server,
     };
   if (deployTarget === "local")
-    return { icon: <HardDrive className="size-3.5 shrink-0" />, label: t.projects.hosting.local };
+    return { icon: <UiIcon name="hard-drive" className="size-3.5 shrink-0" />, label: t.projects.hosting.local };
   return null;
 }
 
@@ -195,12 +186,12 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           {/* Source */}
           {isLocal ? (
             <span className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground @3xl/project-row:inline-flex" title={t.projects.card.sourceLocal}>
-              <FolderOpen className="size-3.5 shrink-0" />
+              <UiIcon name="folder-open" className="size-3.5 shrink-0" />
               <span className="truncate">{t.projects.card.sourceLocal}</span>
             </span>
           ) : repoSlug ? (
             <span className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground @3xl/project-row:inline-flex" title={repoSlug}>
-              <GitBranch className="size-3.5 shrink-0" />
+              <UiIcon name="git-branch" className="size-3.5 shrink-0" />
               <span className="truncate">{project.gitRepo}</span>
             </span>
           ) : null}
@@ -208,17 +199,17 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           {/* Build target */}
           {!hasMultipleServices && (project.workloadType === "worker" ? (
             <span className="hidden min-w-0 max-w-32 shrink-0 items-center gap-1.5 text-xs text-muted-foreground @4xl/project-row:inline-flex" title={t.projects.card.worker}>
-              <Server className="size-3.5 shrink-0" />
+              <UiIcon name="server" className="size-3.5 shrink-0" />
               <span className="truncate">{t.projects.card.worker}</span>
             </span>
           ) : project.hasServer === false ? (
             <span className="hidden min-w-0 max-w-32 shrink-0 items-center gap-1.5 text-xs text-muted-foreground @4xl/project-row:inline-flex" title={t.projects.card.static}>
-              <Globe className="size-3.5 shrink-0" />
+              <UiIcon name="globe" className="size-3.5 shrink-0" />
               <span className="truncate">{t.projects.card.static}</span>
             </span>
           ) : project.productionMode === "standalone" ? (
             <span className="hidden min-w-0 max-w-32 shrink-0 items-center gap-1.5 text-xs text-muted-foreground @4xl/project-row:inline-flex" title={t.projects.card.standalone}>
-              <Server className="size-3.5 shrink-0" />
+              <UiIcon name="server" className="size-3.5 shrink-0" />
               <span className="truncate">{t.projects.card.standalone}</span>
             </span>
           ) : null)}
@@ -247,7 +238,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
                 className="flex size-7 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
                 aria-label={t.projects.draft.deleteTitle}
               >
-                <MoreHorizontal className="size-4" />
+                <UiIcon name="more" className="size-4" />
               </button>
               {menuOpen && (
                 <>
@@ -261,7 +252,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
                       }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger transition-colors hover:bg-danger-bg"
                     >
-                      <Trash2 className="size-3.5" />
+                      <UiIcon name="trash" className="size-3.5" />
                       {t.projects.draft.delete}
                     </button>
                   </div>
@@ -270,7 +261,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
             </div>
           )}
 
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
+          <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
         </div>
       </div>
     </div>

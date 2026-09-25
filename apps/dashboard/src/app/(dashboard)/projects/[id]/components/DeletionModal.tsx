@@ -1,5 +1,5 @@
+import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, Database, HardDrive, Loader2, Unplug } from "lucide-react";
 import { projectsApi } from "@/lib/api";
 import { connectionsApi, type ConnectionConsumer } from "@/lib/api/connections";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -134,7 +134,7 @@ export const DeletionModal = ({
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40">
           <div className="size-9 rounded-xl bg-warning-bg border border-warning-border flex items-center justify-center shrink-0">
-            <AlertTriangle className="size-[18px] text-warning" />
+            <UiIcon name="warning" className="size-[18px] text-warning" />
           </div>
           <div className="min-w-0">
             <h3 className="text-[15px] font-semibold text-foreground">{t.projectSettings.deletion.title}</h3>
@@ -157,7 +157,7 @@ export const DeletionModal = ({
           {linkedGroups.size > 0 && (
             <div className="rounded-xl border border-info-border bg-info-bg px-3 py-3">
               <div className="flex items-center gap-2">
-                <Unplug className="size-3.5 text-info shrink-0" />
+                <UiIcon name="unplug" className="size-3.5 text-info shrink-0" />
                 <span className="text-sm font-medium text-foreground">
                   {interpolate(
                     linkedGroups.size === 1
@@ -221,7 +221,7 @@ export const DeletionModal = ({
           {/* Wipe-volumes block - only shows when there's actual data on disk */}
           {previewLoading ? (
             <div className="flex items-center gap-2 rounded-xl border border-border/30 bg-muted/10 px-3 py-2.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
               {t.projectSettings.deletion.scanning}
             </div>
           ) : showWipeBlock ? (
@@ -236,7 +236,7 @@ export const DeletionModal = ({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <HardDrive className="size-3.5 text-muted-foreground" />
+                    <UiIcon name="hard-drive" className="size-3.5 text-muted-foreground" />
                     <span className="text-sm font-medium text-foreground">
                       {interpolate(preview!.totalVolumes === 1 ? t.projectSettings.deletion.wipeLabelOne : t.projectSettings.deletion.wipeLabelOther, { count: String(preview!.totalVolumes) })}
                     </span>
@@ -254,7 +254,7 @@ export const DeletionModal = ({
                 <ul className="border-t border-border/40 divide-y divide-border/30">
                   {servicesWithVolumes.map((s) => (
                     <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <UiIcon name="database" className="size-3.5 text-muted-foreground/70 shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {s.name}
                       </span>
@@ -265,7 +265,7 @@ export const DeletionModal = ({
                   ))}
                   {preview!.deploymentVolumes.length > 0 && (
                     <li className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <UiIcon name="database" className="size-3.5 text-muted-foreground/70 shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {t.projectSettings.deletion.appData}
                       </span>

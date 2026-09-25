@@ -1,8 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Download, RefreshCw, Copy, Check } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
 
 interface LogsActionsProps {
   onCopy: () => void;
@@ -21,34 +23,45 @@ export const LogsActions: React.FC<LogsActionsProps> = ({
 }) => {
   const { t } = useI18n();
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1">
       {/* Copy */}
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
         onClick={onCopy}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-muted/60 rounded-md transition-colors text-xs text-muted-foreground hover:text-foreground"
+        disabled={logsCount === 0}
+        className="h-9"
       >
-        {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? <UiIcon name="check" className="w-3.5 h-3.5 text-success" /> : <UiIcon name="copy" className="w-3.5 h-3.5" />}
         {copied ? t.projectDetail.logs.actions.copied : t.projectDetail.logs.actions.copy}
-      </button>
+      </Button>
 
       {/* Download */}
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
         onClick={onDownload}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-muted/60 rounded-md transition-colors text-xs text-muted-foreground hover:text-foreground"
+        disabled={logsCount === 0}
+        className="h-9"
       >
-        <Download className="w-3.5 h-3.5" />
+        <UiIcon name="download" className="w-3.5 h-3.5" />
         {t.projectDetail.logs.actions.download}
-      </button>
+      </Button>
 
       {/* Clear */}
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
         onClick={onClear}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-danger-bg rounded-md transition-colors text-xs text-muted-foreground hover:text-danger"
+        disabled={logsCount === 0}
+        className="h-9 hover:bg-danger-bg hover:text-danger"
       >
-        <RefreshCw className="w-3.5 h-3.5" />
+        <UiIcon name="refresh" className="w-3.5 h-3.5" />
         {t.projectDetail.logs.actions.clear}
-      </button>
+      </Button>
     </div>
   );
 };
-

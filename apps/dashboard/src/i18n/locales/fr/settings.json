@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "Apparence",
+    "description": "Choisissez un thème ou suivez l’apparence de votre appareil. Les changements sont immédiats.",
+    "themes": {
+      "light": "Clair",
+      "dim": "Tamisé",
+      "dark": "Sombre",
+      "system": "Système"
+    }
+  },
   "language": {
     "title": "Langue",
     "description": "Choisissez la langue utilisée dans tout le tableau de bord."
@@ -60,6 +70,7 @@
     }
   },
   "github": {
+    "tokenCreate": "Créer un jeton",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "Connecté · Aucune installation pour l'instant",
@@ -219,9 +230,9 @@
   },
   "cloneCredentials": {
     "title": "Identifiants de clonage GitHub",
-    "description": "Jeton personnel utilisé pour cloner des dépôts privés quand la GitHub App n'est pas installée",
+    "description": "Accès personnel aux dépôts privés.",
     "loading": "Chargement…",
-    "intro": "Collez un jeton d'accès personnel GitHub (classique ou fine-grained). Le module de clonage l'utilise comme identifiant de deuxième priorité - après tout remplacement par projet, avant le jeton d'installation de la GitHub App.",
+    "intro": "Les jetons propres aux projets sont prioritaires. Lorsqu’il est activé, ce jeton est utilisé avant les identifiants de la GitHub App. Le désactiver ne supprime pas le jeton enregistré.",
     "placeholder": "ghp_… ou github_pat_…",
     "showToken": "Afficher le jeton",
     "hideToken": "Masquer le jeton",
@@ -233,8 +244,12 @@
     "justNow": "à l'instant",
     "replace": "Remplacer",
     "clear": "Effacer",
-    "useAsDefault": "Utiliser comme jeton de clonage par défaut",
-    "useAsDefaultDesc": "Quand activé, le module de clonage utilise ce jeton comme deuxième niveau de la chaîne (après les remplacements par projet). Quand désactivé, le jeton est stocké mais non utilisé - pratique si vous ne voulez l'activer que pour des déploiements spécifiques.",
+    "useAsDefault": "Utiliser par défaut",
+    "useAsDefaultDesc": "Utiliser ce jeton si le projet n’en possède pas.",
+    "tokenLabel": "Jeton d’accès personnel",
+    "helpTitle": "Droits et utilisation du jeton",
+    "forwardGitLabel": "Transférer l’accès GitHub local",
+    "forwardGitDesc": "Partager votre connexion GitHub locale avec les serveurs de build distants via SSH.",
     "toast": {
       "pasteFirst": "Collez un jeton avant d'enregistrer",
       "notLikeToken": "Cela ne ressemble pas à un jeton GitHub. Enregistrez quand même si vous êtes sûr.",

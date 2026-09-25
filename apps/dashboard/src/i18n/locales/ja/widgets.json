@@ -102,10 +102,12 @@
       "phase": {
         "queued": "ワーカーを待機中…",
         "preparing": "宛先とサービスを解決中…",
-        "snapshotting": "アーティファクトを生成中（プリフック実行中）…",
+        "snapshotting": "データ取得を準備中…",
         "uploading": "宛先へストリーミング中…",
         "verifying": "マニフェストを書き込み中…"
-      }
+      },
+      "reconnecting": "進行状況に再接続中…",
+      "reconnect": "再接続"
     },
     "policyEditor": {
       "presetHourly": "1時間ごと",
@@ -200,7 +202,32 @@
       "compressionNone": "なし — 圧縮しない",
       "compressionHint": "圧縮率は zstd が最良です。gzip はどのイメージにも含まれているためダウンロード不要で、外部接続のないホストでも動作します。",
       "compressionAuto": "自動 — サービスにあるものを使う",
-      "summaryPath": "ファイルとフォルダー"
+      "summaryPath": "ファイルとフォルダー",
+      "quick": {
+        "contents": "バックアップ対象",
+        "volumesTitle": "サービスのボリューム",
+        "volumesDescription": "このサービスに接続されたすべての永続ボリュームとバインドマウント。",
+        "selectedVolumesDescription": "詳細設定で選択したボリュームのみ。",
+        "databaseTitle": "{name} のデータ",
+        "databaseDescription": "データベース標準のバックアップツールで整合性を保ちます。",
+        "projectTitle": "プロジェクトのデータ",
+        "projectDescription": "各サービスのデータベースまたは永続ボリュームをバックアップします。",
+        "filesDescription": "詳細設定で選択したフォルダーをバックアップします。",
+        "customDescription": "設定済みのバックアップおよび復元コマンドを使用します。",
+        "onDemand": "必要なときに実行",
+        "onDemandHint": "必要なときにバックアップを開始できます。",
+        "frequency": "バックアップの実行タイミング",
+        "history": "バックアップ履歴",
+        "keepBackups": "最新 {count} 件のバックアップ",
+        "historyHint": "古いバックアップは自動的に削除されます。",
+        "customSchedule": "カスタムスケジュール",
+        "customRetention": "カスタム保持設定",
+        "advancedHint": "バックアップ方式、対象ボリューム、スケジュール、フック。",
+        "saveAndBackup": "保存してバックアップ",
+        "invalidRetention": "0 より大きい整数を入力してください。すべて保持する場合は空欄にしてください。"
+      },
+      "incrementalLabel": "増分バックアップ",
+      "incrementalHint": "変更されたブロックのみをアップロードします。各バックアップは完全に復元できます。データベースのエクスポートでは容量の削減が少ない場合があります。"
     }
   },
   "cloud": {

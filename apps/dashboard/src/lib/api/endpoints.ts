@@ -587,6 +587,8 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   backupDestinations: {
     list: "backup-destinations",
+    history: "backup-destinations/history",
+    runs: (id: string) => `backup-destinations/${id}/runs`,
     create: "backup-destinations",
     get: (id: string) => `backup-destinations/${id}`,
     update: (id: string) => `backup-destinations/${id}`,

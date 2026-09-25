@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * PTR (reverse DNS) hold gate. Renders AFTER `dnsAcknowledged` flips true
  * but before step 12 (SSL). Same shape as the DNS banner but:
@@ -20,7 +22,6 @@
  */
 
 import { useState } from "react";
-import { Loader2, Network, Copy, Check } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface PtrHoldBannerProps {
@@ -45,7 +46,7 @@ export function PtrHoldBanner({
     <div className="bg-info-bg border border-info-border rounded-2xl p-6 mb-6">
       <div className="flex items-start gap-3 mb-5">
         <div className="w-10 h-10 rounded-xl bg-info-bg flex items-center justify-center shrink-0">
-          <Network className="size-5 text-info" strokeWidth={1.75} />
+          <UiIcon name="network" className="size-5 text-info" />
         </div>
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-info">
@@ -87,9 +88,9 @@ export function PtrHoldBanner({
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-info-solid text-white hover:bg-info-solid/90 transition-colors disabled:opacity-50"
         >
           {acknowledging ? (
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
           ) : (
-            <Network className="size-4" />
+            <UiIcon name="network" className="size-4" />
           )}
           {t.emails.ptr.action}
         </button>
@@ -176,9 +177,9 @@ function PtrField({
         title={t.emails.ptr.copy}
       >
         {copied ? (
-          <Check className="size-3.5 text-success" />
+          <UiIcon name="check" className="size-3.5 text-success" />
         ) : (
-          <Copy className="size-3.5" />
+          <UiIcon name="copy" className="size-3.5" />
         )}
       </button>
     </div>

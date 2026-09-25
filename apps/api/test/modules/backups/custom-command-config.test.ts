@@ -41,12 +41,14 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
         id: "bkr_live",
         status: "queued",
         policyId: "pol_mail",
+        destinationId: "dst_1",
         projectId: null,
         serviceId: null,
         mailServerId: "mail_1",
@@ -96,6 +98,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   return {
     ...actual,
     resolveDestination: () => ({
+      deleteMany: async (keys: string[]) => ({ deleted: keys, failed: [] }),
       preflight: async () => ({ ok: true }),
       put: async (key: string, body: NodeJS.ReadableStream, opts: Record<string, unknown>) => {
         const chunks: Buffer[] = [];

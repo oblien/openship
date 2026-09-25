@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo } from "react";
-import { ChevronUp, GitBranch, Unplug, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NumberField, Section, SelectField, TextField, ToggleField } from "./InspectorFields";
 import {
@@ -44,7 +45,7 @@ export default memo(function ConnectionInspector({
     >
       <div className="flex shrink-0 items-center gap-3 border-b border-border/50 p-5">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
-          <GitBranch className="size-5" />
+          <UiIcon name="git-branch" className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-medium text-foreground">
@@ -62,7 +63,7 @@ export default memo(function ConnectionInspector({
             aria-label="Minimize inspector"
             title="Minimize panel (Esc)"
           >
-            <ChevronUp />
+            <UiIcon name="chevron-up" />
           </Button>
           <Button
             variant="ghost"
@@ -71,7 +72,7 @@ export default memo(function ConnectionInspector({
             aria-label="Close inspector"
             title="Close panel"
           >
-            <X />
+            <UiIcon name="close" />
           </Button>
         </div>
       </div>
@@ -126,7 +127,7 @@ export default memo(function ConnectionInspector({
             className="w-full justify-start text-muted-foreground hover:text-danger"
             onClick={() => onRemove([connection.id])}
           >
-            <Unplug />
+            <UiIcon name="unplug" />
             Remove connection
           </Button>
         </div>

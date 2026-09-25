@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "外观",
+    "description": "选择主题或跟随设备的外观设置。更改会立即生效。",
+    "themes": {
+      "light": "浅色",
+      "dim": "柔暗",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
   "language": {
     "title": "语言",
     "description": "选择整个仪表盘使用的语言。"
@@ -60,6 +70,7 @@
     }
   },
   "github": {
+    "tokenCreate": "创建令牌",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "已连接 · 尚无安装",
@@ -219,9 +230,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub 克隆凭据",
-    "description": "当未安装 GitHub App 时，用于克隆私有仓库的个人令牌",
+    "description": "个人访问私有仓库的凭据。",
     "loading": "加载中…",
-    "intro": "粘贴一个 GitHub 个人访问令牌（经典版或细粒度版）。克隆模块将其作为第二优先级凭据使用 —— 在所有按项目的覆盖设置之后，在 GitHub App 安装令牌之前。",
+    "intro": "项目专用令牌优先。启用后，此令牌会先于 GitHub App 凭据使用。关闭后，令牌仍会保留。",
     "placeholder": "ghp_… 或 github_pat_…",
     "showToken": "显示令牌",
     "hideToken": "隐藏令牌",
@@ -233,8 +244,12 @@
     "justNow": "刚刚",
     "replace": "替换",
     "clear": "清除",
-    "useAsDefault": "用作默认克隆令牌",
-    "useAsDefaultDesc": "开启时，克隆模块会将此令牌作为链中的第二层级使用（在按项目的覆盖设置之后）。关闭时，令牌会被存储但不使用 —— 如果你只想在特定部署中启用它，这会很方便。",
+    "useAsDefault": "默认使用",
+    "useAsDefaultDesc": "项目没有专用令牌时使用此令牌。",
+    "tokenLabel": "个人访问令牌",
+    "helpTitle": "令牌权限与使用说明",
+    "forwardGitLabel": "转发本地 GitHub 访问权限",
+    "forwardGitDesc": "通过 SSH 与远程构建服务器共享本地 GitHub 登录。",
     "toast": {
       "pasteFirst": "保存前请先粘贴一个令牌",
       "notLikeToken": "这看起来不像一个 GitHub 令牌。如果你确定，仍可保存。",

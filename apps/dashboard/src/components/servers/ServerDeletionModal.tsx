@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useId, useRef, useState } from "react";
-import { AlertTriangle, Boxes, Loader2, PowerOff, ServerOff } from "lucide-react";
 import { systemApi } from "@/lib/api/system";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { isResourceOutput, ServerResourceSchemas } from "@repo/contracts";
@@ -217,7 +218,7 @@ export const ServerDeletionModal = ({
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border/40 px-5 py-4">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-warning-border bg-warning-bg">
-            <AlertTriangle className="size-[18px] text-warning" />
+            <UiIcon name="warning" className="size-[18px] text-warning" />
           </div>
           <div className="min-w-0">
             <h3 id={titleId} className="text-[15px] font-semibold text-foreground">
@@ -231,7 +232,7 @@ export const ServerDeletionModal = ({
         <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
           {previewLoading ? (
             <div className="flex items-center gap-2 rounded-xl border border-border/30 bg-muted/10 px-3 py-2.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
               {copy.scanning}
             </div>
           ) : !preview ? (
@@ -249,7 +250,7 @@ export const ServerDeletionModal = ({
               {groups.projects.length > 0 && (
                 <div className="overflow-hidden rounded-xl border border-border/50">
                   <div className="flex items-center gap-2 bg-muted/15 px-3 py-2">
-                    <Boxes className="size-3.5 text-muted-foreground" />
+                    <UiIcon name="project" className="size-3.5 text-muted-foreground" />
                     <span className="text-xs font-medium text-foreground">
                       {interpolate(
                         groups.projects.length === 1 ? copy.projectsOne : copy.projectsOther,
@@ -266,7 +267,7 @@ export const ServerDeletionModal = ({
               {groups.apps.length > 0 && (
                 <div className="overflow-hidden rounded-xl border border-border/50">
                   <div className="flex items-center gap-2 bg-muted/15 px-3 py-2">
-                    <Boxes className="size-3.5 text-muted-foreground" />
+                    <UiIcon name="grid" className="size-3.5 text-muted-foreground" />
                     <span className="text-xs font-medium text-foreground">
                       {interpolate(groups.apps.length === 1 ? copy.appsOne : copy.appsOther, {
                         count: String(groups.apps.length),
@@ -291,7 +292,7 @@ export const ServerDeletionModal = ({
               {blocked ? (
                 <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
                   <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
-                    <ServerOff className="mt-0.5 size-3.5 shrink-0" />
+                    <UiIcon name="server-off" className="mt-0.5 size-3.5 shrink-0" />
                     {blocked === "unreachable" ? copy.destroyUnreachable : copy.destroyUnknown}
                   </p>
                 </div>
@@ -307,7 +308,7 @@ export const ServerDeletionModal = ({
                   />
                   <span className="min-w-0">
                     <span className="flex items-center gap-2">
-                      <PowerOff className="size-3.5 text-muted-foreground" />
+                      <UiIcon name="power" className="size-3.5 text-muted-foreground" />
                       <span className="text-sm font-medium text-foreground">
                         {copy.destroyLabel}
                       </span>
@@ -412,7 +413,7 @@ export const ServerDeletionModal = ({
                 : "bg-danger-solid text-white hover:bg-danger-solid/90"
             }`}
           >
-            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            {busy && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
             {destroyOnSource && !blocked ? copy.confirmDestroy : copy.confirm}
           </button>
         </div>

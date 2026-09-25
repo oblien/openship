@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
-import { Info, MonitorSmartphone, Shield } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { SettingsSection } from "./SettingsSection";
@@ -32,7 +33,7 @@ export function InstanceInfo() {
 
   return (
     <SettingsSection
-      icon={Info}
+      icon={"info"}
       title={t.settings.instance.title}
       description={
         isDesktop
@@ -47,7 +48,7 @@ export function InstanceInfo() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-            <MonitorSmartphone className="size-4 text-muted-foreground" />
+            <UiIcon name="devices" className="size-4 text-muted-foreground" />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">
@@ -65,7 +66,7 @@ export function InstanceInfo() {
         </div>
         <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-            <Shield className="size-4 text-muted-foreground" />
+            <UiIcon name="shield" className="size-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">

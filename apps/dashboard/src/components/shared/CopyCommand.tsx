@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { Check, Terminal } from "lucide-react";
 
 import { useI18n } from "@/components/i18n-provider";
 
@@ -52,10 +53,10 @@ export default function CopyCommand({
       aria-label={`${t.settings.common.copy}: ${command}`}
       className={`group inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1 font-mono text-[12.5px] text-foreground transition-colors hover:bg-muted/70 ${className}`}
     >
-      <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+      <UiIcon name="terminal" className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="truncate">{command}</span>
       {copied ? (
-        <Check className="size-3.5 shrink-0 text-success" />
+        <UiIcon name="check" className="size-3.5 shrink-0 text-success" />
       ) : (
         <span className="text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
           {t.settings.common.copy}

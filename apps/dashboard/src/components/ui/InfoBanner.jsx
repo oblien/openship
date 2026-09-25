@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Icon } from "@repo/ui/icons";
 
 const InfoBanner = ({ title, children, content, icon, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   // Support both children and content props for flexibility
   const bannerContent = content || children;
-  const bannerIcon = <Info className="w-5 h-5 text-indigo-600 flex-shrink-0" />;
+  const bannerIcon = <Icon name="info" className="w-5 h-5 text-indigo-600 flex-shrink-0" />;
 
   return (
     <div className="bg-indigo-50 rounded-[20px] border border-indigo-100 overflow-hidden">
@@ -21,9 +21,9 @@ const InfoBanner = ({ title, children, content, icon, defaultExpanded = false })
           <h4 className="text-sm font-semibold text-indigo-900">{title}</h4>
         </div>
         {expanded ? (
-          <ChevronUp className="w-5 h-5 text-indigo-600" />
+          <Icon name="chevron-up" className="w-5 h-5 text-indigo-600" />
         ) : (
-          <ChevronDown className="w-5 h-5 text-indigo-600" />
+          <Icon name="chevron-down" className="w-5 h-5 text-indigo-600" />
         )}
       </button>
       {expanded && bannerContent && (

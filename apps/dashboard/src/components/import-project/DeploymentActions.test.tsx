@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import { DEFAULT_CONFIG, INITIAL_STATE, createPublicEndpoint, normalizeComposeService, type DeploymentContextType } from "@/context/deployment/types";
 import { encodeLocalSlug } from "@/utils/repoSlug";
-import { DeploymentActions } from "./DeploymentActions";
+import { DeploymentActions, DeploymentConfigurationAction } from "./DeploymentActions";
 import { DeploymentHeader } from "./DeploymentHeader";
 import { getDeploymentSites } from "./deployment-sites";
 
@@ -183,7 +183,8 @@ describe("shared deployment controls", () => {
     await render(true);
     expect(host.querySelector("h1")?.textContent).toBe("Example");
     expect(host.querySelector('header nav a')?.getAttribute("href")).toBe("/projects/project/deployments");
-    expect(host.querySelector(`a[href^="/deploy/${encodeLocalSlug('/workspace/example')}"]`)).not.toBeNull();
     expect(host.querySelector("header")?.textContent).not.toContain("undefined/");
+    await act(async () => root.render(<DeploymentConfigurationAction />));
+    expect(host.querySelector(`a[href^="/deploy/${encodeLocalSlug('/workspace/example')}"]`)).not.toBeNull();
   });
 });

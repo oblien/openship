@@ -294,6 +294,8 @@
     "liveHitsWaiting": "في انتظار الطلبات…",
     "statusesUnclassified": "{count} بدون فئة حالة",
     "trafficTitle": "نظرة عامة على الحركة",
+    "dailyWindow": "٧ أيام، بما فيها اليوم (UTC)",
+    "currentHour": "الساعة الحالية · العد مستمر",
     "trafficSummary": "{count} طلب",
     "servicesMore": "+{count} أخرى",
     "servicesLess": "عرض أقل",

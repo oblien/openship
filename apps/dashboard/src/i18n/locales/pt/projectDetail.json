@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Visão Geral do Tráfego",
 			"last24Hours": "Últimas 24 horas",
-			"bar": "Barras",
+			"bar": "Colunas",
 			"area": "Área",
 			"loading": "Carregando análises...",
 			"noDataTitle": "Ainda não há dados de tráfego",
@@ -170,6 +170,7 @@
 			"startShellHint": "Inicie o serviço para abrir um shell.",
 			"saveEnvironment": "Salvar ambiente",
 			"environmentState": {
+				"helpTitle": "Como funcionam as variáveis de ambiente",
 				"description": "Guardadas no Openship. As substituições do serviço têm prioridade sobre o Compose e os valores partilhados do projeto. Editar um valor herdado cria uma substituição para este serviço.",
 				"sources": {
 					"service": "Substituição do serviço",

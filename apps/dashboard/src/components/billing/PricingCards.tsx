@@ -1,16 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import {
-  ArrowRight,
-  Building2,
-  Check,
-  Crown,
-  Loader2,
-  Rocket,
-  Sparkles,
-  Zap,
-} from "lucide-react";
 import type { PlanLimits, PlanTierId } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PlanResources } from "./PlanResources";
@@ -118,11 +110,11 @@ interface PricingCardsProps {
 /** Keyed by the full tier union so a new tier in the catalog is a compile
  *  error here rather than a card wearing another tier's icon. */
 const PLAN_ICON: Record<PlanTierId, React.ReactNode> = {
-  free: <Zap className="size-5" />,
-  starter: <Rocket className="size-5" />,
-  pro: <Crown className="size-5" />,
-  team: <Building2 className="size-5" />,
-  enterprise: <Sparkles className="size-5" />,
+  free: <UiIcon name="bolt" className="size-5" />,
+  starter: <UiIcon name="rocket" className="size-5" />,
+  pro: <UiIcon name="star" className="size-5" />,
+  team: <UiIcon name="building" className="size-5" />,
+  enterprise: <UiIcon name="sparkles" className="size-5" />,
 };
 
 function formatPrice(
@@ -237,7 +229,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
         const salesUrl = plan.price.monthly === null ? (plan.contactSales ?? null) : null;
         const isPaid = plan.price[interval] !== null && plan.price[interval]! > 0;
         const isSubscribing = subscribingPlan === plan.id;
-        const icon = PLAN_ICON[plan.id] ?? <Sparkles className="size-5" />;
+        const icon = PLAN_ICON[plan.id] ?? <UiIcon name="sparkles" className="size-5" />;
 
         return (
           <div
@@ -318,7 +310,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
                 >
                   {ui.ctaContact}
-                  <ArrowRight className="size-3.5 rtl:rotate-180" />
+                  <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                 </a>
               ) : plan.price.monthly === 0 ? (
                 <div className="flex h-10 w-full items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-medium text-muted-foreground">
@@ -336,11 +328,11 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                   }`}
                 >
                   {isSubscribing ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
                     <>
                       {interpolate(ui.ctaChoose, { name: plan.name })}
-                      <ArrowRight className="size-3.5 rtl:rotate-180" />
+                      <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                     </>
                   )}
                 </button>
@@ -365,11 +357,10 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                   key={feature}
                   className="flex items-start gap-2 text-[13px] text-foreground/80"
                 >
-                  <Check
+                  <UiIcon name="check"
                     className={`mt-0.5 size-3.5 shrink-0 ${
                       isPopular ? "text-primary" : "text-muted-foreground"
                     }`}
-                    strokeWidth={2.5}
                   />
                   <span>{feature}</span>
                 </li>

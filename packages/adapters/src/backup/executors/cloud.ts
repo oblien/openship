@@ -1,25 +1,27 @@
 /**
- * CloudBackupExecutor — backup primitives for Openship Cloud services
- * (services running on Oblien workspaces).
+ * Backup primitives for legacy native Cloud workspaces. Modern Cloud Docker
+ * services resolve to DockerBackupExecutor in the shared registry.
  *
- * Each compose service maps to its own Oblien workspace (see
- * CloudComposeSupport). The workspace disk IS the volume; there's no
- * separate mount concept. So:
- *   - listSources returns a single synthetic source: the workspace
- *     disk at `/app` (or a configurable path).
- *   - execStream / streamPath use `workspaces.exec` with streamStdout.
- *   - receiveStream pipes a tar stream into `tar -x` inside the workspace.
- *   - stopService / startService use workspace lifecycle.
- *
- * The CloudRuntime instance + Oblien client come in through the
- * factory at registration time, mirroring the Docker executor's
- * runtime-injection pattern.
+ * Capture uses CloudWorkspaceExecutor's binary command transport. Restore
+ * stages one private file through the SDK's tar.gz directory-upload endpoint,
+ * then invokes the same command/archive restore logic used on SSH hosts.
+ * Offline volume restore is unsupported: stopping the workspace stops the
+ * filesystem API too. The orchestrator refuses it before destructive work.
  */
 
 import { Readable } from "node:stream";
 import { shellQuote } from "@repo/core";
-import { randomBytes } from "node:crypto";
+import { createGzip } from "node:zlib";
+import { pipeline } from "node:stream/promises";
+import * as tarFs from "tar-fs";
+import {
+  backupShellCommand,
+  pipeRestoreCommand,
+  receiveCommandArchive,
+} from "../common/command-restore";
 import { CloudRuntime } from "../../runtime/cloud";
+import { CloudWorkspaceExecutor } from "../../runtime/cloud/workspace-executor";
+import { captureCommandOutput, CAPTURE_TIMEOUT_MS } from "../common/command-stream";
 import { safeDumpCommand } from "../common/dump-pipeline";
 import { registerExecutor } from "../registry";
 import type {
@@ -37,6 +39,7 @@ const DEFAULT_BACKUP_PATH = "/app";
 
 export class CloudBackupExecutor implements BackupExecutor {
   readonly runtimeName = "cloud" as const;
+  readonly supportsOfflineVolumeRestore = false;
 
   constructor(private readonly runtime: CloudRuntime) {}
 
@@ -65,119 +68,25 @@ export class CloudBackupExecutor implements BackupExecutor {
     opts?: ExecuteCommandOpts,
   ): Promise<{ stdout: Readable; awaitExit: Promise<ExecExitInfo> }> {
     if (!service.containerId) {
-      throw new Error(
-        `Cannot exec in cloud service ${service.name}: no workspace id`,
-      );
+      throw new Error(`Cannot exec in cloud service ${service.name}: no workspace id`);
     }
     const ws = this.client.workspace(service.containerId);
-    const rt = await ws.runtime();
-
-    // Oblien's ExecRunParams doesn't accept env or cwd directly — bake
-    // them into the shell command instead.
-    const fullCmd = this.composeShellCommand(cmd, opts);
-
-    // rt.exec.stream returns an AsyncGenerator<ExecStreamEvent>. Drive
-    // it from a background pump that pushes stdout bytes into our
-    // Readable and resolves awaitExit on the `exit` event.
-    //
-    // The pump HONOURS BACKPRESSURE, and that is #633 on this executor. The Docker
-    // executor's demuxer got the fix; this one is the third byte plane and kept the
-    // original bug: `new Readable({ read() {} })` with `stdout.push(...)`'s return value
-    // discarded is the same unbounded firehose docker-modem had — a dump produced faster
-    // than the destination accepts it accumulates in this Readable until the process
-    // dies. Worse here, because each event's payload is base64, so the transport hands us
-    // ~4/3 the bytes to hold.
-    //
-    // `for await` below is what makes the fix work: awaiting inside the loop suspends
-    // consumption of the event stream, so the pressure reaches the cloud transport
-    // instead of this heap.
-    let resumeRead: (() => void) | null = null;
-    const stdout = new Readable({
-      read() {
-        const resume = resumeRead;
-        resumeRead = null;
-        resume?.();
-      },
-    });
-    /** Push, and if the buffer is full, wait for the consumer to ask for more. */
-    const pushWithBackpressure = async (chunk: Buffer): Promise<void> => {
-      if (stdout.push(chunk)) return;
-      if (stdout.destroyed) return;
-      await new Promise<void>((resolve) => {
-        resumeRead = resolve;
+    // Reuse the workspace's binary-safe command transport and verified exit
+    // status. Backup-specific cancellation and idle bounds live in the same
+    // stream lifecycle as SSH captures.
+    const command = new CloudWorkspaceExecutor(() => ws.runtime());
+    try {
+      const child = await command.rawExec(backupShellCommand(cmd, opts), {
+        timeoutSeconds: Math.ceil((opts?.timeoutMs ?? CAPTURE_TIMEOUT_MS) / 1000),
       });
-    };
-    let stderrBuf = "";
-
-    const awaitExit = new Promise<ExecExitInfo>((resolve, reject) => {
-      const timer = opts?.timeoutMs
-        ? setTimeout(() => {
-            stdout.destroy(new Error(`exec timed out after ${opts.timeoutMs}ms`));
-            reject(new Error(`exec timed out after ${opts.timeoutMs}ms`));
-          }, opts.timeoutMs)
-        : null;
-
-      const stream = rt.exec.stream(fullCmd, {
-        ...(opts?.timeoutMs ? { timeoutSeconds: Math.ceil(opts.timeoutMs / 1000) } : {}),
-      });
-
-      const pump = async (): Promise<void> => {
-        try {
-          let exitCode = 0;
-          for await (const ev of stream) {
-            switch (ev.event) {
-              case "stdout":
-                await pushWithBackpressure(Buffer.from(ev.data, "base64"));
-                break;
-              case "stderr": {
-                const decoded = Buffer.from(ev.data, "base64").toString("utf8");
-                stderrBuf += decoded;
-                if (stderrBuf.length > 16 * 1024) {
-                  stderrBuf = stderrBuf.slice(-16 * 1024);
-                }
-                break;
-              }
-              case "exit":
-                exitCode = ev.exit_code ?? 0;
-                break;
-              default:
-                // task_id / output / unknown events — ignore.
-                break;
-            }
-          }
-          stdout.push(null);
-          if (timer) clearTimeout(timer);
-          resolve({ code: exitCode, stderr: stderrBuf });
-        } catch (err) {
-          if (timer) clearTimeout(timer);
-          stdout.destroy(err as Error);
-          reject(err);
-        } finally {
-          // Release a pump parked on the resume promise. Without this, a consumer that
-          // stops reading leaves the loop suspended forever, so the async generator is
-          // never finalized and the remote exec is never torn down.
-          const resume = resumeRead;
-          resumeRead = null;
-          resume?.();
-        }
-      };
-      void pump();
-    });
-
-    return { stdout, awaitExit };
-  }
-
-  /** Bake env + cwd into a shell command since Oblien's ExecRunParams
-   *  doesn't carry them. */
-  private composeShellCommand(cmd: string[], opts?: ExecuteCommandOpts): string[] {
-    const envPrefix = opts?.env
-      ? Object.entries(opts.env)
-          .map(([k, v]) => `${k}=${shellQuote(v)}`)
-          .join(" ") + " "
-      : "";
-    const cwdPrefix = opts?.cwd ? `cd ${shellQuote(opts.cwd)} && ` : "";
-    const quotedCmd = cmd.map((arg) => shellQuote(arg)).join(" ");
-    return ["sh", "-c", `${cwdPrefix}${envPrefix}${quotedCmd}`];
+      const capture = captureCommandOutput(child, opts);
+      const awaitExit = capture.awaitExit.finally(() => command.dispose());
+      void awaitExit.catch(() => {});
+      return { stdout: capture.stdout, awaitExit };
+    } catch (error) {
+      await command.dispose();
+      throw error;
+    }
   }
 
   async streamPath(
@@ -185,6 +94,11 @@ export class CloudBackupExecutor implements BackupExecutor {
     sourceId: string,
     opts?: StreamPathOpts,
   ): Promise<{ stdout: Readable; awaitExit: Promise<ExecExitInfo> }> {
+    if (opts?.quiesce) {
+      throw new Error(
+        "Quiesced volume backups require a Docker runtime; native Cloud workspaces cannot freeze a service for capture.",
+      );
+    }
     // Default to /app when sourceId matches DEFAULT_BACKUP_PATH; future
     // producers may pass specific db data paths (e.g. /var/lib/postgresql/data).
     const path = sourceId.startsWith("/") ? sourceId : DEFAULT_BACKUP_PATH;
@@ -194,10 +108,7 @@ export class CloudBackupExecutor implements BackupExecutor {
     // pattern like `foo; rm -rf /` would inject. shellEscape wraps in
     // single quotes — tar's glob handling is unchanged because it sees
     // the literal pattern bytes after the shell strips quotes.
-    const excludeArgs = (opts?.exclude ?? []).flatMap((p) => [
-      "--exclude",
-      shellQuote(p),
-    ]);
+    const excludeArgs = (opts?.exclude ?? []).flatMap((p) => ["--exclude", shellQuote(p)]);
     // Built by the shared helper so tar's exit status cannot hide behind the
     // compressor's — the same masking closed for the DB producers and the Docker volume
     // path. `gzip` needs no pipeline (tar compresses in-process via -z), so it passes
@@ -209,6 +120,7 @@ export class CloudBackupExecutor implements BackupExecutor {
     return this.execStream(
       service,
       safeDumpCommand(tarCmd, compression === "zstd" ? "zstd" : "none"),
+      { timeoutMs: opts?.timeoutMs, idleTimeoutMs: opts?.idleTimeoutMs },
     );
   }
 
@@ -219,37 +131,14 @@ export class CloudBackupExecutor implements BackupExecutor {
     opts?: ReceiveStreamOpts,
   ): Promise<{ bytesWritten: number }> {
     if (!service.containerId) {
-      throw new Error(
-        `Cannot restore to cloud service ${service.name}: no workspace id`,
-      );
+      throw new Error(`Cannot restore to cloud service ${service.name}: no workspace id`);
     }
-    const target = targetSourceId.startsWith("/") ? targetSourceId : DEFAULT_BACKUP_PATH;
-    const compression = opts?.compression ?? "zstd";
-    const ws = this.client.workspace(service.containerId);
-    const rt = await ws.runtime();
-
-    let bytesWritten = 0;
-    body.on("data", (chunk: Buffer) => {
-      bytesWritten += chunk.byteLength;
-    });
-
-    // rt.transfer.upload streams a tar.gz INTO the workspace. We pass
-    // body verbatim — Oblien handles the decompression on its end via
-    // the `compression` hint.
-    await rt.transfer.upload({
-      body: body as unknown as ReadableStream<Uint8Array>,
-      dest: target,
-      ...(opts?.clearTarget ? { clearTarget: true } : {}),
-      // Tar.gz vs tar.zst format hint — Oblien's transfer endpoint
-      // accepts both via Content-Type / compression param.
-      ...(compression === "zstd"
-        ? { compression: "zstd" }
-        : compression === "gzip"
-          ? { compression: "gzip" }
-          : {}),
-    } as Parameters<typeof rt.transfer.upload>[0]);
-
-    return { bytesWritten };
+    return receiveCommandArchive(
+      (cmd, stream, options) => this.pipeIntoCommand(service, cmd, stream, options),
+      targetSourceId,
+      body,
+      opts,
+    );
   }
 
   async pipeIntoCommand(
@@ -261,41 +150,48 @@ export class CloudBackupExecutor implements BackupExecutor {
     if (!service.containerId) {
       throw new Error(`Cannot exec in cloud service ${service.name}: no workspace id`);
     }
-    // Oblien's exec API doesn't carry stdin. Stage the bytes to a
-    // tmp file inside the workspace via rt.transfer.upload, then run
-    // the command reading from that file. Slightly less efficient than
-    // a true pipe but avoids needing a separate streaming-exec API.
     const ws = this.client.workspace(service.containerId);
-    const rt = await ws.runtime();
-    // Cryptographic RNG. Math.random is predictable enough that a
-    // concurrent attacker on the same workspace could race to either
-    // read or overwrite the staged bytes (a restore artifact contains
-    // every secret a service can decrypt). 12 hex chars = 48 bits of
-    // entropy, comfortably above the collision floor for a tmp path.
-    const tmpPath = `/tmp/openship-restore-stdin-${randomBytes(6).toString("hex")}`;
-
-    await rt.transfer.upload({
-      body: body as unknown as ReadableStream<Uint8Array>,
-      dest: tmpPath,
-    } as Parameters<typeof rt.transfer.upload>[0]);
-
-    // Wrap the user's command so its stdin reads from the tmp file,
-    // then unlink the file afterward.
-    const wrapped = `${this.composeShellCommand(cmd, opts).slice(2).join(" ")} < ${shellQuote(tmpPath)}; ec=$?; rm -f ${shellQuote(tmpPath)}; exit $ec`;
-    const result = await this.execStream(service, ["sh", "-c", wrapped]);
-    // Drain stdout to /dev/null — caller doesn't read it (the dump is
-    // already on disk; commands like pg_restore log to stderr anyway).
-    result.stdout.resume();
-    return result.awaitExit;
+    return pipeRestoreCommand(
+      {
+        run: async (command, options) => {
+          const capture = await this.execStream(service, ["sh", "-c", command], options);
+          capture.stdout.resume();
+          return capture.awaitExit;
+        },
+        stage: async (localDir, remoteDir, signal) => {
+          const rt = await ws.runtime();
+          signal.throwIfAborted();
+          // The SDK accepts only tar.gz extracted INTO a directory. Stage the
+          // original bytes as one private file, regardless of their own codec.
+          // Stream the wrapper; the build transfer helper buffers up to 500 MiB.
+          const archive = tarFs.pack(localDir, { entries: ["artifact.bin"] });
+          const compressed = createGzip();
+          const packing = pipeline(archive, compressed, { signal });
+          void packing.catch(() => {});
+          try {
+            const result = await rt.transfer.upload({
+              body: Readable.toWeb(compressed),
+              dest: remoteDir,
+            });
+            if (!result.files_extracted) throw new Error("Restore staging extracted no files");
+            await packing;
+          } finally {
+            archive.destroy();
+            compressed.destroy();
+            await packing.catch(() => {});
+          }
+        },
+      },
+      service.name,
+      cmd,
+      body,
+      opts,
+    );
   }
 
   async stopService(service: ServiceHandle): Promise<void> {
     if (!service.containerId) return;
-    try {
-      await this.client.workspaces.stop(service.containerId);
-    } catch {
-      // already stopped — idempotent
-    }
+    await this.client.workspaces.stop(service.containerId);
   }
 
   async startService(service: ServiceHandle): Promise<void> {
@@ -307,12 +203,8 @@ export class CloudBackupExecutor implements BackupExecutor {
 
   async isRunning(service: ServiceHandle): Promise<boolean> {
     if (!service.containerId) return false;
-    try {
-      const data = await this.client.workspaces.get(service.containerId);
-      return data.status === "running";
-    } catch {
-      return false;
-    }
+    const data = await this.client.workspaces.get(service.containerId);
+    return data.status === "running";
   }
 }
 registerExecutor("cloud", (runtime) => {

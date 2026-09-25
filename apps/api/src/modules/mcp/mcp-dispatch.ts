@@ -1,6 +1,8 @@
 import { app } from "../../app";
+import { SDK_SCOPE_HEADER } from "@repo/contracts";
+import { Value } from "@sinclair/typebox/value";
 import { internalClientHeader, internalSourceHeader } from "../../lib/call-source";
-import type { McpToolDef } from "./mcp-tools";
+import { McpOrganizationIdSchema, type McpToolDef } from "./mcp-tools";
 
 /**
  * Execute a tool by dispatching an internal request through the real Hono app.
@@ -13,6 +15,8 @@ export interface DispatchResult {
   status: number;
   ok: boolean;
   data: unknown;
+  /** Set only after a successful request authorized this explicit scope. */
+  organizationId?: string;
 }
 
 /**
@@ -43,6 +47,13 @@ export async function dispatchTool(
   bearerToken: string,
   origin: DispatchOrigin,
 ): Promise<DispatchResult> {
+  const orgId = args.organizationId;
+  if (orgId !== undefined && !Value.Check(McpOrganizationIdSchema, orgId)) {
+    return {
+      status: 400, ok: false,
+      data: { error: "organizationId must be a nonempty workspace ID from get_permissions_workspaces, without whitespace or control characters", code: "INVALID_ORGANIZATION_ID" },
+    };
+  }
   // Fill path params.
   let path = tool.path;
   for (const param of tool.pathParams) {
@@ -78,8 +89,12 @@ export async function dispatchTool(
   };
   if (origin.clientIp) headers["x-real-ip"] = origin.clientIp;
   if (origin.userAgent) headers["user-agent"] = origin.userAgent;
-  const orgId = args.organizationId;
-  if (typeof orgId === "string" && orgId) headers["x-organization-id"] = orgId;
+  if (typeof orgId === "string") {
+    headers["x-organization-id"] = orgId;
+    // Establish context before any operation runs, including shared operations
+    // that never consult the legacy collection-scope header themselves.
+    headers[SDK_SCOPE_HEADER] = "fixed";
+  }
 
   let body: string | undefined;
   if (tool.hasBody && args.body && typeof args.body === "object") {
@@ -98,5 +113,5 @@ export async function dispatchTool(
   } catch {
     /* non-JSON response — return the raw text */
   }
-  return { status: res.status, ok: res.ok, data };
+  return { status: res.status, ok: res.ok, data, ...(res.ok && typeof orgId === "string" ? { organizationId: orgId } : {}) };
 }

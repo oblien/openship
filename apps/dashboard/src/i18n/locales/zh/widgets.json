@@ -102,10 +102,12 @@
       "phase": {
         "queued": "正在等待工作节点……",
         "preparing": "正在解析目标位置和服务……",
-        "snapshotting": "正在生成制品（预处理钩子运行中）……",
+        "snapshotting": "正在准备备份数据……",
         "uploading": "正在流式传输到目标位置……",
         "verifying": "正在写入清单……"
-      }
+      },
+      "reconnecting": "正在重新连接进度…",
+      "reconnect": "重新连接"
     },
     "policyEditor": {
       "presetHourly": "每小时",
@@ -200,7 +202,32 @@
       "compressionNone": "无 — 不压缩",
       "compressionHint": "zstd 压缩率最佳；gzip 内置于每个镜像，无需下载，在无外网的主机上也可用。",
       "compressionAuto": "自动 — 使用服务已有的工具",
-      "summaryPath": "文件和文件夹"
+      "summaryPath": "文件和文件夹",
+      "quick": {
+        "contents": "备份内容",
+        "volumesTitle": "服务卷",
+        "volumesDescription": "连接到此服务的所有持久卷和绑定挂载。",
+        "selectedVolumesDescription": "仅备份高级选项中选定的卷。",
+        "databaseTitle": "{name} 数据",
+        "databaseDescription": "使用数据库自带的备份工具，确保数据一致性。",
+        "projectTitle": "项目数据",
+        "projectDescription": "备份各服务的数据库或持久卷。",
+        "filesDescription": "备份高级选项中选定的文件夹。",
+        "customDescription": "使用已配置的备份和恢复命令。",
+        "onDemand": "按需",
+        "onDemandHint": "需要时随时运行备份。",
+        "frequency": "备份时间",
+        "history": "备份历史",
+        "keepBackups": "最近 {count} 份备份",
+        "historyHint": "较旧的备份会自动清理。",
+        "customSchedule": "自定义计划",
+        "customRetention": "自定义保留设置",
+        "advancedHint": "备份方式、选定的卷、计划和钩子。",
+        "saveAndBackup": "保存并备份",
+        "invalidRetention": "请输入大于零的整数，或留空以保留所有备份。"
+      },
+      "incrementalLabel": "增量备份",
+      "incrementalHint": "仅上传更改的数据块。每个备份仍是完整的还原点；数据库导出节省的空间可能较少。"
     }
   },
   "cloud": {

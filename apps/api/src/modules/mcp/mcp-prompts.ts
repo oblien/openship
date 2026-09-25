@@ -30,8 +30,22 @@ interface PromptDef {
 
 /** Resolve a route (method + full path) to its generated MCP tool name. */
 function toolRef(method: string, path: string): string {
-  const t = getMcpTools().find((x) => x.method === method && x.path === path);
+  const t = getMcpTools().find((x) => x.method === method && x.path.replace(/\/+$/, "") === path.replace(/\/+$/, ""));
   return t ? t.name : `${method} ${path}`;
+}
+
+/** Shared by initialize and every guided flow, before any creation steps. */
+export function workspaceInstructions(workspace?: { organizationId: string | null; boundOrganizationId: string | null }): string {
+  return [
+    "Openship workspaces and workgroups are organizations in the API. Their workspace ID is organizationId. An Oblien runtime workspace and a project's groupId are different resources.",
+    ...(workspace?.organizationId ? [`Current organizationId: ${workspace.organizationId}.`] : []),
+    ...(workspace?.boundOrganizationId ? [`This credential is bound to organizationId ${workspace.boundOrganizationId}.`] : []),
+    `Before installing an app, creating a project, or deploying Compose, call ${toolRef("GET", "/api/permissions/workspaces")} with no arguments. It lists permitted workspace names and organizationId values, including empty workspaces, and reports the current workspace and credential restrictions.`,
+    "Match the user's requested workspace to that list. If several workspaces are available and the destination is unspecified or ambiguous, ask which one to use before creating resources. Never substitute the default when the requested workspace is unavailable.",
+    "Pass the chosen organizationId as a TOP-LEVEL argument alongside body/query on every tool call in the flow (scan, create/ensure, install, service changes, deploy and status). It is fixed scope for that call; no active-workspace switch is persisted. For an authenticated out-of-band upload, also send X-Organization-Id and X-Openship-Scope: fixed.",
+    "If boundOrganizationId is set, this credential only accesses that workspace. To use another, the user must authorize a connection or create a token in that workspace; passing a different ID cannot widen access.",
+    "organizationId selects the request's workspace; it does not move an existing app. Existing project transfer endpoints handle Cloud/self-hosted moves. Cross-workspace app transfer is not currently exposed through MCP.",
+  ].join("\n");
 }
 
 /**
@@ -154,7 +168,7 @@ export function getPrompt(
 ): { description: string; messages: unknown[] } | null {
   const prompt = PROMPTS.find((p) => p.name === name);
   if (!prompt) return null;
-  const text = `${prompt.build(args ?? {}, toolRef)}\n\n${BUG_REPORT}`;
+  const text = `${workspaceInstructions()}\n\n${prompt.build(args ?? {}, toolRef)}\n\n${BUG_REPORT}`;
   return {
     description: prompt.description,
     messages: [

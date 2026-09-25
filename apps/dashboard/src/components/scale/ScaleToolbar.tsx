@@ -1,23 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Database,
-  Download,
-  Layers3,
-  LayoutGrid,
-  MoreHorizontal,
-  Network,
-  Plus,
-  Redo2,
-  RotateCcw,
-  Settings2,
-  Undo2,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { ResourceIcon } from "./ResourceIcon";
@@ -52,7 +37,7 @@ function ClusterMenu({
       className="flex w-full items-center gap-3 rounded-xl p-3 text-start transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => onAdd(choice.id)}
     >
-      <Plus className="size-4 shrink-0 text-muted-foreground" />
+      <UiIcon name="plus" className="size-4 shrink-0 text-muted-foreground" />
       <span>
         <span className="block text-sm font-medium text-foreground">{choice.label}</span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -104,7 +89,7 @@ export function ResourceMenu({
           {RESOURCE_META[kind].paletteDescription}
         </span>
       </span>
-      <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+      <UiIcon name="plus" className="size-3.5 shrink-0 text-muted-foreground" />
     </button>
   );
 
@@ -117,13 +102,13 @@ export function ResourceMenu({
           aria-label="Back to node types"
           onClick={() => setDatabase(null)}
         >
-          <ChevronLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="chevron-left" className="size-4 text-muted-foreground rtl:rotate-180" />
           {DATABASE_ENGINES[database]}
         </button>
         <div className="space-y-2" role="group" aria-label={DATABASE_ENGINES[database]}>
           {(Object.keys(DATABASE_CATALOG[database].deployments) as DatabaseMode[]).map((mode) => {
             const deployment = DATABASE_CATALOG[database].deployments[mode];
-            const Icon = mode === "standalone" ? Database : Layers3;
+            const Icon = mode === "standalone" ? "database" : "layers";
             return (
               <button
                 key={mode}
@@ -139,7 +124,7 @@ export function ResourceMenu({
                 onClick={() => onAdd(database, mode)}
               >
                 <span className="scale-resource-icon flex size-9 shrink-0 items-center justify-center rounded-lg">
-                  <Icon className="size-4" />
+                  <UiIcon name={Icon} className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-foreground">
@@ -149,7 +134,7 @@ export function ResourceMenu({
                     {deployment.description}
                   </span>
                 </span>
-                <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                <UiIcon name="plus" className="size-3.5 shrink-0 text-muted-foreground" />
               </button>
             );
           })}
@@ -183,7 +168,7 @@ export function ResourceMenu({
                 {RESOURCE_META[kind].description}
               </span>
             </span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+            <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
           </button>
         ))}
       </div>
@@ -231,14 +216,14 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
             aria-label="Back to overview"
             title="Back to overview"
           >
-            <ArrowLeft className="rtl:rotate-180" />
+            <UiIcon name="arrow-left" className="rtl:rotate-180" />
             <span>
               <span className="scale-back-prefix">Back to </span>overview
             </span>
           </Button>
         ) : (
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/70">
-            <Network className="size-4" />
+            <UiIcon name="network" className="size-4" />
           </div>
         )}
         <div className="min-w-0 flex-1 pe-2">
@@ -274,7 +259,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
             aria-controls="scale-options"
             onClick={() => setMoreOpen(!moreOpen)}
           >
-            <MoreHorizontal />
+            <UiIcon name="more" />
           </Button>
           {moreOpen && (
             <div
@@ -285,8 +270,8 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
                 Local topology preview. No infrastructure changes.
               </p>
               {[
-                { label: "Export topology", Icon: Download, action: props.onExport },
-                { label: "Reset example", Icon: RotateCcw, action: props.onReset },
+                { label: "Export topology", Icon: "download" as const, action: props.onExport },
+                { label: "Reset example", Icon: "rotate-left" as const, action: props.onReset },
               ].map(({ label, Icon, action }) => (
                 <Button
                   variant="ghost"
@@ -297,7 +282,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
                     setMoreOpen(false);
                   }}
                 >
-                  <Icon />
+                  <UiIcon name={Icon} />
                   {label}
                 </Button>
               ))}
@@ -320,7 +305,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
             disabled={!props.canUndo}
             onClick={props.onUndo}
           >
-            <Undo2 />
+            <UiIcon name="undo" />
           </Button>
           <Button
             variant="ghost"
@@ -331,7 +316,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
             disabled={!props.canRedo}
             onClick={props.onRedo}
           >
-            <Redo2 />
+            <UiIcon name="forward" />
           </Button>
         </div>
         <span className="mx-1 h-5 w-px bg-border/70" aria-hidden="true" />
@@ -343,7 +328,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
           disabled={!props.hasNodes}
           onClick={props.onLayout}
         >
-          <LayoutGrid />
+          <UiIcon name="grid" />
         </Button>
         {props.cluster && (
           <Button
@@ -353,7 +338,7 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
             title="Cluster settings"
             onClick={props.onConfigureCluster}
           >
-            <Settings2 />
+            <UiIcon name="sliders" />
           </Button>
         )}
         <DismissiblePopover open={adding} onOpenChange={setAdding} className="ms-auto">
@@ -368,11 +353,11 @@ export function ScaleToolbar(props: ScaleToolbarProps) {
               directAddition ? props.onAddMember?.(directAddition.id) : setAdding(!adding)
             }
           >
-            <Plus />
+            <UiIcon name="plus" />
             {props.cluster && !directAddition ? (
               <>
                 Add<span className="scale-add-context"> to cluster</span>
-                <ChevronDown className="size-3.5" />
+                <UiIcon name="chevron-down" className="size-3.5" />
               </>
             ) : (
               addLabel

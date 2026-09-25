@@ -63,7 +63,7 @@ describe("CleanDeployProgressCard — installing", () => {
     // aside, so "no bar" no longer identifies the layout at all.
     expect(html).not.toContain("mx-auto max-w-2xl");
     // images done → check icon; services active → spinner
-    expect(html).toContain("lucide-circle-check");
+    expect(html).toContain("data-icon=\"check-circle\"");
     expect(html).toContain("animate-spin");
   });
 
@@ -142,7 +142,7 @@ describe("CleanDeployProgressCard — install progress readout", () => {
     });
     expect(text(html)).toContain("prod-vps");
     expect(text(html)).toContain("Live");
-    expect(html).toContain("lucide-check");
+    expect(html).toContain("data-icon=\"check\"");
     expect(html).not.toContain("animate-progress-sweep"); // no bar once it's settled
   });
 
@@ -354,8 +354,8 @@ describe("CleanDeployProgressCard — error", () => {
     // The in-flight phase settles to the neutral slash, not a spinner and not a
     // danger alert — a cancel is not a fault.
     expect(html).not.toContain("animate-spin");
-    expect(html).toContain("lucide-circle-slash");
-    expect(html).not.toContain("lucide-circle-alert");
+    expect(html).toContain("data-icon=\"ban\"");
+    expect(html).not.toContain("data-icon=\"alert-circle\"");
     expect(out).not.toContain("Failed");
   });
 
@@ -367,7 +367,7 @@ describe("CleanDeployProgressCard — error", () => {
       deploymentId: "dep_9",
     });
     expect(text(html)).toContain("Stopped at Starting services");
-    expect(html).toContain("lucide-circle-alert"); // the in-flight phase carries the fault
+    expect(html).toContain("data-icon=\"alert-circle\""); // the in-flight phase carries the fault
     expect(html).not.toContain("animate-spin");
   });
 
@@ -399,8 +399,8 @@ describe("CleanDeployProgressCard — error", () => {
     // The phase holding a failed service carries the fault, and `ready` is demoted
     // from done to unreached — an install that failed is not live.
     expect(out).toContain("Stopped at Starting services · 1 of 2 services ready");
-    expect(html).toContain("lucide-circle-slash"); // `ready`, unreached
-    expect(html).toContain("lucide-circle-alert"); // `services`, holding the failure
+    expect(html).toContain("data-icon=\"ban\""); // `ready`, unreached
+    expect(html).toContain("data-icon=\"alert-circle\""); // `services`, holding the failure
   });
 
   // A compose run can carry on past a failed phase (a partial image build still

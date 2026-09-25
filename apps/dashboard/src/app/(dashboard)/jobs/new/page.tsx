@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
 import { usePlatform } from "@/context/PlatformContext";
@@ -24,7 +25,7 @@ export default function NewJobPage() {
     <PageContainer>
       <div className="mb-6 flex items-center gap-3">
         <button onClick={() => router.push("/jobs")} className="flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted">
-          <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
         </button>
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{j.create.title}</h1>

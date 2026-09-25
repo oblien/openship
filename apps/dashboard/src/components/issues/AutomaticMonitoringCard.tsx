@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { AlertTriangle, ChevronDown, Loader2, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MonitoringHealthSnapshot } from "@/lib/api/issues";
 
@@ -30,7 +31,7 @@ export function AutomaticMonitoringCard({
           <div
             className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${watching ? "bg-success-bg text-success" : "bg-primary/10 text-primary"}`}
           >
-            <Power className="size-4" />
+            <UiIcon name="power" className="size-4" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +72,7 @@ export function AutomaticMonitoringCard({
             onClick={onToggle}
             disabled={busy || disabled}
           >
-            {busy ? <Loader2 className="animate-spin" /> : <Power />}
+            {busy ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="power" />}
             {busy ? "Saving…" : watching ? "Disable monitoring" : "Enable monitoring"}
           </Button>
         )}
@@ -79,7 +80,7 @@ export function AutomaticMonitoringCard({
       <details className="group border-t border-border/50">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 sm:px-5 [&::-webkit-details-marker]:hidden">
           Settings & details
-          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+          <UiIcon name="chevron-down" className="size-3.5 transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-2 px-4 pb-4 text-xs leading-relaxed text-muted-foreground sm:px-5">
           <p>
@@ -112,7 +113,7 @@ export function AutomaticMonitoringCard({
           role="alert"
           className="flex items-start gap-2 border-t border-danger-border bg-danger-bg px-5 py-3 text-xs text-danger"
         >
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
           <span>{error}</span>
         </div>
       )}

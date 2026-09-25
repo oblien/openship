@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Traffic Overview",
 			"last24Hours": "Last 24 hours",
-			"bar": "Bar",
+			"bar": "Columns",
 			"area": "Area",
 			"loading": "Loading analytics...",
 			"noDataTitle": "No traffic data yet",
@@ -177,6 +177,7 @@
 			"startShellHint": "Start the service to open a shell.",
 			"saveEnvironment": "Save environment",
 			"environmentState": {
+				"helpTitle": "How environment variables work",
 				"description": "Saved in Openship. Service overrides take precedence over Compose and shared project values. Editing an inherited value creates an override for this service.",
 				"sources": {
 					"service": "Service override",

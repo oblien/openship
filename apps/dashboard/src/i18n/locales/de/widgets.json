@@ -102,10 +102,12 @@
       "phase": {
         "queued": "Warten auf einen Worker…",
         "preparing": "Ziel + Dienst werden aufgelöst…",
-        "snapshotting": "Artefakte werden erzeugt (Pre-Hook läuft)…",
+        "snapshotting": "Datensicherung wird vorbereitet…",
         "uploading": "Streaming zum Ziel…",
         "verifying": "Manifest wird geschrieben…"
-      }
+      },
+      "reconnecting": "Fortschrittsverbindung wird wiederhergestellt…",
+      "reconnect": "Neu verbinden"
     },
     "policyEditor": {
       "presetHourly": "Stündlich",
@@ -200,7 +202,32 @@
       "compressionNone": "keine – ohne Komprimierung",
       "compressionHint": "zstd komprimiert am besten; gzip ist in jedem Image enthalten, benötigt also keinen Download und funktioniert auf einem Host ohne Internetzugang.",
       "compressionAuto": "Automatisch – nutzen, was der Dienst hat",
-      "summaryPath": "Dateien und Ordner"
+      "summaryPath": "Dateien und Ordner",
+      "quick": {
+        "contents": "Was gesichert wird",
+        "volumesTitle": "Dienst-Volumes",
+        "volumesDescription": "Alle persistenten Volumes und Bind-Mounts dieses Dienstes.",
+        "selectedVolumesDescription": "Nur die in den erweiterten Optionen ausgewählten Volumes.",
+        "databaseTitle": "{name}-Daten",
+        "databaseDescription": "Das eigene Sicherungswerkzeug der Datenbank sorgt für konsistente Daten.",
+        "projectTitle": "Projektdaten",
+        "projectDescription": "Die Datenbank oder persistenten Volumes jedes Dienstes sichern.",
+        "filesDescription": "Die in den erweiterten Optionen ausgewählten Ordner sichern.",
+        "customDescription": "Die konfigurierten Sicherungs- und Wiederherstellungsbefehle verwenden.",
+        "onDemand": "Bei Bedarf",
+        "onDemandHint": "Eine Sicherung starten, wann immer sie benötigt wird.",
+        "frequency": "Zeitpunkt der Sicherung",
+        "history": "Sicherungsverlauf",
+        "keepBackups": "Letzte {count} Sicherungen",
+        "historyHint": "Ältere Sicherungen werden automatisch gelöscht.",
+        "customSchedule": "Eigener Zeitplan",
+        "customRetention": "Eigene Aufbewahrung",
+        "advancedHint": "Sicherungsmethode, ausgewählte Volumes, Zeitpläne und Hooks.",
+        "saveAndBackup": "Speichern und sichern",
+        "invalidRetention": "Eine ganze Zahl größer als null eingeben oder leer lassen, um alle Sicherungen zu behalten."
+      },
+      "incrementalLabel": "Inkrementelle Sicherungen",
+      "incrementalHint": "Nur geänderte Blöcke hochladen. Jede Sicherung bleibt vollständig wiederherstellbar; Datenbankexporte sparen möglicherweise weniger Platz."
     }
   },
   "cloud": {

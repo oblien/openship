@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Which mail server the rail is scoped to — a compact row above the MAIL
  * section. In platform view /emails' own list view does this job; with the tabs
@@ -18,7 +20,6 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Check, ChevronsUpDown, Server } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { useMailScope } from "@/context/MailScopeContext";
@@ -70,14 +71,14 @@ export function MailServerSwitcher({ collapsed }: { collapsed: boolean }) {
         }`}
       >
         <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.08] text-foreground">
-          <Server className="size-3.5" strokeWidth={1.8} />
+          <UiIcon name="server" className="size-3.5" />
         </div>
         {!collapsed && (
           <>
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
               {activeLabel}
             </span>
-            <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+            <UiIcon name="chevrons-up-down" className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
           </>
         )}
       </button>
@@ -113,7 +114,7 @@ export function MailServerSwitcher({ collapsed }: { collapsed: boolean }) {
                       {s.completed ? s.host : t.chrome.mailRail.setupIncomplete}
                     </p>
                   </div>
-                  {isCurrent && <Check className="size-4 shrink-0 text-primary" />}
+                  {isCurrent && <UiIcon name="check" className="size-4 shrink-0 text-primary" />}
                 </Link>
               );
             })}

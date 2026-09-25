@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useMemo } from "react";
-import { ShieldCheck, Terminal, ShieldAlert, Server } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -43,13 +44,13 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
       value: "docker",
       label: t.deploy.runtime.sandboxedLabel,
       description: t.deploy.runtime.sandboxedDesc,
-      icon: <ShieldCheck className="size-5" />,
+      icon: <UiIcon name="shield-check" className="size-5" />,
     },
     {
       value: "bare",
       label: t.deploy.runtime.directLabel,
       description: t.deploy.runtime.directDesc,
-      icon: <Terminal className="size-5" />,
+      icon: <UiIcon name="terminal" className="size-5" />,
     },
   ];
 
@@ -80,7 +81,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
     <div className="space-y-3">
       <div>
         <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Server className="size-4 text-muted-foreground" />
+          <UiIcon name="server" className="size-4 text-muted-foreground" />
           {t.deploy.runtime.heading}
         </h3>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -134,7 +135,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
           safer option is already chosen). */}
       {selected === "bare" && (
         <div className="flex items-start gap-2.5 rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5">
-          <ShieldAlert className="size-4 text-warning shrink-0 mt-0.5" />
+          <UiIcon name="shield-alert" className="size-4 text-warning shrink-0 mt-0.5" />
           <p className="text-[12px] leading-relaxed text-warning">
             {lowRam ? t.deploy.runtime.caveatLowRam : t.deploy.runtime.caveat}
           </p>

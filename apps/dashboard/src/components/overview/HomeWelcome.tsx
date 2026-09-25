@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
-import { Plus, Github } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 /**
@@ -153,14 +154,14 @@ const HomeWelcome: React.FC = () => {
             href="/library"
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
           >
-            <Plus className="size-4" />
+            <UiIcon name="plus" className="size-4" />
             {t.overview.welcome.createProject}
           </Link>
           <Link
             href="/library"
             className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
-            <Github className="size-4" />
+            <UiIcon name="github" className="size-4" />
             {t.overview.welcome.importGithub}
           </Link>
         </div>

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
-import { Loader2, Pencil, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -82,7 +83,7 @@ export const ProjectRenameModal = ({ isOpen, onClose }: Props) => {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="size-10 shrink-0 rounded-xl bg-primary/15 flex items-center justify-center">
-              <Pencil className="size-4 text-primary" />
+              <UiIcon name="edit" className="size-4 text-primary" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-foreground">{c.title}</h3>
@@ -96,7 +97,7 @@ export const ProjectRenameModal = ({ isOpen, onClose }: Props) => {
             className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
             aria-label={c.cancel}
           >
-            <X className="size-4" />
+            <UiIcon name="close" className="size-4" />
           </button>
         </div>
 
@@ -147,7 +148,7 @@ export const ProjectRenameModal = ({ isOpen, onClose }: Props) => {
               disabled={!canSave}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {c.save}
             </button>
           </div>

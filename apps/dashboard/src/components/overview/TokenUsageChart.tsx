@@ -1,7 +1,8 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from 'react';
-import { TrendingUp, BarChart3 } from 'lucide-react';
 import { SlidingToggle } from '@/components/ui/SlidingToggle';
 import { TokenUsageData, ChartType, TimePeriod } from './types';
 import { useI18n, interpolate } from '@/components/i18n-provider';
@@ -165,8 +166,8 @@ const TokenUsageChart: React.FC<TokenUsageChartProps> = ({
             
             <SlidingToggle
               options={[
-                { value: 'bar', icon: <BarChart3 className="w-4 h-4" /> },
-                { value: 'area', icon: <TrendingUp className="w-4 h-4" /> },
+                { value: 'bar', icon: <UiIcon name="chart-bar" className="w-4 h-4" /> },
+                { value: 'area', icon: <UiIcon name="trending-up" className="w-4 h-4" /> },
               ]}
               value={chartType}
               onChange={(value) => setChartType(value as ChartType)}

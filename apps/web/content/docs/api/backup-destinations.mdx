@@ -181,6 +181,8 @@ The `:id` doesn't belong to your organization (or was deleted). List your destin
 | List backup storage destinations. | `backupDestinations.list()` | `GET /api/backup-destinations`<br />`backup_destination:list` |
 | Create a backup destination. | `backupDestinations.create(input)` | `POST /api/backup-destinations`<br />`backup_destination:write` |
 | Test destination configuration before saving it. | `backupDestinations.preflightDraft(input)` | `POST /api/backup-destinations/preflight`<br />`backup_destination:write` |
+| List backup history across storage destinations. | `backupDestinations.history(input?)` | `GET /api/backup-destinations/history`<br />`backup_destination:list` |
+| List backup runs stored in one destination. | `backupDestinations.runs(id, input?)` | `GET /api/backup-destinations/:id/runs`<br />`backup_destination:read` |
 | Read a destination with credentials protected. | `backupDestinations.get(id)` | `GET /api/backup-destinations/:id`<br />`backup_destination:read` |
 | Read destination storage usage. | `backupDestinations.usage(id)` | `GET /api/backup-destinations/:id/usage`<br />`backup_destination:read` |
 | Update destination settings. | `backupDestinations.update(id, input)` | `PATCH /api/backup-destinations/:id`<br />`backup_destination:write` |

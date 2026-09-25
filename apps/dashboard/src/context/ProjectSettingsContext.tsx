@@ -1,4 +1,5 @@
 "use client";
+import type { IconName } from "@repo/ui/icons";
 import React, {
   createContext,
   useContext,
@@ -224,7 +225,7 @@ interface ServicesData {
 interface ProjectTab {
   id: string;
   label: string;
-  icon: string;
+  icon: IconName;
   /** Sections keep their existing routes inside a shared navigation group. */
   sections?: { id: string; label: string }[];
 }
@@ -962,11 +963,11 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     const tl = t.projects.sidebar.tabs;
     const healthAvailable = selfHosted && projectData.deployTarget !== "cloud";
     return [
-      { id: "overview", label: tl.overview, icon: "setting-100-1658432731.png" },
-      { id: "topology", label: tl.topology, icon: "layers.png" },
-      { id: "services", label: tl.services, icon: "layers.png" },
-      { id: "domains", label: tl.domains, icon: "server-59-1658435258.png" },
-      { id: "deployments", label: tl.deployments, icon: "heart%20rate-118-1658433496.png" },
+      { id: "overview", label: tl.overview, icon: "chart-pie" },
+      { id: "topology", label: tl.topology, icon: "topology" },
+      { id: "services", label: tl.services, icon: "layers" },
+      { id: "domains", label: tl.domains, icon: "globe" },
+      { id: "deployments", label: tl.deployments, icon: "rocket" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via
       // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography
@@ -974,7 +975,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       {
         id: "monitoring",
         label: tl.monitoring,
-        icon: "chart-1658432731.png",
+        icon: "activity",
         // Incidents belong beside metrics. The health watch covers local/SSH
         // workloads; cloud monitoring continues to use its existing adapters.
         sections: healthAvailable ? [
@@ -985,18 +986,18 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       {
         id: "source",
         label: tl.sourceAndTriggers,
-        icon: "git%20branch-159-1658431404.png",
+        icon: "git-branch",
         sections: [
           { id: "source", label: tl.source },
           { id: "webhooks", label: tl.webhooks },
         ],
       },
-      { id: "logs", label: tl.logs, icon: "terminal-184-1658431404.png" },
-      { id: "backup", label: tl.backup, icon: "database.png" },
+      { id: "logs", label: tl.logs, icon: "file-text" },
+      { id: "backup", label: tl.backup, icon: "database-backup" },
       {
         id: "runtime",
         label: tl.settings,
-        icon: "setting-40-1662364403.png",
+        icon: "wrench",
         sections: [
           { id: "runtime", label: tl.runtime },
           { id: "advanced", label: tl.advanced },

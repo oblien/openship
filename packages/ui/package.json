@@ -9,11 +9,15 @@
       "types": "./src/index.tsx",
       "import": "./src/index.tsx"
     },
-    "./globals.css": "./src/globals.css"
+    "./globals.css": "./src/globals.css",
+    "./icons": {
+      "types": "./src/icons/index.ts",
+      "import": "./src/icons/index.ts"
+    }
   },
   "scripts": {
-    "build": "tsup src/index.tsx --format esm --dts --clean --external react --external react-dom",
-    "dev": "tsup src/index.tsx --format esm --dts --watch --external react --external react-dom",
+    "build": "tsup src/index.tsx src/icons/index.ts --format esm --dts --clean --external react --external react-dom",
+    "dev": "tsup src/index.tsx src/icons/index.ts --format esm --dts --watch --external react --external react-dom",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist .turbo node_modules"
   },

@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { ArrowUpRight, GitBranch, Layers3, MapPin, ShieldCheck } from "lucide-react";
 import { ResourceIcon } from "./ResourceIcon";
 import { getClusterTopology } from "./clusterTopology";
 import {
@@ -114,7 +115,7 @@ export const ResourceNode = memo(function ResourceNode({
             ))}
           </dl>
           <div className="flex items-center gap-1.5 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground">
-            <GitBranch className="size-3 shrink-0" />
+            <UiIcon name="git-branch" className="size-3 shrink-0" />
             <span>
               {topology.edges.length} replication {topology.edges.length === 1 ? "link" : "links"}
             </span>
@@ -125,18 +126,18 @@ export const ResourceNode = memo(function ResourceNode({
         </div>
       )}
       <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-3 text-xs text-muted-foreground/70">
-        <MapPin className="size-3" />
+        <UiIcon name="map-pin" className="size-3" />
         <span>{regionLabel}</span>
         {resource.kind === "edge" && (
           <span className="ms-auto inline-flex items-center gap-1">
-            <ShieldCheck className="size-3" />
+            <UiIcon name="shield-check" className="size-3" />
             {resource.tls ? "HTTPS" : "External TLS"}
           </span>
         )}
         {resource.kind === "service" && <span className="ms-auto">Stateless</span>}
         {topology && (
           <span className="ms-auto inline-flex items-center gap-1 tabular-nums">
-            <Layers3 className="size-3" />
+            <UiIcon name="layers" className="size-3" />
             {topology.nodes.length} members
           </span>
         )}
@@ -153,7 +154,7 @@ export const ResourceNode = memo(function ResourceNode({
           onDoubleClick={(event) => event.stopPropagation()}
         >
           Open cluster
-          <ArrowUpRight className="size-3.5" />
+          <UiIcon name="arrow-up-right" className="size-3.5" />
         </button>
       )}
       {resource.kind !== "postgres" && resource.kind !== "redis" && (

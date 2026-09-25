@@ -1,10 +1,4 @@
-import {
-  Server,
-  CheckCircle2,
-  Download,
-  Play,
-  RotateCcw,
-} from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { ComponentRow } from "./component-row";
 import type { ComponentState, SetupMode } from "./types";
 import { BlurIp } from "@/components/BlurIp";
@@ -38,7 +32,7 @@ export function ResultsPanel({
       <div className="bg-card rounded-2xl border border-border/50">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
           <div className="w-9 h-9 bg-info-bg rounded-xl flex items-center justify-center">
-            <Server className="size-[18px] text-info" />
+            <UiIcon name="server" className="size-[18px] text-info" />
           </div>
           <div>
             <h2 className="font-semibold text-foreground text-[15px]"><BlurIp>{serverHost}</BlurIp></h2>
@@ -79,7 +73,7 @@ export function ResultsPanel({
             onClick={onDone}
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
           >
-            <CheckCircle2 className="size-4" />
+            <UiIcon name="check-circle" className="size-4" />
             {t.servers.setup.doneGoToServers}
           </button>
         ) : mode === "auto" ? (
@@ -87,7 +81,7 @@ export function ResultsPanel({
             onClick={onAutoInstall}
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
           >
-            <Download className="size-4" />
+            <UiIcon name="download" className="size-4" />
             {t.servers.setup.installAllMissing}
           </button>
         ) : (
@@ -95,7 +89,7 @@ export function ResultsPanel({
             onClick={onManualContinue}
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
           >
-            <Play className="size-4" />
+            <UiIcon name="play" className="size-4" />
             {t.servers.setup.installMissingComponents}
           </button>
         )}
@@ -103,7 +97,7 @@ export function ResultsPanel({
           onClick={onRecheck}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
         >
-          <RotateCcw className="size-4" />
+          <UiIcon name="rotate-left" className="size-4" />
           {t.servers.setup.recheck}
         </button>
       </div>

@@ -32,6 +32,7 @@ async function serverAccess(ctx: ExecutionContext, kind: string, serverId: strin
 export const backupDestinationDependencies: BackupDestinationDependencies = {
   collection: {
     list: service.listDestinations,
+    history: (ctx, input) => result(() => service.listDestinationHistory(ctx, undefined, input), 500),
     async create(ctx, input) {
       await serverAccess(ctx, input.kind, input.serverId);
       const destination = await result(() => service.createDestination(ctx, input), 400);
@@ -51,8 +52,9 @@ export const backupDestinationDependencies: BackupDestinationDependencies = {
     },
   },
   resources: {
-    get: (ctx, id) => result(() => service.getDestination(ctx, id), 404),
-    usage: (ctx, id) => result(() => service.getDestinationUsage(ctx, id), 404),
+    get: (ctx, id) => result(() => service.getDestination(ctx, id), 500),
+    usage: (ctx, id) => result(() => service.getDestinationUsage(ctx, id), 500),
+    runs: (ctx, id, input) => result(() => service.listDestinationHistory(ctx, id, input), 500),
     async update(ctx, id, input) {
       const existing = await stored(ctx, id);
       await serverAccess(ctx, existing.kind, input.serverId !== undefined ? input.serverId : existing.serverId);

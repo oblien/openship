@@ -14,6 +14,7 @@ import type { BillingPlans } from "@repo/contracts";
 import type { OblienOffer, OblienSubscription } from "../../lib/oblien-billing-api";
 import { cloudNamespaceLimits } from "../../lib/cloud-resource-limits";
 import { fromOblienCredits, toOblienCredits } from "./billing-credit-units";
+import type { ResolvedPlanGrant } from "./billing-plan-grants";
 
 // Read compatibility for subscriptions sold before Openship owned its offers.
 // New checkouts never use these platform catalog IDs.
@@ -173,5 +174,17 @@ export async function cloudPlan(tier: PlanTierId, subscription?: OblienSubscript
     listPrice: { monthly: yearly ? null : offer.unitAmount },
     monthlyCredits: yearly ? null : fromOblienCredits(offer.credits),
     annualCredits: yearly ? fromOblienCredits(offer.credits) : null,
+  };
+}
+
+/** Display the saved grant as a zero-price plan, without a hosted subscription. */
+export function complimentaryCloudPlan(grant: ResolvedPlanGrant) {
+  const plan = presentCloudPlans().plans.find(item => item.id === grant.tier)!;
+  return {
+    ...plan, name: grant.offer.name, description: grant.offer.description ?? "",
+    limits: { ...grant.limits, workloads: [...grant.limits.workloads] },
+    features: [], inheritedFrom: null, campaign: null,
+    price: { monthly: 0, annual: null }, effectivePrice: { monthly: 0 }, listPrice: { monthly: 0 },
+    monthlyCredits: fromOblienCredits(grant.offer.credits), annualCredits: null,
   };
 }

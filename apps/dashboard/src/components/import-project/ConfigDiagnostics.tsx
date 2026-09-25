@@ -15,7 +15,6 @@
  * list items themselves come from the parser in @repo/core and are untranslated.
  */
 import React from "react";
-import { FileWarning } from "lucide-react";
 import WarningCallout from "@/components/shared/WarningCallout";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -34,7 +33,7 @@ export const ConfigDiagnostics: React.FC = () => {
 
   return (
     <WarningCallout
-      icon={FileWarning}
+      icon={"file-warning"}
       title={wholeFile ? cd.titleWholeFile : cd.title}
       description={wholeFile ? cd.descriptionWholeFile : cd.description}
     >

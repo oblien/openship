@@ -29,6 +29,7 @@ import {
 } from "@repo/platform/engine/lib/project-analytics";
 import { getAdminOblienClient } from "@repo/platform/engine/lib/oblien-user-client";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
+import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -74,13 +75,9 @@ async function fetchLiveBuckets(
 }
 
 /**
- * The live OpenResty tail is only the last few UNFLUSHED minutes — the DB
- * already holds every flushed minute (the real snapshot). The tail is fetched
- * over an SSH tunnel to the edge, which is slow/unreachable when the server is
- * remote (desktop mode) — and letting it block times out the WHOLE overview
- * (the "analytics request timed out, works after a huge time" symptom). Cap it
- * hard and fall back to the DB archive; a few missing seconds of live data is a
- * fair trade for an overview that always returns fast. Best-effort, never throws.
+ * Read unflushed counters within edge retention. Bound the remote read so an
+ * unreachable server cannot hold the archived chart hostage. A failed live read
+ * leaves the DB history available; the next refresh can pick up the live tail.
  */
 const LIVE_TAIL_TIMEOUT_MS = 3500;
 
@@ -171,6 +168,7 @@ export function buildHourlyPeriods(
   buckets: MgmtAnalyticsBucket[],
   fromMinute: number,
   toMinute: number,
+  window = { from: fromMinute * 60_000, to: (toMinute + 1) * 60_000 },
 ): AnalyticsPeriod[] {
   const hourly = new Map<
     number,
@@ -206,8 +204,8 @@ export function buildHourlyPeriods(
   const endHour = Math.floor(toMinute / 60);
 
   for (let hourKey = startHour; hourKey <= endHour; hourKey += 1) {
-    const hourStart = new Date(hourKey * 60 * 60_000);
-    const hourEnd = new Date((hourKey + 1) * 60 * 60_000);
+    const hourStart = new Date(Math.max(hourKey * 3_600_000, window.from));
+    const hourEnd = new Date(Math.min((hourKey + 1) * 3_600_000, window.to));
     const current = hourly.get(hourKey);
 
     periods.push({
@@ -252,15 +250,15 @@ function buildCloudHourlyPeriods(
 
   const periods: AnalyticsPeriod[] = [];
   const startHour = Math.floor(fromMs / 3_600_000);
-  const endHour = Math.floor(toMs / 3_600_000);
+  const endHour = Math.ceil(toMs / 3_600_000) - 1;
 
   for (let hourKey = startHour; hourKey <= endHour; hourKey += 1) {
     const bucketStartMs = hourKey * 3_600_000;
     const bucket = byHour.get(Math.floor(bucketStartMs / 1000));
 
     periods.push({
-      from: new Date(bucketStartMs).toISOString(),
-      to: new Date(bucketStartMs + 3_600_000).toISOString(),
+      from: new Date(Math.max(bucketStartMs, fromMs)).toISOString(),
+      to: new Date(Math.min(bucketStartMs + 3_600_000, toMs)).toISOString(),
       requests: bucket?.requests ?? 0,
       uniqueVisitors: bucket?.unique_visitors ?? 0,
       bandwidthIn: bucket?.bandwidth_in ?? 0,
@@ -466,9 +464,9 @@ export async function getAnalyticsOverview(
   // so a fresh or domain-less project renders a clean 0-state, not an error.
   if (sources.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
 
+  const toMs = to ? new Date(to).getTime() : Date.now();
+  const fromMs = from ? new Date(from).getTime() : toMs - 24 * 60 * 60 * 1000;
   if (sources.every((source) => source.kind === "cloud")) {
-    const toMs = to ? new Date(to).getTime() : Date.now();
-    const fromMs = from ? new Date(from).getTime() : toMs - 24 * 60 * 60 * 1000;
     const params = { from: fromMs, to: toMs, interval: "hour" as const };
     // Do NOT swallow a cloud fetch failure into an empty summary — that made an
     // upstream outage look identical to "no traffic" (zeros with a 200). Settle
@@ -488,7 +486,10 @@ export async function getAnalyticsOverview(
         "ANALYTICS_UPSTREAM_UNAVAILABLE",
       );
     }
-    const buckets = ok.flatMap((r) => r.value?.data ?? []);
+    const firstHour = Math.floor(fromMs / 3_600_000) * 3600;
+    const buckets = ok.flatMap((r) => r.value?.data ?? []).filter((bucket) =>
+      bucket.timestamp >= firstHour && bucket.timestamp * 1000 < toMs,
+    );
     // Reached the cloud, but it reported no traffic → genuine empty (200).
     if (buckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
     return {
@@ -498,27 +499,40 @@ export async function getAnalyticsOverview(
   }
 
   const now = Math.floor(Date.now() / 60_000);
-  const fromMinute = from ? Math.floor(new Date(from).getTime() / 60_000) : now - 1440;
-  const toMinute = to ? Math.floor(new Date(to).getTime() / 60_000) : now;
+  const fromMinute = Math.floor(fromMs / 60_000);
+  const toMinute = Math.ceil(toMs / 60_000) - 1;
   const selfHostedSources = sources.filter((source) => source.kind === "self-hosted");
   const bucketSets = await Promise.all(
     selfHostedSources.map(async ({ domain, serverId }) => {
-      // DB: flushed archive for the requested range.
-      const dbBuckets = await repos.analytics.queryBuckets({ serverId, domain, fromMinute, toMinute });
-      // Live OpenResty: unflushed tail (starts after the last persisted minute).
-      const lastDbMinute =
-        dbBuckets.length > 0 ? Math.max(...dbBuckets.map((b) => b.minute)) : fromMinute - 1;
-      const liveFrom = Math.max(lastDbMinute + 1, fromMinute);
+      // Read all retained, unflushed minutes, including holes BEFORE the latest
+      // DB row. Clamp to edge retention so a historical range cannot consume its
+      // 24-hour read cap before reaching the live tail.
+      const liveFrom = Math.max(now - 1440, fromMinute);
+      const liveTo = Math.min(now, toMinute);
       const liveBuckets =
-        liveFrom <= toMinute ? await fetchLiveBucketsBounded(serverId, domain, liveFrom, toMinute) : [];
-      return [...dbBuckets.map(toMgmtBucket), ...liveBuckets];
+        liveFrom <= liveTo ? await fetchLiveBucketsBounded(serverId, domain, liveFrom, liveTo) : [];
+      // Read the archive after the live snapshot: a concurrent scrape may have
+      // persisted some of that snapshot. One entry per minute prevents counting
+      // it twice, and the persisted row wins over a drained zero left at the edge.
+      const dbBuckets = await repos.analytics.queryBuckets({ serverId, domain, fromMinute, toMinute });
+      const merged = new Map(liveBuckets
+        .filter((bucket) => bucket.minute >= fromMinute && bucket.minute <= toMinute && bucket.requests > 0)
+        .map((bucket) => [bucket.minute, bucket]));
+      for (const bucket of dbBuckets) merged.set(bucket.minute, toMgmtBucket(bucket));
+      return [...merged.values()];
     }),
   );
   const allBuckets: MgmtAnalyticsBucket[] = bucketSets.flat();
+  // Viewing Overview also archives retained traffic on desktop, where a
+  // continuously running scheduler is not guaranteed. Start after the snapshot
+  // reads, and reuse the scraper's per-server throttle and in-flight request.
+  for (const serverId of new Set(selfHostedSources.map((source) => source.serverId))) {
+    void trackBackgroundWork(scrapeServerIfStale(serverId)).catch(() => {});
+  }
   if (allBuckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
   return {
     summary: summariseBuckets(allBuckets, new Date().toISOString()),
-    periods: buildHourlyPeriods(allBuckets, fromMinute, toMinute),
+    periods: buildHourlyPeriods(allBuckets, fromMinute, toMinute, { from: fromMs, to: toMs }),
   };
 }
 

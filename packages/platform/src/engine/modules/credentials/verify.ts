@@ -20,6 +20,7 @@
 import { safeErrorMessage, DOCKER_HUB_REGISTRY, type CredentialProvider } from "@repo/core";
 import { env } from "../../config/env";
 import { safeFetch, type SafeFetchResponse } from "../../lib/safe-fetch";
+import { trustedRegistryRealm } from "../../lib/registry-auth";
 
 export interface VerifyResult {
   ok: boolean;
@@ -120,7 +121,12 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
     const realm = /realm="([^"]+)"/i.exec(challenge)?.[1];
     const service = /service="([^"]+)"/i.exec(challenge)?.[1];
     if (!realm) return { ok: false, reason: `${registry} asked for a token but named no realm.` };
-    const url = new URL(realm);
+    let url: URL;
+    try {
+      url = trustedRegistryRealm(base, realm);
+    } catch {
+      return { ok: false, reason: `${registry} requested credentials at an untrusted authentication endpoint. Configure authentication on the registry origin.` };
+    }
     if (service) url.searchParams.set("service", service);
     // No `scope`: an empty scope yields a token proving only authentication, which is
     // exactly what is being verified. Asking for a repository scope would fail for a

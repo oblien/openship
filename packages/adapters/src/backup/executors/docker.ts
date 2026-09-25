@@ -35,6 +35,8 @@ import type {
   ServiceHandle,
   StreamPathOpts,
 } from "../types";
+import { watchArtifactConsumer } from "../common/artifact-stream";
+import { CAPTURE_IDLE_TIMEOUT_MS, CAPTURE_TIMEOUT_MS } from "../common/command-stream";
 
 const HELPER_IMAGE = "alpine:3";
 const BIND_PROBE_TARGET = "/__openship_bind_source";
@@ -71,10 +73,10 @@ const ARTIFACT_BUFFER_BYTES = 4 * 1024 * 1024;
  *  ReceiveStreamOpts.idleTimeoutMs for why idle and not wall-clock. Capture and
  *  restore share these on purpose: a wall-clock bound that a 50GB restore is
  *  allowed to blow through cannot be right for the backup that produced it. */
-const DEFAULT_HELPER_IDLE_MS = 10 * 60 * 1000;
+const DEFAULT_HELPER_IDLE_MS = CAPTURE_IDLE_TIMEOUT_MS;
 /** Last-resort ceiling behind the idle watchdog. Long enough that no honest
  *  transfer hits it, short enough that a stuck one is not forever. */
-const DEFAULT_HELPER_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_HELPER_TIMEOUT_MS = CAPTURE_TIMEOUT_MS;
 /** How often to ask the daemon directly whether the helper has exited. */
 const EXIT_POLL_INTERVAL_MS = 2000;
 /**
@@ -617,6 +619,10 @@ export class DockerBackupExecutor implements BackupExecutor {
     });
 
     if (!quiesceId) return handed;
+    const awaitExit = handed.awaitExit.finally(() =>
+      this.thaw(quiesceId, `backup of "${sourceId}"`),
+    );
+    void awaitExit.catch(() => {});
     return {
       stdout: handed.stdout,
       // Thaw when the copy is DONE, however it ends. `awaitExit` settles once the helper
@@ -624,9 +630,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       // to cover; unfreezing when `streamPath` returned would thaw before a single byte had
       // been read. The original promise is handed back so a caller still sees its value or
       // its rejection.
-      awaitExit: handed.awaitExit.finally(() =>
-        this.thaw(quiesceId, `backup of "${sourceId}"`),
-      ),
+      awaitExit,
     };
   }
 
@@ -1193,8 +1197,9 @@ export class DockerBackupExecutor implements BackupExecutor {
     if (!service.containerId) return;
     try {
       await this.dockerode.getContainer(service.containerId).stop({ t: 30 });
-    } catch {
-      // Already stopped or gone — idempotent.
+    } catch (error) {
+      const status = (error as { statusCode?: number }).statusCode;
+      if (status !== 304 && status !== 404) throw error;
     }
   }
 
@@ -1216,8 +1221,9 @@ export class DockerBackupExecutor implements BackupExecutor {
     try {
       const data = await this.dockerode.getContainer(service.containerId).inspect();
       return !!data.State?.Running;
-    } catch {
-      return false;
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return false;
+      throw error;
     }
   }
 
@@ -1304,6 +1310,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     // source would abandon a backup that is moving, just slowly, and call it wedged.
     // The destination accepting more bytes is exactly the evidence that it is not.
     stdout.on("drain", () => watchdog.touch());
+    const consumer = watchArtifactConsumer(stdout, label);
 
     const awaitExit = (async (): Promise<ExecExitInfo> => {
       const onEnd = new Promise<ExecExitInfo>((resolve, reject) => {
@@ -1332,7 +1339,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
       try {
         return await withTimeout(
-          Promise.race([onEnd, watchdog.promise]),
+          Promise.race([onEnd, watchdog.promise, consumer.promise]),
           timeoutMs,
           `${label} exceeded its ${Math.round(timeoutMs / 1000)}s ceiling and was abandoned.`,
         );
@@ -1350,6 +1357,7 @@ export class DockerBackupExecutor implements BackupExecutor {
         throw err;
       } finally {
         watchdog.dispose();
+        consumer.dispose();
       }
     })();
 
@@ -1408,14 +1416,20 @@ export class DockerBackupExecutor implements BackupExecutor {
     // removed container can no longer affect them.
     let sinksEnded = false;
     let exited = false;
+    let finishSinks!: () => void;
+    const sinksDone = new Promise<void>(resolve => { finishSinks = resolve; });
+    let removal: Promise<unknown> | undefined;
+    const reap = () => removal ??= container.remove({ force: true }).catch(() => {});
     const reapIfDone = () => {
       if (!sinksEnded || !exited) return;
-      void container.remove({ force: true }).catch(() => {});
+      void reap();
     };
     const endSinks = () => {
+      if (sinksEnded) return;
       stdout.end();
       stderrSink.end();
       sinksEnded = true;
+      finishSinks();
       reapIfDone();
     };
     stream.on("end", endSinks);
@@ -1443,6 +1457,9 @@ export class DockerBackupExecutor implements BackupExecutor {
       lastProgressAt = Date.now();
       watchdog.touch();
     });
+    const consumer = watchArtifactConsumer(stdout, opts.label);
+    const startedAt = Date.now();
+    let endBackstop: ReturnType<typeof setTimeout> | undefined;
 
     const awaitExit = (async (): Promise<ExecExitInfo> => {
       try {
@@ -1453,6 +1470,7 @@ export class DockerBackupExecutor implements BackupExecutor {
           timeoutMs: opts.timeoutMs,
           label: opts.label,
           note: "Nothing was written; the archive is incomplete and was not kept.",
+          cancelled: consumer.promise,
         });
         exited = true;
         // Backstop for an attach whose end/close is never delivered (it happens over
@@ -1483,20 +1501,28 @@ export class DockerBackupExecutor implements BackupExecutor {
         // `pending()` gate here is the load-bearing half and that guard is only a second
         // line of defence.
         const armEndBackstop = (): void => {
-          const timer = setTimeout(() => {
+          endBackstop = setTimeout(() => {
             if (sinksEnded) return;
             if (Date.now() - lastProgressAt < ATTACH_DRAIN_QUIET_MS || demux.pending()) {
               return armEndBackstop();
             }
             endSinks();
           }, ATTACH_DRAIN_QUIET_MS);
-          (timer as { unref?: () => void }).unref?.();
+          endBackstop.unref?.();
         };
-        armEndBackstop();
+        if (!sinksEnded) armEndBackstop();
+        // Helper exit alone does not mean its output has drained. Keep both
+        // cancellation and the watchdog alive until that handoff completes.
+        await withTimeout(
+          Promise.race([sinksDone, watchdog.promise, consumer.promise]),
+          Math.max(1, opts.timeoutMs - (Date.now() - startedAt)),
+          `${opts.label} exceeded its ${Math.round(opts.timeoutMs / 1000)}s ceiling while draining.`,
+        );
         reapIfDone();
         // `tar` can exit 0 having written an archive we could not read whole. The
         // helper's status describes the process, not the bytes.
         if (demuxError) throw demuxError;
+        await reap();
         return {
           code: res.StatusCode,
           stderr: Buffer.concat(stderrChunks)
@@ -1509,13 +1535,17 @@ export class DockerBackupExecutor implements BackupExecutor {
         // consumer learns via stdout as well as the rejection — it may be piping
         // the archive somewhere and never look at awaitExit until the end.
         stdout.destroy(err as Error);
-        void container.remove({ force: true }).catch(() => {});
+        destroyQuietly(stream as unknown as { destroy?: (err?: Error) => void });
+        await reap();
         throw err;
       } finally {
         watchdog.dispose();
+        consumer.dispose();
+        if (endBackstop) clearTimeout(endBackstop);
       }
     })();
 
+    void awaitExit.catch(() => {});
     return { stdout, awaitExit };
   }
 }

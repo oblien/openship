@@ -1,6 +1,7 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Checkbox } from "@/components/ui/Checkbox";
 
 /**
@@ -79,7 +80,7 @@ export function TagListInput({
             aria-label={removeLabel}
             className="shrink-0 rounded-sm text-muted-foreground/50 transition-colors hover:text-danger"
           >
-            <X className="size-3" />
+            <UiIcon name="close" className="size-3" />
           </button>
         </span>
       ))}

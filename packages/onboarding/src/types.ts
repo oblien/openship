@@ -10,6 +10,7 @@ export interface SystemSettings {
   sshKeyPath?: string;
   sshKeyPassphrase?: string;
   sshJumpHost?: string;
+  sshTransport?: "direct" | "cloudflare";
   sshArgs?: string;
 }
 
@@ -30,6 +31,7 @@ export interface SshPayload {
   passphrase?: string;
   port?: number;
   jumpHost?: string;
+  sshTransport?: "direct" | "cloudflare";
   sshArgs?: string;
 }
 
@@ -78,6 +80,7 @@ export interface SetupPayload {
   sshKeyPath?: string;
   sshKeyPassphrase?: string;
   sshJumpHost?: string;
+  sshTransport?: "direct" | "cloudflare";
   sshArgs?: string;
   tunnelProvider?: string;
   tunnelToken?: string;

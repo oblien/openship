@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * DraftProjectView — the focused screen shown for a project that has no
  * successful deployment yet (status: draft / failed / cancelled, i.e.
@@ -26,19 +28,8 @@
  * status pill (PROJECT_STATUS_META), and sidebar-style key/value rows.
  */
 
-import { useCallback, useEffect, useId, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Rocket,
-  Settings,
-  Trash2,
-  Github,
-  FolderCode,
-  Boxes,
-  Loader2,
-  Info,
-  ChevronDown,
-} from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { AppLogo } from "@/components/AppLogo";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
@@ -203,7 +194,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
               </div>
             ) : (
               <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
-                <Rocket className="size-4 text-primary" />
+                <UiIcon name="rocket" className="size-4 text-primary" />
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -221,14 +212,14 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                   onClick={handleDeploy}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  <Rocket className="size-4" />
+                  <UiIcon name="rocket" className="size-4" />
                   {hasSource ? t.projects.draft.deployNow : t.projects.draft.connectSource}
                 </button>
                 <button
                   onClick={goToConfig}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                 >
-                  <Settings className="size-4" />
+                  <UiIcon name="settings" className="size-4" />
                   {t.projects.draft.settings}
                 </button>
               </div>
@@ -258,7 +249,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             Source card beside them. Directly under the hero they pushed the
             attempts a whole card down the page; behind one press they cost a row. */}
         <SectionCard
-          icon={Info}
+          icon={"info"}
           title={t.projects.draft.detailsTitle}
           description={t.projects.draft.detailsDescription}
           collapsible
@@ -288,7 +279,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       {/* ── RIGHT COLUMN — source + delete ────────────────────────── */}
       <div className="space-y-5">
         <SectionCard
-          icon={isApp ? Boxes : hasRepoSource ? Github : FolderCode}
+          icon={isApp ? "window" : hasRepoSource ? "github" : "folder-code"}
           title={t.projects.draft.sourceTitle}
           description={t.projects.draft.sourceDescription}
         >
@@ -342,7 +333,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
 
         {/* Deletion requires confirmation, including drafts with failed attempts. */}
         <SectionCard
-          icon={Trash2}
+          icon={"trash"}
           title={t.projects.draft.deleteTitle}
           description={t.projects.draft.deleteDescription}
         >
@@ -358,7 +349,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                 disabled={deleting}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
               >
-                <Rocket className="size-4" />
+                <UiIcon name="rocket" className="size-4" />
                 {hasSource ? t.projects.draft.deployNow : t.projects.draft.connectSource}
               </button>
               <button
@@ -367,9 +358,9 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger-solid px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
                 {deleting ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                 )}
                 {t.projects.draft.delete}
               </button>
@@ -404,7 +395,7 @@ function SectionCard({
   collapsible = false,
   children,
 }: {
-  icon: ComponentType<{ className?: string }>;
+  icon: IconName;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -416,7 +407,7 @@ function SectionCard({
 
   const header = (
     <>
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <UiIcon name={Icon} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <h3 className="text-[14px] font-semibold leading-none text-foreground">{title}</h3>
         {description && open && (
@@ -438,7 +429,7 @@ function SectionCard({
           className={`group flex w-full items-start gap-2.5 text-start ${open ? "mb-4" : ""}`}
         >
           {header}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-all group-hover:text-foreground ${
               open ? "rotate-180" : ""
             }`}

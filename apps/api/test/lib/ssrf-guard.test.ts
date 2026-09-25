@@ -47,6 +47,9 @@ describe("isPrivateIp", () => {
 });
 
 describe("isBlockedHostname", () => {
+  it.each(["localhost.", "metadata.google.internal.", "169.254.169.254.", "127.0.0.1."])("rejects a terminal DNS dot: %s", host => {
+    expect(() => assertPublicHostLiteral(host)).toThrow(SsrfError);
+  });
   it("blocks loopback and internal-only suffixes", () => {
     for (const host of [
       "localhost",

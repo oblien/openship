@@ -10,6 +10,7 @@ export type RestoreRunEvent =
       type: "transition";
       status: BackupRestoreStatus;
       bytesRestored?: number | null;
+      meta?: BackupRestore["meta"];
     }
   | {
       type: "snapshot";

@@ -6,7 +6,6 @@
  * (blur IPs, hosts and env values for screen-shares); add future toggles as rows.
  */
 
-import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
 import { SettingsSection } from "./SettingsSection";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
@@ -17,7 +16,7 @@ export function PreferencesSetting() {
 
   return (
     <SettingsSection
-      icon={SlidersHorizontal}
+      icon={"sliders"}
       title="Preferences"
       description="Personal display preferences for this browser — nothing is sent to the server."
       collapsible

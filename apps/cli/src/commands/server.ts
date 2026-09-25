@@ -57,6 +57,7 @@ interface ConnOpts {
   keyPassphrase?: string;
   jumpHost?: string;
   sshArgs?: string;
+  sshTransport?: CreateServerInput["sshTransport"];
 }
 
 /** Map CLI connection flags to the API's ssh* request body. */
@@ -72,6 +73,7 @@ function connBody(o: ConnOpts): CreateServerInput {
     sshKeyPassphrase: o.keyPassphrase,
     sshJumpHost: o.jumpHost,
     sshArgs: o.sshArgs,
+    sshTransport: o.sshTransport,
   };
 }
 
@@ -116,7 +118,8 @@ server
   .option("--key-path <path>", "Path to private key (key auth)")
   .option("--key-passphrase <passphrase>", "Private key passphrase")
   .option("--jump-host <host>", "SSH jump / bastion host")
-  .option("--ssh-args <args>", "Extra raw ssh args")
+  .option("--ssh-transport <transport>", "SSH transport (direct|cloudflare)")
+  .option("--ssh-args <args>", "SSH connection tuning arguments")
   .action(
     guard(async (o: ConnOpts) => {
       const created = await getShipClient().servers.create(connBody(o));
@@ -153,7 +156,8 @@ server
   .option("--key-path <path>", "Path to private key")
   .option("--key-passphrase <passphrase>", "Private key passphrase")
   .option("--jump-host <host>", "SSH jump / bastion host")
-  .option("--ssh-args <args>", "Extra raw ssh args")
+  .option("--ssh-transport <transport>", "SSH transport (direct|cloudflare)")
+  .option("--ssh-args <args>", "SSH connection tuning arguments")
   .action(
     guard(async (o: ConnOpts) => {
       const spinner = isJsonMode() ? null : ora(`Connecting to ${o.host}…`).start();

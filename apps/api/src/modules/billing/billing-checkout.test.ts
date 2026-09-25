@@ -28,7 +28,11 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   }),
 }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ ensureNamespace: h.namespace }));
-vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
+  syncOblienEntitlement: h.sync,
+  withCloudBillingLock: async (orgId: string, work: (sync: (options: unknown) => Promise<unknown>) => Promise<unknown>) =>
+    work((options: unknown) => h.sync(orgId, options)),
+}));
 vi.mock("@repo/platform/engine/modules/billing/billing.repository", () => ({ listLiveSubscriptions: h.legacy }));
 import { createCheckoutSession, createTopupCheckoutSession, createPortalSession, cancelSubscription, resumeSubscription, listActiveCreditPacks } from "@repo/platform/engine/modules/billing/billing.service";
 import { presentCloudPlans, subscriptionPlan } from "@repo/platform/engine/modules/billing/billing-catalog";
@@ -63,6 +67,11 @@ beforeEach(() => {
   h.resume.mockImplementation(async (namespace) => ({ success: true, namespace, subscription: { ...subscription } }));
 });
 describe("Cloud customer checkout", () => {
+  it("does not create a paid checkout while a complimentary plan is active", async () => {
+    h.sync.mockResolvedValueOnce({ grant: { id: "bpg-test" } });
+    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "BILLING_COMPLIMENTARY_PLAN" });
+    expect(h.checkout).not.toHaveBeenCalled();
+  });
   it("publishes Openship prices and separate namespace allowances", () => {
     const plans = presentCloudPlans().plans.filter(
       (plan) => !["free", "enterprise"].includes(plan.id),

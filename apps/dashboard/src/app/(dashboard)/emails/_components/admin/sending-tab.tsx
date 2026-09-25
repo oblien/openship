@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Sending tab — the outbound path for a self-hosted mail server.
  *
@@ -34,7 +36,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Plus, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import {
   hasRelaySelection,
   implicitTlsUnsupported,
@@ -306,7 +307,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
           {mode === "direct" ? (
             <div className="rounded-2xl border border-border/50 bg-card p-5">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Send className="size-4 text-muted-foreground" strokeWidth={1.8} />
+                <UiIcon name="send" className="size-4 text-muted-foreground" />
                 {s.modeDirectTitle}
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{s.modeDirectDesc}</p>
@@ -318,7 +319,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                   onClick={() => setMode("relay")}
                   className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  <ShieldCheck className="size-4" strokeWidth={1.8} />
+                  <UiIcon name="shield-check" className="size-4" />
                   {s.setUpRelay}
                 </button>
               </div>
@@ -405,7 +406,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                                 aria-label={`${s.removeSender} ${a}`}
                                 className="text-muted-foreground transition-colors hover:text-danger"
                               >
-                                <X className="size-3.5" strokeWidth={2} />
+                                <UiIcon name="close" className="size-3.5" />
                               </button>
                             </span>
                           ))}
@@ -433,7 +434,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                           disabled={!isSenderAddress(addressDraft)}
                           className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
                         >
-                          <Plus className="size-4" strokeWidth={1.8} />
+                          <UiIcon name="plus" className="size-4" />
                           {s.addSender}
                         </button>
                       </div>
@@ -570,14 +571,14 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
 
             <div className="space-y-2">
               <PathOption
-                icon={<Send className="size-4" strokeWidth={1.8} />}
+                icon={<UiIcon name="send" className="size-4" />}
                 title={s.modeDirectTitle}
                 desc={s.modeDirectDesc}
                 active={mode === "direct"}
                 onClick={() => setMode("direct")}
               />
               <PathOption
-                icon={<ShieldCheck className="size-4" strokeWidth={1.8} />}
+                icon={<UiIcon name="shield-check" className="size-4" />}
                 title={current?.enabled || mode === "relay" ? spec.label : s.modeRelayTitle}
                 desc={s.modeRelayDesc}
                 active={mode === "relay"}
@@ -618,7 +619,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                   disabled={saving || !canSave}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
                   {current?.enabled ? s.update : s.save}
                 </button>
                 {current?.enabled && (
@@ -628,7 +629,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                     disabled={saving}
                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-bg/60 disabled:opacity-50"
                   >
-                    <Trash2 className="size-4" strokeWidth={1.8} />
+                    <UiIcon name="trash" className="size-4" />
                     {s.disable}
                   </button>
                 )}
@@ -642,7 +643,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                   disabled={saving}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-danger px-4 py-2.5 text-sm font-medium text-danger-foreground transition-colors hover:bg-danger/90 disabled:opacity-50"
                 >
-                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
                   {s.switchToDirect}
                 </button>
                 <p className="text-xs leading-relaxed text-warning">{s.switchToDirectHint}</p>
@@ -670,7 +671,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
               onClick={() => setTestOpen(true)}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
             >
-              <Send className="size-4" strokeWidth={1.8} />
+              <UiIcon name="send" className="size-4" />
               {sendTest.sendButton}
             </button>
           </div>
@@ -770,9 +771,9 @@ function IdentityEditor({
       >
         <span className="flex items-center gap-2 text-sm font-medium text-foreground">
           {open ? (
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-right" className="size-4 text-muted-foreground" />
           )}
           {domain}
           {isPrimary && (

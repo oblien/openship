@@ -49,6 +49,7 @@ need: a server with SSH access (Ubuntu, Debian, or similar) and an SSH key or pa
 | Field | Notes |
 |---|---|
 | **Server Name** | Optional label shown in the list and header. Leave blank to fall back to the host. |
+| **Connection** | **Direct SSH** or **Cloudflare Access**. |
 | **Server IP Address** | The host to connect to, e.g. `123.45.67.89`. Required. |
 | **Port** | SSH port; defaults to `22`. |
 | **Username** | SSH user; defaults to `root`. |
@@ -62,7 +63,16 @@ The **Authentication** control is a three-way toggle:
   here. The machine running Openship must already have access to the server.
 
 Under **Advanced** you can add a **Jump Host** (e.g. `user@bastion.example.com`) and **Extra SSH Arguments**
-(e.g. `-o StrictHostKeyChecking=no`).
+(e.g. `-o ConnectTimeout=30`). Only connection tuning options are accepted.
+
+For an existing Cloudflare Access SSH application, choose **Cloudflare Access** and enter its hostname,
+such as `ssh.example.com`. Password, encrypted private key, and agent authentication are supported.
+The SSH origin port is configured in Cloudflare Tunnel. Complete Cloudflare sign-in on the machine
+running OpenShip before testing the connection. Windows desktop bundles the verified `cloudflared`
+client; other installations need it on their PATH or configured through `OPENSHIP_CLOUDFLARED_PATH`.
+The saved connection is reused for setup, deployments, health checks, Docker, source transfers, terminals,
+and port forwarding. The server's **Open Cloudflare Access** link opens its Access application;
+a browser terminal is available there only if you enabled it in Cloudflare.
 
 Two buttons finish the form:
 

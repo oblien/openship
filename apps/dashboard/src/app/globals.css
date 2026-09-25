@@ -133,15 +133,10 @@
   opacity: 0.15;
   pointer-events: none;
 }
-/* Window-control glyphs are hand-drawn 12x12 strokes, unlike the lucide icons. */
+/* Window controls share the catalog while retaining their compact dimensions. */
 .app-titlebar-wc {
   width: 12px;
   height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 /* The ⋯ dropdown lives in a 44px bar, so its popup has to escape downward. */
 .app-titlebar-menu {
@@ -219,6 +214,8 @@
 
 @theme inline {
   --font-sans: 'Gellix', 'SF Arabic', system-ui, -apple-system, sans-serif;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
 }
 
 @layer base {

@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
-import { SearchX, Plus, GitBranch } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 interface EmptyStateProps {
@@ -16,7 +17,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ hasFilters }) => {
       <div className="bg-card rounded-2xl border border-border/50 p-16 text-center">
         <div className="max-w-md mx-auto">
           <div className="w-16 h-16 bg-muted/60 rounded-full flex items-center justify-center mx-auto mb-4 border border-border/50">
-            <SearchX className="w-7 h-7 text-muted-foreground/50" />
+            <UiIcon name="search-x" className="w-7 h-7 text-muted-foreground/50" />
           </div>
           <h3 className="text-lg font-medium text-foreground/80 mb-2">{t.deployments.empty.filtered.title}</h3>
           <p className="text-sm text-muted-foreground leading-relaxed">
@@ -85,14 +86,14 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ hasFilters }) => {
           href="/library"
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.deployments.empty.none.deployButton}
         </Link>
         <Link
           href="/library"
           className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
         >
-          <GitBranch className="size-4" />
+          <UiIcon name="git-branch" className="size-4" />
           {t.deployments.empty.none.browseButton}
         </Link>
       </div>

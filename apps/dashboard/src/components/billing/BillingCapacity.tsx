@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, Clock3, Cloud, Cpu, FolderOpen, Globe2, Layers3, MemoryStick } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { PLANS, RESOURCE_TIER_SPECS, formatCpuCores, formatMemoryMb } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
@@ -22,10 +23,10 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const spec = state.maxServiceMachine === undefined
     ? (limits.maxResourceTier ? RESOURCE_TIER_SPECS[limits.maxResourceTier] : null) : state.maxServiceMachine;
   const rows = [
-    { label: copy.projects, hint: copy.projectsHint, meter: cap?.projects ?? { used: null, max: limits.maxProjects }, Icon: FolderOpen },
-    { label: copy.apps, hint: copy.appsHint, meter: cap?.services ?? { used: null, max: limits.runningServices }, Icon: Layers3 },
-    { label: copy.buildTime, hint: copy.buildHint, meter: cap?.buildMinutes ?? { used: state.buildTimeMinutes, max: limits.buildMinutesPerMonth }, unit: t.billing.header.min, Icon: Clock3 },
-    { label: t.billing.capacity.routes, hint: copy.routesHint, meter: cap?.routes ?? { used: null, max: limits.freeSubdomains }, Icon: Globe2 },
+    { label: copy.projects, hint: copy.projectsHint, meter: cap?.projects ?? { used: null, max: limits.maxProjects }, Icon: "folder-open" as const },
+    { label: copy.apps, hint: copy.appsHint, meter: cap?.services ?? { used: null, max: limits.runningServices }, Icon: "layers" as const },
+    { label: copy.buildTime, hint: copy.buildHint, meter: cap?.buildMinutes ?? { used: state.buildTimeMinutes, max: limits.buildMinutesPerMonth }, unit: t.billing.header.min, Icon: "clock" as const },
+    { label: t.billing.capacity.routes, hint: copy.routesHint, meter: cap?.routes ?? { used: null, max: limits.freeSubdomains }, Icon: "globe" as const },
   ];
   const percent = cloudUsagePercent(state);
   const unlimited = hasUnlimitedCloudCredits(state);
@@ -38,10 +39,10 @@ export function BillingCapacity({ state }: { state: BillingState }) {
         <h2 className="text-lg font-semibold tracking-tight text-foreground">{noPlan ? copy.noPlan : copy.includedTitle}</h2>
         <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">{noPlan ? onboarding.workspaceDescription : t.billing.resourceOverview.overviewHint}</p>
       </div>
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground"><Cloud className="size-5" aria-hidden="true" /></div>
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground"><UiIcon name="cloud" className="size-5" aria-hidden="true" /></div>
     </div>
     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {rows.map(({ meter, Icon, ...row }) => <ResourceMeter key={row.label} {...row} {...meter} noPlan={noPlan} icon={<Icon className="size-4" aria-hidden="true" />} />)}
+      {rows.map(({ meter, Icon, ...row }) => <ResourceMeter key={row.label} {...row} {...meter} noPlan={noPlan} icon={<UiIcon name={Icon} className="size-4" aria-hidden="true" />} />)}
     </div>
     {noPlan ? <>
       {savedProjects > 0 && <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{interpolate(onboarding.savedProjects, { count: number(savedProjects) })}</p>}
@@ -54,8 +55,8 @@ export function BillingCapacity({ state }: { state: BillingState }) {
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-muted/20 px-4 py-3.5">
         <MetricLabel label={copy.machine} hint={copy.machineHint} />
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium tabular-nums text-foreground">
-          <span className="inline-flex items-center gap-2"><Cpu className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatCpuCores(spec.cpuCores) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
-          <span className="inline-flex items-center gap-2"><MemoryStick className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatMemoryMb(spec.memoryMb) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
+          <span className="inline-flex items-center gap-2"><UiIcon name="cpu" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatCpuCores(spec.cpuCores) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
+          <span className="inline-flex items-center gap-2"><UiIcon name="memory" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatMemoryMb(spec.memoryMb) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
         </div>
       </div>
       {resetAt && Number.isFinite(resetAt.getTime()) && <p className="mt-3 text-xs text-muted-foreground">{interpolate(copy.reset, {
@@ -76,7 +77,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
         </div>
         <details className="group mt-4 text-xs">
           <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
-            {copy.usageDetails}<ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
+            {copy.usageDetails}<UiIcon name="chevron-down" className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
           <div className="mt-3 rounded-xl bg-muted/30 p-4 leading-relaxed text-muted-foreground">
             <p className="font-medium tabular-nums text-foreground">{unlimited ? copy.unlimited : `${formatMilliCredits(state.balance.quotaRemaining, locale)} ${t.billing.overview.creditsLeft}`}</p>

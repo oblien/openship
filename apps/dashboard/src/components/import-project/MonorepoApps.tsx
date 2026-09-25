@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Monorepo deploy form.
  *
@@ -12,7 +14,6 @@
  */
 
 import React, { useCallback, useState } from "react";
-import { Boxes, ChevronDown, ChevronRight, ChevronUp, Code2, Layers, Settings2 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { MonorepoAppProvider } from "@/context/deployment/MonorepoAppProvider";
@@ -71,7 +72,7 @@ const WorkspaceCard: React.FC = () => {
       <div className="px-5 py-5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Layers className="w-4 h-4 text-primary" />
+            <UiIcon name="layers" className="w-4 h-4 text-primary" />
           </div>
           <div>
             <h3 className="text-[15px] font-semibold text-foreground">{w.title}</h3>
@@ -181,9 +182,9 @@ const AppCard: React.FC<{ app: MonorepoAppConfig; index: number }> = ({ app, ind
           aria-label={expanded ? a.collapse : a.expand}
         >
           {expanded ? (
-            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="w-4 h-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-muted-foreground rtl:rotate-180" />
+            <UiIcon name="chevron-right" className="w-4 h-4 text-muted-foreground rtl:rotate-180" />
           )}
         </button>
 
@@ -241,8 +242,8 @@ const AppCard: React.FC<{ app: MonorepoAppConfig; index: number }> = ({ app, ind
 };
 
 const MONOREPO_MODE_OPTIONS = [
-  { id: "services" as const, icon: Layers },
-  { id: "single" as const, icon: Code2 },
+  { id: "services" as const, icon: "layers" as const },
+  { id: "single" as const, icon: "code" as const },
 ];
 
 const MonorepoApps: React.FC = () => {
@@ -283,7 +284,7 @@ const MonorepoApps: React.FC = () => {
       <div className="bg-card rounded-2xl border border-border/50 px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Boxes className="w-4 h-4 text-primary" />
+            <UiIcon name="grid" className="w-4 h-4 text-primary" />
           </div>
           <div className="flex-1">
             <h3 className="text-[15px] font-semibold text-foreground">
@@ -341,7 +342,7 @@ const MonorepoApps: React.FC = () => {
         >
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-xl bg-muted/40">
-              <Settings2 className="size-4 text-muted-foreground" />
+              <UiIcon name="sliders" className="size-4 text-muted-foreground" />
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">{mr.deploymentMode}</p>
@@ -351,9 +352,9 @@ const MonorepoApps: React.FC = () => {
             </div>
           </div>
           {modeOptionsOpen ? (
-            <ChevronUp className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
           )}
         </button>
 
@@ -383,7 +384,7 @@ const MonorepoApps: React.FC = () => {
                           : "bg-muted text-muted-foreground",
                       )}
                     >
-                      <Icon className="size-4" />
+                      <UiIcon name={Icon} className="size-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-medium">{modeText[option.id].label}</span>

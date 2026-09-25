@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { forwardRef } from "react";
-import { Check, Minus } from "lucide-react";
 
 export interface CheckboxProps {
   /** Controlled checked state. */
@@ -112,9 +113,9 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
         {...rest}
       >
         {checked === "indeterminate" ? (
-          <Minus className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
+          <UiIcon name="minus" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
         ) : checked === true ? (
-          <Check className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
+          <UiIcon name="check" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
         ) : null}
       </button>
     );

@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, RotateCcw } from "lucide-react";
 import { managedNetworkInProgress, managedNetworkSteps } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -83,9 +84,9 @@ export function NetworkSetupCleanup({
               className="h-auto min-h-10 max-w-full whitespace-normal py-2"
             >
               {busy ? (
-                <Loader2 className="size-4 animate-spin" />
+                <UiIcon name="spinner" className="size-4 animate-spin" />
               ) : (
-                <RotateCcw className="size-4" />
+                <UiIcon name="rotate-left" className="size-4" />
               )}
               {m.retryCleanup}
             </Button>
@@ -97,9 +98,9 @@ export function NetworkSetupCleanup({
             className="h-auto min-h-10 max-w-full whitespace-normal py-2"
           >
             {disabled ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <RotateCcw className="size-4" />
+              <UiIcon name="rotate-left" className="size-4" />
             )}
             {m.retryPreparation}
           </Button>

@@ -1,16 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import {
-  ArrowDown,
-  CheckCircle2,
-  ChevronDown,
-  Circle,
-  CircleAlert,
-  Loader2,
-  Minus,
-  PauseCircle,
-} from "lucide-react";
 import type { SetupLog, SetupStepProgress, ManagedNetworkStepId } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -87,14 +79,14 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
         ).length;
         const complete = host.steps.length > 0 && done === host.steps.length;
         const Icon = failed
-          ? CircleAlert
+          ? "alert-circle"
           : running && current
-            ? Loader2
+            ? "spinner"
             : stopped
-              ? PauseCircle
+              ? "pause-circle"
               : complete
-                ? CheckCircle2
-                : Circle;
+                ? "check-circle"
+                : "circle";
         const open =
           expanded[host.serverId] ??
           (!initiallyCollapsed && (hosts.length <= 3 || host.serverId === hosts[0]?.serverId));
@@ -112,7 +104,7 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
                 aria-controls={`network-steps-${host.serverId}`}
                 onClick={() => setExpanded((old) => ({ ...old, [host.serverId]: !open }))}
               >
-                <Icon
+                <UiIcon name={Icon}
                   aria-hidden="true"
                   className={`size-5 shrink-0 ${failed ? "text-danger" : complete ? "text-success" : "text-muted-foreground"} ${running && current && !failed ? "animate-spin" : ""}`}
                 />
@@ -145,7 +137,7 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
                             })}
                   </span>
                 </span>
-                <ChevronDown
+                <UiIcon name="chevron-down"
                   aria-hidden="true"
                   className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
                 />
@@ -164,16 +156,16 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
                     step.status === "running" && !running ? "interrupted" : step.status;
                   const StepIcon =
                     effective === "completed"
-                      ? CheckCircle2
+                      ? "check-circle"
                       : effective === "failed"
-                        ? CircleAlert
+                        ? "alert-circle"
                         : effective === "running"
-                          ? Loader2
+                          ? "spinner"
                           : effective === "interrupted"
-                            ? PauseCircle
+                            ? "pause-circle"
                             : effective === "skipped"
-                              ? Minus
-                              : Circle;
+                              ? "minus"
+                              : "circle";
                   return (
                     <li
                       key={step.id}
@@ -181,7 +173,7 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
                       aria-current={effective === "running" ? "step" : undefined}
                     >
                       <div className="flex items-center gap-2.5">
-                        <StepIcon
+                        <UiIcon name={StepIcon}
                           aria-hidden="true"
                           className={`size-4 shrink-0 ${effective === "completed" ? "text-success" : effective === "failed" ? "text-danger" : effective === "running" ? "animate-spin text-primary" : "text-muted-foreground/45"}`}
                         />
@@ -219,9 +211,9 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
         >
           <span className="flex-1 text-sm font-semibold">{m.logs}</span>
           {running && (
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
+            <UiIcon name="spinner" className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
           )}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             aria-hidden="true"
             className={`size-4 text-muted-foreground transition-transform ${logsOpen ? "rotate-180" : ""}`}
           />
@@ -268,7 +260,7 @@ export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
             onClick={() => setFollow(true)}
             className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background"
           >
-            <ArrowDown className="size-3.5" />
+            <UiIcon name="arrow-down" className="size-3.5" />
             {m.jumpLatest}
           </button>
         )}

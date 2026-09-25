@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Home, RefreshCw, AlertCircle } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n } from "@/components/i18n-provider";
 import { ResourceNotFound } from "@/components/resource-not-found";
@@ -15,20 +16,20 @@ export const ProjectNotFound: React.FC = () => {
   return (
     <div className="flex min-h-[500px] items-center justify-center p-6">
       <ResourceNotFound
-        icon={<AlertCircle className="size-8 text-danger" strokeWidth={2} />}
+        icon={<UiIcon name="alert-circle" className="size-8 text-danger" />}
         title={nf.title}
         description={nf.subtitle}
         actions={[
           {
             label: nf.dashboard,
-            icon: <Home className="size-4" />,
+            icon: <UiIcon name="home" className="size-4" />,
             onClick: () => {
               window.location.href = "/";
             },
           },
           {
             label: nf.reload,
-            icon: <RefreshCw className="size-4" />,
+            icon: <UiIcon name="refresh" className="size-4" />,
             variant: "secondary",
             onClick: () => window.location.reload(),
           },

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Team-mode migration wizard. Promotes a single_user instance into a
  * multi-user deployment via one of three paths:
@@ -17,19 +19,6 @@
 
 import { useEffect, useState } from "react";
 import { BlurIp } from "@/components/BlurIp";
-import {
-  Cloud,
-  Loader2,
-  Network,
-  Server,
-  X,
-  CheckCircle2,
-  AlertCircle,
-  ChevronRight,
-  ChevronLeft,
-  ExternalLink,
-  Plus,
-} from "lucide-react";
 import { migrationApi, systemApi, getApiErrorMessage } from "@/lib/api";
 import type {
   DomainChoice,
@@ -226,7 +215,7 @@ function ModalHeader({
           className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50"
           title={t.settings.migrate.back}
         >
-          <ChevronLeft className="size-4 rtl:rotate-180" />
+          <UiIcon name="chevron-left" className="size-4 rtl:rotate-180" />
         </button>
       )}
       <h2 className="text-base font-semibold text-foreground flex-1">{title}</h2>
@@ -237,7 +226,7 @@ function ModalHeader({
         className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-50"
         title={t.settings.common.close}
       >
-        <X className="size-4" />
+        <UiIcon name="close" className="size-4" />
       </button>
     </div>
   );
@@ -260,7 +249,7 @@ function ChooseStep({
       </p>
 
       <PathCard
-        icon={Server}
+        icon={"server"}
         title={t.settings.migrate.cards.serverTitle}
         body={t.settings.migrate.cards.serverBody}
         meta={t.settings.migrate.cards.serverMeta}
@@ -268,7 +257,7 @@ function ChooseStep({
       />
 
       <PathCard
-        icon={Cloud}
+        icon={"cloud"}
         title={t.settings.migrate.cards.cloudTitle}
         body={t.settings.migrate.cards.cloudBody}
         meta={cloudConnected ? t.settings.migrate.cards.cloudMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
@@ -277,7 +266,7 @@ function ChooseStep({
       />
 
       <PathCard
-        icon={Network}
+        icon={"network"}
         title={t.settings.migrate.cards.tunnelTitle}
         body={t.settings.migrate.cards.tunnelBody}
         meta={cloudConnected ? t.settings.migrate.cards.tunnelMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
@@ -296,7 +285,7 @@ function PathCard({
   warn,
   onClick,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   title: string;
   body: string;
   meta: string;
@@ -310,7 +299,7 @@ function PathCard({
       className="w-full text-start rounded-xl border border-border/50 bg-muted/[0.05] hover:bg-muted/15 hover:border-border p-4 flex items-start gap-4 transition-all"
     >
       <div className="size-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-        <Icon className="size-4" />
+        <UiIcon name={Icon} className="size-4" />
       </div>
       <div className="flex-1 min-w-0">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
@@ -320,11 +309,11 @@ function PathCard({
         </p>
         {warn && (
           <p className="text-[11px] text-warning mt-1 flex items-center gap-1">
-            <AlertCircle className="size-3" /> {warn}
+            <UiIcon name="alert-circle" className="size-3" /> {warn}
           </p>
         )}
       </div>
-      <ChevronRight className="size-4 text-muted-foreground/70 mt-1 rtl:rotate-180" />
+      <UiIcon name="chevron-right" className="size-4 text-muted-foreground/70 mt-1 rtl:rotate-180" />
     </button>
   );
 }
@@ -448,7 +437,7 @@ function ServerForm({
               }
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
             >
-              <Plus className="size-3.5" />
+              <UiIcon name="plus" className="size-3.5" />
               {t.widgets.shared.serverSelector.addServer}
             </button>
           </div>
@@ -562,7 +551,7 @@ function ServerForm({
             disabled={!canPreflight || running || submitting}
             className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 hover:bg-muted text-foreground rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {running && <Loader2 className="size-4 animate-spin" />}
+            {running && <UiIcon name="spinner" className="size-4 animate-spin" />}
             {t.settings.migrate.server.runPreflight}
           </button>
         )}
@@ -582,7 +571,7 @@ function ServerForm({
               disabled={!preflight.ready || submitting}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
             >
-              {submitting && <Loader2 className="size-4 animate-spin" />}
+              {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
               {submitting ? t.settings.migrate.server.deploying : t.settings.migrate.server.startMigration}
             </button>
           </>
@@ -637,7 +626,7 @@ function CloudForm({
     return (
       <div className="rounded-xl border border-warning-border bg-warning-bg p-4 space-y-2">
         <div className="flex items-center gap-2 text-warning">
-          <AlertCircle className="size-4" />
+          <UiIcon name="alert-circle" className="size-4" />
           <p className="text-sm font-medium">{t.settings.migrate.cloud.connectFirstTitle}</p>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -678,7 +667,7 @@ function CloudForm({
           disabled={submitting}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {submitting && <Loader2 className="size-4 animate-spin" />}
+          {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {submitting ? t.settings.migrate.cloud.pushingData : t.settings.migrate.cloud.startMigration}
         </button>
       </div>
@@ -734,7 +723,7 @@ function TunnelForm({
     return (
       <div className="rounded-xl border border-warning-border bg-warning-bg p-4 space-y-2">
         <div className="flex items-center gap-2 text-warning">
-          <AlertCircle className="size-4" />
+          <UiIcon name="alert-circle" className="size-4" />
           <p className="text-sm font-medium">{t.settings.migrate.tunnel.connectFirstTitle}</p>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -783,7 +772,7 @@ function TunnelForm({
           disabled={!slugOk || submitting}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {submitting && <Loader2 className="size-4 animate-spin" />}
+          {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {submitting ? t.settings.migrate.tunnel.provisioning : t.settings.migrate.tunnel.provisionTunnel}
         </button>
       </div>
@@ -806,7 +795,7 @@ function ResultStep({
   return (
     <div className="space-y-5">
       <div className="flex items-start gap-3 rounded-xl border border-success-border bg-success-bg p-4">
-        <CheckCircle2 className="size-5 text-success shrink-0 mt-0.5" />
+        <UiIcon name="check-circle" className="size-5 text-success shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-medium text-foreground">{t.settings.migrate.result.complete}</p>
           <p className="text-xs text-muted-foreground mt-1">{detail}</p>
@@ -825,7 +814,7 @@ function ResultStep({
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 hover:bg-muted text-foreground rounded-xl text-sm font-medium transition-colors"
         >
-          <ExternalLink className="size-4" />
+          <UiIcon name="external-link" className="size-4" />
           {t.settings.migrate.result.open}
         </a>
         <button
@@ -854,9 +843,9 @@ function CheckRow({
   return (
     <div className="flex items-start gap-2">
       {ok ? (
-        <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
+        <UiIcon name="check-circle" className="size-4 text-success shrink-0 mt-0.5" />
       ) : (
-        <AlertCircle className="size-4 text-warning shrink-0 mt-0.5" />
+        <UiIcon name="alert-circle" className="size-4 text-warning shrink-0 mt-0.5" />
       )}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-foreground">{label}</p>

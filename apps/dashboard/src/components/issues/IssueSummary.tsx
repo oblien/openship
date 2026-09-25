@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 
 import type { IssueScope, IssueSeverity, SystemIssue } from "@/lib/api/issues";
 import { useI18n } from "@/components/i18n-provider";
@@ -64,7 +64,7 @@ export function IssueSummary({
     <div className="rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted">
-          <Activity className="size-[18px] text-muted-foreground" />
+          <UiIcon name="activity" className="size-[18px] text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-foreground">{c.summary.title}</h2>
@@ -138,7 +138,7 @@ export function IssueSummary({
                 return (
                   <div key={scope} className="flex items-center justify-between py-1.5">
                     <span className="inline-flex items-center gap-2.5 text-sm text-muted-foreground">
-                      <Icon className="size-4 text-muted-foreground/60" />
+                      <UiIcon name={Icon} className="size-4 text-muted-foreground/60" />
                       {c.scopes[scope]}
                     </span>
                     <span className="text-sm font-medium tabular-nums text-foreground">{n}</span>

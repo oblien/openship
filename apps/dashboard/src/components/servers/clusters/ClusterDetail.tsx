@@ -1,18 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  Boxes,
-  Loader2,
-  Network,
-  Server,
-  Settings2,
-  Trash2,
-} from "lucide-react";
 import type { ClusterCapabilities, ComputeCluster } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -97,7 +89,7 @@ export function ClusterDetail({ id }: { id: string }) {
         href="/servers?tab=cluster"
         className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-4 rtl:rotate-180" />
+        <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
         {c.backToClusters}
       </Link>
       <NetworkStreamNotice stream={stream} />
@@ -110,14 +102,14 @@ export function ClusterDetail({ id }: { id: string }) {
         </div>
       )}
       {!cluster && !error && (
-        <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
       )}
       {cluster && (
         <>
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="grid size-12 place-items-center rounded-xl bg-primary/10 text-primary">
-                <Boxes className="size-6" />
+                <UiIcon name="cluster" className="size-6" />
               </span>
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">{cluster.name}</h1>
@@ -133,7 +125,7 @@ export function ClusterDetail({ id }: { id: string }) {
               <div className="flex items-center gap-2">
                 <Button asChild variant="secondary">
                   <Link href={`/servers/clusters/${encodeURIComponent(id)}/edit`}>
-                    <Settings2 className="size-4" />
+                    <UiIcon name="sliders" className="size-4" />
                     {c.editCluster}
                   </Link>
                 </Button>
@@ -146,7 +138,7 @@ export function ClusterDetail({ id }: { id: string }) {
                   }}
                   className="hover:bg-danger/10 hover:text-danger"
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                   {c.removeCluster}
                 </Button>
               </div>
@@ -176,7 +168,7 @@ export function ClusterDetail({ id }: { id: string }) {
                         className="flex items-center gap-3 py-4 text-sm hover:text-primary"
                       >
                         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted/40 text-muted-foreground">
-                          <Server className="size-4" />
+                          <UiIcon name="server" className="size-4" />
                         </span>
                         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                           <NetworkDiagnosticText value={member.name} />
@@ -185,14 +177,14 @@ export function ClusterDetail({ id }: { id: string }) {
                             <BlurIp>{member.privateIp}</BlurIp>
                           </span>
                         </span>
-                        <ArrowUpRight className="size-4 shrink-0 text-muted-foreground rtl:-rotate-90" />
+                        <UiIcon name="arrow-up-right" className="size-4 shrink-0 text-muted-foreground rtl:-rotate-90" />
                       </Link>
                     ))}
                 </div>
               </section>
               <aside className="space-y-4 rounded-2xl bg-card p-5">
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Network className="size-4 text-info" />
+                  <UiIcon name="network" className="size-4 text-info" />
                   {cluster.network.name}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -205,7 +197,7 @@ export function ClusterDetail({ id }: { id: string }) {
                 <Button asChild variant="secondary" className="w-full">
                   <Link href={`/servers/networks/${encodeURIComponent(cluster.networkId)}`}>
                     {c.openNetwork}
-                    <ArrowUpRight className="size-4 rtl:-rotate-90" />
+                    <UiIcon name="arrow-up-right" className="size-4 rtl:-rotate-90" />
                   </Link>
                 </Button>
               </aside>

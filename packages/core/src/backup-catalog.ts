@@ -297,7 +297,7 @@ export type PayloadConfigKey = (typeof PAYLOAD_CONFIG_KEYS)[number];
  * read would have refused every mail policy and every restore that turns verification
  * off.
  */
-export const UNIVERSAL_PAYLOAD_CONFIG_KEYS = ["verifyOnPrepare", "mail"] as const;
+export const UNIVERSAL_PAYLOAD_CONFIG_KEYS = ["verifyOnPrepare", "mail", "incremental"] as const;
 export type UniversalPayloadConfigKey = (typeof UNIVERSAL_PAYLOAD_CONFIG_KEYS)[number];
 
 /**
@@ -713,6 +713,14 @@ export function validatePolicyPayload(
   }
   const resolved: PolicyPayloadKind = isPolicyPayloadKind(kind) ? kind : PAYLOAD_KIND_AUTO;
   const cfg = config ?? {};
+  for (const key of ["incremental", "quiesce", "clearPath", "verifyOnPrepare"]) {
+    if (cfg[key] !== undefined && typeof cfg[key] !== "boolean") return `Backup option "${key}" must be true or false.`;
+  }
+  for (const key of ["sourceIds", "exclude"]) {
+    if (cfg[key] !== undefined && (!Array.isArray(cfg[key]) || !(cfg[key] as unknown[]).every(value => typeof value === "string" && value.trim()))) {
+      return `Backup option "${key}" must be a list of non-empty strings.`;
+    }
+  }
 
   // A key no producer reads is a typo, and a typo here is a policy that looks
   // configured and captures nothing. Cross-kind keys are deliberately NOT refused: a

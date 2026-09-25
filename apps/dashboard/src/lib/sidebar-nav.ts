@@ -1,3 +1,4 @@
+import type { IconName } from "@repo/ui/icons";
 /**
  * The sidebar's nav model — pure data, no React, so both shapes of the rail are
  * unit-testable without rendering a sidebar.
@@ -15,35 +16,10 @@
  * gets a route of its own (see `webmailHref`).
  */
 
-import {
-  Activity,
-  AppWindow,
-  Bell,
-  Building2,
-  Clock,
-  CreditCard,
-  DatabaseBackup,
-  FileText,
-  FolderKanban,
-  Forward,
-  Globe,
-  HeartPulse,
-  LayoutDashboard,
-  Mail,
-  MailPlus,
-  Rocket,
-  Server,
-  Settings,
-  ClipboardList,
-  ShieldAlert,
-  SlidersHorizontal,
-  UserRound,
-  Waypoints,
-} from "lucide-react";
 
 import { canonicalMailTab, type MailTabKey } from "./mail-tabs";
 
-export type NavIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
+export type NavIcon = IconName;
 
 /** Where an item's label comes from. Mail tab labels already exist, translated
  *  across all 9 locales, under `t.emailsAdmin.panel.tabs` — reusing them means
@@ -80,22 +56,22 @@ export interface NavSection {
 }
 
 const MAIN_ITEMS: NavItem[] = [
-  { key: "home", href: "/", icon: LayoutDashboard },
-  { key: "projects", href: "/projects", icon: FolderKanban },
-  { key: "deployments", href: "/deployments", icon: Rocket },
+  { key: "home", href: "/", icon: "home" },
+  { key: "projects", href: "/projects", icon: "project" },
+  { key: "deployments", href: "/deployments", icon: "rocket" },
   // MAIN, not infrastructure: `/api/issues` reports project, domain and update items on
   // the SaaS too (only the server/container sources resolve empty there), and the
   // infrastructure section is `if (selfHosted)` — putting Issues in it would delete the
   // page from cloud. No count badge: the nav's single getHome() fetch carries no issue
   // total, and a badge here would be the only notification-style one in the rail.
-  { key: "issues", href: "/monitoring", icon: HeartPulse },
+  { key: "issues", href: "/monitoring", icon: "activity" },
 ];
 
 /** Build nav sections dynamically */
 export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
   const settingsItems: NavItem[] = [
-    { key: "backups", href: "/backups", icon: DatabaseBackup },
-    { key: "settings", href: "/settings", icon: Settings },
+    { key: "backups", href: "/backups", icon: "database-backup" },
+    { key: "settings", href: "/settings", icon: "settings" },
   ];
   // LAST row of the LAST section, deliberately. `isSaaS` is true on a self-hosted box
   // the moment it links a cloud account (`!selfHosted || cloudConnected` in
@@ -104,19 +80,19 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   // actually came for. Cloud credits are real, so the entry stays; it just stops
   // outranking the infrastructure.
   if (isSaaS) {
-    settingsItems.push({ key: "billing", href: "/billing", icon: CreditCard });
+    settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card" });
   }
   // Audit log, last row of the rail. Promoted out of Settings: it is not a setting — you
   // never change anything here, you READ what already happened, and burying a
   // review surface three clicks deep behind a settings tab is how it goes unread.
   // Last on purpose: it is consulted after the fact, never on the way to a task.
-  settingsItems.push({ key: "audit", href: "/audit", icon: ClipboardList });
+  settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });
 
   const infraItems: NavItem[] = [];
   if (selfHosted) {
-    infraItems.push({ key: "servers", href: "/servers", icon: Server });
-    infraItems.push({ key: "emails", href: "/emails", icon: Mail });
-    infraItems.push({ key: "jobs", href: "/jobs", icon: Clock });
+    infraItems.push({ key: "servers", href: "/servers", icon: "server" });
+    infraItems.push({ key: "emails", href: "/emails", icon: "mail" });
+    infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   }
   // infraItems.push(
   //   { key: "monitoring", href: "/monitoring", icon: Activity },
@@ -161,14 +137,14 @@ type MailTab = { key: MailTabKey; icon: NavIcon };
 const MAIL_CONSOLE_ALSO_AT = ["/"];
 
 const MAIL_TABS_PRIMARY: MailTab[] = [
-  { key: "overview", icon: LayoutDashboard },
-  { key: "domains", icon: Globe },
-  { key: "mailboxes", icon: UserRound },
-  { key: "aliases", icon: Forward },
+  { key: "overview", icon: "dashboard" },
+  { key: "domains", icon: "globe" },
+  { key: "mailboxes", icon: "user" },
+  { key: "aliases", icon: "forward" },
   // Notification rules sit with the address space rather than with Delivery:
   // Delivery is about SENDING, and a rule is about what happens to mail arriving
   // at one of the addresses above it.
-  { key: "notifications", icon: Bell },
+  { key: "notifications", icon: "bell" },
 ];
 
 /**
@@ -180,19 +156,19 @@ const MAIL_TABS_PRIMARY: MailTab[] = [
  * `./mail-tabs`, which still resolves the old `?tab=test`).
  */
 const MAIL_TABS_DELIVERY: MailTab[] = [
-  { key: "sending", icon: Waypoints },
-  { key: "dns", icon: FileText },
-  { key: "health", icon: HeartPulse },
+  { key: "sending", icon: "network" },
+  { key: "dns", icon: "file-text" },
+  { key: "health", icon: "activity" },
 ];
 
 /** No heading of its own — these ride the infrastructure group under the host
  *  rows, because backups and the danger zone are about the machine, and a fourth
  *  heading is the thing we're getting away from. */
 const MAIL_TABS_SERVER: MailTab[] = [
-  { key: "backup", icon: DatabaseBackup },
+  { key: "backup", icon: "database-backup" },
   // The tab bar uses a gear here; the rail can't, because a gear in the tail
   // group already means platform Settings.
-  { key: "advanced", icon: SlidersHorizontal },
+  { key: "advanced", icon: "sliders" },
 ];
 
 export interface MailNavInput {
@@ -246,18 +222,18 @@ function getMailSetupItem(i: MailNavInput): NavItem | null {
   // needs to be walked back. (A ten-entry guess would be wrong on a fresh box;
   // an empty section would make the rail look broken.)
   if (!i.loaded) {
-    return { key: "emails", href: "/emails", icon: Mail, alsoAt: MAIL_CONSOLE_ALSO_AT };
+    return { key: "emails", href: "/emails", icon: "mail", alsoAt: MAIL_CONSOLE_ALSO_AT };
   }
 
   if (i.serverCount === 0 || !i.activeServerId) {
-    return { key: "mailSetup", href: "/emails", icon: MailPlus, alsoAt: MAIL_CONSOLE_ALSO_AT };
+    return { key: "mailSetup", href: "/emails", icon: "mail-plus", alsoAt: MAIL_CONSOLE_ALSO_AT };
   }
 
   if (!i.activeCompleted) {
     return {
       key: "mailSetupProgress",
       href: `/emails?serverId=${encodeURIComponent(i.activeServerId)}`,
-      icon: Activity,
+      icon: "activity",
       alsoAt: MAIL_CONSOLE_ALSO_AT,
     };
   }
@@ -284,8 +260,8 @@ export function getMailNavSections(i: MailNavInput): NavSection[] {
   // up the rail.
   const infraItems: NavItem[] = [];
   if (i.selfHosted) {
-    infraItems.push({ key: "servers", href: "/servers", icon: Server });
-    infraItems.push({ key: "jobs", href: "/jobs", icon: Clock });
+    infraItems.push({ key: "servers", href: "/servers", icon: "server" });
+    infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   }
   infraItems.push(...tabs(MAIL_TABS_SERVER));
 
@@ -298,7 +274,7 @@ export function getMailNavSections(i: MailNavInput): NavSection[] {
     ? [setup]
     : [
         ...tabs(MAIL_TABS_PRIMARY),
-        { key: "webmail", href: webmailHref(i.activeServerId), icon: AppWindow },
+        { key: "webmail", href: webmailHref(i.activeServerId), icon: "window" as const },
       ];
 
   return [
@@ -313,8 +289,8 @@ export function getMailNavSections(i: MailNavInput): NavSection[] {
     {
       section: "system",
       items: [
-        { key: "issues", href: "/monitoring", icon: HeartPulse },
-        { key: "settings", href: "/settings", icon: Settings },
+        { key: "issues", href: "/monitoring", icon: "activity" as const },
+        { key: "settings", href: "/settings", icon: "settings" as const },
       ],
     },
   ].filter((s) => s.items.length > 0);

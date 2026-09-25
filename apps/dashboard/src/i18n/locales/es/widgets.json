@@ -102,10 +102,12 @@
       "phase": {
         "queued": "Esperando a un trabajador…",
         "preparing": "Resolviendo destino y servicio…",
-        "snapshotting": "Generando artefactos (ejecutando pre-hook)…",
+        "snapshotting": "Preparando la captura de datos…",
         "uploading": "Transmitiendo al destino…",
         "verifying": "Escribiendo el manifiesto…"
-      }
+      },
+      "reconnecting": "Reconectando al progreso…",
+      "reconnect": "Reconectar"
     },
     "policyEditor": {
       "presetHourly": "Cada hora",
@@ -200,7 +202,32 @@
       "compressionNone": "ninguna: sin compresión",
       "compressionHint": "zstd comprime mejor; gzip viene en todas las imágenes, así que no necesita descarga y funciona en un host aislado.",
       "compressionAuto": "Automático: usar lo que tenga el servicio",
-      "summaryPath": "Archivos y carpetas"
+      "summaryPath": "Archivos y carpetas",
+      "quick": {
+        "contents": "Qué respaldar",
+        "volumesTitle": "Volúmenes del servicio",
+        "volumesDescription": "Todos los volúmenes persistentes y montajes vinculados a este servicio.",
+        "selectedVolumesDescription": "Solo los volúmenes seleccionados en las opciones avanzadas.",
+        "databaseTitle": "Datos de {name}",
+        "databaseDescription": "Usa la herramienta de copia de la propia base de datos para obtener datos coherentes.",
+        "projectTitle": "Datos del proyecto",
+        "projectDescription": "Respalda la base de datos o los volúmenes persistentes de cada servicio.",
+        "filesDescription": "Respalda las carpetas seleccionadas en las opciones avanzadas.",
+        "customDescription": "Usa los comandos de copia y restauración que has configurado.",
+        "onDemand": "Bajo demanda",
+        "onDemandHint": "Inicia una copia cuando la necesites.",
+        "frequency": "Cuándo respaldar",
+        "history": "Historial de copias",
+        "keepBackups": "Últimas {count} copias",
+        "historyHint": "Las copias más antiguas se eliminan automáticamente.",
+        "customSchedule": "Programación personalizada",
+        "customRetention": "Retención personalizada",
+        "advancedHint": "Método de copia, volúmenes seleccionados, programación y hooks.",
+        "saveAndBackup": "Guardar y respaldar",
+        "invalidRetention": "Introduce un número entero mayor que cero o deja el campo vacío para conservar todas las copias."
+      },
+      "incrementalLabel": "Copias incrementales",
+      "incrementalHint": "Sube solo los bloques modificados. Cada copia sigue siendo un punto de restauración completo; las exportaciones de bases de datos pueden ahorrar menos espacio."
     }
   },
   "cloud": {

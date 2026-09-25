@@ -1,4 +1,3 @@
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 /** Shared run formatting/status helpers for the jobs UI (list, detail, logs). */
 
@@ -21,5 +20,5 @@ export function statusTone(status: string): string {
 }
 
 export function statusIcon(status: string) {
-  return status === "success" ? CheckCircle2 : status === "failed" ? XCircle : Loader2;
+  return status === "success" ? "check-circle" : status === "failed" ? "x-circle" : "spinner";
 }

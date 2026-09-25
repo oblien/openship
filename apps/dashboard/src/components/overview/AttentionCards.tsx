@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, ArrowUpCircle, X } from "lucide-react";
 
 import type { SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -66,7 +67,7 @@ function AttentionCard({
   onHide,
 }: CardProps & {
   tone: AlertTone;
-  icon: typeof AlertTriangle;
+  icon: IconName;
   title: string;
   subtitle: string;
   max: number;
@@ -98,7 +99,7 @@ function AttentionCard({
             aria-label={c.hide}
             className={HIDE_BUTTON}
           >
-            <X className="size-3.5" />
+            <UiIcon name="close" className="size-3.5" />
           </button>
         )
       }
@@ -108,7 +109,7 @@ function AttentionCard({
       footer={
         <Link href="/monitoring" className={FOOTER_LINK}>
           {hidden > 0 ? interpolate(c.more, { n: String(hidden) }) : t.dashboard.home.viewAll}
-          <ArrowRight className="size-3.5 rtl:rotate-180" />
+          <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
         </Link>
       }
     >
@@ -146,7 +147,7 @@ export function IssuesCard(props: CardProps) {
     <AttentionCard
       {...props}
       tone={tone}
-      icon={AlertTriangle}
+      icon={"warning"}
       title={c.attentionTitle}
       subtitle={c.attentionSubtitle}
       max={MAX_ISSUE_ROWS}
@@ -171,7 +172,7 @@ export function UpdatesCard(props: CardProps) {
     <AttentionCard
       {...props}
       tone="warning"
-      icon={ArrowUpCircle}
+      icon={"arrow-up-circle"}
       title={c.updatesTitle}
       subtitle={c.updatesSubtitle}
       max={MAX_UPDATE_ROWS}

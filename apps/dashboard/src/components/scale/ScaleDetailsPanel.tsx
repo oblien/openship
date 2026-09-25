@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ChevronDown, Settings, Unplug, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResourceIcon } from "./ResourceIcon";
 import type { ResourceKind } from "./topology";
@@ -16,9 +17,10 @@ interface ScaleDetailsPanelProps {
     description: string;
     onRemove?: () => void;
   };
-  open: boolean;
-  onOpen: () => void;
-  onMinimize: () => void;
+  /** Omit for a details panel that opens directly and closes without a preview. */
+  open?: boolean;
+  onOpen?: () => void;
+  onMinimize?: () => void;
   onClose: () => void;
   onBack?: () => void;
   children: ReactNode;
@@ -30,7 +32,7 @@ export function ScaleDetailsPanel({
   kind,
   icon,
   connectionPreview,
-  open,
+  open = true,
   onOpen,
   onMinimize,
   onClose,
@@ -39,10 +41,20 @@ export function ScaleDetailsPanel({
 }: ScaleDetailsPanelProps) {
   const id = useId();
   const [hasOpened, setHasOpened] = useState(open);
+  // Capture before opening makes the diagram inert and moves browser focus.
+  const [trigger] = useState(() => typeof document === "undefined" ? null : document.activeElement);
   const panelRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const previouslyOpen = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if ((trigger instanceof HTMLElement || trigger instanceof SVGElement) && trigger.isConnected) {
+        trigger.focus({ preventScroll: true });
+      }
+    };
+  }, [trigger]);
 
   useLayoutEffect(() => {
     const preview = previewRef.current;
@@ -129,7 +141,7 @@ export function ScaleDetailsPanel({
                   </span>
                 </span>
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors group-hover:bg-muted/60 group-hover:text-foreground">
-                  <ChevronDown className="size-4" />
+                  <UiIcon name="chevron-down" className="size-4" />
                 </span>
               </button>
             )}
@@ -141,7 +153,7 @@ export function ScaleDetailsPanel({
               aria-label="Clear selection"
               title="Clear selection"
             >
-              <X />
+              <UiIcon name="close" />
             </Button>
           </div>
           {connectionPreview && (
@@ -158,7 +170,7 @@ export function ScaleDetailsPanel({
                   aria-controls={id}
                   onClick={onOpen}
                 >
-                  <Settings />
+                  <UiIcon name="settings" />
                   Settings
                 </Button>
                 {connectionPreview.onRemove && <Button
@@ -168,7 +180,7 @@ export function ScaleDetailsPanel({
                   aria-label="Remove connection"
                   onClick={connectionPreview.onRemove}
                 >
-                  <Unplug />
+                  <UiIcon name="unplug" />
                   Remove
                 </Button>}
               </div>
@@ -192,7 +204,7 @@ export function ScaleDetailsPanel({
           ) {
             event.preventDefault();
             event.stopPropagation();
-            onMinimize();
+            (onMinimize ?? onClose)();
           }
         }}
       >
@@ -206,7 +218,7 @@ export function ScaleDetailsPanel({
                   className="gap-2 text-muted-foreground"
                   onClick={onBack}
                 >
-                  <ArrowLeft className="rtl:rotate-180" />
+                  <UiIcon name="arrow-left" className="rtl:rotate-180" />
                   Back to overview
                 </Button>
               </div>

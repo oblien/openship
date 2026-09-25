@@ -43,12 +43,14 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
         id: "bkr_live",
         status: typeof h.row.status === "string" ? h.row.status : "queued",
         policyId: "pol_1",
+        destinationId: "dst_1",
         projectId: "prj_1",
         serviceId: "svc_1",
         mailServerId: null,
@@ -153,7 +155,9 @@ vi.mock("@repo/adapters", async () => {
       preflight: async () => ({ ok: true }),
       put: async (key: string, body: AsyncIterable<Buffer>) => {
         h.puts.push(key);
-        for await (const _chunk of body) {
+        let bytesWritten = 0;
+        for await (const chunk of body) {
+          bytesWritten += chunk.length;
           if (h.failPutFor && key.endsWith(h.failPutFor)) {
             throw new Error("destination connection dropped mid-artifact");
           }
@@ -163,7 +167,7 @@ vi.mock("@repo/adapters", async () => {
           h.finalizeAfterPutAs = null;
           Object.assign(h.row, { status, finishedAt: new Date() });
         }
-        return {};
+        return { bytesWritten };
       },
       deleteMany: async (keys: string[]) => {
         h.deleted.push(...keys);

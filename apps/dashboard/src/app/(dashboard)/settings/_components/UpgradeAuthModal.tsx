@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Zero-auth → local-auth upgrade modal.
  *
@@ -18,7 +20,6 @@
  */
 
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Loader2, Lock, Server, X } from "lucide-react";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -107,7 +108,7 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="size-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-              <Lock className="size-5 text-primary" />
+              <UiIcon name="lock" className="size-5 text-primary" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-foreground">{t.settings.upgradeAuth.title}</h3>
@@ -123,7 +124,7 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-50"
             title={t.settings.upgradeAuth.close}
           >
-            <X className="size-4" />
+            <UiIcon name="close" className="size-4" />
           </button>
         </div>
 
@@ -176,7 +177,7 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
                 tabIndex={-1}
                 className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
               </button>
             </div>
           </div>
@@ -192,7 +193,7 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <Server className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="server" className="size-3.5 text-muted-foreground" />
                   {t.settings.upgradeAuth.useMailServer}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
@@ -216,7 +217,7 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
               disabled={submitting || !name.trim() || !email.trim() || password.length < 8}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {submitting && <Loader2 className="size-4 animate-spin" />}
+              {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
               {t.settings.upgradeAuth.createAccount}
             </button>
           </div>

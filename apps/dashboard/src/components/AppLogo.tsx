@@ -1,16 +1,17 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { Boxes, type LucideIcon } from "lucide-react";
 
 /**
- * Per-app logo source. `src` wins (official logo URL); otherwise `slug` resolves
+ * Shared brand sources, including bundled catalog artwork. Unknown slugs resolve
  * to a simpleicons brand mark. Convex uses its official favicon because the
  * simpleicons "convex" glyph renders as a red mask, not the real orange logo.
  */
-export const APP_LOGO: Record<
+const BRAND_LOGO: Record<
   string,
-  { slug?: string; src?: string; fill?: boolean; darkInvert?: boolean }
+  { slug?: string; src?: string; catalogIcon?: IconName; fill?: boolean; darkInvert?: boolean }
 > = {
   convex: { src: "https://www.google.com/s2/favicons?domain=convex.dev&sz=128" },
   // simpleicons removed the Slack + Microsoft Teams brand marks (both 404 on the
@@ -35,7 +36,7 @@ export const APP_LOGO: Record<
   // Directus' rabbit is near-black (#263238) → invert it on the dark themes.
   directus: { slug: "directus", darkInvert: true },
   // simpleicons DROPPED the NocoDB mark — `cdn.simpleicons.org/nocodb` 404s now, so the
-  // slug it used to resolve left the card on the generic Boxes glyph. Vendored brand SVG
+  // slug it used to resolve left the card on the generic app glyph. Vendored brand SVG
   // instead (indigo gradient, so it reads on light and dark alike — no invert).
   nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
@@ -52,9 +53,8 @@ export const APP_LOGO: Record<
   posthog: { slug: "posthog", darkInvert: true },
   meilisearch: { slug: "meilisearch" },
   umami: { slug: "umami", darkInvert: true },
-  // Valkey (catalog id "redis") has no simpleicons mark → use its official
-  // favicon like convex/slack above. Aliased under "valkey" too for slug callers.
-  redis: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
+  redis: { catalogIcon: "redis" },
+  // Valkey has no simpleicons mark; use its official favicon.
   valkey: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
   // Kafka's catalog id is "kafka"; its simpleicons brand slug is "apachekafka".
   // The mark is near-black (brand color #231F20), so it vanishes on the dark/dim
@@ -89,33 +89,41 @@ export const APP_LOGO: Record<
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
 };
 
+// The Valkey app retains the historical "redis" template ID. Keep that alias
+// scoped to app IDs so a Redis image's brand slug still gets the Redis logo.
+export const APP_LOGO: typeof BRAND_LOGO = {
+  ...BRAND_LOGO,
+  redis: BRAND_LOGO.valkey!,
+};
+
 /**
  * Brand logo for a catalog app. Resolves an official URL / simpleicons mark and
- * gracefully falls back to a monochrome lucide icon (offline / air-gapped /
+ * gracefully falls back to a monochrome catalog icon (offline / air-gapped /
  * unknown app). Keeps the UI clean while adding a touch of real color.
  */
 export function AppLogo({
   appId,
   slug,
   src,
-  icon: Icon = Boxes,
+  icon: Icon = "window",
   className = "size-5",
 }: {
   appId?: string;
   slug?: string;
   src?: string;
-  icon?: LucideIcon;
+  icon?: IconName;
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
   // Resolve config by appId first, then by the bare slug — so callers that pass
   // only a `slug` (e.g. the migrate-sources brand row) can still pick up a
   // vendored src override for brands simpleicons doesn't carry.
-  const cfg = APP_LOGO[appId ?? ""] ?? APP_LOGO[slug ?? ""];
+  const cfg = APP_LOGO[appId ?? ""] ?? BRAND_LOGO[slug ?? ""];
   const resolvedSlug = slug ?? cfg?.slug;
   const url = src ?? cfg?.src ?? (resolvedSlug ? `https://cdn.simpleicons.org/${resolvedSlug}` : undefined);
 
-  if (!url || failed) return <Icon className={`${className} text-muted-foreground`} />;
+  if (!src && cfg?.catalogIcon) return <UiIcon name={cfg.catalogIcon} className={className} />;
+  if (!url || failed) return <UiIcon name={Icon} className={`${className} text-muted-foreground`} />;
   // Full-bleed square marks (own background) fill the tile; transparent brand
   // glyphs stay at the requested size. Dark monochrome marks invert on the dark
   // themes so they don't vanish against a dark tile.

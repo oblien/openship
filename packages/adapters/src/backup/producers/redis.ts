@@ -29,6 +29,7 @@
 import type { Readable } from "node:stream";
 import { isDbImage, payloadSpec, safeErrorMessage, shellQuote, withTimeout } from "@repo/core";
 import { registerProducer } from "../registry";
+import { yieldArtifact } from "../common/artifact-stream";
 import {
   codecSuffix,
   detectDumpCodec,
@@ -221,7 +222,7 @@ class RedisRdbProducerImpl implements BackupProducer {
 
     const { stdout, awaitExit } = await executor.execStream(service, cmd);
 
-    yield {
+    yield* yieldArtifact({
       name: `redis-dump.rdb${codecSuffix(codec)}`,
       stream: stdout,
       payloadKind: "redis_rdb",
@@ -229,12 +230,7 @@ class RedisRdbProducerImpl implements BackupProducer {
         rdbPath: "/data/dump.rdb",
         compression: codec,
       },
-    };
-
-    const exit = await awaitExit;
-    if (exit.code !== 0) {
-      throw new Error(`redis BGSAVE/capture exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
-    }
+    }, awaitExit, exit => `redis BGSAVE/capture exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
   }
 
   /** Both servers speak RESP/RDB; use whichever compatible CLI the image ships. */

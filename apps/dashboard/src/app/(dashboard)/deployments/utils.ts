@@ -87,7 +87,7 @@ export const getStatusConfig = (status: string) => {
   switch (status) {
     case "success":
       return {
-        icon: 'checkmark-72-1658234612.png',
+        icon: "check" as const,
         color: "var(--color-success)",
         bgColor: "bg-success-bg",
         borderColor: "border-success-border",
@@ -95,7 +95,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "failed":
       return {
-        icon: 'close remove-802-1662363936.png',
+        icon: "close" as const,
         color: "var(--color-danger)",
         bgColor: "bg-danger-bg",
         borderColor: "border-danger-border",
@@ -103,7 +103,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "canceled":
       return {
-        icon: 'close%20circle-73-1658234612.png',
+        icon: "x-circle" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-muted/60",
         borderColor: "border-border/50",
@@ -111,7 +111,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "building":
       return {
-        icon: 'loading-51-1663582768.png',
+        icon: "spinner" as const,
         color: "var(--color-info)",
         bgColor: "bg-info-bg",
         borderColor: "border-info-border",
@@ -119,7 +119,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "deploying":
       return {
-        icon: 'loading-51-1663582768.png',
+        icon: "spinner" as const,
         color: "var(--color-info)",
         bgColor: "bg-info-bg",
         borderColor: "border-info-border",
@@ -127,7 +127,7 @@ export const getStatusConfig = (status: string) => {
       };
     case "cancelled":
       return {
-        icon: 'close%20circle-73-1658234612.png',
+        icon: "x-circle" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-muted/60",
         borderColor: "border-border/50",
@@ -139,7 +139,7 @@ export const getStatusConfig = (status: string) => {
       // of `statusMap` above so it isn't folded into "canceled", which would tell
       // the operator to redeploy something that is already current.
       return {
-        icon: 'checkmark-72-1658234612.png',
+        icon: "check" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-muted/60",
         borderColor: "border-border/50",
@@ -151,7 +151,7 @@ export const getStatusConfig = (status: string) => {
       // deploy as live, but the chip surfaces that the build wasn't
       // wholly green.
       return {
-        icon: 'circle%20clock-39-1658435834.png',
+        icon: "clock" as const,
         color: "var(--color-warning)",
         bgColor: "bg-warning-bg",
         borderColor: "border-warning-border",
@@ -162,7 +162,7 @@ export const getStatusConfig = (status: string) => {
       // if it had replaced a previous deployment, that predecessor was restored
       // (otherwise the project falls back to draft). Record + logs are kept.
       return {
-        icon: 'close%20circle-73-1658234612.png',
+        icon: "x-circle" as const,
         color: "var(--color-neutral)",
         bgColor: "bg-muted/60",
         borderColor: "border-border/50",
@@ -173,7 +173,7 @@ export const getStatusConfig = (status: string) => {
       // outcome is being verified against the live host. Not a failure; the
       // status resolves to deployed/failed once the host is reachable.
       return {
-        icon: 'loading-51-1663582768.png',
+        icon: "spinner" as const,
         color: "var(--color-warning)",
         bgColor: "bg-warning-bg",
         borderColor: "border-warning-border",
@@ -185,7 +185,7 @@ export const getStatusConfig = (status: string) => {
       // red "Failed" there is a next step, so it reads amber to match the project
       // card's "Action Required" badge rather than looking like a dead end.
       return {
-        icon: 'circle%20clock-39-1658435834.png',
+        icon: "clock" as const,
         color: "var(--color-warning)",
         bgColor: "bg-warning-bg",
         borderColor: "border-warning-border",
@@ -193,7 +193,7 @@ export const getStatusConfig = (status: string) => {
       };
     default:
       return {
-        icon: 'circle%20clock-39-1658435834.png',
+        icon: "clock" as const,
         color: "var(--color-warning)",
         bgColor: "bg-warning-bg",
         borderColor: "border-warning-border",

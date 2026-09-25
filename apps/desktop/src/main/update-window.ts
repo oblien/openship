@@ -137,9 +137,7 @@ export function openUpdateWindow(
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Off for the same reason as the main window (see index.ts) — the preload
-      // requires @repo/onboarding, which a sandboxed preload can't resolve.
-      sandbox: false,
+      sandbox: true,
     },
   });
   updateWin.once("ready-to-show", () => updateWin?.show());

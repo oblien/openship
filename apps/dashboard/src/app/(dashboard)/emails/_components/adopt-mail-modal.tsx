@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { Search, CheckCircle2, Loader2, MailCheck, AlertCircle } from "lucide-react";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import { mailApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -112,14 +113,14 @@ function AdoptMailContent({
           disabled={!server || scanning || adopting}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {scanning ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+          {scanning ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="search" className="size-4" />}
           {scanning ? t.emails.adopt.scanning : t.emails.adopt.scan}
         </button>
 
         {result?.adoptable && (
           <div className="rounded-xl border border-success-border bg-success-bg p-4 text-sm text-foreground space-y-1.5">
             <div className="flex items-center gap-2 font-medium text-success">
-              <CheckCircle2 className="size-4" /> {t.emails.adopt.detected}
+              <UiIcon name="check-circle" className="size-4" /> {t.emails.adopt.detected}
             </div>
             <p>
               {t.emails.adopt.domainLabel}{" "}
@@ -137,7 +138,7 @@ function AdoptMailContent({
 
         {error && (
           <div className="flex items-start gap-2 text-sm text-destructive">
-            <AlertCircle className="size-4 mt-0.5 shrink-0" />
+            <UiIcon name="alert-circle" className="size-4 mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
@@ -157,7 +158,7 @@ function AdoptMailContent({
           disabled={!result?.adoptable || adopting}
           className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {adopting ? <Loader2 className="size-4 animate-spin" /> : <MailCheck className="size-4" />}
+          {adopting ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="mail-check" className="size-4" />}
           {t.emails.adopt.adopt}
         </button>
       </div>

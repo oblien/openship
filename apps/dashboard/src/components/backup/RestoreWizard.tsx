@@ -1,10 +1,12 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useState } from "react";
-import { X, AlertTriangle, CheckCircle2, XCircle, Loader2, Activity, Shield } from "lucide-react";
 import { backupsApi, getApiErrorMessage, type BackupRun, type BackupRestore } from "@/lib/api";
 import { useRestoreRunStream } from "@/hooks/useRestoreRunStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { BackupStreamNotice } from "./BackupStreamNotice";
 
 interface Props {
   sourceRun: BackupRun;
@@ -21,11 +23,14 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
   const [restoreId, setRestoreId] = useState<string | null>(null);
   const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
-  const [backupFirst, setBackupFirst] = useState(true);
+  const [protectSelected, setProtectSelected] = useState(true);
   const [busy, setBusy] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const { restore } = useRestoreRunStream(restoreId);
+  const stream = useRestoreRunStream(restoreId);
+  const { restore } = stream;
+  const confirmationName = serviceName ?? sourceRun.serviceId ?? "";
 
   // Step transitions follow the restore FSM.
   useEffect(() => {
@@ -44,52 +49,50 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
   }, [restore]);
 
   const startPrepare = async () => {
+    if (busy) return;
     setBusy(true);
+    setActionError(null);
     try {
-      if (backupFirst) {
-        // Protect the latest succeeded backup from prune BEFORE we
-        // restore, so the user can always come back to "what was
-        // running right before I restored". Best-effort.
-        try {
-          await backupsApi.protectRun(sourceRun.id, { protected: true });
-        } catch {
-          // tolerated
-        }
+      if (protectSelected) {
+        await backupsApi.protectRun(sourceRun.id, { protected: true });
       }
       const res = await backupsApi.prepareRestore(sourceRun.id);
       setRestoreId(res.data.restoreId);
       setConfirmationToken(res.data.confirmationToken);
       setStep("preparing");
     } catch (err) {
-      window.alert(getApiErrorMessage(err, m.startFailed));
+      setActionError(getApiErrorMessage(err, m.startFailed));
     } finally {
       setBusy(false);
     }
   };
 
   const applyRestore = async () => {
-    if (!restoreId || !confirmationToken) return;
-    if (typed !== (serviceName ?? sourceRun.serviceId ?? "")) {
-      window.alert(m.typeToConfirm);
+    if (busy || !restoreId || !confirmationToken) return;
+    if (!confirmationName || typed !== confirmationName) {
+      setActionError(m.typeToConfirm);
       return;
     }
     setBusy(true);
+    setActionError(null);
     try {
       await backupsApi.applyRestore(restoreId, confirmationToken);
       setStep("applying");
     } catch (err) {
-      window.alert(getApiErrorMessage(err, m.applyFailed));
+      setActionError(getApiErrorMessage(err, m.applyFailed));
     } finally {
       setBusy(false);
     }
   };
 
   const cancelRestore = async () => {
+    if (busy) return;
     if (!restoreId) {
       onClose();
       return;
     }
     setBusy(true);
+    setActionError(null);
     // A cancel during apply is a REQUEST the running phase honors at its next
     // checkpoint, so the wizard stays open to report which of the two outcomes
     // landed — clean, or "the target holds partial data". Closing here would
@@ -100,7 +103,7 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
       keepOpen = res.data.status === "applying";
       if (keepOpen) setCancelRequested(true);
     } catch (err) {
-      window.alert(getApiErrorMessage(err, m.cancelFailed));
+      setActionError(getApiErrorMessage(err, m.cancelFailed));
       keepOpen = true;
     } finally {
       setBusy(false);
@@ -112,10 +115,12 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <div className="relative max-h-[90vh] w-[640px] max-w-[95vw] overflow-y-auto rounded-2xl border border-border/50 bg-card p-6 shadow-xl">
         <button
-          onClick={onClose}
-          className="absolute end-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted"
+          aria-label={m.close}
+          disabled={busy || step === "applying"}
+          onClick={() => step === "done" || !restoreId ? onClose() : void cancelRestore()}
+          className="absolute end-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
-          <X className="size-4" />
+          <UiIcon name="close" className="size-4" />
         </button>
 
         <h2 className="text-lg font-semibold text-foreground">{m.title}</h2>
@@ -124,12 +129,17 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
         </p>
 
         <StepIndicator step={step} />
+        {actionError && <p role="alert" className="mt-4 rounded-lg bg-danger-bg p-3 text-sm text-danger">{actionError}</p>}
+        <BackupStreamNotice stream={stream} />
+        {stream.warnings.map((warning) => (
+          <p key={warning} role="status" className="mt-3 rounded-lg bg-warning-bg p-3 text-sm text-warning">{warning}</p>
+        ))}
 
         {step === "review" && (
           <ReviewStep
             sourceRun={sourceRun}
-            backupFirst={backupFirst}
-            setBackupFirst={setBackupFirst}
+            protectSelected={protectSelected}
+            setProtectSelected={setProtectSelected}
             onCancel={onClose}
             onContinue={() => void startPrepare()}
             busy={busy}
@@ -137,13 +147,13 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
         )}
 
         {step === "preparing" && (
-          <PreparingStep restore={restore} onCancel={() => void cancelRestore()} />
+          <PreparingStep restore={restore} busy={busy} onCancel={() => void cancelRestore()} />
         )}
 
         {step === "prepared" && (
           <ConfirmStep
             restore={restore}
-            serviceName={serviceName ?? sourceRun.serviceId ?? ""}
+            serviceName={confirmationName}
             typed={typed}
             setTyped={setTyped}
             onCancel={() => void cancelRestore()}
@@ -212,21 +222,25 @@ function StepIndicator({ step }: { step: WizardStep }): React.JSX.Element {
 
 function ReviewStep({
   sourceRun,
-  backupFirst,
-  setBackupFirst,
+  protectSelected,
+  setProtectSelected,
   onCancel,
   onContinue,
   busy,
 }: {
   sourceRun: BackupRun;
-  backupFirst: boolean;
-  setBackupFirst: (v: boolean) => void;
+  protectSelected: boolean;
+  setProtectSelected: (v: boolean) => void;
   onCancel: () => void;
   onContinue: () => void;
   busy: boolean;
 }): React.JSX.Element {
   const { t } = useI18n();
   const m = t.misc.restoreWizard;
+  const sizeBytes = sourceRun.artifacts.reduce<number>((sum, value) => {
+    const bytes = (value as { sizeBytes?: unknown } | null)?.sizeBytes;
+    return sum + (typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
+  }, 0) || sourceRun.bytesTransferred;
   return (
     <div className="mt-6 space-y-4">
       <div className="rounded-xl bg-muted/40 p-4 text-sm">
@@ -237,7 +251,7 @@ function ReviewStep({
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
           {interpolate(m.sizeArtifacts, {
-            size: sourceRun.bytesTransferred ? formatBytes(sourceRun.bytesTransferred) : "—",
+            size: sizeBytes ? formatBytes(sizeBytes) : "—",
             count: String(Array.isArray(sourceRun.artifacts) ? sourceRun.artifacts.length : 0),
           })}
         </p>
@@ -245,7 +259,7 @@ function ReviewStep({
 
       <div className="rounded-xl border border-warning-border bg-warning-bg p-4">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 size-4 text-warning shrink-0" />
+          <UiIcon name="warning" className="mt-0.5 size-4 text-warning shrink-0" />
           <div className="text-sm text-foreground/80">
             <p className="font-medium">{m.overwriteWarning}</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -258,13 +272,14 @@ function ReviewStep({
       <label className="flex items-start gap-2 text-sm cursor-pointer">
         <input
           type="checkbox"
-          checked={backupFirst}
-          onChange={(e) => setBackupFirst(e.target.checked)}
+          checked={protectSelected}
+          disabled={busy}
+          onChange={(e) => setProtectSelected(e.target.checked)}
           className="mt-0.5"
         />
         <span className="flex-1 text-foreground/80">
           <span className="flex items-center gap-1.5">
-            <Shield className="size-3.5 text-muted-foreground" />
+            <UiIcon name="shield" className="size-3.5 text-muted-foreground" />
             <strong className="font-medium">{m.protectLabel}</strong>
           </span>
           <span className="block text-xs text-muted-foreground">
@@ -295,9 +310,11 @@ function ReviewStep({
 
 function PreparingStep({
   restore,
+  busy,
   onCancel,
 }: {
   restore: BackupRestore | null;
+  busy: boolean;
   onCancel: () => void;
 }): React.JSX.Element {
   const { t } = useI18n();
@@ -305,7 +322,7 @@ function PreparingStep({
   return (
     <div className="mt-6 space-y-3">
       <div className="rounded-xl bg-muted/40 p-4 text-sm flex items-center gap-3">
-        <Loader2 className="size-4 animate-spin text-primary" />
+        <UiIcon name="spinner" className="size-4 animate-spin text-primary" />
         <div className="flex-1">
           <p className="font-medium text-foreground">{m.verifying}</p>
           <p className="text-xs text-muted-foreground">
@@ -314,7 +331,7 @@ function PreparingStep({
         </div>
         {restore && (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Activity className="size-3 animate-pulse" />
+            <UiIcon name="activity" className="size-3 animate-pulse" />
             {restore.status}
           </span>
         )}
@@ -322,6 +339,7 @@ function PreparingStep({
       <div className="flex items-center justify-end">
         <button
           onClick={onCancel}
+          disabled={busy}
           className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
         >
           {m.cancelRestore}
@@ -350,12 +368,12 @@ function ConfirmStep({
 }): React.JSX.Element {
   const { t } = useI18n();
   const m = t.misc.restoreWizard;
-  const ok = typed === serviceName;
+  const ok = serviceName.length > 0 && typed === serviceName;
   return (
     <div className="mt-6 space-y-4">
       <div className="rounded-xl border border-success-border bg-success-bg p-4">
         <div className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 text-success shrink-0" />
+          <UiIcon name="check-circle" className="mt-0.5 size-4 text-success shrink-0" />
           <div className="text-sm text-foreground/80">
             <p className="font-medium">{m.verified}</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -369,7 +387,7 @@ function ConfirmStep({
 
       <div className="rounded-xl border border-danger-border bg-danger-bg p-4">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 size-4 text-danger shrink-0" />
+          <UiIcon name="warning" className="mt-0.5 size-4 text-danger shrink-0" />
           <p className="text-sm text-foreground/80">
             {m.confirmPre}<strong>{m.confirmStrong}</strong>{m.confirmMid}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
@@ -436,7 +454,7 @@ function ApplyingStep({
   return (
     <div className="mt-6 space-y-3">
       <div className="rounded-xl bg-muted/40 p-4 text-sm flex items-center gap-3">
-        <Loader2 className="size-4 animate-spin text-danger" />
+        <UiIcon name="spinner" className="size-4 animate-spin text-danger" />
         <div className="flex-1">
           <p className="font-medium text-foreground">{m.restoringData}</p>
           <p className="text-xs text-muted-foreground">
@@ -445,7 +463,7 @@ function ApplyingStep({
         </div>
         {restore && (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Activity className="size-3 animate-pulse" />
+            <UiIcon name="activity" className="size-3 animate-pulse" />
             {restore.status}
           </span>
         )}
@@ -458,7 +476,7 @@ function ApplyingStep({
       ) : confirming ? (
         <div className="rounded-xl border border-danger-border bg-danger-bg p-3 space-y-3">
           <div className="flex items-start gap-2 text-sm">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+            <UiIcon name="warning" className="mt-0.5 size-4 shrink-0 text-danger" />
             <div>
               <p className="font-medium text-foreground">{m.abortTitle}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -522,9 +540,9 @@ function DoneStep({
       >
         <div className="flex items-start gap-2">
           {success ? (
-            <CheckCircle2 className="mt-0.5 size-4 text-success shrink-0" />
+            <UiIcon name="check-circle" className="mt-0.5 size-4 text-success shrink-0" />
           ) : (
-            <XCircle className="mt-0.5 size-4 text-danger shrink-0" />
+            <UiIcon name="x-circle" className="mt-0.5 size-4 text-danger shrink-0" />
           )}
           <div className="text-sm">
             <p className="font-medium">

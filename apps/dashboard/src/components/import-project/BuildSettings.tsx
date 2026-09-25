@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
-import { Terminal, FolderOutput, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck } from "lucide-react";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -112,7 +113,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       placeholder: 'bun install',
       description: bs.installCommandDesc,
       type: 'text',
-      icon: <Package className="size-4" />
+      icon: <UiIcon name="terminal" className="size-4" />
     },
     ...(needsBuild ? [
       {
@@ -121,7 +122,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         placeholder: 'npm run build',
         description: bs.buildCommandDesc,
         type: 'text' as const,
-        icon: <Terminal className="size-4" />
+        icon: <UiIcon name="terminal" className="size-4" />
       },
       {
         key: 'outputDirectory',
@@ -129,7 +130,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         placeholder: '.next',
         description: bs.outputDirectoryDesc,
         type: 'text' as const,
-        icon: <FolderOutput className="size-4" />
+        icon: <UiIcon name="folder-out" className="size-4" />
       },
     ] : []),
   ];
@@ -143,7 +144,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       description: bs.sourceFolderDesc,
       type: 'text',
       optional: true,
-      icon: <FolderOutput className="size-4" />
+      icon: <UiIcon name="folder-out" className="size-4" />
     },
     {
       key: 'buildImage',
@@ -152,7 +153,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       description: bs.buildImageDesc,
       type: 'text',
       optional: true,
-      icon: <BoxSelect className="size-4" />,
+      icon: <UiIcon name="select" className="size-4" />,
       source: 'config',
     },
     ...(needsBuild ? [
@@ -163,7 +164,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         description: bs.productionPathsDesc,
         type: 'text' as const,
         optional: true,
-        icon: <ShieldCheck className="size-4" />
+        icon: <UiIcon name="shield-check" className="size-4" />
       },
     ] : []),
   ];
@@ -176,7 +177,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       placeholder: 'npm start',
       description: bs.startCommandDesc,
       type: 'text',
-      icon: <Play className="size-4" />
+      icon: <UiIcon name="play" className="size-4" />
     },
     {
       key: 'productionPort',
@@ -187,7 +188,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       min: 1,
       max: 65535,
       optional: true,
-      icon: <Hash className="size-4" />
+      icon: <UiIcon name="hash" className="size-4" />
     },
   ];
 
@@ -329,7 +330,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
               onClick={() => handleEdit(field.key, value)}
               className="absolute end-3 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/50 hover:text-primary transition-colors"
             >
-              <Pencil className="size-4" />
+              <UiIcon name="edit" className="size-4" />
             </button>
           </div>
         )}
@@ -461,7 +462,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center">
-              <Settings2 className="size-[18px] text-orange-500" />
+              <UiIcon name="sliders" className="size-[18px] text-orange-500" />
             </div>
             <div>
               <p className="text-[15px] font-semibold text-foreground">{bs.deployConfig}</p>
@@ -471,9 +472,9 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             </div>
           </div>
           {expanded ? (
-            <ChevronUp className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
           )}
         </button>
 
@@ -484,7 +485,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
                   <div className="flex items-center gap-2">
-                    <Hammer className="w-3.5 h-3.5 text-muted-foreground" />
+                    <UiIcon name="wrench" className="w-3.5 h-3.5 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium text-foreground">{bs.build}</p>
                       <p className="text-sm text-muted-foreground leading-tight">
@@ -507,13 +508,13 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                       className="w-full flex items-center justify-between px-3 py-2 text-start hover:bg-muted/30 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" />
+                        <UiIcon name="shield-check" className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="text-xs font-medium text-muted-foreground">{bs.advanced}</span>
                       </div>
                       {advancedOpen ? (
-                        <ChevronUp className="size-3 text-muted-foreground" />
+                        <UiIcon name="chevron-up" className="size-3 text-muted-foreground" />
                       ) : (
-                        <ChevronDown className="size-3 text-muted-foreground" />
+                        <UiIcon name="chevron-down" className="size-3 text-muted-foreground" />
                       )}
                     </button>
                     {advancedOpen && (
@@ -529,7 +530,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
               <div className="space-y-3">
                 <div className="p-2.5 bg-muted/30 rounded-lg border border-border/50 space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <Play className="w-3.5 h-3.5 text-muted-foreground" />
+                    <UiIcon name="play" className="w-3.5 h-3.5 text-muted-foreground" />
                     <p className="text-sm font-medium text-foreground">{bs.start}</p>
                   </div>
                   <div className="grid grid-cols-3 gap-1 p-0.5 bg-muted/40 rounded-lg">
@@ -580,9 +581,9 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             onClick={() => setAdvancedOpen(!advancedOpen)}
             className="flex items-center gap-2 mb-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ShieldCheck className="size-4" />
+            <UiIcon name="shield-check" className="size-4" />
             <span className="font-medium">{bs.advanced}</span>
-            {advancedOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            {advancedOpen ? <UiIcon name="chevron-up" className="size-3.5" /> : <UiIcon name="chevron-down" className="size-3.5" />}
           </button>
           {advancedOpen && (
             <div className="grid md:grid-cols-2 gap-5">

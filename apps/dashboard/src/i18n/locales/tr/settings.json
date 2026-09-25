@@ -1,4 +1,14 @@
 {
+  "appearance": {
+    "title": "Görünüm",
+    "description": "Bir tema seçin veya cihazınızın görünümünü takip edin. Değişiklikler hemen uygulanır.",
+    "themes": {
+      "light": "Açık",
+      "dim": "Loş",
+      "dark": "Koyu",
+      "system": "Sistem"
+    }
+  },
   "language": {
     "title": "Dil",
     "description": "Kontrol panelinde kullanılacak dili seçin."
@@ -100,6 +110,7 @@
     "toastTitle": "E-posta"
   },
   "github": {
+    "tokenCreate": "Jeton oluştur",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "Bağlandı · Henüz kurulum yok",
@@ -259,9 +270,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub klonlama kimlik bilgileri",
-    "description": "GitHub Uygulaması kurulu olmadığında özel depoları klonlamak için kullanılan kişisel jeton",
+    "description": "Özel depolara kişisel erişim.",
     "loading": "Yükleniyor…",
-    "intro": "Bir GitHub kişisel erişim jetonu (classic veya fine-grained) yapıştırın. Klonlama modülü bunu — proje bazlı özel ayarlardan sonra, GitHub Uygulama jetonundan önce — ikinci öncelikli kimlik bilgisi olarak kullanır.",
+    "intro": "Projeye özel jetonlar önceliklidir. Etkinleştirildiğinde bu jeton, GitHub Uygulaması kimlik bilgilerinden önce kullanılır. Devre dışı bırakıldığında jeton kayıtlı kalır.",
     "placeholder": "ghp_… veya github_pat_…",
     "showToken": "Jetonu göster",
     "hideToken": "Jetonu gizle",
@@ -273,8 +284,12 @@
     "justNow": "az önce",
     "replace": "Değiştir",
     "clear": "Temizle",
-    "useAsDefault": "Varsayılan klonlama jetonu olarak kullan",
-    "useAsDefaultDesc": "Açık olduğunda, klonlama modülü bu jetonu zincirdeki ikinci katman olarak kullanır. Kapalı olduğunda jeton saklanır ancak kullanılmaz — yalnızca belirli dağıtımlarda aktif olmasını istiyorsanız kullanışlıdır.",
+    "useAsDefault": "Varsayılan olarak kullan",
+    "useAsDefaultDesc": "Projenin kendi jetonu yoksa bu jetonu kullan.",
+    "tokenLabel": "Kişisel erişim jetonu",
+    "helpTitle": "Jeton izinleri ve kullanımı",
+    "forwardGitLabel": "Yerel GitHub erişimini ilet",
+    "forwardGitDesc": "Yerel GitHub oturumunu SSH üzerinden uzak derleme sunucularıyla paylaş.",
     "toast": {
       "pasteFirst": "Kaydetmeden önce bir jeton yapıştırın",
       "notLikeToken": "Bu bir GitHub jetonuna benzemiyor. Eminseniz yine de kaydedin.",

@@ -1,5 +1,6 @@
 "use client";
 
+import { Icon, type IconName } from "@repo/ui/icons";
 import { createContext, useCallback, useContext, useState } from "react";
 import { randomUUID } from "@/lib/random-uuid";
 
@@ -78,7 +79,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 ${typeStyles[t.type]}
               `}
             >
-              <span className="mt-px shrink-0">{typeIcons[t.type]}</span>
+              <Icon name={typeIcons[t.type]} size={16} className="mt-px shrink-0" />
               <div className="min-w-0 flex-1">
                 {t.title && (
                   <p className="font-semibold leading-snug">{t.title}</p>
@@ -104,24 +105,8 @@ const typeStyles: Record<ToastType, string> = {
     "th-card text-[var(--th-text-body)]",
 };
 
-const typeIcons: Record<ToastType, React.ReactNode> = {
-  error: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="15" y1="9" x2="9" y2="15" />
-      <line x1="9" y1="9" x2="15" y2="15" />
-    </svg>
-  ),
-  success: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  ),
-  info: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4M12 8h.01" />
-    </svg>
-  ),
+const typeIcons: Record<ToastType, IconName> = {
+  error: "x-circle",
+  success: "check-circle",
+  info: "info",
 };

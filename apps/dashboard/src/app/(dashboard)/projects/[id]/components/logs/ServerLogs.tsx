@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Server, Clock, User, AlertCircle } from "lucide-react";
 import { getCountryFlagUrl } from "@/lib/country";
 import './logs.css';
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -231,7 +232,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     if (!domainsData?.isLoading && domains.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Server className="w-10 h-10 text-muted-foreground/30" />
+          <UiIcon name="server" className="w-10 h-10 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">{t.projectDetail.logs.server.noDomain}</p>
           <p className="text-xs text-muted-foreground/70">{t.projectDetail.logs.server.noDomainHint}</p>
         </div>
@@ -241,7 +242,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     if (error) {
       return (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <AlertCircle className="w-10 h-10 text-destructive/60" />
+          <UiIcon name="alert-circle" className="w-10 h-10 text-destructive/60" />
           <p className="text-sm font-medium text-destructive">{error}</p>
           <p className="text-xs text-muted-foreground">{t.projectDetail.logs.server.errorHint}</p>
         </div>
@@ -250,7 +251,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
 
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <Server className="w-10 h-10 text-muted-foreground/30" />
+        <UiIcon name="server" className="w-10 h-10 text-muted-foreground/30" />
         <p className="text-sm text-muted-foreground">{t.projectDetail.logs.server.waiting}</p>
       </div>
     );
@@ -261,7 +262,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
         <div className="flex items-center gap-2.5">
-          <Server className="w-4 h-4 text-muted-foreground" />
+          <UiIcon name="server" className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-sm font-medium text-foreground">{t.projectDetail.logs.server.title}</h3>
         </div>
         <div className="flex items-center gap-3">
@@ -306,7 +307,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
                 </div>
                 <div className="flex items-center gap-3 mt-1 ps-[60px] text-[11px] text-muted-foreground">
                   <span className="flex items-center gap-1 shrink-0">
-                    <Clock className="w-3 h-3" />
+                    <UiIcon name="clock" className="w-3 h-3" />
                     <span className="font-mono tabular-nums">{new Date(log.timestamp).toLocaleTimeString()}</span>
                   </span>
                   {isCombined && log.host && (
@@ -328,7 +329,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
                     {formatBytes(log.requestSize)} → {formatBytes(log.responseSize)}
                   </span>
                   <span className="flex items-center gap-1 flex-1 min-w-0">
-                    <User className="w-3 h-3 shrink-0" />
+                    <UiIcon name="user" className="w-3 h-3 shrink-0" />
                     <span className="truncate">{log.userAgent}</span>
                   </span>
                 </div>

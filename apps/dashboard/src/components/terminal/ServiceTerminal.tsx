@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Interactive terminal surface for a single deployed service.
  *
@@ -29,7 +31,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { RotateCw } from "lucide-react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
 import type { TerminalErrorCode } from "@/lib/api";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
@@ -419,7 +420,7 @@ export const ServiceTerminal = forwardRef<
             onClick={handleReconnect}
             className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
           >
-            <RotateCw className="size-3" />
+            <UiIcon name="refresh" className="size-3" />
             Reconnect
           </button>
         ) : undefined

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Network, Globe, Copy, Check, ChevronDown } from "lucide-react";
 import { resolveLocalized } from "@repo/core";
 import { Modal } from "@/components/ui/Modal";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -235,7 +236,7 @@ export function ProjectConnectionForm({
             </div>
 
             {loadError && <p role="alert" className="text-sm text-danger">{loadError}</p>}
-            {(loading || loadingProjects) && <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{c.loadingServices}</div>}
+            {(loading || loadingProjects) && <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><UiIcon name="spinner" className="size-4 animate-spin" />{c.loadingServices}</div>}
             {!loading && !loadError && sourceProjectId && injectable.length === 0 && (
               <p className="rounded-xl border border-border/50 p-4 text-sm text-muted-foreground">{c.noConnections}</p>
             )}
@@ -252,7 +253,7 @@ export function ProjectConnectionForm({
                   onClick={() => setAdvanced((v) => !v)}
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground"
                 >
-                  <ChevronDown className={`size-3 transition-transform ${advanced ? "rotate-180" : ""}`} />
+                  <UiIcon name="chevron-down" className={`size-3 transition-transform ${advanced ? "rotate-180" : ""}`} />
                   {c.advancedValues}
                 </button>
               </div>
@@ -327,7 +328,7 @@ export function ProjectConnectionForm({
                     aria-label={c.copy}
                     className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                    {copied ? <UiIcon name="check" className="size-3.5 text-success" /> : <UiIcon name="copy" className="size-3.5" />}
                   </button>
                 </div>
               )}
@@ -342,14 +343,14 @@ export function ProjectConnectionForm({
               <ModeCard
                 selected={mode === "internal"}
                 onSelect={() => setMode("internal")}
-                icon={<Network className="size-4" />}
+                icon={<UiIcon name="network" className="size-4" />}
                 label={c.modeInternal}
                 desc={c.modeInternalDesc}
               />
               {!privateOnly && <ModeCard
                 selected={mode === "public"}
                 onSelect={() => setMode("public")}
-                icon={<Globe className="size-4" />}
+                icon={<UiIcon name="globe" className="size-4" />}
                 label={c.modePublic}
                 desc={c.modePublicDesc}
               />}
@@ -371,7 +372,7 @@ export function ProjectConnectionForm({
                   disabled={!sourceProjectId || !targetId || selected.length === 0 || busy || loading}
                   className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {busy && <Loader2 className="size-4 animate-spin" />}
+                  {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                   {c.connect}
                 </button>
               </div>
@@ -464,7 +465,7 @@ function EnvKeyField({
         aria-label={copyLabel}
         className="shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
       >
-        {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+        {copied ? <UiIcon name="check" className="size-3 text-success" /> : <UiIcon name="copy" className="size-3" />}
       </button>
     </div>
   );

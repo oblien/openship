@@ -1,6 +1,8 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
+import type { ReactNode } from "react";
 
 /**
  * The shell both home attention surfaces share: a card with a header strip (icon
@@ -67,7 +69,7 @@ export const ACTION_TONE: Record<AlertTone | "ghost", string> = {
 interface AlertPanelProps {
   tone: AlertTone;
   density?: AlertDensity;
-  icon: ComponentType<{ className?: string }>;
+  icon: IconName;
   title: string;
   subtitle: string;
   count: number;
@@ -99,7 +101,7 @@ export default function AlertPanel({
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
       <div className="flex items-start gap-3 border-b border-border/50 px-5 py-4">
         <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${s.tile}`}>
-          <Icon className={`size-4 ${s.icon}`} />
+          <UiIcon name={Icon} className={`size-4 ${s.icon}`} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -146,7 +148,7 @@ export function AlertRow({
 }: {
   tone: AlertTone;
   density?: AlertDensity;
-  icon: ComponentType<{ className?: string }>;
+  icon: IconName;
   /** ReactNode so a row can link its own title (the Issues feed does); plain
    *  strings still work and are what the home cards pass. */
   title: ReactNode;
@@ -168,7 +170,7 @@ export function AlertRow({
         <div
           className={`col-start-1 row-start-1 flex ${compact ? "size-7" : "size-8"} items-center justify-center rounded-lg ${s.tile}`}
         >
-          <Icon className={`${compact ? "size-3.5" : "size-4"} ${s.icon}`} />
+          <UiIcon name={Icon} className={`${compact ? "size-3.5" : "size-4"} ${s.icon}`} />
         </div>
         {/* Inline names and labels share the space evenly. In a narrow full list,
             let the label wrap so both can use the column's available width. */}

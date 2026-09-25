@@ -45,7 +45,7 @@ body returns `-32600`).
 
 | Method | Result |
 |---|---|
-| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` and `serverInfo: { name: "openship", version: "1.0.0" }`. |
+| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns capabilities, server information, and instructions identifying the current workspace and how to select a destination. |
 | `ping` | Returns `{}`. |
 | `tools/list` | Returns the tools the caller's token can actually use (filtered by read-only flag, role, and grants). |
 | `tools/call` | Dispatches the named tool through the real API and returns its response as JSON text content. |
@@ -69,11 +69,63 @@ curl -s "$OPENSHIP_URL/api/mcp" \
 The tool set is derived from Openship's permission-tagged routes that opt in with an `mcp` block; the
 credential/auth surfaces (`tokens`, `auth`, `mcp` itself) are never exposed.
 
+## Discover and select a workspace
+
+An Openship workspace or workgroup is an **organization** in the API. Call
+`get_permissions_workspaces` with `{}` to discover workspace names and IDs before creating an app or a
+Compose project. This tool is available to read-only and restricted credentials too.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": { "name": "get_permissions_workspaces", "arguments": {} }
+}
+```
+
+The response's `data` includes `currentOrganizationId`, `boundOrganizationId`, `canSwitchOrganization`,
+`readOnly`, and `workspaces`. Each workspace includes `organizationId`, `name`, `slug`, `isTeam`, and
+the effective `role`. Empty workspaces are included. An organization-bound credential only sees its
+own workspace; an unbound credential can discover its user's memberships. An explicitly fixed request
+scope returns only the selected workspace.
+
+Use the selected ID at the **top level** of every tool call in the flow:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "post_apps",
+    "arguments": {
+      "organizationId": "org_target",
+      "body": { "templateId": "redis", "name": "Cache" }
+    }
+  }
+}
+```
+
+The same `organizationId` argument applies to Compose scanning, `post_projects_ensure`, services,
+deployment, and status tools. It fixes that call's scope and does not persist a workspace switch.
+If the user has several available workspaces and has not specified a destination, the agent should ask
+which workspace to use before creating resources.
+
+Current PATs and OAuth connections are bound to the organization where they were authorized.
+`boundOrganizationId` identifies that boundary. Selecting another organization returns `TOKEN_ORG_SCOPE`;
+the user needs a token or authorization in the destination workspace. Invalid or inaccessible IDs fail
+instead of falling back to the default workspace.
+
+This ID selects a request scope; it does **not** transfer an existing app between organizations.
+The existing project transfer endpoints change hosting targets (Cloud/self-hosted). Cross-organization app transfer
+is not currently exposed. `get_cloud_workspaces` lists runtime infrastructure, a separate concept.
+
 ## Call a tool
 
 `params.name` is the tool name from `tools/list`; `params.arguments` carries any path parameters, an optional
 `query` object, an optional `body` object (for `POST`/`PUT`/`PATCH` tools), and an optional
-`organizationId` (sent as the `x-organization-id` header).
+`organizationId` (sent as `X-Organization-Id` together with `X-Openship-Scope: fixed`).
 
 ```bash
 curl -s "$OPENSHIP_URL/api/mcp" \
@@ -108,8 +160,8 @@ curl -s "$OPENSHIP_URL/api/mcp" \
 | `deploy-a-folder` | The 4-step folder-upload flow, including the out-of-band tarball upload that is deliberately **not** an MCP tool (raw binary can't cross JSON-RPC). |
 | `install-catalog-app` | Browse the catalog → install → handle the `flowHref` that wizard apps (e.g. mail) return instead of installing in-band. |
 
-Prompt text resolves tool references against the live registry, so a renamed route never leaves a prompt
-pointing at a stale tool name.
+Every prompt starts with workspace discovery and selection guidance. Tool references resolve against
+the live registry, so a renamed route never leaves a prompt pointing at a stale tool name.
 
 ## Errors
 

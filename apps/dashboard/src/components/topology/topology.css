@@ -1,6 +1,17 @@
 .topology-page {
   container: project-topology / inline-size;
 }
+.topology-page[data-fullscreen="true"] {
+  position: fixed;
+  inset: var(--titlebar-h, 0px) 0 0;
+  z-index: 60;
+  height: auto;
+  padding: 16px;
+  background: var(--background);
+}
+.topology-page[data-fullscreen="true"] .topology-workspace {
+  min-height: 0;
+}
 @container project-topology (max-width: 760px) {
   .topology-toolbar {
     width: 100%;
@@ -14,7 +25,7 @@
     flex-basis: 100%;
   }
   .topology-actions {
-    width: 100%;
+    flex: 1;
   }
   .topology-add-service {
     flex: 1;
@@ -23,14 +34,43 @@
 .topology-workspace {
   min-height: 380px;
 }
+.topology-workspace .react-flow {
+  --xy-background-color: var(--th-card-on-page);
+}
 .topology-notice {
   top: 16px;
 }
 .topology-node {
+  border: 0;
+  background: color-mix(in oklab, var(--scale-node-color) 12%, var(--th-card-on-page));
   box-shadow: none;
+  transition: background-color 160ms ease-out;
 }
-.topology-node[data-pending="true"] {
-  border-style: dashed;
+.topology-node:hover {
+  background: color-mix(in oklab, var(--scale-node-color) 18%, var(--th-card-on-page));
+}
+.topology-node-icon {
+  background: var(--scale-node-tint);
+  color: var(--scale-node-color);
+}
+.topology-node .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--th-card-on-page);
+  background: var(--muted-foreground);
+}
+.topology-node .react-flow__handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+.topology-node .react-flow__handle:hover,
+.topology-node .react-flow__handle.connectingto {
+  background: var(--scale-node-color);
+}
+.topology-canvas-controls {
+  background: var(--background);
+  box-shadow: none;
 }
 .topology-status {
   color: var(--muted-foreground);

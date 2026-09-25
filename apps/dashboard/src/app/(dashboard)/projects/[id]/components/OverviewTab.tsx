@@ -1,29 +1,20 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
 import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
+import { TrafficChart } from "./general/TrafficChart";
 import { useProjectInfo, useAnalyticsData, invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
-import {
-  ExternalLink,
-  GitBranch,
-  Cpu,
-  Server,
-  Users,
-  Gauge,
-  ArrowUpDown,
-  BarChart3,
-  Layers,
-  ChevronRight,
-  Container,
-} from "lucide-react";
 
 export const OverviewTab = () => {
   const {
@@ -44,17 +35,10 @@ export const OverviewTab = () => {
   const hasDomain =
     !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
 
-  // ATOMIC PER-ENDPOINT HOOKS — each one owns its own skeleton state.
-  // No context coupling, no useMemo soup. Module-level caches dedup
-  // concurrent fetches across components (e.g. OverviewTab and
-  // MonitoringTab share one summary fetch).
+  // Project info and analytics load independently. Analytics share one
+  // project-wide request and cache with Monitoring's default All scope.
   const projectInfoQuery = useProjectInfo(id);
-  // Wait for this project's selected domain. An unscoped request aggregates
-  // every domain and can delay the scoped request that immediately follows it.
-  const analytics = useAnalyticsData(
-    projectData.id === id && selectedDomain ? id : null,
-    selectedDomain,
-  );
+  const analytics = useAnalyticsData(projectData.id === id && hasDomain ? id : null);
   const showAnalyticsError = !!analytics.error && !analytics.isLoading;
   const analyticsData = analytics.data;
   const services = servicesData.services;
@@ -94,11 +78,7 @@ export const OverviewTab = () => {
     return num?.toString() || "0";
   };
 
-  // Each skeleton gate reads STRICTLY from its own hook's isLoading.
-  // No cross-coupling possible — info, summary, periods each own a
-  // module-level cache and an independent isLoading boolean. A slow
-  // periods endpoint cannot pin the stats; a slow getInfo cannot pin
-  // the analytics widgets.
+  // Summary and chart come from the same snapshot; info has its own load.
   const showProjectInfoSkeleton = projectInfoQuery.isLoading;
   const showStatsSkeleton = analytics.isLoadingSummary;
   const showChartSkeleton = analytics.isLoadingPeriods;
@@ -109,39 +89,38 @@ export const OverviewTab = () => {
     subtext?: string;
     loading?: boolean;
   };
-  const hasAnalytics = !!analyticsData;
   const stats: Stat[] = showStatsSkeleton
     ? [
         {
           label: t.projects.stats.serverRequests,
           value: "",
-          icon: <Server className="size-4" />,
+          icon: <UiIcon name="server" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.uniqueIPs,
           value: "",
-          icon: <Users className="size-4" />,
+          icon: <UiIcon name="users" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.avgResponse,
           value: "",
-          icon: <Gauge className="size-4" />,
+          icon: <UiIcon name="gauge" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.bandwidthOut,
           value: "",
-          icon: <ArrowUpDown className="size-4" />,
+          icon: <UiIcon name="arrows-up-down" className="size-4" />,
           loading: true,
         },
       ]
     : [
         {
           label: t.projects.stats.serverRequests,
-          value: formatNumber(analyticsData?.summary?.uniqueRequests ?? 0),
-          icon: <Server className="size-4" />,
+          value: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
+          icon: <UiIcon name="server" className="size-4" />,
           subtext: interpolate(t.projects.stats.requestsSubtext, {
             total: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
             avg: String(analyticsData?.summary?.avgRequestsPerHour ?? 0),
@@ -150,7 +129,7 @@ export const OverviewTab = () => {
         {
           label: t.projects.stats.uniqueIPs,
           value: formatNumber(analyticsData?.summary?.uniqueIPs ?? 0),
-          icon: <Users className="size-4" />,
+          icon: <UiIcon name="users" className="size-4" />,
           subtext: interpolate(t.projects.stats.uniqueIPsSubtext, {
             pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
           }),
@@ -158,13 +137,13 @@ export const OverviewTab = () => {
         {
           label: t.projects.stats.avgResponse,
           value: `${analyticsData?.performance?.avgResponseTimeMs?.toFixed(2) || "N/A "}ms`,
-          icon: <Gauge className="size-4" />,
+          icon: <UiIcon name="gauge" className="size-4" />,
           subtext: t.projects.stats.responseTime,
         },
         {
           label: t.projects.stats.bandwidthOut,
           value: analyticsData?.bandwidth?.totalOutFormatted || "N/A",
-          icon: <ArrowUpDown className="size-4" />,
+          icon: <UiIcon name="arrows-up-down" className="size-4" />,
           subtext: interpolate(t.projects.stats.bandwidthInSubtext, {
             value: analyticsData?.bandwidth?.totalInFormatted ?? "0 B",
           }),
@@ -173,16 +152,6 @@ export const OverviewTab = () => {
 
   const trafficData = analyticsData?.trafficByHour || [];
   const topPaths = analyticsData?.topPaths || [];
-  const dateRange = analyticsData
-    ? `${new Date(analyticsData.summary.firstRequest).toLocaleDateString()} – ${new Date(analyticsData.summary.lastRequest).toLocaleDateString()}`
-    : undefined;
-
-  const displayData =
-    trafficData.length > 0
-      ? trafficData
-      : Array.from({ length: 24 }, (_, i) => ({ hour: i, requests: 0 }));
-  const maxRequests = Math.max(...displayData.map((d) => d.requests), 1);
-  const areaData = displayData.length === 1 ? [displayData[0], displayData[0]] : displayData;
 
   return (
     <div className="space-y-5">
@@ -207,7 +176,7 @@ export const OverviewTab = () => {
       {/* ── Info sections ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Infrastructure */}
-        <Card title={t.projects.overview.infrastructure} icon={Cpu} iconColor="primary">
+        <Card title={t.projects.overview.infrastructure} icon={"cpu"} iconColor="primary">
           <Item
             label={t.projects.overview.platform}
             value={platformLabel}
@@ -242,7 +211,7 @@ export const OverviewTab = () => {
                   className="inline-flex min-w-0 items-center gap-1.5 truncate text-[13px] font-medium text-foreground transition-colors hover:text-primary sm:max-w-[180px]"
                 >
                   <span className="truncate">{projectData.serverName}</span>
-                  <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                  <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground" />
                 </Link>
               ) : (
                 <span className="min-w-0 truncate text-[13px] font-medium text-foreground sm:max-w-[180px]">
@@ -254,7 +223,7 @@ export const OverviewTab = () => {
         </Card>
 
         {/* Source & CI/CD */}
-        <Card title={t.projects.overview.sourceCicd} icon={GitBranch} iconColor="orange">
+        <Card title={t.projects.overview.sourceCicd} icon={"git-branch"} iconColor="orange">
           <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-[13px] text-muted-foreground">
               {t.projects.overview.repository}
@@ -269,7 +238,7 @@ export const OverviewTab = () => {
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"
               >
                 <span className="truncate">{projectData.gitOwner}/{projectData.gitRepo}</span>
-                <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground" />
               </a>
             ) : (
               <span className="text-[13px] text-muted-foreground/60">
@@ -340,94 +309,13 @@ export const OverviewTab = () => {
         ))}
       </div>
 
-      {/* Compact traffic chart */}
-      <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="size-3.5 text-primary" />
-            <span className="text-[13px] font-semibold text-foreground">
-              {t.projects.overview.traffic}
-            </span>
-          </div>
-          {dateRange && <span className="text-[11px] text-muted-foreground">{dateRange}</span>}
-        </div>
-        {showChartSkeleton ? (
-          // Chart-shaped skeleton - animated bars at varied heights so
-          // the placeholder reads as "a chart is coming" instead of a
-          // bare text line. Gated on `showChartSkeleton` (periods
-          // hydration) only — the stat cards above use their own
-          // `showStatsSkeleton`, so a fast `summary` endpoint can flip
-          // those even while `periods` is still in flight.
-          <div className="flex items-end gap-[3px] h-[120px] px-1 pb-1">
-            {Array.from({ length: 32 }).map((_, i) => {
-              // Deterministic varied heights - sine-based so the bars
-              // form a wave rather than a uniform block, and the
-              // sequence stays stable across re-renders.
-              const h = 18 + Math.abs(Math.sin(i * 0.7)) * 70;
-              return (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-muted-foreground/15 animate-pulse"
-                  style={{ height: `${h}%`, animationDelay: `${i * 40}ms` }}
-                />
-              );
-            })}
-          </div>
-        ) : !hasAnalytics ? (
-          <div className="flex items-center justify-center h-[120px] rounded-xl border border-dashed border-border/50 bg-muted/10">
-            <span className="text-[12px] text-muted-foreground">
-              {t.projects.overview.noTrafficData}
-            </span>
-          </div>
-        ) : (
-          <div>
-            <div className="relative h-[120px]">
-              <svg
-                className="absolute inset-0 w-full h-full text-primary"
-                viewBox="0 0 1000 200"
-                preserveAspectRatio="none"
-                style={{ color: "var(--primary)" }}
-              >
-                <defs>
-                  <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="20%" stopColor="currentColor" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d={`M 0 200 ${areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `L ${x} ${y}`;
-                    })
-                    .join(" ")} L 1000 200 Z`}
-                  fill="url(#overviewAreaGrad)"
-                />
-                <path
-                  d={areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-                    })
-                    .join(" ")}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
-              {displayData
-                .filter((_, i) => i % 6 === 0)
-                .map((d, i) => (
-                  <span key={i}>{d.hour}:00</span>
-                ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <TrafficChart
+        trafficData={trafficData}
+        isLoading={showChartSkeleton}
+        totalRequests={analyticsData?.summary.totalRequests}
+        scopeLabel={t.projects.monitoring.allDomains}
+        compact
+      />
         </>
       )}
 
@@ -443,7 +331,7 @@ export const OverviewTab = () => {
       >
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-success-bg flex items-center justify-center">
-            <Layers className="size-3.5 text-success" />
+            <UiIcon name="layers" className="size-3.5 text-success" />
           </div>
           <span className="text-[13px] font-medium text-foreground">
             {t.projects.overview.services}
@@ -461,7 +349,7 @@ export const OverviewTab = () => {
                   title={svc.name}
                   className="w-6 h-6 rounded-md bg-muted/50 flex items-center justify-center"
                 >
-                  <Container className="size-3 text-muted-foreground" />
+                  <ServiceIcon service={svc} className="size-3" />
                 </div>
               ))}
               {services.length > 4 && (
@@ -479,7 +367,7 @@ export const OverviewTab = () => {
         </div>
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <span className="text-[12px]">{t.projects.overview.manage}</span>
-          <ChevronRight className="size-3.5 group-hover:translate-x-0.5 transition-transform rtl:rotate-180" />
+          <UiIcon name="chevron-right" className="size-3.5 group-hover:translate-x-0.5 transition-transform rtl:rotate-180" />
         </div>
       </button>
 
@@ -487,7 +375,7 @@ export const OverviewTab = () => {
       {hasDomain && topPaths.length > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
           <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="size-3.5 text-primary" />
+            <UiIcon name="chart-bar" className="size-3.5 text-primary" />
             <span className="text-[13px] font-semibold text-foreground">
               {t.projects.overview.topPaths}
             </span>
@@ -535,7 +423,7 @@ function Card({
   children,
 }: {
   title: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconColor?: keyof typeof ICON_COLORS;
   children: React.ReactNode;
 }) {
@@ -544,7 +432,7 @@ function Card({
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors.bg}`}>
-          <Icon className={`size-4 ${colors.text}`} />
+          <UiIcon name={Icon} className={`size-4 ${colors.text}`} />
         </div>
         <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
       </div>

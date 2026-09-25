@@ -254,9 +254,8 @@ function ensureHttps(url: string, envOverride: string): void {
 
 /**
  * For user-supplied external dist URLs: HTTPS + refuse literal loopback /
- * private / link-local / metadata hosts (SSRF). Note: a hostname that RESOLVES
- * to a private IP (DNS rebinding) is a known residual — a full fix needs
- * resolve-then-connect pinning; this blocks the common literal-IP abuse.
+ * private / link-local / metadata hosts (SSRF). This early literal check is
+ * backed by safeFetch's DNS validation and pinned transport at download time.
  */
 export function assertPublicHttps(url: string, envOverride: string): void {
   ensureHttps(url, envOverride);

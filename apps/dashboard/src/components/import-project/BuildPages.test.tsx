@@ -91,7 +91,7 @@ beforeEach(() => {
     },
     deploymentStatus: "ready",
     stopDeployment: mocks.stop, onTerminalReady: mocks.ready, respondToPrompt: mocks.respond,
-    steps: [{ label: "Prepare", icon: "" }, { label: "Build", icon: "" }, { label: "Deploy", icon: "" }],
+    steps: [{ label: "Prepare", icon: "server" }, { label: "Build", icon: "wrench" }, { label: "Deploy", icon: "rocket" }],
     terminalRef: { current: null },
   };
   host = document.createElement("div");
@@ -122,7 +122,8 @@ describe("build pages", () => {
     for (const label of [copy.openProject, composeCopy.editConfiguration]) {
       const controls = [...host.querySelectorAll("button, a")].filter(element => element.textContent === label);
       expect(controls).toHaveLength(1);
-      expect(controls[0].closest("header")).not.toBeNull();
+      expect(controls[0].closest(label === copy.openProject ? "header" : "section[aria-label]"))
+        .not.toBeNull();
     }
     expect(host.querySelector('a[href="/servers/server"]')).not.toBeNull();
     expect(mocks.ready).toHaveBeenCalledTimes(1);
@@ -146,17 +147,52 @@ describe("build pages", () => {
 
   it("switches service panels with the keyboard and preserves browser modifier shortcuts", async () => {
     await render();
+    expect(host.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe("horizontal");
     const prepare = tab(composeCopy.prepareTab);
     await act(async () => { prepare.focus(); prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
     expect(tab("api").getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tab("api"));
+    await act(async () => tab("api").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement).toBe(tab("postgres"));
+    await act(async () => tab("postgres").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    expect(document.activeElement).toBe(tab("web"));
+    await act(async () => tab("web").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+    expect(document.activeElement).toBe(prepare);
     await act(async () => tab("api").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
     expect(document.activeElement).toBe(tab("postgres"));
     await act(async () => tab("postgres").dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
     expect(document.activeElement).toBe(prepare);
-    await act(async () => prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true })));
+    await act(async () => prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", ctrlKey: true, bubbles: true })));
     expect(document.activeElement).toBe(prepare);
+    await act(async () => prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+    expect(document.activeElement).toBe(tab("web"));
+    expect(panel().textContent).toContain("web build output");
     expect(host.querySelectorAll('[role="tab"][tabindex="0"]')).toHaveLength(1);
+  });
+
+  it("keeps vertical arrow navigation in its column when the last grid row is unpaired", async () => {
+    deployment.config.services.push(normalizeComposeService({ id: "svc-worker", name: "worker", image: "example/worker" }));
+    await render();
+    const prepare = tab(composeCopy.prepareTab);
+    await act(async () => { prepare.focus(); prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })); });
+    expect(document.activeElement).toBe(tab("worker"));
+    await act(async () => tab("worker").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement).toBe(prepare);
+    await select("api");
+    await act(async () => tab("api").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement).toBe(tab("postgres"));
+    await act(async () => tab("postgres").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement).toBe(tab("api"));
+  });
+
+  it("reverses horizontal grid navigation for right-to-left layouts", async () => {
+    await render();
+    for (const element of host.querySelectorAll<HTMLElement>('[role="tab"]')) element.style.direction = "rtl";
+    const prepare = tab(composeCopy.prepareTab);
+    await act(async () => { prepare.focus(); prepare.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })); });
+    expect(document.activeElement).toBe(tab("api"));
+    await act(async () => tab("api").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    expect(document.activeElement).toBe(prepare);
   });
 
   it("enables runtime output only for the selected service of the current successful deployment", async () => {

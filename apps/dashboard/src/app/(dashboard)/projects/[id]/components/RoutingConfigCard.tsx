@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Project Routing/Domains tab card: view + edit the vercel.json-derived routing
  * (rewrites/redirects/headers). Saving PATCHes the project; the backend re-applies
@@ -8,7 +10,6 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Route, ChevronDown } from "lucide-react";
 import type { RoutingConfig } from "@repo/core";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import type { EdgeConfigReport } from "@/lib/api/projects";
@@ -102,7 +103,7 @@ export function RoutingConfigCard({
       >
         <div className="flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-            <Route className="size-[18px]" />
+            <UiIcon name="route" className="size-[18px]" />
           </div>
           <div>
             <h3 className="text-[14px] font-semibold text-foreground">{t.projectSettings.routing.title}</h3>
@@ -115,7 +116,7 @@ export function RoutingConfigCard({
           <span className="text-[12px] text-muted-foreground">
             {active ? t.projectSettings.routing.summaryActive : t.projectSettings.routing.summaryNone}
           </span>
-          <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+          <UiIcon name="chevron-down" className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
       {open && (

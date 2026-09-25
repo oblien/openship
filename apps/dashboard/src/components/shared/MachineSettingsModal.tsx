@@ -1,8 +1,9 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ExternalLink, BookOpen } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/context/ToastContext';
 import { useI18n, interpolate } from '@/components/i18n-provider';
@@ -209,7 +210,7 @@ export default function MachineSettingsModal({
             href={docsUrl}
             className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-black/50 hover:text-black bg-black/5 hover:bg-black/10 rounded-lg transition-all"
           >
-            <BookOpen className="w-4 h-4" />
+            <UiIcon name="book" className="w-4 h-4" />
             {w.docs}
           </Link>
         </div>
@@ -258,7 +259,7 @@ export default function MachineSettingsModal({
               className="inline-flex items-center gap-1 text-xs text-black/40 hover:text-black/60 mt-1 transition-colors"
             >
               {w.viewPricing}
-              <ExternalLink className="w-3 h-3" />
+              <UiIcon name="external-link" className="w-3 h-3" />
             </Link>
           </div>
 
@@ -276,7 +277,7 @@ export default function MachineSettingsModal({
             >
               {isSaving ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <UiIcon name="spinner" className="w-4 h-4 animate-spin text-white" />
                   {w.saving}
                 </>
               ) : (

@@ -268,6 +268,14 @@ export const MOCK_VARIANTS: Record<MockVariant, () => MockBundle> = {
 export function mockAnalytics(): AnalyticsData {
   const now = Date.now();
   const totalRequests = 99_356;
+  const weights = Array.from({ length: 24 }, (_, hour) => 1200 + Math.sin(((hour - 4) / 24) * Math.PI * 2) * 900);
+  const weightSum = weights.reduce((sum, value) => sum + value, 0);
+  const trafficByHour = weights.map((weight, hour) => ({
+    from: new Date(now - (24 - hour) * 3_600_000).toISOString(),
+    to: new Date(now - (23 - hour) * 3_600_000).toISOString(),
+    requests: Math.floor(totalRequests * weight / weightSum),
+  }));
+  trafficByHour[23].requests += totalRequests - trafficByHour.reduce((sum, period) => sum + period.requests, 0);
   return {
     success: true,
     domain: "app.example.com",
@@ -279,10 +287,10 @@ export function mockAnalytics(): AnalyticsData {
       uniqueRequests: totalRequests,
       totalIPs: totalRequests,
       uniqueIPsPercentage: "61.6",
-      firstRequest: new Date(now - 7 * 86_400_000).toISOString(),
+      firstRequest: trafficByHour[0].from,
       lastRequest: new Date(now).toISOString(),
-      timeRangeHours: 168,
-      avgRequestsPerHour: 591,
+      timeRangeHours: 24,
+      avgRequestsPerHour: Math.round(totalRequests / 24),
     },
     performance: {
       avgResponseTime: 0.0842,
@@ -300,14 +308,7 @@ export function mockAnalytics(): AnalyticsData {
       avgResponseSize: 185_204,
     },
     topPaths: [],
-    trafficByHour: Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      // A believable diurnal curve, not a flat line — a flat chart hides whether the
-      // axis scaling is right.
-      requests: Math.round(
-        1200 + Math.sin(((hour - 4) / 24) * Math.PI * 2) * 900 + Math.random() * 180,
-      ),
-    })),
+    trafficByHour,
     limited: false,
   };
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Cpu, Infinity as InfinityIcon, Loader2, SlidersHorizontal } from "lucide-react";
 import {
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
@@ -64,7 +65,7 @@ function SectionCard({
       >
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-500">
-            <Cpu className="size-4" />
+            <UiIcon name="cpu" className="size-4" />
           </div>
           <div className="min-w-0">
             <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
@@ -73,7 +74,7 @@ function SectionCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {summary}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
           />
         </div>
@@ -216,7 +217,7 @@ export const ResourceSettings: React.FC = () => {
       onToggle={() => setOpen((v) => !v)}
       summary={
         loading ? (
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-3.5 animate-spin text-muted-foreground" />
         ) : loadError ? (
           <span className="truncate text-[12px] text-destructive">{r.unavailable}</span>
         ) : (
@@ -236,7 +237,7 @@ export const ResourceSettings: React.FC = () => {
     >
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-[13px] text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
+          <UiIcon name="spinner" className="size-3.5 animate-spin" />
           {r.loading}
         </div>
       ) : loadError ? (
@@ -292,13 +293,13 @@ export const ResourceSettings: React.FC = () => {
                     }`}
                   >
                     {isSaving ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : tier === "unlimited" ? (
-                      <InfinityIcon className="size-4" />
+                      <UiIcon name="infinity" className="size-4" />
                     ) : tier === "custom" ? (
-                      <SlidersHorizontal className="size-4" />
+                      <UiIcon name="sliders" className="size-4" />
                     ) : (
-                      <Cpu className="size-4" />
+                      <UiIcon name="cpu" className="size-4" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">

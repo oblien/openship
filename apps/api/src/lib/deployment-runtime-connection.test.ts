@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   factoryCalls: 0,
   waitForFactory: null as Promise<void> | null,
   failDispose: false,
-  invalidHostIdentity: false,
+  invalidSsh: false,
   disposalCalls: 0,
   sslCalls: 0,
   waitForSsl: null as Promise<void> | null,
@@ -23,7 +23,6 @@ vi.mock("@repo/adapters", async () => {
       async dispose() { value.closed = true; },
       async readFile() {
         if (value.closed) throw new Error("SSH connection was closed");
-        if (h.invalidHostIdentity) throw new Error("host identity unavailable");
         return "0123456789abcdef0123456789abcdef";
       },
     };
@@ -78,7 +77,7 @@ vi.mock("@repo/db", () => {
   const row = (id: string) => ({
     id, organizationId: "org", isLocal: id === "local",
     sshHost: id === "local" ? "127.0.0.1" : "remote.invalid",
-    sshUser: "root", sshPort: h.invalidHostIdentity ? 0 : 22, sshAuthMethod: "password", sshPassword: "test-password",
+    sshUser: "root", sshPort: h.invalidSsh ? 0 : 22, sshAuthMethod: "password", sshPassword: "test-password",
   });
   const verification = {
     id: "target", organizationId: "org", serverId: "remote", target: "http://203.0.113.10",
@@ -133,6 +132,7 @@ vi.mock("@repo/platform/engine/lib/openship-manifest", () => ({
 }));
 
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import * as hostPortTarget from "@repo/platform/engine/lib/host-port-target";
 import {
   createServerDockerRuntime,
   resolveDeploymentPlatform,
@@ -159,7 +159,7 @@ beforeEach(() => {
   h.factoryCalls = 0;
   h.waitForFactory = null;
   h.failDispose = false;
-  h.invalidHostIdentity = false;
+  h.invalidSsh = false;
   h.disposalCalls = 0;
   h.sslCalls = 0;
   h.waitForSsl = null;
@@ -173,6 +173,7 @@ afterEach(async () => {
   sshManager.invalidate();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("SSL ownership of pooled connections", () => {
@@ -318,15 +319,29 @@ describe("runtime ownership of pooled connections", () => {
   });
 
   it.each(["deployment", "inspection"])("disposes a %s runtime if host identity resolution fails", async (kind) => {
-    h.invalidHostIdentity = true;
+    // Fail after a valid connection is allocated; invalid SSH input is now
+    // rejected earlier and must not bypass this cleanup regression test.
+    vi.spyOn(hostPortTarget, "resolveHostPortTargetIdentity")
+      .mockRejectedValueOnce(new Error("host identity unavailable"));
     const meta = { deployTarget: "server", serverId: "remote", runtimeMode: "docker" } as const;
     const pending = kind === "deployment"
       ? resolveDeploymentPlatform(meta, { organizationId: "org" })
       : resolveDeploymentRuntimeForRead({ meta, organizationId: "org" } as never);
-    await expect(pending).rejects.toThrow("invalid SSH port");
+    await expect(pending).rejects.toThrow("host identity unavailable");
     expect(h.disposalCalls).toBe(1);
     await advance();
     expect(h.executors[0].closed).toBe(true);
+  });
+
+  it.each(["deployment", "inspection"])("rejects invalid SSH before allocating a %s runtime", async (kind) => {
+    h.invalidSsh = true;
+    const meta = { deployTarget: "server", serverId: "remote", runtimeMode: "docker" } as const;
+    const pending = kind === "deployment"
+      ? resolveDeploymentPlatform(meta, { organizationId: "org" })
+      : resolveDeploymentRuntimeForRead({ meta, organizationId: "org" } as never);
+    await expect(pending).rejects.toThrow("Invalid SSH host, username or port.");
+    expect(h.executors).toHaveLength(0);
+    expect(h.runtimes).toHaveLength(0);
   });
 
   it("does not release a replacement connection when an invalidated runtime finishes", async () => {

@@ -30,6 +30,7 @@ import {
   type ParseResult,
 } from "./schema";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
+import { isValidServiceName } from "../service-name";
 
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
@@ -354,6 +355,10 @@ function parseServices(ctx: Ctx, v: unknown, path: string): OpenshipService[] | 
     const name = ctx.str(item.name, `${p}.name`);
     if (!name) {
       ctx.err(p, "requires a `name`");
+      return;
+    }
+    if (!isValidServiceName(name)) {
+      ctx.err(p, "requires a service name starting with a letter or digit and containing only letters, digits, dots, underscores or hyphens");
       return;
     }
     out.push({

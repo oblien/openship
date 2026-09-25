@@ -1,7 +1,9 @@
 "use client";
+
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Archive, RotateCcw } from "lucide-react";
 import type { ClusterDatabase } from "@repo/contracts";
 import type { ClusterDatabaseConfig } from "@repo/core";
 import { Button } from "@/components/ui/button";
@@ -150,7 +152,7 @@ export function ClusterDatabaseBackups({
   return (
     <div className="space-y-3 rounded-xl bg-muted/30 p-3">
       <div className="flex items-center gap-2">
-        <Archive className="size-4 text-primary" />
+        <UiIcon name="archive" className="size-4 text-primary" />
         <h3 className="flex-1 text-sm font-medium">Backups and recovery</h3>
         {database.status === "ready" && (
           <Button variant="ghost" size="sm" disabled={disabled} onClick={onBackup}>
@@ -204,7 +206,7 @@ export function ClusterDatabaseBackups({
                 setSelected(backup.name);
               }}
             >
-              <RotateCcw />
+              <UiIcon name="rotate-left" />
             </Button>
           )}
         </div>

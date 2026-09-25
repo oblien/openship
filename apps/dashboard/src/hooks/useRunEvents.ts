@@ -12,9 +12,18 @@ export interface RunEventsState {
 }
 
 /** Read-only run subscription. Reconnection can never replay a start/retry POST. */
-export function useRunEvents<T>(path: string | null, onSnapshot: (run: T) => void): RunEventsState {
+export function useRunEvents<T>(
+  path: string | null,
+  onSnapshot: (run: T) => void,
+  options: {
+    snapshotKey?: "run" | "restore";
+    onEvent?: (message: SSEMessage) => void;
+  } = {},
+): RunEventsState {
   const callback = useRef(onSnapshot);
   callback.current = onSnapshot;
+  const eventOptions = useRef(options);
+  eventOptions.current = options;
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -45,9 +54,10 @@ export function useRunEvents<T>(path: string | null, onSnapshot: (run: T) => voi
     (message: SSEMessage) => {
       if (!control.current.active) return;
       if (message.type === "snapshot") {
-        if (!message.run || typeof message.run !== "object")
+        const snapshot = message[eventOptions.current.snapshotKey ?? "run"];
+        if (!snapshot || typeof snapshot !== "object")
           throw new Error("Invalid run progress snapshot");
-        callback.current(message.run as T);
+        callback.current(snapshot as T);
         control.current.snapshot = true;
         setError(null);
         setReconnecting(false);
@@ -55,6 +65,7 @@ export function useRunEvents<T>(path: string | null, onSnapshot: (run: T) => voi
         // Never accept an incomplete replay as a successful connection.
         if (!control.current.snapshot)
           throw new Error("The progress stream ended without a saved snapshot");
+        eventOptions.current.onEvent?.(message);
         control.current.complete = true;
         setReconnecting(false);
         disconnect.current();
@@ -68,6 +79,8 @@ export function useRunEvents<T>(path: string | null, onSnapshot: (run: T) => voi
           ),
         );
         disconnect.current();
+      } else {
+        eventOptions.current.onEvent?.(message);
       }
     },
     [onError],

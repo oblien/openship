@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useRef } from "react";
-import { Search } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { ProjectFilter } from "./ProjectFilter";
 import type { Project } from "../types";
@@ -71,7 +72,7 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
     // and the viewport is tight; stacks on mobile.
     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="relative w-full sm:flex-1 sm:min-w-[220px]">
-        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+        <UiIcon name="search" className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <input
           type="text"
           placeholder={t.deployments.filters.searchPlaceholder}

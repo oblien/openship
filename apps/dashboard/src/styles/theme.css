@@ -164,6 +164,12 @@
 
   /* Solid fills (bars/dots/solid buttons) — vivid mid-tones that read on white. */
   --st-success-solid: #10b981;  --st-danger-solid: #ef4444;  --st-warning-solid: #f59e0b;  --st-info-solid: #3b82f6;  --st-neutral-solid: #9ca3af;
+
+  /* ANSI hues without a semantic status equivalent; log surfaces use card/text tokens. */
+  --th-terminal-magenta: #9333ea;
+  --th-terminal-cyan: #0891b2;
+  --th-terminal-black: var(--th-text-title);
+  --th-terminal-white: var(--th-text-muted);
 }
 
 
@@ -297,6 +303,10 @@
 
   /* Solid fills (bars/dots/solid buttons) — desaturated so they read as color, not neon glow. */
   --st-success-solid: hsl(154 44% 47%);  --st-danger-solid: hsl(0 74% 60%);  --st-warning-solid: hsl(38 66% 52%);  --st-info-solid: hsl(214 58% 56%);  --st-neutral-solid: #8b8f98;
+  --th-terminal-magenta: #c084fc;
+  --th-terminal-cyan: #22d3ee;
+  --th-terminal-black: var(--th-card-on-page);
+  --th-terminal-white: var(--th-text-title);
 }
 
 
@@ -432,6 +442,10 @@
 
   /* Solid fills (bars/dots/solid buttons) — softened to sit on the lifted gray without glare. */
   --st-success-solid: hsl(85 68% 62%);  --st-danger-solid: hsl(4 72% 57%);  --st-warning-solid: hsl(38 68% 53%);  --st-info-solid: hsl(214 60% 57%);  --st-neutral-solid: rgba(255,255,255,.42);
+  --th-terminal-magenta: hsl(275 60% 75%);
+  --th-terminal-cyan: hsl(185 55% 65%);
+  --th-terminal-black: var(--th-card-on-page);
+  --th-terminal-white: var(--th-text-title);
 }
 
 

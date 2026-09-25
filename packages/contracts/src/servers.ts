@@ -25,6 +25,7 @@ const connectionFields = {
   sshPrivateKey: Type.Optional(nullableString),
   sshKeyPassphrase: Type.Optional(nullableString),
   sshJumpHost: Type.Optional(nullableString),
+  sshTransport: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("cloudflare")])),
   sshArgs: Type.Optional(nullableString),
 };
 export const CreateServerInputSchema = Type.Object({
@@ -45,6 +46,7 @@ const serverFields = {
   sshPort: Type.Union([Type.Number(), Type.Null()]), sshUser: nullableString,
   sshAuthMethod: nullableString, sshKeyPath: nullableString, hasStoredKeyMaterial: Type.Boolean(),
   sshJumpHost: nullableString, sshArgs: nullableString, createdAt: Type.String(), country: nullableString,
+  sshTransport: Type.Union([Type.Literal("direct"), Type.Literal("cloudflare")]),
 };
 /** Explicitly excludes password, private-key material and passphrase, including ciphertext. */
 export const ServerSchema = Type.Object(serverFields, { additionalProperties: false });

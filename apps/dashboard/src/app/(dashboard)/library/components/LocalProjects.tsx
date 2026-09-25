@@ -1,22 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import {
-  FolderOpen,
-  Plus,
-  Trash2,
-  ArrowRight,
-  Loader2,
-  Package,
-  AlertCircle,
-  CheckCircle2,
-  X,
-  Upload,
-  FolderInput,
-  Zap,
-  HardDrive,
-} from "lucide-react";
 import { projectsApi, type ScanProjectResponse } from "@/lib/api/projects";
 import { systemApi } from "@/lib/api/system";
 import { encodeLocalSlug } from "@/utils/repoSlug";
@@ -91,7 +78,7 @@ export function LocalProjects() {
         <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-              <FolderOpen className="size-[18px] text-primary" />
+              <UiIcon name="folder-open" className="size-[18px] text-primary" />
             </div>
             <div>
               <h2 className="font-semibold text-foreground text-[15px]">{t.library.localProjects.title}</h2>
@@ -106,7 +93,7 @@ export function LocalProjects() {
             onClick={handleImport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            <Plus className="size-3.5" />
+            <UiIcon name="plus" className="size-3.5" />
             {t.library.localProjects.import}
           </button>
         </div>
@@ -146,7 +133,7 @@ export function LocalProjects() {
               className="px-5 py-3.5 flex items-center gap-4 hover:bg-muted/40 transition-colors group"
             >
               <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
-                <Package className="size-[18px] text-muted-foreground" />
+                <UiIcon name="project" className="size-[18px] text-muted-foreground" />
               </div>
 
               <div className="flex-1 min-w-0">
@@ -170,13 +157,13 @@ export function LocalProjects() {
                   }}
                   className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-danger hover:bg-danger-bg transition-colors opacity-0 group-hover:opacity-100"
                 >
-                  <Trash2 className="size-3.5" />
+                  <UiIcon name="trash" className="size-3.5" />
                 </button>
                 <button
                   onClick={() => project.localPath && handleDeploy(project.localPath)}
                   className="p-1.5 rounded-lg text-muted-foreground/40 group-hover:text-muted-foreground transition-colors"
                 >
-                  <ArrowRight className="size-4 rtl:rotate-180" />
+                  <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                 </button>
               </div>
             </div>
@@ -249,7 +236,7 @@ function EmptyState({ onImport }: { onImport: () => void }) {
           onClick={onImport}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.library.localProjects.empty.importProject}
         </button>
       </div>
@@ -262,21 +249,21 @@ function EmptyState({ onImport }: { onImport: () => void }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="bg-card border border-border/50 rounded-xl p-4 text-start">
             <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-              <FolderInput className="size-4 text-muted-foreground" />
+              <UiIcon name="folder-in" className="size-4 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground">{t.library.localProjects.empty.dropTitle}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{t.library.localProjects.empty.dropDesc}</p>
           </div>
           <div className="bg-card border border-border/50 rounded-xl p-4 text-start">
             <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-              <Zap className="size-4 text-muted-foreground" />
+              <UiIcon name="bolt" className="size-4 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground">{t.library.localProjects.empty.autoDetectTitle}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{t.library.localProjects.empty.autoDetectDesc}</p>
           </div>
           <div className="bg-card border border-border/50 rounded-xl p-4 text-start sm:col-span-1 col-span-2">
             <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-              <HardDrive className="size-4 text-muted-foreground" />
+              <UiIcon name="hard-drive" className="size-4 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground">{t.library.localProjects.empty.deployTitle}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{t.library.localProjects.empty.deployDesc}</p>
@@ -406,7 +393,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-foreground">{t.library.localProjects.form.title}</h3>
         <button onClick={onClose} className="p-1 rounded-md hover:bg-muted transition-colors">
-          <X className="size-4 text-muted-foreground" />
+          <UiIcon name="close" className="size-4 text-muted-foreground" />
         </button>
       </div>
 
@@ -433,7 +420,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
             onChange={(e) => e.target.files && extractPath(e.target.files)}
           />
           <div className="w-10 h-10 rounded-xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-2">
-            <Upload className="size-5 text-muted-foreground" />
+            <UiIcon name="upload" className="size-5 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium text-foreground mb-0.5">
             {t.library.localProjects.form.dropTitle}
@@ -471,7 +458,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
           disabled={!path.trim() || scanning}
           className="px-3 py-2 rounded-lg text-sm font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors disabled:opacity-50"
         >
-          {scanning ? <Loader2 className="size-4 animate-spin" /> : t.library.localProjects.form.scan}
+          {scanning ? <UiIcon name="spinner" className="size-4 animate-spin" /> : t.library.localProjects.form.scan}
         </button>
       </div>
 
@@ -487,7 +474,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
               ? "bg-warning-bg border border-warning-border"
               : "bg-danger-bg border border-danger-border"
           }`}>
-            <AlertCircle className={`size-4 shrink-0 ${
+            <UiIcon name="alert-circle" className={`size-4 shrink-0 ${
               isPathHint ? "text-warning" : "text-danger"
             }`} />
             <p className={`text-xs ${
@@ -501,7 +488,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
       {scanResult && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success-bg border border-success-border">
-            <CheckCircle2 className="size-4 text-success shrink-0" />
+            <UiIcon name="check-circle" className="size-4 text-success shrink-0" />
             <p className="text-xs text-success">
               {t.library.localProjects.form.detected}{" "}<span className="font-medium capitalize">{scanResult.stack}</span>
               {scanResult.stack !== "unknown" && (
@@ -556,9 +543,9 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {importing ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
             )}
             {importing ? t.library.localProjects.form.importing : t.library.localProjects.form.importProject}
           </button>

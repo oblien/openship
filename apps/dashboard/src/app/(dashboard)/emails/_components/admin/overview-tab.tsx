@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Overview tab - what an operator wants on day one.
  *
@@ -30,24 +32,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  Check,
-  Code2,
-  Copy,
-  Globe,
-  Inbox,
-  Mail,
-  Sparkles,
-  Upload,
-  UserPlus,
-  UserRound,
-  HardDrive,
-  Apple,
-  Smartphone,
-} from "lucide-react";
 import {
   getApiErrorMessage,
   isMailEngineUnavailable,
@@ -144,7 +128,7 @@ function MailServerCard({
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <Inbox className="size-4 text-muted-foreground" strokeWidth={2} />
+          <UiIcon name="inbox" className="size-4 text-muted-foreground" />
           <h3 className="font-semibold text-foreground text-sm">{t.emailsAdmin.overview.mailServer}</h3>
         </div>
         <Link
@@ -174,9 +158,9 @@ function MailServerCard({
             {mailHost && (
               <span className="text-muted-foreground/70 group-hover:text-foreground transition-colors shrink-0">
                 {copied ? (
-                  <Check className="size-3.5 text-success" />
+                  <UiIcon name="check" className="size-3.5 text-success" />
                 ) : (
-                  <Copy className="size-3.5" />
+                  <UiIcon name="copy" className="size-3.5" />
                 )}
               </span>
             )}
@@ -213,19 +197,19 @@ function MailServerCard({
         {cta.kind === "open" ? (
           <a href={cta.url} target="_blank" rel="noopener noreferrer" className={CTA_CLASS}>
             {t.emailsAdmin.overview.openWebmail}
-            <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
+            <UiIcon name="arrow-up-right" className="size-3.5" />
           </a>
         ) : cta.kind === "project" ? (
           <Link href={`/projects/${cta.projectId}`} className={CTA_CLASS}>
             {t.projects.connections.usedByOpen}
-            <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
+            <UiIcon name="arrow-up-right" className="size-3.5" />
           </Link>
         ) : (
           <Link
             href={`/deploy/mail?serverId=${encodeURIComponent(serverId)}`}
             className={CTA_CLASS}
           >
-            <Upload className="size-3.5" strokeWidth={2.25} />
+            <UiIcon name="upload" className="size-3.5" />
             {t.emailsAdmin.overview.deployWebmail}
           </Link>
         )}
@@ -244,7 +228,7 @@ function SetupGuidesBanner() {
   return (
     <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/15 p-5">
       <div className="flex items-center gap-2 mb-1">
-        <Sparkles className="size-4 text-primary" strokeWidth={2} />
+        <UiIcon name="sparkles" className="size-4 text-primary" />
         <h3 className="font-semibold text-foreground text-sm">{t.emailsAdmin.overview.setupGuides}</h3>
       </div>
       <p className="text-sm text-muted-foreground leading-relaxed mb-4">
@@ -254,25 +238,25 @@ function SetupGuidesBanner() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <GuideCard
           href={guideHref("ios")}
-          icon={Apple}
+          icon={"apple"}
           title={t.emailsAdmin.overview.guides.iosTitle}
           subtitle={t.emailsAdmin.overview.guides.iosSubtitle}
         />
         <GuideCard
           href={guideHref("android")}
-          icon={Smartphone}
+          icon={"smartphone"}
           title={t.emailsAdmin.overview.guides.androidTitle}
           subtitle={t.emailsAdmin.overview.guides.androidSubtitle}
         />
         <GuideCard
           href={guideHref("desktop")}
-          icon={Mail}
+          icon={"mail"}
           title={t.emailsAdmin.overview.guides.desktopTitle}
           subtitle={t.emailsAdmin.overview.guides.desktopSubtitle}
         />
         <GuideCard
           href={guideHref("nodemailer")}
-          icon={Code2}
+          icon={"code"}
           title={t.emailsAdmin.overview.guides.codeTitle}
           subtitle={t.emailsAdmin.overview.guides.codeSubtitle}
         />
@@ -288,7 +272,7 @@ function GuideCard({
   subtitle,
 }: {
   href: string;
-  icon: typeof Mail;
+  icon: IconName;
   title: string;
   subtitle: string;
 }) {
@@ -300,13 +284,13 @@ function GuideCard({
       className="flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border/50 hover:bg-muted/40 hover:border-border transition-all group"
     >
       <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-        <Icon className="size-[18px] text-muted-foreground" strokeWidth={2} />
+        <UiIcon name={Icon} className="size-[18px] text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground truncate">{title}</p>
         <p className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</p>
       </div>
-      <ArrowUpRight className="size-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors shrink-0" />
+      <UiIcon name="arrow-up-right" className="size-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors shrink-0" />
     </a>
   );
 }
@@ -351,7 +335,7 @@ function MailStatsCard({ serverId }: { serverId: string }) {
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-4">
-        <Activity className="size-4 text-muted-foreground" strokeWidth={2} />
+        <UiIcon name="activity" className="size-4 text-muted-foreground" />
         <h3 className="font-semibold text-foreground text-sm">{t.emailsAdmin.overview.mailStats}</h3>
       </div>
 
@@ -364,7 +348,7 @@ function MailStatsCard({ serverId }: { serverId: string }) {
       ) : stats ? (
         <div className="space-y-3">
           <StatRow
-            icon={Globe}
+            icon={"globe"}
             iconBg="bg-primary/10"
             iconColor="text-primary"
             label={t.emailsAdmin.overview.domains}
@@ -372,7 +356,7 @@ function MailStatsCard({ serverId }: { serverId: string }) {
             sub={stats.domains.total !== stats.domains.active ? interpolate(t.emailsAdmin.overview.totalSuffix, { count: String(stats.domains.total) }) : undefined}
           />
           <StatRow
-            icon={UserRound}
+            icon={"user"}
             iconBg="bg-orange-500/10"
             iconColor="text-orange-500"
             label={t.emailsAdmin.overview.mailboxes}
@@ -380,7 +364,7 @@ function MailStatsCard({ serverId }: { serverId: string }) {
             sub={stats.mailboxes.total !== stats.mailboxes.active ? interpolate(t.emailsAdmin.overview.totalSuffix, { count: String(stats.mailboxes.total) }) : undefined}
           />
           <StatRow
-            icon={ArrowRight}
+            icon={"arrow-right"}
             iconBg="bg-muted"
             iconColor="text-muted-foreground"
             label={t.emailsAdmin.overview.aliases}
@@ -390,14 +374,14 @@ function MailStatsCard({ serverId }: { serverId: string }) {
           <div className="h-px bg-border/60 my-2" />
 
           <StatRow
-            icon={HardDrive}
+            icon={"hard-drive"}
             iconBg="bg-muted"
             iconColor="text-muted-foreground"
             label={t.emailsAdmin.overview.storage}
             value={formatBytes(stats.storageBytes)}
           />
           <StatRow
-            icon={Inbox}
+            icon={"inbox"}
             iconBg="bg-muted"
             iconColor="text-muted-foreground"
             label={t.emailsAdmin.overview.messages}
@@ -433,7 +417,7 @@ function StatRow({
   value,
   sub,
 }: {
-  icon: typeof Globe;
+  icon: IconName;
   iconBg: string;
   iconColor: string;
   label: string;
@@ -448,7 +432,7 @@ function StatRow({
         <div
           className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center`}
         >
-          <Icon className={`size-4 ${iconColor}`} strokeWidth={2} />
+          <UiIcon name={Icon} className={`size-4 ${iconColor}`} />
         </div>
         <span className="text-sm text-muted-foreground">{label}</span>
       </div>
@@ -471,23 +455,23 @@ function QuickActionsCard() {
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="size-4 text-muted-foreground" strokeWidth={2} />
+        <UiIcon name="sparkles" className="size-4 text-muted-foreground" />
         <h3 className="font-semibold text-foreground text-sm">{t.emailsAdmin.overview.quickActions}</h3>
       </div>
       <div className="space-y-2">
         <QuickActionLink
           href="?tab=mailboxes"
-          icon={UserPlus}
+          icon={"user-plus"}
           label={t.emailsAdmin.overview.addMailbox}
         />
         <QuickActionLink
           href="?tab=domains"
-          icon={Globe}
+          icon={"globe"}
           label={t.emailsAdmin.overview.addDomain}
         />
         <QuickActionLink
           href="?tab=dns"
-          icon={Mail}
+          icon={"mail"}
           label={t.emailsAdmin.overview.reviewDns}
         />
       </div>
@@ -501,7 +485,7 @@ function QuickActionLink({
   label,
 }: {
   href: string;
-  icon: typeof UserPlus;
+  icon: IconName;
   label: string;
 }) {
   return (
@@ -512,10 +496,10 @@ function QuickActionLink({
       className="flex items-center gap-2.5 -mx-2 px-2.5 py-2 rounded-lg hover:bg-muted/40 transition-colors group"
     >
       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-        <Icon className="size-4 text-muted-foreground" strokeWidth={2} />
+        <UiIcon name={Icon} className="size-4 text-muted-foreground" />
       </div>
       <span className="text-sm text-foreground flex-1">{label}</span>
-      <ArrowRight className="size-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
+      <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
     </Link>
   );
 }

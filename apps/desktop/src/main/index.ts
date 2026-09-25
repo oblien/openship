@@ -274,12 +274,8 @@ function createWindow() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Still off because the preload does `require("@repo/onboarding")`, which a
-      // sandboxed preload can't resolve — it would silently hit the fallback path
-      // and degrade onboarding's SSH validation to no-ops. Turning this on means
-      // bundling the preload in dev too (dev builds with plain `tsc`; only the
-      // packaged build runs esbuild), so it's tracked separately.
-      sandbox: false,
+      // Helpers are bundled into the preload in development and release builds.
+      sandbox: true,
     },
   });
 
@@ -777,7 +773,7 @@ async function performUpdate(): Promise<boolean> {
   // Close the notify modal — from here on progress belongs to the dashboard.
   closeUpdateWindow();
   try {
-    const file = await downloadUpdate(pendingUpdate.asset, (f) => {
+    const file = await downloadUpdate(pendingUpdate.asset, pendingUpdate.version, (f) => {
       mainWindow?.webContents.send("update:progress", f);
       mainWindow?.setProgressBar(f); // Dock / taskbar indicator
     });

@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Traffic-Übersicht",
 			"last24Hours": "Letzte 24 Stunden",
-			"bar": "Balken",
+			"bar": "Säulen",
 			"area": "Fläche",
 			"loading": "Analysen werden geladen...",
 			"noDataTitle": "Noch keine Traffic-Daten",
@@ -170,6 +170,7 @@
 			"startShellHint": "Starten Sie den Dienst, um eine Shell zu öffnen.",
 			"saveEnvironment": "Umgebung speichern",
 			"environmentState": {
+				"helpTitle": "So funktionieren Umgebungsvariablen",
 				"description": "In Openship gespeichert. Dienstspezifische Werte haben Vorrang vor Compose und gemeinsamen Projektwerten. Das Bearbeiten eines geerbten Werts erstellt eine Überschreibung für diesen Dienst.",
 				"sources": {
 					"service": "Dienstspezifische Überschreibung",

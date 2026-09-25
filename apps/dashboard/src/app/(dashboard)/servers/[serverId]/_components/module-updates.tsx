@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
-import { ArrowUpCircle, RefreshCw, AlertTriangle } from "lucide-react";
 import { systemApi, type ServerModuleStatus } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
@@ -36,12 +37,12 @@ export function ModuleUpdatesCard({
   const { t } = useI18n();
   const m = t.servers.modules;
   const behindCount = rows.filter((r) => r.behind).length;
-  const HeadIcon = behindCount > 0 ? ArrowUpCircle : AlertTriangle;
+  const HeadIcon = behindCount > 0 ? "arrow-up-circle" : "warning";
 
   return (
     <div className="rounded-2xl border border-warning-border bg-warning-bg/40 p-4 mb-5">
       <div className="flex items-center gap-2 mb-3">
-        <HeadIcon className="size-4 text-warning" />
+        <UiIcon name={HeadIcon} className="size-4 text-warning" />
         <h3 className="text-sm font-semibold text-foreground">
           {behindCount > 0 ? m.title : m.checkFailedTitle}
         </h3>
@@ -67,7 +68,7 @@ export function ModuleUpdatesCard({
                       title={consent.map((c) => c.warning ?? c.id).join("; ")}
                       className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning"
                     >
-                      <AlertTriangle className="size-2.5" />
+                      <UiIcon name="warning" className="size-2.5" />
                       {m.needsConfirmation}
                     </span>
                   )}
@@ -81,7 +82,7 @@ export function ModuleUpdatesCard({
                     differently on every surface. */}
                 {note && (
                   <p className="mt-1 flex items-start gap-1.5 text-xs text-warning">
-                    <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                    <UiIcon name="warning" className="mt-0.5 size-3 shrink-0" />
                     <span className="min-w-0 break-words">{note}</span>
                   </p>
                 )}
@@ -93,7 +94,7 @@ export function ModuleUpdatesCard({
                   disabled={isBusy}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-warning-bg px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
                 >
-                  {isBusy ? <RefreshCw className="size-3.5 animate-spin" /> : <ArrowUpCircle className="size-3.5" />}
+                  {isBusy ? <UiIcon name="refresh" className="size-3.5 animate-spin" /> : <UiIcon name="arrow-up-circle" className="size-3.5" />}
                   {isBusy ? m.updating : m.update}
                 </button>
               )}

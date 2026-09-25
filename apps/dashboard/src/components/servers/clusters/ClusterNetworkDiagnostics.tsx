@@ -1,19 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  Check,
-  ChevronDown,
-  CircleAlert,
-  Gauge,
-  Loader2,
-  Minus,
-  Plus,
-  Settings2,
-  Trash2,
-} from "lucide-react";
 import {
   NETWORK_LATENCY_SAMPLES,
   NETWORK_SPEED_DURATION_MS,
@@ -38,12 +28,12 @@ import { NetworkConnectionAccess } from "./NetworkConnectionAccess";
 function CheckResult({ value }: { value?: boolean }) {
   const { t } = useI18n();
   const c = t.servers.networks;
-  const Icon = value === true ? Check : value === false ? CircleAlert : Minus;
+  const Icon = value === true ? "check" : value === false ? "alert-circle" : "minus";
   return (
     <span
       className={`inline-flex items-center gap-1 text-xs ${value === true ? "text-success" : value === false ? "text-danger" : "text-muted-foreground"}`}
     >
-      <Icon className="size-3.5" aria-hidden="true" />
+      <UiIcon name={Icon} className="size-3.5" aria-hidden="true" />
       {value === true ? c.passed : value === false ? c.failed : c.diagnostics.notTested}
     </span>
   );
@@ -186,9 +176,9 @@ export function ClusterNetworkDiagnostics({
           aria-expanded={showDetails}
           onClick={() => setDetailsOpen(!showDetails)}
         >
-          <Settings2 className="size-4 text-muted-foreground" aria-hidden="true" />
+          <UiIcon name="sliders" className="size-4 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1">{onAccessChange ? a.manage : d.connectionDetails}</span>
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground transition-transform ${showDetails ? "rotate-180" : ""}`}
             aria-hidden="true"
           />
@@ -233,7 +223,7 @@ export function ClusterNetworkDiagnostics({
                       )
                     }
                   >
-                    {selected.connected ? <Trash2 /> : <Plus />}
+                    {selected.connected ? <UiIcon name="trash" /> : <UiIcon name="plus" />}
                     <span className="hidden @lg/network-diagnostics:inline">
                       {selected.connected ? a.remove : a.restore}
                     </span>
@@ -254,9 +244,9 @@ export function ClusterNetworkDiagnostics({
                 }
               >
                 {running && report?.speedTest ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Gauge className="size-4" />
+                  <UiIcon name="gauge" className="size-4" />
                 )}
                 {d.testSpeed}
               </Button>
@@ -290,7 +280,7 @@ export function ClusterNetworkDiagnostics({
                     >
                       <NetworkDiagnosticText value={source.name} />
                     </Link>
-                    <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+                    <UiIcon name="arrow-right" className="size-3.5 shrink-0 text-muted-foreground" />
                     <Link
                       href={`/servers/${target.serverId}`}
                       className="break-words hover:text-primary"

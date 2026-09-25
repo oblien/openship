@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, KeyRound, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { normalizeCredentialSelector, type CredentialProvider } from "@repo/core";
 
 import { credentialsApi, type Credential } from "@/lib/api";
@@ -32,7 +33,7 @@ function ProviderLogo({ slug, className }: { slug: string; className?: string })
   const [failed, setFailed] = useState(false);
   // Falls back to a key glyph rather than a broken image: devicon does not carry every
   // brand, and a provider without a logo must still be usable.
-  if (failed || !slug) return <KeyRound className={className} />;
+  if (failed || !slug) return <UiIcon name="key" className={className} />;
   return (
     <img
       src={`${DEVICON}/${slug}/${slug}-original.svg`}
@@ -118,10 +119,10 @@ export function Credentials() {
   };
 
   return (
-    <SettingsSection icon={KeyRound} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"key"} title={copy.title} description={copy.description}>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {t.settings.common.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {t.settings.common.loading}
         </div>
       ) : providers.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">{copy.noProviders}</p>
@@ -144,7 +145,7 @@ export function Credentials() {
                     }}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                   >
-                    <Plus className="size-3.5" />
+                    <UiIcon name="plus" className="size-3.5" />
                     {copy.add}
                   </button>
                 </div>
@@ -172,11 +173,11 @@ export function Credentials() {
                               <p className="truncate text-sm font-medium text-foreground">{row.name}</p>
                               {row.status === "invalid" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">
-                                  <AlertTriangle className="size-3" /> {copy.badgeInvalid}
+                                  <UiIcon name="warning" className="size-3" /> {copy.badgeInvalid}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                  <CheckCircle2 className="size-3" /> {copy.badgeActive}
+                                  <UiIcon name="check-circle" className="size-3" /> {copy.badgeActive}
                                 </span>
                               )}
                             </div>
@@ -197,9 +198,9 @@ export function Credentials() {
                               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                             >
                               {busy === row.id ? (
-                                <Loader2 className="size-4 animate-spin" />
+                                <UiIcon name="spinner" className="size-4 animate-spin" />
                               ) : (
-                                <RefreshCw className="size-4" />
+                                <UiIcon name="refresh" className="size-4" />
                               )}
                             </button>
                             <button
@@ -217,7 +218,7 @@ export function Credentials() {
                               title={copy.delete}
                               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             >
-                              <Trash2 className="size-4" />
+                              <UiIcon name="trash" className="size-4" />
                             </button>
                           </div>
                         </div>
@@ -398,7 +399,7 @@ function CredentialForm({
           disabled={saving}
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+          {saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : null}
           {existing ? copy.save : copy.connect}
         </button>
         <button

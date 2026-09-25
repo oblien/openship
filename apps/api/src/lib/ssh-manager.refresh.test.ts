@@ -39,6 +39,30 @@ beforeEach(() => {
 });
 afterEach(async () => { await manager.destroy(); });
 
+describe("SSH reachability with per-operation connections", () => {
+  it.each([true, false])("only reuses proof while the connection persists: %s", async (persistentConnection) => {
+    const remote = Object.assign(executor(), { persistentConnection });
+    h.create.mockReturnValue(remote);
+    h.get.mockResolvedValue({ ...row("remote"), sshAuthMethod: "agent" });
+    await manager.acquire("remote");
+    expect(manager.isConnected("remote")).toBe(false);
+    expect(await manager.probeReachable("remote")).toBe(true);
+    expect(manager.isConnected("remote")).toBe(persistentConnection);
+    expect(await manager.probeReachable("remote")).toBe(true);
+    expect(remote.exec).toHaveBeenCalledTimes(persistentConnection ? 1 : 2);
+  });
+
+  it("reports a failed Windows SSH route even after a successful command", async () => {
+    const remote = Object.assign(executor(), { persistentConnection: false });
+    h.create.mockReturnValue(remote);
+    h.get.mockResolvedValue({ ...row("remote"), sshAuthMethod: "agent", sshTransport: "cloudflare", sshHost: "ssh.example.test" });
+    expect(await manager.probeReachable("remote")).toBe(true);
+    vi.mocked(remote.exec).mockRejectedValue(new Error("All configured authentication methods failed"));
+    expect(await manager.diagnoseReachability("remote")).toMatchObject({ reachable: false, code: "unreachable" });
+    expect(remote.exec).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("SSH authentication refresh (#408)", () => {
   it("uses the new login for future operations while retaining an active terminal", async () => {
     const old = await manager.acquire("remote");

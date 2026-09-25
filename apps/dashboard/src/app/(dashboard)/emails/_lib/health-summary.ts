@@ -1,3 +1,4 @@
+import type { IconName } from "@repo/ui/icons";
 /**
  * The one-line verdict at the top of the Health tab.
  *
@@ -20,7 +21,6 @@
  * likely to be quietly wrong — see ./health-summary.test.ts.
  */
 
-import { AlertTriangle, Check, CheckCircle2, CircleX } from "lucide-react";
 
 import { interpolate } from "@/components/i18n-provider";
 import type {
@@ -33,7 +33,7 @@ import type {
 export type HealthDict = (typeof import("@/i18n/locales/en/emailsAdmin.json"))["health"];
 
 export interface BannerSummary {
-  Icon: typeof Check;
+  Icon: IconName;
   banner: string;
   iconBg: string;
   iconColor: string;
@@ -113,7 +113,7 @@ export function summarizeHealth(
 
   if (allClean && (components || checks || delivery || reachability)) {
     return {
-      Icon: CheckCircle2,
+      Icon: "check-circle",
       banner: "bg-success-bg border-success-border",
       iconBg: "bg-success-bg",
       iconColor: "text-success",
@@ -161,7 +161,7 @@ export function summarizeHealth(
           ? interpolate(h.summary.notInstalledLabel, { names: namesMissing })
           : h.summary.almostLabel;
     return {
-      Icon: AlertTriangle,
+      Icon: "warning",
       banner: "bg-warning-bg border-warning-border",
       iconBg: "bg-warning-bg",
       iconColor: "text-warning",
@@ -192,7 +192,7 @@ export function summarizeHealth(
   if (reachabilityFails) parts.push(h.summary.partReachability);
 
   return {
-    Icon: CircleX,
+    Icon: "x-circle",
     banner: "bg-danger-bg border-danger-border",
     iconBg: "bg-danger-bg",
     iconColor: "text-danger",

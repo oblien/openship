@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * On-demand DNS auto-configure — the button that writes a domain's records
  * through a connected provider (Settings→DNS) instead of asking the operator to
@@ -16,15 +18,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  Globe,
-  Loader2,
-  RefreshCcw,
-  ShieldCheck,
-} from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
@@ -174,7 +167,7 @@ export function AutoDnsView({
   if (loading && !plan) {
     return (
       <div className={`${shell} flex items-center gap-2`}>
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground">{c.checking}</span>
       </div>
     );
@@ -199,7 +192,7 @@ export function AutoDnsView({
       <div className={shell}>
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Globe className="size-4 text-muted-foreground" strokeWidth={2} />
+            <UiIcon name="globe" className="size-4 text-muted-foreground" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">{c.noProviderTitle}</p>
@@ -211,7 +204,7 @@ export function AutoDnsView({
               className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
             >
               {c.connect}
-              <ArrowRight className="size-3" />
+              <UiIcon name="arrow-right" className="size-3" />
             </Link>
           </div>
         </div>
@@ -231,7 +224,7 @@ export function AutoDnsView({
           className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
         >
           {c.reconnect}
-          <ArrowRight className="size-3" />
+          <UiIcon name="arrow-right" className="size-3" />
         </Link>
       </div>
     );
@@ -260,7 +253,7 @@ export function AutoDnsView({
   return (
     <div className={shell}>
       <div className="flex items-center gap-2">
-        <ShieldCheck className="size-4 text-success" strokeWidth={2} />
+        <UiIcon name="shield-check" className="size-4 text-success" />
         <p className="text-sm font-medium text-foreground">
           {interpolate(c.managedBy, {
             provider: displayProvider(plan.provider),
@@ -337,7 +330,7 @@ export function AutoDnsView({
       <div className="mt-3 flex items-center gap-3">
         {allInSync ? (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-            <CheckCircle2 className="size-3.5" />
+            <UiIcon name="check-circle" className="size-3.5" />
             {c.allInPlace}
           </span>
         ) : writable.length > 0 ? (
@@ -348,9 +341,9 @@ export function AutoDnsView({
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {applying ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             ) : (
-              <ShieldCheck className="size-3.5" />
+              <UiIcon name="shield-check" className="size-3.5" />
             )}
             {applying ? c.applying : result ? c.reapply : c.apply}
           </button>
@@ -388,7 +381,7 @@ function Notice({ title, desc }: { title: string; desc?: string }) {
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning-bg">
-        <AlertTriangle className="size-4 text-warning" strokeWidth={2} />
+        <UiIcon name="warning" className="size-4 text-warning" />
       </span>
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">{title}</p>
@@ -407,7 +400,7 @@ function RetryButton({ onClick, label }: { onClick: () => void; label: string })
       onClick={onClick}
       className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
     >
-      <RefreshCcw className="size-3" />
+      <UiIcon name="refresh" className="size-3" />
       {label}
     </button>
   );

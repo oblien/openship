@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * /cloud-authorize — explicit consent screen for the self-hosted
  * "Connect to Openship Cloud" flow.
@@ -28,7 +30,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, ServerIcon, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
 import { cloudApi } from "@/lib/api";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
@@ -197,7 +198,7 @@ function CloudAuthorizeInner() {
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500/80 to-red-600 shadow-sm">
-            <AlertCircle className="size-7 text-white" />
+            <UiIcon name="alert-circle" className="size-7 text-white" />
           </div>
           <h1 className="text-lg font-semibold">{m.invalidTitle}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{validated.error}</p>
@@ -210,7 +211,7 @@ function CloudAuthorizeInner() {
     return (
       <AuthShell>
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </div>
       </AuthShell>
     );
@@ -221,7 +222,7 @@ function CloudAuthorizeInner() {
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/80 to-emerald-600 shadow-sm">
-            <CheckCircle2 className="size-7 text-white" />
+            <UiIcon name="check-circle" className="size-7 text-white" />
           </div>
           <h1 className="text-lg font-semibold">{m.deviceDoneTitle}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{m.deviceDoneBody}</p>
@@ -234,7 +235,7 @@ function CloudAuthorizeInner() {
     <AuthShell>
       <div className="mb-6 text-center">
         <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary shadow-sm">
-          <ServerIcon className="size-7 text-primary-foreground" />
+          <UiIcon name="server" className="size-7 text-primary-foreground" />
         </div>
         <h1 className="text-xl font-semibold">{m.title}</h1>
         {/* Device/poll flow has no redirect host to name — the title alone is
@@ -268,7 +269,7 @@ function CloudAuthorizeInner() {
             void handleAuthorize();
           }}
         >
-          {submitting && <Loader2 className="me-2 size-4 animate-spin" />}
+          {submitting && <UiIcon name="spinner" className="me-2 size-4 animate-spin" />}
           {submitting ? m.authorizing : m.authorize}
         </Button>
         <Button
@@ -290,7 +291,7 @@ export default function CloudAuthorizePage() {
       fallback={
         <AuthShell>
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           </div>
         </AuthShell>
       }

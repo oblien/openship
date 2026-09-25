@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * /cloud-connect-callback — popup landing page for the cloud-connect flow.
  *
@@ -25,7 +27,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Check, AlertCircle } from "lucide-react";
 import { cloudApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { CONNECT_PKCE_STORAGE_PREFIX } from "@/lib/cloud-auth";
@@ -109,7 +110,7 @@ function CloudConnectCallbackInner() {
     return (
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
-          <Loader2 className="mb-4 size-8 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="mb-4 size-8 animate-spin text-muted-foreground" />
           <h1 className="text-lg font-semibold">{m.finalizingTitle}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{m.finalizingSubtitle}</p>
         </div>
@@ -122,7 +123,7 @@ function CloudConnectCallbackInner() {
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/80 to-emerald-600 shadow-sm">
-            <Check className="size-7 text-white" />
+            <UiIcon name="check" className="size-7 text-white" />
           </div>
           <h1 className="text-lg font-semibold">{m.successTitle}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -137,7 +138,7 @@ function CloudConnectCallbackInner() {
     <AuthShell>
       <div className="flex flex-col items-center justify-center py-4 text-center">
         <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500/80 to-red-600 shadow-sm">
-          <AlertCircle className="size-7 text-white" />
+          <UiIcon name="alert-circle" className="size-7 text-white" />
         </div>
         <h1 className="text-lg font-semibold">{m.failedTitle}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{errorMessage}</p>
@@ -152,7 +153,7 @@ export default function CloudConnectCallbackPage() {
       fallback={
         <AuthShell>
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           </div>
         </AuthShell>
       }

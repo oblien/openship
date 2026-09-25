@@ -44,6 +44,7 @@ import {
   resolveProducerForService,
   runPrefix,
   sanitizeProducerOpts,
+  uploadIncrementalArtifact,
   type Artifact,
   type BackupExecutor,
   type BackupTrigger,
@@ -59,10 +60,11 @@ import {
 } from "../../lib/deployment-runtime";
 import { notification } from "../../lib/notification-dispatcher";
 import { prunePolicy } from "./retention-prune";
+import { withBackupPolicyLock } from "./backup-lock";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
 import crypto from "node:crypto";
-import { detectDbImage, safeErrorMessage, ValidationError } from "@repo/core";
+import { detectDbImage, incrementalBackupStorage, payloadSpec, safeErrorMessage, ValidationError } from "@repo/core";
 import {
   boundedStorableText,
   sanitizeStorableStringsExceptKeys,
@@ -208,40 +210,45 @@ export class BackupOrchestrator {
     //    service of the project, one child run each. Single-app projects have
     //    no service rows → nothing to back up (surfaced as an error).
     if (input.serviceId) {
-      const runId = await this.spawnRun(
+      const service = await repos.service.findById(input.serviceId);
+      if (!service || service.projectId !== policy.projectId ||
+        (policy.serviceId && policy.serviceId !== input.serviceId) || policy.sourceKind !== "service") {
+        throw new ValidationError("The selected service does not belong to this backup policy");
+      }
+      const runIds = await this.spawnRuns(
         policy,
         destination,
         organizationId,
         batchId,
         batchStartedAt,
-        { serviceId: input.serviceId },
+        [{ serviceId: input.serviceId }],
         input.trigger,
       );
-      return { runId, runIds: [runId] };
+      return { runId: runIds[0]!, runIds };
     }
     if (policy.sourceKind === "mail_server") {
-      const runId = await this.spawnRun(
+      const runIds = await this.spawnRuns(
         policy,
         destination,
         organizationId,
         batchId,
         batchStartedAt,
-        { mailServerId: policy.mailServerId ?? null },
+        [{ mailServerId: policy.mailServerId ?? null }],
         input.trigger,
       );
-      return { runId, runIds: [runId] };
+      return { runId: runIds[0]!, runIds };
     }
     if (policy.serviceId) {
-      const runId = await this.spawnRun(
+      const runIds = await this.spawnRuns(
         policy,
         destination,
         organizationId,
         batchId,
         batchStartedAt,
-        { serviceId: policy.serviceId },
+        [{ serviceId: policy.serviceId }],
         input.trigger,
       );
-      return { runId, runIds: [runId] };
+      return { runId: runIds[0]!, runIds };
     }
 
     // Project-default: fan out across the project's enabled services.
@@ -258,51 +265,30 @@ export class BackupOrchestrator {
         "Project has no services with persistent storage (volumes or databases) to back up.",
       );
     }
-    const runIds: string[] = [];
-    for (const svc of candidates) {
-      try {
-        runIds.push(
-          await this.spawnRun(
-            policy,
-            destination,
-            organizationId,
-            batchId,
-            batchStartedAt,
-            { serviceId: svc.id },
-            input.trigger,
-          ),
-        );
-      } catch (err) {
-        console.warn(
-          `[backup-orchestrator] failed to enqueue service ${svc.id} for policy ${policy.id}: ${safeErrorMessage(err)}`,
-        );
-      }
-    }
-    if (runIds.length === 0) {
-      throw new Error("Failed to enqueue any service backups for this project.");
-    }
+    const runIds = await this.spawnRuns(
+      policy, destination, organizationId, batchId, batchStartedAt,
+      candidates.map(service => ({ serviceId: service.id })), input.trigger,
+    );
     return { runId: runIds[0], runIds };
   }
 
   /**
-   * Create one queued backup_run row for a concrete source (a single service or
-   * a mail server) and hand it to the JobRunner. The runner is BullMQ-backed
+   * Create the queued rows for every concrete source and hand them to the JobRunner. The runner is BullMQ-backed
    * when Redis is reachable, in-process otherwise — the backup_run row is the
    * crash-safe record either way (stale-run sweep on boot reconciles). Falls
-   * back to inline execution if the runner enqueue throws. Returns the run id.
+   * back to inline execution if the runner enqueue throws. Returns every run id.
    */
-  private async spawnRun(
+  private async spawnRuns(
     policy: BackupPolicy,
     destination: BackupDestination,
     organizationId: string,
     batchId: string,
     batchStartedAt: Date,
-    target: { serviceId: string } | { mailServerId: string | null },
+    targets: Array<{ serviceId: string } | { mailServerId: string | null }>,
     trigger: BackupTrigger,
-  ): Promise<string> {
-    const runId = `bkr_${crypto.randomUUID()}`;
-    await repos.backupRun.create({
-      id: runId,
+  ): Promise<string[]> {
+    const rows = targets.map(target => ({
+      id: `bkr_${crypto.randomUUID()}`,
       batchId,
       policyId: policy.id,
       destinationId: destination.id,
@@ -317,21 +303,24 @@ export class BackupOrchestrator {
         trigger.source === "manual" || trigger.source === "webhook" ? trigger.userId : null,
       clientIp: trigger.clientIp ?? null,
       startedAt: batchStartedAt,
-    });
-
-    try {
-      const runner = await getJobRunner();
-      await runner.enqueueRun(runId);
-    } catch (err) {
-      console.warn(
-        `[backup-orchestrator] runner enqueue failed for ${runId}; falling back to inline: ${safeErrorMessage(err)}`,
-      );
-      void deferBackgroundWork(() => this.execute(runId)).catch((execErr) => {
-        console.error(`[backup-orchestrator] run ${runId} crashed: ${safeErrorMessage(execErr)}`);
-      });
+    }));
+    // A database failure must never leave a silently incomplete project backup.
+    // Persist the whole batch atomically, then hand each durable row to a worker.
+    await repos.backupRun.createBatch(rows);
+    for (const { id: runId } of rows) {
+      try {
+        const runner = await getJobRunner();
+        await runner.enqueueRun(runId);
+      } catch (err) {
+        console.warn(
+          `[backup-orchestrator] runner enqueue failed for ${runId}; falling back to inline: ${safeErrorMessage(err)}`,
+        );
+        void deferBackgroundWork(() => this.execute(runId)).catch((execErr) => {
+          console.error(`[backup-orchestrator] run ${runId} crashed: ${safeErrorMessage(execErr)}`);
+        });
+      }
     }
-
-    return runId;
+    return rows.map(row => row.id);
   }
 
   /**
@@ -339,6 +328,24 @@ export class BackupOrchestrator {
    * worker backend uses the same database-owned execution boundary.
    */
   async execute(runId: string): Promise<void> {
+    const pending = await repos.backupRun.findById(runId);
+    if (!pending || pending.status !== "queued") return;
+    // Freeze the settings used by this worker; a policy edit applies to the next run.
+    const policy = pending.policyId ? await repos.backupPolicy.findById(pending.policyId) : null;
+    const work = () => this.executeRun(runId, policy ?? null);
+    const completed = policy?.payloadConfig?.incremental === true
+      ? await withBackupPolicyLock(policy.id, work)
+      : await work();
+    // Pruning takes the same lock as incremental capture, after capture releases it.
+    if (completed) {
+      try { await prunePolicy(completed); }
+      catch (error) {
+        console.warn(`[backup-orchestrator] run ${runId} succeeded; retention cleanup deferred: ${safeErrorMessage(error)}`);
+      }
+    }
+  }
+
+  private async executeRun(runId: string, policySnapshot: BackupPolicy | null): Promise<BackupPolicy | undefined> {
     const run = await repos.backupRun.findById(runId);
     if (!run) {
       console.warn(`[backup-orchestrator] run ${runId} disappeared`);
@@ -393,14 +400,23 @@ export class BackupOrchestrator {
     /** Serialized because stream callbacks cannot await. */
     let progressInFlight: Promise<void> | null = null;
     let pendingProgress: { bytesTransferred: number; currentArtifact: string } | null = null;
+    const hookLog: string[] = [];
+    let postHookDue = false;
+    const finishHook = async () => {
+      if (!postHookDue || !policy?.postHook || !serviceHandle || !executor) return;
+      postHookDue = false;
+      try { await this.runHook(serviceHandle, executor, policy.postHook, "post", hookLog, policy.hookTimeoutSeconds); }
+      catch (error) { hookLog.push(`[post-hook] continued past failure: ${safeErrorMessage(error)}`); }
+    };
 
     try {
       // 1. Reload policy + destination + service.
       if (!run.policyId) throw new Error("Run has no policyId");
-      policy = (await repos.backupPolicy.findById(run.policyId)) ?? null;
+      policy = policySnapshot;
       if (!policy) throw new Error(`Policy ${run.policyId} disappeared`);
-      const destinationRow = await repos.backupDestination.findById(policy.destinationId);
-      if (!destinationRow) throw new Error(`Destination ${policy.destinationId} disappeared`);
+      if (!run.destinationId) throw new Error("Run has no backup destination");
+      const destinationRow = await repos.backupDestination.findById(run.destinationId);
+      if (!destinationRow) throw new Error(`Destination ${run.destinationId} disappeared`);
 
       // 2. Resolve the destination up front (shared by both source kinds).
       //    toAdapterRow handles openship_server by hydrating creds from the
@@ -501,7 +517,7 @@ export class BackupOrchestrator {
           : resolveProducer(policy.payloadKind as PayloadKind);
 
       // 4. Snapshot. Pre-hook runs first; failure aborts.
-      const hookLog: string[] = [];
+      postHookDue = true;
       if (policy.preHook) {
         await this.transition(runId, "snapshotting");
         await this.runHook(
@@ -553,6 +569,15 @@ export class BackupOrchestrator {
       // value outside the codec vocabulary reached the shell layer and produced an
       // artifact whose recorded codec no restore can read. See that function.
       const producerOpts = sanitizeProducerOpts(policy.payloadConfig);
+      const incremental = producerOpts.incremental === true;
+      // Compress blocks independently so editing one file does not change a
+      // compressor's state for the remainder of a filesystem archive.
+      if (incremental && payloadSpec(producer.kind).shape === "filesystem") producerOpts.compression = "none";
+      const previous = incremental
+        ? await repos.backupRun.latestSucceededForSource(policy.id, destinationRow.id, run.serviceId, run.mailServerId)
+        : undefined;
+      const previousArtifacts = (previous?.artifacts ?? []) as typeof artifactsRecorded;
+      const artifactNames = new Set<string>();
 
       // Live upload progress. Cumulative across the WHOLE run — the current
       // artifact's moving count rides on top of the bytes every finished
@@ -587,12 +612,20 @@ export class BackupOrchestrator {
       };
 
       for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
-        const recorded = await this.uploadArtifact(destination, baseKey, artifact, (n) =>
-          reportUploadProgress(n, artifact.name),
-        );
-        uploadedKeys.push(recorded.key);
+        const key = artifactKey(baseKey, artifact.name);
+        if (artifactNames.has(key) || key === manifestKey(baseKey)) {
+          artifact.stream.destroy();
+          throw new Error(`Backup produced a duplicate or reserved artifact name: ${artifact.name}`);
+        }
+        artifactNames.add(key);
+        // Register BEFORE put: even a failed upload or digest check can leave an object.
+        if (!incremental) uploadedKeys.push(key);
+        const onBytes = (n: number) => reportUploadProgress(n, artifact.name);
+        const recorded = incremental
+          ? await uploadIncrementalArtifact(destination, baseKey, artifact, [...previousArtifacts, ...artifactsRecorded], uploadedKeys, onBytes)
+          : await this.uploadArtifact(destination, baseKey, artifact, onBytes);
         artifactsRecorded.push(recorded);
-        totalBytes += recorded.sizeBytes;
+        totalBytes += incrementalBackupStorage(recorded)?.uploadedBytes ?? recorded.sizeBytes;
         finishedArtifactBytes = totalBytes;
         // A throttled write may still be waiting on the database. Settle it
         // before broadcasting the exact artifact boundary, otherwise its older
@@ -687,20 +720,7 @@ export class BackupOrchestrator {
       });
 
       // 7. Post-hook. Failure is logged but doesn't fail the run.
-      if (policy.postHook) {
-        try {
-          await this.runHook(
-            serviceHandle,
-            executor,
-            policy.postHook,
-            "post",
-            hookLog,
-            policy.hookTimeoutSeconds,
-          );
-        } catch (err) {
-          hookLog.push(`[post-hook] continued past failure: ${safeErrorMessage(err)}`);
-        }
-      }
+      await finishHook();
 
       // Flush the last throttled progress write before the terminal one: the
       // value below is the exact uploaded total, and no in-flight estimate may
@@ -729,25 +749,13 @@ export class BackupOrchestrator {
           artifactCount: artifactsRecorded.length,
         },
       });
-      // Only a durable, verified success may displace older restore points.
-      // Await cleanup while this worker still owns its execution lease. Its
-      // failure must never enter the backup catch, which reclaims THIS run's
-      // uploaded artifacts. The scheduled sweep will retry deferred pruning.
-      try {
-        const finished = await repos.backupRun.findById(runId);
-        // A cancellation/stale-run verdict can win the terminal-state CAS.
-        // In that case this worker did not produce a new durable restore point.
-        if (finished?.status === "succeeded") await prunePolicy(policy);
-      } catch (error) {
-        console.warn(
-          `[backup-orchestrator] run ${runId} succeeded; retention cleanup deferred: ${safeErrorMessage(error)}`,
-        );
-      }
+      return policy;
     } catch (err) {
       // Settle any throttled progress write before the failed transition
       // stamps `bytesTransferred: 0` — an in-flight estimate must not be the
       // last byte count this run records (terminal-guarded in the repo too).
       await progressInFlight;
+      await finishHook();
       // Both forms are scrubbed independently: a second `.slice` over an
       // already-scrubbed string can split a surrogate pair back open.
       const raw = safeErrorMessage(err);
@@ -818,9 +826,9 @@ export class BackupOrchestrator {
       // other project backs up to as unverified, and the UI would tell the operator
       // their storage is broken when it is fine. The run's own errorMessage carries
       // the real reason either way.
-      if (policy?.destinationId && !destinationProven) {
+      if (run.destinationId && !destinationProven) {
         await repos.backupDestination
-          .setLastVerified(policy.destinationId, false, summary)
+          .setLastVerified(run.destinationId, false, summary)
           .catch(() => {});
       }
 
@@ -847,10 +855,11 @@ export class BackupOrchestrator {
         errorMessage: message,
         artifacts: [],
         bytesTransferred: 0,
+        hookLog: boundedStorableText(hookLog.join("\n"), TRUNCATE_HOOK_LOG),
       });
 
       // Fan-out to subscribers. Look up destination by policy or run.
-      const destId = policy?.destinationId ?? run.destinationId;
+      const destId = run.destinationId;
       const destForNotify = destId
         ? await repos.backupDestination.findById(destId).catch(() => null)
         : null;
@@ -1004,36 +1013,47 @@ export class BackupOrchestrator {
       ),
     );
 
-    const result = await destination.put(key, hasher, {
-      size: artifact.sizeHint,
-      contentType: "application/octet-stream",
-      metadata: headerSafeMetadata as Record<string, string>,
-    });
+    try {
+      const result = await destination.put(key, hasher, {
+        size: artifact.sizeHint,
+        contentType: "application/octet-stream",
+        metadata: headerSafeMetadata as Record<string, string>,
+      });
 
-    const { sha256, bytesWritten } = hasher.summary();
+      const { sha256, bytesWritten } = hasher.summary();
+      if (result.bytesWritten !== bytesWritten) {
+        throw new Error(`Artifact "${artifact.name}" was not fully stored: sent ${bytesWritten} bytes, destination recorded ${result.bytesWritten}`);
+      }
 
-    // An artifact's digest doesn't exist until its bytes have already been
-    // written, so it can't be handed to `put` as a precondition (see
-    // PutOpts.sha256). Where the destination reports one back — local hashes as
-    // it lands the file — compare: a disagreement means what's stored is not
-    // what we hashed, and recording OUR digest would make restore's verification
-    // pass against corrupt bytes. S3's ETag is an MD5/multipart composite and
-    // SFTP reports none, so the shape guard keeps this to destinations where the
-    // comparison means something.
-    if (result?.etag && SHA256_HEX.test(result.etag) && result.etag.toLowerCase() !== sha256) {
-      throw new Error(
-        `Artifact "${artifact.name}" changed in transit: hashed ${sha256} on the way out, destination stored ${result.etag.toLowerCase()}`,
-      );
+      // An artifact's digest doesn't exist until its bytes have already been
+      // written, so it can't be handed to `put` as a precondition (see
+      // PutOpts.sha256). Where the destination reports one back — local hashes as
+      // it lands the file — compare: a disagreement means what's stored is not
+      // what we hashed, and recording OUR digest would make restore's verification
+      // pass against corrupt bytes. S3's ETag is an MD5/multipart composite and
+      // SFTP reports none, so the shape guard keeps this to destinations where the
+      // comparison means something.
+      if (result?.etag && SHA256_HEX.test(result.etag) && result.etag.toLowerCase() !== sha256) {
+        throw new Error(
+          `Artifact "${artifact.name}" changed in transit: hashed ${sha256} on the way out, destination stored ${result.etag.toLowerCase()}`,
+        );
+      }
+
+      return {
+        name: artifact.name,
+        key,
+        sizeBytes: bytesWritten,
+        sha256,
+        payloadKind: artifact.payloadKind,
+        metadata: artifact.metadata,
+      };
+    } finally {
+      // A destination can reject before consuming the producer. Close both ends
+      // so its Docker/SSH helper is not left running or frozen behind backpressure.
+      artifact.stream.unpipe(hasher);
+      artifact.stream.destroy();
+      hasher.destroy();
     }
-
-    return {
-      name: artifact.name,
-      key,
-      sizeBytes: bytesWritten,
-      sha256,
-      payloadKind: artifact.payloadKind,
-      metadata: artifact.metadata,
-    };
   }
 
   private async runHook(

@@ -9,6 +9,7 @@
  */
 
 import { repos } from "@repo/db";
+import type { ListBackupRunsInput } from "@repo/contracts";
 import { DEFAULT_RETAIN_COUNT, validatePolicyPayload } from "@repo/core";
 import crypto from "node:crypto";
 import { assertResourceInOrg } from "@repo/platform/engine/lib/resource-access";
@@ -250,7 +251,7 @@ export async function deletePolicy(ctx: RequestContext, policyId: string) {
 export async function listRunsForProject(
   ctx: RequestContext,
   projectId: string,
-  opts?: { limit?: number; serviceId?: string },
+  opts?: ListBackupRunsInput,
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
@@ -258,6 +259,8 @@ export async function listRunsForProject(
     limit: opts?.limit,
     projectId,
     serviceId: opts?.serviceId,
+    before: opts?.before,
+    active: opts?.active,
   });
 }
 

@@ -981,5 +981,12 @@
     "serviceNetwork": "Service network",
     "lastChecked": "Last verified",
     "scaleProject": "Choose a project"
+  },
+  "sshTransport": {
+    "label": "Connection",
+    "direct": "Direct SSH",
+    "hostname": "Access hostname",
+    "help": "Use your Cloudflare Access hostname and your server’s SSH credentials. Complete Cloudflare sign-in on the machine running OpenShip. Windows desktop includes the required client; other installations need cloudflared.",
+    "openAccess": "Open Cloudflare Access"
   }
 }

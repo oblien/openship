@@ -1,25 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  DatabaseBackup,
-  HardDrive,
-  PlayCircle,
-  ExternalLink,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  RefreshCw,
-  Plus,
-  Settings,
-  Activity,
-  RotateCcw,
-  Lock,
-  Unlock,
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icon, type IconName } from "@repo/ui/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import {
   backupDestinationsApi,
   backupsApi,
@@ -28,475 +12,943 @@ import {
   type BackupPolicy,
   type BackupRun,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
+import { CreateDestinationModal } from "@/components/backup/CreateDestinationModal";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
+import { BackupStatusChip } from "@/components/backup/BackupStatusChip";
 import { RestoreWizard } from "@/components/backup/RestoreWizard";
+import { EDITABLE_KINDS, KIND_ICONS, kindLabel, DestinationVerificationBadge } from "@/components/backup/destinationDisplay";
+import { partsFromCron } from "@/lib/backup-schedule";
+import { formatBytes } from "@/lib/formatBytes";
+import { isBackupRunning, latestBackupRun, mergeBackupRuns } from "@/lib/backup-run-state";
 
-const ICON_TONES = {
-  primary: "bg-primary/10 text-primary",
-  amber: "bg-warning-bg text-warning",
-  emerald: "bg-success-bg text-success",
-  red: "bg-danger-bg text-danger",
-  muted: "bg-muted/60 text-muted-foreground",
-} as const;
-
-function SectionCard({
-  title,
-  description,
-  icon: Icon,
-  iconTone,
-  actions,
-  children,
-}: {
-  title: string;
-  description?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  iconTone: keyof typeof ICON_TONES;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-      <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
-        >
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
-          {description && (
-            <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
-          )}
-        </div>
-        {actions}
-      </div>
-      <div className="px-5 py-4">{children}</div>
-    </div>
-  );
-}
+type BackupCopy = ReturnType<typeof useI18n>["t"]["projectSettings"]["backup"];
+type BackupData = {
+  projectId: string;
+  destinations: BackupDestinationSummary[];
+  policies: BackupPolicy[];
+  runs: BackupRun[];
+  historyIds: string[];
+  hasMore: boolean;
+  before: string | null;
+};
+type PolicyScope = { serviceId: string | null; serviceName: string; serviceImage?: string | null };
+const HISTORY_PAGE_SIZE = 10;
+const EMPTY: Omit<BackupData, "projectId"> = {
+  destinations: [],
+  policies: [],
+  runs: [],
+  historyIds: [],
+  hasMore: false,
+  before: null,
+};
 
 export function BackupSettings(): React.JSX.Element {
   const { projectData, servicesData } = useProjectSettings();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const b = t.projectSettings.backup;
+  const m = t.misc.backups;
+  const w = t.widgets.backup.policyEditor;
   const projectId = String(projectData.id);
-
-  const [destinations, setDestinations] = useState<BackupDestinationSummary[]>([]);
-  const [policies, setPolicies] = useState<BackupPolicy[]>([]);
-  const [runs, setRuns] = useState<BackupRun[]>([]);
-  const [loading, setLoading] = useState(true);
+  const activeProject = useRef<string | null>(projectId);
+  activeProject.current = projectId;
+  const [data, setData] = useState<BackupData | null>(null);
+  const current = data?.projectId === projectId ? data : null;
+  const { destinations, policies, runs } = current ?? EMPTY;
+  const [refreshing, setRefreshing] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const moreRequest = useRef<symbol | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
+  const pendingActions = useRef(new Set<string>());
+  const [busyIds, setBusyIds] = useState(new Set<string>());
+  const [destinationEditor, setDestinationEditor] = useState<{
+    destination: BackupDestinationSummary | null;
+  } | null>(null);
+  const [preferredDestination, setPreferredDestination] = useState<BackupDestinationSummary | null>(
+    null,
+  );
   const [editingPolicy, setEditingPolicy] = useState<
-    { existing: BackupPolicy | null; serviceId: string | null; serviceName?: string; serviceImage?: string | null } | null
+    (PolicyScope & { existing: BackupPolicy | null }) | null
   >(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
+  const activityRef = useRef<HTMLElement | null>(null);
+  const [dismissedRunIds, setDismissedRunIds] = useState(new Set<string>());
   const [restoreFromRun, setRestoreFromRun] = useState<BackupRun | null>(null);
 
   const reload = useCallback(async () => {
-    setLoading(true);
+    if (activeProject.current !== projectId) return;
+    const version = ++requestVersion.current;
+    moreRequest.current = null;
+    setLoadingMore(false);
+    setHistoryError(null);
+    setRefreshing(true);
+    setLoadError(null);
     try {
-      const [destRes, polRes, runRes] = await Promise.all([
+      const [destinations, policies, history, active] = await Promise.all([
         backupDestinationsApi.list(),
-        backupsApi.listPolicies(projectId).catch(() => ({ data: [] as BackupPolicy[] })),
-        backupsApi.listRuns(projectId, { limit: 25 }).catch(() => ({ data: [] as BackupRun[] })),
+        backupsApi.listPolicies(projectId),
+        backupsApi.listRuns(projectId, { limit: HISTORY_PAGE_SIZE + 1 }),
+        backupsApi.listRuns(projectId, { active: true, limit: 1000 }),
       ]);
-      setDestinations(destRes.data);
-      setPolicies(polRes.data);
-      setRuns(runRes.data);
+      if (version !== requestVersion.current) return;
+      const page = history.data.slice(0, HISTORY_PAGE_SIZE);
+      const received = mergeBackupRuns(page, active.data);
+      setData((previous) => ({
+        projectId,
+        destinations: destinations.data,
+        policies: policies.data,
+        runs: received.map(
+          (row) =>
+            latestBackupRun(
+              previous?.projectId === projectId
+                ? (previous.runs.find((run) => run.id === row.id) ?? null)
+                : null,
+              row,
+            )!,
+        ),
+        historyIds: page.map((run) => run.id),
+        hasMore: history.data.length > HISTORY_PAGE_SIZE,
+        before: page.at(-1)?.id ?? null,
+      }));
+    } catch (error) {
+      if (version === requestVersion.current)
+        setLoadError(getApiErrorMessage(error, b.overview.loadFailed));
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setRefreshing(false);
     }
-  }, [projectId]);
+  }, [projectId, b.overview.loadFailed]);
+
+  const loadOlder = async () => {
+    if (refreshing || moreRequest.current || !current?.hasMore || !current.before) return;
+    const token = Symbol();
+    moreRequest.current = token;
+    const version = requestVersion.current;
+    const before = current.before;
+    setLoadingMore(true);
+    setHistoryError(null);
+    try {
+      const response = await backupsApi.listRuns(projectId, {
+        limit: HISTORY_PAGE_SIZE + 1,
+        before,
+      });
+      if (activeProject.current !== projectId || version !== requestVersion.current) return;
+      const page = response.data.slice(0, HISTORY_PAGE_SIZE);
+      setData((previous) =>
+        previous?.projectId === projectId && previous.before === before
+          ? {
+              ...previous,
+              runs: mergeBackupRuns(previous.runs, page),
+              historyIds: [...new Set([...previous.historyIds, ...page.map((run) => run.id)])],
+              hasMore: response.data.length > HISTORY_PAGE_SIZE,
+              before: page.at(-1)?.id ?? null,
+            }
+          : previous,
+      );
+    } catch (error) {
+      if (activeProject.current === projectId && version === requestVersion.current)
+        setHistoryError(getApiErrorMessage(error, b.overview.loadFailed));
+    } finally {
+      if (moreRequest.current === token) {
+        moreRequest.current = null;
+        setLoadingMore(false);
+      }
+    }
+  };
+
+  const updateRun = useCallback(
+    (run: BackupRun) => {
+      if (activeProject.current !== projectId) return;
+      setData((previous) => {
+        if (previous?.projectId !== projectId) return previous;
+        const existing = previous.runs.find((row) => row.id === run.id);
+        const latest = latestBackupRun(existing ?? null, run)!;
+        if (existing === latest) return previous;
+        return {
+          ...previous,
+          runs: existing
+            ? previous.runs.map((row) => (row.id === run.id ? latest : row))
+            : [latest, ...previous.runs],
+          // A newly accepted run may reach its stream before the history request.
+          historyIds: existing ? previous.historyIds : [run.id, ...previous.historyIds],
+        };
+      });
+    },
+    [projectId],
+  );
 
   useEffect(() => {
+    activeProject.current = projectId;
+    setEditingPolicy(null);
+    setDestinationEditor(null);
+    setPreferredDestination(null);
+    setActiveRunIds([]);
+    setDismissedRunIds(new Set());
+    setRestoreFromRun(null);
+    setActionError(null);
     void reload();
-  }, [reload]);
+    return () => {
+      activeProject.current = null;
+      requestVersion.current += 1;
+      moreRequest.current = null;
+    };
+  }, [reload, projectId]);
 
-  const policyByService = useMemo(() => {
-    const map = new Map<string | null, BackupPolicy>();
-    for (const p of policies) map.set(p.serviceId, p);
-    return map;
-  }, [policies]);
-
-  const handleRunNow = useCallback(
-    async (policyId: string) => {
-      try {
-        const res = await backupsApi.runNow(policyId);
-        setActiveRunId(res.data.runId);
-        await reload();
-      } catch (err) {
-        window.alert(getApiErrorMessage(err, t.projectSettings.backup.toast.runFailed));
-      }
+  const saveDestination = useCallback(
+    (destination: BackupDestinationSummary) => {
+      if (activeProject.current !== projectId) return;
+      // An older refresh must not remove a destination just created in the modal.
+      requestVersion.current += 1;
+      setRefreshing(false);
+      setData((previous) =>
+        previous?.projectId === projectId
+          ? {
+              ...previous,
+              destinations: [
+                ...previous.destinations
+                  .filter((item) => item.id !== destination.id)
+                  .map((item) => (destination.isDefault ? { ...item, isDefault: false } : item)),
+                destination,
+              ],
+            }
+          : previous,
+      );
+      setPreferredDestination(destination);
     },
-    [reload, t],
+    [projectId],
   );
+
+  const perform = async (id: string, action: () => Promise<void>, fallback: string) => {
+    if (pendingActions.current.has(id)) return;
+    pendingActions.current.add(id);
+    setBusyIds(new Set(pendingActions.current));
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      if (activeProject.current === projectId) setActionError(getApiErrorMessage(error, fallback));
+    } finally {
+      pendingActions.current.delete(id);
+      if (activeProject.current === projectId) setBusyIds(new Set(pendingActions.current));
+    }
+  };
+  const runNow = (policy: BackupPolicy) =>
+    perform(
+      policy.id,
+      async () => {
+        const response = await backupsApi.runNow(policy.id);
+        if (activeProject.current !== projectId) return;
+        setActiveRunIds((previous) => [
+          ...new Set([...previous, ...(response.data.runIds ?? [response.data.runId])]),
+        ]);
+        await reload();
+        if (activeProject.current === projectId)
+          requestAnimationFrame(() => activityRef.current?.scrollIntoView?.({ block: "nearest" }));
+      },
+      b.toast.runFailed,
+    );
+
+  const finishPolicy = async (policy: BackupPolicy, startBackup = false) => {
+    if (activeProject.current !== projectId) return;
+    // Keep the saved policy available even if the subsequent refresh or run fails.
+    requestVersion.current += 1;
+    setRefreshing(false);
+    setData((previous) =>
+      previous?.projectId === projectId
+        ? {
+            ...previous,
+            policies: [...previous.policies.filter((item) => item.id !== policy.id), policy],
+          }
+        : previous,
+    );
+    setEditingPolicy(null);
+    if (startBackup) await runNow(policy);
+    else await reload();
+  };
+
+  const policiesByService = useMemo(() => {
+    const grouped = new Map<string | null, BackupPolicy[]>();
+    for (const policy of policies)
+      grouped.set(policy.serviceId, [...(grouped.get(policy.serviceId) ?? []), policy]);
+    return grouped;
+  }, [policies]);
+  const scopes: PolicyScope[] = [
+    { serviceId: null, serviceName: b.overview.projectScope },
+    ...servicesData.services.map((service) => ({
+      serviceId: service.id,
+      serviceName: service.name,
+      serviceImage: service.image,
+    })),
+  ];
+  for (const serviceId of policiesByService.keys()) {
+    if (serviceId && !scopes.some((scope) => scope.serviceId === serviceId))
+      scopes.push({ serviceId, serviceName: b.overview.serviceBackup });
+  }
+  const recentRuns = useMemo(() => {
+    const shown = new Set(current?.historyIds);
+    return runs
+      .filter((run) => shown.has(run.id))
+      .sort((a, z) => Date.parse(z.startedAt) - Date.parse(a.startedAt));
+  }, [runs, current?.historyIds]);
+  const lastSuccess = recentRuns.find((run) => run.status === "succeeded");
+  const scheduledCount = policies.filter(
+    (policy) => policy.enabled && policy.cronExpression,
+  ).length;
+  const projectPolicyEnabled = policies.some(
+    (policy) => policy.serviceId === null && policy.enabled,
+  );
+  const runsById = useMemo(() => new Map(runs.map((run) => [run.id, run])), [runs]);
+  const trackedRunIds = [
+    ...new Set([...activeRunIds, ...runs.filter(isBackupRunning).map((run) => run.id)]),
+  ].filter(
+    (id) => !dismissedRunIds.has(id) || !runsById.has(id) || isBackupRunning(runsById.get(id)!),
+  );
+  const liveRunIds = trackedRunIds.filter((id) => !dismissedRunIds.has(id));
+  const scopeName = (serviceId: string | null) =>
+    scopes.find((scope) => scope.serviceId === serviceId)?.serviceName ?? b.overview.serviceBackup;
 
   return (
     <div className="space-y-5">
-      {activeRunId && (
-        <SectionCard
-          title={t.projectSettings.backup.live.title}
-          description={t.projectSettings.backup.live.description}
-          icon={Activity}
-          iconTone="primary"
-          actions={
-            <button
-              onClick={() => setActiveRunId(null)}
-              className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs hover:bg-muted"
-            >
-              {t.projectSettings.backup.live.dismiss}
-            </button>
-          }
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{m.title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{b.overview.description}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void reload()} disabled={refreshing}>
+          <Icon name="refresh" className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          {b.services.refresh}
+        </Button>
+      </div>
+      {(loadError || actionError) && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger"
         >
-          <BackupRunCard runId={activeRunId} />
-        </SectionCard>
+          <span>{loadError || actionError}</span>
+          {loadError && (
+            <Button variant="ghost" size="sm" disabled={refreshing} onClick={() => void reload()}>
+              {w.retry}
+            </Button>
+          )}
+        </div>
       )}
-
+      {!current ? (
+        refreshing && (
+          <div
+            aria-busy="true"
+            aria-label={b.destinations.loading}
+            className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]"
+          >
+            <div className="h-72 animate-pulse rounded-2xl bg-muted/50" />
+            <div className="h-52 animate-pulse rounded-2xl bg-muted/50" />
+          </div>
+        )
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 rounded-2xl border border-border/50 bg-card sm:grid-cols-3">
+            <Summary
+              className="col-span-2 border-b sm:col-span-1 sm:border-b-0"
+              icon="clock"
+              label={b.overview.lastBackup}
+              value={
+                lastSuccess
+                  ? formatDate(lastSuccess.finishedAt ?? lastSuccess.startedAt, locale)
+                  : b.overview.noRecentBackup
+              }
+            />
+            <Summary
+              className="sm:border-s"
+              icon="calendar"
+              label={b.overview.scheduledPolicies}
+              value={String(scheduledCount)}
+            />
+            <Summary
+              className="border-s"
+              icon="hard-drive"
+              label={b.destinations.title}
+              value={String(destinations.length)}
+            />
+          </dl>
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="min-w-0 space-y-5">
+              <section
+                className="overflow-hidden rounded-2xl border border-border/50 bg-card"
+                aria-label={b.recent.title}
+              >
+                <SectionHeading title={b.recent.title} description={b.recent.description} />
+                {recentRuns.length === 0 ? (
+                  <div className="flex flex-col items-center px-5 py-12 text-center">
+                    <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+                      <Icon name="database-backup" className="size-5" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">{b.recent.empty}</p>
+                    <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                      {b.recent.emptyHint}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-[480px] overflow-auto">
+                    <table className="w-full min-w-[580px] text-start text-xs">
+                      <thead className="sticky top-0 z-10 bg-card text-muted-foreground">
+                        <tr className="border-b border-border/40">
+                          <th scope="col" className="px-5 py-3 text-start font-medium">
+                            {b.recent.backup}
+                          </th>
+                          <th scope="col" className="px-3 py-3 text-start font-medium">
+                            {t.widgets.backup.runCard.started}
+                          </th>
+                          <th scope="col" className="px-3 py-3 text-end font-medium">
+                            {t.widgets.backup.runCard.bytes}
+                          </th>
+                          <th scope="col" className="px-5 py-3">
+                            <span className="sr-only">{b.recent.viewDetails}</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {recentRuns.map((run) => {
+                          const succeeded = run.status === "succeeded";
+                          const protectedRun =
+                            !!run.retentionLockedUntil &&
+                            Date.parse(run.retentionLockedUntil) > Date.now();
+                          return (
+                            <tr key={run.id} className="transition-colors hover:bg-muted/20">
+                              <td className="max-w-[240px] px-5 py-3.5">
+                                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                                  <span className="truncate">{scopeName(run.serviceId)}</span>
+                                  {protectedRun && (
+                                    <Icon
+                                      name="lock"
+                                      className="size-3 shrink-0 text-warning"
+                                      title={b.recent.protectedTitle}
+                                    />
+                                  )}
+                                </div>
+                                <div className="mt-1.5">
+                                  <BackupStatusChip status={run.status} />
+                                </div>
+                                {run.errorMessage && (
+                                  <p
+                                    className="mt-1 max-w-xs truncate text-danger"
+                                    title={run.errorMessage}
+                                  >
+                                    {run.errorMessage}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-3.5 text-muted-foreground">
+                                <time dateTime={run.startedAt}>
+                                  {formatDate(run.startedAt, locale)}
+                                </time>
+                                <p className="mt-1 text-[11px]">
+                                  {b.recent.triggers[run.triggeredBy]}
+                                </p>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-3.5 text-end tabular-nums text-muted-foreground">
+                                {run.bytesTransferred == null
+                                  ? "—"
+                                  : formatBytes(run.bytesTransferred)}
+                              </td>
+                              <td className="px-5 py-3.5">
+                                <div className="flex items-center justify-end gap-1">
+                                  {succeeded && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setRestoreFromRun(run)}
+                                      title={b.recent.restoreTitle}
+                                    >
+                                      <Icon name="rotate-left" className="size-3.5" />
+                                      {b.recent.restore}
+                                    </Button>
+                                  )}
+                                  {succeeded && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      disabled={busyIds.has(run.id)}
+                                      title={
+                                        protectedRun ? b.recent.allowPrune : b.recent.protectFrom
+                                      }
+                                      aria-label={
+                                        protectedRun ? b.recent.allowPrune : b.recent.protectFrom
+                                      }
+                                      onClick={() => {
+                                        void perform(
+                                          run.id,
+                                          async () => {
+                                            await backupsApi.protectRun(run.id, {
+                                              protected: !protectedRun,
+                                            });
+                                            await reload();
+                                          },
+                                          b.toast.toggleProtectionFailed,
+                                        );
+                                      }}
+                                    >
+                                      <Icon
+                                        name={protectedRun ? "unlock" : "lock"}
+                                        className="size-3.5"
+                                      />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setActiveRunIds((previous) => [
+                                        ...new Set([...previous, run.id]),
+                                      ]);
+                                      setDismissedRunIds((previous) => {
+                                        const next = new Set(previous);
+                                        next.delete(run.id);
+                                        return next;
+                                      });
+                                      requestAnimationFrame(() => {
+                                        activityRef.current?.scrollIntoView?.({ block: "nearest" });
+                                      });
+                                    }}
+                                    title={b.recent.viewDetails}
+                                    aria-label={`${b.recent.viewDetails}: ${scopeName(run.serviceId)}`}
+                                  >
+                                    <Icon name="activity" className="size-3.5" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {(current.hasMore || historyError) && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                    {historyError && (
+                      <p role="alert" className="text-sm text-danger">
+                        {historyError}
+                      </p>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={loadingMore || refreshing}
+                      onClick={() => void loadOlder()}
+                    >
+                      {loadingMore && <Icon name="spinner" className="size-3.5 animate-spin" />}
+                      {loadingMore ? b.recent.loading : b.recent.loadOlder}
+                    </Button>
+                  </div>
+                )}
+              </section>
+              {trackedRunIds.length > 0 && (
+                <section
+                  ref={activityRef}
+                  className="space-y-3"
+                  aria-label={b.live.title}
+                  hidden={liveRunIds.length === 0}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-foreground">{b.live.title}</h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setDismissedRunIds((previous) => new Set([...previous, ...liveRunIds]));
+                      }}
+                    >
+                      {b.live.dismiss}
+                    </Button>
+                  </div>
+                  {trackedRunIds.map((runId) => {
+                    const run = runsById.get(runId);
+                    return (
+                      <BackupRunCard
+                        key={runId}
+                        runId={runId}
+                        initial={run}
+                        visible={!dismissedRunIds.has(runId)}
+                        serviceName={run ? scopeName(run.serviceId) : undefined}
+                        onUpdate={updateRun}
+                      />
+                    );
+                  })}
+                </section>
+              )}
+            </div>
+            <aside
+              className="min-w-0 rounded-2xl border border-border/50 bg-card"
+              aria-label={b.destinations.title}
+            >
+              <SectionHeading
+                title={b.destinations.title}
+                description={b.destinations.description}
+              />
+              {destinations.length === 0 ? (
+                <div className="px-5 pt-5">
+                  <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+                    <Icon name="hard-drive" className="size-5" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">{m.emptyTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {b.destinations.emptyHint}
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/40">
+                  {destinations.map((destination) => {
+                    const editable = EDITABLE_KINDS.has(destination.kind);
+                    const busy = busyIds.has(destination.id);
+                    const used = policies.some((policy) => policy.destinationId === destination.id);
+                    const actions: MenuAction[] = [];
+                    if (editable)
+                      actions.push({
+                        id: "edit",
+                        label: m.editAction,
+                        icon: <Icon name="edit" className="size-4" />,
+                        onClick: () => setDestinationEditor({ destination }),
+                      });
+                    actions.push({
+                      id: "verify",
+                      label: m.verifyConnection,
+                      icon: <Icon name="refresh" className="size-4" />,
+                      onClick: () => {
+                        void perform(
+                          destination.id,
+                          async () => {
+                            const result = await backupDestinationsApi.preflight(destination.id);
+                            if (activeProject.current !== projectId) return;
+                            if (!result.data.ok)
+                              setActionError(result.data.reason ?? m.verificationFailedMsg);
+                            await reload();
+                          },
+                          m.verificationFailedTitle,
+                        );
+                      },
+                    });
+                    if (!destination.isDefault)
+                      actions.push({
+                        id: "default",
+                        label: m.setDefaultAction,
+                        icon: <Icon name="star" className="size-4" />,
+                        onClick: () => {
+                          void perform(
+                            destination.id,
+                            async () => {
+                              const result = await backupDestinationsApi.update(destination.id, {
+                                isDefault: true,
+                              });
+                              saveDestination(result.data);
+                            },
+                            m.setDefaultFailed,
+                          );
+                        },
+                      });
+                    return (
+                      <li key={destination.id} className="px-5 py-4">
+                        <div className="flex items-start gap-2.5">
+                          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
+                            <Icon name={KIND_ICONS[destination.kind]} className="size-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            {editable ? (
+                              <button
+                                type="button"
+                                onClick={() => setDestinationEditor({ destination })}
+                                disabled={busy}
+                                className="block max-w-full truncate text-start text-sm font-medium text-foreground hover:underline disabled:opacity-50"
+                                title={interpolate(m.modalEditTitle, { name: destination.name })}
+                              >
+                                {destination.name}
+                              </button>
+                            ) : (
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {destination.name}
+                              </p>
+                            )}
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {kindLabel(destination.kind, m)}
+                            </p>
+                          </div>
+                          <DropdownMenu
+                            actions={actions}
+                            disabled={busy}
+                            triggerLabel={`${b.destinations.manage}: ${destination.name}`}
+                            trigger={
+                              busy ? (
+                                <Icon name="spinner" className="size-4 animate-spin" />
+                              ) : undefined
+                            }
+                          />
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
+                          <DestinationVerificationBadge destination={destination} badge={false} />
+                          {used && (
+                            <span className="text-muted-foreground">{b.destinations.inUse}</span>
+                          )}
+                          {destination.isDefault && (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <Icon name="star" className="size-3" />
+                              {m.defaultBadge}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="p-5">
+                <Button
+                  variant={destinations.length ? "outline" : "default"}
+                  className="w-full"
+                  onClick={() => setDestinationEditor({ destination: null })}
+                >
+                  <Icon name="plus" className="size-4" />
+                  {m.addDestination}
+                </Button>
+              </div>
+            </aside>
+          </div>
+          <section
+            className="rounded-2xl border border-border/50 bg-card"
+            aria-label={b.services.title}
+          >
+            <SectionHeading title={b.services.title} description={b.services.description} />
+            <div className="divide-y divide-border/40">
+              {scopes.flatMap((scope) => {
+                const scopedPolicies = policiesByService.get(scope.serviceId) ?? [];
+                return (scopedPolicies.length ? scopedPolicies : [null]).map((policy) => (
+                  <PolicyRow
+                    key={policy?.id ?? scope.serviceId ?? "project"}
+                    scope={scope}
+                    policy={policy}
+                    destination={destinations.find(
+                      (destination) => destination.id === policy?.destinationId,
+                    )}
+                    projectPolicyEnabled={projectPolicyEnabled}
+                    busy={
+                      !!policy &&
+                      (busyIds.has(policy.id) ||
+                        runs.some((run) => run.policyId === policy.id && isBackupRunning(run)))
+                    }
+                    onEdit={() => setEditingPolicy({ ...scope, existing: policy })}
+                    onRun={() => {
+                      if (policy) void runNow(policy);
+                    }}
+                  />
+                ));
+              })}
+            </div>
+          </section>
+        </>
+      )}
+      {destinationEditor && (
+        <CreateDestinationModal
+          isOpen
+          destination={destinationEditor.destination}
+          onClose={() => setDestinationEditor(null)}
+          onSaved={(destination) => {
+            saveDestination(destination);
+            setDestinationEditor(null);
+          }}
+        />
+      )}
       {editingPolicy && (
         <PolicyEditor
           projectId={projectId}
           serviceId={editingPolicy.serviceId}
-          serviceName={editingPolicy.serviceName}
+          serviceName={editingPolicy.serviceId ? editingPolicy.serviceName : undefined}
           serviceImage={editingPolicy.serviceImage}
           existing={editingPolicy.existing}
+          initialDestination={
+            preferredDestination ?? destinations.find((destination) => destination.isDefault)
+          }
+          onDestinationSaved={saveDestination}
           onClose={() => setEditingPolicy(null)}
-          onSaved={async () => {
-            setEditingPolicy(null);
-            await reload();
-          }}
+          onSaved={(policy) => finishPolicy(policy)}
+          onSavedAndRun={
+            editingPolicy.existing ? undefined : (policy) => finishPolicy(policy, true)
+          }
         />
       )}
-
       {restoreFromRun && (
         <RestoreWizard
           sourceRun={restoreFromRun}
-          serviceName={
-            servicesData.services.find((s) => s.id === restoreFromRun.serviceId)?.name
-          }
+          serviceName={restoreFromRun.serviceId ? scopeName(restoreFromRun.serviceId) : undefined}
           onClose={() => {
             setRestoreFromRun(null);
             void reload();
           }}
         />
       )}
-
-      <SectionCard
-        title={t.projectSettings.backup.destinations.title}
-        description={t.projectSettings.backup.destinations.description}
-        icon={HardDrive}
-        iconTone="primary"
-        actions={
-          <Link
-            href="/backups"
-            className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-muted"
-          >
-            {t.projectSettings.backup.destinations.manage} <ExternalLink className="size-3" />
-          </Link>
-        }
-      >
-        {loading ? (
-          <p className="text-sm text-muted-foreground">{t.projectSettings.backup.destinations.loading}</p>
-        ) : destinations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {t.projectSettings.backup.destinations.emptyPrefix}<Link href="/backups" className="text-primary hover:underline">{t.projectSettings.backup.destinations.emptyLink}</Link>{t.projectSettings.backup.destinations.emptySuffix}
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {destinations.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 text-sm"
-              >
-                <div>
-                  <span className="font-medium text-foreground">{d.name}</span>
-                  <span className="ms-2 text-xs text-muted-foreground">{d.kind}</span>
-                </div>
-                {d.lastVerifiedAt ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-success">
-                    <CheckCircle2 className="size-3" />
-                    {t.projectSettings.backup.destinations.verified}
-                  </span>
-                ) : d.lastVerifyError ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-danger">
-                    <XCircle className="size-3" />
-                    {t.projectSettings.backup.destinations.failed}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
-
-      <SectionCard
-        title={t.projectSettings.backup.services.title}
-        description={t.projectSettings.backup.services.description}
-        icon={DatabaseBackup}
-        iconTone="emerald"
-        actions={
-          <button
-            onClick={() => void reload()}
-            className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-muted"
-          >
-            <RefreshCw className="size-3" />
-            {t.projectSettings.backup.services.refresh}
-          </button>
-        }
-      >
-        {servicesData.services.length > 0 &&
-          (() => {
-            // Project-level policy — one policy that fans out to EVERY service.
-            const projectPolicy = policyByService.get(null) ?? null;
-            return (
-              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    {t.widgets.backup.policyEditor.projectLevel}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {projectPolicy
-                      ? `${t.projectSettings.backup.services.policyLabel} ${projectPolicy.payloadKind}${projectPolicy.cronExpression ? ` · cron ${projectPolicy.cronExpression}` : ` · ${t.projectSettings.backup.services.manualOnly}`}`
-                      : t.projectSettings.backup.services.noPolicy}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  {projectPolicy ? (
-                    <>
-                      <button
-                        onClick={() => void handleRunNow(projectPolicy.id)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                      >
-                        <PlayCircle className="size-3" />
-                        {t.projectSettings.backup.services.backupNow}
-                      </button>
-                      <button
-                        onClick={() => setEditingPolicy({ existing: projectPolicy, serviceId: null })}
-                        className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2 py-1.5 text-xs font-medium hover:bg-muted"
-                        title={t.projectSettings.backup.services.editPolicy}
-                      >
-                        <Settings className="size-3" />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setEditingPolicy({ existing: null, serviceId: null })}
-                      title={t.projectSettings.backup.services.createPolicyHint}
-                      className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                    >
-                      <Plus className="size-3" />
-                      {t.projectSettings.backup.services.createPolicy}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        {servicesData.services.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {t.projectSettings.backup.services.empty}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border/40">
-            {servicesData.services.map((svc) => {
-              const policy = policyByService.get(svc.id) ?? null;
-              return (
-                <li key={svc.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{svc.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {policy
-                        ? `${t.projectSettings.backup.services.policyLabel} ${policy.payloadKind}${policy.cronExpression ? ` · cron ${policy.cronExpression}` : ` · ${t.projectSettings.backup.services.manualOnly}`}${policy.triggerOnPreDeploy ? ` · ${t.projectSettings.backup.services.preDeploy}` : ""}${policy.webhookToken ? ` · ${t.projectSettings.backup.services.webhook}` : ""}`
-                        : t.projectSettings.backup.services.noPolicy}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {policy ? (
-                      <>
-                        <button
-                          onClick={() => void handleRunNow(policy.id)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                        >
-                          <PlayCircle className="size-3" />
-                          {t.projectSettings.backup.services.backupNow}
-                        </button>
-                        <button
-                          onClick={() =>
-                            setEditingPolicy({
-                              existing: policy,
-                              serviceId: svc.id,
-                              serviceName: svc.name,
-                              serviceImage: svc.image,
-                            })
-                          }
-                          className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2 py-1.5 text-xs font-medium hover:bg-muted"
-                          title={t.projectSettings.backup.services.editPolicy}
-                        >
-                          <Settings className="size-3" />
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          setEditingPolicy({
-                            existing: null,
-                            serviceId: svc.id,
-                            serviceName: svc.name,
-                            serviceImage: svc.image,
-                          })
-                        }
-                        title={t.projectSettings.backup.services.createPolicyHint}
-                        className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                      >
-                        <Plus className="size-3" />
-                        {t.projectSettings.backup.services.createPolicy}
-                      </button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </SectionCard>
-
-      <SectionCard
-        title={t.projectSettings.backup.recent.title}
-        description={t.projectSettings.backup.recent.description}
-        icon={DatabaseBackup}
-        iconTone="muted"
-      >
-        {loading ? (
-          <p className="text-sm text-muted-foreground">{t.projectSettings.backup.recent.loading}</p>
-        ) : runs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t.projectSettings.backup.recent.empty}</p>
-        ) : (
-          <ul className="divide-y divide-border/40">
-            {runs.map((run) => {
-              const isSucceeded = run.status === "succeeded";
-              const isProtected = !!(run as { retentionLockedUntil?: string | null }).retentionLockedUntil;
-              return (
-                <li key={run.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <StatusChip status={run.status} statusLabels={t.widgets.backup.runCard.status} />
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(run.startedAt).toLocaleString()}
-                      </span>
-                      {run.bytesTransferred ? (
-                        <span className="text-xs text-muted-foreground">
-                          · {formatBytes(run.bytesTransferred)}
-                        </span>
-                      ) : null}
-                      {isProtected && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning"
-                          title={t.projectSettings.backup.recent.protectedTitle}
-                        >
-                          <Lock className="size-2.5" />
-                          {t.projectSettings.backup.recent.protected}
-                        </span>
-                      )}
-                    </div>
-                    {run.errorMessage && (
-                      <p className="mt-0.5 truncate text-xs text-danger" title={run.errorMessage}>
-                        {run.errorMessage}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {isSucceeded && (
-                      <button
-                        onClick={() => setRestoreFromRun(run)}
-                        title={t.projectSettings.backup.recent.restoreTitle}
-                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      >
-                        <RotateCcw className="size-3.5" />
-                      </button>
-                    )}
-                    {isSucceeded && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            await backupsApi.protectRun(run.id, {
-                              protected: !isProtected,
-                            });
-                            await reload();
-                          } catch (err) {
-                            window.alert(getApiErrorMessage(err, t.projectSettings.backup.toast.toggleProtectionFailed));
-                          }
-                        }}
-                        title={isProtected ? t.projectSettings.backup.recent.allowPrune : t.projectSettings.backup.recent.protectFrom}
-                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      >
-                        {isProtected ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
-                      </button>
-                    )}
-                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground ms-1">
-                      {run.triggeredBy}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </SectionCard>
     </div>
   );
 }
 
-function StatusChip({
-  status,
-  statusLabels,
-}: {
-  status: BackupRun["status"];
-  statusLabels: ReturnType<typeof useI18n>["t"]["widgets"]["backup"]["runCard"]["status"];
-}): React.JSX.Element {
-  const meta = (() => {
-    switch (status) {
-      case "succeeded":
-        return { color: "text-success bg-success-bg", icon: CheckCircle2 };
-      case "failed":
-      case "server_error":
-      case "cancelled":
-        return { color: "text-danger bg-danger-bg", icon: XCircle };
-      default:
-        return { color: "text-info bg-info-bg", icon: Loader2 };
-    }
-  })();
-  const Icon = meta.icon;
-  const label = (() => {
-    switch (status) {
-      case "queued":
-        return statusLabels.queued;
-      case "preparing":
-        return statusLabels.preparing;
-      case "snapshotting":
-        return statusLabels.snapshotting;
-      case "uploading":
-        return statusLabels.uploading;
-      case "verifying":
-        return statusLabels.verifying;
-      case "succeeded":
-        return statusLabels.succeeded;
-      case "failed":
-        return statusLabels.failed;
-      case "cancelled":
-        return statusLabels.cancelled;
-      case "server_error":
-        return statusLabels.serverError;
-    }
-  })();
+function SectionHeading({ title, description }: { title: string; description: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.color}`}>
-      <Icon className={`size-3 ${status === "succeeded" || status === "failed" || status === "server_error" || status === "cancelled" ? "" : "animate-spin"}`} />
-      {label}
-    </span>
+    <div className="border-b border-border/40 px-5 py-4">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+    </div>
   );
 }
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+function Summary({
+  icon,
+  label,
+  value,
+  className = "",
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={`min-w-0 border-border/50 px-5 py-4 ${className}`}>
+      <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon name={icon} className="size-3.5" />
+        {label}
+      </dt>
+      <dd className="mt-2 text-sm font-semibold tabular-nums text-foreground">{value}</dd>
+    </div>
+  );
+}
+function PolicyRow({
+  scope,
+  policy,
+  destination,
+  projectPolicyEnabled,
+  busy,
+  onEdit,
+  onRun,
+}: {
+  scope: PolicyScope;
+  policy: BackupPolicy | null;
+  destination?: BackupDestinationSummary;
+  projectPolicyEnabled: boolean;
+  busy: boolean;
+  onEdit: () => void;
+  onRun: () => void;
+}) {
+  const { t, locale } = useI18n();
+  const b = t.projectSettings.backup;
+  const w = t.widgets.backup.policyEditor;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+          <Icon name={scope.serviceId ? "server" : "layers"} className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium text-foreground">{scope.serviceName}</p>
+            {policy && !policy.enabled && (
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                {b.overview.paused}
+              </span>
+            )}
+          </div>
+          {policy ? (
+            <>
+              <p
+                className="mt-1 truncate text-xs text-muted-foreground"
+                title={
+                  policy.cronExpression
+                    ? `${policy.cronExpression} · ${b.schedule.timezone}`
+                    : undefined
+                }
+              >
+                {destination?.name ?? w.destination}
+                <span className="mx-1.5 text-muted-foreground/40">·</span>
+                {scheduleLabel(policy.cronExpression, b, w, locale)}
+              </p>
+              <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground/80">
+                {policy.retainCount != null && (
+                  <span>
+                    {interpolate(b.services.retainCount, { count: String(policy.retainCount) })}
+                  </span>
+                )}
+                {policy.retainDays != null && (
+                  <span>
+                    {interpolate(b.services.retainDays, { days: String(policy.retainDays) })}
+                  </span>
+                )}
+                {policy.triggerOnPreDeploy && <span>{b.services.preDeploy}</span>}
+                {policy.webhookToken && <span>{b.services.webhook}</span>}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {scope.serviceId
+                ? projectPolicyEnabled
+                  ? b.services.includedInProject
+                  : b.services.noPolicy
+                : b.services.projectHint}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        {policy ? (
+          <>
+            <Button variant="outline" size="sm" disabled={busy} onClick={onRun}>
+              <Icon
+                name={busy ? "spinner" : "play-circle"}
+                className={`size-3.5 ${busy ? "animate-spin" : ""}`}
+              />
+              {b.services.backupNow}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onEdit}
+              disabled={busy}
+              title={b.services.editPolicy}
+              aria-label={`${b.services.editPolicy}: ${scope.serviceName}`}
+            >
+              <Icon name="settings" className="size-4" />
+            </Button>
+          </>
+        ) : (
+          <Button variant={scope.serviceId ? "outline" : "default"} size="sm" onClick={onEdit}>
+            <Icon name="plus" className="size-3.5" />
+            {b.services.createPolicy}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+function scheduleLabel(
+  cron: string | null,
+  b: BackupCopy,
+  w: ReturnType<typeof useI18n>["t"]["widgets"]["backup"]["policyEditor"],
+  locale: string,
+) {
+  if (!cron) return w.summaryScheduleManual;
+  if (cron === "0 * * * *") return w.presetHourly;
+  const parts = partsFromCron(cron);
+  if (parts.frequency === "daily") return interpolate(b.schedule.daily, { time: parts.time });
+  if (parts.frequency === "weekly")
+    return interpolate(b.schedule.weekly, {
+      day: new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(
+        new Date(Date.UTC(2026, 0, 4 + parts.weekday)),
+      ),
+      time: parts.time,
+    });
+  if (parts.frequency === "monthly")
+    return interpolate(b.schedule.monthly, { day: String(parts.dayOfMonth), time: parts.time });
+  return b.schedule.custom;
+}
+function formatDate(value: string, locale: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useRef } from "react";
-import { ArrowRight, HeartPulse } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
@@ -47,9 +48,9 @@ export function MonitoringNavigation({
             navigation.current?.querySelector<HTMLButtonElement>("#monitoring-tab-health")?.focus();
           }}
         >
-          <HeartPulse aria-hidden="true" />
+          <UiIcon name="activity" aria-hidden="true" />
           {c.monitoringHint.action}
-          <ArrowRight aria-hidden="true" className="rtl:rotate-180" />
+          <UiIcon name="arrow-right" aria-hidden="true" className="rtl:rotate-180" />
         </Button>
       )}
     </div>

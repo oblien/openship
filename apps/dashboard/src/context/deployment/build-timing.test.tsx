@@ -4,7 +4,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeploymentContext } from "@/context/DeploymentContext";
-import ComposeSidebar from "@/components/import-project/compose/ComposeSidebar";
+import DeploymentDetails from "@/components/import-project/DeploymentDetails";
 import { baseDictionary } from "@/i18n";
 import { ApiError } from "@/lib/api/client";
 import { useDeploymentBuild } from "./useDeploymentBuild";
@@ -74,7 +74,7 @@ function Harness() {
   build = useDeploymentBuild(config, setConfig);
   return (
     <DeploymentContext.Provider value={{ config, ...build } as DeploymentContextType}>
-      <ComposeSidebar />
+      <DeploymentDetails />
     </DeploymentContext.Provider>
   );
 }
@@ -94,8 +94,8 @@ async function load(extra: Record<string, unknown> = {}) {
 }
 
 function clockText() {
-  const label = [...container.querySelectorAll("span")].find(
-    (span) => span.textContent === baseDictionary.importProject.composeSidebar.rowBuildTime,
+  const label = [...container.querySelectorAll("dt")].find(
+    (span) => span.textContent === baseDictionary.importProject.deploymentProcessing.detailBuildTime,
   );
   return label?.nextElementSibling?.textContent;
 }

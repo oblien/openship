@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, Circle, CircleAlert, Loader2 } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import type { ComputeCluster } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -17,17 +18,17 @@ export function ClusterScalingStatus({ cluster }: { cluster: ComputeCluster }) {
   const running = status === "setting_up" || status === "removing";
   const attention = status === "failed" || status === "interrupted";
   const Icon = running
-    ? Loader2
+    ? "spinner"
     : status === "ready"
-      ? CheckCircle2
+      ? "check-circle"
       : attention
-        ? CircleAlert
-        : Circle;
+        ? "alert-circle"
+        : "circle";
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-medium ${status === "ready" ? "text-success" : attention ? "text-warning" : "text-muted-foreground"}`}
     >
-      <Icon aria-hidden="true" className={`size-3.5 shrink-0 ${running ? "animate-spin" : ""}`} />
+      <UiIcon name={Icon} aria-hidden="true" className={`size-3.5 shrink-0 ${running ? "animate-spin" : ""}`} />
       {t.servers.runtime.status[status]}
     </span>
   );

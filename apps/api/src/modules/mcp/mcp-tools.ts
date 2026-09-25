@@ -12,7 +12,17 @@ import {
   type CheckedResourceType,
 } from "../../lib/permission";
 import type { Permission } from "@repo/db";
+import { Type } from "@sinclair/typebox";
 import { env } from "@repo/platform/engine/config/index";
+
+/** IDs become HTTP headers: reject empty, whitespace and control characters. */
+export const McpOrganizationIdSchema = Type.String({
+  minLength: 1,
+  maxLength: 512,
+  // Unlike $, the final assertion cannot match before a trailing newline.
+  pattern: "^[!-~]+(?![\\s\\S])",
+  description: "Openship workspace ID from get_permissions_workspaces. Fixes this call to that workspace within the credential's access. Omit to use the credential/account default.",
+});
 
 /**
  * MCP tool generation from the HTTP route registry. A route is exposed as a
@@ -149,6 +159,7 @@ function inputSchema(
   for (const p of pathParams) {
     properties[p] = { type: "string", description: `Path parameter :${p}` };
   }
+  properties.organizationId = McpOrganizationIdSchema;
   properties.query = { type: "object", description: "Optional query-string parameters", additionalProperties: true };
   if (hasBody && bodySchema) {
     // Emit the route's TypeBox body schema (JSON Schema at runtime) verbatim.
@@ -307,6 +318,11 @@ export function filterToolsForPrincipal(tools: McpToolDef[], principal: McpPrinc
     // Read-only tokens can only call GET — the runtime gate rejects mutations by
     // HTTP method, so mirror that exactly rather than guessing from the tag.
     if (principal.readOnly && t.method !== "GET") return false;
+
+    // Self-discovery needs no resource grant. Its shared identity operation
+    // validates membership and confines the result to the credential's scope.
+    // Keep this exception exact; other permission-management routes stay gated.
+    if (t.method === "GET" && t.path === "/api/permissions/workspaces") return true;
 
     // Repo CONTENT is a capability of its own, orthogonal to role: a repo grant
     // authorises deploying and inspecting metadata, not crawling files. Hide the

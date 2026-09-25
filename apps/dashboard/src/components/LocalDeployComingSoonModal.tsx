@@ -1,10 +1,11 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 // TODO: temporary desktop gate — see useLocalDeployGate.ts. Delete this file and
 // its call sites when DESKTOP_LOCAL_DEPLOY_ENABLED flips to true.
 
 import { useRouter } from "next/navigation";
-import { MonitorSmartphone, Server, ArrowRight } from "lucide-react";
 import type { ServerInfo } from "@/lib/api/system";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 
@@ -51,7 +52,7 @@ export function LocalDeployComingSoonModal({
     <div className="space-y-5 p-6">
       <div className="flex items-start gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-          <MonitorSmartphone className="size-5" />
+          <UiIcon name="devices" className="size-5" />
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">
@@ -70,7 +71,7 @@ export function LocalDeployComingSoonModal({
 
       <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
         <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
-          <Server className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <UiIcon name="server" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <span>
             Add a server once and every deploy from this desktop lands there. Your builds can still
             run locally.
@@ -92,7 +93,7 @@ export function LocalDeployComingSoonModal({
           className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Connect a server
-          <ArrowRight className="size-4" />
+          <UiIcon name="arrow-right" className="size-4" />
         </button>
       </div>
     </div>

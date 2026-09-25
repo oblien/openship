@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * "Domain: <picker>" toolbar shared by every domain-scoped tab (Mailboxes,
  * Aliases, DNS). One component so the three cannot drift, and so all three use
@@ -11,7 +13,6 @@
  */
 
 import type { ReactNode } from "react";
-import { Loader2 } from "lucide-react";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 
 export function DomainPicker({
@@ -36,7 +37,7 @@ export function DomainPicker({
       <span className="text-sm text-muted-foreground">{label}</span>
       {loading ? (
         <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-muted/40 px-4 py-3">
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-3.5 animate-spin text-muted-foreground" />
           <span className="text-sm text-muted-foreground">{loadingLabel}</span>
         </div>
       ) : (

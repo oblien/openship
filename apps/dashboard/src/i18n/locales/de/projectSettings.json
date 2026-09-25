@@ -244,24 +244,26 @@
   },
   "backup": {
     "live": {
-      "title": "Live-Backup",
+      "title": "Backup-Aktivität",
       "description": "Echtzeit-Fortschritt für den soeben gestarteten Lauf. Übersteht ein Neuladen der Seite.",
       "dismiss": "Ausblenden"
     },
     "destinations": {
       "title": "Backup-Ziele",
-      "description": "Speicherziele pro Benutzer. Fügen Sie S3-kompatible Buckets, SFTP-Server oder lokale Festplatten hinzu.",
+      "description": "Verfügbare Speicherziele für dieses Projekt.",
       "manage": "Verwalten",
       "loading": "Wird geladen…",
       "emptyPrefix": "Noch keine Ziele. ",
       "emptyLink": "Eines erstellen",
       "emptySuffix": ", um mit dem Sichern zu beginnen.",
       "verified": "Verifiziert",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "emptyHint": "Verbinde einen S3-Bucket, einen SFTP-Host oder einen vorhandenen Server.",
+      "inUse": "In Verwendung"
     },
     "services": {
-      "title": "Dienste + Richtlinien",
-      "description": "Jeder Dienst kann seine eigene Backup-Richtlinie haben (Zeitplan + Ziel). Projektweite Standardwerte kommen in Chunk 2.",
+      "title": "Backup-Richtlinien",
+      "description": "Wähle die Daten, den Zeitplan und das Speicherziel.",
       "refresh": "Aktualisieren",
       "empty": "Dieses Projekt hat noch keine Dienste. Backups auf Dienstebene erscheinen hier, sobald Sie welche hinzufügen.",
       "policyLabel": "Richtlinie:",
@@ -273,22 +275,54 @@
       "editPolicy": "Richtlinie bearbeiten",
       "addDestinationFirst": "Zuerst ein Ziel hinzufügen",
       "createPolicyHint": "Eine Backup-Richtlinie für diesen Dienst erstellen",
-      "createPolicy": "Richtlinie erstellen"
+      "createPolicy": "Richtlinie erstellen",
+      "projectHint": "Eine Richtlinie für alle Services dieses Projekts.",
+      "includedInProject": "In der Projektrichtlinie enthalten.",
+      "retainCount": "{count} Backups behalten",
+      "retainDays": "Bis zu {days} Tage"
     },
     "recent": {
+      "loadOlder": "Ältere Backups laden",
       "title": "Letzte Backups",
-      "description": "Die 25 letzten Läufe über alle Dienste in diesem Projekt.",
+      "description": "Letzte Sicherungen, Ergebnisse und Wiederherstellungsoptionen.",
       "loading": "Wird geladen…",
       "empty": "Noch keine Backups.",
       "protectedTitle": "Vor dem Aufräumen durch Aufbewahrung geschützt",
       "protected": "Geschützt",
       "restoreTitle": "Aus diesem Backup wiederherstellen",
       "allowPrune": "Aufräumen durch Aufbewahrung erlauben",
-      "protectFrom": "Vor Aufbewahrung schützen"
+      "protectFrom": "Vor Aufbewahrung schützen",
+      "emptyHint": "Erstelle eine Richtlinie und starte hier dein erstes Backup.",
+      "backup": "Sicherung",
+      "viewDetails": "Details anzeigen",
+      "restore": "Wiederherstellen",
+      "triggers": {
+        "manual": "Bei Bedarf",
+        "cron": "Geplant",
+        "webhook": "Webhook",
+        "pre_deploy": "Vor dem Deployment"
+      }
     },
     "toast": {
       "runFailed": "Backup-Lauf fehlgeschlagen",
       "toggleProtectionFailed": "Umschalten des Schutzes fehlgeschlagen"
+    },
+    "overview": {
+      "description": "Plane Backups und stelle deine Projektdaten wieder her.",
+      "lastBackup": "Letztes erfolgreiches Backup",
+      "noRecentBackup": "Kein aktuelles Backup",
+      "scheduledPolicies": "Geplante Richtlinien",
+      "projectScope": "Gesamtes Projekt",
+      "serviceBackup": "Service-Backup",
+      "paused": "Pausiert",
+      "loadFailed": "Backups konnten nicht geladen werden"
+    },
+    "schedule": {
+      "daily": "Täglich um {time}",
+      "weekly": "Jeden {day} um {time}",
+      "monthly": "Am {day}. jedes Monats, {time}",
+      "custom": "Eigener Zeitplan",
+      "timezone": "Verwendet die Zeitzone des Servers."
     }
   },
   "build": {
@@ -436,6 +470,7 @@
       "install": "GitHub App installieren"
     },
     "webhookBanner": {
+      "summary": "Öffentlicher Endpunkt erforderlich",
       "title": "Auto-Deploy aktivieren",
       "description": "Auto-Deploy benötigt einen direkten Webhook-Endpunkt. Stellen Sie diese Openship API unter einer öffentlichen URL bereit oder konfigurieren Sie eine verifizierte Webhook-Domain für die direkte Zustellung."
     },

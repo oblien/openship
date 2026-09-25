@@ -245,7 +245,7 @@ describe("resolveLatestVersion", () => {
       timeoutMs: 10_000,
       maxRedirects: 5,
       maxBodyBytes: 8192,
-      allowPrivate: !env.CLOUD_MODE,
+      allowPrivate: false,
     });
     expect(nativeFetch).not.toHaveBeenCalled();
   });

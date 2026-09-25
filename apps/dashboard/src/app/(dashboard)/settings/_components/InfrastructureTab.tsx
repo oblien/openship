@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings → Infrastructure. POLICY ONLY: the two instance-wide preferences for
  * managed containers (edge / mail) — auto-update on a control-plane version bump,
@@ -16,7 +18,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Boxes, CheckCircle2 } from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { systemApi } from "@/lib/api/system";
@@ -141,7 +142,7 @@ export function InfrastructureTab() {
     : [];
 
   return (
-    <SettingsSection icon={Boxes} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"server-settings"} title={copy.title} description={copy.description}>
       <div className="space-y-5">
         {/* #527: let OpenShip deploy to the machine it runs on. Server-host (VPS)
             only — desktop derives "here" without a row and the SaaS control plane
@@ -182,7 +183,7 @@ export function InfrastructureTab() {
             <p className="min-w-0 text-[13px] text-foreground">{parts.join(" · ")}</p>
           ) : (
             <p className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
-              <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+              <UiIcon name="check-circle" className="size-3.5 shrink-0 text-success" />
               {copy.allHealthy}
             </p>
           )}
@@ -191,7 +192,7 @@ export function InfrastructureTab() {
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
           >
             {copy.manageLink}
-            <ArrowRight className="size-3.5 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
           </Link>
         </div>
       </div>

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUpRight, Cloud, Loader2, RefreshCw, X } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
@@ -99,21 +100,21 @@ export function CloudDeployPlanModal({ restriction, onClose }: {
       tabIndex={-1} onKeyDown={onKeyDown} className="flex max-h-[88vh] flex-col p-5 outline-none sm:p-8">
       <div className="mb-5 flex shrink-0 items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Cloud className="size-5" aria-hidden="true" /></div>
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><UiIcon name="cloud" className="size-5" aria-hidden="true" /></div>
           <div>
             <h2 id={titleId} className="text-xl font-semibold tracking-tight text-foreground">{ready ? copy.readyTitle : title}</h2>
             <p id={descriptionId} className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
           </div>
         </div>
         <button type="button" onClick={onClose} aria-label={copy.close} className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted focus-visible:outline-primary">
-          <X className="size-5" aria-hidden="true" />
+          <UiIcon name="close" className="size-5" aria-hidden="true" />
         </button>
       </div>
 
       <div className="-mx-1 min-h-0 overflow-y-auto px-1 py-1">
       {loading && !state ? (
         <div role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />{copy.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" aria-hidden="true" />{copy.loading}
         </div>
       ) : error ? (
         <p role="alert" className="rounded-xl border border-border bg-muted/30 p-5 text-sm">
@@ -134,12 +135,12 @@ export function CloudDeployPlanModal({ restriction, onClose }: {
             <div className="flex flex-wrap gap-3">
               {recovery === "credits" && state.billing?.enabled && state.topups?.available && (
                 <a href="/billing/topups" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                  {copy.topups}<ArrowUpRight className="size-4" aria-hidden="true" />
+                  {copy.topups}<UiIcon name="arrow-up-right" className="size-4" aria-hidden="true" />
                 </a>
               )}
               <a href={recovery === "credits" ? "/billing/plans" : "/billing/overview"} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium">
-                {copy.manageBilling}<ArrowUpRight className="size-4" aria-hidden="true" />
+                {copy.manageBilling}<UiIcon name="arrow-up-right" className="size-4" aria-hidden="true" />
               </a>
             </div>
           )}
@@ -155,7 +156,7 @@ export function CloudDeployPlanModal({ restriction, onClose }: {
           {!ready && error !== "owner" && <button type="button" disabled={loading}
             onClick={() => { setChecked(true); void refresh(); }}
             className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50">
-            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
+            <UiIcon name="refresh" className={`size-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
             {error ? t.billing.plansRoute.tryAgain : copy.checkPlan}
           </button>}
           <button type="button" onClick={onClose} className={`rounded-lg px-3 py-2 text-sm font-medium ${ready ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>

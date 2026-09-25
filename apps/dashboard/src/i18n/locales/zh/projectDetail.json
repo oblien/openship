@@ -170,6 +170,7 @@
 			"startShellHint": "启动服务以打开 shell。",
 			"saveEnvironment": "保存环境",
 			"environmentState": {
+				"helpTitle": "环境变量的工作方式",
 				"description": "已保存在 Openship 中。服务覆盖值优先于 Compose 和项目共享值。编辑继承的值会为此服务创建覆盖值。",
 				"sources": {
 					"service": "服务覆盖值",

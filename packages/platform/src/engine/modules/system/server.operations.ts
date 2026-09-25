@@ -10,7 +10,7 @@ import type { ServerDependencies } from "../../../servers";
 import { OperationError, type CreateServerInput, type UpdateServerInput, type ServerOperations } from "@repo/contracts";
 import { repos } from "@repo/db";
 import { hostControlDisabled } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { assertSshSettings, normalizeSshTransport, safeErrorMessage } from "@repo/core";
 import { invalidateOpenRestyPaths } from "../../lib/openresty-paths";
 import { invalidateHostCapacity } from "../../lib/host-capacity";
 import { sshManager, type ReachabilityDiagnosis } from "../../lib/ssh-manager";
@@ -37,6 +37,11 @@ import { clusterRuntimeCollection } from "./cluster-runtime.operations";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
 
+function validateConnectionOptions(settings: Parameters<typeof assertSshSettings>[0]): void {
+  try { assertSshSettings(settings); }
+  catch (error) { failServer({ error: safeErrorMessage(error) }, 400); }
+}
+
 /** Public shape - what the controller returns to clients (no SSH secrets). */
 function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
   if (!s) return null;
@@ -56,6 +61,7 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
     // the password field, which is simply absent from this shape).
     hasStoredKeyMaterial: !!s.sshPrivateKey,
     sshJumpHost: s.sshJumpHost,
+    sshTransport: s.sshTransport ?? "direct",
     sshArgs: s.sshArgs,
     createdAt: s.createdAt,
     // ISO country for the row's flag; null for hostnames/private IPs or until
@@ -168,13 +174,14 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
 
   const host = (body.sshHost as string)?.trim();
   if (!host) return failServer({ error: "SSH host is required" }, 400);
+  validateConnectionOptions({ ...body, sshHost: host });
 
 
   // Adding THIS host as a server (loopback / the box's own SERVER_IP on a
   // server-host) must NOT create a plain SSH row — deploys/probes would dial the
   // API's own loopback (the container's, when compose-deployed) where there is no
   // sshd → the "Can't reach 127.0.0.1" failure.
-  if (resolvesToLocalHost({ sshHost: host, sshPort: body.sshPort, sshJumpHost: body.sshJumpHost })) {
+  if (resolvesToLocalHost({ sshHost: host, sshPort: body.sshPort, sshJumpHost: body.sshJumpHost, sshTransport: body.sshTransport })) {
     // Only the box-owning org may register the local host — running on it is
     // code execution on the control plane (host executor + mounted docker socket,
     // DooD ≈ root). A teammate's org (any member can POST /servers) is refused so
@@ -215,6 +222,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
     sshPrivateKey: encryptSecretField(body.sshPrivateKey),
     sshKeyPassphrase: encryptSecretField(body.sshKeyPassphrase),
     sshJumpHost: body.sshJumpHost?.trim() || null,
+    sshTransport: normalizeSshTransport(body.sshTransport),
     sshArgs: body.sshArgs?.trim() || null,
   });
 
@@ -239,6 +247,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
       sshUser: server.sshUser,
       sshAuthMethod: server.sshAuthMethod,
       sshJumpHost: server.sshJumpHost,
+      sshTransport: server.sshTransport,
     },
   });
 
@@ -261,6 +270,7 @@ const LOCAL_ROW_READONLY_FIELDS = [
   "sshPrivateKey",
   "sshKeyPassphrase",
   "sshJumpHost",
+  "sshTransport",
   "sshArgs",
 ] as const;
 
@@ -298,6 +308,8 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
 
   if (LOCAL_ROW_READONLY_FIELDS.some(field => body[field] !== undefined))
     assertNativeSshSettings({ ...existing, ...body });
+  if (LOCAL_ROW_READONLY_FIELDS.some(field => body[field] !== undefined))
+    validateConnectionOptions({ ...existing, ...body, sshHost: body.sshHost?.trim() || existing.sshHost });
 
   const patch: Record<string, unknown> = {};
 
@@ -312,6 +324,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   if (body.sshPrivateKey !== undefined) patch.sshPrivateKey = encryptSecretField(body.sshPrivateKey);
   if (body.sshKeyPassphrase !== undefined) patch.sshKeyPassphrase = encryptSecretField(body.sshKeyPassphrase);
   if (body.sshJumpHost !== undefined) patch.sshJumpHost = body.sshJumpHost?.trim() || null;
+  if (body.sshTransport !== undefined) patch.sshTransport = normalizeSshTransport(body.sshTransport);
   if (body.sshArgs !== undefined) patch.sshArgs = body.sshArgs?.trim() || null;
 
   if (Object.keys(patch).length === 0) {
@@ -336,6 +349,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   if (body.sshAuthMethod !== undefined) auditAfter.sshAuthMethod = updated?.sshAuthMethod ?? null;
   if (body.sshKeyPath !== undefined) auditAfter.sshKeyPath = updated?.sshKeyPath ?? null;
   if (body.sshJumpHost !== undefined) auditAfter.sshJumpHost = updated?.sshJumpHost ?? null;
+  if (body.sshTransport !== undefined) auditAfter.sshTransport = updated?.sshTransport ?? "direct";
   if (body.sshArgs !== undefined) auditAfter.sshArgs = updated?.sshArgs ?? null;
   // Sentinels for credential rotation (no values).
   if (body.sshPassword !== undefined) auditAfter.sshPasswordChanged = true;

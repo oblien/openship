@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Loader2, RotateCcw } from "lucide-react";
 import { DEFAULT_ROLLBACK_WINDOW, MAX_ROLLBACK_WINDOW } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { InfoCard } from "@/components/settings/InfoCard";
@@ -88,7 +89,7 @@ export function RollbackRetentionCards({
     // Stacked cards fit both Advanced settings and the narrow deploy wizard.
     <div className="grid gap-3">
       <InfoCard
-        icon={RotateCcw}
+        icon={"rotate-left"}
         title={g.rollbackStrategy.title}
         value={capacity ? (isSnapshot ? g.rollbackStrategy.keepCopies : g.rollbackStrategy.keepNone) : "—"}
         description={
@@ -113,7 +114,7 @@ export function RollbackRetentionCards({
             >
               {togglingStrategy ? (
                 <span className="mx-auto">
-                  <Loader2 className="size-3.5 animate-spin text-background" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin text-background" />
                 </span>
               ) : (
                 <span
@@ -125,7 +126,7 @@ export function RollbackRetentionCards({
         }
       />
       <InfoCard
-        icon={RotateCcw}
+        icon={"rotate-left"}
         title={g.rollbackHistory.title}
         value={capacity ? interpolate(
           windowVal === 1 ? g.rollbackHistory.valueOne : g.rollbackHistory.valueOther,
@@ -151,7 +152,7 @@ export function RollbackRetentionCards({
               </button>
               <span className="w-5 text-center text-[13px] font-medium tabular-nums text-foreground">
                 {savingWindow ? (
-                  <Loader2 className="mx-auto size-3.5 animate-spin text-muted-foreground" />
+                  <UiIcon name="spinner" className="mx-auto size-3.5 animate-spin text-muted-foreground" />
                 ) : (
                   windowVal
                 )}

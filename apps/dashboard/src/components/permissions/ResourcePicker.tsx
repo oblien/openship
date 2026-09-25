@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * ResourcePicker — multi-select for grantable resources, shared by the invite
  * flow, the member-grants editor, and (Phase 2) token scoping.
@@ -16,7 +18,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Loader2, Search, SlidersHorizontal } from "lucide-react";
 import {
   permissionsApi,
   RESOURCE_TYPE_LABELS,
@@ -305,7 +306,7 @@ export function ResourcePicker({
           {/* Search */}
           {!isSingleton && (
             <div className="relative">
-              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <UiIcon name="search" className="absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={search}
@@ -321,7 +322,7 @@ export function ResourcePicker({
           <div className="rounded-xl border border-border/50 overflow-hidden max-h-[340px] overflow-y-auto divide-y divide-border/30">
             {loading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
               </div>
             ) : (
               <>
@@ -556,7 +557,7 @@ function Checkbox({
           : "border-border/60 hover:border-primary/60"
       }`}
     >
-      {checked && <Check className="size-3" />}
+      {checked && <UiIcon name="check" className="size-3" />}
     </button>
   );
 }
@@ -602,7 +603,7 @@ function SourceAccessButton({
           title,
           label: (
             <span className="inline-flex items-center gap-1">
-              <SlidersHorizontal className="size-3 shrink-0" />
+              <UiIcon name="sliders" className="size-3 shrink-0" />
               {label}
             </span>
           ),
@@ -736,7 +737,7 @@ function GitHubTree({
   if (loadingOrgs) {
     return (
       <div className="rounded-xl border border-border/50 flex items-center justify-center py-10">
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -778,7 +779,7 @@ function GitHubTree({
                   className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-40"
                   aria-label={isOpen ? w.collapse : w.expand}
                 >
-                  {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4 rtl:rotate-180" />}
+                  {isOpen ? <UiIcon name="chevron-down" className="size-4" /> : <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />}
                 </button>
                 <Checkbox checked={wholeOrg} disabled={disabled} onClick={() => toggleOrg(login)} />
                 <ResourceAvatar resourceType="github_installation" resourceId={login} className="size-5" />
@@ -842,7 +843,7 @@ function GitHubTree({
                   </p>
                 ) : loadingRepos.has(login) ? (
                   <div className="flex items-center justify-center py-6">
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
                   </div>
                 ) : repos.length === 0 ? (
                   <p className="px-12 py-4 text-xs text-muted-foreground">{w.noRepos}</p>

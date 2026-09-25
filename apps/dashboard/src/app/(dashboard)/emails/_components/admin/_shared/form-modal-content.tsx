@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Form scaffold for create/edit modals.
  *
@@ -13,7 +15,6 @@
  */
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 interface FormModalContentProps {
@@ -103,7 +104,7 @@ export function FormModalContent({
           disabled={submitting || disabled}
           className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${submitClass}`}
         >
-          {submitting && <Loader2 className="size-3.5 animate-spin" />}
+          {submitting && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
           {submitting ? (submittingLabel ?? submitLabel) : submitLabel}
         </button>
       </div>

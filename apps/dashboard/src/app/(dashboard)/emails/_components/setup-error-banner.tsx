@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The one place a mail-setup failure is rendered. Two callers, because a setup
  * can fail on either side of the progress stream:
@@ -13,7 +15,6 @@
  * there is no step to retry from.
  */
 
-import { XCircle, RotateCcw } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface SetupErrorBannerProps {
@@ -33,7 +34,7 @@ export function SetupErrorBanner({
   return (
     <div className="bg-danger-bg border border-danger-border rounded-2xl p-5">
       <div className="flex items-start gap-3">
-        <XCircle className="size-5 text-danger mt-0.5 shrink-0" />
+        <UiIcon name="x-circle" className="size-5 text-danger mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-danger">{title}</p>
           <p className="text-xs text-muted-foreground mt-1 break-words">{message}</p>
@@ -42,7 +43,7 @@ export function SetupErrorBanner({
               onClick={() => onResume(resumeStep)}
               className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <RotateCcw className="size-3.5" />
+              <UiIcon name="rotate-left" className="size-3.5" />
               {interpolate(t.emails.progress.retryFromStep, {
                 resumeStep: String(resumeStep),
               })}

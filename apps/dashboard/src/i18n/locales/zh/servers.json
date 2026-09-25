@@ -947,5 +947,12 @@
     "serviceNetwork": "服务网络",
     "lastChecked": "上次验证",
     "scaleProject": "选择项目"
+  },
+  "sshTransport": {
+    "label": "连接",
+    "direct": "直接 SSH",
+    "hostname": "Access 主机名",
+    "help": "使用 Cloudflare Access 主机名和服务器的 SSH 凭据。在运行 OpenShip 的机器上登录 Cloudflare。Windows 桌面应用已包含所需客户端；其他安装环境需要 cloudflared。",
+    "openAccess": "打开 Cloudflare Access"
   }
 }

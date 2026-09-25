@@ -13,6 +13,7 @@
 
 import { isDbImage, payloadSpec, shellQuote } from "@repo/core";
 import { registerProducer } from "../registry";
+import { yieldArtifact } from "../common/artifact-stream";
 import type {
   Artifact,
   ArtifactRef,
@@ -52,17 +53,12 @@ class MongoDumpProducerImpl implements BackupProducer {
     const cmd = ["sh", "-c", `mongodump ${auth} --archive --gzip`];
     const { stdout, awaitExit } = await executor.execStream(service, cmd);
 
-    yield {
+    yield* yieldArtifact({
       name: "mongo-dump.archive.gz",
       stream: stdout,
       payloadKind: "mongo_dump",
       metadata: { format: "archive", compression: "gzip" },
-    };
-
-    const exit = await awaitExit;
-    if (exit.code !== 0) {
-      throw new Error(`mongodump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
-    }
+    }, awaitExit, exit => `mongodump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
   }
 
   async restore(

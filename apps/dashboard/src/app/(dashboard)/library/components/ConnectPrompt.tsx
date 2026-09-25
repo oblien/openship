@@ -1,13 +1,15 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Github, Loader2, Settings, ExternalLink, ArrowRight, KeyRound } from "lucide-react";
 import { useGitHub, type CliAction } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
+import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
 
 /* ── Shared SVG illustration ──────────────────────────────────────── */
 
@@ -180,11 +182,11 @@ export function ConnectPrompt({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 mb-5"
           >
-            <ExternalLink className="size-4" />
+            <UiIcon name="external-link" className="size-4" />
             {t.library.connect.deviceFlow.openGithub}
           </a>
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             {t.library.connect.deviceFlow.waiting}
           </div>
         </div>
@@ -233,7 +235,7 @@ export function ConnectPrompt({
               className="group rounded-xl border border-primary/40 bg-primary/[0.03] p-4 transition-all hover:border-primary/60 hover:bg-primary/[0.06] disabled:opacity-50"
             >
               <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
-                <Github className="size-[18px] text-foreground/70" />
+                <UiIcon name="github" className="size-[18px] text-foreground/70" />
               </span>
               <p className="text-sm font-medium text-foreground">{t.library.connect.default.ghCli}</p>
               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
@@ -242,9 +244,9 @@ export function ConnectPrompt({
               <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
                 {connecting ? t.library.connect.default.connecting : t.library.connect.default.useGhCli}
                 {connecting ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                 ) : (
-                  <ArrowRight className="size-3.5 rtl:rotate-180" />
+                  <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                 )}
               </span>
             </button>
@@ -258,7 +260,7 @@ export function ConnectPrompt({
               className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] text-start"
             >
               <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
-                <KeyRound className="size-[18px] text-foreground/70" />
+                <UiIcon name="key" className="size-[18px] text-foreground/70" />
               </span>
               <p className="text-sm font-medium text-foreground">{t.library.connect.default.byoc}</p>
               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
@@ -266,7 +268,7 @@ export function ConnectPrompt({
               </p>
               <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
                 {t.library.connect.default.byocCta}
-                <ArrowRight className="size-3.5 rtl:rotate-180" />
+                <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
               </span>
             </button>
             )}
@@ -281,12 +283,12 @@ export function ConnectPrompt({
             >
               {connecting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                   {t.library.connect.default.connecting}
                 </>
               ) : (
                 <>
-                  <Github className="size-4" />
+                  <UiIcon name="github" className="size-4" />
                   {t.library.connect.connectGithub}
                 </>
               )}
@@ -299,7 +301,7 @@ export function ConnectPrompt({
             href="/settings"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Settings className="size-3.5" />
+            <UiIcon name="settings" className="size-3.5" />
             {t.library.connect.manageInSettings}
           </Link>
         </div>
@@ -357,20 +359,12 @@ function TokenField({ onSaved }: { onSaved: () => void }) {
           disabled={!token.trim() || saving}
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          {saving && <Loader2 className="size-4 animate-spin" />}
+          {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {t.library.connect.token.connect}
         </button>
       </div>
       {error && <p className="text-xs text-danger leading-relaxed">{error}</p>}
-      <a
-        href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Openship"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-      >
-        {t.library.connect.token.create}
-        <ExternalLink className="size-3" />
-      </a>
+      <CreateGitHubTokenLink label={t.library.connect.token.create} />
     </div>
   );
 }

@@ -1,17 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  CircleAlert,
-  Loader2,
-  PauseCircle,
-  RotateCcw,
-} from "lucide-react";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -197,7 +190,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
           href="/servers?tab=networking"
           className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4 rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
           {c.backToClusters}
         </Link>
         <div className="flex items-start justify-between gap-4">
@@ -250,7 +243,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
               </div>
             )}
             {!preparation && !error && !stream.error && (
-              <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
+              <UiIcon name="spinner" className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
             )}
             {preparation && (
               <div className="mt-6 grid items-start gap-6 @4xl/network-preparation:grid-cols-[minmax(0,1fr)_340px]">
@@ -305,15 +298,15 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                 <aside className="order-first space-y-5 rounded-2xl bg-card p-5 @4xl/network-preparation:sticky @4xl/network-preparation:top-6 @4xl/network-preparation:order-last">
                   <div role="status" className="flex items-center gap-2 text-sm font-semibold">
                     {running ? (
-                      <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+                      <UiIcon name="spinner" className="size-4 shrink-0 animate-spin text-primary" />
                     ) : waiting || preparation.status === "interrupted" ? (
-                      <PauseCircle className="size-4 shrink-0 text-muted-foreground" />
+                      <UiIcon name="pause-circle" className="size-4 shrink-0 text-muted-foreground" />
                     ) : preparation.status === "cancelled" ? (
-                      <CheckCircle2 className="size-4 shrink-0 text-muted-foreground" />
+                      <UiIcon name="check-circle" className="size-4 shrink-0 text-muted-foreground" />
                     ) : preparation.status === "ready" ? (
-                      <CheckCircle2 className="size-4 shrink-0 text-success" />
+                      <UiIcon name="check-circle" className="size-4 shrink-0 text-success" />
                     ) : (
-                      <CircleAlert className="size-4 shrink-0 text-danger" />
+                      <UiIcon name="alert-circle" className="size-4 shrink-0 text-danger" />
                     )}
                     {m.preparationStatus[preparation.status]}
                   </div>
@@ -329,7 +322,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                         aria-busy={busy}
                         onClick={() => void saveConnections()}
                       >
-                        {busy && <Loader2 className="size-4 animate-spin" />}
+                        {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
                         {busy ? c.access.saving : c.access.save}
                       </Button>
                       <Button
@@ -357,7 +350,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                             className={`grid size-6 shrink-0 place-items-center rounded-full text-xs ${index === 0 ? "bg-primary/10 text-primary" : "bg-muted"}`}
                           >
                             {index === 0 && preparation.status === "ready" ? (
-                              <CheckCircle2 className="size-3.5" />
+                              <UiIcon name="check-circle" className="size-3.5" />
                             ) : (
                               index + 1
                             )}
@@ -388,7 +381,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                         href={`/servers/networks/preparations/${preparation.replacementPreparationId}`}
                       >
                         {m.viewUpdatedSetup}
-                        <ArrowRight className="size-4 rtl:rotate-180" />
+                        <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                       </Link>
                     </Button>
                   )}
@@ -399,9 +392,9 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                       className="h-auto min-h-10 w-full whitespace-normal py-2"
                     >
                       {busy ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <RotateCcw className="size-4" />
+                        <UiIcon name="rotate-left" className="size-4" />
                       )}
                       {m.retryPreparation}
                     </Button>
@@ -412,7 +405,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                       <Button asChild className="h-auto min-h-10 w-full whitespace-normal py-2">
                         <Link href={`/servers/networks/operations/${preparation.operationId}`}>
                           {m.reviewNetwork}
-                          <ArrowRight className="size-4 rtl:rotate-180" />
+                          <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                         </Link>
                       </Button>
                     )}
@@ -425,9 +418,9 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                           className="h-auto min-h-10 w-full whitespace-normal py-2"
                         >
                           {busy ? (
-                            <Loader2 className="size-4 animate-spin" />
+                            <UiIcon name="spinner" className="size-4 animate-spin" />
                           ) : (
-                            <RotateCcw className="size-4" />
+                            <UiIcon name="rotate-left" className="size-4" />
                           )}
                           {m.retryPreparation}
                         </Button>

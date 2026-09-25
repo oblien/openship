@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * BillingUnavailable — empty-state card rendered when the billing
  * surface is reachable but not usable in the current mode.
@@ -13,7 +15,6 @@
 
 import { useCallback } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, Cloud, CircleAlert } from "lucide-react";
 import { useCloud } from "@/context/CloudContext";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
@@ -55,7 +56,7 @@ export function BillingUnavailable({ reason }: Props) {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10">
-          <Cloud className="size-6 text-primary" />
+          <UiIcon name="cloud" className="size-6 text-primary" />
         </div>
         <h2 className="text-base font-semibold text-foreground">
           {t.billing.unavailable.notConnected.title}
@@ -66,9 +67,9 @@ export function BillingUnavailable({ reason }: Props) {
         <div className="mt-5 flex justify-center">
           <Button onClick={handleConnect} disabled={connecting}>
             {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <ExternalLink className="size-4" />
+              <UiIcon name="external-link" className="size-4" />
             )}
             {connecting
               ? t.billing.unavailable.notConnected.connecting
@@ -83,7 +84,7 @@ export function BillingUnavailable({ reason }: Props) {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-warning-bg">
-          <CircleAlert className="size-6 text-warning" />
+          <UiIcon name="alert-circle" className="size-6 text-warning" />
         </div>
         <h2 className="text-base font-semibold text-foreground">
           {t.billing.unavailable.sessionExpired.title}
@@ -94,9 +95,9 @@ export function BillingUnavailable({ reason }: Props) {
         <div className="mt-5 flex justify-center">
           <Button onClick={handleConnect} disabled={connecting}>
             {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <ExternalLink className="size-4" />
+              <UiIcon name="external-link" className="size-4" />
             )}
             {connecting
               ? t.billing.unavailable.sessionExpired.connecting
@@ -111,7 +112,7 @@ export function BillingUnavailable({ reason }: Props) {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
-          <CircleAlert className="size-6 text-destructive" />
+          <UiIcon name="alert-circle" className="size-6 text-destructive" />
         </div>
         <h2 className="text-base font-semibold text-foreground">
           {t.billing.unavailable.unreachable.title}
@@ -125,9 +126,9 @@ export function BillingUnavailable({ reason }: Props) {
           </Button>
           <Button onClick={handleConnect} disabled={connecting}>
             {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <ExternalLink className="size-4" />
+              <UiIcon name="external-link" className="size-4" />
             )}
             {t.billing.unavailable.unreachable.reconnect}
           </Button>

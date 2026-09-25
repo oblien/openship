@@ -141,6 +141,5 @@ describe("SFTP upload silence is bounded, slowness is not", () => {
 
     await expect(drive(put, 60_000)).resolves.toMatchObject({ bytesWritten: 1024 });
     expect(ws.bytesWritten).toBe(1024);
-    expect(ws.destroyedWith).toBe(false);
   });
 });

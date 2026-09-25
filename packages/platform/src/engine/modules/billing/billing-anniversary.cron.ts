@@ -1,6 +1,7 @@
 /**
  * Oblien renews subscriptions and resets usage. This job only repairs the local
- * display/permission mirror when webhook delivery is delayed or missed.
+ * display/permission mirror when webhook delivery is delayed or missed. Explicit
+ * complimentary grants renew their Mode A allowance through the same reconciler.
  */
 import { and, asc, db, gt, isNotNull, schema } from "@repo/db";
 import { env } from "../../config/env";

@@ -167,6 +167,19 @@ membership comes back `404`, just as it would in the dashboard. See [Isolation](
 
 ## Which tools map to which API
 
+To see your **workspace ID**, ask the agent to call `get_permissions_workspaces` with no arguments.
+Openship calls it `organizationId` in the API. The result lists workspace names and IDs, including empty
+workspaces, and identifies the current workspace and any credential binding.
+
+When installing an app or deploying Compose, pass the chosen `organizationId` alongside `body` on each
+tool call. The server uses that exact workspace. If several destinations are available, the agent's
+instructions tell it to clarify the destination before creating resources. See
+[workspace selection](/docs/api/mcp#discover-and-select-a-workspace) for examples.
+
+Tokens and OAuth connections created today are bound to one organization. To target another, authorize
+the connection or create a token in that workspace. Selecting an ID cannot widen a credential's scope,
+and it does not move an already installed app between organizations.
+
 Tools aren't a separate feature set — each one **maps onto a permission-tagged REST route**, and the tool name
 is built from that route's method and path. So `get_projects` is `GET /api/projects`, `post_domains` is
 `POST /api/domains`, and `patch_projects_by_id` is `PATCH /api/projects/:id`. Call `tools/list` to see the
@@ -179,6 +192,7 @@ UI can flag a destructive call before it runs.
 
 | Tool name (examples) | REST route | Reference |
 |---|---|---|
+| `get_permissions_workspaces` | `/api/permissions/workspaces` | [Workspace discovery](/docs/api/permissions#list-workspaces) |
 | `get_projects`, `patch_projects_by_id` | `/api/projects` | [Projects API](/docs/api/projects) |
 | `get_deployments`, `post_deployments_build_access` | `/api/deployments` | [Deployments API](/docs/api/deployments) |
 | `get_projects_by_id_services`, `post_projects_by_id_services` | `/api/projects/:id/services` | [Services API](/docs/api/services) |

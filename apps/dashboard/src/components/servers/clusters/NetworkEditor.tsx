@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import type { ClusterCapabilities, ServerCluster } from "@repo/contracts";
 import { managedNetworkUnsettled, type ManagedNetworkPreparation } from "@repo/core";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -108,7 +109,7 @@ export function NetworkEditor({
             href={backHref}
             className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="size-4 rtl:rotate-180" />
+            <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
             {clusterId ? c.back : c.backToClusters}
           </Link>
           <h1 className="mb-6 text-2xl font-semibold tracking-tight">
@@ -142,7 +143,7 @@ export function NetworkEditor({
             </div>
           ) : (
             <div role="status" aria-label={c.setupSteps} className="flex justify-center py-16">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
             </div>
           )}
         </>

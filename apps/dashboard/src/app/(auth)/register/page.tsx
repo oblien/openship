@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +15,6 @@ import { useAuthContext } from "../providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 import { buildAuthPageHref, getPostAuthRedirect } from "@/lib/cloud-auth";
 
@@ -21,7 +22,7 @@ export default function RegisterPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center py-8"><div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></div>
+        <div className="flex justify-center py-8"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <RegisterPageInner />
@@ -140,13 +141,13 @@ function RegisterPageInner() {
               className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
               aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
             </button>
           </div>
         </div>
 
         <Button type="submit" disabled={loading} className="mt-1 w-full">
-          {loading && <Loader2 className="animate-spin" />}
+          {loading && <UiIcon name="spinner" className="animate-spin" />}
           {loading ? t.auth.register.submitting : t.auth.register.submit}
         </Button>
       </form>

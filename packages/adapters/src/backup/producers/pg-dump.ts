@@ -38,6 +38,7 @@
 
 import { isDbImage, payloadSpec, shellQuote } from "@repo/core";
 import { registerProducer } from "../registry";
+import { yieldArtifact } from "../common/artifact-stream";
 import { recordedCodec, safeDumpCommand, safeRestoreCommand } from "../common/dump-pipeline";
 import type {
   Artifact,
@@ -119,7 +120,7 @@ class PgDumpProducerImpl implements BackupProducer {
     );
     const { stdout, awaitExit } = await executor.execStream(service, cmd);
 
-    yield {
+    yield* yieldArtifact({
       // These bytes are pg_dump's own container format, which pg_restore reads
       // directly. `.dump` is what the Postgres docs call it.
       name: "pg-dump.dump",
@@ -133,14 +134,7 @@ class PgDumpProducerImpl implements BackupProducer {
         // own business, so a `-Fc` artifact records "none".
         compression: "none",
       },
-    };
-
-    const exit = await awaitExit;
-    if (exit.code !== 0) {
-      throw new Error(
-        `pg_dump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`,
-      );
-    }
+    }, awaitExit, exit => `pg_dump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
   }
 
   async restore(

@@ -1,5 +1,4 @@
 import type { InfrastructureProviderId } from "@repo/core";
-import { Network } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 
 // Branding is presentation data; supported providers still come from capabilities.
@@ -26,7 +25,7 @@ export function InfrastructureProviderLogo({
       aria-hidden="true"
       className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md ${providerId === "custom" ? "bg-muted/50" : "bg-white"}`}
     >
-      <AppLogo key={providerId} src={LOGOS[providerId]} icon={Network} className="size-5" />
+      <AppLogo key={providerId} src={LOGOS[providerId]} icon={"network"} className="size-5" />
     </span>
   );
 }

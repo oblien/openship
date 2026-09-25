@@ -14,12 +14,12 @@
 import { Hono } from "hono";
 import { db, eq, repos, schema } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
-import { auth, isSaasDeployment } from "@repo/platform/engine/lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
 import { authMiddleware } from "../../middleware/auth";
 import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
-import { isLoopbackRequest } from "../../middleware/loopback-peer";
+import { firstSignupGuard } from "../../middleware/local-bootstrap";
 import * as ctrl from "./auth.controller";
 import { handleMcpTokenRequest } from "./mcp-token.handler";
 
@@ -51,22 +51,11 @@ authRoutes.post("/organization/leave", authMiddleware, organizationController.le
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps
 // open public signup. On self-host the ONLY Better Auth signup allowed is the
-// FIRST account and only from loopback (CLI bootstrap / local dev) — this closes
-// the remote first-admin race and public invite-hijack signup. Every other new
+// FIRST account on an explicitly local instance and from a loopback peer.
+// Public/CLI instances bootstrap through the host-token flow. Every other new
 // account is created via the token-bound POST /api/system/invite-signup, so a
 // remote peer can never create an account through /sign-up here.
-authRoutes.on("POST", "/sign-up/*", async (c, next) => {
-  if (isSaasDeployment) return next();
-  const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
-  if (!anyUser && isLoopbackRequest(c)) return next();
-  return c.json(
-    {
-      error: "Public sign-up is disabled on this instance. Use your invitation link to join.",
-      code: "SIGNUP_DISABLED",
-    },
-    403,
-  );
-});
+authRoutes.on("POST", "/sign-up/*", firstSignupGuard);
 
 // The mcp() plugin's discovery metadata advertises `jwks_uri` and
 // `userinfo_endpoint` under /api/auth/mcp/* but implements NEITHER — both fell

@@ -926,5 +926,12 @@
     "serviceNetwork": "Servis ağı",
     "lastChecked": "Son doğrulama",
     "scaleProject": "Proje seç"
+  },
+  "sshTransport": {
+    "label": "Bağlantı",
+    "direct": "Doğrudan SSH",
+    "hostname": "Access ana makine adı",
+    "help": "Cloudflare Access ana makine adını ve sunucunuzun SSH kimlik bilgilerini kullanın. OpenShip’i çalıştıran makinede Cloudflare oturumunu açın. Windows uygulaması gerekli istemciyi içerir; diğer kurulumlar cloudflared gerektirir.",
+    "openAccess": "Cloudflare Access’i aç"
   }
 }

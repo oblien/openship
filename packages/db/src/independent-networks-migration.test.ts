@@ -41,9 +41,11 @@ describe("independent network migration", () => {
         ],
       );
       for (const [index, serverId] of [`${id}-a`, `${id}-b`].entries()) {
-        await db
-          .insert(schema.servers)
-          .values({ id: serverId, organizationId: "org", sshHost: serverId });
+        // Seed the historical schema without columns added by later migrations.
+        await client.query(
+          "INSERT INTO servers (id, organization_id, ssh_host) VALUES ($1, $2, $1)",
+          [serverId, "org"],
+        );
         await client.query(
           "INSERT INTO cluster_member (id, cluster_id, server_id, host_identity) VALUES ($1, $2, $1, $3)",
           [serverId, id, `host:${serverId}`],

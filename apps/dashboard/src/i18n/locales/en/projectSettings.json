@@ -409,24 +409,26 @@
   },
   "backup": {
     "live": {
-      "title": "Live backup",
+      "title": "Backup activity",
       "description": "Real-time progress for the run you just kicked off. Survives page refresh.",
       "dismiss": "Dismiss"
     },
     "destinations": {
       "title": "Backup destinations",
-      "description": "Per-user storage targets. Add S3-compatible buckets, SFTP servers, or local disks.",
+      "description": "Storage available to this project.",
       "manage": "Manage",
       "loading": "Loading…",
       "emptyPrefix": "No destinations yet. ",
       "emptyLink": "Create one",
       "emptySuffix": " to start backing up.",
       "verified": "Verified",
-      "failed": "Failed"
+      "failed": "Failed",
+      "emptyHint": "Connect an S3 bucket, an SFTP host, or a server you already use.",
+      "inUse": "In use"
     },
     "services": {
-      "title": "Services + policies",
-      "description": "Each service can have its own backup policy (schedule + destination). Project-level defaults land in Chunk 2.",
+      "title": "Backup policies",
+      "description": "Choose what to back up, when to run it, and where to store it.",
       "refresh": "Refresh",
       "empty": "This project has no services yet. Service-level backups appear here once you add some.",
       "policyLabel": "Policy:",
@@ -438,22 +440,54 @@
       "editPolicy": "Edit policy",
       "addDestinationFirst": "Add a destination first",
       "createPolicyHint": "Create a backup policy for this service",
-      "createPolicy": "Create policy"
+      "createPolicy": "Create policy",
+      "projectHint": "One policy for all services in this project.",
+      "includedInProject": "Included in the project policy.",
+      "retainCount": "Keep {count} backups",
+      "retainDays": "Up to {days} days"
     },
     "recent": {
+      "loadOlder": "Load older backups",
       "title": "Recent backups",
-      "description": "The 25 most recent runs across all services in this project.",
+      "description": "Recent runs, their results, and restore options.",
       "loading": "Loading…",
       "empty": "No backups yet.",
       "protectedTitle": "Protected from retention prune",
       "protected": "Protected",
       "restoreTitle": "Restore from this backup",
       "allowPrune": "Allow retention to prune",
-      "protectFrom": "Protect from retention"
+      "protectFrom": "Protect from retention",
+      "emptyHint": "Create a policy, then run your first backup here.",
+      "backup": "Backup",
+      "viewDetails": "View details",
+      "restore": "Restore",
+      "triggers": {
+        "manual": "On demand",
+        "cron": "Scheduled",
+        "webhook": "Webhook",
+        "pre_deploy": "Before deployment"
+      }
     },
     "toast": {
       "runFailed": "Backup run failed",
       "toggleProtectionFailed": "Failed to toggle protection"
+    },
+    "overview": {
+      "description": "Schedule backups and restore your project data.",
+      "lastBackup": "Latest successful backup",
+      "noRecentBackup": "No recent backup",
+      "scheduledPolicies": "Scheduled policies",
+      "projectScope": "Entire project",
+      "serviceBackup": "Service backup",
+      "paused": "Paused",
+      "loadFailed": "Couldn't load backups"
+    },
+    "schedule": {
+      "daily": "Daily at {time}",
+      "weekly": "Every {day} at {time}",
+      "monthly": "Day {day} of each month, {time}",
+      "custom": "Custom schedule",
+      "timezone": "Uses the server’s time zone."
     }
   },
   "build": {
@@ -601,6 +635,7 @@
       "install": "Install GitHub App"
     },
     "webhookBanner": {
+      "summary": "Public endpoint required",
       "title": "Enable auto-deploy",
       "description": "Auto-deploy needs a direct webhook endpoint. Expose this Openship API on a public URL or configure a verified webhook domain for direct delivery."
     },

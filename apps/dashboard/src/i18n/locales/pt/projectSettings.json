@@ -244,24 +244,26 @@
   },
   "backup": {
     "live": {
-      "title": "Cópia de segurança em tempo real",
+      "title": "Atividade de backups",
       "description": "Progresso em tempo real da execução que acabou de iniciar. Persiste ao atualizar a página.",
       "dismiss": "Dispensar"
     },
     "destinations": {
       "title": "Destinos de cópia de segurança",
-      "description": "Destinos de armazenamento por utilizador. Adicione buckets compatíveis com S3, servidores SFTP ou discos locais.",
+      "description": "Armazenamento disponível para este projeto.",
       "manage": "Gerir",
       "loading": "A carregar…",
       "emptyPrefix": "Ainda não há destinos. ",
       "emptyLink": "Crie um",
       "emptySuffix": " para começar a fazer cópias de segurança.",
       "verified": "Verificado",
-      "failed": "Falhou"
+      "failed": "Falhou",
+      "emptyHint": "Conecte um bucket S3, um host SFTP ou um servidor que você já usa.",
+      "inUse": "Em uso"
     },
     "services": {
-      "title": "Serviços + políticas",
-      "description": "Cada serviço pode ter a sua própria política de cópia de segurança (agendamento + destino). As predefinições ao nível do projeto chegam no Chunk 2.",
+      "title": "Políticas de backup",
+      "description": "Escolha os dados, o agendamento e onde armazenar os backups.",
       "refresh": "Atualizar",
       "empty": "Este projeto ainda não tem serviços. As cópias de segurança ao nível do serviço aparecem aqui assim que adicionar alguns.",
       "policyLabel": "Política:",
@@ -273,22 +275,54 @@
       "editPolicy": "Editar política",
       "addDestinationFirst": "Adicione primeiro um destino",
       "createPolicyHint": "Crie uma política de cópia de segurança para este serviço",
-      "createPolicy": "Criar política"
+      "createPolicy": "Criar política",
+      "projectHint": "Uma política para todos os serviços deste projeto.",
+      "includedInProject": "Incluído na política do projeto.",
+      "retainCount": "Manter {count} backups",
+      "retainDays": "Até {days} dias"
     },
     "recent": {
+      "loadOlder": "Carregar backups anteriores",
       "title": "Cópias de segurança recentes",
-      "description": "As 25 execuções mais recentes de todos os serviços deste projeto.",
+      "description": "Execuções recentes, resultados e opções de restauração.",
       "loading": "A carregar…",
       "empty": "Ainda não há cópias de segurança.",
       "protectedTitle": "Protegido da limpeza por retenção",
       "protected": "Protegido",
       "restoreTitle": "Restaurar a partir desta cópia de segurança",
       "allowPrune": "Permitir limpeza por retenção",
-      "protectFrom": "Proteger da retenção"
+      "protectFrom": "Proteger da retenção",
+      "emptyHint": "Crie uma política e execute seu primeiro backup aqui.",
+      "backup": "Cópia de segurança",
+      "viewDetails": "Ver detalhes",
+      "restore": "Restaurar",
+      "triggers": {
+        "manual": "Sob demanda",
+        "cron": "Agendado",
+        "webhook": "Webhook",
+        "pre_deploy": "Antes da implantação"
+      }
     },
     "toast": {
       "runFailed": "A execução da cópia de segurança falhou",
       "toggleProtectionFailed": "Falha ao alternar a proteção"
+    },
+    "overview": {
+      "description": "Agende backups e restaure os dados do seu projeto.",
+      "lastBackup": "Último backup concluído",
+      "noRecentBackup": "Nenhum backup recente",
+      "scheduledPolicies": "Políticas agendadas",
+      "projectScope": "Projeto inteiro",
+      "serviceBackup": "Backup do serviço",
+      "paused": "Pausada",
+      "loadFailed": "Não foi possível carregar os backups"
+    },
+    "schedule": {
+      "daily": "Diariamente às {time}",
+      "weekly": "Toda {day} às {time}",
+      "monthly": "Dia {day} de cada mês, {time}",
+      "custom": "Agendamento personalizado",
+      "timezone": "Usa o fuso horário do servidor."
     }
   },
   "build": {
@@ -430,6 +464,7 @@
       "install": "Instalar Aplicação GitHub"
     },
     "webhookBanner": {
+      "summary": "Endpoint público necessário",
       "title": "Ativar implementação automática",
       "description": "A implementação automática requer um endpoint de webhook direto. Exponha esta API da Openship num URL público ou configure um domínio de webhook verificado para entrega direta."
     },

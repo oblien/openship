@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,7 +12,6 @@ import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
@@ -73,7 +74,7 @@ export default function ForgotPasswordPage() {
           </div>
 
           <Button type="submit" disabled={loading} className="mt-1 w-full">
-            {loading && <Loader2 className="animate-spin" />}
+            {loading && <UiIcon name="spinner" className="animate-spin" />}
             {loading ? t.auth.forgotPassword.submitting : t.auth.forgotPassword.submit}
           </Button>
         </form>
@@ -83,7 +84,7 @@ export default function ForgotPasswordPage() {
             href="/login"
             className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:underline"
           >
-            <ArrowLeft className="size-3.5" />
+            <UiIcon name="arrow-left" className="size-3.5" />
             {t.auth.forgotPassword.backToSignIn}
           </Link>
         </p>

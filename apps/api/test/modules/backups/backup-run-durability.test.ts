@@ -175,10 +175,11 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
-      create: async (data: Record<string, unknown>) => {
-        h.createdRuns.push(data);
+      createBatch: async (data: Array<Record<string, unknown>>) => {
+        h.createdRuns.push(...data);
         return data;
       },
       findById: async () => h.run,
@@ -234,11 +235,7 @@ vi.mock("@repo/adapters", async () => {
   // Likewise the real sanitizer, not a passthrough stub.
   const { sanitizeProducerOpts } =
     await import("../../../../../packages/adapters/src/backup/common/producer-opts");
-  class FakeHasher extends PassThrough {
-    summary() {
-      return { sha256: "d0", bytesWritten: 11 };
-    }
-  }
+  const { HashingPassthrough: FakeHasher } = await import("../../../../../packages/adapters/src/backup/common/sha256-stream");
   return {
     HashingPassthrough: FakeHasher,
     PRESERVED_ARTIFACT_METADATA_KEYS,
@@ -249,7 +246,11 @@ vi.mock("@repo/adapters", async () => {
     buildManifest: () => ({ version: 1 }),
     resolveDestination: () => ({
       preflight: async () => ({ ok: true }),
-      put: async () => {},
+      put: async (_key: string, body: AsyncIterable<Buffer>) => {
+        let bytesWritten = 0;
+        for await (const chunk of body) bytesWritten += chunk.length;
+        return { bytesWritten };
+      },
     }),
     resolveExecutor: () => ({
       execStream: async () => ({
@@ -317,6 +318,7 @@ function wireRun(): PgFake {
     id: "bkr_live",
     status: "queued",
     policyId: "pol_1",
+    destinationId: "dst_1",
     projectId: null,
     serviceId: null,
     mailServerId: "mail_1",

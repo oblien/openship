@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useCallback } from "react";
-import { Shield, Plus, X, Loader2, Check, RefreshCw } from "lucide-react";
 import { systemApi, type ServerRateLimitConfig } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -220,7 +221,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-orange-500/10 rounded-xl flex items-center justify-center">
-              <Shield className="size-[18px] text-orange-500" />
+              <UiIcon name="shield" className="size-[18px] text-orange-500" />
             </div>
             <div>
               <h2 className="font-semibold text-foreground text-[15px]">{t.servers.security.title}</h2>
@@ -229,7 +230,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
           </div>
         </div>
         <div className="p-5 flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
+          <UiIcon name="spinner" className="size-4 animate-spin" />
           {t.servers.security.loading}
         </div>
       </div>
@@ -242,7 +243,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-orange-500/10 rounded-xl flex items-center justify-center">
-              <Shield className="size-[18px] text-orange-500" />
+              <UiIcon name="shield" className="size-[18px] text-orange-500" />
             </div>
             <div>
               <h2 className="font-semibold text-foreground text-[15px]">{t.servers.security.title}</h2>
@@ -263,7 +264,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
               onClick={() => void fetchConfig()}
               className="inline-flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
             >
-              <RefreshCw className="size-3.5" />
+              <UiIcon name="refresh" className="size-3.5" />
               {t.servers.security.retry}
             </button>
           </div>
@@ -277,7 +278,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-orange-500/10 rounded-xl flex items-center justify-center">
-            <Shield className="size-[18px] text-orange-500" />
+            <UiIcon name="shield" className="size-[18px] text-orange-500" />
           </div>
           <div>
             <h2 className="font-semibold text-foreground text-[15px]">{t.servers.security.title}</h2>
@@ -289,7 +290,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
           onClick={() => void fetchConfig()}
           className="inline-flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
         >
-          <RefreshCw className="size-3.5" />
+          <UiIcon name="refresh" className="size-3.5" />
           {t.servers.security.refresh}
         </button>
       </div>
@@ -444,7 +445,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
                         onClick={() => removeIp(cidr)}
                         className="ms-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                       >
-                        <X className="size-3" />
+                        <UiIcon name="close" className="size-3" />
                       </button>
                     </span>
                   ))}
@@ -465,7 +466,7 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
                   onClick={addIp}
                   className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
                 >
-                  <Plus className="size-3.5" />
+                  <UiIcon name="plus" className="size-3.5" />
                   {t.servers.security.add}
                 </button>
               </div>
@@ -504,9 +505,9 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
                   className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <UiIcon name="spinner" className="size-3.5 animate-spin" />
                   ) : (
-                    <Check className="size-3.5" />
+                    <UiIcon name="check" className="size-3.5" />
                   )}
                   {hasExistingLimit ? t.servers.security.saveChanges : t.servers.security.applyRateLimit}
                 </button>

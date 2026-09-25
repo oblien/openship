@@ -1,26 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  Box,
-  Cloud,
-  Container,
-  Cpu,
-  Database,
-  HardDrive,
-  Loader2,
-  Mail,
-  MessageSquare,
-  Plus,
-  PlugZap,
-  Rocket,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  X,
-  Zap,
-} from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { imagesApi, type ImageCatalogEntry } from "@/lib/api/images";
 import type { ServiceInput } from "@/lib/api/services";
@@ -125,7 +107,7 @@ function volumeStringsFromRows(rows: VolumeRow[]): string[] {
 interface CategoryDef {
   id: string;
   label: string;
-  icon: React.ElementType;
+  icon: IconName;
   /** Substrings (lowercased) - match against category, tags, name, image. */
   match: string[];
 }
@@ -134,55 +116,55 @@ const CATEGORIES: CategoryDef[] = [
   {
     id: "database",
     label: "Databases",
-    icon: Database,
+    icon: "database",
     match: ["database", "db", "sql", "postgres", "mysql", "mariadb", "mongo", "cockroach", "neon", "sqlite"],
   },
   {
     id: "cache",
     label: "Caches",
-    icon: Zap,
+    icon: "bolt",
     match: ["cache", "redis", "memcached", "dragonfly", "keydb"],
   },
   {
     id: "search",
     label: "Search",
-    icon: Search,
+    icon: "search",
     match: ["search", "elastic", "opensearch", "meilisearch", "typesense", "solr"],
   },
   {
     id: "vector",
     label: "Vector & AI",
-    icon: Sparkles,
+    icon: "sparkles",
     match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama"],
   },
   {
     id: "queue",
     label: "Queues & Streams",
-    icon: MessageSquare,
+    icon: "message",
     match: ["queue", "broker", "rabbitmq", "kafka", "nats", "pulsar", "redpanda", "mqtt"],
   },
   {
     id: "storage",
     label: "Object Storage",
-    icon: HardDrive,
+    icon: "hard-drive",
     match: ["storage", "minio", "s3", "garage", "seaweedfs", "ceph"],
   },
   {
     id: "auth",
     label: "Auth & Identity",
-    icon: ShieldCheck,
+    icon: "shield-check",
     match: ["auth", "identity", "keycloak", "authentik", "oauth", "oidc"],
   },
   {
     id: "mail",
     label: "Mail & SMTP",
-    icon: Mail,
+    icon: "mail",
     match: ["mail", "smtp", "mailpit", "mailhog", "smtp4dev", "postal"],
   },
   {
     id: "runtime",
     label: "Runtimes",
-    icon: Rocket,
+    icon: "rocket",
     match: ["runtime", "node", "python", "deno", "bun", "go", "ruby", "php"],
   },
 ];
@@ -233,8 +215,8 @@ function CatalogIcon({ entry, className = "size-5" }: { entry: ImageCatalogEntry
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={entry.logo} alt="" className={`${className} object-contain`} onError={() => setFailedLogo(entry.logo)} />;
   }
-  const Icon = CATEGORIES.find((category) => category.id === bucketEntry(entry))?.icon ?? Container;
-  return <Icon className={className} />;
+  const Icon = CATEGORIES.find((category) => category.id === bucketEntry(entry))?.icon ?? "window";
+  return <UiIcon name={Icon} className={className} />;
 }
 
 export function AddServiceModal({ open, projectId, projectName, isCloudProject, onClose, onSubmit }: AddServiceModalProps) {
@@ -369,14 +351,14 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
     }
     const catLabels = t.projectDetail.services.addModal.categories as Record<string, string>;
-    const ordered: Array<{ id: string; label: string; icon: React.ElementType; count: number }> = [];
+    const ordered: Array<{ id: string; label: string; icon: IconName; count: number }> = [];
     for (const cat of CATEGORIES) {
       const count = counts.get(cat.id) ?? 0;
       if (count > 0) ordered.push({ id: cat.id, label: catLabels[cat.id] ?? cat.label, icon: cat.icon, count });
     }
     const otherCount = counts.get(OTHER_CATEGORY_ID) ?? 0;
     if (otherCount > 0) {
-      ordered.push({ id: OTHER_CATEGORY_ID, label: catLabels.other, icon: Box, count: otherCount });
+      ordered.push({ id: OTHER_CATEGORY_ID, label: catLabels.other, icon: "window", count: otherCount });
     }
     return ordered;
   }, [bucketed, t]);
@@ -508,7 +490,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
                 className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                 aria-label={t.projectDetail.services.addModal.backToCatalog}
               >
-                <ArrowLeft className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
               </button>
             )}
             <div className="min-w-0">
@@ -542,7 +524,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
               className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
               aria-label={t.projectDetail.services.addModal.close}
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
           </div>
         </div>
@@ -550,13 +532,13 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
         {step === "pick" && projectId && (
           <div className="flex gap-2 border-b border-border/40 px-6 py-3" role="tablist" aria-label={t.projectDetail.services.addModal.addTitle}>
             {([
-              { id: "new", label: t.projects.connections.createNew, icon: Plus },
-              { id: "existing", label: t.projects.connections.connectExisting, icon: PlugZap },
+              { id: "new", label: t.projects.connections.createNew, icon: "plus" },
+              { id: "existing", label: t.projects.connections.connectExisting, icon: "plug" },
             ] as const).map(item => (
               <button key={item.id} type="button" role="tab" aria-selected={sourceMode === item.id}
                 onClick={() => setSourceMode(item.id)}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${sourceMode === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"}`}>
-                <item.icon className="size-4" />{item.label}
+                <UiIcon name={item.icon} className="size-4" />{item.label}
               </button>
             ))}
           </div>
@@ -633,7 +615,7 @@ function CatalogPickStep({
   onPick,
 }: {
   catalog: ImageCatalogEntry[];
-  categories: Array<{ id: string; label: string; icon: React.ElementType; count: number }>;
+  categories: Array<{ id: string; label: string; icon: IconName; count: number }>;
   activeCategory: string | null;
   onCategoryChange: (c: string | null) => void;
   totalCount: number;
@@ -658,7 +640,7 @@ function CatalogPickStep({
       <div className="flex flex-1 min-h-0 items-center justify-center p-8">
         <div className="flex max-w-sm flex-col items-center text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10">
-            <Cloud className="size-7 text-primary" />
+            <UiIcon name="cloud" className="size-7 text-primary" />
           </div>
           <h3 className="text-[15px] font-semibold text-foreground">{m.cloudConnectTitle}</h3>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{m.cloudConnectBody}</p>
@@ -667,7 +649,7 @@ function CatalogPickStep({
             onClick={onConnectCloud}
             className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            <Cloud className="size-4" />
+            <UiIcon name="cloud" className="size-4" />
             {m.cloudConnectButton}
           </button>
         </div>
@@ -690,7 +672,7 @@ function CatalogPickStep({
         </div>
         <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-0.5">
           <CategoryItem
-            icon={Sparkles}
+            icon={"sparkles"}
             label={m.allServices}
             count={totalCount}
             active={activeCategory === null}
@@ -710,7 +692,7 @@ function CatalogPickStep({
         </div>
         <div className="border-t border-border/30 px-2.5 py-3">
           <CategoryItem
-            icon={Plus}
+            icon={"plus"}
             label={m.customImage}
             active={activeCategory === CUSTOM_CATEGORY_ID}
             onClick={() => onCategoryChange(CUSTOM_CATEGORY_ID)}
@@ -730,7 +712,7 @@ function CatalogPickStep({
             )}
           </div>
           <div className="relative">
-            <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60" />
+            <UiIcon name="search" className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60" />
             <input
               type="text"
               value={searchQuery}
@@ -761,7 +743,7 @@ function CatalogPickStep({
           ) : hasNoResults ? (
             <div className="flex flex-col items-center justify-center text-center py-16">
               <div className="size-11 rounded-xl bg-muted/40 flex items-center justify-center mb-3">
-                <Search className="size-4 text-muted-foreground/60" />
+                <UiIcon name="search" className="size-4 text-muted-foreground/60" />
               </div>
               <p className="text-sm font-medium text-foreground">{m.noMatchesTitle}</p>
               <p className="text-xs text-muted-foreground/70 mt-1 max-w-[280px]">
@@ -800,9 +782,9 @@ function SourceSwitcher({
   onChange: (v: "local" | "cloud") => void;
 }) {
   const { t } = useI18n();
-  const options: Array<{ value: "local" | "cloud"; label: string; icon: React.ElementType }> = [
-    { value: "local", label: t.projectDetail.services.addModal.localImages, icon: Cpu },
-    { value: "cloud", label: t.projectDetail.services.addModal.openshipCloud, icon: Cloud },
+  const options: Array<{ value: "local" | "cloud"; label: string; icon: IconName }> = [
+    { value: "local", label: t.projectDetail.services.addModal.localImages, icon: "cpu" },
+    { value: "cloud", label: t.projectDetail.services.addModal.openshipCloud, icon: "cloud" },
   ];
   return (
     <div className="inline-flex w-fit items-center gap-0.5 rounded-xl border border-border/60 bg-muted/60 p-0.5">
@@ -820,7 +802,7 @@ function SourceSwitcher({
                 : "text-muted-foreground/80 hover:text-foreground"
             }`}
           >
-            <Icon className="size-3.5" />
+            <UiIcon name={Icon} className="size-3.5" />
             {opt.label}
           </button>
         );
@@ -837,7 +819,7 @@ function CategoryItem({
   accent,
   onClick,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   label: string;
   count?: number;
   active?: boolean;
@@ -859,7 +841,7 @@ function CategoryItem({
           accent ?? (active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground/70 group-hover:text-foreground")
         }`}
       >
-        <Icon className="size-3.5" />
+        <UiIcon name={Icon} className="size-3.5" />
       </span>
       <span className="flex-1 min-w-0 truncate text-[13px] font-medium">{label}</span>
       {typeof count === "number" && (
@@ -901,7 +883,7 @@ function CatalogCard({
     >
       <div className={`size-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${accent}`}>
         {custom ? (
-          <Plus className="size-4 text-muted-foreground/80" />
+          <UiIcon name="plus" className="size-4 text-muted-foreground/80" />
         ) : (
           <CatalogIcon entry={entry} />
         )}
@@ -1089,7 +1071,7 @@ function ConfigureStep({
                     className="size-10 shrink-0 rounded-xl text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground inline-flex items-center justify-center"
                     aria-label={m.removeVolume}
                   >
-                    <X className="size-4" />
+                    <UiIcon name="close" className="size-4" />
                   </button>
                 </div>
               ))}
@@ -1102,7 +1084,7 @@ function ConfigureStep({
               volumeRows.length > 0 ? "mt-2" : ""
             }`}
           >
-            <Plus className="size-3.5" />
+            <UiIcon name="plus" className="size-3.5" />
             {m.addVolume}
           </button>
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -1151,7 +1133,7 @@ function ConfigureStep({
           disabled={saving}
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-foreground/[0.06] px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.1] disabled:opacity-50"
         >
-          <X className="size-4" />
+          <UiIcon name="close" className="size-4" />
           {m.cancel}
         </button>
         <button
@@ -1159,7 +1141,7 @@ function ConfigureStep({
           disabled={saving}
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          {saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
           {m.addService}
         </button>
       </div>
@@ -1189,10 +1171,10 @@ function Field({
 
 function ModeBadge({ mode }: { mode: "cloud" | "local" }) {
   const { t } = useI18n();
-  const Icon = mode === "cloud" ? Cloud : Cpu;
+  const Icon = mode === "cloud" ? "cloud" : "cpu";
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-      <Icon className="size-3" />
+      <UiIcon name={Icon} className="size-3" />
       {mode === "cloud" ? t.projectDetail.services.addModal.openshipCloud : t.projectDetail.services.addModal.localDocker}
     </span>
   );

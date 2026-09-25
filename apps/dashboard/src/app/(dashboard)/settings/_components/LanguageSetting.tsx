@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings → General → Language. Switches the interface locale via the shared
  * I18nProvider (which flips <html lang/dir>, so RTL for Arabic is automatic).
@@ -7,7 +9,6 @@
  * own script (中文, Español, …), never translated into the current UI language.
  */
 
-import { Languages, Check } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { isRtl, locales, type Locale } from "@/i18n";
 import { SettingsSection } from "./SettingsSection";
@@ -43,7 +44,7 @@ export function LanguageSetting() {
 
   return (
     <SettingsSection
-      icon={Languages}
+      icon={"languages"}
       title={t.settings.language.title}
       description={t.settings.language.description}
       collapsible
@@ -79,7 +80,7 @@ export function LanguageSetting() {
               </div>
               {active && (
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Check className="size-3.5" strokeWidth={2.5} />
+                  <UiIcon name="check" className="size-3.5" />
                 </span>
               )}
             </button>

@@ -294,6 +294,8 @@
     "liveHitsWaiting": "等待请求…",
     "statusesUnclassified": "{count} 个无状态类别",
     "trafficTitle": "流量概览",
+    "dailyWindow": "含今天的7天（UTC）",
+    "currentHour": "当前小时 · 持续统计中",
     "trafficSummary": "{count} 个请求",
     "servicesMore": "另外 {count} 个",
     "servicesLess": "收起",

@@ -1,20 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import {
-  Mail,
-  Shield,
-  CheckCircle2,
-  ExternalLink,
-  RotateCcw,
-  AlertTriangle,
-  Loader2,
-  Unplug,
-  OctagonX,
-  ArrowRightLeft,
-  Skull,
-  ChevronDown,
-} from "lucide-react";
 import type {
   MailSetupStatus,
   MailStepStatus,
@@ -71,7 +59,7 @@ export function MailSidebar({
       {portConflicts && (
         <div className="bg-warning-bg border border-warning-border rounded-2xl p-5">
           <div className="flex items-center gap-3 mb-4">
-            <Unplug className="size-5 text-warning" />
+            <UiIcon name="unplug" className="size-5 text-warning" />
             <div>
               <h3 className="text-sm font-semibold text-warning">
                 {t.emails.sidebar.portConflict.title}
@@ -141,12 +129,12 @@ export function MailSidebar({
                       >
                         {resolution.destructive ? (
                           resolution.id === "kill_process" ? (
-                            <Skull className="size-4 text-danger shrink-0" />
+                            <UiIcon name="skull" className="size-4 text-danger shrink-0" />
                           ) : (
-                            <OctagonX className="size-4 text-danger shrink-0" />
+                            <UiIcon name="x-circle" className="size-4 text-danger shrink-0" />
                           )
                         ) : (
-                          <ArrowRightLeft className="size-4 text-info shrink-0" />
+                          <UiIcon name="arrows-left-right" className="size-4 text-info shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
                           <p
@@ -163,7 +151,7 @@ export function MailSidebar({
                           </p>
                         </div>
                         {resolving && (
-                          <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
+                          <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground shrink-0" />
                         )}
                       </button>
                     ))}
@@ -171,7 +159,7 @@ export function MailSidebar({
 
                   {conflict.type === "unknown" && (
                     <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-danger-bg">
-                      <AlertTriangle className="size-3.5 text-danger mt-0.5 shrink-0" />
+                      <UiIcon name="warning" className="size-3.5 text-danger mt-0.5 shrink-0" />
                       <p className="text-xs text-danger">
                         {t.emails.sidebar.portConflict.killWarning}
                       </p>
@@ -193,7 +181,7 @@ export function MailSidebar({
                 disabled={resolving || running}
                 className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                <RotateCcw className="size-3.5" />
+                <UiIcon name="rotate-left" className="size-3.5" />
                 {t.emails.sidebar.portConflict.resumeStep3}
               </button>
             </div>
@@ -205,7 +193,7 @@ export function MailSidebar({
       {isCompleted && completionData && (
         <div className="bg-success-bg border border-success-border rounded-2xl p-5">
           <div className="flex items-center gap-3 mb-4">
-            <CheckCircle2 className="size-5 text-success" />
+            <UiIcon name="check-circle" className="size-5 text-success" />
             <h3 className="text-sm font-semibold text-success">
               {t.emails.sidebar.completion.ready}
             </h3>
@@ -217,14 +205,14 @@ export function MailSidebar({
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/50 bg-card hover:border-border transition-colors"
             >
-              <Mail className="size-4 text-muted-foreground" />
+              <UiIcon name="mail" className="size-4 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">{t.emails.sidebar.completion.webmail}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {completionData.webmailUrl}
                 </p>
               </div>
-              <ExternalLink className="size-3.5 text-muted-foreground shrink-0" />
+              <UiIcon name="external-link" className="size-3.5 text-muted-foreground shrink-0" />
             </a>
             <a
               href={completionData.adminUrl}
@@ -232,14 +220,14 @@ export function MailSidebar({
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/50 bg-card hover:border-border transition-colors"
             >
-              <Shield className="size-4 text-muted-foreground" />
+              <UiIcon name="shield" className="size-4 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">{t.emails.sidebar.completion.adminPanel}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {completionData.adminUrl}
                 </p>
               </div>
-              <ExternalLink className="size-3.5 text-muted-foreground shrink-0" />
+              <UiIcon name="external-link" className="size-3.5 text-muted-foreground shrink-0" />
             </a>
           </div>
         </div>
@@ -368,7 +356,7 @@ function AllStepsCard({
             onClick={() => onResume(firstPendingId)}
             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-warning-solid text-white hover:bg-warning-solid/90 transition-colors shrink-0"
           >
-            <RotateCcw className="size-3" />
+            <UiIcon name="rotate-left" className="size-3" />
             {t.emails.sidebar.steps.resume}
           </button>
         </div>
@@ -424,7 +412,7 @@ function AllStepsCard({
                     {s.label}
                   </span>
                   {s.warning && (
-                    <AlertTriangle className="size-3 text-warning shrink-0" />
+                    <UiIcon name="warning" className="size-3 text-warning shrink-0" />
                   )}
                 </div>
                 {(isCurrent || isFailed) && s.message && (
@@ -444,7 +432,7 @@ function AllStepsCard({
                   onClick={() => onResume(s.id)}
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
                 >
-                  <RotateCcw className="size-3" />
+                  <UiIcon name="rotate-left" className="size-3" />
                   {t.emails.sidebar.steps.retry}
                 </button>
               )}
@@ -479,7 +467,7 @@ function DnsRecordsCollapsibleCard({ dnsRecords }: { dnsRecords: DnsRecords }) {
             {t.emails.sidebar.dnsRef.subtitle}
           </p>
         </div>
-        <ChevronDown
+        <UiIcon name="chevron-down"
           className={`size-4 text-muted-foreground shrink-0 transition-transform ${
             open ? "rotate-180" : ""
           }`}

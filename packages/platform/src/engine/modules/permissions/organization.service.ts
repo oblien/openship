@@ -1,7 +1,7 @@
 import { AppError, ConflictError, NotFoundError, generateId, type Permission, type ResourceType } from "@repo/core";
 import { db, repos, schema, eq, and, sql, type DatabaseTransaction } from "@repo/db";
 import { createResourceGrantRepo, createInvitationPendingGrantRepo } from "@repo/db/repos";
-import type { InviteWithGrantsInput, PermissionGrantInput } from "@repo/contracts";
+import type { InviteWithGrantsInput, PermissionGrantInput, WorkspaceList } from "@repo/contracts";
 import type { ContextRole, ExecutionContext } from "../../../context";
 import { organizationOptions, deliverOrganizationInvitation, INVITE_RATE_LIMIT_PER_HOUR, INVITE_RATE_LIMIT_WINDOW_MS } from "../../lib/organization-lifecycle";
 import { smtpEnabled } from "../../lib/mail";
@@ -10,6 +10,31 @@ import { captureExecutionAuthority, resolveExecutionAuthority } from "../../lib/
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { authorization } from "../../lib/authorization";
 import { changeMembership } from "../../lib/member-lifecycle";
+
+/** Membership discovery, including empty workspaces. Never expose another
+ * tenant through a bound credential or an explicitly fixed execution scope. */
+export async function listWorkspaces(ctx: ExecutionContext): Promise<WorkspaceList> {
+  const boundOrganizationId = ctx.credential?.organizationId ?? (ctx.tokenScope ? ctx.organizationId : null);
+  const fixedOrganizationId = boundOrganizationId ?? (ctx.scopeMode === "fixed" ? ctx.organizationId : null);
+  const memberships = fixedOrganizationId
+    ? [await repos.member.find(fixedOrganizationId, ctx.userId)].filter(member => member !== null)
+    : await repos.member.listByUser(ctx.userId);
+  const organizations = await repos.organization.findManyById(memberships.map(member => member.organizationId));
+  const roles = new Map(memberships.map(member => [member.organizationId, member.role]));
+  return {
+    currentOrganizationId: ctx.organizationId,
+    boundOrganizationId,
+    canSwitchOrganization: boundOrganizationId === null,
+    readOnly: ctx.credential?.readOnly ?? false,
+    workspaces: organizations
+      .map(org => ({
+        organizationId: org.id, name: org.name, slug: org.slug,
+        isTeam: org.isTeam === true,
+        role: ctx.tokenScope ? "restricted" as const : roles.get(org.id) as ContextRole,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.organizationId.localeCompare(b.organizationId)),
+  };
+}
 
 export function assertOrgAdmin(ctx: ExecutionContext): void {
   if (ctx.tokenScope || !["owner", "admin"].includes(ctx.role))

@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Aperçu du trafic",
 			"last24Hours": "Dernières 24 heures",
-			"bar": "Barres",
+			"bar": "Colonnes",
 			"area": "Aires",
 			"loading": "Chargement des analyses...",
 			"noDataTitle": "Aucune donnée de trafic pour le moment",
@@ -173,6 +173,7 @@
 			"startShellHint": "Démarrez le service pour ouvrir un shell.",
 			"saveEnvironment": "Enregistrer l'environnement",
 			"environmentState": {
+				"helpTitle": "Fonctionnement des variables d’environnement",
 				"description": "Enregistrées dans Openship. Les valeurs personnalisées du service priment sur Compose et les valeurs partagées du projet. Modifier une valeur héritée crée une valeur personnalisée pour ce service.",
 				"sources": {
 					"service": "Valeur personnalisée du service",

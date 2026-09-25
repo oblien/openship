@@ -1,8 +1,9 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
 import Link from 'next/link';
-import { Coins, ArrowUpRight, TrendingUp, TrendingDown, Plus } from 'lucide-react';
 import { CreditData, DailyMetric } from './types';
 import { useI18n } from '@/components/i18n-provider';
 
@@ -78,7 +79,7 @@ const CreditsCard: React.FC<CreditsCardProps> = ({ data, isLoading = false }) =>
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-            <Coins className="w-5 h-5 text-emerald-600" />
+            <UiIcon name="coins" className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
             <h3 className="font-semibold text-black">{t.overview.credits.title}</h3>
@@ -90,7 +91,7 @@ const CreditsCard: React.FC<CreditsCardProps> = ({ data, isLoading = false }) =>
           href="/billing"
           className="p-2 hover:bg-emerald-100 rounded-lg transition-colors group"
         >
-          <ArrowUpRight className="w-4 h-4 text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          <UiIcon name="arrow-up-right" className="w-4 h-4 text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </Link>
       </div>
 
@@ -104,7 +105,7 @@ const CreditsCard: React.FC<CreditsCardProps> = ({ data, isLoading = false }) =>
             <span className={`flex items-center gap-0.5 text-xs font-medium ${
               data.trend > 0 ? 'text-emerald-600' : 'text-rose-600'
             }`}>
-              {data.trend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {data.trend > 0 ? <UiIcon name="trending-up" className="w-3 h-3" /> : <UiIcon name="trending-down" className="w-3 h-3" />}
               {Math.abs(data.trend)}%
             </span>
           )}
@@ -127,7 +128,7 @@ const CreditsCard: React.FC<CreditsCardProps> = ({ data, isLoading = false }) =>
           href="/billing"
           className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-full hover:bg-emerald-700 transition-colors"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <UiIcon name="plus" className="w-3.5 h-3.5" />
           {t.overview.credits.add}
         </Link>
       </div>

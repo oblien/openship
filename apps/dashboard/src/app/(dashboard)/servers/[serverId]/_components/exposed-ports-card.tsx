@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useCallback } from "react";
-import { Network, Globe, Lock, Shield, Loader2, RefreshCw, ScanLine } from "lucide-react";
 import { BlurIp } from "@/components/BlurIp";
 import { systemApi, type PortScanResult, type HostListener } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -40,7 +41,7 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-info/10 rounded-xl flex items-center justify-center">
-            <Network className="size-[18px] text-info" />
+            <UiIcon name="network" className="size-[18px] text-info" />
           </div>
           <div>
             <h2 className="font-semibold text-foreground text-[15px]">{s.title}</h2>
@@ -53,7 +54,7 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
             onClick={() => void scan()}
             className="inline-flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
           >
-            <RefreshCw className="size-3.5" />
+            <UiIcon name="refresh" className="size-3.5" />
             {s.rescan}
           </button>
         )}
@@ -72,7 +73,7 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
               disabled={scanning}
               className="inline-flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
-              <RefreshCw className="size-3.5" />
+              <UiIcon name="refresh" className="size-3.5" />
               {s.retry}
             </button>
           </div>
@@ -85,7 +86,7 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
               disabled={scanning}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanLine className="size-4" />}
+              {scanning ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="scan" className="size-4" />}
               {scanning ? s.scanning : s.scanButton}
             </button>
           </div>
@@ -203,7 +204,7 @@ function PortRow({ listener, labels }: { listener: HostListener; labels: Record<
 
   const badgeLabel = labels[state]; // reachable | firewalled | exposed | loopback
 
-  const Icon = state === "loopback" ? Lock : state === "firewalled" ? Shield : Globe;
+  const Icon = state === "loopback" ? "lock" : state === "firewalled" ? "shield" : "globe";
   const iconColor =
     state === "loopback"
       ? "text-muted-foreground"
@@ -216,7 +217,7 @@ function PortRow({ listener, labels }: { listener: HostListener; labels: Record<
   return (
     <li className="flex items-center justify-between gap-3 bg-muted/10 px-4 py-2.5">
       <div className="flex items-center gap-3 min-w-0">
-        <Icon className={`size-4 shrink-0 ${iconColor}`} />
+        <UiIcon name={Icon} className={`size-4 shrink-0 ${iconColor}`} />
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-foreground truncate">
             <span className="uppercase text-muted-foreground me-1.5 text-[11px] tracking-wide">

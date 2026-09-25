@@ -49,6 +49,7 @@ export interface SshProbeInput {
   sshPrivateKey?: string;
   sshKeyPassphrase?: string;
   sshJumpHost?: string;
+  sshTransport?: "direct" | "cloudflare";
   sshArgs?: string;
 }
 
@@ -202,6 +203,7 @@ export interface ServerInfo {
    *  edit form gets, so it can offer "a key is stored; paste to replace". */
   hasStoredKeyMaterial?: boolean;
   sshJumpHost: string | null;
+  sshTransport: "direct" | "cloudflare";
   sshArgs: string | null;
   createdAt: string;
   /** ISO-3166-1 alpha-2 country for the host IP, or null (hostname/private/unknown). */

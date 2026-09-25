@@ -64,6 +64,7 @@ function chunkFor(chunks: string[], method: string, path: string): string | unde
  * gated and are pinned here so they stay that way.
  */
 const INSTANCE_GLOBAL: Array<[string, string]> = [
+  ["get", "/browse"],
   ["get", "/diagnostics"],
   ["patch", "/settings"],
   ["delete", "/settings"],
@@ -92,6 +93,7 @@ const INSTANCE_GLOBAL: Array<[string, string]> = [
 ];
 
 const SHARED_INSTANCE_ROUTES = new Map<string, keyof typeof SystemOperationSchemas>([
+  ["get /browse", "browse"],
   ["patch /settings", "updateSettings"], ["delete /settings", "resetSettings"],
   ["put /settings/email", "updateEmailSettings"], ["post /settings/email/test", "sendTestEmail"],
   ["get /edge/untracked", "listUntrackedEdgeSites"], ["post /edge/untracked/remove", "removeUntrackedEdgeSite"],

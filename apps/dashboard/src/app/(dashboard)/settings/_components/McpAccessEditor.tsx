@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Edit a CONNECTED agent's access, from the settings MCP tab.
  *
@@ -30,7 +32,6 @@
  */
 
 import { useCallback, useMemo, useReducer, useState } from "react";
-import { AlertCircle, Loader2, ShieldAlert } from "lucide-react";
 import { grantableTypesForMode } from "@repo/core";
 import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
 import {
@@ -222,7 +223,7 @@ export function McpAccessEditor({
             {rejected && (
               <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
                 <p className="flex items-start gap-2 font-medium">
-                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
                   {interpolate(m.scopeGrantRejected, { resource: rejected })}
                 </p>
               </div>
@@ -230,7 +231,7 @@ export function McpAccessEditor({
             {widenPending && (
               <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
                 <p className="flex items-start gap-2 font-medium">
-                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <UiIcon name="shield-alert" className="mt-0.5 size-3.5 shrink-0" />
                   {m.confirmWidenTitle}
                 </p>
                 <p className="mt-1 ps-5 leading-relaxed">{m.confirmWidenBody}</p>
@@ -238,7 +239,7 @@ export function McpAccessEditor({
             )}
             {error && (
               <div className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
                 {error}
               </div>
             )}
@@ -264,7 +265,7 @@ export function McpAccessEditor({
                   : "bg-primary hover:bg-primary/90"
               }`}
             >
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {widenPending ? m.confirmWidenAction : m.saveScope}
             </button>
           </div>

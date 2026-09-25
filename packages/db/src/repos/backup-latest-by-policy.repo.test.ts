@@ -67,6 +67,16 @@ describe("repos.backupRun.latestByPolicy", () => {
     expect(res).toBeUndefined();
   });
 
+  it("keeps a moved policy's latest run scoped to the displayed destination", async () => {
+    await repos.db.insert(schema.backupRun).values([
+      { id: "old-storage", policyId: "pol1", organizationId: "org1", destinationId: "dest1", projectId: "p1", status: "succeeded", triggeredBy: "manual", startedAt: new Date("2026-09-24T10:00:00Z"), bytesTransferred: 100 },
+      { id: "new-storage", policyId: "pol1", organizationId: "org1", destinationId: "dest2", projectId: "p1", status: "failed", triggeredBy: "manual", startedAt: new Date("2026-09-25T10:00:00Z"), bytesTransferred: 0 },
+    ]);
+    expect(await repos.run.latestByPolicy("pol1")).toMatchObject({ id: "new-storage", status: "failed" });
+    expect(await repos.run.latestByPolicy("pol1", "dest1")).toMatchObject({ id: "old-storage", status: "succeeded" });
+    expect(await repos.run.latestByPolicy("pol1", "never-used")).toBeUndefined();
+  });
+
   it("returns one legacy run without inferring a batch from its timestamp", async () => {
     const started = new Date("2026-08-26T10:00:00Z");
     const finished = new Date("2026-08-26T10:01:00Z");

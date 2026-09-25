@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Edit2, Save, X } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 interface Props {
@@ -41,7 +42,7 @@ export const SettingSection = ({
                 onClick={onEdit}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 font-medium text-sm"
               >
-                <Edit2 className="w-4 h-4" />
+                <UiIcon name="edit" className="w-4 h-4" />
                 {t.projectSettings.settingSection.edit}
               </button>
             ) : (
@@ -50,14 +51,14 @@ export const SettingSection = ({
                   onClick={onSave}
                   className="flex items-center gap-2 px-4 py-2 bg-success-solid text-white rounded-lg hover:bg-success-solid/90 transition-all duration-200 font-medium text-sm"
                 >
-                  <Save className="w-4 h-4" />
+                  <UiIcon name="save" className="w-4 h-4" />
                   {t.projectSettings.settingSection.save}
                 </button>
                 <button
                   onClick={onCancel}
                   className="flex items-center gap-2 px-4 py-2 bg-muted text-foreground/70 rounded-lg hover:bg-muted/80 transition-all duration-200 font-medium text-sm"
                 >
-                  <X className="w-4 h-4" />
+                  <UiIcon name="close" className="w-4 h-4" />
                   {t.projectSettings.settingSection.cancel}
                 </button>
               </>

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Entry point to the team-mode migration wizard.
  *
@@ -13,7 +15,6 @@
  */
 
 import { useState } from "react";
-import { Rocket, Loader2 } from "lucide-react";
 import { SettingsSection } from "./SettingsSection";
 import { MigrateModal } from "./MigrateModal";
 import { useI18n } from "@/components/i18n-provider";
@@ -25,7 +26,7 @@ export function TeamWorkspaceCard({ canMigrate }: { canMigrate: boolean }) {
 
   return (
     <SettingsSection
-      icon={Rocket}
+      icon={"rocket"}
       title={t.settings.teamWorkspace.title}
       description={t.settings.teamWorkspace.description}
       iconBg="bg-primary/10"
@@ -48,7 +49,7 @@ export function TeamWorkspaceCard({ canMigrate }: { canMigrate: boolean }) {
             title={canMigrate ? undefined : t.settings.teamWorkspace.ownerOnlyTitle}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {migrated && <Loader2 className="size-4 animate-spin" />}
+            {migrated && <UiIcon name="spinner" className="size-4 animate-spin" />}
             {t.settings.teamWorkspace.migrate}
           </button>
         </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * A two-up card picker for a setting that is a CHOICE between named modes, not a
  * feature you switch on.
@@ -12,13 +14,11 @@
  * (per user) render this, which is what keeps them identical.
  */
 
-import { Check } from "lucide-react";
 
-type ChoiceIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
 
 export interface ModeChoice<V extends string> {
   value: V;
-  icon: ChoiceIcon;
+  icon: IconName;
   label: string;
   description: string;
 }
@@ -61,7 +61,7 @@ export function ModeChoiceCards<V extends string>({
                   : "bg-muted text-muted-foreground group-hover:text-foreground"
               }`}
             >
-              <Icon className="size-[18px]" strokeWidth={1.8} />
+              <UiIcon name={Icon} className="size-[18px]" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">{choice.label}</p>
@@ -71,7 +71,7 @@ export function ModeChoiceCards<V extends string>({
             </div>
             {active && (
               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                <Check className="size-3.5" strokeWidth={2.5} />
+                <UiIcon name="check" className="size-3.5" />
               </span>
             )}
           </button>

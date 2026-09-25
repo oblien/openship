@@ -1,32 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Search,
-  RefreshCw,
-  Loader2,
-  Database,
-  Network,
-  AlertTriangle,
-  AlertCircle,
-  Container,
-  Boxes,
-  Check,
-  X,
-  ArrowRight,
-  ArrowLeft,
-  Trash2,
-  CheckCircle2,
-  Plus,
-  GitBranch,
-  Link2,
-  Globe,
-  ChevronRight,
-  ChevronDown,
-  KeyRound,
-  ShieldCheck,
-} from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import {
@@ -65,6 +42,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { randomUUID } from "@/lib/random-uuid";
 import { extractOwnerRepoFromUrl } from "@/utils/repoSlug";
 import { AppLogo } from "@/components/AppLogo";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { Logo } from "@/components/logo";
 import { DeploymentTerminal } from "@/components/import-project/DeploymentTerminal";
 import { ServerConnectionCard } from "@/app/(dashboard)/servers/[serverId]/_components/connection-card";
@@ -1330,7 +1308,7 @@ export function ServerMigrationWizard({
       onClick={onBack}
       className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
-      <ArrowLeft className="size-4" />
+      <UiIcon name="arrow-left" className="size-4" />
       {m.tab.back}
     </button>
   ) : null;
@@ -1341,7 +1319,7 @@ export function ServerMigrationWizard({
     <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-b border-border/60 bg-muted/[0.18]">
       <div className="flex items-center gap-3 min-w-0">
         <div className="size-9 rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20 flex items-center justify-center shrink-0">
-          <Container className="size-[18px] text-primary" />
+          <UiIcon name="migration" className="size-[18px] text-primary" />
         </div>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground leading-tight">
@@ -1354,7 +1332,7 @@ export function ServerMigrationWizard({
         onClick={close}
         className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
       >
-        <X className="size-5" />
+        <UiIcon name="close" className="size-5" />
       </button>
     </div>
   );
@@ -1399,9 +1377,9 @@ export function ServerMigrationWizard({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
               >
                 {cutoverBusy ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                 )}
                 {m.cutover.stopRemove}
               </button>
@@ -1427,7 +1405,7 @@ export function ServerMigrationWizard({
                     : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 }
               >
-                {anyDomainAssigned && <ArrowRight className="size-4" />}
+                {anyDomainAssigned && <UiIcon name="arrow-right" className="size-4" />}
                 {m.run.openProject}
               </button>
               {!anyDomainAssigned && (
@@ -1436,7 +1414,7 @@ export function ServerMigrationWizard({
                   onClick={openDomains}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
                 >
-                  <ArrowRight className="size-4" />
+                  <UiIcon name="arrow-right" className="size-4" />
                   {m.run.addDomains}
                 </button>
               )}
@@ -1507,7 +1485,7 @@ export function ServerMigrationWizard({
                     className="rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     aria-label={m.wizard.removeProject}
                   >
-                    <X className="size-3.5" />
+                    <UiIcon name="close" className="size-3.5" />
                   </button>
                 )}
               </div>
@@ -1518,7 +1496,7 @@ export function ServerMigrationWizard({
             onClick={addProject}
             className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
           >
-            <Plus className="size-3.5" />
+            <UiIcon name="plus" className="size-3.5" />
             {m.wizard.addProject}
           </button>
         </div>
@@ -1699,9 +1677,9 @@ export function ServerMigrationWizard({
                   className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {scanning ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <RefreshCw className="size-4" />
+                    <UiIcon name="refresh" className="size-4" />
                   )}
                 </button>
                 <button
@@ -1718,7 +1696,7 @@ export function ServerMigrationWizard({
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {m.wizard.steps.next}
-                  <ArrowRight className="size-4" />
+                  <UiIcon name="arrow-right" className="size-4" />
                 </button>
               </div>
             </>
@@ -1734,7 +1712,7 @@ export function ServerMigrationWizard({
                   onClick={() => setStep("select")}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  <ArrowLeft className="size-4" />
+                  <UiIcon name="arrow-left" className="size-4" />
                   {m.wizard.steps.back}
                 </button>
                 <button
@@ -1743,7 +1721,7 @@ export function ServerMigrationWizard({
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
                 >
                   {m.wizard.steps.next}
-                  <ArrowRight className="size-4" />
+                  <UiIcon name="arrow-right" className="size-4" />
                 </button>
               </div>
             </>
@@ -1752,7 +1730,7 @@ export function ServerMigrationWizard({
             <>
               <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
                 <div className="flex items-center gap-2 shrink-0">
-                  <ArrowRight className="size-4 text-muted-foreground" />
+                  <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">
                     {m.wizard.targetLabel}
                   </span>
@@ -1791,7 +1769,7 @@ export function ServerMigrationWizard({
                   onClick={() => setStep("source")}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  <ArrowLeft className="size-4" />
+                  <UiIcon name="arrow-left" className="size-4" />
                   {m.wizard.steps.back}
                 </button>
                 {sameServer ? (
@@ -1802,9 +1780,9 @@ export function ServerMigrationWizard({
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {starting ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <ArrowRight className="size-4" />
+                      <UiIcon name="arrow-right" className="size-4" />
                     )}
                     {migratable.length > 1
                       ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -1818,7 +1796,7 @@ export function ServerMigrationWizard({
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {m.wizard.steps.next}
-                    <ArrowRight className="size-4" />
+                    <UiIcon name="arrow-right" className="size-4" />
                   </button>
                 )}
               </div>
@@ -1835,7 +1813,7 @@ export function ServerMigrationWizard({
                   onClick={() => setStep("domains")}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  <ArrowLeft className="size-4" />
+                  <UiIcon name="arrow-left" className="size-4" />
                   {m.wizard.steps.back}
                 </button>
                 <button
@@ -1845,9 +1823,9 @@ export function ServerMigrationWizard({
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {starting ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <ArrowRight className="size-4" />
+                    <UiIcon name="arrow-right" className="size-4" />
                   )}
                   {migratable.length > 1
                     ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -1874,11 +1852,11 @@ export function ServerMigrationWizard({
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {scanning ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : stack ? (
-                  <RefreshCw className="size-4" />
+                  <UiIcon name="refresh" className="size-4" />
                 ) : (
-                  <Search className="size-4" />
+                  <UiIcon name="search" className="size-4" />
                 )}
                 {scanning ? m.wizard.scanning : stack ? m.wizard.rescan : m.wizard.scan}
               </button>
@@ -1903,7 +1881,7 @@ export function ServerMigrationWizard({
         aria-label={m.wizard.rescan}
         className="p-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {scanning ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        {scanning ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="refresh" className="size-4" />}
       </button>
     );
 
@@ -1950,13 +1928,13 @@ export function ServerMigrationWizard({
               }`}
             >
               {failed ? (
-                <AlertCircle className="size-6" />
+                <UiIcon name="alert-circle" className="size-6" />
               ) : done || awaiting ? (
-                <CheckCircle2 className="size-6" />
+                <UiIcon name="check-circle" className="size-6" />
               ) : cutoverNeedsRetry || partial ? (
-                <AlertCircle className="size-6" />
+                <UiIcon name="alert-circle" className="size-6" />
               ) : (
-                <Loader2 className="size-6 animate-spin" />
+                <UiIcon name="spinner" className="size-6 animate-spin" />
               )}
             </span>
             <div className="space-y-0.5">
@@ -1989,9 +1967,9 @@ export function ServerMigrationWizard({
                   className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
                 >
                   {cutoverBusy ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <Trash2 className="size-4" />
+                    <UiIcon name="trash" className="size-4" />
                   )}
                   {m.cutover.stopRemove}
                 </button>
@@ -2019,7 +1997,7 @@ export function ServerMigrationWizard({
                     onClick={openDomains}
                     className="inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
                   >
-                    <ArrowRight className="size-4" />
+                    <UiIcon name="arrow-right" className="size-4" />
                     {m.run.addDomains}
                   </button>
                 )}
@@ -2032,7 +2010,7 @@ export function ServerMigrationWizard({
                       : "w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   }
                 >
-                  {anyDomainAssigned && <ArrowRight className="size-4" />}
+                  {anyDomainAssigned && <UiIcon name="arrow-right" className="size-4" />}
                   {m.run.openProject}
                 </button>
                 <button
@@ -2064,9 +2042,9 @@ export function ServerMigrationWizard({
                     className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40"
                   >
                     {retrying ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <RefreshCw className="size-4" />
+                      <UiIcon name="refresh" className="size-4" />
                     )}
                     {m.tab.retryRun}
                   </button>
@@ -2087,7 +2065,7 @@ export function ServerMigrationWizard({
                     onClick={editRetry}
                     className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
                   >
-                    <RefreshCw className="size-4" />
+                    <UiIcon name="refresh" className="size-4" />
                     {m.tab.editRetry}
                   </button>
                 )}
@@ -2099,9 +2077,9 @@ export function ServerMigrationWizard({
                     className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors disabled:opacity-40"
                   >
                     {cleanupBusy ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <Trash2 className="size-4" />
+                      <UiIcon name="trash" className="size-4" />
                     )}
                     {m.tab.cleanupTarget}
                   </button>
@@ -2141,9 +2119,9 @@ export function ServerMigrationWizard({
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
                     >
                       {deleteBusy ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <Trash2 className="size-4" />
+                        <UiIcon name="trash" className="size-4" />
                       )}
                       {m.tab.delete}
                     </button>
@@ -2155,7 +2133,7 @@ export function ServerMigrationWizard({
                   onClick={() => setConfirmingDelete(true)}
                   className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors"
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                   {m.tab.delete}
                 </button>
               )}
@@ -2267,7 +2245,7 @@ export function ServerMigrationWizard({
       const targetCard = (
         <div className="rounded-2xl border border-border/50 bg-card p-4 space-y-2.5">
           <div className="flex items-center gap-2">
-            <ArrowRight className="size-4 text-muted-foreground" />
+            <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">{m.wizard.targetLabel}</span>
           </div>
           <ServerSelector value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
@@ -2355,7 +2333,7 @@ export function ServerMigrationWizard({
                     onClick={() => setStep("select")}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
-                    <ArrowLeft className="size-4" />
+                    <UiIcon name="arrow-left" className="size-4" />
                     {m.wizard.steps.back}
                   </button>
                   <button
@@ -2364,7 +2342,7 @@ export function ServerMigrationWizard({
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
                   >
                     {m.wizard.steps.next}
-                    <ArrowRight className="size-4" />
+                    <UiIcon name="arrow-right" className="size-4" />
                   </button>
                 </div>
               </div>
@@ -2405,7 +2383,7 @@ export function ServerMigrationWizard({
                     onClick={() => setStep("source")}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
-                    <ArrowLeft className="size-4" />
+                    <UiIcon name="arrow-left" className="size-4" />
                     {m.wizard.steps.back}
                   </button>
                   {sameServer ? (
@@ -2416,9 +2394,9 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {starting ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <ArrowRight className="size-4" />
+                        <UiIcon name="arrow-right" className="size-4" />
                       )}
                       {migratable.length > 1
                         ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -2432,7 +2410,7 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {m.wizard.steps.next}
-                      <ArrowRight className="size-4" />
+                      <UiIcon name="arrow-right" className="size-4" />
                     </button>
                   )}
                 </div>
@@ -2470,7 +2448,7 @@ export function ServerMigrationWizard({
                     onClick={() => setStep("domains")}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
-                    <ArrowLeft className="size-4" />
+                    <UiIcon name="arrow-left" className="size-4" />
                     {m.wizard.steps.back}
                   </button>
                   <button
@@ -2480,9 +2458,9 @@ export function ServerMigrationWizard({
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {starting ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
-                      <ArrowRight className="size-4" />
+                      <UiIcon name="arrow-right" className="size-4" />
                     )}
                     {migratable.length > 1
                       ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -2583,9 +2561,9 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
                     >
                       {cutoverBusy ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <Trash2 className="size-4" />
+                        <UiIcon name="trash" className="size-4" />
                       )}
                       {m.cutover.stopRemove}
                     </button>
@@ -2608,7 +2586,7 @@ export function ServerMigrationWizard({
                           : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                       }
                     >
-                      {anyDomainAssigned && <ArrowRight className="size-4" />}
+                      {anyDomainAssigned && <UiIcon name="arrow-right" className="size-4" />}
                       {m.run.openProject}
                     </button>
                     {!anyDomainAssigned && (
@@ -2617,7 +2595,7 @@ export function ServerMigrationWizard({
                         onClick={openDomains}
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
                       >
-                        <ArrowRight className="size-4" />
+                        <UiIcon name="arrow-right" className="size-4" />
                         {m.run.addDomains}
                       </button>
                     )}
@@ -2711,7 +2689,7 @@ export function ServerMigrationWizard({
                     {/* Target + move options */}
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2.5">
                       <div className="flex items-center gap-2">
-                        <ArrowRight className="size-4 text-muted-foreground" />
+                        <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
                         <span className="text-sm font-medium text-foreground">
                           {m.wizard.targetLabel}
                         </span>
@@ -2787,7 +2765,7 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {m.wizard.steps.next}
-                      <ArrowRight className="size-4" />
+                      <UiIcon name="arrow-right" className="size-4" />
                     </button>
                   </>
                 ) : step === "source" ? (
@@ -2797,7 +2775,7 @@ export function ServerMigrationWizard({
                       onClick={() => setStep("select")}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                     >
-                      <ArrowLeft className="size-4" />
+                      <UiIcon name="arrow-left" className="size-4" />
                       {m.wizard.steps.back}
                     </button>
                     <button
@@ -2806,7 +2784,7 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
                     >
                       {m.wizard.steps.next}
-                      <ArrowRight className="size-4" />
+                      <UiIcon name="arrow-right" className="size-4" />
                     </button>
                   </>
                 ) : step === "domains" ? (
@@ -2816,7 +2794,7 @@ export function ServerMigrationWizard({
                       onClick={() => setStep("source")}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                     >
-                      <ArrowLeft className="size-4" />
+                      <UiIcon name="arrow-left" className="size-4" />
                       {m.wizard.steps.back}
                     </button>
                     {sameServer ? (
@@ -2827,9 +2805,9 @@ export function ServerMigrationWizard({
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {starting ? (
-                          <Loader2 className="size-4 animate-spin" />
+                          <UiIcon name="spinner" className="size-4 animate-spin" />
                         ) : (
-                          <ArrowRight className="size-4" />
+                          <UiIcon name="arrow-right" className="size-4" />
                         )}
                         {migratable.length > 1
                           ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -2843,7 +2821,7 @@ export function ServerMigrationWizard({
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {m.wizard.steps.next}
-                        <ArrowRight className="size-4" />
+                        <UiIcon name="arrow-right" className="size-4" />
                       </button>
                     )}
                   </>
@@ -2854,7 +2832,7 @@ export function ServerMigrationWizard({
                       onClick={() => setStep("domains")}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                     >
-                      <ArrowLeft className="size-4" />
+                      <UiIcon name="arrow-left" className="size-4" />
                       {m.wizard.steps.back}
                     </button>
                     <button
@@ -2864,9 +2842,9 @@ export function ServerMigrationWizard({
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {starting ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <UiIcon name="spinner" className="size-4 animate-spin" />
                       ) : (
-                        <ArrowRight className="size-4" />
+                        <UiIcon name="arrow-right" className="size-4" />
                       )}
                       {migratable.length > 1
                         ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
@@ -2881,7 +2859,7 @@ export function ServerMigrationWizard({
             <div className="rounded-2xl border border-border/50 bg-card p-5 space-y-3.5">
               <div className="flex items-center gap-2.5">
                 <div className="size-9 rounded-xl bg-info/10 flex items-center justify-center shrink-0">
-                  <Boxes className="size-[18px] text-info" />
+                  <UiIcon name="migration" className="size-[18px] text-info" />
                 </div>
                 <h3 className="text-sm font-semibold text-foreground leading-tight">
                   {m.entry.cardTitle}
@@ -2899,9 +2877,9 @@ export function ServerMigrationWizard({
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {scanning ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Search className="size-4" />
+                  <UiIcon name="search" className="size-4" />
                 )}
                 {scanning ? m.wizard.scanning : m.wizard.scan}
               </button>
@@ -2947,7 +2925,7 @@ function EmptyHint({ scanning, status }: { scanning?: boolean; status?: string }
       {/* Safety guarantee footer — migration COPIES, never moves; nothing is
           deleted unless you explicitly cut over. */}
       <div className="flex items-start gap-2.5 border-t border-border/50 bg-muted/30 px-5 py-4 text-start">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
+        <UiIcon name="shield-check" className="mt-0.5 size-4 shrink-0 text-success" />
         <p className="text-xs leading-relaxed text-muted-foreground">
           <span className="font-medium text-foreground">{t.migration.tab.safetyTitle}</span>{" "}
           {t.migration.tab.safetyBody}
@@ -3077,7 +3055,7 @@ export function OpenshipReimportSection({
       {/* Header — same shape as ServiceGroup (icon + title + muted count pill). */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2 px-0.5">
-          <Boxes className="size-4 text-muted-foreground shrink-0" />
+          <UiIcon name="layers" className="size-4 text-muted-foreground shrink-0" />
           <h3 className="text-sm font-semibold text-foreground">{m.title}</h3>
           <span className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-muted/70 text-muted-foreground shrink-0">
             {orphaned.length}
@@ -3102,7 +3080,7 @@ export function OpenshipReimportSection({
               {doneId ? (
                 <div className="flex h-full flex-col justify-between gap-3">
                   <span className="flex items-center gap-1.5 text-sm font-medium text-success">
-                    <CheckCircle2 className="size-4 shrink-0" />
+                    <UiIcon name="check-circle" className="size-4 shrink-0" />
                     {m.reimported}
                   </span>
                   <button
@@ -3111,7 +3089,7 @@ export function OpenshipReimportSection({
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
                     {m.openProject}
-                    <ArrowRight className="size-3.5" />
+                    <UiIcon name="arrow-right" className="size-3.5" />
                   </button>
                 </div>
               ) : (
@@ -3151,7 +3129,7 @@ export function OpenshipReimportSection({
                   </div>
                   {err && (
                     <p className="flex items-center gap-1.5 text-xs text-warning">
-                      <AlertTriangle className="size-3.5 shrink-0" />
+                      <UiIcon name="warning" className="size-3.5 shrink-0" />
                       {err}
                     </p>
                   )}
@@ -3163,7 +3141,7 @@ export function OpenshipReimportSection({
                   >
                     {busy === p.projectId ? (
                       <>
-                        <Loader2 className="size-3.5 animate-spin" />
+                        <UiIcon name="spinner" className="size-3.5 animate-spin" />
                         {m.working}
                       </>
                     ) : (
@@ -3247,7 +3225,7 @@ function ServiceGroup({
                 allOn ? "bg-primary border-primary text-primary-foreground" : "border-border"
               }`}
             >
-              {allOn && <Check className="size-3" />}
+              {allOn && <UiIcon name="check" className="size-3" />}
             </span>
             {m.selectAll}
           </button>
@@ -3326,7 +3304,7 @@ function ServiceRow({
               : "border-border bg-transparent group-hover:border-foreground/40"
         }`}
       >
-        {checked && !interactionBlocked && <Check className="size-3" />}
+        {checked && !interactionBlocked && <UiIcon name="check" className="size-3" />}
       </span>
       <input
         type="checkbox"
@@ -3369,13 +3347,13 @@ function ServiceRow({
 
         {blocked && (
           <p className="mt-1 flex items-center gap-1.5 text-xs text-warning">
-            <AlertTriangle className="size-3.5 shrink-0" />
+            <UiIcon name="warning" className="size-3.5 shrink-0" />
             {m.buildBlocked}
           </p>
         )}
         {!blocked && proxy && (
           <p className="mt-1 flex items-center gap-1.5 text-xs text-warning">
-            <AlertTriangle className="size-3.5 shrink-0" />
+            <UiIcon name="warning" className="size-3.5 shrink-0" />
             {interpolate(m.proxyExcluded, { ports: edgePortLabel(service) })}
           </p>
         )}
@@ -3462,7 +3440,7 @@ function RepoSourceCard({
   return (
     <section className="space-y-3 rounded-xl border border-border/50 p-4">
       <div className="flex items-center gap-2">
-        <GitBranch className="size-4 text-muted-foreground" />
+        <UiIcon name="git-branch" className="size-4 text-muted-foreground" />
         <h4 className="text-sm font-semibold text-foreground">{s.linkRepo}</h4>
         <span className="text-[11px] text-muted-foreground">· {s.repoOptional}</span>
       </div>
@@ -3474,7 +3452,7 @@ function RepoSourceCard({
           onClick={() => void github.connect()}
           className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
         >
-          <Link2 className="size-4" />
+          <UiIcon name="link" className="size-4" />
           {s.connectGithub}
         </button>
       ) : !repo ? (
@@ -3508,7 +3486,7 @@ function RepoSourceCard({
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
             <span className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-medium text-foreground">
               {parsing && (
-                <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
               )}
               {repo.owner}/{repo.repo}
             </span>
@@ -3567,7 +3545,7 @@ function ServiceMapPanel({
     <section className="space-y-4">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <Boxes className="size-4 text-muted-foreground" />
+          <UiIcon name="layers" className="size-4 text-muted-foreground" />
           <h4 className="text-sm font-semibold text-foreground">{s.mapTitle}</h4>
         </div>
         <p className="text-[13px] leading-relaxed text-muted-foreground">{s.mapHint}</p>
@@ -3575,7 +3553,7 @@ function ServiceMapPanel({
 
       {parsing ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {s.parsingCompose}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {s.parsingCompose}
         </div>
       ) : composeNames.length === 0 ? (
         <div className="rounded-xl border border-border/50 bg-card px-4 py-3 text-[13px] text-muted-foreground">
@@ -3611,7 +3589,7 @@ function ServiceMapPanel({
                 <div key={uid} className="rounded-xl border border-border/50 bg-card p-4 space-y-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Container className="size-4 shrink-0 text-muted-foreground" />
+                      <ServiceIcon service={sv} className="size-4 shrink-0" />
                       <span
                         className="truncate text-sm font-medium text-foreground"
                         title={sv.name}
@@ -3780,7 +3758,7 @@ function ServiceConfigCard({
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-4 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Container className="size-4 text-muted-foreground" />
+        <ServiceIcon service={service} className="size-4" />
         <span className="text-sm font-semibold text-foreground truncate">{service.name}</span>
         {service.ports.map((p, i) => (
           <span
@@ -3807,12 +3785,12 @@ function ServiceConfigCard({
               // same-toned static badges (`New` is warning-coloured too).
               className="flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning transition-opacity hover:opacity-80"
             >
-              <AlertTriangle className="size-3 shrink-0" />
+              <UiIcon name="warning" className="size-3 shrink-0" />
               {issueLabel}
               {warningsOpen ? (
-                <ChevronDown className="size-3 shrink-0" />
+                <UiIcon name="chevron-down" className="size-3 shrink-0" />
               ) : (
-                <ChevronRight className="size-3 shrink-0" />
+                <UiIcon name="chevron-right" className="size-3 shrink-0" />
               )}
             </button>
           )}
@@ -3842,7 +3820,7 @@ function ServiceConfigCard({
         <div className="space-y-1 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
           {service.warnings.map((warning) => (
             <p key={warning} className="flex items-start gap-1.5 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
               {warning}
             </p>
           ))}
@@ -3852,7 +3830,7 @@ function ServiceConfigCard({
       {/* Route: Free / Custom / None (+ Keep when a route was already detected) */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <Globe className="size-3.5 text-muted-foreground" />
+          <UiIcon name="globe" className="size-3.5 text-muted-foreground" />
           <span className="text-[13px] font-medium text-muted-foreground">{s.routeTitle}</span>
           {existing && existing.length > 0 && (
             <span
@@ -3967,13 +3945,13 @@ function ServiceConfigCard({
         className="flex w-full items-center justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-start transition-colors hover:bg-muted/30"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+          <UiIcon name="key" className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-[13px] font-medium text-foreground">{s.envTitle}</span>
           <span className="text-[12px] text-muted-foreground/70">
             · {interpolate(d.nEnv, { n: String(Object.keys(envRecord).length) })}
           </span>
         </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground" />
       </button>
 
       {/* Env the IMAGE supplies, not the operator (recovered from Docker's
@@ -3989,9 +3967,9 @@ function ServiceConfigCard({
               className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] text-muted-foreground transition-colors hover:text-foreground"
             >
               {imageEnvOpen ? (
-                <ChevronDown className="size-3.5 shrink-0" />
+                <UiIcon name="chevron-down" className="size-3.5 shrink-0" />
               ) : (
-                <ChevronRight className="size-3.5 shrink-0" />
+                <UiIcon name="chevron-right" className="size-3.5 shrink-0" />
               )}
               <span className="truncate">
                 {interpolate(d.envFromImage, { n: String(pendingImageEnv.length) })}
@@ -4030,7 +4008,7 @@ function ServiceConfigCard({
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <KeyRound className="size-5 text-primary" />
+                <UiIcon name="key" className="size-5 text-primary" />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{service.name}</p>
@@ -4045,7 +4023,7 @@ function ServiceConfigCard({
               className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label={s.envTitle}
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
           </div>
         </div>
@@ -4193,7 +4171,7 @@ function TransferPlanSummary({
     <div className="space-y-5 rounded-2xl border border-border/50 bg-card p-5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-semibold text-foreground">{plan.title}</span>
-        {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+        {loading && <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />}
       </div>
 
       {/* Target-volume conflicts — must be resolved (override/clone/keep) before
@@ -4202,7 +4180,7 @@ function TransferPlanSummary({
       {conflicts.length > 0 && (
         <div className="space-y-4 rounded-xl border border-warning-border bg-warning-bg/40 p-4">
           <div className="flex items-center gap-2">
-            <AlertCircle className="size-4 shrink-0 text-warning" />
+            <UiIcon name="alert-circle" className="size-4 shrink-0 text-warning" />
             <span className="text-sm font-medium text-foreground">{plan.conflictTitle}</span>
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">{plan.conflictDesc}</p>
@@ -4265,7 +4243,7 @@ function TransferPlanSummary({
                       {plan[it.kind] ?? it.kind}
                     </span>
                     {it.exists === false && (
-                      <AlertCircle className="size-3.5 shrink-0 text-warning" />
+                      <UiIcon name="alert-circle" className="size-3.5 shrink-0 text-warning" />
                     )}
                     <span className="truncate text-muted-foreground" title={it.ref}>
                       {it.ref}
@@ -4290,7 +4268,7 @@ function TransferPlanSummary({
         // just a corner spinner, so the size scan (du over SSH) doesn't feel dead.
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             {plan.measuring}
           </div>
           <div className="space-y-2">
@@ -4321,7 +4299,7 @@ function TransferPlanSummary({
           {ssl.map((s) => (
             <div key={s.domain} className="flex items-center gap-2 text-sm">
               {s.hasCert ? (
-                <Check className="size-4 shrink-0 text-success" />
+                <UiIcon name="check" className="size-4 shrink-0 text-success" />
               ) : (
                 <span className="inline-block size-2 shrink-0 rounded-full bg-warning" />
               )}
@@ -4506,7 +4484,7 @@ export function MigrationProgress({
                       : "bg-muted/60 text-muted-foreground"
                 }`}
               >
-                {state === "done" && <Check className="size-3" />}
+                {state === "done" && <UiIcon name="check" className="size-3" />}
                 {completed[i]?.name ?? (i === queueIndex ? queueName : `#${i + 1}`)}
               </span>
             );
@@ -4517,7 +4495,7 @@ export function MigrationProgress({
       {allDone ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm text-success rounded-xl bg-success-bg px-4 py-3">
-            <CheckCircle2 className="size-5 shrink-0" />
+            <UiIcon name="check-circle" className="size-5 shrink-0" />
             <span className="font-medium">
               {queueTotal > 1
                 ? interpolate(m.run.allSucceeded, { n: String(queueTotal) })
@@ -4532,7 +4510,7 @@ export function MigrationProgress({
         </div>
       ) : failed ? (
         <div className="flex items-start gap-2 text-sm text-destructive rounded-xl bg-destructive/10 px-4 py-3">
-          <AlertCircle className="size-4 mt-0.5 shrink-0" />
+          <UiIcon name="alert-circle" className="size-4 mt-0.5 shrink-0" />
           <div>
             <p className="font-medium">{runText[status]}</p>
             {run?.errorMessage && <p className="mt-1 text-xs opacity-80">{run.errorMessage}</p>}
@@ -4555,9 +4533,9 @@ export function MigrationProgress({
                   }`}
                 >
                   {state === "done" ? (
-                    <Check className="size-3" />
+                    <UiIcon name="check" className="size-3" />
                   ) : state === "active" ? (
-                    <Loader2 className="size-3 animate-spin" />
+                    <UiIcon name="spinner" className="size-3 animate-spin" />
                   ) : (
                     <span className="size-1.5 rounded-full bg-current" />
                   )}
@@ -4614,14 +4592,14 @@ export function MigrationProgress({
 
       {status === "awaiting_cutover" && (
         <div className="flex items-start gap-2 text-sm rounded-xl bg-success-bg text-success px-4 py-3">
-          <CheckCircle2 className="size-4 mt-0.5 shrink-0" />
+          <UiIcon name="check-circle" className="size-4 mt-0.5 shrink-0" />
           <span>{m.run.awaiting_cutover}</span>
         </div>
       )}
 
       {error && (
         <div className="flex items-start gap-2 text-sm text-destructive rounded-xl bg-destructive/10 px-4 py-3">
-          <AlertCircle className="size-4 mt-0.5 shrink-0" />
+          <UiIcon name="alert-circle" className="size-4 mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
@@ -4783,7 +4761,7 @@ function PartialResolution({ runId, pending }: { runId: string; pending: Pending
   return (
     <div className="space-y-4 rounded-2xl border border-border/50 bg-card p-5">
       <div className="flex items-center gap-2">
-        <AlertCircle className="size-4 text-warning" />
+        <UiIcon name="alert-circle" className="size-4 text-warning" />
         <h4 className="text-sm font-semibold text-foreground">{tab.pendingTitle}</h4>
       </div>
       <ul className="space-y-3">
@@ -4831,7 +4809,7 @@ function PartialResolution({ runId, pending }: { runId: string; pending: Pending
         disabled={busy}
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
       >
-        {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="refresh" className="size-4" />}
         {busy ? tab.resuming : tab.resume}
       </button>
     </div>

@@ -315,6 +315,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Download and verify Cloudflare SSH client (Windows)
+        if: runner.os == 'Windows'
+        run: node apps/desktop/scripts/fetch-cloudflared.mjs
+
       - name: Install AppImage build deps (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2
@@ -767,6 +771,11 @@ jobs:
               "${CORE_ASSETS[@]}"
           fi
 
+      - name: Sign desktop installers
+        env:
+          OPENSHIP_DESKTOP_SIGNING_KEY: ${{ secrets.OPENSHIP_DESKTOP_SIGNING_KEY }}
+        run: node apps/desktop/scripts/sign-updates.mjs dist
+
       - name: Attach desktop installers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -777,7 +786,7 @@ jobs:
           # single-OS failure shouldn't block the release).
           for asset in Openship-arm64.dmg Openship-x64.dmg Openship-win32-x64.zip Openship.AppImage Openship-arm64.AppImage Openship.deb Openship.rpm; do
             if [[ -f "dist/${asset}" ]]; then
-              gh release upload "${TAG}" "dist/${asset}" "dist/${asset}.sha256" --clobber
+              gh release upload "${TAG}" "dist/${asset}" "dist/${asset}.sha256" "dist/${asset}.sig" --clobber
             else
               echo "::warning::desktop installer missing: ${asset}"
             fi

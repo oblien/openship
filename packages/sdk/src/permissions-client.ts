@@ -4,6 +4,7 @@ import { createRemoteScopedOperations, createRemoteResourceOperations } from "./
 export function createRemotePermissionOperations(http: HttpClient): PermissionOperations {
   return Object.freeze({
     ...createRemoteScopedOperations(http, PermissionCollectionSchemas, {
+      listWorkspaces: { method: "GET", path: () => "/permissions/workspaces", envelope: "data" },
       orgMeta: { method: "GET", path: () => "/permissions/org-meta", envelope: "data" },
       listResources: { method: "GET", path: () => "/permissions/resources", envelope: "data" },
       createTeamOrg: { method: "POST", path: () => "/permissions/create-team-org", envelope: "data" },

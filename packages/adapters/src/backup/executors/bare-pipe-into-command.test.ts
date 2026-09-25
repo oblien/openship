@@ -84,21 +84,20 @@ describe("BareBackupExecutor.pipeIntoCommand ceiling", () => {
   });
 
   it("bounds the staging fallback's transfer, and cleans up after it", async () => {
-    const { readdir } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const staged = () =>
-      readdir(tmpdir())
-        .then((names) => names.filter((n) => n.startsWith("openship-bare-restore-")))
-        .catch(() => [] as string[]);
-    const before = await staged();
+    const { stat } = await import("node:fs/promises");
+    let stagedDir: string | undefined;
 
     // No `execWithInput` — the shape a local, non-SSH CommandExecutor has, which is the
     // only way into the staging branch.
     const exec = {
-      rawExec: async () => {
-        throw new Error("the transfer never finished, so nothing should run");
+      rawExec: async (command: string) => {
+        expect(command).not.toContain("psql");
+        return { stdout: Readable.from([]), stderr: Readable.from([]), onClose: Promise.resolve(0), kill: () => {} };
       },
-      transferIn: async () => new Promise<never>(() => {}),
+      transferIn: async (localDir: string) => {
+        stagedDir = localDir;
+        return new Promise<never>(() => {});
+      },
     };
 
     await expect(
@@ -109,14 +108,15 @@ describe("BareBackupExecutor.pipeIntoCommand ceiling", () => {
 
     // The staged artifact is the module's last unbounded resource — a ceiling that
     // leaked it would fill the control plane's disk one abandoned restore at a time.
-    expect(await staged()).toEqual(before);
+    expect(stagedDir).toBeDefined();
+    await expect(stat(stagedDir!)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("hands the staging fallback's remaining budget to the exec itself", async () => {
     let killed = false;
     let onClose: (code: number) => void = () => {};
     const exec = {
-      rawExec: async () => ({
+      rawExec: async (command: string) => command.includes("psql") ? ({
         stdout: Readable.from([]),
         stderr: new PassThrough(),
         onClose: new Promise<number>((resolve) => {
@@ -128,18 +128,17 @@ describe("BareBackupExecutor.pipeIntoCommand ceiling", () => {
           killed = true;
           onClose(137);
         },
-      }),
+      }) : ({ stdout: Readable.from([]), stderr: Readable.from([]), onClose: Promise.resolve(0), kill: () => {} }),
       transferIn: async () => {},
     };
 
-    const exit = await executorWith(exec).pipeIntoCommand(
+    await expect(executorWith(exec).pipeIntoCommand(
       service,
       ["sh", "-c", "psql"],
       Readable.from(["dump"]),
       { timeoutMs: 150 },
-    );
+    )).rejects.toThrow(/ceiling/);
 
     expect(killed).toBe(true);
-    expect(exit.code).toBe(137);
   });
 });

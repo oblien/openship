@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Terminal, ShieldCheck, Monitor, CloudOff } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /**
@@ -19,7 +20,7 @@ export function GhCliConsent({ login, onAllow }: { login?: string; onAllow: () =
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="px-6 py-12 text-center">
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl bg-info/10 ring-4 ring-info/5">
-          <Terminal className="size-6 text-info" />
+          <UiIcon name="terminal" className="size-6 text-info" />
         </div>
         <h3 className="mb-1.5 text-lg font-medium text-foreground/85">{c.title}</h3>
         <p className="mx-auto mb-6 max-w-md text-sm leading-relaxed text-muted-foreground">
@@ -28,15 +29,15 @@ export function GhCliConsent({ login, onAllow }: { login?: string; onAllow: () =
 
         <ul className="mx-auto mb-7 max-w-sm space-y-2.5 text-start">
           <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <CloudOff className="mt-0.5 size-4 shrink-0 text-success" />
+            <UiIcon name="cloud-off" className="mt-0.5 size-4 shrink-0 text-success" />
             <span>{c.pointNoCloud}</span>
           </li>
           <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <Monitor className="mt-0.5 size-4 shrink-0 text-success" />
+            <UiIcon name="monitor" className="mt-0.5 size-4 shrink-0 text-success" />
             <span>{c.pointDesktopOnly}</span>
           </li>
           <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
+            <UiIcon name="shield-check" className="mt-0.5 size-4 shrink-0 text-success" />
             <span>{c.pointReadOnly}</span>
           </li>
         </ul>
@@ -46,7 +47,7 @@ export function GhCliConsent({ login, onAllow }: { login?: string; onAllow: () =
           onClick={onAllow}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
         >
-          <ShieldCheck className="size-4" />
+          <UiIcon name="shield-check" className="size-4" />
           {c.allow}
         </button>
       </div>

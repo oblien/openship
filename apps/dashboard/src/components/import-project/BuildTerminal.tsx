@@ -11,6 +11,7 @@ interface BuildTerminalProps {
   className?: string;
   theme?: 'light' | 'dark';
   enableContainerStreaming?: boolean;
+  active?: boolean;
   // Container streaming props
   onContainerStreamStart?: () => void;
   onContainerExit?: (exitCode: number, message: string) => void;
@@ -21,6 +22,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
   className = "", 
   theme = 'light',
   enableContainerStreaming = true,
+  active = true,
   onContainerStreamStart,
   onContainerExit: onContainerExitProp
 }) => {
@@ -172,6 +174,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
       onReady={onReady}
       className={className}
       theme={theme}
+      active={active}
     />
   );
 };

@@ -1,21 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  FolderKanban,
-  Rocket,
-  ArrowRight,
-  ExternalLink,
-  Clock,
-  BookOpen,
-  Boxes,
-  Plus,
-  GitBranch,
-  Settings,
-  Activity,
-} from "lucide-react";
 import { projectsApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import UpdatesBlock from "@/components/overview/UpdatesBlock";
@@ -102,7 +91,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                    <FolderKanban className="size-[18px] text-primary" />
+                    <UiIcon name="project" className="size-[18px] text-primary" />
                   </div>
                   <div>
                     <h2 className="font-semibold text-foreground text-[15px]">{t.dashboard.home.yourProjects}</h2>
@@ -123,7 +112,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                 >
                   {t.dashboard.home.viewAll}
-                  <ArrowRight className="size-3.5" />
+                  <UiIcon name="arrow-right" className="size-3.5" />
                 </Link>
               </div>
 
@@ -165,7 +154,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                  <GitBranch className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="git-branch" className="size-[18px] text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground">{t.dashboard.home.importGit}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.dashboard.home.importGitDesc}</p>
@@ -175,7 +164,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                  <Boxes className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="mcp" className="size-[18px] text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground">{t.dashboard.home.mcpDeploy}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.dashboard.home.mcpDeployDesc}</p>
@@ -185,7 +174,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                  <Settings className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="settings" className="size-[18px] text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground">{t.dashboard.home.settingsCard}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.dashboard.home.settingsCardDesc}</p>
@@ -197,11 +186,11 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                  <BookOpen className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="book" className="size-[18px] text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground flex items-center gap-1">
                   {t.dashboard.home.docs}
-                  <ExternalLink className="size-3 text-muted-foreground" />
+                  <UiIcon name="external-link" className="size-3 text-muted-foreground" />
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.dashboard.home.docsDesc}</p>
               </a>
@@ -222,7 +211,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
             {attention.cards === 0 && (
               <div className="bg-card rounded-2xl border border-border/50 p-5">
                 <div className="flex items-center gap-2 mb-4">
-                  <Activity className="size-4 text-muted-foreground" />
+                  <UiIcon name="activity" className="size-4 text-muted-foreground" />
                   <h3 className="font-semibold text-foreground text-sm">{t.dashboard.home.activityTitle}</h3>
                 </div>
               
@@ -230,7 +219,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <FolderKanban className="size-4 text-primary" />
+                        <UiIcon name="project" className="size-4 text-primary" />
                       </div>
                       <span className="text-sm text-muted-foreground">{t.dashboard.home.statsProjects}</span>
                     </div>
@@ -242,7 +231,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                        <Rocket className="size-4 text-orange-500" />
+                        <UiIcon name="rocket" className="size-4 text-orange-500" />
                       </div>
                       <span className="text-sm text-muted-foreground">{t.dashboard.home.statsDeployments}</span>
                     </div>

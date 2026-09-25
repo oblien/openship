@@ -38,7 +38,7 @@
 		"traffic": {
 			"title": "Trafiğe Genel Bakış",
 			"last24Hours": "Son 24 saat",
-			"bar": "Çubuk (Bar)",
+			"bar": "Sütunlar",
 			"area": "Alan (Area)",
 			"loading": "Analiz verileri yükleniyor...",
 			"noDataTitle": "Henüz trafik verisi yok",
@@ -177,6 +177,7 @@
 			"startShellHint": "Bir kabuk (shell) açmak için servisi başlatın.",
 			"saveEnvironment": "Ortamı kaydet",
 			"environmentState": {
+				"helpTitle": "Ortam değişkenleri nasıl çalışır",
 				"description": "Openship üzerinde kaydedildi. Hizmetin özel değerleri, Compose ve paylaşılan proje değerlerinden önceliklidir. Devralınan bir değeri düzenlemek bu hizmet için özel bir değer oluşturur.",
 				"sources": {
 					"service": "Hizmete özel değer",

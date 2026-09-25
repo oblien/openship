@@ -11,7 +11,7 @@ import {
   topupOffer,
   subscriptionPlan,
 } from "./billing-catalog";
-import { syncOblienEntitlement } from "./billing-oblien-quota";
+import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-quota";
 import { listLiveSubscriptions } from "./billing.repository";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
@@ -64,28 +64,33 @@ export async function createCheckoutSession(
   await assertNoLegacySubscription(ctx.organizationId);
   const offer = subscriptionOffer(planTierId, interval);
   const namespace = await ensureNamespace(ctx.organizationId);
-  // The entitlement read verifies this namespace's subscription too; do not
-  // fetch it a second time before opening checkout.
-  await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false });
-  await getOblienBillingApi().assertResellerSupport();
-  // Oblien replaces only this namespace's subscription after payment. This
-  // starts a full-price cycle without proration; disclose that before checkout.
-  const result = await getOblienBillingApi().createCheckout({
-    namespace,
-    kind: "subscription",
-    offer,
-    metadata: subscriptionMetadata(planTierId, ctx.organizationId, namespace),
-    billingInterval: interval === "annual" ? "yearly" : "monthly",
-    successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled`,
-    idempotencyKey: checkoutKey(
-      ctx.organizationId,
-      `subscription:${offer.reference}:${interval}`,
-      requestKey,
-    ),
+  return withCloudBillingLock(ctx.organizationId, async (sync) => {
+    // Serialize checkout creation with operator grants. Complimentary access must
+    // be explicitly revoked before a customer starts a paid subscription.
+    const { grant } = await sync({ syncResourceLimits: false });
+    if (grant) {
+      throw new AppError("This workspace has a complimentary plan. Contact support to change it.", 409, "BILLING_COMPLIMENTARY_PLAN");
+    }
+    await getOblienBillingApi().assertResellerSupport();
+    // Oblien replaces only this namespace's subscription after payment. This
+    // starts a full-price cycle without proration; disclose that before checkout.
+    const result = await getOblienBillingApi().createCheckout({
+      namespace,
+      kind: "subscription",
+      offer,
+      metadata: subscriptionMetadata(planTierId, ctx.organizationId, namespace),
+      billingInterval: interval === "annual" ? "yearly" : "monthly",
+      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled`,
+      idempotencyKey: checkoutKey(
+        ctx.organizationId,
+        `subscription:${offer.reference}:${interval}`,
+        requestKey,
+      ),
+    });
+    // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
+    return { checkoutUrl: result.url };
   });
-  // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
-  return { checkoutUrl: result.url };
 }
 
 export async function createTopupCheckoutSession(ctx: RequestContext, packId: string, requestKey?: string): Promise<{ checkoutUrl: string }> {

@@ -1,25 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import {
-  Layers,
-  Boxes,
-  Globe,
-  Lock,
-  KeyRound,
-  Code2,
-  ChevronDown,
-  ChevronUp,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Trash2,
-  Settings2,
-  Network,
-  HardDrive,
-  AlertTriangle,
-  X,
-} from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { isMaskedValue } from "@repo/core";
 import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
@@ -181,7 +164,7 @@ const ServiceDomainSection: React.FC<{
     return (
       <div className="flex items-center gap-3">
         <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
-          <Lock className="size-4 text-muted-foreground" />
+          <UiIcon name="lock" className="size-4 text-muted-foreground" />
         </div>
         <div>
           <p className="text-sm font-medium text-foreground">{d.internalService}</p>
@@ -228,7 +211,7 @@ const ServiceDomainSection: React.FC<{
           <div className={`flex size-9 items-center justify-center rounded-lg ${
             service.exposed ? "bg-success-bg" : "bg-muted/50"
           }`}>
-            <Globe className={`size-4 ${
+            <UiIcon name="globe" className={`size-4 ${
               service.exposed ? "text-success" : "text-muted-foreground"
             }`} />
           </div>
@@ -341,7 +324,7 @@ const SharedEnvironmentCard: React.FC<{
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <KeyRound className="size-4 text-primary" />
+            <UiIcon name="key" className="size-4 text-primary" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -392,7 +375,7 @@ const SharedEnvironmentCard: React.FC<{
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <KeyRound className="size-5 text-primary" />
+                <UiIcon name="key" className="size-5 text-primary" />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">
@@ -409,7 +392,7 @@ const SharedEnvironmentCard: React.FC<{
               className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label={sh.close}
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
           </div>
           {importableRootVars.length > 0 && (
@@ -505,14 +488,14 @@ const ServiceConfigSection: React.FC<{
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start"
       >
         <span className="flex items-center gap-2.5">
-          <Settings2 className="size-4 text-muted-foreground" />
+          <UiIcon name="sliders" className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">{cfg.title}</span>
           <span className="text-xs text-muted-foreground">{summary}</span>
         </span>
         {open ? (
-          <ChevronUp className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronDown className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
         )}
       </button>
 
@@ -521,7 +504,7 @@ const ServiceConfigSection: React.FC<{
           {/* Ports */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Network className="size-4 text-foreground/70" />
+              <UiIcon name="network" className="size-4 text-foreground/70" />
               <span className={labelCls}>{cfg.ports}</span>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -565,7 +548,7 @@ const ServiceConfigSection: React.FC<{
                       className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       aria-label={cfg.removePort}
                     >
-                      <X className="size-3.5" />
+                      <UiIcon name="close" className="size-3.5" />
                     </button>
                   </div>
                 );
@@ -575,7 +558,7 @@ const ServiceConfigSection: React.FC<{
                 onClick={() => commitPorts([...portRows, { ip: "", host: "", container: "", proto: "" }])}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <Plus className="size-3.5" /> {cfg.addPort}
+                <UiIcon name="plus" className="size-3.5" /> {cfg.addPort}
               </button>
             </div>
           </div>
@@ -583,12 +566,12 @@ const ServiceConfigSection: React.FC<{
           {/* Volumes */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <HardDrive className="size-4 text-foreground/70" />
+              <UiIcon name="hard-drive" className="size-4 text-foreground/70" />
               <span className={labelCls}>{cfg.volumes}</span>
             </div>
             {statefulOnCloud && (
               <div className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
                 <span>
                   {cfg.statefulWarnPart1}<span className="font-medium">{cfg.statefulWarnBold}</span>{cfg.statefulWarnPart2}
                 </span>
@@ -644,7 +627,7 @@ const ServiceConfigSection: React.FC<{
                     className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                     aria-label={cfg.removeVolume}
                   >
-                    <X className="size-3.5" />
+                    <UiIcon name="close" className="size-3.5" />
                   </button>
                 </div>
               ))}
@@ -657,7 +640,7 @@ const ServiceConfigSection: React.FC<{
                   isCloud && "cursor-not-allowed opacity-50 hover:bg-muted/60 hover:text-muted-foreground",
                 )}
               >
-                <Plus className="size-3.5" /> {cfg.addVolume}
+                <UiIcon name="plus" className="size-3.5" /> {cfg.addVolume}
               </button>
             </div>
           </div>
@@ -814,19 +797,19 @@ const ServiceCard: React.FC<{
         </div>
         <DropdownMenu
           align="right"
-          trigger={<MoreHorizontal className="size-4 text-muted-foreground" />}
+          trigger={<UiIcon name="more" className="size-4 text-muted-foreground" />}
           triggerClassName="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           actions={[
             {
               id: "edit",
               label: cs.card.edit,
-              icon: <Pencil className="size-4" />,
+              icon: <UiIcon name="edit" className="size-4" />,
               onClick: () => setEnvModalOpen(true),
             },
             {
               id: "delete",
               label: cs.card.delete,
-              icon: <Trash2 className="size-4" />,
+              icon: <UiIcon name="trash" className="size-4" />,
               variant: "danger",
               onClick: onDelete,
             },
@@ -867,7 +850,7 @@ const ServiceCard: React.FC<{
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <KeyRound className="size-5 text-primary" />
+                <UiIcon name="key" className="size-5 text-primary" />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate">
@@ -885,7 +868,7 @@ const ServiceCard: React.FC<{
               className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
               aria-label={cs.card.closeEnv}
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
           </div>
           {missingCount > 0 && (
@@ -1005,13 +988,13 @@ const ComposeServices: React.FC = () => {
       id: "services" as const,
       label: cs.main.modeServicesLabel,
       description: cs.main.modeServicesDesc,
-      icon: Layers,
+      icon: "layers" as const,
     },
     {
       id: "single" as const,
       label: cs.main.modeSingleLabel,
       description: cs.main.modeSingleDesc,
-      icon: Code2,
+      icon: "code" as const,
     },
   ];
 
@@ -1024,7 +1007,7 @@ const ComposeServices: React.FC = () => {
           {/* Header */}
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-orange-500/10 rounded-xl">
-              <Boxes className="w-6 h-6 text-orange-500" />
+              <UiIcon name="layers" className="w-6 h-6 text-orange-500" />
             </div>
             <div>
               <h3 className="text-[15px] font-semibold text-foreground">Docker Compose</h3>
@@ -1053,7 +1036,7 @@ const ComposeServices: React.FC = () => {
               {/* Duplicate-domain warning — two routes can't share a hostname. */}
               {duplicateHosts.size > 0 && (
                 <div className="flex items-start gap-3 rounded-xl border border-warning-border bg-warning-bg px-4 py-3">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <UiIcon name="warning" className="mt-0.5 size-4 shrink-0 text-warning" />
                   <div className="min-w-0 text-sm">
                     <p className="font-medium text-warning">
                       {cs.domain.duplicateTitle}
@@ -1111,7 +1094,7 @@ const ComposeServices: React.FC = () => {
             >
               <div className="flex items-center gap-3">
                 <div className="flex size-9 items-center justify-center rounded-xl bg-muted/40">
-                  <Settings2 className="size-4 text-muted-foreground" />
+                  <UiIcon name="sliders" className="size-4 text-muted-foreground" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-foreground">{cs.main.deploymentMode}</p>
@@ -1121,9 +1104,9 @@ const ComposeServices: React.FC = () => {
                 </div>
               </div>
               {modeOptionsOpen ? (
-                <ChevronUp className="size-4 text-muted-foreground" />
+                <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
               ) : (
-                <ChevronDown className="size-4 text-muted-foreground" />
+                <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
               )}
             </button>
 
@@ -1149,7 +1132,7 @@ const ComposeServices: React.FC = () => {
                           "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg",
                           selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
                         )}>
-                          <Icon className="size-4" />
+                          <UiIcon name={Icon} className="size-4" />
                         </span>
                         <span className="min-w-0">
                           <span className="block text-sm font-medium">{option.label}</span>

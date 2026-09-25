@@ -378,24 +378,26 @@
   },
   "backup": {
     "live": {
-      "title": "Canlı yedekleme",
+      "title": "Yedekleme etkinliği",
       "description": "Az önce başlattığınız yedekleme işleminin gerçek zamanlı ilerlemesi. Sayfa yenilense de izlenmeye devam eder.",
       "dismiss": "Kapat"
     },
     "destinations": {
       "title": "Yedekleme hedefleri",
-      "description": "Kullanıcı bazlı depolama hedefleri. S3-uyumlu bucket'lar, SFTP sunucuları veya yerel diskler ekleyin.",
+      "description": "Bu proje için kullanılabilir depolama hedefleri.",
       "manage": "Yönet",
       "loading": "Yükleniyor…",
       "emptyPrefix": "Henüz hedef yok. ",
       "emptyLink": "Bir tane oluşturun",
       "emptySuffix": " ve yedeklemeye başlayın.",
       "verified": "Doğrulandı",
-      "failed": "Başarısız"
+      "failed": "Başarısız",
+      "emptyHint": "Bir S3 kovası, SFTP sunucusu veya mevcut sunucunuzu bağlayın.",
+      "inUse": "Kullanımda"
     },
     "services": {
-      "title": "Servisler + ilkeler",
-      "description": "Her servisin kendi yedekleme ilkesi (zamanlama + hedef) olabilir. Proje düzeyindeki varsayılanlar 2. bölümde yer alır.",
+      "title": "Yedekleme politikaları",
+      "description": "Neyin, ne zaman ve nereye yedekleneceğini seçin.",
       "refresh": "Yenile",
       "empty": "Bu projenin henüz servisi yok. Bazı servisler eklediğinizde servis düzeyinde yedekler burada görünecektir.",
       "policyLabel": "İlke:",
@@ -407,22 +409,54 @@
       "editPolicy": "İlkeyi düzenle",
       "addDestinationFirst": "Önce bir hedef ekleyin",
       "createPolicyHint": "Bu servis için bir yedekleme ilkesi oluşturun",
-      "createPolicy": "İlke oluştur"
+      "createPolicy": "İlke oluştur",
+      "projectHint": "Bu projedeki tüm servisler için tek politika.",
+      "includedInProject": "Proje politikasına dahil.",
+      "retainCount": "{count} yedek sakla",
+      "retainDays": "En fazla {days} gün"
     },
     "recent": {
+      "loadOlder": "Eski yedekleri yükle",
       "title": "Son yedeklemeler",
-      "description": "Bu projedeki tüm servislerin son 25 yedekleme işlemi.",
+      "description": "Son çalıştırmalar, sonuçları ve geri yükleme seçenekleri.",
       "loading": "Yükleniyor…",
       "empty": "Henüz yedek yok.",
       "protectedTitle": "Saklama süresi temizliğinden korunanlar",
       "protected": "Korunan",
       "restoreTitle": "Bu yedekten geri yükle",
       "allowPrune": "Saklama süresi dolduğunda silinmesine izin ver",
-      "protectFrom": "Saklama süresi temizliğinden koru"
+      "protectFrom": "Saklama süresi temizliğinden koru",
+      "emptyHint": "Bir politika oluşturun, ardından ilk yedeğinizi burada çalıştırın.",
+      "backup": "Yedek",
+      "viewDetails": "Ayrıntıları görüntüle",
+      "restore": "Geri yükle",
+      "triggers": {
+        "manual": "İsteğe bağlı",
+        "cron": "Zamanlanmış",
+        "webhook": "Webhook",
+        "pre_deploy": "Dağıtımdan önce"
+      }
     },
     "toast": {
       "runFailed": "Yedekleme işlemi başarısız oldu",
       "toggleProtectionFailed": "Koruma durumu değiştirilemedi"
+    },
+    "overview": {
+      "description": "Yedeklemeleri zamanlayın ve proje verilerinizi geri yükleyin.",
+      "lastBackup": "Son başarılı yedek",
+      "noRecentBackup": "Yakın zamanda yedek yok",
+      "scheduledPolicies": "Zamanlanmış politikalar",
+      "projectScope": "Tüm proje",
+      "serviceBackup": "Servis yedeği",
+      "paused": "Duraklatıldı",
+      "loadFailed": "Yedekler yüklenemedi"
+    },
+    "schedule": {
+      "daily": "Her gün {time}",
+      "weekly": "Her {day}, {time}",
+      "monthly": "Her ayın {day}. günü, {time}",
+      "custom": "Özel zamanlama",
+      "timezone": "Sunucunun saat dilimini kullanır."
     }
   },
   "build": {
@@ -570,6 +604,7 @@
       "install": "GitHub Uygulamasını Kur"
     },
     "webhookBanner": {
+      "summary": "Herkese açık uç nokta gerekli",
       "title": "Otomatik dağıtımı etkinleştirin",
       "description": "Otomatik dağıtım doğrudan bir webhook uç noktasına ihtiyaç duyar. Bu Openship API'sini herkese açık bir URL'de kullanıma sunun veya doğrudan teslimat için doğrulanmış bir webhook alan adı yapılandırın."
     },

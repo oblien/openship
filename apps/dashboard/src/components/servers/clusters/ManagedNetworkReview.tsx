@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, Network, ShieldCheck } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import type { ManagedNetworkPlan } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -15,7 +16,7 @@ export function ManagedNetworkReview({ plan }: { plan: ManagedNetworkPlan }) {
       <summary className="cursor-pointer list-none rounded-2xl p-5 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:px-7 [&::-webkit-details-marker]:hidden">
         <h2 className="flex items-center justify-between gap-3 text-sm font-semibold">
           {m.reviewTitle}
-          <ChevronDown
+          <UiIcon name="chevron-down"
             aria-hidden="true"
             className="size-4 shrink-0 text-muted-foreground transition-transform group-open/network-review:rotate-180"
           />
@@ -23,7 +24,7 @@ export function ManagedNetworkReview({ plan }: { plan: ManagedNetworkPlan }) {
       </summary>
       <div className="space-y-5 px-5 pb-5 sm:px-7 sm:pb-7">
         <div className="flex items-start gap-3 rounded-xl bg-muted/40 p-4">
-          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+          <UiIcon name="shield-check" className="mt-0.5 size-5 shrink-0 text-primary" />
           <div className="min-w-0">
             <p className="font-semibold">{plan.config.name}</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -45,7 +46,7 @@ export function ManagedNetworkReview({ plan }: { plan: ManagedNetworkPlan }) {
             <>
               <dt className="text-muted-foreground">{m.rotateKeys}</dt>
               <dd>
-                <ShieldCheck className="size-4 text-primary" />
+                <UiIcon name="shield-check" className="size-4 text-primary" />
               </dd>
             </>
           )}
@@ -69,7 +70,7 @@ export function ManagedNetworkReview({ plan }: { plan: ManagedNetworkPlan }) {
               </div>
               <div className="flex flex-wrap justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
-                  <Network className="size-3.5" />
+                  <UiIcon name="network" className="size-3.5" />
                   <span dir="ltr" className="font-mono">
                     <BlurIp>{host.endpoint}</BlurIp>:{host.listenPort}
                   </span>

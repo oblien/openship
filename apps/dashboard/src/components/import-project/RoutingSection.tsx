@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Wizard "Routing" advanced section — a collapsible card wrapping the shared
  * RoutingConfigEditor, bound to the deployment config. Detected from the repo's
@@ -8,7 +10,6 @@
  */
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, Route } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { RoutingConfigEditor } from "@/components/routing/RoutingConfigEditor";
 import { useI18n } from "@/components/i18n-provider";
@@ -55,7 +56,7 @@ const RoutingSection: React.FC = () => {
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Route className="w-4 h-4 text-primary" />
+            <UiIcon name="route" className="w-4 h-4 text-primary" />
           </div>
           <div>
             <h3 className="text-[15px] font-semibold text-foreground">
@@ -67,9 +68,9 @@ const RoutingSection: React.FC = () => {
           </div>
         </div>
         {open ? (
-          <ChevronUp className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronDown className="size-4 text-muted-foreground" />
+          <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
         )}
       </button>
       {open && (

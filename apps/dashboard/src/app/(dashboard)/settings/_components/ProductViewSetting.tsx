@@ -13,7 +13,6 @@
  * /projects, and a failed webmail deploy has to be debuggable), and vice versa.
  */
 
-import { LayoutTemplate, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
@@ -38,18 +37,18 @@ export function ProductViewSetting() {
   const choices: Array<ModeChoice<ProductView>> = [
     {
       value: "platform",
-      icon: LayoutTemplate,
+      icon: "layout",
       label: copy.platformLabel,
       description: copy.platformDesc,
     },
-    { value: "mail", icon: Mail, label: copy.mailLabel, description: copy.mailDesc },
+    { value: "mail", icon: "mail", label: copy.mailLabel, description: copy.mailDesc },
   ];
 
   const defaultLabel = productMode === "mail" ? copy.mailLabel : copy.platformLabel;
 
   return (
     <SettingsSection
-      icon={LayoutTemplate}
+      icon={"layout"}
       title={copy.title}
       description={copy.description}
       collapsible

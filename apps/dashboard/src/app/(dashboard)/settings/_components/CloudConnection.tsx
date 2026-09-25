@@ -1,17 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
-import {
-  ArrowUpRight,
-  Check,
-  Database,
-  Github,
-  Globe,
-  LogOut,
-  Loader2,
-  ExternalLink,
-  Rocket,
-} from "lucide-react";
 import { cloudApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -40,10 +31,10 @@ export function CloudConnection() {
      and the one people actually hit first (a project's free domain routes through
      Cloud, see the `managed-project-domain` capability). */
   const perks = [
-    { Icon: Globe, text: interpolate(pitch.perkDomain, { domain: baseDomain }) },
-    { Icon: Rocket, text: pitch.perkDeploy },
-    { Icon: Database, text: pitch.perkServices },
-    { Icon: Github, text: pitch.perkGithub },
+    { Icon: "globe" as const, text: interpolate(pitch.perkDomain, { domain: baseDomain }) },
+    { Icon: "rocket" as const, text: pitch.perkDeploy },
+    { Icon: "database" as const, text: pitch.perkServices },
+    { Icon: "github" as const, text: pitch.perkGithub },
   ];
 
   async function handleDisconnect() {
@@ -64,7 +55,7 @@ export function CloudConnection() {
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       {cloudLoading ? (
         <div className="py-4 flex items-center justify-center gap-2">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
           <p className="text-xs text-muted-foreground">{t.settings.cloud.checking}</p>
         </div>
       ) : cloudConnected ? (
@@ -97,7 +88,7 @@ export function CloudConnection() {
           {/* Status badge */}
           <div className="flex items-center justify-between">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-success-bg text-success text-xs font-semibold rounded-full ring-1 ring-success-border">
-              <Check className="size-3" />
+              <UiIcon name="check" className="size-3" />
               {t.settings.cloud.connected}
             </div>
             <button
@@ -106,9 +97,9 @@ export function CloudConnection() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-50"
             >
               {disconnecting ? (
-                <Loader2 className="size-3 animate-spin" />
+                <UiIcon name="spinner" className="size-3 animate-spin" />
               ) : (
-                <LogOut className="size-3" />
+                <UiIcon name="logout" className="size-3" />
               )}
               {t.settings.common.disconnect}
             </button>
@@ -140,7 +131,7 @@ export function CloudConnection() {
             {perks.map(({ Icon, text }) => (
               <li key={text} className="flex items-start gap-2.5">
                 <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                  <Icon className="size-3 text-primary" />
+                  <UiIcon name={Icon} className="size-3 text-primary" />
                 </span>
                 <span className="text-[13px] leading-snug text-muted-foreground">{text}</span>
               </li>
@@ -155,12 +146,12 @@ export function CloudConnection() {
             >
               {connecting ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" />
                   {t.settings.cloud.waitingSignIn}
                 </>
               ) : (
                 <>
-                  <ExternalLink className="size-3.5" />
+                  <UiIcon name="external-link" className="size-3.5" />
                   {t.settings.cloud.connectButton}
                 </>
               )}
@@ -172,7 +163,7 @@ export function CloudConnection() {
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-muted/50 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:flex-none"
             >
               {pitch.viewPricing}
-              <ArrowUpRight className="size-3.5" />
+              <UiIcon name="arrow-up-right" className="size-3.5" />
             </a>
           </div>
 
