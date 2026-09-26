@@ -3,6 +3,278 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.8.0
+
+This release adds the Node.js SDK, private networking and k3s-based application
+scaling, expands MCP automation, and refreshes the dashboard and desktop experience.
+It also repairs environment persistence, Compose migration, domain recovery,
+deployment accounting, and the backup/restore lifecycle accumulated since 0.7.2.
+
+### SDK, CLI and MCP
+
+- **A Node.js SDK alongside the CLI** — the `openship` package now provides
+  `OpenshipClient` through `openship/client` for remote installations and
+  `createShip` through `openship/native` for an embedded engine without a separate
+  API server. Both use shared platform operations, validation and authorization.
+  Native instances have explicit start/close lifecycles and verified workspace
+  scopes; ESM and CommonJS are supported on Node.js 22 and newer (#887).
+- **MCP covers more of the operational lifecycle** — networking, cluster setup,
+  replica scaling, managed databases, backup/restore, migration, routing and
+  diagnostics have documented tools and ordered workflow prompts. Discovery
+  respects workspace permissions and instance mode; required arguments and DELETE
+  bodies survive dispatch, and path arguments cannot redirect a call to another
+  route. Generated API, CLI and MCP references describe the available operations
+  and explicitly excluded HTTP-only routes (#953).
+- **CLI workflows use the shared SDK** — native mode and remote clients share
+  deployment and source handling, and Jobs now has commands for its existing
+  management and execution flows. Re-login preserves custom context endpoints,
+  folder uploads require explicit opt-in, project display names can be changed
+  safely, and failed component installation returns a failure to the caller.
+
+### Clustering and networking
+
+- **Private networks and compute clusters** — register and verify existing
+  private networks or prepare an Openship-managed WireGuard network. Managed
+  changes expose a reviewable plan, progress, retry and cleanup; compute clusters
+  group registered servers separately from their network configuration. Shared
+  service connections can reuse a service across projects while retaining its
+  owner, data and connection settings (#899, #900).
+- **Automated k3s setup** — self-hosted and desktop controllers can install a
+  cluster runtime on selected SSH servers, check prerequisites and node/network
+  readiness, and inspect saved per-host logs. Failed or interrupted setup can be
+  retried; runtime removal checks dependent workloads and owned infrastructure
+  before cleanup (#912).
+- **Manual application scaling from 1 to 100 replicas** — stateless single apps
+  and workers can deploy to a prepared cluster and change replica counts using
+  the active image without rebuilding. The topology shows observed pods and
+  readiness, with deployment history and retained-image rollback. This path
+  excludes Compose applications and persistent application mounts; policy-driven
+  autoscaling, automatic server provisioning and live cluster membership changes
+  are not included.
+- **Managed PostgreSQL and Redis on clusters** — database provisioning,
+  observation, connection settings, retry and guarded removal have their own
+  lifecycle. PostgreSQL supports S3 backups and recovery into a new database.
+  Redis archive backup/restore and resharding are not included.
+
+### Deployments and builds
+
+- **Run release commands before activation** — configure `releaseCommands` in
+  Build settings, `openship.json` or the project API/SDK. Commands run in order
+  after building, using the candidate release's environment, with streamed logs
+  and a ten-minute budget per command. Failure, timeout or cancellation stops
+  activation. Single-app Docker and Bare deployments are supported; unsupported
+  deployment types reject configured commands. Rollbacks skip them, and rolling
+  back application code does not undo database changes (#592).
+- **Completion and elapsed time survive retries and refresh** — workers retry a
+  failed database completion acknowledgement without repeating deployment work.
+  Cancellation records its outcome and duration atomically; late worker results
+  cannot replace them. Both build views use the same persisted timing, including
+  queued starts, rejected retries and terminal events (#940).
+- **Rollback retention has a predictable limit** — Project → Advanced → Rollback
+  history defaults to five past deployments, with active and pinned deployments
+  kept in addition. Cleanup runs after deployment and retention changes, retries
+  failed removals, and preserves artifacts still referenced by another retained
+  release. Older history remains browsable with pagination and accurate snapshot
+  labels.
+- **More reliable source builds** — recursive Git submodules are fetched for
+  build checkouts; Ruby builds respect declared versions and preserve Rails
+  storage; PHP builds include EXIF and package assets needed by frontend builds.
+  JavaScript `PORT` assignments are detected, invalid empty monorepo creation is
+  rejected, and build-time service-DNS failures receive an actionable explanation.
+- **Deployment errors reach the UI** — rejected submissions show the API's
+  specific validation or configuration error. Build streams reconnect without
+  replaying output, and successful deployments can show live service logs.
+  Preview variable sets cannot be deployed onto a production project's runtime.
+
+### Environment and Compose
+
+- **Saved service variables stay visible** — the Environment tab reads effective
+  values from Openship, including Compose values, shared project variables and
+  explicit service overrides, with their sources. It remains usable when the
+  server is offline. Saves update only edited rows, preserve untouched secrets,
+  reject conflicting edits and remove an override by restoring inheritance
+  where available (#926).
+- **Compose updates apply without routine approval gates** — repository changes
+  merge automatically while explicit operator overrides remain. Saved environment
+  values survive omitted source keys, unresolved expressions and legacy review
+  resolution. Interpolation uses current configured values instead of stale scan
+  results; legacy pending reviews reconcile on redeploy (#893, #916).
+- **Recover and apply environment changes deliberately** — older or migrated
+  services can recover missing variables from their running container for review
+  and saving, without overwriting saved values. Apply compares against the running
+  service and recreates supported Docker services from their existing image,
+  retaining ports, networks, mounts and resource limits. Failed startup restores
+  the previous container; unavailable comparisons remain unknown, and unsupported
+  runtimes direct the operator to redeploy.
+- **Environment download and secret protection** — Download .env exports the
+  listed values, including saved secrets, using quoting that round-trips through
+  Upload .env. Inline service environment, build arguments and their saved
+  deployment/Compose snapshots are now encrypted at rest; API presentation masks
+  protected values and preserves them on round trips (#844).
+
+### Migration and portability
+
+- **Compose migration includes the domain handoff** — discovery reports existing
+  proxies and matches Traefik routes through private container addresses as well
+  as published ports. The wizard saves service environment and selected routes,
+  prepares Edge during migration, and requests confirmation before taking over
+  an existing proxy. Selected sites attach to their migrated services, existing
+  certificates are reused, and unresolved routing prevents automatic source
+  container removal (#905, #908).
+- **Project export and import expose their requirements** — project settings
+  include export/import actions with source, server and Cloud dependencies, import
+  previews and explicit target mappings. Included credentials are encrypted with
+  the destination instance's key on import; project exports offer plain or
+  password-protected credential bundles. Configuration transfer does not itself
+  copy runtime volumes or perform a whole-instance server cutover.
+
+### Domains and certificates
+
+- **Routing retries reconcile saved and live state** — Retry routing checks Edge,
+  reapplies project routes and synchronizes domains, with inline progress logs and
+  refreshed results. Live ownership checks recover stale hostname/host-port
+  reservations left by deleted or recreated projects. Repairs preserve complete
+  routes and canonical endpoints when aliases are removed (#915, #922, #925).
+- **Pending states explain what happens next** — domain details distinguish
+  verification in progress, scheduled retry and failure, show the reason and next
+  retry time, and offer a manual retry. Durable backoff prevents overlapping
+  background sweeps from repeatedly retrying the same domain. An SSH observation
+  failure no longer clears a working certificate or becomes a claim that HTTPS
+  is absent (#911, #922).
+- **Imported certificates and container routes recover correctly** — certificate
+  lookup follows managed lineages and avoids collisions after import; recovery
+  excludes ACME challenge ports from application upstreams. Static sites inside
+  containers route through their owning service, and Edge serves an Openship
+  error page for unavailable upstreams (#879, #913).
+
+### Backups and restore
+
+- **Back up now from the project, service or volume panel** — service shortcuts
+  reuse an applicable policy and run only the selected service. Project policies
+  skip stateless services and admit their eligible runs together. Progress shows
+  saved phases, elapsed time and transferred bytes, reconnects across workers,
+  and updates recent history even after the progress view is dismissed.
+- **Optional incremental backups** — policies can reuse verified unchanged
+  blocks, with a complete block index for each restore point. Retention preserves
+  blocks still referenced by another snapshot, and storage totals count shared
+  objects once. Full backups remain the default. Captures still scan the whole
+  source and transfer through the Openship backup worker.
+- **Retention and destinations remain consistent** — pruning runs after
+  successful capture and through the scheduled sweep, preserving protected copies
+  and backups used by active restores. Existing runs retain their original
+  destination when a policy changes, and failed cleanup remains retryable without
+  invalidating a successful backup. SFTP failures close streams and clean partial
+  uploads instead of leaving the worker stuck (#817).
+- **Restore validates before replacing data** — preparation and confirmed apply
+  share source/target checks, integrity verification and exclusive access to the
+  project or mail server. Runtime/stop failures abort before destructive writes;
+  partial-write failures are reported and do not automatically restart a service
+  on incomplete volume data. Redis/Valkey restore validates persistence settings,
+  and PostgreSQL restore uses a transaction for each supported artifact. Release
+  tests now exercise backup, incremental reuse, retention and restore with real
+  Docker volumes and databases (#892, #946).
+
+### GitHub and access
+
+- **Cloud GitHub connections finish in the dashboard** — installation completion
+  refreshes repository access and the connection state instead of leaving the
+  page loading after GitHub has finished. Device sign-in keeps its code and
+  instructions visible until completion; transient and rate-limit failures no
+  longer discard durable credentials (#920, #951).
+- **Repository selection stays in sync** — branches load on demand while keeping
+  selection and keyboard focus, and changing the branch rescans deployment
+  configuration. Partially successful push-webhook dispatches retry failed targets
+  without redeploying targets that already completed (#847, #870).
+- **Sign-in and invitations respect the configured flow** — clients can discover
+  enabled login providers, and signed-out invitees can reach account creation and
+  complete acceptance without the dashboard's prior navigation race.
+
+### Dashboard and desktop
+
+- **Shared icons and more consistent layouts** — dashboard and desktop use a
+  theme-aware icon catalog with bundled local assets. Service headers, tabs,
+  environment controls, volume forms, source settings and log controls have
+  consistent spacing and typography; mobile navigation and crowded rows are
+  improved (#942, #946).
+- **Topology stays inside the project** — the graph has an optional expanded
+  view, improved loading placeholders and compact service nodes. Clicking a node
+  opens its details directly; long runtime identifiers truncate with copy actions
+  rather than widening the panel.
+- **Deployment pages put actions and logs first** — Open site and Open project
+  remain prominent, multiple exposed domains can be selected, and preparation,
+  service status and single-app steps share clearer progress indicators. Logs
+  have bounded layout, search and copy controls; history filters survive returning
+  from a deployment.
+- **Backup pages show retained data and real run state** — global and destination
+  views share paginated history, restore actions and usage information. Successful
+  retained copies, active attempts and physical storage totals are distinguished;
+  history remains available after policy changes.
+- **Desktop startup follows the application theme** — a redesigned loading screen
+  uses shared colors, clearer progress and service startup states (#952).
+
+### Monitoring and runtime reliability
+
+- **Monitoring recovers after connection interruptions** — desktop connectivity
+  loss is distinguished from a confirmed remote runtime failure, with recheck and
+  reconnection handling. Overlapping status requests no longer stop polling or
+  replace newer results, and issue feeds remain available when a host adapter
+  cannot start. Services show a checking state while runtime status is unknown
+  (#927, #949, #951).
+- **Traffic views use the same time series** — overview and monitoring render
+  timestamped request buckets with clear time ranges, area/column views and loading
+  skeletons. Analytics failures stay within the affected view instead of appearing
+  as empty traffic or replacing fresh data with stale responses.
+- **Long-running resources are bounded and released** — container log retention
+  is bounded for newly created managed containers, session caches preserve active
+  work at capacity, and closed log, terminal and IMAP streams release their
+  subscriptions. Busy builds retain their SSH transport; abandoned terminal
+  handshakes release their slots and resumed shells remain bound to the authorized
+  target (#950, #951).
+- **Server administration reports actionable failures** — macOS hosts expose
+  system statistics, server responses match shared diagnostics contracts, and
+  deletion refuses hosts with active deployments. SSH group refresh preserves
+  active sessions after Docker installation.
+
+### Cloud and API
+
+- **Cloud billing follows the selected organization** — plans, checkout, credit
+  top-ups and renewal management use Oblien namespace entitlements. Purchased
+  limits survive catalog changes, deployment/recovery checks enforce available
+  capacity, and checkout completion verifies payment delivery rather than trusting
+  the return URL. Billing portals remain scoped to the organization (#910).
+- **Standalone APIs limit unauthenticated floods** — a separate per-IP guard runs
+  before authentication without consuming the route's own limit. Cloud mode or
+  explicit `OPENSHIP_TRUST_EDGE=true` delegates that outer ceiling to the upstream
+  proxy while preserving per-route limits (#123).
+
+### Mail
+
+- **Webmail refreshes without duplicate subscriptions** — inbox updates use a
+  single owned SSE/IMAP IDLE connection with cleanup on disconnect. Replies fill
+  recipients and subject correctly, Trash uses IMAP deletion, and mobile composer,
+  accessibility and browser-cache failures are corrected (#897, #904, #921, #950).
+- **Remote-content blocking also covers CSS** — disabling remote images prevents
+  CSS imports and URL-based fetches from leaking a read receipt (#220).
+- **Mail setup, delivery and alerts are more reliable** — setup distinguishes an
+  unverified public SMTP probe from a stopped server; database port selection
+  handles conflicts; mounted certificates and Amavis state recover on restart.
+  Relay TLS and SES MAIL FROM checks are corrected, delivery health evaluates the
+  full queue, and captured messages remain until notification delivery is durably
+  queued. Job and backup notifications include their relevant target, outcome and
+  log details (#834, #865, #867, #945, #951).
+
+### Upgrade notes
+
+- **Keep the database and encryption key together** — this release includes
+  database migrations and converts legacy plaintext service configuration when
+  the engine starts. Back up the database and retain the instance encryption key
+  (`BETTER_AUTH_SECRET` for API installations) before upgrading. Downgrading to a
+  version before this protection requires its matching database backup. Use Data
+  Transfer with secrets included when moving configuration between instances with
+  different keys.
+
+[Full comparison: v0.7.2…v0.8.0](https://github.com/oblien/openship/compare/v0.7.2...v0.8.0)
+
 ## 0.7.2
 
 Soft maintenance patch for Docker build reliability. No breaking API changes or
