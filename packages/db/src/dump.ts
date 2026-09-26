@@ -974,6 +974,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "oauth_application", column: "clientSecret" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
+  { table: "azure_connection", column: "patEncrypted" },
   { table: "deployment", column: "envVars" },
   ...SERVICE_SECRET_FIELDS.map(column => ({ table: "service", column })),
   { table: "deployment", column: "meta", secretPaths: [...DEPLOYMENT_SECRET_FIELDS] },

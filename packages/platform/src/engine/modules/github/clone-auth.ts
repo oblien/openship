@@ -47,6 +47,7 @@ import { getLocalGhToken, hasLocalGitIdentity } from "./github.local-auth";
 import { resolveServerGitCredential } from "./server-github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { resolveGitHubApiBaseUrl } from "./github-source.service";
+import { cloneCredential as getAzureCloneCredential } from "../azure/azure.auth";
 
 /**
  * Result of build-token resolution:
@@ -133,6 +134,10 @@ export async function resolveBuildGitToken(opts: {
   repo?: string | null;
   /** Server-resolved project snapshot; validated against org+owner before use. */
   installationId?: number | null;
+  /** When "azure", resolve the Azure DevOps credential chain (project token
+   *  override, then the owning organization's connection) instead of the
+   *  GitHub chain. */
+  gitProvider?: string | null;
   buildStrategy: BuildStrategy;
   /**
    * Target server id (server deploys). When set, a per-server GitHub auth
@@ -170,6 +175,11 @@ export async function resolveBuildGitToken(opts: {
   /** Build-log sink for the probe's one-line outcome. Never receives secrets. */
   onLog?: (message: string) => void;
 }): Promise<BuildGitCredential> {
+  if ((opts.gitProvider ?? "").toLowerCase() === "azure") {
+    const token = await getAzureCloneCredential({ projectId: opts.projectId, ctx: opts.ctx });
+    return token ? { token } : {};
+  }
+
   const tokenCtx: TokenContext = {
     projectId: opts.projectId,
     owner: opts.owner ?? undefined,

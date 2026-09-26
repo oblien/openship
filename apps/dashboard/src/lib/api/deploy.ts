@@ -69,6 +69,16 @@ export type PrepareProjectSource = { includeEnv?: boolean } & (
       env?: Record<string, string>;
     }
   | {
+      source: "azure";
+      owner: string;
+      project: string;
+      repo: string;
+      branch?: string;
+      force?: string | boolean;
+      composePath?: string;
+      env?: Record<string, string>;
+    }
+  | {
       source: "local";
       path: string;
       composePath?: string;

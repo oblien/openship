@@ -14,6 +14,7 @@
     "tabs": {
       "folder": "مجلد",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "رابط Git",
       "template": "قالب"
     }
@@ -163,9 +164,24 @@
     "manageGithubSettings": "إدارة GitHub من الإعدادات"
   },
   "urlImport": {
-    "invalidUrl": "أدخل رابط مستودع GitHub صالحًا",
+    "invalidUrl": "أدخل رابط مستودع GitHub أو Azure DevOps صالحًا",
     "title": "استيراد من رابط Git",
-    "description": "الصق رابط مستودع عام لاستيراده. لا حاجة إلى اتصال GitHub.",
+    "description": "الصق رابط GitHub أو Azure DevOps. المستودعات العامة على GitHub لا تحتاج اتصالاً؛ Azure DevOps يحتاج حسابًا أو PAT في الإعدادات.",
+    "placeholder": "https://github.com/… أو https://dev.azure.com/org/project/_git/repo",
     "importButton": "استيراد المستودع"
+  },
+  "azure": {
+    "connectTitle": "ربط Azure DevOps",
+    "connectDesc": "سجّل الدخول باستخدام Microsoft أو الصق PAT على مستوى النسخة في الإعدادات لتصفح مستودعات Azure DevOps.",
+    "connectButton": "تسجيل الدخول باستخدام Microsoft",
+    "connectInSettings": "فتح إعدادات Git",
+    "searchPlaceholder": "البحث في المستودعات…",
+    "noRepos": "لا توجد مستودعات",
+    "noReposDesc": "لا تحتوي هذه المؤسسة على مستودعات Git يمكن لـ Openship رؤيتها.",
+    "noMatching": "لا توجد مستودعات مطابقة",
+    "noMatchingDesc": "جرّب بحثًا آخر.",
+    "emptyOrgs": "لا توجد مؤسسات Azure DevOps",
+    "emptyOrgsDesc": "الحساب المتصل بلا مؤسسات، أو أن PAT يفتقد صلاحية Code (Read).",
+    "loading": "جارٍ تحميل المستودعات…"
   }
 }

@@ -26,6 +26,7 @@ import {
   renderReleaseImage,
   validateReleaseRepository,
   validateReleaseVersionUrl,
+  buildGitUrl,
   isBehind,
   GITHUB_REPO,
   normalizeRollbackWindow,
@@ -63,6 +64,7 @@ import {
 import { projectMatchesChanges } from "../github/webhook-changed-files";
 import { getInstallationIdByOrg, resolveInstallUrl } from "../github/github.auth";
 import { hasActiveGitHubSource, resolveGitHubWebBaseUrl } from "../github/github-source.service";
+import * as azureService from "../azure/azure.service";
 import { domainWebhookUrl } from "../../lib/public-url";
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
 import {
@@ -130,6 +132,7 @@ const PROJECT_UPDATE_KEYS = Object.keys(UpdateProjectBody.properties);
 const GIT_SOURCE_IDENTITY_KEYS = new Set([
   "gitProvider",
   "gitOwner",
+  "gitProject",
   "gitRepo",
   "installationId",
   "releaseSource",
@@ -384,8 +387,18 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
+function projectGitUrl(
+  owner?: string | null,
+  repo?: string | null,
+  provider?: string | null,
+  gitProject?: string | null,
+) {
+  if (!owner || !repo) return undefined;
+  if (provider === "azure") {
+    if (!gitProject) return undefined;
+    return buildGitUrl("azure", owner, repo, gitProject);
+  }
+  return buildGitUrl("github", owner, repo);
 }
 
 /** Validate and normalize one complete release source before it can become a
@@ -557,13 +570,16 @@ function resolveProjectSource(data: TCreateProjectBody) {
     !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
+  const gitProject = isRelease || safeLocalPath ? undefined : data.gitProject;
+  const gitProvider = isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github");
 
   return {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProject,
+    gitProvider,
+    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider, gitProject),
     releaseSource,
   };
 }
@@ -699,6 +715,7 @@ function buildProductionProjectInput(
     localPath: source.safeLocalPath,
     gitProvider: source.gitProvider,
     gitOwner: source.gitOwner,
+    gitProject: source.gitProject,
     gitRepo: source.gitRepo,
     gitBranch: data.gitBranch ?? "main",
     gitUrl: source.gitUrl,
@@ -1074,13 +1091,24 @@ export type LinkProjectRepoOutcome =
 export async function linkProjectRepo(
   ctx: RequestContext,
   projectId: string,
-  input: { owner: string; repo: string; branch?: string; installationId?: number },
+  input: {
+    provider?: "github" | "azure";
+    owner: string;
+    repo: string;
+    project?: string;
+    branch?: string;
+    installationId?: number;
+  },
 ): Promise<LinkProjectRepoOutcome> {
   const { organizationId } = ctx;
+  const provider = input.provider ?? "github";
   const owner = input.owner?.trim();
   const repo = input.repo?.trim();
+  const adoProject = input.project?.trim();
   if (!owner || !repo)
     return { ok: false, code: "invalid", message: "owner and repo are required" };
+  if (provider === "azure" && !adoProject)
+    return { ok: false, code: "invalid", message: "Azure DevOps project is required" };
 
   const result = await withLiveProjectRuntimeMutation(
     projectId,
@@ -1091,13 +1119,20 @@ export async function linkProjectRepo(
         return { ok: false, code: "not_found" } as const;
       }
 
-      const sourceWebBaseUrl = await resolveGitHubWebBaseUrl(organizationId, owner).catch(
-        () => null,
-      );
-      const gitUrl = sourceWebBaseUrl
-        ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
-        : projectGitUrl(owner, repo);
-      const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
+      const isAzure = provider === "azure";
+      const sourceWebBaseUrl = isAzure
+        ? null
+        : await resolveGitHubWebBaseUrl(organizationId, owner).catch(() => null);
+      const gitUrl = isAzure
+        ? buildGitUrl("azure", owner, repo, adoProject)
+        : sourceWebBaseUrl
+          ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
+          : projectGitUrl(owner, repo);
+      const defaultBranch = isAzure
+        ? (input.branch?.trim() ||
+            (await azureService.getRepository(ctx, owner, adoProject!, repo)).defaultBranch ||
+            "main")
+        : await resolveDefaultBranch(ctx, owner, repo, input.branch);
       // A project_app is one source identity even if an old/partial write left its
       // environments inconsistent. Linking Git converges the whole group, so clear
       // release-only class overrides when ANY sibling still carries that source.
@@ -1108,9 +1143,10 @@ export async function linkProjectRepo(
         : isReleaseProvider(project!.gitProvider);
 
       const gitFields: Record<string, unknown> = {
-        gitProvider: "github",
+        gitProvider: provider,
         gitOwner: owner,
         gitRepo: repo,
+        ...(isAzure ? { gitProject: adoProject } : {}),
         gitBranch: defaultBranch,
         gitUrl,
         // Source transition: a Git repo and a release image are mutually exclusive.
@@ -1131,9 +1167,16 @@ export async function linkProjectRepo(
         autoDeploy: false,
       };
 
-      const strategy = await resolveWebhookStrategy(project!, organizationId);
+      // Azure DevOps auto-deploy is wired through setAutoDeploy (Service Hook per
+      // project) — the GitHub webhook-strategy machinery does not apply here.
+      const strategy = isAzure
+        ? "azure"
+        : await resolveWebhookStrategy(project!, organizationId);
 
-      if (strategy === "app") {
+      if (isAzure) {
+        gitFields.webhookId = null;
+        gitFields.webhookExternalId = null;
+      } else if (strategy === "app") {
         const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
         if (!resolvedInstId) {
           const install = await resolveInstallUrl(ctx);
@@ -1160,9 +1203,10 @@ export async function linkProjectRepo(
 
       if (project!.groupId) {
         const sharedGitFields = {
-          gitProvider: "github",
+          gitProvider: provider,
           gitOwner: owner,
           gitRepo: repo,
+          ...(isAzure ? { gitProject: adoProject } : {}),
           gitUrl,
           installationId:
             typeof gitFields.installationId === "number"
@@ -1178,7 +1222,7 @@ export async function linkProjectRepo(
           autoDeploy: Boolean(gitFields.autoDeploy),
         };
         await repos.project.updateSourceByApp(project!.groupId, sharedGitFields, {
-          gitProvider: "github",
+          gitProvider: provider,
           gitOwner: owner,
           gitRepo: repo,
           gitUrl,

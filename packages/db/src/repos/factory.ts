@@ -14,6 +14,7 @@ export {
   type CreateInstallStateInput,
 } from "./github-install-state.repo";
 export { createGitSourceRepo, type GitSource, type NewGitSource } from "./git-source.repo";
+export { type AzureConnection, type NewAzureConnection };
 export {
   createPersonalAccessTokenRepo,
   type PersonalAccessToken,
@@ -277,6 +278,7 @@ import { createAccountRepo } from "./account.repo";
 import { createGitInstallationRepo } from "./git-installation.repo";
 import { createGithubInstallStateRepo } from "./github-install-state.repo";
 import { createGitSourceRepo } from "./git-source.repo";
+import { createAzureConnectionRepo, type AzureConnection, type NewAzureConnection } from "./azure-connection.repo";
 import { createProjectGroupRepo } from "./project-group.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
@@ -363,6 +365,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   gitInstallation: createGitInstallationRepo(db),
   githubInstallState: createGithubInstallStateRepo(db),
   gitSource: createGitSourceRepo(db),
+  azureConnection: createAzureConnectionRepo(db),
   projectGroup: createProjectGroupRepo(db),
   project: createProjectRepo(db, encryption),
   deployment: createDeploymentRepo(db, encryption),

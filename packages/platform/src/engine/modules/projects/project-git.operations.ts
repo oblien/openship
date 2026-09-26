@@ -9,6 +9,10 @@ import { OperationError } from "@repo/contracts";
 import type { ExecutionContext as RequestContext } from "../../../context";
 import type { RuntimeAdapter } from "@repo/adapters";
 import { presentProject } from "../../../projects";
+import {
+  enableProjectHook,
+  disableProjectHook,
+} from "../azure/azure.service";
 import { failOperation } from "../../lib/operation-errors";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import * as projectService from "./project.service";
@@ -352,6 +356,45 @@ export function createProjectGitOperations(
         const repo = project.gitRepo;
         if (!owner || !repo) {
           return failOperation({ success: false, error: "No repository linked" }, 400);
+        }
+        // Azure DevOps projects manage their own Service Hook subscription —
+        // the GitHub webhook-strategy machinery does not apply.
+        if ((project.gitProvider ?? "").toLowerCase() === "azure") {
+          const adoProject = project.gitProject;
+          if (!adoProject) {
+            return failOperation(
+              { success: false, error: "Project has no Azure DevOps project set" },
+              400,
+            );
+          }
+          try {
+            if (enabled) {
+              await enableProjectHook(ctx, id);
+            } else {
+              await disableProjectHook(ctx, id);
+            }
+          } catch (err) {
+            if (err instanceof OperationError) throw err;
+            const msg = safeErrorMessage(err);
+            console.error(`[setAutoDeploy] azure enabled=${enabled}:`, msg);
+            return failOperation({ success: false, error: msg }, 502);
+          }
+          const updated = await repos.project.findById(id);
+          recordAudit(ctx, {
+            eventType: "project.updated",
+            resourceType: "project",
+            resourceId: id,
+            after: {
+              action: "autoDeploy.set",
+              autoDeploy: updated?.autoDeploy ?? false,
+              webhookStrategy: "azure-service-hook",
+            },
+          });
+          return {
+            success: true,
+            auto_deploy: updated?.autoDeploy ?? false,
+            webhook_strategy: "azure-service-hook",
+          };
         }
         const strategy = await resolveWebhookStrategy(project, organizationId);
         // In "none" mode, auto-deploy can't work - suggest options

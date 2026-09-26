@@ -4,7 +4,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { encodeRepoSlug } from "@/utils/repoSlug";
+import { Link2, ArrowRight } from "lucide-react";
+import { encodeProviderRepoSlug, extractOwnerRepoFromUrl } from "@/utils/repoSlug";
 import { useI18n } from "@/components/i18n-provider";
 
 export function UrlImport() {
@@ -17,16 +18,18 @@ export function UrlImport() {
     e.preventDefault();
     setError("");
 
-    const match = url.match(
-      /(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/.]+)/
-    );
-    if (!match) {
+    const parsed = extractOwnerRepoFromUrl(url);
+    if (!parsed) {
       setError(t.library.urlImport.invalidUrl);
       return;
     }
 
-    const [, owner, repo] = match;
-    const slug = encodeRepoSlug(owner!, repo!);
+    const slug = encodeProviderRepoSlug(
+      parsed.provider,
+      parsed.owner,
+      parsed.repo,
+      parsed.project,
+    );
     router.push(`/deploy/${slug}`);
   };
 
@@ -50,7 +53,7 @@ export function UrlImport() {
                 type="url"
                 value={url}
                 onChange={(e) => { setUrl(e.target.value); setError(""); }}
-                placeholder="https://github.com/username/repository"
+                placeholder={t.library.urlImport.placeholder}
                 className={`w-full px-4 py-3 bg-background border rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 transition-all ${
                   error
                     ? "border-danger-border focus:ring-danger-border"

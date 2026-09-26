@@ -15,7 +15,7 @@ import { getWebhookProvider } from "@repo/platform/engine/modules/webhooks/webho
 import type { WebhookProviderName } from "@repo/platform/engine/modules/webhooks/webhook.types";
 
 /** Allowed provider names - rejects anything else at the route level. */
-const ALLOWED_PROVIDERS = new Set<string>(["github"]);
+const ALLOWED_PROVIDERS = new Set<string>(["github", "azure"]);
 
 /**
  * Generic webhook handler - looks up the provider by route param

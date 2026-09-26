@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "Klasör",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "Git URL'si",
       "template": "Şablon"
     }
@@ -154,9 +155,24 @@
     "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin"
   },
   "urlImport": {
-    "invalidUrl": "Geçerli bir GitHub depo URL'si girin",
+    "invalidUrl": "Geçerli bir GitHub veya Azure DevOps depo URL'si girin",
     "title": "Git URL'sinden İçe Aktar",
-    "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. GitHub bağlantısı gerekmez.",
+    "description": "Bir GitHub veya Azure DevOps URL'si yapıştırın. Genel GitHub depoları bağlantı gerektirmez; Azure DevOps için Ayarlar'da hesap veya PAT gerekir.",
+    "placeholder": "https://github.com/… veya https://dev.azure.com/org/project/_git/repo",
     "importButton": "Depoyu İçe Aktar"
+  },
+  "azure": {
+    "connectTitle": "Azure DevOps'a bağlan",
+    "connectDesc": "Azure DevOps depolarını taramak için Microsoft ile oturum açın veya Ayarlar'a bir örnek PAT yapıştırın.",
+    "connectButton": "Microsoft ile oturum aç",
+    "connectInSettings": "Git ayarlarını aç",
+    "searchPlaceholder": "Depoları ara…",
+    "noRepos": "Depo yok",
+    "noReposDesc": "Bu kuruluşta Openship'in görebileceği Git deposu yok.",
+    "noMatching": "Eşleşen depo yok",
+    "noMatchingDesc": "Farklı bir arama deneyin.",
+    "emptyOrgs": "Azure DevOps kuruluşu yok",
+    "emptyOrgsDesc": "Bağlı hesabın kuruluşu yok veya PAT'te Code (Read) yok.",
+    "loading": "Depolar yükleniyor…"
   }
 }

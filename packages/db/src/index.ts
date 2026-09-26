@@ -205,6 +205,8 @@ export {
   type NewServiceIncident,
   type ResourceUsageRow,
   type NewResourceUsage,
+  type AzureConnection,
+  type NewAzureConnection,
 } from "./repos";
 
 // ─── Drizzle operators (re-exported for convenience) ─────────────────────────

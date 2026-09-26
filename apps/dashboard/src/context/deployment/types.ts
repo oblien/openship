@@ -376,6 +376,10 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  /** Git host. Absent / "github" is GitHub. "azure" requires gitProject. */
+  gitProvider?: "github" | "azure";
+  /** Azure DevOps project (the middle segment of org/project/repo). */
+  gitProject?: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
   /**
@@ -502,6 +506,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   projectName: "",
   repo: "",
   owner: "",
+  gitProvider: undefined,
+  gitProject: undefined,
   localPath: undefined,
   composePath: undefined,
   uploadSessionId: undefined,
@@ -939,6 +945,8 @@ export interface DeploymentContextType {
       branch?: string;
       projectId?: string;
       composePath?: string;
+      provider?: "github" | "azure";
+      gitProject?: string;
       env?: Record<string, string>;
       preserveEnvState?: boolean;
     },

@@ -181,7 +181,7 @@ export interface StartMigrationInput {
   /** Optional project-level git repo to link to the migrated project (records
    *  source + binds push auto-deploy). The running image is still reused — no
    *  rebuild during migrate. Absent = no repo linked (today's behavior). */
-  gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+  gitSource?: { provider: "github" | "azure"; owner: string; repo: string; project?: string; branch?: string };
   /** serviceName → build subpath inside the linked repo. Metadata only. */
   serviceSubpaths?: Record<string, string>;
   /** DISCOVERED service name → the repo compose service name to adopt the row AS
@@ -731,6 +731,9 @@ class MigrationOrchestratorImpl {
     const repoServices = await (async () => {
       const gs = input.gitSource;
       if (!gs?.owner || !gs?.repo) return undefined;
+      // parseRepoCompose is GitHub-specific; for Azure sources skip it (the
+      // caller degrades to image-only adoption, which is already best-effort).
+      if (gs.provider === "azure") return undefined;
       const parsed = await parseRepoCompose(ctx, gs.owner, gs.repo, gs.branch).catch(() => []);
       return parsed.length ? new Map(parsed.map((s) => [s.name, s])) : undefined;
     })();
