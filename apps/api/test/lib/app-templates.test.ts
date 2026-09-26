@@ -41,4 +41,38 @@ describe("app catalog", () => {
     expect(svc.volumes).toContain("n8n_data:/home/node/.n8n");
     expect(n8n.configFields?.some((f) => f.key === "N8N_ENCRYPTION_KEY" && f.generate === "secret")).toBe(true);
   });
+
+  it("adds Kan.bn with its migration job, Postgres database, and web app", () => {
+    const kanbn = getAppTemplate("kanbn")!;
+    expect(kanbn.repository).toBe("https://github.com/kanbn/kan");
+    expect(kanbn.endpoints).toEqual([
+      { service: "web", port: 3000, label: "Kan.bn", kind: "http" },
+    ]);
+
+    const postgres = kanbn.services!.find((s) => s.name === "postgres")!;
+    expect(postgres.image).toBe("postgres:15");
+    expect(postgres.volumes).toContain("kan_postgres_data:/var/lib/postgresql/data");
+    expect(postgres.secretEnv).toContain("POSTGRES_PASSWORD");
+    expect(postgres.healthcheck?.test).toEqual(["CMD-SHELL", "pg_isready -U kan -d kan_db"]);
+
+    const migrate = kanbn.services!.find((s) => s.name === "migrate")!;
+    expect(migrate.image).toBe("ghcr.io/kanbn/kan-migrate:latest");
+    expect(migrate.dependsOn).toEqual(["postgres"]);
+
+    const web = kanbn.services!.find((s) => s.name === "web")!;
+    expect(web.image).toBe("ghcr.io/kanbn/kan:latest");
+    expect(web.dependsOn).toEqual(["migrate"]);
+    expect(web.exposedPort).toBe(3000);
+    expect(web.environment).toMatchObject({
+      NEXT_PUBLIC_BASE_URL: "{{publicUrl:web}}",
+      NEXT_PUBLIC_ALLOW_CREDENTIALS: "true",
+    });
+    expect(web.secretEnv).toEqual(["POSTGRES_URL", "BETTER_AUTH_SECRET"]);
+    expect(
+      kanbn.configFields?.some((f) => f.key === "POSTGRES_PASSWORD" && f.generate === "secret"),
+    ).toBe(true);
+    expect(
+      kanbn.configFields?.some((f) => f.key === "BETTER_AUTH_SECRET" && f.generate === "secret"),
+    ).toBe(true);
+  });
 });
