@@ -133,6 +133,12 @@ beforeEach(() => {
 });
 
 describe("stored `{{publicUrl:…}}` tokens in an env value", () => {
+  it("does not turn a wildcard route into a literal application URL", async () => {
+    listDomains.mockResolvedValue([domainRow({ hostname: "*.example.com", serviceId: "svc-backend", targetPort: 3210 })]);
+    const { outputs } = await getAppConnectionView(ctx, "proj1");
+    expect(valueOf(outputs, "url")).toBe("http://203.0.113.5:3210");
+    expect(outputs.some((output) => output.value.includes("https://*."))).toBe(false);
+  });
   it("resolves a routed port to its persisted hostname and a port-only sibling to its reachable host port", async () => {
     listDomains.mockResolvedValue([domainRow({ serviceId: "svc-backend", targetPort: 3210 })]);
 

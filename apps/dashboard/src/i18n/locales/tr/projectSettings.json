@@ -921,8 +921,8 @@
       "externalIngress": "Harici trafik girişi ve TLS",
       "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
       "dnsChallenge": "DNS-01 doğrulamasını kullan",
-      "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
-      "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
+      "dnsChallengeDesc": "Bir DNS sağlayıcısı veya geçici TXT kaydı ile doğrulayın. Port 80 kullanılamadığında yararlıdır.",
+      "dnsChallengeWildcardDesc": "Joker alan adı için HTTPS kurulumunda gereklidir. Bağlı bir DNS sağlayıcısı kullanın veya HTTPS kurulumu sırasında geçici bir TXT kaydı ekleyin.",
       "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
       "adding": "Ekleniyor...",
       "submit": "Alan adı ekle"
@@ -1087,7 +1087,45 @@
         "removing": "Bu alan adı kaldırılıyor. Planlanmış doğrulama yok.",
         "manual_certificate": "Bu alan adı yüklenmiş bir sertifika kullanıyor. Geçerli bir yenisini yükleyip tekrar kontrol edin. Openship bunu otomatik yenilemez.",
         "managed_certificate": "TLS, harici vekil sunucunuz veya Openship Cloud tarafından yönetiliyor. Sağlayıcının yapılandırmasını kontrol edin.",
-        "route_missing": "Yapılandırılmış bu rota henüz uygulanmadı. Uygulamak için yönlendirmeyi yeniden deneyin. Otomatik yönlendirme denemesi planlanmamış."
+        "route_missing": "Yapılandırılmış bu rota henüz uygulanmadı. Uygulamak için yönlendirmeyi yeniden deneyin. Otomatik yönlendirme denemesi planlanmamış.",
+        "manual_dns": "Bu sertifika manuel TXT doğrulaması kullanıyor. Yeni bir TXT kaydını onaylamak için HTTPS kurulumunu açın veya otomatik yenileme için bağlı bir DNS sağlayıcısı seçin."
+      }
+    },
+    "wildcard": {
+      "title": "DNS doğrulamalı HTTPS",
+      "scope": "Joker alan adı, tek bir alt alan adı düzeyini kapsar. Ana alan adının da bu uygulamayı sunmasını istiyorsanız onu ayrı olarak ekleyin.",
+      "notice": "Joker alan adı için HTTPS, DNS doğrulaması gerektirir. Kaydettikten sonra bir DNS sağlayıcısı bağlayın veya HTTPS kurulumundaki TXT kaydını ekleyin.",
+      "automatic": "Otomatik sağlayıcı",
+      "manual": "Manuel TXT",
+      "automaticHint": "Sertifika doğrulama kayıtları oluşturmak ve HTTPS'i otomatik yenilemek için Ayarlar → DNS bölümünden Cloudflare'i bağlayın.",
+      "manualHint": "DNS sağlayıcınızda geçici bir TXT kaydı ekleyin. Her yenileme yeni bir TXT kaydı gerektirir; Openship yenileme zamanını gösterecektir.",
+      "routing": "1. Alan adını bu sunucuya yönlendirin",
+      "certificate": "2. HTTPS'i etkinleştirin",
+      "startAutomatic": "HTTPS'i otomatik etkinleştir",
+      "startManual": "TXT kaydını al",
+      "renew": "Sertifikayı yenile",
+      "check": "TXT'yi kontrol et ve HTTPS'i etkinleştir",
+      "cancel": "Doğrulamayı iptal et",
+      "refresh": "Durumu yenile",
+      "close": "Kurulumu kapat",
+      "loading": "Sertifika kurulumu yükleniyor",
+      "loadFailed": "Sertifika kurulumu yüklenemedi. Güncel durumu görmek için yeniden deneyin.",
+      "recordsFailed": "Yönlendirme DNS kayıtları yüklenemedi. Kaydedilmiş sertifika doğrulamanız hâlâ kullanılabilir.",
+      "actionFailed": "Sertifika kurulumu güncellenemedi.",
+      "expires": "Bu doğrulamayı {date} tarihine kadar tamamlayın.",
+      "txtHint": "Bu TXT değerini aynen ekleyin. Aynı addaki diğer TXT değerlerini koruyun. Sağlayıcınız bölge adını ekliyorsa yalnızca göreli kısmı girin.",
+      "cleanup": "Bu denemeye ait TXT değerini kaldırabilirsiniz. Diğer tüm TXT kayıtlarını koruyun.",
+      "logs": "Sertifika günlükleri",
+      "states": {
+        "preparing": "Sertifika doğrulaması hazırlanıyor…",
+        "waiting": "TXT kaydınız bekleniyor",
+        "checking": "DNS ve sertifika sahipliği kontrol ediliyor…",
+        "installing": "HTTPS etkinleştiriliyor…",
+        "cancelling": "Doğrulama iptal ediliyor…",
+        "completed": "HTTPS hazır",
+        "failed": "Sertifika kurulumu müdahale gerektiriyor",
+        "cancelled": "Doğrulama iptal edildi",
+        "expired": "TXT doğrulamasının süresi doldu"
       }
     }
   },

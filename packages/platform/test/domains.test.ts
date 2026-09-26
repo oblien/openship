@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@repo/contracts";
 import { createAuthorization, createDomainOperations, createDnsOperations, type DomainDependencies, type ExecutionContext } from "../src";
 import { alice, authorizationFixture } from "./fixtures";
-import { domainFixture, dnsCredentialFixture } from "../../contracts/test/fixtures";
+import { domainFixture, domainDnsChallengeFixture, dnsCredentialFixture } from "../../contracts/test/fixtures";
 
 let state: ReturnType<typeof authorizationFixture>;
 let ctx: ExecutionContext;
 let domains: ReturnType<typeof createDomainOperations>;
-const get = vi.fn(), create = vi.fn(), verifyPending = vi.fn(), unsubscribe = vi.fn();
+const get = vi.fn(), create = vi.fn(), verifyPending = vi.fn(), unsubscribe = vi.fn(), challenge = vi.fn();
 let write: (event: string, data: string) => boolean;
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -21,9 +21,10 @@ beforeEach(async () => {
   const authorization = createAuthorization(state);
   ctx = await authorization.resolveScope(alice, "org-a");
   get.mockResolvedValue(domainFixture());
+  challenge.mockResolvedValue(domainDnsChallengeFixture());
   create.mockResolvedValue({ domain: domainFixture(), records: { mode: "external", records: [] } });
   domains = createDomainOperations(authorization, {
-    collection: { create }, resources: { get }, scoped: { verifyPending },
+    collection: { create }, resources: { get, dnsChallenge: challenge, startDnsChallenge: challenge, checkDnsChallenge: challenge, cancelDnsChallenge: challenge }, scoped: { verifyPending },
     subscribe: () => (send) => {
       write = send;
       send("session", JSON.stringify({ type: "session" }));
@@ -80,6 +81,32 @@ describe("domain operation boundaries", () => {
     abort.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("requires project write access for the entire TXT lifecycle and scopes every read", async () => {
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    expect((await domains.dnsChallenge(ctx, "domain-a")).data).toEqual(domainDnsChallengeFixture());
+    await expect(domains.dnsChallenge(ctx, "domain-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    for (const operation of [
+      () => domains.startDnsChallenge(ctx, "domain-a", { mode: "manual" }),
+      () => domains.checkDnsChallenge(ctx, "domain-a", { attemptId: "dns-attempt" }),
+      () => domains.cancelDnsChallenge(ctx, "domain-a", { attemptId: "dns-attempt" }),
+    ]) await expect(operation()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(challenge).toHaveBeenCalledOnce();
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["write"] });
+    await domains.startDnsChallenge(ctx, "domain-a", { mode: "manual" });
+    await domains.checkDnsChallenge(ctx, "domain-a", { attemptId: "dns-attempt" });
+    await domains.cancelDnsChallenge(ctx, "domain-a", { attemptId: "dns-attempt" });
+    expect(challenge).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects private order fields and caller-supplied account material", async () => {
+    await expect(domains.startDnsChallenge(ctx, "domain-a", { mode: "manual", accountKey: "injected" } as never)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await expect(domains.checkDnsChallenge(ctx, "domain-a", { attemptId: "" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(challenge).not.toHaveBeenCalled();
+    challenge.mockResolvedValue({ ...domainDnsChallengeFixture(), orderEnc: "must-stay-private" });
+    await expect(domains.dnsChallenge(ctx, "domain-a")).rejects.toMatchObject({ code: "INVALID_OPERATION_RESPONSE" });
   });
 });
 

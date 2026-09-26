@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Domain } from "@repo/db";
+import type { SslProvider } from "@repo/adapters";
 
 const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
   recordSslFailure: vi.fn(),
+  markVerifiedActive: vi.fn(),
   disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string, _opts?: unknown) => ({
     domain,
@@ -45,6 +48,7 @@ vi.mock("@repo/db", () => ({
       findByHostname: vi.fn(async (hostname: string) => h.domains.get(hostname) ?? null),
       updateSsl: h.updateSsl,
       recordSslFailure: h.recordSslFailure,
+      markVerifiedActive: h.markVerifiedActive,
     },
     project: {
       findById: vi.fn(async (id: string) => ({
@@ -89,6 +93,7 @@ import {
   provisionDomainCertForVerify,
   createDnsHookScripts,
 } from "@repo/platform/engine/lib/domain-ssl";
+import { createTrackedSslProvider } from "@repo/platform/engine/lib/routing-domains";
 
 function domain(hostname: string, extra: Record<string, unknown> = {}) {
   h.domains.set(hostname, {
@@ -109,6 +114,7 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     h.domains.clear();
     h.updateSsl.mockClear();
     h.recordSslFailure.mockClear();
+    h.markVerifiedActive.mockClear();
     h.disposePlatform.mockClear();
     h.provisionCert.mockClear();
     h.renewCert.mockClear();
@@ -182,6 +188,21 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     expect(calledOpts.dnsAuthHookScript).toBeDefined();
   });
 
+  it("does not issue or renew a manual TXT certificate through the connected provider", async () => {
+    domain("*.example.com", { sslChallenge: "dns-01", sslDnsMode: "manual" });
+    await expect(manageDomainSsl("*.example.com", { action: "provision" })).rejects.toThrow(/manual TXT/);
+    await expect(manageDomainSsl("*.example.com", { action: "renew" })).rejects.toThrow(/manual TXT/);
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.renewCert).not.toHaveBeenCalled();
+  });
+
+  it("reuses an existing manual TXT certificate without touching its provider", async () => {
+    domain("*.example.com", { sslChallenge: "dns-01", sslDnsMode: "manual" });
+    h.verifyCert.mockResolvedValue({ domain: "*.example.com", expiresAt: "2030-01-01T00:00:00.000Z", issuer: "Let's Encrypt", verified: true });
+    expect(await manageDomainSsl("*.example.com", { action: "provision" })).toMatchObject({ verified: true });
+    expect(h.provisionCert).not.toHaveBeenCalled();
+  });
+
   it("provisionDomainCertForVerify generates DNS hooks and passes dns-01 for unverified wildcard domain", async () => {
     domain("*.example.com", { verified: false, sslChallenge: "dns-01" });
 
@@ -202,12 +223,12 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     domain("*.example.com", { sslChallenge: "dns-01" });
 
     await expect(manageDomainSsl("*.example.com", { action: "provision" })).rejects.toThrow(
-      /requires a connected DNS provider.*Settings → DNS/,
+      /connected DNS provider.*Settings → DNS.*Manual TXT/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(
       "dom_*.example.com",
-      expect.stringMatching(/requires a connected DNS provider/),
+      expect.stringMatching(/connected DNS provider.*Manual TXT/),
     );
   });
 
@@ -278,6 +299,58 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     expect(calledOpts.challenge).toBe("dns-01");
     expect(calledOpts.dnsAuthHookScript).toContain("cloudflare.com/client/v4");
     expect(calledOpts.dnsCleanupHookScript).toContain("DELETE");
+  });
+
+  it("issues a first wildcard deployment on its selected server with the shared DNS hooks", async () => {
+    const host = "*.example.com";
+    domain(host, { verified: false, sslChallenge: "dns-01" });
+    const selected: SslProvider = {
+      provisionCert: vi.fn(async () => ({ domain: host, verified: true, expiresAt: "2030-01-01T00:00:00.000Z", issuer: "Let's Encrypt" })),
+      verifyCert: vi.fn(async () => ({ domain: host, verified: false, expiresAt: "", issuer: "", reason: "missing" })),
+      renewCert: vi.fn(), installCert: vi.fn(),
+    };
+    const rows = new Map([[host, h.domains.get(host) as unknown as Domain]]);
+    const tracked = createTrackedSslProvider(selected, rows, undefined, "new-server");
+
+    expect(await tracked.provisionCert(host)).toMatchObject({ verified: true });
+    expect(selected.provisionCert).toHaveBeenCalledExactlyOnceWith(host, expect.objectContaining({
+      challenge: "dns-01", dnsAuthHookScript: expect.stringContaining("zone_123"),
+      dnsCleanupHookScript: expect.stringContaining("DELETE"),
+    }));
+    expect(h.provisionCert).not.toHaveBeenCalled(); // The previous serving target is never used.
+    expect(h.markVerifiedActive).toHaveBeenCalledWith(`dom_${host}`, expect.objectContaining({ sslStatus: "active" }));
+  });
+
+  it.each([false, true])("keeps manual DNS ownership during deployment (certificate present: %s)", async (present) => {
+    const host = "*.example.com";
+    domain(host, { sslChallenge: "dns-01", sslDnsMode: "manual" });
+    const selected: SslProvider = {
+      provisionCert: vi.fn(), renewCert: vi.fn(), installCert: vi.fn(),
+      verifyCert: vi.fn(async () => ({ domain: host, verified: present, expiresAt: present ? "2030-01-01T00:00:00.000Z" : "", issuer: "Let's Encrypt", reason: present ? undefined : "missing" })),
+    };
+    const rows = new Map([[host, h.domains.get(host) as unknown as Domain]]);
+    const result = await createTrackedSslProvider(selected, rows).provisionCert(host);
+    expect(result.verified).toBe(present);
+    expect(selected.provisionCert).not.toHaveBeenCalled();
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    if (present) expect(h.recordSslFailure).not.toHaveBeenCalled();
+    else expect(h.recordSslFailure).toHaveBeenCalledWith(`dom_${host}`, expect.stringContaining("manual TXT"), true);
+  });
+
+  it("does not report deployment HTTPS ready when activation fails with a valid certificate on disk", async () => {
+    const host = "*.example.com";
+    domain(host, { sslChallenge: "dns-01", sslDnsMode: "manual" });
+    const selected: SslProvider = {
+      provisionCert: vi.fn(), renewCert: vi.fn(), installCert: vi.fn(),
+      verifyCert: vi.fn(async () => ({ domain: host, verified: true, expiresAt: "2030-01-01T00:00:00.000Z", issuer: "Let's Encrypt" })),
+      activateCert: vi.fn().mockRejectedValue(new Error("Edge reload failed")),
+    };
+    const rows = new Map([[host, h.domains.get(host) as unknown as Domain]]);
+    const result = await createTrackedSslProvider(selected, rows).provisionCert(host);
+    expect(result.verified).toBe(false);
+    expect(selected.provisionCert).not.toHaveBeenCalled();
+    expect(h.updateSsl).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith(`dom_${host}`, "Edge reload failed");
   });
 });
 

@@ -18,6 +18,7 @@ export const DomainDiagnosticsSchema = Type.Object({
     Type.Literal("removing"),
     Type.Literal("manual_certificate"),
     Type.Literal("managed_certificate"),
+    Type.Literal("manual_dns"),
   ]),
   retryAction: Type.Union([Type.Literal("verify"), Type.Literal("verify_ssl"), Type.Null()]),
   nextRetryAt: nullableString,
@@ -40,6 +41,7 @@ export const DomainSchema = Type.Object({
   status: Type.String(), verificationToken: nullableString, verified: Type.Boolean(),
   verifiedAt: nullableString, verifyAttempts: Type.Integer(), lastVerifyError: nullableString,
   lastCheckedAt: nullableString, sslStatus: Type.String(), sslChallenge: Type.String(),
+  sslDnsMode: Type.Optional(Type.Union([Type.Literal("automatic"), Type.Literal("manual")])),
   sslIssuer: nullableString, sslExpiresAt: nullableString,
   createdAt: Type.String(), updatedAt: Type.String(),
   diagnostics: Type.Optional(Type.Union([DomainDiagnosticsSchema, Type.Null()])),
@@ -93,6 +95,33 @@ const recordAction = Type.Union([
   Type.Literal("create"), Type.Literal("update"), Type.Literal("adopt"),
   Type.Literal("in-sync"), Type.Literal("conflict"),
 ]);
+
+/** Safe, durable progress for a DNS-01 certificate order. No key/CSR/account material. */
+export const DomainDnsChallengeSchema = Type.Object({
+  id: ResourceIdSchema,
+  domainId: ResourceIdSchema,
+  mode: Type.Union([Type.Literal("automatic"), Type.Literal("manual")]),
+  status: Type.Union([
+    Type.Literal("preparing"), Type.Literal("waiting"), Type.Literal("checking"),
+    Type.Literal("installing"), Type.Literal("cancelling"), Type.Literal("completed"),
+    Type.Literal("failed"), Type.Literal("cancelled"), Type.Literal("expired"),
+  ]),
+  record: Type.Union([Type.Object({ type: Type.Literal("TXT"), name: Type.String(), value: Type.String() }, { additionalProperties: false }), Type.Null()]),
+  expiresAt: Type.String(),
+  logs: Type.String(),
+  error: nullableString,
+  createdAt: Type.String(),
+  updatedAt: Type.String(),
+}, { additionalProperties: false });
+export type DomainDnsChallenge = Static<typeof DomainDnsChallengeSchema>;
+export const StartDomainDnsChallengeSchema = Type.Object({
+  mode: Type.Union([Type.Literal("automatic"), Type.Literal("manual")], { description: "Use the connected DNS provider, or prepare a TXT record for the operator to add manually. Manual certificates also need a fresh TXT confirmation at renewal." }),
+  force: Type.Optional(Type.Boolean({ description: "Request a new certificate even when one is still comfortably valid." })),
+}, { additionalProperties: false });
+export type StartDomainDnsChallenge = Static<typeof StartDomainDnsChallengeSchema>;
+export const DomainDnsChallengeAttemptSchema = Type.Object({
+  attemptId: ResourceIdSchema,
+}, { additionalProperties: false });
 export const DomainDnsPlanSchema = Type.Object({
   status: Type.Union([Type.Literal("matched"), Type.Literal("none"), Type.Literal("unavailable"), Type.Literal("unauthorized")]),
   provider: Type.Optional(Type.String()), zoneName: Type.Optional(Type.String()),
@@ -135,6 +164,10 @@ export const DomainResourceSchemas = {
   records: { action: "read", input: DomainDnsTargetSchema, optionalInput: true, output: DomainRecordsSchema },
   dnsPlan: { action: "read", input: DomainDnsTargetSchema, optionalInput: true, output: DomainDnsPlanSchema },
   dnsApply: { action: "write", input: DomainDnsTargetSchema, optionalInput: true, output: DomainDnsApplySchema },
+  dnsChallenge: { action: "read", output: Type.Union([DomainDnsChallengeSchema, Type.Null()]) },
+  startDnsChallenge: { action: "write", input: StartDomainDnsChallengeSchema, output: DomainDnsChallengeSchema },
+  checkDnsChallenge: { action: "write", input: DomainDnsChallengeAttemptSchema, output: DomainDnsChallengeSchema },
+  cancelDnsChallenge: { action: "write", input: DomainDnsChallengeAttemptSchema, output: DomainDnsChallengeSchema },
   setPrimary: { action: "write", output: DomainSchema },
   renewSsl: { action: "write", output: DomainSslSchema },
   verifySsl: { action: "write", output: DomainSslSchema },

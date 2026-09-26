@@ -36,9 +36,10 @@ curl -X POST "$OPENSHIP_URL/api/domains" \
 <TypeTable
   type={{
     projectId: { type: 'string', description: 'The project to attach the domain to.', required: true },
-    hostname: { type: 'string', description: 'The fully-qualified domain, e.g. app.example.com.', required: true },
-    isPrimary: { type: 'boolean', description: "Make this the project's primary domain.", default: 'false' },
-    externalIngress: { type: 'boolean', description: 'TLS is terminated upstream (Cloudflare Tunnel, a load balancer). Openship verifies ownership by DNS TXT only, does not require the domain to resolve to this box, and issues no certificate.', default: 'false' },
+    hostname: { type: 'string', description: 'A hostname such as app.example.com or *.example.com. Wildcards automatically use DNS-01.', required: true },
+    isPrimary: { type: 'boolean', description: "Make this the project's primary domain. Requires a concrete hostname, not a wildcard.", default: 'false' },
+    sslChallenge: { type: "'http-01' | 'dns-01'", description: 'Certificate challenge for a self-hosted target. Wildcards always use dns-01; other hostnames default to http-01.' },
+    externalIngress: { type: 'boolean', description: 'TLS is terminated upstream (Cloudflare Tunnel, a load balancer). Openship Cloud verifies ownership by DNS TXT; self-hosted instances accept the operator configuration. Openship issues no certificate.', default: 'false' },
     includeWww: { type: 'boolean', description: 'Also claim www.<hostname> as a SEPARATE domain — its own row, DNS record, verification and certificate, created as a 301 to the bare domain. The response carries its id in `www` (or the reason it could not be claimed in `wwwError`), and `records` includes its DNS record.', default: 'false' },
     redirectTo: { type: 'string', description: 'Answer a redirect to another domain of the SAME project instead of serving the app. Must be one of the project\'s own hostnames; self-targets and loops are refused. Self-hosted only.' },
     redirectStatus: { type: 'number', description: 'Redirect code used with redirectTo: 301, 302, 307 or 308.', default: '301' },
@@ -102,8 +103,40 @@ curl -X POST "$OPENSHIP_URL/api/domains/dom_123/verify" \
 </Tab>
 </Tabs>
 
-Once DNS is in place, verify it. Openship checks the routing record and the ownership TXT record, marks the
-domain active, and (unless it's external-ingress) provisions SSL in the background.
+Once DNS is in place, verify it. Openship Cloud checks its routing and ownership records. Self-hosted
+verification obtains or reuses the certificate on the deployment server. Domains with external ingress
+keep TLS at their upstream proxy.
+
+## Wildcard HTTPS and manual TXT
+
+Wildcard and DNS-01 domains on self-hosted targets use the same operations in the dashboard, SDK and MCP.
+Deploy and enable the project first. An external ingress or uploaded certificate keeps its existing TLS flow.
+
+```ts
+// "automatic" uses a connected DNS provider. "manual" generates a real ACME TXT.
+const attempt = await ship.domains.startDnsChallenge("dom_123", { mode: "manual" });
+const current = await ship.domains.dnsChallenge("dom_123");
+// Once current.status is "waiting", publish current.record at the DNS provider.
+// Then explicitly ask Openship to check it:
+await ship.domains.checkDnsChallenge("dom_123", { attemptId: attempt.id });
+```
+
+Start and check return **202** with `{ data: attempt }`; they do not hold the HTTP request open for
+certificate issuance. Read `GET /api/domains/:id/dns/challenge` until the result settles. It returns
+`{ data: null }` before any attempt. The safe attempt includes `id`, `domainId`, `mode`, `status`,
+`record`, `expiresAt`, `logs`, `error`, `createdAt` and `updatedAt`. It never includes private keys,
+account credentials or serialized ACME orders.
+
+`preparing`, `checking`, `installing` and `cancelling` represent running work. `waiting` needs the operator's
+TXT; stop polling until they act. `completed`, `failed`, `cancelled` and `expired` are settled results.
+A missing TXT or retryable validation/install error keeps the same order in `waiting` with its error.
+Repeated starts reuse an active attempt; check and cancel require its current `attemptId` and reject
+a stale ID with **409**. An installation that has already started cannot be cancelled.
+
+Manual renewal uses `startDnsChallenge(id, { mode: "manual", force: true })` and a fresh TXT value.
+`cancelDnsChallenge(id, { attemptId })` discards an unfinished manual attempt without removing existing TLS.
+Connected-provider mode renews automatically when the SSL job is enabled. See the
+[wildcard guide](/docs/guides/custom-domains#wildcard-domains) for DNS names, record cleanup and renewal steps.
 
 ## Errors
 
@@ -133,6 +166,10 @@ to get valid IDs.
 | Read DNS records required by a domain. | `domains.records(id, input?)` | `GET /api/domains/:id/records`<br />`domain:read` |
 | Preview DNS changes before applying them. | `domains.dnsPlan(id, input?)` | `GET /api/domains/:id/dns/plan`<br />`domain:read` |
 | Apply the authorized DNS plan. | `domains.dnsApply(id, input?)` | `POST /api/domains/:id/dns/apply`<br />`domain:write` |
+| Read the saved DNS certificate attempt, TXT record, deadline and logs. | `domains.dnsChallenge(id)` | `GET /api/domains/:id/dns/challenge`<br />`domain:read` |
+| Start automatic provider setup or a manual TXT challenge; reuse an active attempt. Self-hosted targets only. | `domains.startDnsChallenge(id, input)` | `POST /api/domains/:id/dns/challenge`<br />`domain:write` |
+| Check the saved attempt's TXT, complete ACME validation and install HTTPS on the serving host. | `domains.checkDnsChallenge(id, input)` | `POST /api/domains/:id/dns/challenge/check`<br />`domain:write` |
+| Cancel a manual DNS certificate attempt before installation starts; retain existing certificates. | `domains.cancelDnsChallenge(id, input)` | `POST /api/domains/:id/dns/challenge/cancel`<br />`domain:write` |
 | Select the project’s primary domain. | `domains.setPrimary(id)` | `POST /api/domains/:id/primary`<br />`domain:write` |
 | Request certificate renewal for a domain record. | `domains.renewSsl(id)` | `POST /api/domains/:id/renew`<br />`domain:write` |
 | Check the domain’s current certificate. | `domains.verifySsl(id)` | `POST /api/domains/:id/verify-ssl`<br />`domain:write` |

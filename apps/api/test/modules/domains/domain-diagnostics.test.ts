@@ -150,4 +150,19 @@ describe("domain details reflect the persisted check and actual schedule", () =>
       automaticRetry: "not_applicable",
     });
   });
+
+  it("offers manual TXT setup and renewal without inventing an automatic retry", () => {
+    const manual = domain({ hostname: "*.example.com", sslDnsMode: "manual" });
+    expect(domainDiagnostics(manual, project, schedule, true, now)).toMatchObject({
+      state: "waiting", reason: "manual_dns", retryAction: "verify", nextRetryAt: null, automaticRetry: "not_applicable",
+    });
+    const healthy = { ...manual, verified: true, sslStatus: "active", sslExpiresAt: new Date("2027-01-01T00:00:00Z") };
+    expect(domainDiagnostics(healthy, project, schedule, true, now)).toBeNull();
+    expect(domainDiagnostics({ ...healthy, sslExpiresAt: new Date("2026-09-25T00:00:00Z") }, project, schedule, true, now)).toMatchObject({
+      state: "waiting", reason: "manual_dns", nextRetryAt: null,
+    });
+    expect(domainDiagnostics({ ...healthy, sslExpiresAt: new Date("2026-09-22T00:00:00Z") }, project, schedule, true, now)).toMatchObject({
+      state: "failed", reason: "manual_dns", nextRetryAt: null,
+    });
+  });
 });

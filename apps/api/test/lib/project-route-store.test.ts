@@ -45,6 +45,25 @@ describe("syncProjectPublicRoutes", () => {
     }));
   });
 
+  it("keeps wildcard routes on DNS-01 and chooses a concrete primary without resetting manual renewal", async () => {
+    const wildcard = {
+      id: "wildcard", projectId: "proj_123", serviceId: null, hostname: "*.example.com",
+      targetPort: 3000, targetPath: null, domainType: "custom", isPrimary: true,
+      sslChallenge: "http-01", sslDnsMode: "manual", verified: true, status: "active",
+      redirectTo: null, redirectStatus: null,
+    } as any;
+    await syncProjectPublicRoutes({
+      projectId: "proj_123", currentDomains: [wildcard],
+      endpoints: [
+        { domainType: "custom", customDomain: "*.example.com", port: 3000 },
+        { domainType: "custom", customDomain: "app.example.com", port: 3000 },
+      ],
+    });
+    expect(domainRepo.update).toHaveBeenCalledWith("wildcard", { isPrimary: false, sslChallenge: "dns-01" });
+    expect(domainRepo.create).toHaveBeenCalledWith(expect.objectContaining({ hostname: "app.example.com", isPrimary: true }));
+    expect(domainRepo.update.mock.calls.some(([, patch]) => "sslDnsMode" in patch)).toBe(false);
+  });
+
   it("reuses an existing service-scoped hostname when switching to project-level routing", async () => {
     const hostname = `business-servio.${getRoutingBaseDomain()}`;
 

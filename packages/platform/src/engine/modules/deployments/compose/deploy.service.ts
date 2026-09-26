@@ -30,6 +30,7 @@ import {
   UNLIMITED_RESOURCES,
   DeployError,
   safeErrorMessage,
+  isWildcardHostname,
   withTimeout,
   type ComposeAdvanced,
   type ProxySettings,
@@ -392,7 +393,7 @@ function resolveServiceCustomDomain(service: Service): string | undefined {
 
 function resolveServicePublicUrl(project: Project, service: Service): string | undefined {
   const customDomain = resolveServiceCustomDomain(service);
-  if (customDomain) return `https://${customDomain}`;
+  if (customDomain) return isWildcardHostname(customDomain) ? undefined : `https://${customDomain}`;
 
   const publicSlug = resolveServicePublicSlug(project, service);
   return publicSlug ? `https://${publicSlug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}` : undefined;
@@ -3374,8 +3375,9 @@ async function deployComposeServicesUnlocked(
           }
         }
 
-        firstPublicUrl ??= proxyRoutes[0]
-          ? `https://${proxyRoutes[0].hostname}`
+        const openableRoute = proxyRoutes.find((route) => !isWildcardHostname(route.hostname));
+        firstPublicUrl ??= openableRoute
+          ? `https://${openableRoute.hostname}`
           : runtime.name === "cloud"
             ? resolveServicePublicUrl(project, svc)
             : undefined;

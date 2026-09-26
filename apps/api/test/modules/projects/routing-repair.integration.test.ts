@@ -289,8 +289,10 @@ it("repairs all three missing service domain records, reuses their real certific
         sslStatus: "active",
         sslExpiresAt: expect.any(Date),
       });
+      // The first repair applies routing, then confirms certificate activation.
+      // A healthy repeat only applies routing; it needs no second activation.
       expect(writes.mock.calls.filter(([config]) => config.domain === route.hostname)).toHaveLength(
-        attempt,
+        attempt + 1,
       );
       const config = [...h.files.entries()].find(
         ([path, data]) => path.endsWith(".conf") && data.includes(`server_name ${route.hostname};`),
@@ -584,16 +586,19 @@ it.each(["container-ip", "loopback-port"] as const)(
           verified: true,
           sslStatus: "active",
         });
-        expect(
-          writes.mock.calls.filter(([config]) => config.domain === route.hostname),
-        ).toHaveLength(1);
-        expect(
-          writes.mock.calls.find(([config]) => config.domain === route.hostname)?.[0].targetUrl,
-        ).toBe(
-          strategy === "loopback-port"
-            ? `http://127.0.0.1:${publishedPorts[routes.indexOf(route)]}`
-            : `http://${route.ip}:${route.port}`,
-        );
+        const routeWrites = writes.mock.calls
+          .filter(([config]) => config.domain === route.hostname)
+          .map(([config]) => config);
+        // Reusing the certificate confirms TLS activation after routing. Both
+        // writes must preserve the recovered deployment's target and strategy.
+        expect(routeWrites).toHaveLength(2);
+        for (const config of routeWrites) {
+          expect(config.targetUrl).toBe(
+            strategy === "loopback-port"
+              ? `http://127.0.0.1:${publishedPorts[routes.indexOf(route)]}`
+              : `http://${route.ip}:${route.port}`,
+          );
+        }
         expect((await nginx.verifyCert(route.hostname)).verified).toBe(true);
       }
       expect(await h.repos.orphanedResource.listByProject("deleted-project")).toEqual([]);

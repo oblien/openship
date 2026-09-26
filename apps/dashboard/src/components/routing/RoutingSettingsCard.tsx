@@ -449,6 +449,11 @@ export function RoutingSettingsCard({
                   "checking…" loading state was dropped: it flashed on every
                   keystroke and jittered the card height. DNS isn't required up
                   front (verified later at preflight / in domain settings). */}
+              {(saveMode === "explicit" ? draftCustomDomain : customDomain).trim().startsWith("*.") && (
+                <p className="text-sm leading-relaxed text-muted-foreground">{dnsMode === "selfhosted"
+                  ? t.projectSettings.domains.wildcard.notice
+                  : t.projectSettings.domains.wildcard.scope}</p>
+              )}
               {hasRecords && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">

@@ -70,6 +70,18 @@ export async function dnsPlan(c: Context) {
 export async function dnsApply(c: Context) {
   return c.json({ data: await operationData(c, operations().dnsApply(operationContext(c), param(c, "id"), target(c))) });
 }
+export async function dnsChallenge(c: Context) {
+  return c.json({ data: await operationData(c, operations().dnsChallenge(operationContext(c), param(c, "id"))) });
+}
+export async function startDnsChallenge(c: Context) {
+  return c.json({ data: await operationData(c, operations().startDnsChallenge(operationContext(c), param(c, "id"), await c.req.json())) }, 202);
+}
+export async function checkDnsChallenge(c: Context) {
+  return c.json({ data: await operationData(c, operations().checkDnsChallenge(operationContext(c), param(c, "id"), await c.req.json())) }, 202);
+}
+export async function cancelDnsChallenge(c: Context) {
+  return c.json({ data: await operationData(c, operations().cancelDnsChallenge(operationContext(c), param(c, "id"), await c.req.json())) });
+}
 export async function setPrimary(c: Context) {
   return c.json({ data: await operationData(c, operations().setPrimary(operationContext(c), param(c, "id"))) });
 }

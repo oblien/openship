@@ -151,6 +151,16 @@ describe("persisted domain verification and retry eligibility", () => {
     expect((await repo.findPendingSsl(50, "org")).map((row) => row.id)).toEqual(["ssl-failed"]);
   });
 
+  it.each([false, true])("never runs unattended DNS verification for manual TXT domains (verified: %s)", async (verified) => {
+    const state = { verified, status: verified ? "active" : "pending", sslStatus: "none" };
+    await add("provider-managed", state);
+    await add("manual-txt", { ...state, sslDnsMode: "manual" });
+    const rows = verified
+      ? await repo.findPendingSsl(50, "org")
+      : await repo.findPendingVerification(minutesAgo(10), 50, "org");
+    expect(rows.map((row) => row.id)).toEqual(["provider-managed"]);
+  });
+
   it("records a failed TLS check without downgrading a working certificate, then clears the failure atomically on success", async () => {
     await add("working", { verified: true, status: "active", sslStatus: "active" });
     await repo.recordSslFailure("working", "SSH unavailable");

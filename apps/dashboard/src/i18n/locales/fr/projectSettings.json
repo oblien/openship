@@ -789,8 +789,8 @@
       "externalIngress": "Ingress et TLS externes",
       "externalIngressDesc": "Le TLS se termine sur votre proxy inverse (Cloudflare Tunnel, Nginx Proxy Manager ou un équilibreur de charge). Le domaine n’a pas besoin de pointer vers ce serveur et Openship n’émettra pas de certificat.",
       "dnsChallenge": "Utiliser le défi DNS-01",
-      "dnsChallengeDesc": "Émettez et renouvelez le certificat via votre fournisseur DNS connecté. Utilisez cette option si le port 80 est inaccessible.",
-      "dnsChallengeWildcardDesc": "Les certificats génériques nécessitent DNS-01 et un fournisseur DNS connecté.",
+      "dnsChallengeDesc": "Vérifiez via un fournisseur DNS ou un enregistrement TXT temporaire. Utile lorsque le port 80 est inaccessible.",
+      "dnsChallengeWildcardDesc": "Obligatoire pour HTTPS avec un domaine générique. Utilisez un fournisseur DNS connecté ou ajoutez un enregistrement TXT temporaire lors de la configuration HTTPS.",
       "noWww": "Saisissez le domaine sans « www. » — activez « Inclure www » ci-dessous pour l'ajouter."
     },
     "dns": {
@@ -950,7 +950,45 @@
         "removing": "Ce domaine est en cours de suppression. Aucune vérification n’est planifiée.",
         "manual_certificate": "Ce domaine utilise un certificat importé. Importez un certificat de remplacement valide, puis vérifiez-le. Openship ne le renouvelle pas automatiquement.",
         "managed_certificate": "TLS est géré par votre proxy externe ou Openship Cloud. Vérifiez la configuration de ce fournisseur.",
-        "route_missing": "Cette route configurée n’a pas encore été appliquée. Réessayez le routage pour l’appliquer. Aucune nouvelle tentative automatique de routage n’est planifiée."
+        "route_missing": "Cette route configurée n’a pas encore été appliquée. Réessayez le routage pour l’appliquer. Aucune nouvelle tentative automatique de routage n’est planifiée.",
+        "manual_dns": "Ce certificat utilise la vérification TXT manuelle. Ouvrez la configuration HTTPS pour confirmer un nouvel enregistrement TXT, ou choisissez un fournisseur DNS connecté pour le renouvellement automatique."
+      }
+    },
+    "wildcard": {
+      "title": "HTTPS avec vérification DNS",
+      "scope": "Un domaine générique couvre un seul niveau de sous-domaines. Ajoutez le domaine de base séparément s’il doit aussi servir cette application.",
+      "notice": "HTTPS avec un domaine générique nécessite une vérification DNS. Après l’enregistrement, connectez un fournisseur DNS ou ajoutez l’enregistrement TXT de la configuration HTTPS.",
+      "automatic": "Fournisseur automatique",
+      "manual": "TXT manuel",
+      "automaticHint": "Connectez Cloudflare dans Paramètres → DNS pour créer les validations du certificat et renouveler HTTPS automatiquement.",
+      "manualHint": "Ajoutez un enregistrement TXT temporaire chez votre fournisseur DNS. Chaque renouvellement nécessite un nouvel enregistrement TXT ; Openship indiquera quand renouveler.",
+      "routing": "1. Pointez le domaine vers ce serveur",
+      "certificate": "2. Activez HTTPS",
+      "startAutomatic": "Activer HTTPS automatiquement",
+      "startManual": "Obtenir l’enregistrement TXT",
+      "renew": "Renouveler le certificat",
+      "check": "Vérifier le TXT et activer HTTPS",
+      "cancel": "Annuler la vérification",
+      "refresh": "Actualiser le statut",
+      "close": "Fermer la configuration",
+      "loading": "Chargement de la configuration du certificat",
+      "loadFailed": "Impossible de charger la configuration du certificat. Réessayez pour voir son état actuel.",
+      "recordsFailed": "Impossible de charger les enregistrements DNS de routage. La validation du certificat enregistrée reste disponible.",
+      "actionFailed": "Impossible de mettre à jour la configuration du certificat.",
+      "expires": "Terminez cette vérification avant le {date}.",
+      "txtHint": "Ajoutez exactement cette valeur TXT. Conservez les autres valeurs TXT portant le même nom. Si votre fournisseur ajoute le nom de la zone, saisissez uniquement la partie relative.",
+      "cleanup": "Vous pouvez supprimer la valeur TXT de cette tentative. Conservez tous les autres enregistrements TXT.",
+      "logs": "Journaux du certificat",
+      "states": {
+        "preparing": "Préparation de la validation du certificat…",
+        "waiting": "En attente de votre enregistrement TXT",
+        "checking": "Vérification du DNS et de la propriété du certificat…",
+        "installing": "Activation de HTTPS…",
+        "cancelling": "Annulation de la vérification…",
+        "completed": "HTTPS est prêt",
+        "failed": "La configuration du certificat nécessite votre attention",
+        "cancelled": "Vérification annulée",
+        "expired": "La vérification TXT a expiré"
       }
     }
   },

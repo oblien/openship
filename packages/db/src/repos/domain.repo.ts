@@ -417,7 +417,8 @@ export function createDomainRepo(db: Database) {
       const rows = await db.query.domain.findMany({
         where: eq(domain.projectId, projectId),
       });
-      return rows.find((d) => d.isPrimary) ?? rows[0] ?? null;
+      const openable = rows.filter((d) => !d.hostname.startsWith("*."));
+      return openable.find((d) => d.isPrimary) ?? openable[0] ?? null;
     },
 
     /**
@@ -432,7 +433,7 @@ export function createDomainRepo(db: Database) {
       // Prefer isPrimary=true; fall back to first row encountered per project.
       const out = new Map<string, Domain>();
       for (const row of rows) {
-        if (!row.projectId) continue; // webhook-owned domains have no project
+        if (!row.projectId || row.hostname.startsWith("*.")) continue;
         const existing = out.get(row.projectId);
         if (!existing || (row.isPrimary && !existing.isPrimary)) {
           out.set(row.projectId, row);
@@ -735,7 +736,7 @@ export function createDomainRepo(db: Database) {
      * excluded. A transient renewal error must not strand an expiring cert. */
     async findExpiringSsl(beforeDate: Date) {
       return db.query.domain.findMany({
-        where: and(inArray(domain.sslStatus, ["active", "error"]), lt(domain.sslExpiresAt, beforeDate)),
+        where: and(inArray(domain.sslStatus, ["active", "error"]), lt(domain.sslExpiresAt, beforeDate), ne(domain.sslDnsMode, "manual")),
       });
     },
 
@@ -765,6 +766,7 @@ export function createDomainRepo(db: Database) {
         // Externally-terminated TLS is not ours to issue; certbot never will.
         eq(domain.externalIngress, false),
         eq(domain.manualSsl, false),
+        ne(domain.sslDnsMode, "manual"),
         retryDue(),
         liveVerificationOwner(organizationId),
       ];
@@ -789,6 +791,7 @@ export function createDomainRepo(db: Database) {
         eq(domain.verified, false),
         inArray(domain.status, ["pending", "failed"]),
         eq(domain.domainType, "custom"),
+        ne(domain.sslDnsMode, "manual"),
         lte(domain.createdAt, beforeDate),
         retryDue(),
         liveVerificationOwner(organizationId),

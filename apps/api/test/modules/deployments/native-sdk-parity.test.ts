@@ -1685,6 +1685,19 @@ describe("domain and DNS HTTP/native parity", () => {
     expect(h.notify).toHaveBeenCalledTimes(2);
     expect((await app.request("/api/domains/domain-a/verify", { method: "POST" })).status).toBe(422);
   });
+  it("enforces native host policy for forced verification even when stored TLS is healthy", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "false");
+    h.domainGet.mockResolvedValue({ ...domainFixture(), projectId: "project-a", verified: true, sslStatus: "active", sslExpiresAt: "2030-01-01T00:00:00.000Z" });
+    h.domainVerify.mockResolvedValue({ verified: true, cnameVerified: true, txtVerified: true, sslStatus: "active", message: "Already verified" });
+    const local = await native();
+    expect(await local.domains.verify("domain-a")).toMatchObject({ verified: true });
+    h.domainVerify.mockClear();
+    for (const domains of [local.domains, remote().domains]) {
+      await expect(domains.verify("domain-a", { force: true })).rejects.toMatchObject({ code: "HOST_EXECUTION_DISABLED" });
+    }
+    expect(h.domainVerify).not.toHaveBeenCalled();
+  });
   it("flushes terminal stream events through both facades without interactive notifications", async () => {
     h.domainVerify.mockImplementation(async (_ctx, _id, options) => {
       options.onLog("Certificate issued");
@@ -1790,6 +1803,16 @@ describe("project routing HTTP/native parity", () => {
     h.domainCreate.mockRejectedValue(new Error("Domain already in use"));
     for (const projects of [remote().projects, local.projects]) {
       await expect(projects.connectDomain("project-a", input)).rejects.toMatchObject({ statusCode: 400, details: { success: false, message: "Domain already in use" } });
+    }
+  });
+  it("connects a wildcard through HTTP and native without making it the primary URL", async () => {
+    h.domainCreate.mockResolvedValue({ domain: { ...domainFixture(), hostname: "*.example.com" }, records: { mode: "selfhosted", records: [] } });
+    const local = await native();
+    for (const projects of [remote().projects, local.projects]) {
+      await projects.connectDomain("project-a", { domain: "*.example.com", sslChallenge: "dns-01" });
+    }
+    for (const [, command] of h.domainCreate.mock.calls) {
+      expect(command).toMatchObject({ projectId: "project-a", hostname: "*.example.com", isPrimary: false, sslChallenge: "dns-01" });
     }
   });
 });

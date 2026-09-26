@@ -1,8 +1,9 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Domain, Project } from "@repo/db";
-import type { ManualCert, Platform, SslProvider, SslResult, ProvisionCertOptions } from "@repo/adapters";
+import type { ManualCert, Platform, SslProvider, SslResult, ProvisionCertOptions, DnsCertificateProvider } from "@repo/adapters";
 import {
   ForbiddenError,
+  ValidationError,
   NotFoundError,
   SYSTEM,
   isWildcardHostname,
@@ -135,6 +136,7 @@ export function describeTlsIssuedElsewhere(where: TlsIssuedElsewhere, hostname: 
 
 export interface DomainSslOptions {
   action: DomainSslAction;
+  force?: boolean;
   /** Restrict to a specific project (defense-in-depth; route layer
    *  already verified access). */
   projectId?: string;
@@ -383,27 +385,27 @@ export async function recordMailCertDomain(hostname: string, result: SslResult):
  * edge counting down: TLS expires ~90 days later, silently, with the UI showing a
  * domain that looks like it never got a cert at all.
  *
- * A read-only re-read settles it. A COMFORTABLY valid cert can only have come from
- * the run that just threw — every caller re-checks before issuing and proceeds only
- * when the cert is missing, near expiry, or forced — so it IS the outcome: persist
- * it and return it. Anything less (nothing on disk, or the near-expiry cert we were
- * trying to replace) means the failure was real, so rethrow untouched.
+ * Re-read the certificate and confirm its route activation before reporting
+ * success. A readable PEM cannot prove a failed vhost reload recovered. A
+ * near-expiry certificate may be the one issuance failed to replace.
  */
 async function recoverIssuedCert(
   ssl: SslProvider,
   domainRecord: { id: string; hostname: string; sslStatus?: string | null },
   err: unknown,
 ): Promise<SslResult> {
-  const onDisk = await ssl.verifyCert(domainRecord.hostname).catch(() => null);
-  if (!onDisk || !certComfortablyValid(onDisk)) throw err;
-
-  console.warn(
-    `[SSL] ${domainRecord.hostname}: issuance reported an error but a valid certificate ` +
-      `(expires ${onDisk.expiresAt.slice(0, 10)}) is present on the edge — recording it so renewal ` +
-      `stays scheduled. The error was: ${safeErrorMessage(err)}`,
-  );
-  await persistSslResult(domainRecord.id, domainRecord.sslStatus, onDisk);
-  return onDisk;
+  return createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(async () => {
+    const onDisk = await ssl.verifyCert(domainRecord.hostname).catch(() => null);
+    if (!onDisk || !certComfortablyValid(onDisk)) throw err;
+    await ssl.activateCert?.(domainRecord.hostname);
+    console.warn(
+      `[SSL] ${domainRecord.hostname}: issuance reported an error but a valid certificate ` +
+        `(expires ${onDisk.expiresAt.slice(0, 10)}) is active on the edge — recording it so renewal ` +
+        `stays scheduled. The error was: ${safeErrorMessage(err)}`,
+    );
+    await persistSslResult(domainRecord.id, domainRecord.sslStatus, onDisk);
+    return onDisk;
+  });
 }
 
 /** Keep the resolved platform alive until the last SSL operation finishes. */
@@ -550,7 +552,7 @@ export function createDnsHookScripts(manager: MatchedDnsManager): DnsHookScripts
 set -e
 DOMAIN="\${CERTBOT_DOMAIN#\\*.}"
 RECORD_NAME="_acme-challenge.\${DOMAIN}"
-RES=$(curl -s -S -X POST "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records" \\
+RES=$(curl -s -S --connect-timeout 5 --max-time 15 -X POST "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records" \\
   -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
   -H "Content-Type: application/json" \\
   --data "{\\"type\\":\\"TXT\\",\\"name\\":\\"\${RECORD_NAME}\\",\\"content\\":\\"\${CERTBOT_VALIDATION}\\",\\"ttl\\":60,\\"comment\\":\\"Managed by Openship\\"}")
@@ -570,7 +572,7 @@ echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
 # issuance flaky when provider propagation is slower than usual.
 ATTEMPT=0
 while [ "$ATTEMPT" -lt 30 ]; do
-  ANSWER=$(curl -s -S --get "https://cloudflare-dns.com/dns-query" \\
+  ANSWER=$(curl -s -S --connect-timeout 5 --max-time 15 --get "https://cloudflare-dns.com/dns-query" \\
     -H "Accept: application/dns-json" \\
     --data-urlencode "name=\${RECORD_NAME}" --data-urlencode "type=TXT" || true)
   if echo "$ANSWER" | grep -Fq "$CERTBOT_VALIDATION"; then
@@ -587,7 +589,7 @@ exit 1
 if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
   RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
   if [ -n "$RECORD_ID" ]; then
-    curl -s -S -X DELETE "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records/\${RECORD_ID}" \\
+    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records/\${RECORD_ID}" \\
       -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
       -H "Content-Type: application/json" || true
   fi
@@ -614,6 +616,14 @@ async function resolveDns01Hooks(
     };
   }
 
+  // A manual setup can be selected while this operation waits for issuance's
+  // lock. Read the current preference before touching the DNS provider.
+  const current = await repos.domain.findByHostname(domainRecord.hostname);
+  if (!current || current.id !== domainRecord.id) throw new NotFoundError("Domain", domainRecord.hostname);
+  if (current.sslDnsMode === "manual") {
+    throw new ValidationError("This domain uses manual TXT verification. Open its DNS challenge details to prepare or confirm the TXT record. Connect a DNS provider and choose Automatic to enable unattended renewal.");
+  }
+
   const dnsLookup = await resolveDnsManager(organizationId, domainRecord.hostname);
   if (dnsLookup.status === "matched") {
     const hooks = createDnsHookScripts(dnsLookup.manager);
@@ -630,8 +640,19 @@ async function resolveDns01Hooks(
     throw new Error(`DNS provider unavailable: ${dnsLookup.reason}`);
   }
   throw new Error(
-    `DNS-01 challenge for ${domainRecord.hostname} requires a connected DNS provider (e.g. Cloudflare) in Settings → DNS.`,
+    `DNS-01 for ${domainRecord.hostname} needs a connected DNS provider in Settings → DNS, or choose Manual TXT in the domain's HTTPS setup.`,
   );
+}
+
+/** Deployments already own a provider for their selected target, which may not
+ * be active yet. Supply the same DNS credentials as interactive verification
+ * without resolving a different (previously active) deployment's SSL provider. */
+export async function domainDnsProvisionOptions(hostname: string, projectId: string): Promise<ProvisionCertOptions> {
+  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, {
+    action: "provision", projectId, allowUnverified: true,
+  });
+  const organizationId = owner.kind === "project" ? owner.project.organizationId : owner.organizationId;
+  return { challenge: "dns-01", ...await resolveDns01Hooks(organizationId, domainRecord) };
 }
 
 async function executeSslAction(
@@ -739,28 +760,23 @@ async function manageAuthorizedDomainSsl(
       domainRecord.sslChallenge === "dns-01" ||
       isWildcardHostname(domainRecord.hostname);
 
-    let dnsHooks: Awaited<ReturnType<typeof resolveDns01Hooks>> = {};
-    if (isDns) {
-      const orgId = owner.kind === "project" ? owner.project.organizationId : owner.organizationId;
-      dnsHooks = await resolveDns01Hooks(orgId, domainRecord, {
-        dnsAuthHook: opts.dnsAuthHook,
-        dnsCleanupHook: opts.dnsCleanupHook,
-      });
-    }
-
-    const provOpts: ProvisionCertOptions = {
-      ...(opts.onLog ? { onLog: opts.onLog } : {}),
-      ...(opts.action === "renew" ? { force: true } : {}),
-      ...(isDns ? { challenge: "dns-01" } : opts.challenge ? { challenge: opts.challenge } : {}),
-      ...dnsHooks,
-    };
-
     try {
-      const result = await createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(() =>
-        createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
+      const result = await createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(async () => {
+        const dnsHooks = isDns ? await resolveDns01Hooks(
+          owner.kind === "project" ? owner.project.organizationId : owner.organizationId,
+          domainRecord,
+          opts,
+        ) : {};
+        const provOpts: ProvisionCertOptions = {
+          ...(opts.onLog ? { onLog: opts.onLog } : {}),
+          force: true,
+          ...(isDns ? { challenge: "dns-01" } : opts.challenge ? { challenge: opts.challenge } : {}),
+          ...dnsHooks,
+        };
+        return createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
           executeSslAction(ssl, domainRecord.hostname, opts.action, provOpts),
-        ),
-      );
+        );
+      });
       await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
       return result;
     } catch (err) {
@@ -836,6 +852,7 @@ async function provisionAuthorizedDomainCert(
           if (!opts.force) {
             const existing = await ssl.verifyCert(domainRecord.hostname).catch(() => null);
             if (existing && certComfortablyValid(existing)) {
+              await ssl.activateCert?.(domainRecord.hostname);
               opts.onLog?.(
                 `A valid certificate is already present for ${domainRecord.hostname}` +
                   (existing.expiresAt ? ` (expires ${existing.expiresAt.slice(0, 10)})` : "") +
@@ -892,7 +909,12 @@ async function provisionAuthorizedDomainCert(
 export async function installDomainCert(
   hostname: string,
   cert: ManualCert,
-  opts: { projectId?: string; allowUnverified?: boolean } = {},
+  opts: {
+    projectId?: string;
+    allowUnverified?: boolean;
+    beforeInstall?: () => Promise<void>;
+    onInstalled?: (domain: Domain, result: SslResult) => Promise<void>;
+  } = {},
 ): Promise<SslResult> {
   const authorization: DomainSslOptions = {
     action: "provision",
@@ -900,30 +922,60 @@ export async function installDomainCert(
     allowUnverified: opts.allowUnverified,
   };
   return withAuthorizedDomainRuntime(hostname, authorization, async ({ domainRecord, owner }) => {
-    return withSslProvider(owner, ({ ssl }) => ssl.installCert(domainRecord.hostname, cert));
+    return withSslProvider(owner, ({ ssl }) =>
+      createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(async () => {
+        await opts.beforeInstall?.();
+        const result = await ssl.installCert(domainRecord.hostname, cert);
+        if (result.verified) await opts.onInstalled?.(domainRecord, result);
+        return result;
+      }),
+    );
+  });
+}
+
+/** Preparing/finalizing an ACME order does not mutate the runtime. Retain the
+ * provider only for that bounded request, never while waiting for manual DNS. */
+export async function withDomainDnsCertificateProvider<T>(
+  hostname: string,
+  projectId: string,
+  work: (provider: DnsCertificateProvider) => Promise<T>,
+): Promise<T> {
+  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, {
+    action: "provision", projectId, allowUnverified: true,
+  });
+  if (tlsIssuedElsewhere(domainRecord)) throw new ValidationError("TLS for this domain is managed externally; a local DNS challenge is not needed.");
+  return withSslProvider(owner, async ({ ssl }) => {
+    if (!ssl.dnsChallengeProvider) throw new ValidationError("Manual DNS certificates are unavailable on this deployment target. Its edge provider manages HTTPS.");
+    return work(await ssl.dnsChallengeProvider());
   });
 }
 
 /**
- * Read-only check: is a usable cert for this hostname ALREADY present on the
+ * Check whether a usable cert for this hostname is ALREADY present on the
  * host that serves it (e.g. left by a prior deploy of the same box)? No
  * issuance, no ACME rate-limit cost. Allows a not-yet-verified row — the
  * migration/first-publish reuse path (domain.service → reuseServerCertForDomain)
  * runs before the domain is verified, so it can't use manageDomainSsl (which
- * gates on `verified`). Persists an "active" result via resolveSslPatch.
+ * gates on `verified`). Read-only by default; explicit verification may also
+ * activate the route under the normal runtime and hostname locks.
  */
 export async function verifyExistingCert(
   hostname: string,
-  opts: { projectId?: string } = {},
+  opts: { projectId?: string; activate?: boolean } = {},
 ): Promise<SslResult> {
-  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, {
+  const authorization: DomainSslOptions = {
     action: "verify",
     projectId: opts.projectId,
     allowUnverified: true,
-  });
-  return withSslProvider(owner, async ({ ssl }) => {
+  };
+  const inspect = ({ domainRecord, owner }: AuthorizedDomain) => withSslProvider(owner, async ({ ssl }) => {
     const result = await ssl.verifyCert(domainRecord.hostname);
+    if (result.verified && opts.activate) await ssl.activateCert?.(domainRecord.hostname);
     await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
     return result;
   });
+  return opts.activate
+    ? withAuthorizedDomainRuntime(hostname, authorization, (authorized) =>
+      createProvisionLock(sslIssueLockKey(authorized.domainRecord.hostname)).run(() => inspect(authorized)))
+    : inspect(await resolveAuthorizedDomain(hostname, authorization));
 }

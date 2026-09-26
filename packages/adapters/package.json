@@ -34,6 +34,7 @@
     "@aws-sdk/lib-storage": "^3.668.0",
     "@aws-sdk/s3-request-presigner": "^3.668.0",
     "@repo/core": "workspace:*",
+    "acme-client": "^5.4.0",
     "dockerode": "^4.0.9",
     "ignore": "^7.0.5",
     "oblien": "2.4.0",

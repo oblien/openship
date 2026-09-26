@@ -172,7 +172,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   };
 
   const renderRoutingCard = (endpoint: PublicEndpoint, actionSlot?: React.ReactNode) => {
-    const resolvedUrl = endpoint.domainType === "custom" && endpoint.customDomain
+    const resolvedUrl = endpoint.domainType === "custom" && endpoint.customDomain && !endpoint.customDomain.startsWith("*.")
       ? `https://${endpoint.customDomain}`
       : null;
     const readOnlyTarget = !allowPortEdit

@@ -1,4 +1,4 @@
-import type { Deployment, Project, Service, Domain, DnsCredential, PublicCredential, ServerDetail, ServerContainerStatus, SystemInfo, SystemOperations } from "../src";
+import type { Deployment, Project, Service, Domain, DomainDnsChallenge, DnsCredential, PublicCredential, ServerDetail, ServerContainerStatus, SystemInfo, SystemOperations } from "../src";
 
 export function credentialFixture(id = "credential-a"): PublicCredential {
   return { id, provider: "docker-registry", providerLabel: "Container registry", name: "Production registry", selector: "ghcr.io",
@@ -22,6 +22,15 @@ export function dnsCredentialFixture(id = "dns-a", organizationId = "org-a"): Dn
     id, organizationId, provider: "cloudflare", name: "Production DNS", status: "active",
     tokenMasked: "••••••••", lastVerifiedAt: null,
     createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z",
+  };
+}
+
+export function domainDnsChallengeFixture(): DomainDnsChallenge {
+  return {
+    id: "dns-attempt", domainId: "domain-a", mode: "manual", status: "waiting",
+    record: { type: "TXT", name: "_acme-challenge.example.com", value: "public-ACME-proof" },
+    expiresAt: "2026-09-27T00:00:00.000Z", logs: "Add the TXT record.", error: null,
+    createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z",
   };
 }
 

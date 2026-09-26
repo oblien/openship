@@ -2050,6 +2050,46 @@ describe("installCert leaves the private key unreadable to other users", () => {
   });
 });
 
+describe("manual DNS certificate activation", () => {
+  const wildcard: RouteConfig = {
+    domain: "*.example.com", tls: false, targetUrl: "http://127.0.0.1:3009",
+    proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://127.0.0.1:4010" }],
+  };
+
+  test("enables wildcard TLS without dropping composite service routes", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(wildcard);
+    const statePath = [...files.keys()].find((path) => path.endsWith(".route.json"))!;
+    const result = await nginx.installCert(wildcard.domain, makeTestCert([wildcard.domain]));
+    expect(result.verified).toBe(true);
+    expect(JSON.parse(files.get(statePath)!)).toEqual({ ...wildcard, tls: true });
+    const config = files.get(statePath.replace(/\.route\.json$/, ".conf"))!;
+    expect(config).toContain("server_name *.example.com;");
+    expect(config).toContain("listen 443 ssl;");
+    expect(config).toContain("proxy_pass http://127.0.0.1:3009;");
+    expect(config).toContain("proxy_pass http://127.0.0.1:4010;");
+  });
+
+  test("reports a failed reload and retains the previous route instead of claiming HTTPS is ready", async () => {
+    const opts: FakeOpts = {};
+    const { nginx, files } = setup(opts);
+    await nginx.registerRoute(wildcard);
+    const paths = [...files.keys()].filter((path) => path.endsWith(".conf") || path.endsWith(".route.json"));
+    const previous = paths.map((path) => [path, files.get(path)]);
+    opts.failReload = true;
+    await expect(nginx.installCert(wildcard.domain, makeTestCert([wildcard.domain]))).rejects.toThrow();
+    expect(paths.map((path) => [path, files.get(path)])).toEqual(previous);
+
+    // The certificate did get written. A retry must activate it instead of
+    // accepting readable PEM files as proof the previous reload succeeded.
+    opts.failReload = false;
+    await expect(nginx.provisionCert(wildcard.domain)).resolves.toMatchObject({ verified: true });
+    const config = files.get(paths.find((path) => path.endsWith(".conf"))!)!;
+    expect(config).toContain("listen 443 ssl;");
+    expect(config).toContain("proxy_pass http://127.0.0.1:4010;");
+  });
+});
+
 /**
  * On a CONTAINER edge the two halves of "write it, then tighten it" travel different
  * channels: the write lands on the HOST (bind mount) while `chmod` runs INSIDE the

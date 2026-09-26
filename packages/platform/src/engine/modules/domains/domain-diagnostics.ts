@@ -1,5 +1,5 @@
 import cronParser from "cron-parser";
-import { domainRetryEligibleAt } from "@repo/core";
+import { domainRetryEligibleAt, SYSTEM } from "@repo/core";
 import type { DomainDiagnostics } from "@repo/contracts";
 import { repos, type Domain, type Project, type Service } from "@repo/db";
 import { nativeJobsEnabled } from "../../native/execution-policy";
@@ -56,6 +56,12 @@ export function domainDiagnostics(
     return waiting("removing");
   if (project.disabledAt || !serviceEnabled) return waiting("disabled");
   if (!project.activeDeploymentId) return waiting("deployment");
+  if (domain.sslDnsMode === "manual" && !tlsIssuedElsewhere(domain) && (
+    !domain.verified || failed || domain.sslStatus !== "active" || !domain.sslExpiresAt ||
+    new Date(domain.sslExpiresAt).getTime() <= now.getTime() + SYSTEM.DOMAINS.SSL_RENEW_BEFORE_DAYS * 86_400_000
+  )) {
+    return { ...waiting("manual_dns", "verify"), state: failed || sslExpired ? "failed" : "waiting" };
+  }
   if (
     domain.verified &&
     !failed &&

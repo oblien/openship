@@ -1,4 +1,3 @@
-import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";
 import type { DomainDependencies } from "../../../domains";
@@ -9,12 +8,12 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { notification } from "../../lib/notification-dispatcher";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { resolveProjectAuthority } from "../../lib/cloud/project-authority";
-import { platform } from "../../lib/platform-config";
-import { isLocalHostRow } from "../../lib/box-org";
-import { resolveEffectiveTarget, type DeploymentMeta } from "../../lib/deployment-runtime";
 import * as service from "./domain.service";
+import * as dnsChallenge from "./domain-dns-challenge.service";
 import { manageDomainSsl, needsDomainSslCheck } from "../../lib/domain-ssl";
 import { resolveManagedHostname } from "../../lib/routing-domains";
+import { domainExecution } from "./domain-execution";
+export { domainExecution } from "./domain-execution";
 
 function record(ctx: ExecutionContext, id: string, eventType: string, after: unknown) {
   audit.recordAsync(operationAuditContext(ctx), { eventType, resourceType: "domain", resourceId: id, after });
@@ -27,24 +26,6 @@ async function targetServer(ctx: ExecutionContext, id?: string) {
   if (id) await authorization.authorize({ ...ctx, scopeMode: "fixed" }, {
     resourceType: "server", resourceId: id, action: "read",
   });
-}
-
-/** Refuse host work before the retained best-effort TLS paths can swallow a policy error. */
-export async function domainExecution(ctx: ExecutionContext, id: string, verifying = false) {
-  if (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true") return;
-  const domain = await service.getDomain(ctx, id);
-  if (verifying && (domain.externalIngress || (domain.verified && !needsDomainSslCheck(domain))))
-    return;
-  const project = domain.projectId ? await repos.project.findById(domain.projectId) : null;
-  if (!project || project.organizationId !== ctx.organizationId) throw new NotFoundError("Domain", id);
-  const deployment = project.activeDeploymentId ? await findActiveDeployment(project) : null;
-  const meta = (deployment?.meta ?? {}) as DeploymentMeta;
-  if (resolveEffectiveTarget(platform().target, meta) === "cloud") return;
-  if (meta.serverId) {
-    const server = await repos.server.getInOrganization(meta.serverId, ctx.organizationId);
-    if (server && !await isLocalHostRow(server)) return;
-  }
-  throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
 }
 
 function batchContext(ctx: ExecutionContext): service.DomainBatchContext {
@@ -64,7 +45,7 @@ function batchContext(ctx: ExecutionContext): service.DomainBatchContext {
 }
 
 async function verify(ctx: ExecutionContext, id: string, input: { force?: boolean }, onLog?: (line: string) => void) {
-  await domainExecution(ctx, id, true);
+  await domainExecution(ctx, id, !input.force);
   const result = await service.verifyDomain(ctx, id, { ...input, onLog });
   record(ctx, id, result.verified ? "domain.verified" : "domain.verify_failed", {
     verified: result.verified, cnameVerified: result.cnameVerified, txtVerified: result.txtVerified,
@@ -186,6 +167,24 @@ export const domainDependencies: DomainDependencies = {
         applied: result.records.filter(r => r.outcome === "applied").length,
         failed: result.records.filter(r => r.outcome === "failed").length,
       });
+      return result;
+    },
+    dnsChallenge: dnsChallenge.getDnsChallenge,
+    async startDnsChallenge(ctx, id, input) {
+      await domainExecution(ctx, id);
+      const result = await dnsChallenge.startDnsChallenge(ctx, id, input);
+      record(ctx, id, "domain:write", { operation: "startDnsChallenge", mode: input.mode, attemptId: result.id });
+      return result;
+    },
+    async checkDnsChallenge(ctx, id, input) {
+      await domainExecution(ctx, id);
+      const result = await dnsChallenge.checkDnsChallenge(ctx, id, input.attemptId);
+      record(ctx, id, "domain:write", { operation: "checkDnsChallenge", attemptId: result.id });
+      return result;
+    },
+    async cancelDnsChallenge(ctx, id, input) {
+      const result = await dnsChallenge.cancelDnsChallenge(ctx, id, input.attemptId);
+      record(ctx, id, "domain:write", { operation: "cancelDnsChallenge", attemptId: result.id });
       return result;
     },
     async setPrimary(ctx, id) {

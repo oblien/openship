@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **402 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **406 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -158,11 +158,15 @@ The current API has **402 unique tools**. Permission tags below describe the rou
 | `delete_domains_by_id`<br />`DELETE /api/domains/:id` | Delete a domain by id. | `domain:admin` |
 | `get_domains`<br />`GET /api/domains` | List domains for the project named by the projectId query parameter. | `domain:list` |
 | `get_domains_by_id`<br />`GET /api/domains/:id` | Read one domain's verify + SSL state. | `domain:read` |
+| `get_domains_by_id_dns_challenge`<br />`GET /api/domains/:id/dns/challenge` | Read the current DNS-01 HTTPS setup, including the actual ACME TXT record, deadline, logs, and result. Safe to poll or reopen after reconnecting; contains no certificate keys. | `domain:read` |
 | `get_domains_by_id_dns_plan`<br />`GET /api/domains/:id/dns/plan` | Preview what auto-configuring this domain's DNS through a connected provider would change. | `domain:read` |
 | `get_domains_by_id_records`<br />`GET /api/domains/:id/records` | Get the DNS records for a domain. | `domain:read` |
 | `post_domains`<br />`POST /api/domains` | Add a domain (free subdomain or custom). | `domain:write` |
 | `post_domains_by_id_certificate`<br />`POST /api/domains/:id/certificate` | Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA). | `domain:write`<br />Self-hosted |
 | `post_domains_by_id_dns_apply`<br />`POST /api/domains/:id/dns/apply` | Auto-configure this domain's DNS through a connected provider. | `domain:write` |
+| `post_domains_by_id_dns_challenge`<br />`POST /api/domains/:id/dns/challenge` | Start wildcard or DNS-01 HTTPS on a self-hosted deployment. Automatic uses a connected DNS provider; manual prepares a real ACME TXT record to publish. Returns the current attempt immediately; repeated starts reuse an active attempt. Read DNS challenge status, then check the manual attempt after adding its TXT value. Manual renewals need this flow again. | `domain:write` |
+| `post_domains_by_id_dns_challenge_cancel`<br />`POST /api/domains/:id/dns/challenge/cancel` | Cancel the named manual DNS certificate attempt. Preserves existing certificates and routes. An installation already in progress must finish. Remove only this attempt's TXT value from DNS afterward. | `domain:write` |
+| `post_domains_by_id_dns_challenge_check`<br />`POST /api/domains/:id/dns/challenge/check` | Check the exact TXT record for a manual DNS certificate attempt, then validate with the CA and install HTTPS on the current deployment server. Pass the attemptId returned by DNS challenge status. Read status for the result; a missing TXT keeps the same order available for retry. | `domain:write` |
 | `post_domains_by_id_primary`<br />`POST /api/domains/:id/primary` | Set this domain as the project's primary domain. | `domain:write` |
 | `post_domains_by_id_renew`<br />`POST /api/domains/:id/renew` | Renew the domain's SSL certificate. | `domain:write` |
 | `post_domains_by_id_verify`<br />`POST /api/domains/:id/verify` | Verify a domain's ownership / DNS. | `domain:write` |

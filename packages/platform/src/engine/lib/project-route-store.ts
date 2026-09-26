@@ -1,5 +1,5 @@
 import { repos, type Domain } from "@repo/db";
-import { ConflictError } from "@repo/core";
+import { ConflictError, isWildcardHostname } from "@repo/core";
 import { CloudRuntime } from "@repo/adapters";
 import {
   normalizeStoredPublicEndpoints,
@@ -88,19 +88,22 @@ async function resolveLocalConflict(domainRow: Domain, projectId: string): Promi
 
 function desiredProjectRoutes(endpoints?: StoredPublicEndpoint[] | null): DesiredProjectRoute[] {
   const seen = new Set<string>();
+  let hasPrimary = false;
 
-  return normalizeStoredPublicEndpoints(endpoints).flatMap((endpoint, index) => {
+  return normalizeStoredPublicEndpoints(endpoints).flatMap((endpoint) => {
     const hostname = publicEndpointHostname(endpoint);
     if (!hostname || seen.has(hostname)) return [];
 
     seen.add(hostname);
     const redirect = normalizeRedirect(endpoint);
+    const isPrimary = !hasPrimary && !isWildcardHostname(hostname);
+    if (isPrimary) hasPrimary = true;
     return [{
       hostname,
       targetPort: endpoint.port,
       targetPath: endpoint.targetPath,
       domainType: endpoint.domainType,
-      isPrimary: index === 0,
+      isPrimary,
       redirectTo: redirect.redirectTo,
       redirectStatus: redirect.redirectStatus,
     } satisfies DesiredProjectRoute];
@@ -152,6 +155,7 @@ export async function syncProjectPublicRoutes(
             status: "pending" as const,
             verified: false,
             verificationToken: generateToken(route.hostname),
+            ...(isWildcardHostname(route.hostname) ? { sslChallenge: "dns-01" as const } : {}),
           }
         : { status: "active" as const, verified: true, verifiedAt: new Date() };
 
@@ -250,6 +254,7 @@ export async function syncProjectPublicRoutes(
       patch.targetPath = route.targetPath ?? null;
     }
     if ((existing.domainType ?? null) !== route.domainType) patch.domainType = route.domainType;
+    if (isWildcardHostname(route.hostname) && existing.sslChallenge !== "dns-01") patch.sslChallenge = "dns-01";
     if (existing.isPrimary !== route.isPrimary) patch.isPrimary = route.isPrimary;
     // The submitted endpoint list is authoritative for the redirect, so an OMITTED
     // one clears it — that's how "stop redirecting, serve the app here" is

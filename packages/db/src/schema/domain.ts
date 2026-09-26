@@ -126,6 +126,8 @@ export const domain = pgTable(
     sslStatus: text("ssl_status").notNull().default("none"),
     /** SSL challenge mechanism: http-01 | dns-01 */
     sslChallenge: text("ssl_challenge").notNull().default("http-01"),
+    /** Manual DNS needs a new TXT confirmation at renewal; never start it in a sweep. */
+    sslDnsMode: text("ssl_dns_mode").$type<"automatic" | "manual">().notNull().default("automatic"),
     /** Issuer (e.g. "letsencrypt", "oblien") */
     sslIssuer: text("ssl_issuer"),
     /** When the current certificate expires */

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(), update: vi.fn(), remove: vi.fn(), verify: vi.fn(), records: vi.fn(),
   refreshServices: vi.fn(), invalidate: vi.fn(), toast: vi.fn(), changed: vi.fn(),
   updateProject: vi.fn(), edge: vi.fn(), verifyModal: vi.fn(), cloud: vi.fn(),
+  connect: vi.fn(), listDomains: vi.fn(), dnsChallenge: vi.fn(), startDnsChallenge: vi.fn(), dnsPlan: vi.fn(),
 }));
 let context: ReturnType<typeof import("@/context/ProjectSettingsContext").useProjectSettings>;
 vi.mock("@/context/ProjectSettingsContext", () => ({ useProjectSettings: () => context }));
@@ -30,9 +31,10 @@ vi.mock("@/lib/api", async (original) => {
   return {
     ...actual,
     servicesApi: { ...actual.servicesApi, get: mocks.get, update: mocks.update },
-    projectsApi: { ...actual.projectsApi, update: mocks.updateProject, getEdgeStatus: async () => ({ ready: true }) },
+    projectsApi: { ...actual.projectsApi, update: mocks.updateProject, connectDomain: mocks.connect, getEdgeStatus: async () => ({ ready: true }) },
     deployApi: { ...actual.deployApi, checkPorts: async () => ({ data: [] }), checkOutput: async () => ({ data: [] }) },
     domainsApi: { ...actual.domainsApi, remove: mocks.remove, verify: mocks.verify, records: mocks.records,
+      list: mocks.listDomains, dnsChallenge: mocks.dnsChallenge, startDnsChallenge: mocks.startDnsChallenge, dnsPlan: mocks.dnsPlan,
       previewRecords: async () => ({ data: { mode: "cloud", records: [] } }) },
   };
 });
@@ -85,6 +87,8 @@ beforeEach(() => {
   mocks.remove.mockResolvedValue({ success: true });
   mocks.verify.mockResolvedValue({ verified: true, sslStatus: "active" });
   mocks.records.mockResolvedValue({ data: { mode: "cloud", records: [] } });
+  mocks.dnsChallenge.mockResolvedValue({ data: null });
+  mocks.dnsPlan.mockResolvedValue({ data: { status: "none", records: [] } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -107,7 +111,7 @@ function button(label: string) {
 }
 async function click(label: string) { await act(async () => button(label).click()); }
 async function input(label: string, value: string) {
-  const element = [...host.querySelectorAll("input")].find((item) => item.getAttribute("aria-label") === label)!;
+  const element = [...host.querySelectorAll("input")].find((item) => item.getAttribute("aria-label") === label || item.placeholder === label)!;
   expect(element, `input ${label}`).toBeDefined();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
@@ -153,6 +157,49 @@ describe("service domain controls", () => {
     expect(mocks.updateProject).not.toHaveBeenCalled();
     expect(mocks.edge).not.toHaveBeenCalled();
     expect(mocks.changed).toHaveBeenCalledOnce();
+  });
+
+  it("opens inline HTTPS setup for the persisted wildcard service domain without starting an order", async () => {
+    context.projectData.deployTarget = "server";
+    const wildcard = { id: "dom-wildcard", hostname: "*.tenant.example.com", serviceId: service.id,
+      verified: false, status: "pending", domainType: "custom", sslStatus: "none", sslChallenge: "dns-01", isPrimary: false };
+    mocks.listDomains.mockResolvedValue({ data: [...context.domainsData.domains, wildcard] });
+    await render({ serviceId: service.id, port: 3000, add: true });
+    await click(domains.addRoute.custom);
+    await input(domains.add.domainName, wildcard.hostname);
+    await submitAdd();
+    expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([primary, secondary, { ...primary, customDomain: wildcard.hostname }]);
+    expect(host.querySelector(`section[aria-label="${domains.wildcard.title}: ${wildcard.hostname}"]`)).not.toBeNull();
+    expect(mocks.dnsChallenge).toHaveBeenCalledWith(wildcard.id);
+    expect(mocks.startDnsChallenge).not.toHaveBeenCalled();
+    expect(mocks.verifyModal).not.toHaveBeenCalled();
+    expect(host.querySelector('a[href="https://*.tenant.example.com"]')).toBeNull();
+  });
+
+  it("adds a project wildcard with DNS-01 and no www sibling after www was previously selected", async () => {
+    context.projectData.deployTarget = "server";
+    context.projectData.framework = "nextjs";
+    context.projectData.serviceCount = 0;
+    context.servicesData.services = [];
+    context.domainsData.domains = [];
+    const wildcard = { id: "dom-project-wildcard", hostname: "*.project.example.com", sslChallenge: "dns-01" };
+    mocks.connect.mockResolvedValue({ success: true, domain: wildcard, records: { records: [] } });
+    mocks.updateProject.mockResolvedValue({ success: true });
+    await render(null);
+    await click(domains.actions.addDomain);
+    await click(domains.add.includeWww);
+    await input(domains.add.customPlaceholder, wildcard.hostname);
+    expect(button(domains.add.includeWww).disabled).toBe(true);
+    await click(domains.add.submit);
+    expect(mocks.connect).toHaveBeenCalledWith("project-stack", expect.objectContaining({
+      domain: wildcard.hostname, includeWww: false, sslChallenge: "dns-01",
+    }));
+    const endpoints = mocks.updateProject.mock.calls[0][1].publicEndpoints;
+    expect(endpoints.filter((endpoint: { customDomain?: string }) => endpoint.customDomain?.endsWith("project.example.com")))
+      .toEqual([{ port: 3000, domainType: "custom", customDomain: wildcard.hostname }]);
+    expect(host.querySelector(`section[aria-label="${domains.wildcard.title}: ${wildcard.hostname}"]`)).not.toBeNull();
+    expect(mocks.dnsChallenge).toHaveBeenCalledWith(wildcard.id);
+    expect(mocks.startDnsChallenge).not.toHaveBeenCalled();
   });
 
   it("keeps the add form and its values when the API rejects the change", async () => {

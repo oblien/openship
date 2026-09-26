@@ -57,7 +57,9 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
         ))}
 
         <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
-          {mode === "selfhosted" ? (
+          {mode === "selfhosted" && domain.startsWith("*.") ? (
+            t.projectSettings.domains.wildcard.notice
+          ) : mode === "selfhosted" ? (
             <>
               {d.selfInfoPre}
               <span className="font-medium text-foreground">{d.recordA}</span>

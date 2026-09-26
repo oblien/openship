@@ -1238,6 +1238,18 @@ interface FileSnapshot {
 // ─── Implementation ──────────────────────────────────────────────────────────
 
 export class NginxProvider implements RoutingProvider, SslProvider {
+  async dnsChallengeProvider() {
+    const { createAcmeDnsProvider } = await import("./acme-dns");
+    return createAcmeDnsProvider({
+      directoryUrl: this.acmeDirectoryUrl,
+      email: this.acmeEmail,
+      termsOfServiceAgreed: this.acmeTosAgreed,
+      eabKid: this.acmeEabKid,
+      eabHmacKey: this.acmeEabHmacKey,
+      keyType: this.acmeKeyType,
+      caPem: this.acmeCaBundle ? await this._readFile(this.acmeCaBundle) : undefined,
+    });
+  }
   private sitesDir: string;
   private readonly acmeEmail: string | undefined;
   private readonly acmeDirectoryUrl: string | undefined;
@@ -2437,8 +2449,8 @@ ${serveLocation}
   /**
    * Provision a TLS certificate using certbot.
    *
-   * HTTP-01 ONLY — there is no DNS-01 path anywhere in this file, and the DNS credentials the
-   * product stores are for record MANAGEMENT, not for challenges.
+   * Uses HTTP-01 by default. DNS-01 requires hooks from the engine's connected
+   * DNS provider; wildcard hostnames always select DNS-01.
    *
    * The authenticator is `--standalone` on {@link ACME_HTTP01_PORT} (a loopback alt-port), with
    * the edge proxying `/.well-known/acme-challenge/` to it — see `ACME_CHALLENGE_LOCATION`. So
@@ -2464,7 +2476,9 @@ ${serveLocation}
     // near-expiry / a deliberate renew — without it this short-circuit would
     // return a stale cert and a renewal would silently no-op.
     if (!opts?.force && (await this.certsExist(domain))) {
-      return this.readCertInfo(domain);
+      const existing = await this.readCertInfo(domain);
+      if (existing.verified) await this.activateCert(domain);
+      return existing;
     }
 
     const lineage =
@@ -2569,6 +2583,13 @@ ${serveLocation}
       await this.useCertbotLineage(domain, issuedDir);
     }
 
+    await this.activateCert(domain);
+    return this.ensureIssued(domain, certonlyOut);
+  }
+
+  /** One route activation path for Certbot, manual DNS, and uploaded certs. */
+  async activateCert(domain: string): Promise<void> {
+    assertValidDomain(domain);
     // Rewrite the config with SSL now that certs exist
     const slug = await this.resolveSlug(domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
@@ -2576,22 +2597,26 @@ ${serveLocation}
     // Prefer the persisted RouteConfig sidecar so the re-register keeps every
     // location (composite proxyLocations + webhookProxy), not just the primary.
     let saved: RouteConfig | undefined;
-    try {
+    if (await this._exists(this.routeStatePath(slug))) {
       const state = await this._readFile(this.routeStatePath(slug));
-      saved = JSON.parse(state) as RouteConfig;
-    } catch {
-      // No sidecar (legacy route or unreadable) - fall back to scraping the conf.
+      try {
+        saved = JSON.parse(state) as RouteConfig;
+      } catch (error) {
+        // A corrupt legacy sidecar can still be recovered from its vhost.
+        // Transport and reload errors must never enter this fallback.
+        if (!(error instanceof SyntaxError)) throw error;
+      }
     }
     // A write/reload failure must propagate, not trigger a lossy fallback or be
     // reported as success just because certbot issued a readable certificate.
     if (saved) {
       await this.registerRoute({ ...saved, domain, tls: true });
-      return this.ensureIssued(domain, certonlyOut);
+      return;
     }
 
     // Certificate-only issuance is valid before a route exists. Once it does
     // exist, a read or recovery failure must leave it intact and reach the caller.
-    if (!(await this._exists(configPath))) return this.ensureIssued(domain, certonlyOut);
+    if (!(await this._exists(configPath))) return;
     const existing = await this._readFile(configPath);
     const scraped = this.scrapeProxySettings(existing);
     // The first proxy_pass in a vhost belongs to the ACME challenge. Use the
@@ -2611,7 +2636,7 @@ ${serveLocation}
           tls: true,
           ...(scraped ? { proxy: scraped } : {}),
         });
-        return this.ensureIssued(domain, certonlyOut);
+        return;
       }
 
       const staticRoot = firstDirective(location.body, "root");
@@ -2626,7 +2651,7 @@ ${serveLocation}
           tls: true,
           ...(scraped ? { proxy: scraped } : {}),
         });
-        return this.ensureIssued(domain, certonlyOut);
+        return;
       }
     }
 
@@ -2885,18 +2910,7 @@ ${serveLocation}
     const dir = join(this.certDir, domain);
     await this.stageCertDir(dir, cert);
 
-    // Re-register the vhost with TLS now that the cert is on disk. Prefer the
-    // persisted RouteConfig sidecar so every location survives (same as
-    // provisionCert); if there's no route yet, the next deploy's route plan
-    // picks up tls:true from the manualSsl gate.
-    const slug = await this.resolveSlug(domain);
-    try {
-      const state = await this._readFile(this.routeStatePath(slug));
-      const saved = JSON.parse(state) as RouteConfig;
-      await this.registerRoute({ ...saved, domain, tls: true });
-    } catch {
-      // No sidecar (domain not routed yet) — cert is staged on disk regardless.
-    }
+    await this.activateCert(domain);
 
     return {
       domain,

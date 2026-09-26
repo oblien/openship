@@ -24,6 +24,7 @@ import {
   resolvePublicUrlTemplate,
   effectiveServiceAlias,
   normalizeServiceLabel,
+  isWildcardHostname,
   type AppManagement,
   type AppSettingGroup,
   type AppConnectionGuide,
@@ -289,7 +290,7 @@ function persistedServiceRouteUrls(
     if (row.redirectTo) return;
     const port = rowTargetPort(row);
     const hostname = row.hostname?.trim().toLowerCase();
-    if (port === undefined || !hostname || urls.has(port)) return;
+    if (port === undefined || !hostname || isWildcardHostname(hostname) || urls.has(port)) return;
     urls.set(port, `https://${hostname}`);
   };
 

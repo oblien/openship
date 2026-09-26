@@ -1,5 +1,5 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
+import { AppError, NotFoundError, isWildcardHostname, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { OperationError, type ProjectRoutingSchemas } from "@repo/contracts";
 import { repos } from "@repo/db";
 import type { ResourceServices } from "../../../resource-operations";
@@ -96,11 +96,11 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
     };
   },
   async connectDomain(ctx, id, input) {
-    const hostname = input.domain.trim();
+    const hostname = normalizeCustomHostname(input.domain);
     if (!hostname) throw new OperationError("Domain is required", 400, "VALIDATION_ERROR", { success: false });
     try {
       const result = await domainDependencies.collection.create(ctx, id, {
-        hostname, isPrimary: true, externalIngress: input.externalIngress ?? false,
+        hostname, isPrimary: !isWildcardHostname(hostname), externalIngress: input.externalIngress ?? false,
         sslChallenge: input.sslChallenge, includeWww: input.includeWww ?? false,
       });
       return { success: true, ...(result as AddDomainResult) };

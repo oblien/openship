@@ -18,6 +18,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
+import DnsChallengePanel from "@/components/domains/DnsChallengePanel";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import {
@@ -492,6 +493,17 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   );
 
   const [newDomain, setNewDomain] = useState("");
+  const [dnsSetup, setDnsSetup] = useState<{ domainId: string; hostname: string; renew?: boolean } | null>(null);
+  useEffect(() => setDnsSetup(null), [id, serviceScope?.serviceId]);
+  const dnsSetupAnchor = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (dnsSetup) dnsSetupAnchor.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [dnsSetup]);
+  const usesDnsSetup = (hostname: string) => {
+    const row = domainsData.domains.find((item: any) => (item.hostname ?? item.domain) === hostname);
+    return selfHosted && !isCloudProject && !row?.externalIngress && !row?.manualSsl &&
+      (hostname.startsWith("*.") || row?.sslChallenge === "dns-01");
+  };
   // Unified "add domain" = add a route: pick free/custom + the port it maps to.
   // Same model services use; single-app just gets a lighter form.
   const [newDomainType, setNewDomainType] = useState<"free" | "custom">("custom");
@@ -932,7 +944,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const result = await domainsApi.previewRecords(trimmed, includeWww);
+        const result = await domainsApi.previewRecords(trimmed, effectiveIncludeWww);
         if (cancelled) return;
         if (result?.data?.records) {
           setPreviewedRecords(result.data.records);
@@ -954,7 +966,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     // `includeWww` is a real dependency: toggling it changes WHICH records the
     // user has to add, so the panel must re-fetch instead of showing the apex
     // record alone while the toggle says www is included.
-  }, [newDomain, newDomainType, selfHosted, showCustomDomainSection, baseDomain, includeWww]);
+  }, [newDomain, newDomainType, selfHosted, showCustomDomainSection, baseDomain, effectiveIncludeWww]);
 
   // Add a domain = add a ROUTE (the same model services use): pick free/custom,
   // the host, and the port (server) / path (static) it maps to. It lands in the
@@ -988,6 +1000,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
     setIsSubmitting(true);
     try {
+      let newDnsSetup: { domainId: string; hostname: string } | null = null;
       // Custom: create the pending row + get its DNS records + real verify id
       // up front. persist (below) then attaches the port and lists it; the
       // backend keeps it pending until /verify.
@@ -1007,6 +1020,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           return;
         }
         if (result.records?.records) setDnsRecords(result.records.records);
+        if (result.domain?.id && selfHosted && !isCloudProject && !externalIngress && effectiveSslChallenge === "dns-01") {
+          newDnsSetup = { domainId: result.domain.id, hostname: host };
+        }
         // Track EVERY row the connect created. `result.www` is the sibling's own
         // row (its own verify, its own cert); `wwwError` means it couldn't be
         // claimed at all — say so instead of leaving the toggle looking successful.
@@ -1040,7 +1056,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       // already set it on the row: an OMITTED redirect clears one, so leaving it out
       // would wipe the 301 a request later and quietly serve the app on both hosts.
       const wwwEndpoint =
-        isCustom && includeWww && !host.startsWith("www.")
+        isCustom && effectiveIncludeWww && !host.startsWith("www.")
           ? createPublicEndpoint({
               domainType: newDomainType,
               customDomain: `www.${host}`,
@@ -1057,6 +1073,13 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           : interpolate(t.projectSettings.domains.toast.addedFree, { label }),
       );
       if (!ok) return;
+
+      if (newDnsSetup) {
+        setDnsSetup(newDnsSetup);
+        setShowCustomDomainSection(false);
+        setDnsRecords([]);
+        setPendingVerifyDomains([]);
+      }
 
       // Reset the form. Keep the panel open for custom (DNS records + Verify);
       // free has nothing to verify, so collapse it.
@@ -1132,6 +1155,10 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   // stays on the request/response path (Oblien CNAME check, no certbot to stream,
   // and it needs the cloud proxy).
   const startVerify = (domainId: string, hostname: string) => {
+    if (usesDnsSetup(hostname)) {
+      setDnsSetup({ domainId, hostname });
+      return;
+    }
     if (selfHosted && !isCloudProject) {
       openVerifyModal(domainId, {
         hostname,
@@ -1517,6 +1544,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         // Persisted domain row → force-delete it (backend removeDomain always
         // drops the row + best-effort tears down the edge, atomically now).
         await domainsApi.remove(summary.domainId);
+        if (dnsSetup?.domainId === summary.domainId) setDnsSetup(null);
         updateDomains(
           (Array.isArray(domainsData.domains) ? domainsData.domains : []).filter(
             (d: any) => d?.id !== summary.domainId,
@@ -1648,6 +1676,20 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       if (ok) {
         setShowAddRoute(false);
         setAddRouteDraft({ ...emptyAddRouteDraft, port: portFilter ? String(portFilter) : "" });
+        if (selfHosted && !isCloudProject && hostname?.startsWith("*.")) {
+          // The service save owns domain creation. Read its actual row before
+          // opening certificate setup; never invent a domain id from the host.
+          try {
+            const { data } = await domainsApi.list(id);
+            const savedDomain = data.find((row) => row.hostname === hostname && row.serviceId === target.id);
+            updateDomains(data.map((row) => ({ ...row, domain: row.hostname, primary: row.isPrimary })));
+            if (savedDomain && !savedDomain.externalIngress && !savedDomain.manualSsl) {
+              setDnsSetup({ domainId: savedDomain.id, hostname: savedDomain.hostname });
+            }
+          } catch (error) {
+            showToast(getApiErrorMessage(error, t.projectSettings.domains.wildcard.loadFailed), "error");
+          }
+        }
       }
     } catch (error) {
       setAddRouteError(getApiErrorMessage(error, t.projectSettings.domains.toast.routeUpdateFailed));
@@ -1769,7 +1811,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     if (onEditRoute) {
       items.push({ id: "edit", label: m.editRoute, icon: <UiIcon name="edit" className="size-4" />, onClick: onEditRoute });
     }
-    if (onSetPrimary) {
+    if (onSetPrimary && !domain.hostname.startsWith("*.")) {
       items.push({
         id: "set-primary",
         label: isSettingPrimary ? m.settingPrimary : m.setPrimary,
@@ -1800,12 +1842,21 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     //     would silently do nothing. Uploading an Origin-CA cert IS still the right
     //     action there (that's what secures the origin hop), so only renew goes.
     const canRenew = certbotOwned && !domain.externalIngress;
+    if (domain.domainId && usesDnsSetup(domain.hostname)) {
+      items.push({
+        id: "dns-https", label: t.projectSettings.domains.wildcard.title,
+        icon: <UiIcon name="shield-check" className="size-4" />,
+        onClick: () => setDnsSetup({ domainId: domain.domainId!, hostname: domain.hostname }),
+      });
+    }
     if (sslActionable && canRenew) {
       items.push({
         id: "renew",
         label: isRenewing ? m.renewing : m.renewSsl,
         icon: <UiIcon name="shield-alert" className={isRenewing ? "size-4 animate-spin" : "size-4"} />,
-        onClick: () => void handleRenewDomainSsl(domain.hostname),
+        onClick: () => usesDnsSetup(domain.hostname)
+          ? setDnsSetup({ domainId: domain.domainId!, hostname: domain.hostname, renew: true })
+          : void handleRenewDomainSsl(domain.hostname),
         disabled: isRenewing,
       });
     }
@@ -1891,6 +1942,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             : t.projectSettings.domains.menu.rechecking
         }
         onVerify={canVerify ? () => startVerify(item.domainId!, item.hostname) : undefined}
+        verifyLabel={usesDnsSetup(item.hostname) ? t.projectSettings.domains.wildcard.title : undefined}
         onRetryDiagnosis={
           item.diagnosis?.retryAction === "retry_routing"
             ? retryRouting
@@ -1907,7 +1959,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         verifying={!!verifyingDomainId && verifyingDomainId === item.domainId}
         verifyHint={verifyHintFor(item.domainId)}
         autoOpenRecords={!!item.domainId && verifyFailure?.domainId === item.domainId}
-        loadRecords={canVerify ? () => domainsApi.records(item.domainId!).then((r) => r.data.records) : undefined}
+        loadRecords={canVerify && !usesDnsSetup(item.hostname) ? () => domainsApi.records(item.domainId!).then((r) => r.data.records) : undefined}
         onCopy={handleCopy}
         portHint={portHintFor(item.mappedPort, item.serviceId)}
         outputHint={outputHintFor(item.targetPath)}
@@ -2033,6 +2085,17 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
   return (
     <div className="space-y-5">
+      {dnsSetup && (
+        <div ref={dnsSetupAnchor} className="scroll-mt-6">
+          <DnsChallengePanel
+            key={`${dnsSetup.domainId}:${dnsSetup.renew ?? false}`}
+            {...dnsSetup}
+            mode={domainsData.domains.find((row: any) => row.id === dnsSetup.domainId)?.sslDnsMode === "manual" ? "manual" : "automatic"}
+            onChanged={() => { invalidateProjectCaches(id); router.refresh(); }}
+            onClose={() => setDnsSetup(null)}
+          />
+        </div>
+      )}
       {serviceScope && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -2190,6 +2253,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                   </div>
                   <button
                     onClick={() => setIncludeWww((value) => !value)}
+                    aria-label={t.projectSettings.domains.add.includeWww}
                     disabled={wildcardDomain}
                     className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveIncludeWww ? "bg-primary" : "bg-muted"}`}
                   >
@@ -2213,6 +2277,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                   <button
                     type="button"
                     onClick={() => setSslChallenge((value) => (value === "dns-01" ? "http-01" : "dns-01"))}
+                    aria-label={t.projectSettings.domains.add.dnsChallenge}
                     disabled={wildcardDomain}
                     aria-pressed={effectiveSslChallenge === "dns-01"}
                     className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveSslChallenge === "dns-01" ? "bg-primary" : "bg-muted"}`}
@@ -2966,6 +3031,7 @@ function DomainOverviewCard({
   sslActionBusy = false,
   sslActionLabel,
   onVerify,
+  verifyLabel,
   onRetryRouting,
   onRetryDiagnosis,
   retryBusy = false,
@@ -2987,6 +3053,7 @@ function DomainOverviewCard({
   /** Label for the in-flight SSL action ("Renewing…" / "Rechecking…"). */
   sslActionLabel?: string;
   onVerify?: () => void;
+  verifyLabel?: string;
   onRetryRouting?: () => void;
   onRetryDiagnosis?: () => void;
   retryBusy?: boolean;
@@ -3064,7 +3131,7 @@ function DomainOverviewCard({
           <p className="mt-1 text-[12px] text-muted-foreground">{domain.typeLabel}</p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          {domain.liveUrl ? (
+          {domain.liveUrl && !domain.hostname.startsWith("*.") ? (
             <a
               href={domain.liveUrl}
               target="_blank"
@@ -3253,7 +3320,7 @@ function DomainOverviewCard({
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {verifying ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="refresh" className="size-3.5" />}
-                {verifying ? d.menu.verifying : d.menu.verify}
+                {verifying ? d.menu.verifying : verifyLabel ?? d.menu.verify}
               </button>
               {loadRecords ? (
                 <button

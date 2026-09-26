@@ -5,7 +5,7 @@ import {
   type SslProvider,
   type SslResult,
 } from "@repo/adapters";
-import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
+import { SYSTEM, ConflictError, isWildcardHostname, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { env } from "../config/env";
 import { serviceKind } from "./deployable-service";
 import {
@@ -13,7 +13,7 @@ import {
   resolveServicePublicEndpoints,
   type StoredPublicEndpoint,
 } from "./public-endpoints";
-import { acmeIssueLockKey, LOCAL_ACME_SCOPE, resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
+import { acmeIssueLockKey, domainDnsProvisionOptions, LOCAL_ACME_SCOPE, resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
 import { resolveRouteRedirect } from "./domain-redirect";
 import { createProvisionLock } from "./provision-lock";
 import { generateToken } from "./domain-token";
@@ -666,7 +666,8 @@ export function createTrackedSslProvider(
       // stale database row or failed SSH read must not imply an HTTP-only site.
       // This read serves progress reporting; it never changes persisted state
       // or prevents the existing issuance/recovery path from running.
-      const onDisk = log ? await ssl.verifyCert(host).catch(() => null) : null;
+      const dnsChallenge = host.startsWith("*.") || domainRecord?.sslChallenge === "dns-01";
+      const onDisk = log || dnsChallenge ? await ssl.verifyCert(host).catch(() => null) : null;
       const noCertYet = onDisk?.reason === "missing";
       log?.(noCertYet
         ? `No HTTPS certificate found for ${host}; the HTTP route is configured while certificate issuance is in progress.`
@@ -678,9 +679,17 @@ export function createTrackedSslProvider(
         // `www.example.com` issues two certificates in a row, and each certbot run
         // binds the same standalone challenge port. Without this they can also
         // collide with the pending-SSL sweep working on the other hostname.
-        result = await createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
-          ssl.provisionCert(host),
-        );
+        if (dnsChallenge && onDisk?.verified && Date.parse(onDisk.expiresAt) > Date.now()) {
+          await ssl.activateCert?.(host);
+          result = onDisk;
+        } else {
+          const dnsOptions = dnsChallenge && domainRecord?.projectId
+            ? await domainDnsProvisionOptions(host, domainRecord.projectId)
+            : undefined;
+          result = await createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
+            dnsOptions ? ssl.provisionCert(host, dnsOptions) : ssl.provisionCert(host),
+          );
+        }
       } catch (err) {
         errorReason = safeErrorMessage(err);
         const unknown: SslResult = {
@@ -696,6 +705,14 @@ export function createTrackedSslProvider(
         result = isRemoteConnectionError(err)
           ? unknown
           : await ssl.verifyCert(host).catch(() => unknown);
+        if (result.verified && result.reason !== "not_local") {
+          try {
+            await ssl.activateCert?.(host);
+          } catch (activationError) {
+            errorReason = safeErrorMessage(activationError);
+            result = { ...result, verified: false, reason: "read_error" };
+          }
+        }
       }
 
       // No row in the map (route-minted after the map was built) — nothing to
@@ -752,6 +769,8 @@ export function createTrackedSslProvider(
 
   return {
     provisionCert,
+    ...(ssl.dnsChallengeProvider ? { dnsChallengeProvider: () => ssl.dnsChallengeProvider!() } : {}),
+    ...(ssl.activateCert ? { activateCert: (hostname: string) => ssl.activateCert!(hostname) } : {}),
     renewCert: async (hostname: string) => persist(hostname, await ssl.renewCert(hostname)),
     verifyCert: async (hostname: string) => persist(hostname, await ssl.verifyCert(hostname)),
     installCert: async (hostname, cert) => persist(hostname, await ssl.installCert(hostname, cert)),
@@ -810,6 +829,7 @@ export async function ensureRouteDomainRecord(opts: {
     if ((existing.targetPort ?? null) !== expectedTargetPort) patch.targetPort = expectedTargetPort;
     if ((existing.targetPath ?? null) !== expectedTargetPath) patch.targetPath = expectedTargetPath;
     if ((existing.serviceId ?? null) !== expectedServiceId) patch.serviceId = expectedServiceId;
+    if (isWildcardHostname(route.hostname) && existing.sslChallenge !== "dns-01") patch.sslChallenge = "dns-01";
     // isPrimary intentionally NOT patched — preserve the user's stored selection.
     // Custom domains must pass the DNS challenge — the deploy must NOT force
     // them verified/active (that's the bug that left service routes stuck with
@@ -848,13 +868,14 @@ export async function ensureRouteDomainRecord(opts: {
     targetPort: route.targetPort,
     targetPath: route.targetPath,
     domainType: route.domainType,
-    isPrimary: hasExistingPrimary
+    isPrimary: hasExistingPrimary || isWildcardHostname(route.hostname)
       ? false
       : (route.isPrimary ?? (!route.serviceId && domainByHostname.size === 0)),
     status: isNewCustom ? "pending" : "active",
     verified: !isNewCustom,
     verifiedAt: isNewCustom ? null : new Date(),
     verificationToken: isNewCustom ? generateToken(route.hostname) : undefined,
+    ...(isWildcardHostname(route.hostname) ? { sslChallenge: "dns-01" as const } : {}),
   });
   // The ownership read above and the insert are separate statements. If a
   // foreign project won that race, findOrCreateWithStatus returns its row; it

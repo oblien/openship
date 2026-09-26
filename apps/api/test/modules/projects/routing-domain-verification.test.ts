@@ -164,7 +164,10 @@ describe("routing repair domain verification", () => {
         resourceId: row.id,
         action: "write",
       });
-      expect(mocks.verifyCert).toHaveBeenCalledWith(row.hostname, { projectId: "project-a" });
+      expect(mocks.verifyCert).toHaveBeenCalledWith(row.hostname, {
+        projectId: "project-a",
+        activate: true,
+      });
       expect(logs.some((line) => line.includes(row.hostname) && line.includes("reusing it"))).toBe(
         true,
       );

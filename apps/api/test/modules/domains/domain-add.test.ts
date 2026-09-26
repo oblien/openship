@@ -147,6 +147,22 @@ describe("addDomain retries", () => {
     expect(domainRepo.update).not.toHaveBeenCalled();
   });
 
+  it("enforces DNS-01 for a wildcard even when HTTP is requested, without adding www", async () => {
+    domainRepo.findByHostname.mockResolvedValue(null);
+    domainRepo.create.mockImplementation(async (data: any) => ({ id: "dom_wildcard", ...data }));
+    const result = await addDomain(context as any, {
+      projectId: project.id, hostname: "*.example.com", sslChallenge: "http-01", includeWww: true,
+    });
+    expect(result.domain).toMatchObject({ hostname: "*.example.com", sslChallenge: "dns-01", isPrimary: false });
+    expect(domainRepo.create).toHaveBeenCalledOnce();
+    expect(result.www).toBeUndefined();
+  });
+
+  it("rejects a wildcard as the primary URL before creating a domain", async () => {
+    await expect(addDomain(context as any, { projectId: project.id, hostname: "*.example.com", isPrimary: true })).rejects.toThrow(/concrete hostname/);
+    expect(domainRepo.create).not.toHaveBeenCalled();
+  });
+
   // The toggle used to set a flag nothing read: the controller dropped it and the SSL
   // layer's www branch only ever resolved an EXISTING row (#289). www is a second
   // routable hostname — the edge binds one server_name per row — so it only exists

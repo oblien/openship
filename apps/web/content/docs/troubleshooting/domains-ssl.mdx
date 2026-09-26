@@ -77,10 +77,30 @@ Fix each record named in the message.
 
 <Callout title="Self-hosted: check the certificate challenge" type="info">
 For HTTP-01, the hostname must reach the server's challenge endpoint on port 80, including through any
-proxy or NAT. DNS-01 instead requires a connected DNS provider that can publish the ACME challenge.
+proxy or NAT. DNS-01 uses a connected DNS provider or the **Manual TXT** flow in **DNS-verified HTTPS**.
 Neither mode compares the hostname's public IP with the server's IP. If another proxy owns TLS, use
 **External ingress & TLS** and configure that proxy to forward application requests.
 </Callout>
+
+## Wildcard or manual TXT setup is waiting
+
+Wildcard certificates require DNS-01. The routing `A` or `CNAME` record does not replace the certificate's
+`_acme-challenge` TXT record. Open the domain's **DNS-verified HTTPS** panel to see the active attempt,
+its deadline and **Certificate logs**.
+
+| State or message | What to do |
+|---|---|
+| No DNS provider connected | Connect Cloudflare in **Settings → DNS**, or choose **Manual TXT** and generate a TXT record. |
+| TXT record not visible | Compare both name and value. If the provider appends your zone name, enter only the relative part. Keep other TXT values, allow propagation, then **Check TXT & enable HTTPS**. |
+| Connection interrupted | Reopen the panel or use **Refresh status**. An accepted operation continues on the server; the saved attempt can resume after a restart. |
+| TXT challenge expired or CA order invalid | Cancel the old attempt if needed and start again. Publish the new value; remove only the previous attempt's value. |
+| Certificate authority changed | Start a new challenge using the current HTTPS settings. An order belongs to the authority that created it. |
+| Server connection or certificate installation failed | Restore access to the current deployment server, then retry the same saved challenge before its deadline. Existing TLS is retained. |
+
+Manual TXT setup does not retry on a schedule: it waits for the operator to publish and check DNS.
+Within 14 days of expiry, the domain details request renewal. Use **Renew SSL** to obtain and confirm a
+fresh TXT value, or switch to **Automatic provider** for unattended renewal. See the
+[wildcard setup guide](/docs/guides/custom-domains#wildcard-domains).
 
 ### If the Cloud TXT ownership record is failing
 
@@ -117,11 +137,12 @@ hours to propagate globally."* Usually it's a few minutes; occasionally it's muc
    domain is at least 10 minutes old, the job retries verification and certificate issuance automatically.
    This also runs in Openship Desktop against the project's connected deployment server. Clicking
    **Verify** is the faster, explicit retry; it is not required for the normal background lifecycle.
+   Manual TXT domains are excluded from this job and wait for **Check TXT & enable HTTPS** instead.
 
 <Callout title="What the first deployment does" type="info">
-A new custom domain starts **Pending**, so its initial deployment creates the HTTP route and prepares the
-server's SSL toolchain, but deliberately does not open an ACME order yet. Certificate issuance begins only
-after verification succeeds, either from the scheduled job or from **Verify**.
+A new custom domain starts **Pending**. Its deployment prepares the route and SSL toolchain. A DNS-01
+certificate needs a connected provider, or manual TXT setup after deployment. A missing credential or
+certificate failure remains actionable in the domain details; it does not erase the deployed application.
 </Callout>
 
 <Callout title="Confirm propagation yourself" type="info">
@@ -158,7 +179,8 @@ not been observed yet, or the first attempt failed.
 Once a certificate is **Active** you normally never touch it again. Renewal targets certificates within about
 two weeks of expiry: on Openship Cloud, and on self-hosted setups where your proxy or edge (Traefik, Caddy, a
 load balancer) owns TLS, this is handled for you; a self-hosted operator can also point a scheduled job at the
-renew endpoint. **Renew SSL** is the manual fallback if a certificate ever lapses.
+renew endpoint. **Renew SSL** is the manual fallback if a certificate ever lapses. If you chose manual TXT,
+this opens DNS setup for a fresh record; those certificates cannot renew unattended.
 </Callout>
 
 <Callout title="“Recheck / Renew SSL” errors that the domain must be verified" type="warn">

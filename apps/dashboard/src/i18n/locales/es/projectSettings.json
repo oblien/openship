@@ -772,8 +772,8 @@
       "mapsToPort": "Se asigna al puerto",
       "includeWww": "Incluir www",
       "dnsChallenge": "Usar desafío DNS-01",
-      "dnsChallengeDesc": "Emite y renueva el certificado mediante tu proveedor DNS conectado. Úsalo cuando el puerto 80 no sea accesible.",
-      "dnsChallengeWildcardDesc": "Los certificados comodín requieren DNS-01 y un proveedor DNS conectado.",
+      "dnsChallengeDesc": "Verifica mediante un proveedor DNS o un registro TXT temporal. Útil cuando el puerto 80 no está disponible.",
+      "dnsChallengeWildcardDesc": "Obligatorio para HTTPS con comodín. Usa un proveedor DNS conectado o añade un registro TXT temporal durante la configuración de HTTPS.",
       "includeWwwDesc": "También generar registros para www.{domain}",
       "includeWwwFallback": "tudominio.com",
       "adding": "Añadiendo...",
@@ -900,7 +900,8 @@
         "removing": "Este dominio se está eliminando. No hay ninguna verificación programada.",
         "manual_certificate": "Este dominio usa un certificado subido manualmente. Sube un reemplazo válido y compruébalo. Openship no lo renueva automáticamente.",
         "managed_certificate": "TLS lo gestiona tu proxy externo u Openship Cloud. Revisa la configuración de ese proveedor.",
-        "route_missing": "Esta ruta configurada aún no se ha aplicado. Reintenta el enrutamiento para aplicarla. No hay reintentos automáticos de enrutamiento programados."
+        "route_missing": "Esta ruta configurada aún no se ha aplicado. Reintenta el enrutamiento para aplicarla. No hay reintentos automáticos de enrutamiento programados.",
+        "manual_dns": "Este certificado usa verificación TXT manual. Abre la configuración de HTTPS para confirmar un nuevo registro TXT o elige un proveedor DNS conectado para la renovación automática."
       }
     },
     "records": {
@@ -911,6 +912,43 @@
       "body": "No se encontró ninguna salida de compilación en {path} — revisa tu directorio de salida y vuelve a desplegar.",
       "noIndex": "Hay salida en {path} pero no hay ningún archivo index — las solicitudes devolverán 404. Revisa tu directorio de salida.",
       "notServed": "El proxy respondió HTTP {status} para {path} — esta ruta no se está sirviendo. Revisa tu directorio de salida y la ruta."
+    },
+    "wildcard": {
+      "title": "HTTPS con verificación DNS",
+      "scope": "Un comodín cubre un nivel de subdominios. Añade el dominio base por separado si también debe servir esta aplicación.",
+      "notice": "HTTPS con comodín requiere verificación DNS. Después de guardar, conecta un proveedor DNS o añade el registro TXT de la configuración de HTTPS.",
+      "automatic": "Proveedor automático",
+      "manual": "TXT manual",
+      "automaticHint": "Conecta Cloudflare en Ajustes → DNS para crear las verificaciones del certificado y renovar HTTPS automáticamente.",
+      "manualHint": "Añade un registro TXT temporal en tu proveedor DNS. Cada renovación necesita un registro TXT nuevo; Openship mostrará cuándo debes renovar.",
+      "routing": "1. Apunta el dominio a este servidor",
+      "certificate": "2. Habilita HTTPS",
+      "startAutomatic": "Habilitar HTTPS automáticamente",
+      "startManual": "Obtener registro TXT",
+      "renew": "Renovar certificado",
+      "check": "Comprobar TXT y habilitar HTTPS",
+      "cancel": "Cancelar verificación",
+      "refresh": "Actualizar estado",
+      "close": "Cerrar configuración",
+      "loading": "Cargando la configuración del certificado",
+      "loadFailed": "No se pudo cargar la configuración del certificado. Reintenta para ver su estado actual.",
+      "recordsFailed": "No se pudieron cargar los registros DNS de enrutamiento. La verificación del certificado guardada sigue disponible.",
+      "actionFailed": "No se pudo actualizar la configuración del certificado.",
+      "expires": "Completa esta verificación antes del {date}.",
+      "txtHint": "Añade exactamente este valor TXT. Conserva los demás valores TXT con el mismo nombre. Si tu proveedor añade el nombre de la zona, introduce solo la parte relativa.",
+      "cleanup": "Puedes eliminar el valor TXT de este intento. Conserva todos los demás registros TXT.",
+      "logs": "Registros del certificado",
+      "states": {
+        "preparing": "Preparando la verificación del certificado…",
+        "waiting": "Esperando tu registro TXT",
+        "checking": "Comprobando DNS y la titularidad del certificado…",
+        "installing": "Habilitando HTTPS…",
+        "cancelling": "Cancelando la verificación…",
+        "completed": "HTTPS está listo",
+        "failed": "La configuración del certificado requiere atención",
+        "cancelled": "Verificación cancelada",
+        "expired": "La verificación TXT ha caducado"
+      }
     }
   },
   "serviceEnvironment": {

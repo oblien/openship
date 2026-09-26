@@ -42,6 +42,7 @@ export {
   type NewBuildSession,
 } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
+export { createDomainDnsChallengeRepo, type DomainDnsChallenge } from "./domain-dns-challenge.repo";
 export {
   createDnsCredentialRepo,
   type DnsCredential,
@@ -281,6 +282,7 @@ import { createProjectGroupRepo } from "./project-group.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
+import { createDomainDnsChallengeRepo } from "./domain-dns-challenge.repo";
 import { createDnsCredentialRepo } from "./dns-credential.repo";
 import { createCredentialRepo } from "./credential.repo";
 import { createRouteRuleRepo } from "./route-rule.repo";
@@ -367,6 +369,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   project: createProjectRepo(db, encryption),
   deployment: createDeploymentRepo(db, encryption),
   domain: createDomainRepo(db),
+  domainDnsChallenge: createDomainDnsChallengeRepo(db),
   dnsCredential: createDnsCredentialRepo(db),
   credential: createCredentialRepo(db),
   routeRule: createRouteRuleRepo(db),

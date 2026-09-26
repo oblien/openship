@@ -772,8 +772,8 @@
       "mapsToPort": "映射到端口",
       "includeWww": "包含 www",
       "dnsChallenge": "使用 DNS-01 验证",
-      "dnsChallengeDesc": "通过已连接的 DNS 提供商签发和续期证书。端口 80 无法访问时使用此选项。",
-      "dnsChallengeWildcardDesc": "通配符证书需要 DNS-01 和已连接的 DNS 提供商。",
+      "dnsChallengeDesc": "通过 DNS 提供商或临时 TXT 记录进行验证。适用于端口 80 不可用的情况。",
+      "dnsChallengeWildcardDesc": "通配符 HTTPS 必须使用 DNS 验证。请使用已连接的 DNS 提供商，或在设置 HTTPS 时添加临时 TXT 记录。",
       "includeWwwDesc": "同时为 www.{domain} 生成记录",
       "includeWwwFallback": "yourdomain.com",
       "adding": "添加中...",
@@ -900,7 +900,8 @@
         "removing": "正在删除此域名，未安排验证。",
         "manual_certificate": "此域名使用手动上传的证书。请上传有效的替代证书后重新检查。Openship 不会自动续期此证书。",
         "managed_certificate": "TLS 由外部代理或 Openship Cloud 管理。请检查相应提供方的配置。",
-        "route_missing": "已配置的路由尚未应用。请重试路由操作以应用配置。目前没有安排路由自动重试。"
+        "route_missing": "已配置的路由尚未应用。请重试路由操作以应用配置。目前没有安排路由自动重试。",
+        "manual_dns": "此证书使用手动 TXT 验证。请打开 HTTPS 设置以确认新的 TXT 记录，或选择已连接的 DNS 提供商以自动续期。"
       }
     },
     "records": {
@@ -911,6 +912,43 @@
       "body": "在 {path} 未找到构建输出 — 请检查输出目录并重新部署。",
       "noIndex": "{path} 存在输出，但没有 index 文件 — 请求将返回 404。请检查输出目录。",
       "notServed": "边缘代理对 {path} 返回了 HTTP {status} — 此路径未提供服务。请检查输出目录和路由。"
+    },
+    "wildcard": {
+      "title": "通过 DNS 验证的 HTTPS",
+      "scope": "通配符仅覆盖一级子域名。如果根域名也需要提供此应用，请单独添加。",
+      "notice": "通配符 HTTPS 需要 DNS 验证。保存后，请连接 DNS 提供商，或添加 HTTPS 设置中显示的 TXT 记录。",
+      "automatic": "提供商自动验证",
+      "manual": "手动 TXT",
+      "automaticHint": "在设置 → DNS 中连接 Cloudflare，即可创建证书验证记录并自动续期 HTTPS。",
+      "manualHint": "请在 DNS 提供商处添加临时 TXT 记录。每次续期都需要新的 TXT 记录；Openship 会显示何时需要续期。",
+      "routing": "1. 将域名指向此服务器",
+      "certificate": "2. 启用 HTTPS",
+      "startAutomatic": "自动启用 HTTPS",
+      "startManual": "获取 TXT 记录",
+      "renew": "续期证书",
+      "check": "检查 TXT 并启用 HTTPS",
+      "cancel": "取消验证",
+      "refresh": "刷新状态",
+      "close": "关闭设置",
+      "loading": "正在加载证书设置",
+      "loadFailed": "无法加载证书设置。请重试以查看当前状态。",
+      "recordsFailed": "无法加载用于路由的 DNS 记录。已保存的证书验证信息仍然可用。",
+      "actionFailed": "无法更新证书设置。",
+      "expires": "请在 {date} 前完成此验证。",
+      "txtHint": "请准确添加此 TXT 值。保留同名的其他 TXT 值。如果提供商会自动添加 DNS 区域名称，请仅输入相对部分。",
+      "cleanup": "可以删除本次尝试的 TXT 值。请保留所有其他 TXT 记录。",
+      "logs": "证书日志",
+      "states": {
+        "preparing": "正在准备证书验证…",
+        "waiting": "正在等待你的 TXT 记录",
+        "checking": "正在检查 DNS 和证书所有权…",
+        "installing": "正在启用 HTTPS…",
+        "cancelling": "正在取消验证…",
+        "completed": "HTTPS 已就绪",
+        "failed": "证书设置需要处理",
+        "cancelled": "验证已取消",
+        "expired": "TXT 验证已过期"
+      }
     }
   },
   "serviceEnvironment": {

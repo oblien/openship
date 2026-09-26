@@ -834,6 +834,30 @@
       "description": "Apply the authorized DNS plan.",
       "route": "POST /api/domains/:id/dns/apply"
     },
+    "domains.dnsChallenge": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Read the saved DNS certificate attempt, TXT record, deadline and logs.",
+      "route": "GET /api/domains/:id/dns/challenge"
+    },
+    "domains.startDnsChallenge": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Start automatic provider setup or a manual TXT challenge; reuse an active attempt. Self-hosted targets only.",
+      "route": "POST /api/domains/:id/dns/challenge"
+    },
+    "domains.checkDnsChallenge": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Check the saved attempt's TXT, complete ACME validation and install HTTPS on the serving host.",
+      "route": "POST /api/domains/:id/dns/challenge/check"
+    },
+    "domains.cancelDnsChallenge": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Cancel a manual DNS certificate attempt before installation starts; retain existing certificates.",
+      "route": "POST /api/domains/:id/dns/challenge/cancel"
+    },
     "domains.setPrimary": {
       "page": "domains",
       "section": "Operations",

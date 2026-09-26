@@ -772,8 +772,8 @@
       "mapsToPort": "マッピング先ポート",
       "includeWww": "www を含める",
       "dnsChallenge": "DNS-01 チャレンジを使用",
-      "dnsChallengeDesc": "接続済みの DNS プロバイダーで証明書を発行・更新します。ポート 80 に到達できない場合に使用してください。",
-      "dnsChallengeWildcardDesc": "ワイルドカード証明書には DNS-01 と接続済みの DNS プロバイダーが必要です。",
+      "dnsChallengeDesc": "DNS プロバイダーまたは一時的な TXT レコードで検証します。ポート 80 を利用できない場合に便利です。",
+      "dnsChallengeWildcardDesc": "ワイルドカード HTTPS には必須です。接続済みの DNS プロバイダーを使用するか、HTTPS の設定中に一時的な TXT レコードを追加してください。",
       "includeWwwDesc": "www.{domain} 用のレコードも生成します",
       "includeWwwFallback": "yourdomain.com",
       "adding": "追加中...",
@@ -900,7 +900,8 @@
         "removing": "このドメインは削除中です。検証は予定されていません。",
         "manual_certificate": "このドメインはアップロードされた証明書を使用しています。有効な証明書をアップロードして再確認してください。Openship は自動更新しません。",
         "managed_certificate": "TLS は外部プロキシまたは Openship Cloud が管理しています。そのプロバイダーの設定を確認してください。",
-        "route_missing": "設定されたルートはまだ適用されていません。ルーティングを再試行して適用してください。ルーティングの自動再試行は予定されていません。"
+        "route_missing": "設定されたルートはまだ適用されていません。ルーティングを再試行して適用してください。ルーティングの自動再試行は予定されていません。",
+        "manual_dns": "この証明書は手動の TXT 検証を使用しています。HTTPS 設定を開いて新しい TXT レコードを確認するか、接続済みの DNS プロバイダーを選んで自動更新を有効にしてください。"
       }
     },
     "records": {
@@ -911,6 +912,43 @@
       "body": "{path} にビルド出力が見つかりません — 出力ディレクトリを確認して再デプロイしてください。",
       "noIndex": "{path} に出力はありますが index ファイルがありません — リクエストは 404 になります。出力ディレクトリを確認してください。",
       "notServed": "エッジが {path} に対して HTTP {status} を返しました — このパスは配信されていません。出力ディレクトリとルートを確認してください。"
+    },
+    "wildcard": {
+      "title": "DNS 検証による HTTPS",
+      "scope": "ワイルドカードはサブドメインの 1 階層を対象とします。ベースドメインでもこのアプリを配信する場合は、別途追加してください。",
+      "notice": "ワイルドカード HTTPS には DNS 検証が必要です。保存後、DNS プロバイダーを接続するか、HTTPS 設定に表示される TXT レコードを追加してください。",
+      "automatic": "自動（プロバイダー）",
+      "manual": "手動 TXT",
+      "automaticHint": "設定 → DNS で Cloudflare を接続すると、証明書の検証レコードを作成し、HTTPS を自動更新できます。",
+      "manualHint": "DNS プロバイダーで一時的な TXT レコードを追加してください。更新のたびに新しい TXT レコードが必要です。更新時期は Openship に表示されます。",
+      "routing": "1. ドメインをこのサーバーに向ける",
+      "certificate": "2. HTTPS を有効にする",
+      "startAutomatic": "HTTPS を自動で有効にする",
+      "startManual": "TXT レコードを取得",
+      "renew": "証明書を更新",
+      "check": "TXT を確認して HTTPS を有効化",
+      "cancel": "検証をキャンセル",
+      "refresh": "状態を更新",
+      "close": "設定を閉じる",
+      "loading": "証明書設定を読み込み中",
+      "loadFailed": "証明書設定を読み込めませんでした。再試行して現在の状態を確認してください。",
+      "recordsFailed": "ルーティング用の DNS レコードを読み込めませんでした。保存済みの証明書検証情報は引き続き利用できます。",
+      "actionFailed": "証明書設定を更新できませんでした。",
+      "expires": "{date} までにこの検証を完了してください。",
+      "txtHint": "この TXT 値をそのまま追加してください。同じ名前の他の TXT 値は残してください。プロバイダーがゾーン名を補完する場合は、相対部分のみを入力してください。",
+      "cleanup": "この試行の TXT 値は削除できます。他の TXT レコードはすべて残してください。",
+      "logs": "証明書ログ",
+      "states": {
+        "preparing": "証明書の検証を準備中…",
+        "waiting": "TXT レコードを待機中",
+        "checking": "DNS と証明書の所有権を確認中…",
+        "installing": "HTTPS を有効化中…",
+        "cancelling": "検証をキャンセル中…",
+        "completed": "HTTPS の準備ができました",
+        "failed": "証明書の設定に対応が必要です",
+        "cancelled": "検証をキャンセルしました",
+        "expired": "TXT 検証の有効期限が切れました"
+      }
     }
   },
   "serviceEnvironment": {

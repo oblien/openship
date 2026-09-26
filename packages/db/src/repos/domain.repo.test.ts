@@ -63,4 +63,13 @@ describe("domain.repo findExpiringSsl (PGlite)", () => {
       "error-expiring.test",
     ]);
   });
+
+  it("never returns a literal wildcard as a project's openable primary URL", async () => {
+    await ctx.db.insert(domain).values({ id: "wildcard", projectId: "p2", hostname: "*.example.com", isPrimary: true });
+    expect(await ctx.repo.getPrimaryByProject("p2")).toBeNull();
+    expect((await ctx.repo.getPrimariesByProjects(["p2"])).has("p2")).toBe(false);
+    await ctx.db.insert(domain).values({ id: "concrete", projectId: "p2", hostname: "app.example.com" });
+    expect((await ctx.repo.getPrimaryByProject("p2"))?.hostname).toBe("app.example.com");
+    expect((await ctx.repo.getPrimariesByProjects(["p2"])).get("p2")?.hostname).toBe("app.example.com");
+  });
 });

@@ -34,6 +34,36 @@ jobs:
     name: Scaling E2E
     uses: ./.github/workflows/scaling-e2e.yml
 
+  acme-dns:
+    name: Wildcard HTTPS (real ACME + DNS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - run: bun install --frozen-lockfile
+      - name: Install the pinned ACME test authority and DNS server
+        env:
+          GOBIN: ${{ runner.temp }}/acme-test-tools
+        run: |
+          go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.1
+          go install github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@v2.10.1
+          echo "$GOBIN" >> "$GITHUB_PATH"
+      - name: Issue, recover and renew wildcard certificates using real DNS proof
+        working-directory: packages/adapters
+        env:
+          RUN_ACME_E2E: '1'
+        run: node ../../node_modules/vitest/vitest.mjs run test/acme-dns.e2e.test.ts --maxWorkers=1
+
   test:
     name: Typecheck + tests
     runs-on: ubuntu-latest

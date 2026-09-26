@@ -121,6 +121,7 @@ export async function setPrimaryDomain(ctx: RequestContext, domainId: string) {
   if (!domain.projectId) throw new NotFoundError("Domain", domainId); // primary is a project-domain concept
   const project = await repos.project.findById(domain.projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, domain.projectId);
+  if (isWildcardHostname(domain.hostname)) throw new ValidationError("Choose a concrete hostname as the primary domain. A wildcard cannot be opened as a site URL.");
   await repos.domain.setPrimary(domain.projectId, domainId);
   return { ...domain, isPrimary: true };
 }
@@ -171,6 +172,12 @@ export async function addDomain(
 
   if (!hostname) {
     throw new ValidationError("Hostname is required.");
+  }
+  if (isWildcardHostname(hostname)) {
+    if (data.isPrimary) throw new ValidationError("Choose a concrete hostname as the primary domain. A wildcard cannot be opened as a site URL.");
+    // Re-saves must obey the same rule as creation, including older rows that
+    // stored an HTTP challenge for a wildcard.
+    data = { ...data, sslChallenge: "dns-01", includeWww: false };
   }
 
   // The TypeBox schema (route-level tbValidator) already enforces the
@@ -284,7 +291,7 @@ export async function addDomain(
   const token = generateToken(hostname);
 
   const isWildcard = isWildcardHostname(hostname);
-  const sslChallenge = data.sslChallenge ?? (isWildcard ? "dns-01" : "http-01");
+  const sslChallenge = isWildcard ? "dns-01" : data.sslChallenge ?? "http-01";
 
   const domain = await repos.domain.create({
     projectId: data.projectId,
@@ -607,7 +614,7 @@ export async function applyDomainDns(
  * entry point for analytics + the "Visit" link. Shared by verify + cert-reuse.
  */
 async function shouldPromoteToPrimary(domain: Domain, domainId: string): Promise<boolean> {
-  if (!domain.projectId || domain.domainType !== "custom") return false;
+  if (!domain.projectId || domain.domainType !== "custom" || isWildcardHostname(domain.hostname)) return false;
   const peers = await repos.domain.listByProject(domain.projectId);
   return !peers.some((p) => p.id !== domainId && p.isPrimary && p.domainType === "custom");
 }
@@ -620,7 +627,7 @@ async function shouldPromoteToPrimary(domain: Domain, domainId: string): Promise
  * the cert is already on disk by this point, so the box serves the domain while the
  * dashboard still shows it pending, with nothing to retry.
  */
-async function markDomainVerifiedActive(
+export async function markDomainVerifiedActive(
   domain: Domain,
   domainId: string,
   ssl: {
@@ -839,6 +846,8 @@ export async function reuseServerCertForDomain(
 interface DomainVerifyOptions {
   onLog?: (line: string) => void;
   force?: boolean;
+  /** Explicit certificate setup checks the serving host even if metadata is active. */
+  recheck?: boolean;
   /** The automatic sweep completes cloud TLS in its second, locked phase. */
   deferSsl?: boolean;
 }
@@ -870,12 +879,13 @@ async function checkDomain(
   const log = (line: string) => opts.onLog?.(line);
 
   if (domain.verified) {
-    if (needsDomainSslCheck(domain)) {
+    if (opts.force || opts.recheck || needsDomainSslCheck(domain)) {
       log("Checking the server's certificate and completing HTTPS if needed…");
       const result = await manageDomainSsl(domain.hostname, {
         action: "provision",
         projectId: project.id,
         onLog: opts.onLog,
+        force: opts.force,
       });
       if (!result.verified || !result.expiresAt) {
         const current = await repos.domain.findById(domainId);
@@ -983,6 +993,7 @@ async function checkDomain(
     if (!opts.force) {
       const existing = await verifyExistingCert(domain.hostname, {
         projectId: domain.projectId ?? undefined,
+        activate: true,
       }).catch(() => null);
       const daysLeft = existing?.expiresAt
         ? (new Date(existing.expiresAt).getTime() - Date.now()) / 86_400_000

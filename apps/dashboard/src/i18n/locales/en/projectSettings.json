@@ -957,8 +957,8 @@
       "externalIngress": "External ingress & TLS",
       "externalIngressDesc": "TLS terminates at your reverse proxy (Cloudflare Tunnel, Nginx Proxy Manager, or a load balancer). The domain need not point at this server, and Openship won't issue a certificate.",
       "dnsChallenge": "Use DNS-01 challenge",
-      "dnsChallengeDesc": "Issue and renew the certificate through your connected DNS provider. Use this when port 80 cannot be reached.",
-      "dnsChallengeWildcardDesc": "Wildcard certificates require DNS-01 and a connected DNS provider.",
+      "dnsChallengeDesc": "Verify through a DNS provider or a temporary TXT record. Useful when port 80 is unavailable.",
+      "dnsChallengeWildcardDesc": "Required for wildcard HTTPS. Use a connected DNS provider, or add a temporary TXT record during HTTPS setup.",
       "noWww": "That domain is already on this project.",
       "adding": "Adding...",
       "submit": "Add domain"
@@ -1123,7 +1123,45 @@
         "removing": "This domain is being removed. No verification is scheduled.",
         "manual_certificate": "This domain uses an uploaded certificate. Upload a valid replacement, then recheck it. Openship does not renew it automatically.",
         "managed_certificate": "TLS is managed by your external proxy or Openship Cloud. Check that provider’s configuration.",
-        "route_missing": "This configured route has not been applied. Retry routing to apply it. No automatic routing retry is scheduled."
+        "route_missing": "This configured route has not been applied. Retry routing to apply it. No automatic routing retry is scheduled.",
+        "manual_dns": "This certificate uses manual TXT verification. Open HTTPS setup to confirm a new TXT record, or choose a connected DNS provider for automatic renewal."
+      }
+    },
+    "wildcard": {
+      "title": "DNS-verified HTTPS",
+      "scope": "A wildcard covers one subdomain level. Add the base domain separately if it should serve this app too.",
+      "notice": "Wildcard HTTPS requires DNS verification. After saving, connect a DNS provider or add the TXT record from HTTPS setup.",
+      "automatic": "Automatic provider",
+      "manual": "Manual TXT",
+      "automaticHint": "Connect Cloudflare in Settings → DNS to create certificate challenges and renew HTTPS automatically.",
+      "manualHint": "Add a temporary TXT record at your DNS provider. Each renewal needs a new TXT record; Openship will show when renewal is due.",
+      "routing": "1. Point the domain at this server",
+      "certificate": "2. Enable HTTPS",
+      "startAutomatic": "Enable HTTPS automatically",
+      "startManual": "Get TXT record",
+      "renew": "Renew certificate",
+      "check": "Check TXT & enable HTTPS",
+      "cancel": "Cancel challenge",
+      "refresh": "Refresh status",
+      "close": "Close setup",
+      "loading": "Loading certificate setup",
+      "loadFailed": "Could not load certificate setup. Retry to see its current state.",
+      "recordsFailed": "Could not load the routing DNS records. Your saved certificate challenge is still available.",
+      "actionFailed": "Could not update certificate setup.",
+      "expires": "Complete this challenge by {date}.",
+      "txtHint": "Add this exact TXT value. Keep other TXT values at the same name. If your provider adds the zone name, enter only the relative part.",
+      "cleanup": "You may remove this attempt’s TXT value. Keep all other TXT records.",
+      "logs": "Certificate logs",
+      "states": {
+        "preparing": "Preparing the certificate challenge…",
+        "waiting": "Waiting for your TXT record",
+        "checking": "Checking DNS and certificate ownership…",
+        "installing": "Enabling HTTPS…",
+        "cancelling": "Cancelling the challenge…",
+        "completed": "HTTPS is ready",
+        "failed": "Certificate setup needs attention",
+        "cancelled": "Challenge cancelled",
+        "expired": "TXT challenge expired"
       }
     }
   },

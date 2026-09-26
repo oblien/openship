@@ -778,8 +778,8 @@
       "mapsToPort": "Verweist auf Port",
       "includeWww": "www einbeziehen",
       "dnsChallenge": "DNS-01-Challenge verwenden",
-      "dnsChallengeDesc": "Zertifikat über den verbundenen DNS-Anbieter ausstellen und erneuern. Verwenden, wenn Port 80 nicht erreichbar ist.",
-      "dnsChallengeWildcardDesc": "Wildcard-Zertifikate erfordern DNS-01 und einen verbundenen DNS-Anbieter.",
+      "dnsChallengeDesc": "Über einen DNS-Anbieter oder einen temporären TXT-Eintrag verifizieren. Hilfreich, wenn Port 80 nicht erreichbar ist.",
+      "dnsChallengeWildcardDesc": "Für Wildcard-HTTPS erforderlich. Verwende einen verbundenen DNS-Anbieter oder füge beim Einrichten von HTTPS einen temporären TXT-Eintrag hinzu.",
       "includeWwwDesc": "Auch Einträge für www.{domain} erzeugen",
       "includeWwwFallback": "ihredomain.de",
       "adding": "Wird hinzugefügt...",
@@ -906,7 +906,8 @@
         "removing": "Diese Domain wird entfernt. Es ist keine Prüfung geplant.",
         "manual_certificate": "Diese Domain verwendet ein hochgeladenes Zertifikat. Lade einen gültigen Ersatz hoch und prüfe ihn erneut. Openship erneuert es nicht automatisch.",
         "managed_certificate": "TLS wird von deinem externen Proxy oder Openship Cloud verwaltet. Prüfe die Konfiguration dieses Anbieters.",
-        "route_missing": "Diese konfigurierte Route wurde noch nicht angewendet. Wiederhole die Routing-Aktion. Es ist kein automatischer Routing-Versuch geplant."
+        "route_missing": "Diese konfigurierte Route wurde noch nicht angewendet. Wiederhole die Routing-Aktion. Es ist kein automatischer Routing-Versuch geplant.",
+        "manual_dns": "Dieses Zertifikat verwendet die manuelle TXT-Verifizierung. Öffne die HTTPS-Einrichtung, um einen neuen TXT-Eintrag zu bestätigen, oder wähle einen verbundenen DNS-Anbieter für die automatische Erneuerung."
       }
     },
     "records": {
@@ -917,6 +918,43 @@
       "body": "Keine Build-Ausgabe unter {path} gefunden — prüfen Sie Ihr Ausgabeverzeichnis und deployen Sie erneut.",
       "noIndex": "Unter {path} liegt eine Ausgabe, aber keine Index-Datei — Anfragen liefern 404. Prüfen Sie Ihr Ausgabeverzeichnis.",
       "notServed": "Der Edge-Proxy antwortete mit HTTP {status} für {path} — dieser Pfad wird nicht ausgeliefert. Prüfen Sie Ihr Ausgabeverzeichnis und die Route."
+    },
+    "wildcard": {
+      "title": "HTTPS mit DNS-Verifizierung",
+      "scope": "Eine Wildcard deckt eine Subdomain-Ebene ab. Füge die Basisdomain separat hinzu, wenn sie diese App ebenfalls bereitstellen soll.",
+      "notice": "Wildcard-HTTPS erfordert eine DNS-Verifizierung. Verbinde nach dem Speichern einen DNS-Anbieter oder füge den TXT-Eintrag aus der HTTPS-Einrichtung hinzu.",
+      "automatic": "Automatischer Anbieter",
+      "manual": "TXT manuell",
+      "automaticHint": "Verbinde Cloudflare unter Einstellungen → DNS, um Zertifikatsnachweise zu erstellen und HTTPS automatisch zu erneuern.",
+      "manualHint": "Füge bei deinem DNS-Anbieter einen temporären TXT-Eintrag hinzu. Jede Erneuerung benötigt einen neuen TXT-Eintrag; Openship zeigt an, wann sie fällig ist.",
+      "routing": "1. Die Domain auf diesen Server verweisen",
+      "certificate": "2. HTTPS aktivieren",
+      "startAutomatic": "HTTPS automatisch aktivieren",
+      "startManual": "TXT-Eintrag abrufen",
+      "renew": "Zertifikat erneuern",
+      "check": "TXT prüfen und HTTPS aktivieren",
+      "cancel": "Verifizierung abbrechen",
+      "refresh": "Status aktualisieren",
+      "close": "Einrichtung schließen",
+      "loading": "Zertifikatseinrichtung wird geladen",
+      "loadFailed": "Die Zertifikatseinrichtung konnte nicht geladen werden. Versuche es erneut, um den aktuellen Status zu sehen.",
+      "recordsFailed": "Die DNS-Routing-Einträge konnten nicht geladen werden. Dein gespeicherter Zertifikatsnachweis ist weiterhin verfügbar.",
+      "actionFailed": "Die Zertifikatseinrichtung konnte nicht aktualisiert werden.",
+      "expires": "Schließe diese Verifizierung bis {date} ab.",
+      "txtHint": "Füge genau diesen TXT-Wert hinzu. Behalte andere TXT-Werte unter demselben Namen bei. Wenn dein Anbieter den Zonennamen ergänzt, gib nur den relativen Teil ein.",
+      "cleanup": "Du kannst den TXT-Wert dieses Versuchs entfernen. Behalte alle anderen TXT-Einträge bei.",
+      "logs": "Zertifikatsprotokolle",
+      "states": {
+        "preparing": "Zertifikatsnachweis wird vorbereitet…",
+        "waiting": "Warten auf deinen TXT-Eintrag",
+        "checking": "DNS und Zertifikatsinhaberschaft werden geprüft…",
+        "installing": "HTTPS wird aktiviert…",
+        "cancelling": "Verifizierung wird abgebrochen…",
+        "completed": "HTTPS ist bereit",
+        "failed": "Die Zertifikatseinrichtung erfordert Aufmerksamkeit",
+        "cancelled": "Verifizierung abgebrochen",
+        "expired": "TXT-Verifizierung abgelaufen"
+      }
     }
   },
   "serviceEnvironment": {

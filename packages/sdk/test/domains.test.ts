@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenshipClient } from "../src/client";
-import { domainFixture, dnsCredentialFixture } from "../../contracts/test/fixtures";
+import { domainFixture, domainDnsChallengeFixture, dnsCredentialFixture } from "../../contracts/test/fixtures";
 
 describe("domain and DNS remote transport", () => {
   it("adapts project-scoped creation without dropping sibling or edge recovery information", async () => {
@@ -58,5 +58,22 @@ describe("domain and DNS remote transport", () => {
     const iterator = client.domains.verifyStream("domain/a", {}, { signal: abort.signal })[Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toMatchObject({ name: "AbortError" });
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("supports the complete resumable TXT lifecycle without exposing private order material", async () => {
+    const state = domainDnsChallengeFixture();
+    const fetcher = vi.fn(async () => Response.json({ data: state }, { status: 202 }));
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    expect(await client.domains.startDnsChallenge("domain/a", { mode: "manual" })).toEqual(state);
+    expect(fetcher.mock.calls.at(-1)).toMatchObject(["https://ship.test/api/domains/domain%2Fa/dns/challenge", { method: "POST", body: JSON.stringify({ mode: "manual" }) }]);
+    expect(await client.domains.dnsChallenge("domain/a")).toEqual(state);
+    expect(fetcher.mock.calls.at(-1)).toMatchObject(["https://ship.test/api/domains/domain%2Fa/dns/challenge", { method: "GET" }]);
+    const input = { attemptId: state.id };
+    await client.domains.checkDnsChallenge("domain/a", input);
+    expect(fetcher.mock.calls.at(-1)).toMatchObject(["https://ship.test/api/domains/domain%2Fa/dns/challenge/check", { method: "POST", body: JSON.stringify(input) }]);
+    await client.domains.cancelDnsChallenge("domain/a", input);
+    expect(fetcher.mock.calls.at(-1)).toMatchObject(["https://ship.test/api/domains/domain%2Fa/dns/challenge/cancel", { method: "POST", body: JSON.stringify(input) }]);
+    fetcher.mockImplementation(async () => Response.json({ data: { ...state, orderEnc: "private" } }));
+    await expect(client.domains.dnsChallenge("domain/a")).rejects.toMatchObject({ status: 502 });
   });
 });

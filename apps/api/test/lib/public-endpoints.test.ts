@@ -16,6 +16,7 @@ import {
   resolveProjectAccess,
   serviceDomainRowsToPublicEndpoints,
   resolveServicePublicEndpoints,
+  resolveServiceEndpointUrls,
   resolveServiceRouteHostname,
   resolveStoredPublicEndpoints,
   syncStoredPublicEndpoints,
@@ -434,6 +435,16 @@ describe("pickCanonicalDomainRow", () => {
 });
 
 describe("resolveProjectAccess", () => {
+  it("keeps wildcard routes out of canonical access links and service URL substitutions", () => {
+    const wildcard = row({ hostname: "*.example.com", verified: true, isPrimary: true });
+    expect(pickCanonicalDomainRow([wildcard])).toBeNull();
+    expect(resolveProjectAccess({ rows: [wildcard], target: "server", port: 3000 }).url).toBeNull();
+    const concrete = row({ hostname: "app.example.com", verified: true });
+    expect(resolveProjectAccess({ rows: [wildcard, concrete], target: "server", port: 3000 }).urls).toEqual(["https://app.example.com"]);
+    const service = { id: "service", name: "web", kind: "compose", exposed: true, exposedPort: "3000", domainType: "custom", customDomain: "*.example.com" } as any;
+    expect(resolveServicePublicEndpoints(service)).toMatchObject([{ customDomain: "*.example.com" }]);
+    expect(resolveServiceEndpointUrls({ slug: "project" } as any, service)).toEqual([]);
+  });
   it("resolves a project whose only domains are service-scoped (the openship repro)", () => {
     // Multi-service project: both verified custom domains live on service-scoped
     // rows, so project-level publicEndpoints is empty — the exact case that used

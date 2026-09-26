@@ -104,6 +104,13 @@ export interface ProvisionCertOptions {
 }
 
 export interface SslProvider {
+  /** Resumable DNS-01 orders. Waiting for a person must not hold an executor,
+   * Certbot process, or deployment lock. Returned order material is private. */
+  dnsChallengeProvider?(): Promise<DnsCertificateProvider>;
+  /** Enable the current route with an already-validated certificate, without
+   * opening another ACME order. A readable PEM alone does not prove a failed
+   * vhost reload has recovered. Only providers that own the route implement it. */
+  activateCert?(domain: string): Promise<void>;
   /** Provision a new TLS certificate for a domain. `onLog`, when given, streams
    *  certbot's output line-by-line (powers the live-log verify modal). `force`
    *  bypasses the "cert already on disk" short-circuit and passes certbot
@@ -130,4 +137,16 @@ export interface SslProvider {
    * of mistaking a transient read failure for "no cert".
    */
   verifyCert(domain: string): Promise<SslResult>;
+}
+
+export interface DnsCertificateProvider {
+  readonly directoryUrl: string;
+  createAccountKey(): Promise<string>;
+  prepare(hostname: string, accountKey: string): Promise<{
+    record: { name: string; value: string };
+    expiresAt: string;
+    /** Opaque serialized order, CSR and key. Encrypt at rest; never return to a client. */
+    state: string;
+  }>;
+  complete(hostname: string, accountKey: string, state: string): Promise<ManualCert>;
 }

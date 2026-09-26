@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   provisionCert: vi.fn(),
   renewCert: vi.fn(),
   verifyCert: vi.fn(),
+  activateCert: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -61,6 +62,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
         provisionCert: h.provisionCert,
         renewCert: h.renewCert,
         verifyCert: h.verifyCert,
+        activateCert: h.activateCert,
       },
     },
   })),
@@ -116,6 +118,7 @@ beforeEach(() => {
   h.recordSslFailure.mockReset();
   h.provisionCert.mockReset();
   h.renewCert.mockReset();
+  h.activateCert.mockReset().mockResolvedValue(undefined);
   h.verifyCert.mockReset().mockResolvedValue({
     domain: HOST,
     expiresAt: "",
@@ -199,6 +202,15 @@ describe.each([
 
     await expect(run()).rejects.toThrow(POST_ISSUE_ERROR);
   });
+
+  it("does not mistake a readable certificate for a recovered route activation", async () => {
+    domain();
+    failingSpy().mockRejectedValue(POST_ISSUE_ERROR);
+    onDisk(VALID_EXPIRY);
+    h.activateCert.mockRejectedValue(new Error("Edge reload failed"));
+    await expect(run()).rejects.toThrow("Edge reload failed");
+    expect(h.updateSsl).not.toHaveBeenCalledWith("dom_1", expect.objectContaining({ sslStatus: "active" }));
+  });
 });
 
 describe("the happy path is untouched", () => {
@@ -212,6 +224,7 @@ describe("the happy path is untouched", () => {
       { verified: true, expiresAt: VALID_EXPIRY },
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.activateCert).toHaveBeenCalledWith(HOST);
     expect(h.updateSsl).toHaveBeenCalledWith(
       "dom_1",
       expect.objectContaining({
