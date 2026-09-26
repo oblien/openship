@@ -72,6 +72,21 @@ describe("injectGitToken", () => {
       "https://github.com/owner/repo.git",
     );
   });
+  it("puts an Azure DevOps PAT in the password slot with a dummy username", () => {
+    expect(
+      injectGitToken("https://dev.azure.com/org/project/_git/repo", "azurepat"),
+    ).toBe("https://pat:azurepat@dev.azure.com/org/project/_git/repo");
+  });
+  it("handles the old visualstudio.com Azure host the same way", () => {
+    expect(
+      injectGitToken("https://org.visualstudio.com/project/_git/repo", "azurepat"),
+    ).toBe("https://pat:azurepat@org.visualstudio.com/project/_git/repo");
+  });
+  it("returns an Azure URL unchanged when no token", () => {
+    expect(injectGitToken("https://dev.azure.com/org/project/_git/repo")).toBe(
+      "https://dev.azure.com/org/project/_git/repo",
+    );
+  });
   it("returns the URL unchanged when no token", () => {
     expect(injectGitToken("https://github.com/owner/repo.git")).toBe(
       "https://github.com/owner/repo.git",

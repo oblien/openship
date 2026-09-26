@@ -7,6 +7,7 @@
 
 import * as githubService from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
+import * as azureService from "../azure/azure.service";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
 import {
   blockingComposeFields,
@@ -50,7 +51,7 @@ import {
   resolveTierResources,
 } from "@repo/core";
 import { env } from "../../config/index";
-import { createGitHubReader, type ProjectReader } from "./project-reader";
+import { createGitHubReader, createAzureReader, type ProjectReader } from "./project-reader";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 
 const PREPARE_FILE_CONTENTS = [
@@ -84,6 +85,16 @@ export type Source =
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
       /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
+    }
+  | {
+      source: "azure";
+      owner: string;
+      project: string;
+      repo: string;
+      branch?: string;
+      ctx?: RequestContext;
+      composePath?: string;
       env?: Record<string, string>;
     }
   | {
@@ -856,6 +867,16 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     });
   }
 
+  if (input.source === "azure") {
+    if (!input.ctx) {
+      throw new Error("resolveProjectInfo(azure): ctx is required");
+    }
+    return resolveFromAzure(input.ctx, input.owner, input.project, input.repo, input.branch, {
+      composePath: input.composePath,
+      env: input.env,
+    });
+  }
+
   if (env.CLOUD_MODE) {
     throw new Error("Local project resolution is not available in cloud mode");
   }
@@ -883,6 +904,20 @@ export async function resolveProjectSourceEnv(
       (await githubService.getRepository(input.ctx, input.owner, input.repo)).default_branch;
     return resolveSourceEnvFromReader(
       createGitHubReader(input.ctx, input.owner, input.repo, branch),
+      rootDirectory,
+    );
+  }
+
+  if (input.source === "azure") {
+    if (!input.ctx) {
+      throw new Error("resolveProjectSourceEnv(azure): ctx is required");
+    }
+    const branch =
+      input.branch?.trim() ||
+      (await azureService.getRepository(input.ctx, input.owner, input.project, input.repo))
+        .defaultBranch;
+    return resolveSourceEnvFromReader(
+      createAzureReader(input.ctx, input.owner, input.project, input.repo, branch),
       rootDirectory,
     );
   }
@@ -1041,6 +1076,41 @@ async function resolveFromGitHub(
   return resolveFromReader(
     createGitHubReader(ctx, owner, repo, selectedBranch),
     repository,
+    selectedBranch,
+    opts,
+  );
+}
+
+async function resolveFromAzure(
+  ctx: RequestContext,
+  org: string,
+  project: string,
+  repo: string,
+  branch?: string,
+  opts: ResolveOptions = {},
+): Promise<ProjectInfo> {
+  const repository = await azureService.getRepository(ctx, org, project, repo);
+  const branches = await azureService.listBranches(ctx, org, project, repo);
+  const requestedBranch = branch?.trim();
+  const selectedBranch = requestedBranch || repository.defaultBranch;
+
+  if (requestedBranch && !branches.some((b) => b.name === requestedBranch)) {
+    throw new Error(`Branch "${selectedBranch}" was not found for ${org}/${project}/${repo}`);
+  }
+
+  return resolveFromReader(
+    createAzureReader(ctx, org, project, repo, selectedBranch),
+    {
+      name: repository.name,
+      full_name: `${org}/${project}/${repository.name}`,
+      owner: org,
+      private: true,
+      default_branch: repository.defaultBranch,
+      selected_branch: selectedBranch,
+      clone_url: repository.remoteUrl,
+      html_url: repository.webUrl,
+      branches,
+    },
     selectedBranch,
     opts,
   );

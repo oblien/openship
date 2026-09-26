@@ -10,6 +10,7 @@ export { hostPortClaim } from "./host-port-claim";
 export { resourceGrant } from "./resource-grant";
 export { invitationPendingGrant } from "./invitation-pending-grant";
 export { gitSource } from "./git-source";
+export { azureConnection, type AzureConnection, type NewAzureConnection } from "./azure-connection";
 export { gitInstallation } from "./github";
 export { githubInstallState, type GithubInstallStatePayload } from "./github-install-state";
 export { projectGroup, project, envVar } from "./project";

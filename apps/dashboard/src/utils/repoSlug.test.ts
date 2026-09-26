@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   decodeSlug,
+  encodeGitSourceSlug,
   encodeLocalSlug,
   encodeProjectSlug,
+  encodeProviderRepoSlug,
   encodeRepoSlug,
   encodeUploadSlug,
   extractOwnerRepoFromUrl,
@@ -136,6 +138,37 @@ describe("decodeSlug repo:v2 format", () => {
     expect(decodeSlug(encodeV2({ owner: "acme" }))).toBeNull();
   });
 
+  it("round-trips an Azure org/project/repo via encodeProviderRepoSlug", () => {
+    const slug = encodeProviderRepoSlug("azure", "myorg", "myrepo", "myproject");
+    expect(decodeSlug(slug)).toEqual({
+      kind: "repo",
+      owner: "myorg",
+      repo: "myrepo",
+      provider: "azure",
+      project: "myproject",
+    });
+  });
+
+  it("keeps GitHub on the legacy owner/repo encoding", () => {
+    const slug = encodeProviderRepoSlug("github", "acme", "widgets");
+    expect(slug).toBe(encodeRepoSlug("acme", "widgets"));
+    expect(decodeSlug(slug)).toEqual({ kind: "repo", owner: "acme", repo: "widgets" });
+  });
+
+  it("encodeGitSourceSlug routes Azure through v2", () => {
+    const slug = encodeGitSourceSlug({
+      provider: "azure",
+      owner: "myorg",
+      repo: "myrepo",
+      project: "myproject",
+    });
+    expect(decodeSlug(slug)).toMatchObject({ provider: "azure", project: "myproject" });
+  });
+
+  it("rejects an Azure v2 payload missing project", () => {
+    expect(decodeSlug(encodeV2({ owner: "myorg", repo: "myrepo", provider: "azure" }))).toBeNull();
+  });
+
   it("rejects malformed JSON after the prefix", () => {
     const slug = Buffer.from("repo:v2:{not json")
       .toString("base64")
@@ -166,6 +199,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
@@ -173,6 +207,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets.git")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
@@ -180,6 +215,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("git@github.com:acme/widgets.git")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
@@ -187,6 +223,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets.js")).toEqual({
       owner: "acme",
       repo: "widgets.js",
+      provider: "github",
     });
   });
 
@@ -194,22 +231,58 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://gitlab.com/acme/widgets")).toBeNull();
   });
 
-  it("bug: a trailing slash after the repo name is captured as part of the repo", () => {
-    // repo becomes "widgets/", not "widgets" — the non-greedy `.+?` still has
-    // to consume up to the end of the string since there's no `.git` to stop
-    // at, so the trailing slash comes along with it.
+  it("strips a trailing slash after the repo name", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/")).toEqual({
       owner: "acme",
-      repo: "widgets/",
+      repo: "widgets",
+      provider: "github",
     });
   });
 
-  it("bug: a GitHub tree/blob URL captures the whole trailing path as the repo name", () => {
-    // Pasting a URL to a specific branch or file (a very common copy-paste
-    // source) does not extract just the repo name.
+  it("takes only owner/repo from a GitHub tree URL", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/tree/main")).toEqual({
       owner: "acme",
-      repo: "widgets/tree/main",
+      repo: "widgets",
+      provider: "github",
+    });
+  });
+
+  it("parses an Azure DevOps HTTPS URL", () => {
+    expect(extractOwnerRepoFromUrl("https://dev.azure.com/myorg/myproject/_git/myrepo")).toEqual({
+      owner: "myorg",
+      repo: "myrepo",
+      provider: "azure",
+      project: "myproject",
+    });
+  });
+
+  it("parses a visualstudio.com Azure URL", () => {
+    expect(
+      extractOwnerRepoFromUrl("https://myorg.visualstudio.com/myproject/_git/myrepo"),
+    ).toEqual({
+      owner: "myorg",
+      repo: "myrepo",
+      provider: "azure",
+      project: "myproject",
+    });
+  });
+
+  it("parses Azure SSH and never embeds a token", () => {
+    expect(
+      extractOwnerRepoFromUrl("git@ssh.dev.azure.com:v3/myorg/myproject/myrepo"),
+    ).toEqual({
+      owner: "myorg",
+      repo: "myrepo",
+      provider: "azure",
+      project: "myproject",
+    });
+    expect(
+      extractOwnerRepoFromUrl("https://:secret@dev.azure.com/myorg/myproject/_git/myrepo"),
+    ).toEqual({
+      owner: "myorg",
+      repo: "myrepo",
+      provider: "azure",
+      project: "myproject",
     });
   });
 });

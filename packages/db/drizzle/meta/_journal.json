@@ -1037,6 +1037,13 @@
       "when": 1790331638893,
       "tag": "0147_project_release_commands",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1790331639893,
+      "tag": "0148_azure_devops",
+      "breakpoints": true
     }
   ]
 }

@@ -954,6 +954,7 @@ async function executeBuildAndDeploy(
           owner: project.gitOwner ?? undefined,
           repo: project.gitRepo ?? undefined,
           installationId: project.installationId ?? undefined,
+          gitProvider: project.gitProvider ?? undefined,
           buildStrategy: clonePlan.cloneCredentialPurpose,
           // Only meaningful for an on-server clone — lets a per-server GitHub auth
           // config (device token / PAT / SSH key) win for that server.

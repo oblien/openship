@@ -94,6 +94,8 @@ const DeployRepository: React.FC = () => {
                 d.kind === "local" ? d.path
                     : d.kind === "upload" ? t.deploy.page.uploadedFolder
                     : d.kind === "project" ? ""
+                    : d.provider === "azure" && d.project
+                      ? `${d.owner}/${d.project}/${d.repo}`
                     : `${d.owner}/${d.repo}`;
             return { kind: "settings" as const, label };
         }
@@ -271,6 +273,8 @@ const DeployRepository: React.FC = () => {
                 result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
                     branch: branch ?? decoded.branch,
                     projectId: projectId ?? decoded.projectId,
+                    provider: decoded.provider,
+                    gitProject: decoded.project,
                 });
             }
 

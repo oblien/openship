@@ -251,6 +251,17 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Azure DevOps (self-hosted only)                                 */
+  /* ---------------------------------------------------------------- */
+  azure: {
+    status: "azure/status",
+    saveToken: "azure/connections",
+    deleteConnection: (org: string) => `azure/connections/${encodeURIComponent(org)}`,
+    orgs: "azure/orgs",
+    orgRepos: (org: string) => `azure/orgs/${encodeURIComponent(org)}/repos`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Icons                                                           */
   /* ---------------------------------------------------------------- */
   icons: {

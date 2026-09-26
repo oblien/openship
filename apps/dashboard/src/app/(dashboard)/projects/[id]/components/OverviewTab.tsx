@@ -14,6 +14,7 @@ import { UsedByCard } from "./UsedByCard";
 import { TrafficChart } from "./general/TrafficChart";
 import { useProjectInfo, useAnalyticsData, invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { gitSourceHref, gitSourceLabel } from "@/utils/repoSlug";
 import type { Dictionary } from "@/i18n";
 
 export const OverviewTab = () => {
@@ -230,17 +231,35 @@ export const OverviewTab = () => {
             </span>
             {showProjectInfoSkeleton ? (
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
-            ) : hasGit ? (
+            ) : hasGit ? (() => {
+              const href = gitSourceHref({
+                provider: projectData.gitProvider,
+                owner: projectData.gitOwner,
+                repo: projectData.gitRepo,
+                project: projectData.gitProject,
+              });
+              const label = gitSourceLabel({
+                provider: projectData.gitProvider,
+                owner: projectData.gitOwner,
+                repo: projectData.gitRepo,
+                project: projectData.gitProject,
+              });
+              return href ? (
               <a
-                href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
+                href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"
               >
-                <span className="truncate">{projectData.gitOwner}/{projectData.gitRepo}</span>
+                <span className="truncate">{label}</span>
                 <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground" />
               </a>
-            ) : (
+              ) : (
+                <span className="text-[13px] font-medium text-foreground truncate max-w-[180px]">
+                  {label}
+                </span>
+              );
+            })() : (
               <span className="text-[13px] text-muted-foreground/60">
                 {t.projects.overview.notConnected}
               </span>
