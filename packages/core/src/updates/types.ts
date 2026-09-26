@@ -108,7 +108,14 @@ export interface UpdateState {
   latestChangelogUrl: string;
 }
 
-export const GITHUB_REPO = "oblien/openship";
+/**
+ * Release/update source for this localized fork.
+ *
+ * Keep the desktop updater on the same repository that produced the app. Using
+ * the upstream feed here would allow a Russian fork build to replace itself with
+ * an official upstream installer that does not contain the fork's localization.
+ */
+export const GITHUB_REPO = "AlexK420/openship";
 
 /** GitHub API: the latest published (non-prerelease) release. */
 export const RELEASES_LATEST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;

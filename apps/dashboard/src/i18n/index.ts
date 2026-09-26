@@ -7,6 +7,12 @@
  * (`loadDictionary`), so adding languages never bloats the client bundle —
  * only the active locale's JSON chunks ship.
  *
+ * The Russian locale keeps its upstream-sync delta in `locales/ru-patch/`.
+ * Those files overlay the original Russian dictionaries after English fallback
+ * is applied. This keeps upstream syncs small while preserving existing Russian
+ * translations. `_delete` metadata in patch files is checker-only and is
+ * ignored by the runtime merge.
+ *
  * Adding a language: add its code to `locales` (+ `rtlLocales` if RTL) and
  * drop a `locales/<code>/<namespace>.json` for each namespace. Nothing else.
  * Adding a namespace: create `locales/en/<ns>.json` (+ each other locale) and
@@ -42,7 +48,7 @@ import autoDns from "./locales/en/autoDns.json";
 export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns };
 export type Dictionary = typeof baseDictionary;
 
-export const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;
+export const locales = ["en", "ru", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;
 export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = "en";
 export const LOCALE_COOKIE = "openship-locale";
@@ -57,7 +63,8 @@ export function isRtl(locale: Locale): boolean {
 const NAMESPACES = Object.keys(baseDictionary) as (keyof Dictionary)[];
 
 /** Deep-merge `src` over `base`; `base` (English) fills any key `src` omits, so
- *  a partial/incomplete locale never renders a blank. */
+ *  a partial/incomplete locale never renders a blank. Keys that no longer exist
+ *  in the English source are ignored. */
 function deepMerge<T>(base: T, src: unknown): T {
   if (src == null || typeof src !== "object" || Array.isArray(src)) {
     return (src ?? base) as T;
@@ -65,9 +72,11 @@ function deepMerge<T>(base: T, src: unknown): T {
   if (typeof base !== "object" || base == null || Array.isArray(base)) {
     return (src as T) ?? base;
   }
-  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  const baseRecord = base as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...baseRecord };
   for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
-    out[k] = deepMerge((base as Record<string, unknown>)[k], v);
+    if (!(k in baseRecord)) continue;
+    out[k] = deepMerge(baseRecord[k], v);
   }
   return out as T;
 }
@@ -90,5 +99,22 @@ export async function loadDictionary(locale: Locale): Promise<Dictionary> {
     }),
   );
   const loaded = Object.fromEntries(parts.filter(([, v]) => v !== undefined));
-  return deepMerge(baseDictionary, loaded);
+  let dictionary = deepMerge(baseDictionary, loaded);
+
+  if (locale === "ru") {
+    const patchParts = await Promise.all(
+      NAMESPACES.map(async (ns) => {
+        try {
+          const mod = await import(`./locales/ru-patch/${ns}.json`);
+          return [ns, (mod as { default: unknown }).default] as const;
+        } catch {
+          return [ns, undefined] as const;
+        }
+      }),
+    );
+    const patch = Object.fromEntries(patchParts.filter(([, v]) => v !== undefined));
+    dictionary = deepMerge(dictionary, patch);
+  }
+
+  return dictionary;
 }
