@@ -16,6 +16,7 @@ import {
   Cpu,
   Server,
   Users,
+  FileText,
   Gauge,
   ArrowUpDown,
   BarChart3,
@@ -112,9 +113,9 @@ export const OverviewTab = () => {
           loading: true,
         },
         {
-          label: t.projects.stats.uniqueIPs,
+          label: t.projects.stats.pageRequests ?? t.projects.stats.uniqueIPs,
           value: "",
-          icon: <Users className="size-4" />,
+          icon: <FileText className="size-4" />,
           loading: true,
         },
         {
@@ -141,12 +142,15 @@ export const OverviewTab = () => {
           }),
         },
         {
-          label: t.projects.stats.uniqueIPs,
-          value: formatNumber(analyticsData?.summary?.uniqueIPs ?? 0),
-          icon: <Users className="size-4" />,
-          subtext: interpolate(t.projects.stats.uniqueIPsSubtext, {
-            pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
-          }),
+          label: t.projects.stats.pageRequests ?? t.projects.stats.uniqueIPs,
+          value: formatNumber(analyticsData?.summary?.pageRequests ?? analyticsData?.summary?.uniqueIPs ?? 0),
+          icon: <FileText className="size-4" />,
+          subtext: interpolate(
+            t.projects.stats.pageRequestsSubtext ?? t.projects.stats.uniqueIPsSubtext,
+            {
+              pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
+            },
+          ),
         },
         {
           label: t.projects.stats.avgResponse,
