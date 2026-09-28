@@ -170,6 +170,37 @@ export interface StackDetection {
   contentPatterns?: Readonly<Record<string, string>>;
 }
 
+// ─── Stack runtime roles (issue #935) ────────────────────────────────────────
+
+/** "web" is derived from `defaultStartCommand`, never declared as a role. */
+export type RoleKind = "web" | "worker" | "scheduler";
+export const ROLE_KINDS: readonly RoleKind[] = ["web", "worker", "scheduler"];
+
+export interface RoleHealth {
+  kind: "http" | "exec" | "process";
+  /** Path to probe. Only meaningful when `kind` is "http". */
+  path?: string;
+  /** Command to run. Only meaningful when `kind` is "exec". */
+  command?: string;
+}
+export const ROLE_HEALTH_KINDS: readonly RoleHealth["kind"][] = ["http", "exec", "process"];
+
+export interface StackRole {
+  name: string;
+  kind: RoleKind;
+  command: string;
+  /** Process count. Omit for the runtime default (1). */
+  replicas?: number;
+  /** Run as at most one instance regardless of `replicas` - always true for "scheduler". */
+  singleton?: boolean;
+  health?: RoleHealth;
+  /** Preset gating only: every signal must match. Ignored for openship.json roles. */
+  when?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
+}
+
 export interface StackDefinition {
   /** Human-readable display name */
   name: string;
@@ -231,6 +262,8 @@ export interface StackDefinition {
    * `stack-detector.ts` and `project-root-detector.ts`. See {@link StackDetection}.
    */
   detection?: StackDetection;
+  /** Non-web role presets, gated by `when` in `resolveStackRoles`. */
+  defaultRoles?: readonly StackRole[];
 }
 
 // ─── The registry ────────────────────────────────────────────────────────────
@@ -678,6 +711,23 @@ export const STACKS = {
       // The conjunction is encoded as an override in stack-detector.
       rootMarkers: ["Gemfile", "bin/rails", "config/routes.rb"],
     },
+    // Only one queue backend is registered per app in practice, but a repo can
+    // carry both gems mid-migration - resolveStackRoles drops the worker role
+    // entirely when that happens rather than guessing which one runs.
+    defaultRoles: [
+      {
+        name: "jobs",
+        kind: "worker",
+        command: "bin/jobs",
+        when: { deps: ["solid_queue"], files: ["bin/jobs"] },
+      },
+      {
+        name: "sidekiq",
+        kind: "worker",
+        command: "bundle exec sidekiq",
+        when: { deps: ["sidekiq"] },
+      },
+    ],
   },
   sinatra: {
     name: "Sinatra",
