@@ -52,6 +52,41 @@ describe("resolveStackRoles", () => {
     ).toEqual([]);
   });
 
+  it("excludes a preset when any `unless` dep is present", () => {
+    // The shape sudanese needs for Laravel: an ungated queue worker that steps
+    // aside for Horizon, rather than both matching and cancelling out.
+    const queue: StackRole = {
+      name: "queue",
+      kind: "worker",
+      command: "php artisan queue:work",
+      unless: { deps: ["laravel/horizon"] },
+    };
+    const horizon: StackRole = {
+      name: "horizon",
+      kind: "worker",
+      command: "php artisan horizon",
+      when: { deps: ["laravel/horizon"] },
+    };
+    const laravelRoles = [queue, horizon];
+    expect(resolveStackRoles({ defaultRoles: laravelRoles, deps: ["laravel/framework"] })).toEqual([
+      queue,
+    ]);
+    expect(
+      resolveStackRoles({ defaultRoles: laravelRoles, deps: ["laravel/horizon"] }),
+    ).toEqual([horizon]);
+  });
+
+  it("excludes a preset when any `unless` file is present", () => {
+    const role: StackRole = {
+      name: "queue",
+      kind: "worker",
+      command: "php artisan queue:work",
+      unless: { files: ["Procfile"] },
+    };
+    expect(resolveStackRoles({ defaultRoles: [role], files: [] })).toEqual([role]);
+    expect(resolveStackRoles({ defaultRoles: [role], files: ["Procfile"] })).toEqual([]);
+  });
+
   it("an explicit configRoles array replaces presets entirely", () => {
     const custom: StackRole = { name: "custom-worker", kind: "worker", command: "bin/custom" };
     expect(

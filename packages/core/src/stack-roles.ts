@@ -17,11 +17,12 @@ export interface ResolveStackRolesInput {
   configRoles?: readonly StackRole[];
 }
 
-function matchesWhen(role: StackRole, deps: ReadonlySet<string>, files: ReadonlySet<string>): boolean {
-  const when = role.when;
-  if (!when) return true;
-  if (when.deps && !when.deps.every((d) => deps.has(d.toLowerCase()))) return false;
-  if (when.files && !when.files.every((f) => files.has(f))) return false;
+function matchesGates(role: StackRole, deps: ReadonlySet<string>, files: ReadonlySet<string>): boolean {
+  const { when, unless } = role;
+  if (when?.deps && !when.deps.every((d) => deps.has(d.toLowerCase()))) return false;
+  if (when?.files && !when.files.every((f) => files.has(f))) return false;
+  if (unless?.deps?.some((d) => deps.has(d.toLowerCase()))) return false;
+  if (unless?.files?.some((f) => files.has(f))) return false;
   return true;
 }
 
@@ -31,7 +32,7 @@ export function resolveStackRoles(input: ResolveStackRolesInput): StackRole[] {
 
   const deps = new Set((input.deps ?? []).map((d) => d.toLowerCase()));
   const files = new Set(input.files ?? []);
-  const matched = (input.defaultRoles ?? []).filter((role) => matchesWhen(role, deps, files));
+  const matched = (input.defaultRoles ?? []).filter((role) => matchesGates(role, deps, files));
 
   const countByKind = new Map<string, number>();
   for (const role of matched) {

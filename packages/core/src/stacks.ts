@@ -199,6 +199,11 @@ export interface StackRole {
     deps?: readonly string[];
     files?: readonly string[];
   };
+  /** Preset gating only: ANY signal here excludes the preset. */
+  unless?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
 }
 
 export interface StackDefinition {

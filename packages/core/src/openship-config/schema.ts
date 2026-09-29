@@ -207,7 +207,9 @@ export interface OpenshipConfig {
    * (`STACKS[framework].defaultRoles`) outright; absence derives them from
    * detected deps/files. See `resolveStackRoles` in `../stack-roles`. A role
    * with `kind: "web"` is rejected here - the web role is always derived from
-   * `startCommand`.
+   * `startCommand`. Deriving presets is a creation-time act: the deploy path
+   * resolves the persisted `project.roles`, where null means web only, so an
+   * existing project never gains a process on redeploy (#935 Q2).
    */
   roles?: StackRole[];
   // ── Env ──
