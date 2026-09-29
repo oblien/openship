@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   deliverManagedImage: vi.fn(async () => ({ delivered: false })),
   dockerInstaller: vi.fn(),
   edgeInstaller: vi.fn(),
+  edgeUninstaller: vi.fn(),
   ensureEdge: vi.fn(),
   recoverInterruptedTakeover: vi.fn(async () => undefined),
   refreshServerContainer: vi.fn(async () => undefined),
@@ -40,6 +41,10 @@ vi.mock("@repo/adapters", async (importOriginal) => {
       docker: h.dockerInstaller,
       edge: h.edgeInstaller,
     },
+    COMPONENT_UNINSTALLERS: {
+      ...(actual.COMPONENT_UNINSTALLERS as Record<string, unknown>),
+      edge: h.edgeUninstaller,
+    },
     ensureEdge: h.ensureEdge,
     recoverInterruptedTakeover: h.recoverInterruptedTakeover,
   };
@@ -69,7 +74,13 @@ vi.mock("@repo/platform/engine/modules/system/server-containers.service", () => 
   refreshServerContainer: h.refreshServerContainer,
 }));
 
-import { checkServer as checkServerHandler, installComponent as installComponentHandler, installStream } from "./server-check.controller";
+import {
+  checkServer as checkServerHandler,
+  installComponent as installComponentHandler,
+  installStream,
+  removeComponent as removeComponentHandler,
+} from "./server-check.controller";
+import { withServerInventoryLock } from "@repo/platform/engine/lib/server-inventory-lock";
 
 const executor = { exec: vi.fn(async () => "") };
 
@@ -84,6 +95,12 @@ function component(name: string, healthy: boolean) {
     healthy,
     message: healthy ? `${name} ready` : `${name} missing`,
   };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 function context(body: unknown) {
@@ -128,6 +145,7 @@ beforeEach(() => {
   );
   h.dockerInstaller.mockResolvedValue({ component: "docker", success: true });
   h.edgeInstaller.mockResolvedValue({ component: "edge", success: true });
+  h.edgeUninstaller.mockResolvedValue({ component: "edge", success: true });
   h.managementMode = "managed";
   h.ensureEdge.mockImplementation(
     async (_executor: unknown, install: (prompt?: unknown) => unknown) => ({
@@ -246,6 +264,60 @@ describe("server component installation dependencies", () => {
     expect(h.dockerInstaller).not.toHaveBeenCalled();
   });
 
+  it("keeps a mode transition behind a direct component installation", async () => {
+    const started = deferred();
+    const finish = deferred();
+    h.dockerInstaller.mockImplementationOnce(async () => {
+      started.resolve();
+      await finish.promise;
+      return { component: "docker", success: true };
+    });
+    const { c } = context({ serverId: "server-1", component: "docker" });
+
+    const installing = installComponent(c);
+    await started.promise;
+    let transitionEntered = false;
+    const transition = withServerInventoryLock("org1", async () => {
+      transitionEntered = true;
+      h.managementMode = "observe_only";
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(transitionEntered).toBe(false);
+    finish.resolve();
+    await installing;
+    await transition;
+    expect(transitionEntered).toBe(true);
+  });
+
+  it("keeps a mode transition behind a direct component removal", async () => {
+    const started = deferred();
+    const finish = deferred();
+    h.edgeUninstaller.mockImplementationOnce(async () => {
+      started.resolve();
+      await finish.promise;
+      return { component: "edge", success: true };
+    });
+    const { c } = context({ serverId: "server-1", component: "edge" });
+
+    const removing = removeComponent(c);
+    await started.promise;
+    let transitionEntered = false;
+    const transition = withServerInventoryLock("org1", async () => {
+      transitionEntered = true;
+      h.managementMode = "observe_only";
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(transitionEntered).toBe(false);
+    finish.resolve();
+    await removing;
+    await transition;
+    expect(transitionEntered).toBe(true);
+  });
+
   it("orders a reversed Edge + Docker stream as Docker then Edge", async () => {
     await finishStream({ serverId: "server-1", components: ["edge", "docker"] });
 
@@ -335,6 +407,13 @@ const checkServer = async (c: Context): Promise<Response> => {
 };
 const installComponent = async (c: Context): Promise<Response> => {
   try { return await installComponentHandler(c); }
+  catch (error) {
+    if (error instanceof AppError || error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    throw error;
+  }
+};
+const removeComponent = async (c: Context): Promise<Response> => {
+  try { return await removeComponentHandler(c); }
   catch (error) {
     if (error instanceof AppError || error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
     throw error;

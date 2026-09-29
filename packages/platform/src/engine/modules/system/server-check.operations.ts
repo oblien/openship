@@ -21,6 +21,7 @@ import { safeErrorMessage } from "@repo/core";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertNativeSshSettings, assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { assertManagedServer } from "../../lib/server-target";
+import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 
 export const ALLOWED_COMPONENTS = new Set(SYSTEM_COMPONENTS.filter(component => component.installable).map(component => component.name));
 const REMOVABLE_COMPONENTS = new Set(Object.keys(COMPONENT_UNINSTALLERS));
@@ -403,6 +404,21 @@ export function dependencyFailureMessage(component: string, missing: string[]): 
   return `${component} requires healthy ${missing.join(", ")} on this server. Install ${missing.join(", ")} first.`;
 }
 
+async function withManagedComponentMutation<T>(
+  ctx: ExecutionContext,
+  serverId: string,
+  mutate: () => Promise<T>,
+): Promise<T> {
+  return withServerInventoryLock(ctx.organizationId, async () => {
+    const server = await requireSelfHostedServer(ctx, serverId);
+    assertManagedServer(server);
+    await assertServerExecution(server);
+    // A management-mode update takes this same lock. Keep it until the host
+    // mutation settles so observe-only cannot commit while work is still live.
+    return mutate();
+  });
+}
+
 
 /**
  * POST /system/install
@@ -434,56 +450,55 @@ export async function installComponent(ctx: ExecutionContext, serverId: string, 
   // from-source edge build that fails throws with its output ONLY in these lines, and
   // a success-only `logs` would drop exactly the diagnostic the operator needs.
   const logs: string[] = [];
-  const server = await requireSelfHostedServer(ctx, serverId);
-  assertManagedServer(server);
-  await assertServerExecution(server);
-  try {
-    const outcome = await sshManager.withExecutor(serverId, async (executor) => {
-      // This gate must run before deliverEdgeBeforeInstall: in development that
-      // delivery builds the Edge image on the target and therefore needs Docker
-      // itself. The adapter installer keeps its own guard for non-API callers.
-      const missingDependencies = await missingInstallPrerequisites(executor, componentName);
-      if (missingDependencies.length > 0) return { missingDependencies } as const;
+  return withManagedComponentMutation(ctx, serverId, async () => {
+    try {
+      const outcome = await sshManager.withExecutor(serverId, async (executor) => {
+        // This gate must run before deliverEdgeBeforeInstall: in development that
+        // delivery builds the Edge image on the target and therefore needs Docker
+        // itself. The adapter installer keeps its own guard for non-API callers.
+        const missingDependencies = await missingInstallPrerequisites(executor, componentName);
+        if (missingDependencies.length > 0) return { missingDependencies } as const;
 
-      await deliverEdgeBeforeInstall(componentName, executor, (log) => logs.push(log.message));
-      const installResult = await installerFn(
-        executor,
-        (log) => logs.push(log.message),
-        withPinnedEdgeImage(body.config ?? {}),
-      );
-      return { installResult } as const;
-    });
+        await deliverEdgeBeforeInstall(componentName, executor, (log) => logs.push(log.message));
+        const installResult = await installerFn(
+          executor,
+          (log) => logs.push(log.message),
+          withPinnedEdgeImage(body.config ?? {}),
+        );
+        return { installResult } as const;
+      });
 
-    if ("missingDependencies" in outcome && outcome.missingDependencies) {
-      const missingDependencies = outcome.missingDependencies;
-      return failSystem({
-          error: "missing_dependency",
-          component: componentName,
-          missing: missingDependencies,
-          message: dependencyFailureMessage(componentName, missingDependencies),
-          logs,
-        }, 409);
-    }
+      if ("missingDependencies" in outcome && outcome.missingDependencies) {
+        const missingDependencies = outcome.missingDependencies;
+        return failSystem({
+            error: "missing_dependency",
+            component: componentName,
+            missing: missingDependencies,
+            message: dependencyFailureMessage(componentName, missingDependencies),
+            logs,
+          }, 409);
+      }
 
-    return {
-      ...outcome.installResult,
-      logs,
-    };
-  } catch (err) {
-    if (err instanceof OperationError) throw err;
-    const message =
-      err instanceof Error ? err.message : "Installation failed";
-    if (
-      message === "No server configured" ||
-      message === "Invalid SSH auth configuration"
-    ) {
-      return failSystem({ error: "no_server", message, logs }, 400);
+      return {
+        ...outcome.installResult,
+        logs,
+      };
+    } catch (err) {
+      if (err instanceof OperationError) throw err;
+      const message =
+        err instanceof Error ? err.message : "Installation failed";
+      if (
+        message === "No server configured" ||
+        message === "Invalid SSH auth configuration"
+      ) {
+        return failSystem({ error: "no_server", message, logs }, 400);
+      }
+      if (isSshAuthError(err)) {
+        return failSystem({ error: "auth_failed", message, logs }, 400);
+      }
+      return failSystem({ error: "install_failed", message, logs }, 502);
     }
-    if (isSshAuthError(err)) {
-      return failSystem({ error: "auth_failed", message, logs }, 400);
-    }
-    return failSystem({ error: "install_failed", message, logs }, 502);
-  }
+  });
 }
 
 
@@ -511,37 +526,36 @@ export async function removeComponent(ctx: ExecutionContext, serverId: string, b
     return failSystem({ error: `No remover for ${componentName}` }, 400);
   }
 
-  const server = await requireSelfHostedServer(ctx, serverId);
-  assertManagedServer(server);
-  await assertServerExecution(server);
-  try {
-    const logs: string[] = [];
-    const result = await sshManager.withExecutor(serverId, (executor) =>
-      uninstallerFn(
-        executor,
-        (log) => logs.push(log.message),
-        withPinnedEdgeImage(body.config ?? {}),
-      ),
-    );
+  return withManagedComponentMutation(ctx, serverId, async () => {
+    try {
+      const logs: string[] = [];
+      const result = await sshManager.withExecutor(serverId, (executor) =>
+        uninstallerFn(
+          executor,
+          (log) => logs.push(log.message),
+          withPinnedEdgeImage(body.config ?? {}),
+        ),
+      );
 
-    return {
-      ...result,
-      logs,
-    };
-  } catch (err) {
-    if (err instanceof OperationError) throw err;
-    const message = err instanceof Error ? err.message : "Removal failed";
-    if (
-      message === "No server configured" ||
-      message === "Invalid SSH auth configuration"
-    ) {
-      return failSystem({ error: "no_server", message }, 400);
+      return {
+        ...result,
+        logs,
+      };
+    } catch (err) {
+      if (err instanceof OperationError) throw err;
+      const message = err instanceof Error ? err.message : "Removal failed";
+      if (
+        message === "No server configured" ||
+        message === "Invalid SSH auth configuration"
+      ) {
+        return failSystem({ error: "no_server", message }, 400);
+      }
+      if (isSshAuthError(err)) {
+        return failSystem({ error: "auth_failed", message }, 400);
+      }
+      return failSystem({ error: "remove_failed", message }, 502);
     }
-    if (isSshAuthError(err)) {
-      return failSystem({ error: "auth_failed", message }, 400);
-    }
-    return failSystem({ error: "remove_failed", message }, 502);
-  }
+  });
 }
 
 
