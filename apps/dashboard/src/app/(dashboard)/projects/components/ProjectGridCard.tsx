@@ -6,13 +6,12 @@ import React from "react";
 import Link from "next/link";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
-import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { timeAgo } from "@/lib/time";
 import { useImageFallback } from "@/hooks/useImageFallback";
-import { getHostingLabel } from "./ProjectCard";
+import { getHostingLabel, getProjectFrameworkConfig } from "./ProjectCard";
 
 /**
  * Grid (tile) view of a project — the same data as {@link ProjectCard}, stacked
@@ -32,7 +31,7 @@ const ProjectGridCard: React.FC<{
   updateAvailable?: boolean;
 }> = ({ project, preferAppLogo, updateAvailable }) => {
   const { t } = useI18n();
-  const fw = getFrameworkConfig(project.framework);
+  const fw = getProjectFrameworkConfig(project);
   const favicon = useImageFallback(project.favicon);
 
   const isLocal = !!project.localPath;
