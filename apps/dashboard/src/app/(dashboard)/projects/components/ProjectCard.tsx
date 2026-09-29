@@ -42,6 +42,18 @@ export function getHostingLabel(
   return null;
 }
 
+/**
+ * Imported service-first projects deliberately keep `framework: "unknown"`:
+ * their runtime lives in service rows rather than a top-level app stack. The
+ * home/list payload includes that service count, so show the actual Docker
+ * Compose shape instead of leaking the persistence sentinel into the UI.
+ */
+export function getProjectFrameworkConfig(project: Project) {
+  const serviceFirstUnknown =
+    project.framework === "unknown" && Number(project.serviceCount ?? 0) > 0;
+  return getFrameworkConfig(serviceFirstUnknown ? "docker-compose" : project.framework);
+}
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 interface Props {
@@ -66,7 +78,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
   const { showToast } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const status = getProjectStatus(project);
-  const fw = getFrameworkConfig(project.framework);
+  const fw = getProjectFrameworkConfig(project);
   const favicon = useImageFallback(project.favicon);
 
   const isLocal = !!project.localPath;

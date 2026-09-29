@@ -54,6 +54,7 @@ export default async function DashboardHome() {
   return (
     <DashboardHomeClient
       initialData={initialData}
+      initialHour={new Date().getHours()}
       planCard={hostedCloud ? (
         <Suspense fallback={null}>
           <HomePlanCard />

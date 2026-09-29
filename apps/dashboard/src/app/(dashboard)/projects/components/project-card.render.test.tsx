@@ -5,6 +5,7 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { ModalProvider } from "@/context/ModalContext";
 import type { Project } from "@/constants/mock";
 import ProjectCard from "./ProjectCard";
+import ProjectGridCard from "./ProjectGridCard";
 
 /**
  * Two lies this row used to tell, both seen in the field on one Convex app:
@@ -116,5 +117,37 @@ describe("ProjectCard — status pill", () => {
       }),
     );
     expect(out).toContain('href="/projects/p1/domains"');
+  });
+});
+
+describe.each([
+  ["list", ProjectCard],
+  ["grid", ProjectGridCard],
+] as const)("%s project card — stack label", (_name, Card) => {
+  const renderCard = (p: Project & { primaryDomain?: string | null }) =>
+    text(
+      renderToStaticMarkup(
+        <I18nProvider>
+          <ModalProvider>
+            <Card project={p} />
+          </ModalProvider>
+        </I18nProvider>,
+      ),
+    );
+
+  it("labels an imported service-first project as Docker Compose", () => {
+    const out = renderCard(project({ framework: "unknown", serviceCount: 1 }));
+    expect(out).toContain("Docker Compose");
+    expect(out).not.toContain("Unknown");
+  });
+
+  it("does not replace a known app framework just because it has a sidecar", () => {
+    const out = renderCard(project({ framework: "nextjs", serviceCount: 1 }));
+    expect(out).toContain("Next.js");
+    expect(out).not.toContain("Docker Compose");
+  });
+
+  it("keeps Unknown when there is no evidence of a service-first stack", () => {
+    expect(renderCard(project({ framework: "unknown", serviceCount: 0 }))).toContain("Unknown");
   });
 });
