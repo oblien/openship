@@ -12,6 +12,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // (NEXT_PUBLIC_API_PROXY unset) get no rewrites and are unchanged.
 const API_PROXY = process.env.NEXT_PUBLIC_API_PROXY === "true";
 
+export const SECURITY_RESPONSE_HEADERS = Object.freeze([
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+]);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
@@ -24,6 +32,9 @@ const nextConfig = {
   transpilePackages: ["@repo/ui", "@repo/core", "@repo/db"],
   turbopack: {
     root: path.resolve(__dirname, "../.."),
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_RESPONSE_HEADERS }];
   },
   async rewrites() {
     if (!API_PROXY) return [];

@@ -9,6 +9,7 @@ import {
   DESKTOP_CLOUD_FLOW,
 } from "@/lib/cloud-auth";
 import { AuthProviders } from "./providers";
+import { selfHostedRegisterRedirect } from "@/lib/register-access";
 
 /**
  * Auth layout - minimal shell, no sidebar. Sends already-authenticated
@@ -36,6 +37,7 @@ export default async function AuthLayout({
   const hdrs = await headers();
   const cookieHeader = hdrs.get("cookie") ?? "";
   const hasBrowserSession = /\.session_token=/.test(cookieHeader);
+  const pathWithSearch = hdrs.get("x-pathname-with-search") ?? "";
 
   const session = hasBrowserSession ? await getSession() : null;
 
@@ -46,7 +48,6 @@ export default async function AuthLayout({
     // safe to trust. Falling back to `Referer` would be client-
     // controlled and could leak a cross-origin callback into our
     // redirect chain.
-    const pathWithSearch = hdrs.get("x-pathname-with-search") ?? "";
     const query = pathWithSearch.includes("?")
       ? pathWithSearch.slice(pathWithSearch.indexOf("?"))
       : "";
@@ -98,6 +99,12 @@ export default async function AuthLayout({
 
   const deploymentInfo = await getDeploymentInfoOrNull();
   if (!deploymentInfo) return <ApiUnavailable />;
+
+  const registerRedirect = selfHostedRegisterRedirect(
+    deploymentInfo.selfHosted,
+    pathWithSearch,
+  );
+  if (registerRedirect) redirect(registerRedirect);
 
   return (
     <AuthProviders
