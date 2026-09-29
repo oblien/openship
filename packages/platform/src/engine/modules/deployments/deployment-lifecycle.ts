@@ -31,7 +31,11 @@ import { audit } from "../../lib/audit-emitter";
 import * as sessionManager from "./session-manager";
 import type { BuildSessionState } from "./session-manager";
 import { failureStatusFor } from "./blocking-errors";
-import { sanitizeStorableStrings, sliceWithoutSplittingPair } from "./build-log-sanitize";
+import {
+  sanitizeDeploymentMeta,
+  sanitizeStorableStrings,
+  sliceWithoutSplittingPair,
+} from "./build-log-sanitize";
 import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
@@ -443,7 +447,7 @@ export async function onNoChanges(
   // refresh path reads a persisted deploy note from. Sanitized like onSuccess's
   // meta — a NUL in the reason must not fail the write.
   const previousMeta = (dep.meta as DeploymentMeta | null) ?? {};
-  const mergedMeta = sanitizeStorableStrings({
+  const mergedMeta = sanitizeDeploymentMeta({
     ...previousMeta,
     composeDeployment: { ...(previousMeta.composeDeployment ?? {}), warningMessage: reason },
   });
@@ -736,7 +740,11 @@ export async function onSuccess(
   // Sanitized: metaPatch carries service/routing warnings built from raw process
   // output, and `meta` is jsonb written BEFORE the outcome — one NUL in a warning
   // string would fail the "ready" write and take the whole deploy down with it.
-  const mergedMeta = sanitizeStorableStrings(
+  // `sanitizeDeploymentMeta`, not the plain scrubber: meta carries
+  // `composeServices` (the frozen env a rollback replays), which is an encrypted
+  // operational record, not log text. Redacting it wrote `***` into a DSN and
+  // broke the restore — see `sanitizeDeploymentMeta`.
+  const mergedMeta = sanitizeDeploymentMeta(
     result.metaPatch
       ? { ...((dep.meta as DeploymentMeta | null) ?? {}), ...result.metaPatch }
       : ((dep.meta as DeploymentMeta | null) ?? null),
