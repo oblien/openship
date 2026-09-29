@@ -256,6 +256,7 @@ export function ProjectMigrationCard({
               its own menu, so an operator with one server can create the destination here
               instead of hitting a dead end. */}
           <ServerSelector
+            managedOnly
             compact
             value={target?.id ?? null}
             onSelect={setTarget}

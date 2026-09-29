@@ -20,6 +20,7 @@ import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertNativeSshSettings, assertServerExecution, requireSelfHostedServer } from "./server-access";
+import { assertManagedServer } from "../../lib/server-target";
 
 export const ALLOWED_COMPONENTS = new Set(SYSTEM_COMPONENTS.filter(component => component.installable).map(component => component.name));
 const REMOVABLE_COMPONENTS = new Set(Object.keys(COMPONENT_UNINSTALLERS));
@@ -247,7 +248,8 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
     return failSystem({ error: "Invalid component names" }, 400);
   }
 
-  await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+  const server = await requireSelfHostedServer(ctx, serverId);
+  await assertServerExecution(server);
   try {
     systemDebug("system-check",
       `check:start server=${serverId} ${valid?.length ? valid.join(",") : "all"}`,
@@ -260,10 +262,14 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
       // Check core required + all infrastructure components
       // Remote requirements come from the shared system policy. DEPLOY_MODE is
       // how this control plane runs, not what this target server needs.
-      const required = [...REMOTE_SERVER_REQUIRED_COMPONENTS];
+      const remoteRequired = [...REMOTE_SERVER_REQUIRED_COMPONENTS];
+      const remoteRequiredSet = new Set<string>(remoteRequired);
+      const required = server.managementMode === "observe_only" ? [] : remoteRequired;
       const infra = resolveInfraComponents();
       const requiredSet = new Set<string>(required);
-      const allToCheck = [...required, ...infra.filter((n) => !requiredSet.has(n))];
+      const allToCheck = server.managementMode === "observe_only"
+        ? [...remoteRequired, ...infra.filter((n) => !remoteRequiredSet.has(n))]
+        : [...required, ...infra.filter((n) => !requiredSet.has(n))];
 
       const allResults = await checkServerComponents(serverId, allToCheck);
 
@@ -428,7 +434,9 @@ export async function installComponent(ctx: ExecutionContext, serverId: string, 
   // from-source edge build that fails throws with its output ONLY in these lines, and
   // a success-only `logs` would drop exactly the diagnostic the operator needs.
   const logs: string[] = [];
-  await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+  const server = await requireSelfHostedServer(ctx, serverId);
+  assertManagedServer(server);
+  await assertServerExecution(server);
   try {
     const outcome = await sshManager.withExecutor(serverId, async (executor) => {
       // This gate must run before deliverEdgeBeforeInstall: in development that
@@ -503,7 +511,9 @@ export async function removeComponent(ctx: ExecutionContext, serverId: string, b
     return failSystem({ error: `No remover for ${componentName}` }, 400);
   }
 
-  await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+  const server = await requireSelfHostedServer(ctx, serverId);
+  assertManagedServer(server);
+  await assertServerExecution(server);
   try {
     const logs: string[] = [];
     const result = await sshManager.withExecutor(serverId, (executor) =>

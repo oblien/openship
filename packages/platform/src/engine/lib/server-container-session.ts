@@ -113,6 +113,13 @@ export function getActiveContainerApplySession(
   return null;
 }
 
+export function hasActiveContainerApplySession(serverId: string): boolean {
+  for (const session of sessions.values()) {
+    if (session.serverId === serverId && session.status === "running") return true;
+  }
+  return false;
+}
+
 /**
  * A session without its transport — what a progress READER needs (steps, status,
  * outcome) and nothing it must not hold (the subscriber set, the log ring, the

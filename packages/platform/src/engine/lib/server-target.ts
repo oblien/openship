@@ -1,5 +1,5 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { repos, type Project } from "@repo/db";
+import { repos, type Project, type Server } from "@repo/db";
 import { AppError, isLoopbackHost as isCoreLoopbackHost } from "@repo/core";
 import { env } from "../config/env";
 
@@ -23,6 +23,28 @@ export async function requireOrgServer(serverId: string, organizationId: string)
       "SERVER_TARGET_UNAVAILABLE",
     );
   }
+  return server;
+}
+
+/**
+ * A deployment/component-management capability check shared by every write
+ * path that can change a connected host. Observe-only servers deliberately
+ * remain usable by read-only inventory and monitoring operations.
+ */
+export function assertManagedServer(server: Pick<Server, "managementMode">): void {
+  if (server.managementMode === "observe_only") {
+    throw new AppError(
+      "This server is connected in observe-only mode. Change it to Managed before deploying or installing components.",
+      409,
+      "SERVER_OBSERVE_ONLY",
+    );
+  }
+}
+
+/** Resolve an org-owned host and require it to accept deployment/component writes. */
+export async function requireManagedOrgServer(serverId: string, organizationId: string) {
+  const server = await requireOrgServer(serverId, organizationId);
+  assertManagedServer(server);
   return server;
 }
 

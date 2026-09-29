@@ -541,7 +541,9 @@ export async function scanOrgContainers(organizationId: string, beforeScan?: (se
   const servers = await repos.server.listByOrganization(organizationId);
   // Pre-seeded so the fan-out fills slots in place and the caller still gets the
   // servers in list order (mapWithLimit resolves void, not results).
-  const out = servers.map((server) => ({ server, views: [] as ServerContainerView[] }));
+  const out = servers
+    .filter(server => server.managementMode !== "observe_only")
+    .map((server) => ({ server, views: [] as ServerContainerView[] }));
   await mapWithLimit(out, SCAN_CONCURRENCY, async (entry) => {
     await beforeScan?.(entry.server);
     entry.views = await detectServerContainers(entry.server).catch(() => []);
@@ -613,7 +615,9 @@ export async function applyAllContainers(
     repos.server.listByOrganization(organizationId),
     repos.serverContainerStatus.listByOrg(organizationId),
   ]);
-  const byId = new Map(servers.map((s) => [s.id, s]));
+  const byId = new Map(
+    servers.filter(server => server.managementMode !== "observe_only").map((s) => [s.id, s]),
+  );
 
   const started: BulkApplyStarted[] = [];
   const skipped: BulkApplySkipped[] = [];
@@ -723,7 +727,9 @@ export async function scanInstanceContainers(): Promise<{
 }> {
   const settings = await repos.instanceSettings.get().catch(() => undefined);
   const auto = Boolean(settings?.autoUpdateInfra);
-  const servers = await repos.server.list();
+  const servers = (await repos.server.list()).filter(
+    server => server.managementMode !== "observe_only",
+  );
   const detected = servers.map((server) => ({ server, views: [] as ServerContainerView[] }));
   await mapWithLimit(detected, SCAN_CONCURRENCY, async (entry) => {
     // Unreachable server / probe failure → skip, don't fail the sweep.
@@ -785,6 +791,7 @@ interface IssueServer {
   id: string;
   name?: string | null;
   sshHost: string;
+  managementMode?: "managed" | "observe_only";
 }
 /** The subset of a cached container row the issue rollup reads. */
 interface IssueRow {
@@ -821,6 +828,7 @@ export function classifyContainerIssues(
   let edgeMissing = 0;
   let mailDown = 0;
   for (const s of servers) {
+    if (s.managementMode === "observe_only") continue;
     const own = byServer.get(s.id) ?? [];
     const server = { id: s.id, name: s.name ?? s.sshHost };
 

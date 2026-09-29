@@ -25,6 +25,7 @@ import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/
 import { createPersistedValue } from "@/lib/persisted-value";
 import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
+import { deployableServers, isManagedServer } from "@/lib/server/management-mode";
 import ServerRuntimePicker from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -512,7 +513,7 @@ export function useDesktopTargets(): ResolvedTargets {
 
     let cancelled = false;
     systemApi.listServers()
-      .then((list) => { if (!cancelled) setServers(list); })
+      .then((list) => { if (!cancelled) setServers(deployableServers(list)); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setServersReady(true); });
     return () => { cancelled = true; };
@@ -1036,6 +1037,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const openAddServer = () => {
     addServerModal((server) => {
       refreshServers();
+      if (!isManagedServer(server)) return;
       updateConfig({ deployTarget: "server", serverId: server.id });
     });
   };

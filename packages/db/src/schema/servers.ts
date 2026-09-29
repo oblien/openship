@@ -7,10 +7,9 @@ import { organization } from "./organization";
 /**
  * SSH server configurations.
  *
- * One row per configured host. There's no kind / role flag - any server
- * can host apps, the mail stack, or both. Whether mail is installed on a
- * given host is derived at runtime from the mail-state.json the install
- * pipeline writes, not from a schema column.
+ * One row per configured host. `managementMode` separates deployment targets
+ * from hosts connected only for inventory and monitoring. Observe-only rows
+ * are never valid deployment or component-management targets.
  *
  * The lone exception is `isLocal`: exactly one row (auto-created on boot when
  * OpenShip runs ON a server) represents the host OpenShip itself sits on. It is
@@ -33,6 +32,14 @@ export const servers = pgTable("servers", {
    * server-host mode). Deploys to it run on the local host executor, not SSH.
    */
   isLocal: boolean("is_local").notNull().default(false),
+
+  /**
+   * `managed` hosts may receive deployments and OpenShip-managed components.
+   * `observe_only` hosts remain reachable for read-only inventory/monitoring.
+   */
+  managementMode: text("management_mode", { enum: ["managed", "observe_only"] })
+    .notNull()
+    .default("managed"),
 
   // ── SSH credentials ────────────────────────────────────────────────────────
 
@@ -61,4 +68,8 @@ export const servers = pgTable("servers", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
   check("servers_ssh_transport_check", sql`${table.sshTransport} IN ('direct', 'cloudflare')`),
+  check(
+    "servers_management_mode_check",
+    sql`${table.managementMode} IN ('managed', 'observe_only')`,
+  ),
 ]);

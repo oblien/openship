@@ -44,6 +44,7 @@ interface ServerEntry {
   country: string | null;
   /** The auto-registered host row ("This Server") — deploys run locally, not SSH. */
   isLocal: boolean;
+  managementMode: "managed" | "observe_only";
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount: number;
 }
@@ -133,6 +134,7 @@ export default function ServersPage() {
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,
           country: s.country ?? null,
           isLocal: s.isLocal ?? false,
+          managementMode: s.managementMode ?? "managed",
           projectCount: s.projectCount ?? 0,
         })),
       );
@@ -539,6 +541,11 @@ export default function ServersPage() {
                             {server.isLocal && (
                               <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
                                 {t.servers.list.thisServer}
+                              </span>
+                            )}
+                            {server.managementMode === "observe_only" && (
+                              <span className="ms-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground align-middle">
+                                {t.servers.list.observeOnly}
                               </span>
                             )}
                           </p>

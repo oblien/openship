@@ -17,6 +17,8 @@ import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import { assertSelfHosted, assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { ALLOWED_COMPONENTS, deliverEdgeBeforeInstall, installPrerequisites, dependencyFailureMessage, failSystem } from "./server-check.operations";
 import { refreshServerContainer } from "./server-containers.service";
+import { assertManagedServer } from "../../lib/server-target";
+import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import {
   createSetupSession, getSetupSession, getActiveSetupSession, updateComponentProgress, appendSetupLog,
   finishSetupSession, subscribeSetupSession, promptSetupUser, respondToSetupPrompt, rejectPendingSetupPrompt, setupPromptState,
@@ -44,24 +46,28 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
     return subscriptionEvents(writer => subscribeSetupSession(sessionId, writer), signal);
   },
   async start(ctx, serverId, body, signal) {
-    await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
     signal?.throwIfAborted();
     const validNames = body.components.filter(name => ALLOWED_COMPONENTS.has(name));
     if (validNames.length === 0) return failSystem({ error: "Invalid component names" }, 400);
     const config = withPinnedEdgeImage(body.config ?? {});
     const installNames = resolveSystemComponentInstallPlan(validNames);
     const explicitlyRequested = new Set(validNames);
-    const existing = getActiveSetupSession();
-    if (existing) {
-      let visible = false;
-      try {
-        await authorization.authorize(ctx, { resourceType: "server", resourceId: existing.serverId, action: "admin" });
-        visible = true;
-      } catch { /* The busy response must not reveal another tenant's session id. */ }
-      return failSystem({ error: "install_in_progress", ...(visible && { sessionId: existing.id }) }, 409);
-    }
     const componentMeta = installNames.map(name => ({ name, label: getSystemComponentDefinition(name).label }));
-    const session = createSetupSession(componentMeta, serverId);
+    const session = await withServerInventoryLock(ctx.organizationId, async () => {
+      const server = await requireSelfHostedServer(ctx, serverId);
+      assertManagedServer(server);
+      await assertServerExecution(server);
+      const existing = getActiveSetupSession();
+      if (existing) {
+        let visible = false;
+        try {
+          await authorization.authorize(ctx, { resourceType: "server", resourceId: existing.serverId, action: "admin" });
+          visible = true;
+        } catch { /* The busy response must not reveal another tenant's session id. */ }
+        return failSystem({ error: "install_in_progress", ...(visible && { sessionId: existing.id }) }, 409);
+      }
+      return createSetupSession(componentMeta, serverId);
+    });
     let disconnected = false;
     let done = false;
     let grace: ReturnType<typeof setTimeout> | undefined;

@@ -7,6 +7,7 @@ import { withOpenRestyRouting } from "../../lib/openresty-paths";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { scanServer, applyServerModule } from "./server-modules.service";
+import { assertManagedServer } from "../../lib/server-target";
 
 function isValidCidr(cidr: string): boolean {
   return /^[\da-fA-F.:]+\/\d{1,3}$/.test(cidr) && cidr.length <= 50;
@@ -32,6 +33,7 @@ export const serverMaintenanceResources: Pick<ServerDependencies["resources"],
   },
   async applyModule(ctx, id, input) {
     const server = await requireSelfHostedServer(ctx, id);
+    assertManagedServer(server);
     await assertServerExecution(server);
     // Explicit application includes consent-tier steps. A failed step is a result.
     const result = await applyServerModule(server, input.module, "all");
@@ -52,6 +54,7 @@ export const serverMaintenanceResources: Pick<ServerDependencies["resources"],
   },
   async updateRateLimit(ctx, id, body) {
     const server = await requireSelfHostedServer(ctx, id);
+    assertManagedServer(server);
     await assertServerExecution(server);
     let isRemoving = false;
     try {

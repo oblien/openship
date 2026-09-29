@@ -54,6 +54,9 @@ export function ServerForm({
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const [serverName, setServerName] = useState(server?.name ?? "");
+  const [managementMode, setManagementMode] = useState<"managed" | "observe_only">(
+    server?.managementMode ?? "managed",
+  );
   const [sshHost, setSshHost] = useState(server?.sshHost ?? "");
   const [sshTransport, setSshTransport] = useState<"direct" | "cloudflare">(server?.sshTransport ?? "direct");
   const [sshPort, setSshPort] = useState(String(server?.sshPort ?? 22));
@@ -184,6 +187,7 @@ export function ServerForm({
     try {
       const data: Record<string, unknown> = {
         name: trimmedServerName || null,
+        managementMode,
         sshHost: trimmedHost,
         sshPort: currentPort,
         sshUser: trimmedUser,
@@ -302,6 +306,8 @@ export function ServerForm({
   // continue to the install step; the modal saves and hands the row back.
   const defaultSubmit = isEditing
     ? t.servers.form.saveChanges
+    : managementMode === "observe_only" && !isModal
+      ? t.servers.form.saveServer
     : isModal
       ? t.servers.form.saveServer
       : t.servers.form.saveAndContinue;
@@ -398,6 +404,41 @@ export function ServerForm({
           <p className="text-xs text-muted-foreground/60 mt-1.5">
             {t.servers.form.serverNameHelp}
           </p>
+        </div>
+
+        <div>
+          <label className={LABEL}>{t.servers.form.managementMode}</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setManagementMode("managed")}
+              className={`rounded-xl border px-3 py-3 text-start transition-colors ${
+                managementMode === "managed"
+                  ? "border-primary/50 bg-primary/5 text-foreground"
+                  : "border-border/50 bg-muted/20 text-muted-foreground hover:bg-muted/40"
+              }`}
+            >
+              <span className="block text-sm font-medium">{t.servers.form.modeManaged}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                {t.servers.form.modeManagedDesc}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setManagementMode("observe_only")}
+              disabled={server?.isLocal === true}
+              className={`rounded-xl border px-3 py-3 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                managementMode === "observe_only"
+                  ? "border-info/50 bg-info/5 text-foreground"
+                  : "border-border/50 bg-muted/20 text-muted-foreground hover:bg-muted/40"
+              }`}
+            >
+              <span className="block text-sm font-medium">{t.servers.form.modeObserveOnly}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                {t.servers.form.modeObserveOnlyDesc}
+              </span>
+            </button>
+          </div>
         </div>
 
         <SshTransportField value={sshTransport} disabled={saving || testing} onChange={(value) => {

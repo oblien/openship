@@ -14,13 +14,15 @@ const h = vi.hoisted(() => ({
   streamSSE: vi.fn(),
   withExecutor: vi.fn(),
   refreshAuthentication: vi.fn(),
+  managementMode: "managed" as "managed" | "observe_only",
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: vi.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
   repos: {
     server: {
       get: vi.fn(async () => undefined),
-      getInOrganization: vi.fn(async (id: string) => ({ id, organizationId: "org1", isLocal: false, sshHost: "203.0.113.10", sshAuthMethod: "key", sshPrivateKey: "supplied-test-key" })),
+      getInOrganization: vi.fn(async (id: string) => ({ id, organizationId: "org1", isLocal: false, managementMode: h.managementMode, sshHost: "203.0.113.10", sshAuthMethod: "key", sshPrivateKey: "supplied-test-key" })),
       list: vi.fn(async () => []),
     },
     member: { find: vi.fn(async () => null) },
@@ -126,6 +128,7 @@ beforeEach(() => {
   );
   h.dockerInstaller.mockResolvedValue({ component: "docker", success: true });
   h.edgeInstaller.mockResolvedValue({ component: "edge", success: true });
+  h.managementMode = "managed";
   h.ensureEdge.mockImplementation(
     async (_executor: unknown, install: (prompt?: unknown) => unknown) => ({
       migrated: false,
@@ -139,6 +142,22 @@ afterEach(() => {
 });
 
 describe("remote server prerequisite checks", () => {
+  it("keeps an observe-only host ready when Docker is intentionally absent", async () => {
+    h.managementMode = "observe_only";
+    h.checkComponents.mockImplementation(async (_executor: unknown, names: string[]) =>
+      names.map((name) => component(name, name === "git")),
+    );
+    const { c, sent } = context({ serverId: "server-1" });
+
+    await checkServer(c);
+
+    expect(sent.body).toMatchObject({
+      ready: true,
+      missing: [],
+      components: [expect.objectContaining({ name: "git", optional: true })],
+    });
+  });
+
   it("reports Docker missing even when this control plane runs in bare mode", async () => {
     h.checkComponents.mockImplementation(async (_executor: unknown, names: string[]) =>
       names.map((name) =>
@@ -215,6 +234,18 @@ describe("remote server prerequisite checks", () => {
 });
 
 describe("server component installation dependencies", () => {
+  it("refuses component installation on an observe-only host before using the executor", async () => {
+    h.managementMode = "observe_only";
+    const { c, sent } = context({ serverId: "server-1", component: "docker" });
+
+    await installComponent(c);
+
+    expect(sent.status).toBe(409);
+    expect(sent.body).toMatchObject({ code: "SERVER_OBSERVE_ONLY" });
+    expect(h.withExecutor).not.toHaveBeenCalled();
+    expect(h.dockerInstaller).not.toHaveBeenCalled();
+  });
+
   it("orders a reversed Edge + Docker stream as Docker then Edge", async () => {
     await finishStream({ serverId: "server-1", components: ["edge", "docker"] });
 
@@ -293,18 +324,19 @@ vi.mock("@repo/platform/engine/lib/platform", async () => {
 vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() }, operationAuditContext: () => ({}) }));
 
 import { OperationError, ValidationError } from "@repo/contracts";
+import { AppError } from "@repo/core";
 import { handleApiError } from "../../middleware/error-handler";
 const checkServer = async (c: Context): Promise<Response> => {
   try { return await checkServerHandler(c); }
   catch (error) {
-    if (error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    if (error instanceof AppError || error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
     throw error;
   }
 };
 const installComponent = async (c: Context): Promise<Response> => {
   try { return await installComponentHandler(c); }
   catch (error) {
-    if (error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    if (error instanceof AppError || error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
     throw error;
   }
 };

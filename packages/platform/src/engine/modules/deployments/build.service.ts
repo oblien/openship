@@ -84,7 +84,8 @@ import {
 } from "../../lib/plan-guard";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { type PortCheckResult } from "../../lib/deployment-runtime";
-import { requireOrgServer } from "../../lib/server-target";
+import { assertManagedServer, requireOrgServer } from "../../lib/server-target";
+import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import * as sessionManager from "./session-manager";
 import {
   requestDeploymentCancellation,
@@ -1292,7 +1293,9 @@ export async function createQueuedDeployment(opts: Parameters<typeof createQueue
   // A service env apply owns the same lock until its replacement is durable.
   // Once a queued row exists, apply refuses it via listInFlightByProject, so
   // neither ordering can replace the same container concurrently.
-  return withProjectRuntimeLock(opts.projectId, () => createQueuedDeploymentUnlocked(opts));
+  return withServerInventoryLock(opts.organizationId, () =>
+    withProjectRuntimeLock(opts.projectId, () => createQueuedDeploymentUnlocked(opts)),
+  );
 }
 
 async function createQueuedDeploymentUnlocked(opts: {
@@ -1351,6 +1354,18 @@ async function createQueuedDeploymentUnlocked(opts: {
   // Only meaningful WITH a scope — on its own it would describe an exclusion of nothing.
   if (opts.strictServiceScope && opts.serviceIds && opts.serviceIds.length > 0) {
     meta = { ...meta, strictServiceScope: true };
+  }
+
+  // Every deployment entry point funnels through this function, including
+  // redeploys that deliberately skip preflight. Reject observe-only targets
+  // before entitlement checks or a queued deployment row is created.
+  if (meta.deployTarget === "server") {
+    const server = meta.serverId
+      ? await requireOrgServer(meta.serverId, opts.organizationId)
+      : await repos.server
+          .listByOrganization(opts.organizationId)
+          .then(rows => rows.length === 1 ? rows[0] : undefined);
+    if (server) assertManagedServer(server);
   }
 
   // Plan entitlements, checked BEFORE the row exists so an out-of-allowance org
