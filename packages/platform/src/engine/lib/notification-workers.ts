@@ -487,8 +487,9 @@ async function sendMSTeams(
   };
 
   // SSRF-safe: the Teams webhook URL is user-configured. Creation-time
-  // validation restricts the host to *.logic.azure.com / *.webhook.office.com,
-  // but an attacker-provisioned Azure Logic App passes that suffix check and can
+  // validation restricts the host to *.environment.api.powerplatform.com /
+  // *.logic.azure.com / *.webhook.office.com, but an attacker-provisioned
+  // Azure Logic App or Power Automate workflow passes that suffix check and can
   // 302-redirect the server-side POST into the internal network / metadata IP.
   // So pin the resolved IP and never follow a redirect (maxRedirects defaults to
   // 0 → a 3xx is non-2xx → thrown), exactly like the Slack/webhook workers.

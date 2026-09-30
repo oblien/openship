@@ -435,14 +435,18 @@ function sanitizeChannelConfig(
     case "msteams": {
       const webhookUrl = String(cfg.webhookUrl ?? "").trim();
       if (!webhookUrl) return { ok: false, error: "Invalid Microsoft Teams webhook URL" };
-      // Power Automate Workflows live on *.logic.azure.com; legacy
-      // connectors on *.webhook.office.com. Suffix-match the hostname so
+      // Teams "Send webhook alerts to a channel" workflows are issued on
+      // *.<region>.environment.api.powerplatform.com; the pre-migration
+      // Power Automate trigger URLs were on *.logic.azure.com and legacy
+      // Office 365 connectors on *.webhook.office.com. All three are still
+      // live, so all three are accepted. Suffix-match the hostname so
       // lookalike domains (e.g. evil-logic.azure.com.attacker.io) fail.
       try {
         const parsed = new URL(webhookUrl);
         if (
           parsed.protocol !== "https:" ||
           !(
+            parsed.hostname.endsWith(".environment.api.powerplatform.com") ||
             parsed.hostname.endsWith(".logic.azure.com") ||
             parsed.hostname.endsWith(".webhook.office.com")
           )
