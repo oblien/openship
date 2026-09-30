@@ -9,12 +9,15 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertSelfHosted, requireSelfHostedServer, assertServerExecution } from "./server-access";
 import { applyAllContainers, scanOrgContainers, detectServerContainers, loadOrgContainerIssues, runContainerApply } from "./server-containers.service";
 import { getActiveContainerApplySession, listContainerApplySessions, subscribeContainerApplySession } from "../../lib/server-container-session";
+import { assertManagedServer } from "../../lib/server-target";
+import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 
 const SETTLED_WINDOW_MS = 90_000;
 
 async function authorizedServer(ctx: ExecutionContext, id: string, action: "read" | "write") {
   const context = await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action });
   const server = await requireSelfHostedServer(context, id);
+  assertManagedServer(server);
   await assertServerExecution(server);
   return server;
 }
@@ -36,8 +39,15 @@ export const serverContainerCollection: Pick<ServerDependencies["collection"],
   },
   async containersBehind(ctx) {
     assertSelfHosted();
-    const rows = await repos.serverContainerStatus.listBehindByOrg(ctx.organizationId);
-    return { servers: new Set(rows.map(row => row.serverId)).size, components: rows.length };
+    const [rows, servers] = await Promise.all([
+      repos.serverContainerStatus.listBehindByOrg(ctx.organizationId),
+      repos.server.listByOrganization(ctx.organizationId),
+    ]);
+    const managed = new Set(
+      servers.filter(server => server.managementMode !== "observe_only").map(server => server.id),
+    );
+    const applicable = rows.filter(row => managed.has(row.serverId));
+    return { servers: new Set(applicable.map(row => row.serverId)).size, components: applicable.length };
   },
   async containerIssues(ctx) { assertSelfHosted(); return loadOrgContainerIssues(ctx.organizationId); },
   applyingContainers: listApplyingContainers,
@@ -56,11 +66,13 @@ export const serverContainerCollection: Pick<ServerDependencies["collection"],
 
 export const serverContainerResources: Pick<ServerDependencies["resources"], "listContainers" | "scanContainers" | "containerApplySession"> = {
   async listContainers(ctx, id) {
-    await requireSelfHostedServer(ctx, id);
+    const server = await requireSelfHostedServer(ctx, id);
+    if (server.managementMode === "observe_only") return [];
     return repos.serverContainerStatus.listByServer(id);
   },
   async scanContainers(ctx, id) {
     const server = await requireSelfHostedServer(ctx, id);
+    if (server.managementMode === "observe_only") return { ok: true, containers: [] };
     await assertServerExecution(server);
     const containers = await detectServerContainers(server).catch((error: unknown) => { throw new Error(`scan failed: ${(error as Error).message}`); });
     record(ctx, id);
@@ -75,12 +87,14 @@ export const serverContainerResources: Pick<ServerDependencies["resources"], "li
 
 export const serverContainerStreams: NonNullable<ServerDependencies["containers"]> = {
   async start(ctx, id, input, signal) {
-    const server = await authorizedServer(ctx, id, "write");
     signal?.throwIfAborted();
-    if (input.component === "mail" && !await repos.mailServer.get(id).catch(() => undefined))
-      throw new OperationError("No mail server is provisioned on this server", 400, "MAIL_SERVER_NOT_PROVISIONED");
-    const { session } = runContainerApply(server, input.component, input.intent ?? "update",
-      () => authorizedServer(ctx, id, "write").then(() => {}));
+    const { session } = await withServerInventoryLock(ctx.organizationId, async () => {
+      const server = await authorizedServer(ctx, id, "write");
+      if (input.component === "mail" && !await repos.mailServer.get(id).catch(() => undefined))
+        throw new OperationError("No mail server is provisioned on this server", 400, "MAIL_SERVER_NOT_PROVISIONED");
+      return runContainerApply(server, input.component, input.intent ?? "update",
+        () => authorizedServer(ctx, id, "write").then(() => {}));
+    });
     record(ctx, id);
     // A disconnected observer does not cancel an accepted container swap.
     return subscriptionEvents(writer => subscribeContainerApplySession(session.id, writer), signal);
@@ -107,7 +121,7 @@ async function groupedContainers(organizationId: string) {
   // projectCount rides along so the view can tell an ABSENT edge that's a real
   // issue (this box hosts projects) from one that's just an offer — the same
   // rule containerIssues uses — without a second round-trip.
-  return servers.map((s) => ({
+  return servers.filter(s => s.managementMode !== "observe_only").map((s) => ({
     server: {
       id: s.id,
       name: s.name ?? s.sshHost,
@@ -125,7 +139,9 @@ export async function listApplyingContainers(ctx: ExecutionContext) {
     repos.server.listByOrganization(ctx.organizationId),
     repos.serverContainerStatus.listByOrg(ctx.organizationId),
   ]);
-  const names = new Map(servers.map((s) => [s.id, s.name ?? s.sshHost]));
+  const names = new Map(
+    servers.filter(s => s.managementMode !== "observe_only").map((s) => [s.id, s.name ?? s.sshHost]),
+  );
   const sessions = listContainerApplySessions({ settledWithinMs: SETTLED_WINDOW_MS }).filter((s) =>
     names.has(s.serverId),
   );

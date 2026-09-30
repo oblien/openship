@@ -178,6 +178,10 @@ export default function AddServerPage() {
       router.push("/servers");
       return;
     }
+    if (server.managementMode === "observe_only") {
+      router.push(`/servers/${server.id}`);
+      return;
+    }
     // New server created - move into the component-setup flow.
     setHasExistingServer(true);
     setExistingServerId(server.id);

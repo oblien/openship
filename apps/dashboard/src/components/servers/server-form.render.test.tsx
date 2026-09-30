@@ -45,6 +45,15 @@ function placeholders(html: string) {
  * of fields, and these tests fail if a variant starts growing its own.
  */
 describe("ServerForm variants", () => {
+  it("offers managed and observe-only profiles in both chromes", () => {
+    for (const html of [render(), render({ variant: "modal", onCancel: () => {} })]) {
+      const out = text(html);
+      expect(out).toContain("Managed");
+      expect(out).toContain("Observe only");
+      expect(out).toContain("Inventory and monitor this host");
+    }
+  });
+
   it("renders the same fields in both chromes", () => {
     const page = placeholders(render());
     const modal = placeholders(render({ variant: "modal", onCancel: () => {} }));

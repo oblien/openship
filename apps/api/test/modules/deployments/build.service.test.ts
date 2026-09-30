@@ -67,6 +67,7 @@ const {
     },
     server: {
       getInOrganization: vi.fn(),
+      listByOrganization: vi.fn(async () => []),
     },
   },
   resolveProjectInfo: vi.fn(),
@@ -1064,6 +1065,25 @@ describe("triggerDeployment", () => {
         }),
       }),
     );
+  });
+
+  it("rejects an observe-only target before queue creation", async () => {
+    repos.server.getInOrganization.mockResolvedValue({
+      id: "srv_remote",
+      managementMode: "observe_only",
+    });
+
+    await expect(
+      triggerDeployment(ctx, {
+        projectId: "project-1",
+        branch: "main",
+        commitSha: "abc123",
+        serverId: "srv_remote",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "SERVER_OBSERVE_ONLY" });
+
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
   });
 
   it("rejects a foreign explicit target before reconciliation or queue creation", async () => {

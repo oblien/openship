@@ -8,12 +8,14 @@ import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useI18n } from "@/components/i18n-provider";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { DismissiblePopover } from "@/components/ui/Popover";
+import { deployableServers, isManagedServer } from "@/lib/server/management-mode";
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
 export interface ServerOption {
   id: string;
   name: string;
+  managementMode?: "managed" | "observe_only";
   host: string;
   user: string;
   port: number;
@@ -56,6 +58,8 @@ export interface ServerSelectorProps {
    * action is unchanged: adding one is still the way out.
    */
   emptyHint?: string;
+  /** Only offer hosts that accept deployments and managed component writes. */
+  managedOnly?: boolean;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -64,6 +68,7 @@ function serverInfoToOption(s: ServerInfo): ServerOption {
   return {
     id: s.id,
     name: s.name || s.sshHost,
+    managementMode: s.managementMode,
     host: s.sshHost,
     user: s.sshUser || "root",
     port: s.sshPort ?? 22,
@@ -83,6 +88,7 @@ export default function ServerSelector({
   autoSelectFirst = false,
   excludeIds,
   emptyHint,
+  managedOnly = false,
 }: ServerSelectorProps) {
   const { t } = useI18n();
   const w = t.widgets.shared.serverSelector;
@@ -105,13 +111,17 @@ export default function ServerSelector({
       const all = await systemApi.listServers();
       // Excluded BEFORE the auto-select below, so "one server" means one CHOOSABLE server.
       const skip = new Set(excludeIds ?? []);
-      const list = skip.size > 0 ? all.filter((s) => !skip.has(s.id)) : all;
+      const eligible = managedOnly ? deployableServers(all) : all;
+      const list = skip.size > 0 ? eligible.filter((s) => !skip.has(s.id)) : eligible;
       if (list.length > 0) {
         const opts = list.map(serverInfoToOption);
         setServers(opts);
         // Auto-select the lone server, or the first one when the caller asked
         // for a default and nothing's chosen yet (captured initial `value`).
-        if (opts.length === 1 || (autoSelectFirst && !value)) {
+        if (managedOnly && value && !opts.some(option => option.id === value)) {
+          setInternalId(null);
+          onSelect(null);
+        } else if (opts.length === 1 || (autoSelectFirst && !value)) {
           setInternalId(opts[0].id);
           onSelect(opts[0]);
         }
@@ -132,7 +142,7 @@ export default function ServerSelector({
   // flow has just ruled out. Joined rather than passed by reference — callers build the
   // array inline, so a fresh identity every render would refetch forever.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(excludeIds ?? []).join(",")]);
+  }, [(excludeIds ?? []).join(","), managedOnly]);
 
   useEffect(() => {
     fetchServers();
@@ -143,12 +153,13 @@ export default function ServerSelector({
   // createServerEntry returns the full row, so no refetch is needed.
   const addServer = useCallback(() => {
     openAddServer((created: ServerInfo) => {
+      if (managedOnly && !isManagedServer(created)) return;
       const opt = serverInfoToOption(created);
       setServers((prev) => (prev.some((p) => p.id === opt.id) ? prev : [...prev, opt]));
       setInternalId(opt.id);
       onSelect(opt);
     });
-  }, [openAddServer, onSelect]);
+  }, [managedOnly, openAddServer, onSelect]);
 
   const selected = servers.find((s) => s.id === effectiveValue) ?? null;
 

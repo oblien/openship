@@ -138,7 +138,7 @@ export function MailSetupForm({
             selector's built-in "Add server" opens the panel as a modal, so mail
             setup survives). Auto-select is a convenient default, not a reason to
             hide the choice. */}
-        <ServerSelector value={selectedServerId} onSelect={onServerSelect} />
+        <ServerSelector managedOnly value={selectedServerId} onSelect={onServerSelect} />
 
         <div className="space-y-4 mb-6">
           <div>

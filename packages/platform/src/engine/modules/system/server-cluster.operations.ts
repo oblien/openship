@@ -48,6 +48,7 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertSelfHosted, assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { notifyNetworkSetup } from "./network-setup-bus";
 import { assertNetworkSetupAcceptingWork, deferNetworkSetupWork } from "./network-setup-lifecycle";
+import { assertManagedServer } from "../../lib/server-target";
 
 function infrastructureUnavailable(): string | null {
   if (isOblienConfigured())
@@ -69,7 +70,9 @@ export async function authorizeMember(ctx: ExecutionContext, serverId: string) {
     resourceId: serverId,
     action: "admin",
   });
-  return requireSelfHostedServer(ctx, serverId);
+  const server = await requireSelfHostedServer(ctx, serverId);
+  assertManagedServer(server);
+  return server;
 }
 
 export async function onServer<T>(

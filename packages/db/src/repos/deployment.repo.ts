@@ -154,6 +154,31 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       })).map(codec.openDeployment);
     },
 
+    /** True while any deployment targeting this server can still mutate it. */
+    async hasInFlightByServer(organizationId: string, serverId: string): Promise<boolean> {
+      const [row] = await db
+        .select({ id: deployment.id })
+        .from(deployment)
+        .innerJoin(project, eq(project.id, deployment.projectId))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`coalesce(${deployment.meta} ->> 'serverId', ${project.serverId}) = ${serverId}`,
+            or(
+              inArray(deployment.status, ["queued", "building", "deploying"]),
+              sql`exists (
+                select 1 from "build_session" as "active_build_session"
+                where "active_build_session"."deployment_id" = ${deployment.id}
+                  and "active_build_session"."started_at" is not null
+                  and "active_build_session"."finished_at" is null
+              )`,
+            ),
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
+    },
+
     async hasLiveBuildExecution(deploymentId: string, projectId: string): Promise<boolean> {
       const [row] = await db
         .select({ id: buildSession.id })

@@ -93,7 +93,7 @@ import type {
 import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
-import { requireOrgServer } from "../../lib/server-target";
+import { requireManagedOrgServer } from "../../lib/server-target";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
@@ -902,7 +902,7 @@ async function createProductionProject(
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
   if (data.serverId) {
-    await requireOrgServer(data.serverId, organizationId);
+    await requireManagedOrgServer(data.serverId, organizationId);
   }
 
   // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the

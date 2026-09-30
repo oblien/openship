@@ -97,6 +97,7 @@ export function AppDestinationPicker({
         <ServerSelector
           compact
           autoSelectFirst
+          managedOnly
           value={serverActive ? (value?.serverId ?? null) : null}
           onSelect={(s: ServerOption | null) => {
             if (s)

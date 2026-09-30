@@ -21,6 +21,7 @@ import {
   type DeploymentMeta,
   type ResolvedDeploymentPlatform,
 } from "./deployment-runtime";
+import { requireManagedOrgServer } from "./server-target";
 
 export async function requireClusterDeploymentTarget(
   organizationId: string,
@@ -55,6 +56,7 @@ export async function requireClusterDeploymentTarget(
       409,
       "CLUSTER_RUNTIME_CHANGED",
     );
+  await Promise.all(cluster.serverIds.map(serverId => requireManagedOrgServer(serverId, organizationId)));
   return { cluster, runtime };
 }
 

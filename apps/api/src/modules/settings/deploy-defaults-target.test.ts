@@ -29,6 +29,9 @@ vi.mock("@repo/db", () => ({
         h.updates.push(values);
       },
     },
+    server: {
+      getInOrganization: async () => ({ managementMode: "managed" }),
+    },
   },
 }));
 

@@ -46,6 +46,8 @@ import { permission } from "../../lib/permission";
 // the mail stack gives SSH-level reach into the box, so a cross-org
 // serverId here is the same severity as the terminal hole.
 import { isServerInOrg } from "@repo/platform/engine/lib/resource-access";
+import { assertManagedServer } from "@repo/platform/engine/lib/server-target";
+import { withServerInventoryLock } from "@repo/platform/engine/lib/server-inventory-lock";
 import type { CommandExecutor } from "@repo/adapters";
 import { pinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
 import { pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
@@ -287,7 +289,6 @@ export async function getStatus(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-
   // The webmail is a project like any other, so its state comes from the DB —
   // resolved BEFORE the SSH probe and independent of it. An unreachable mail
   // server must not make a deployed webmail vanish from the page, and a
@@ -724,6 +725,9 @@ export async function startSetup(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
+  const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
+  if (!server) return c.json({ error: "Server not found" }, 404);
+  assertManagedServer(server);
 
   if (active) {
     return c.json({ error: "Setup already running" }, 409);
@@ -744,7 +748,12 @@ export async function startSetup(c: Context) {
 
   let reservation;
   try {
-    reservation = await reserveMailSetup(serverId, domain);
+    reservation = await withServerInventoryLock(ctx.organizationId, async () => {
+      const current = await repos.server.getInOrganization(serverId, ctx.organizationId);
+      if (!current) return null;
+      assertManagedServer(current);
+      return reserveMailSetup(serverId, domain);
+    });
   } catch (err) {
     if (active === session) active = null;
     console.error(
