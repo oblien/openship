@@ -25,7 +25,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * edit surface can prefill from the server and never be silently defaulted.
  */
 
-import { useMemo, useReducer, useState } from "react";
+import { useCallback, useMemo, useReducer, useState } from "react";
 import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
 import {
   reduceSelection,
@@ -79,13 +79,13 @@ export function AccessEditorModal({
     (grants): AccessSelection => ({ grants, readOnly: false, template: "custom" }),
   );
 
-  const onCatalogLoaded = (type: ResourceType, entries: CatalogEntry[]) => {
+  const onCatalogLoaded = useCallback((type: ResourceType, entries: CatalogEntry[]) => {
     setLabels((prev) => {
       const next = new Map(prev);
       for (const e of entries) next.set(`${type} ${e.id}`, e.label);
       return next;
     });
-  };
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
