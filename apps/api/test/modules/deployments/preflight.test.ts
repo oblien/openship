@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { cloudClient, runCloudPreflight, preflightFn } = vi.hoisted(() => ({
+const { cloudClient, runCloudPreflight, preflightFn, isPublicRepo } = vi.hoisted(() => ({
   cloudClient: vi.fn(),
   runCloudPreflight: vi.fn(),
   preflightFn: vi.fn(),
+  isPublicRepo: vi.fn(),
 }));
 
 vi.mock("@repo/db", async (importOriginal) => {
@@ -32,6 +33,10 @@ vi.mock("@repo/platform/engine/lib/cloud-preflight", () => ({
   runCloudPreflight,
 }));
 
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
+  isPublicRepo,
+}));
+
 // Keep the custom-domain DNS branch (checkCustomDomainSelfHosted) off the network
 // and deterministic — a custom host resolves to "no records yet" (a warn on the
 // `domain` check), never a cloud requirement. Isolates the cloud-gating assertions.
@@ -46,6 +51,8 @@ import { isCloudConnectedForOrg } from "@repo/platform/engine/lib/cloud/session"
 describe("runPreflightChecks", () => {
   beforeEach(() => {
     runCloudPreflight.mockReset();
+    isPublicRepo.mockReset();
+    isPublicRepo.mockResolvedValue(false);
     cloudClient.mockReset();
     preflightFn.mockReset();
     preflightFn.mockImplementation(async (input: { slug?: string }) => ({
@@ -66,13 +73,69 @@ describe("runPreflightChecks", () => {
     );
   });
 
-  it.each(["services", "single"] as const)("checks Cloud volume support for %s projects before deployment", async mode => {
-    const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
-      buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
-    { multiService: true, composeServices: [{ name: "db", image: "postgres:17", ports: ["5432"], exposed: false,
-      enabled: true, volumes: ["data:/var/lib/postgresql/data"], dependsOn: [] }] as any });
-    expect(result.checks.find(check => check.id === "cloud-storage")).toMatchObject({ status: mode === "services" ? "pass" : "fail" });
+  it("does not route a non-GitHub owner through GitHub probes or credentials", async () => {
+    const result = await runPreflightChecks(
+      {
+        repoUrl: "https://gitlab.example/acme/app.git",
+        branch: "main",
+        buildImage: "node:22",
+        installCommand: "npm install",
+        buildCommand: "npm run build",
+        startCommand: "npm start",
+        port: 3000,
+        hasBuild: true,
+        hasServer: true,
+        deployTarget: "server",
+        organizationId: "org-1",
+      } as any,
+      {
+        ctx: { userId: "user-1", organizationId: "org-1" } as any,
+        buildStrategy: "local",
+        gitProvider: "gitlab",
+        gitOwner: "acme",
+        gitRepo: "app",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(isPublicRepo).not.toHaveBeenCalled();
+    expect(result.checks.some((check) => check.id.startsWith("github-"))).toBe(false);
   });
+
+  it.each(["services", "single"] as const)(
+    "checks Cloud volume support for %s projects before deployment",
+    async (mode) => {
+      const result = await runPreflightChecks(
+        {
+          deployTarget: "cloud",
+          organizationId: "org-1",
+          serviceDeploymentMode: mode,
+          buildStrategy: "server",
+          framework: "docker",
+          buildImage: "node:22",
+          hasServer: true,
+          port: 8080,
+        } as any,
+        {
+          multiService: true,
+          composeServices: [
+            {
+              name: "db",
+              image: "postgres:17",
+              ports: ["5432"],
+              exposed: false,
+              enabled: true,
+              volumes: ["data:/var/lib/postgresql/data"],
+              dependsOn: [],
+            },
+          ] as any,
+        },
+      );
+      expect(result.checks.find((check) => check.id === "cloud-storage")).toMatchObject({
+        status: mode === "services" ? "pass" : "fail",
+      });
+    },
+  );
 
   it("checks free-domain availability for every public endpoint", async () => {
     const result = await runPreflightChecks(

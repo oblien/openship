@@ -2968,6 +2968,66 @@
       "page": "github",
       "description": "GitHub OAuth callback — browser navigates here, no session yet."
     },
+    "GET /api/vcs/:provider/orgs/:org/repos": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "List repositories in an organization through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "List repositories available through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Read repository metadata through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/branches": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "List repository branches through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/clone-token": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Obtain a short-lived clone credential through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/detect": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Detect build configuration through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/file": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Read repository file content through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/files": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "List repository files at a path through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/tree": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Read a repository tree through the selected version-control provider."
+    },
+    "GET /api/vcs/:provider/repos/:owner/:repo/webhooks": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "List repository webhooks through the selected version-control provider."
+    },
+    "POST /api/vcs/:provider/repos/:owner/:repo/webhooks": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Register a repository webhook through the selected version-control provider."
+    },
+    "DELETE /api/vcs/:provider/repos/:owner/:repo/webhooks": {
+      "page": "github",
+      "section": "Provider-neutral repository transport",
+      "description": "Delete a repository webhook through the selected version-control provider."
+    },
     "GET /api/health": {
       "page": "health",
       "description": "Liveness probe — returns `{ status, timestamp }`."

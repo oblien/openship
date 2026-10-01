@@ -9,10 +9,18 @@ const { findByGitRepo, projectUpdate, registerWebhook, updateWebhook } = vi.hois
   updateWebhook: vi.fn(),
 }));
 
-vi.mock("@repo/db", () => ({
-  repos: { project: { findByGitRepo, update: projectUpdate } },
+vi.mock("@repo/db", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    repos: { project: { findByGitRepo, update: projectUpdate } },
+  };
+});
+vi.mock("@repo/platform/engine/modules/vcs/vcs.factory", () => ({
+  VcsStrategyFactory: {
+    getStrategy: () => ({ registerWebhook, updateWebhook }),
+  },
 }));
-vi.mock("@repo/platform/engine/modules/github/github.service", () => ({ registerWebhook, updateWebhook }));
 
 import { ensureSharedWebhook, findSharedWebhookId } from "@repo/platform/engine/modules/projects/project-git-webhook";
 
@@ -23,7 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   findByGitRepo.mockResolvedValue([]);
   projectUpdate.mockResolvedValue(undefined);
-  registerWebhook.mockResolvedValue({ hookId: 100, events: [] });
+  registerWebhook.mockResolvedValue({ id: 100, events: [] });
   updateWebhook.mockResolvedValue(undefined);
 });
 
@@ -32,6 +40,7 @@ describe("ensureSharedWebhook", () => {
     findByGitRepo.mockResolvedValue([
       { id: "p1", organizationId: "o1", gitOwner: "acme", gitRepo: "app", webhookId: null },
       { id: "p2", organizationId: "o1", gitOwner: "Acme", gitRepo: "App", webhookId: null }, // case-insensitive match
+      { id: "pGitLab", organizationId: "o1", gitProvider: "gitlab", gitOwner: "acme", gitRepo: "app", webhookId: null },
       { id: "pX", organizationId: "oOther", gitOwner: "acme", gitRepo: "app", webhookId: null }, // other org — excluded
     ]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,6 +52,7 @@ describe("ensureSharedWebhook", () => {
     const updatedIds = projectUpdate.mock.calls.map((c) => c[0]);
     expect(updatedIds).toContain("p1");
     expect(updatedIds).toContain("p2");
+    expect(updatedIds).not.toContain("pGitLab"); // provider is part of the repo identity
     expect(updatedIds).not.toContain("pX"); // never crosses the org boundary
     expect(projectUpdate).toHaveBeenCalledWith("p1", { webhookId: 100 });
   });
@@ -50,7 +60,7 @@ describe("ensureSharedWebhook", () => {
   it("deactivates a superseded hook when the repo already had a different one", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const project = { id: "p1", organizationId: "o1", webhookId: 55 } as any;
-    registerWebhook.mockResolvedValue({ hookId: 100, events: [] });
+    registerWebhook.mockResolvedValue({ id: 100, events: [] });
 
     await ensureSharedWebhook(ctx, project, "acme", "app");
 
@@ -58,7 +68,7 @@ describe("ensureSharedWebhook", () => {
   });
 
   it("returns null and fans out nothing when registration yields no hook", async () => {
-    registerWebhook.mockResolvedValue({ hookId: null, events: [] });
+    registerWebhook.mockResolvedValue(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const project = { id: "p1", organizationId: "o1", webhookId: null } as any;
 

@@ -65,11 +65,11 @@ r.public(
   },
 );
 
-/** Signed provider webhooks (GitHub) — HMAC/signature verified in the handler. */
+/** Signed provider webhooks (e.g. GitHub, GitLab, Self-hosted) — HMAC/signature verified in the handler. */
 r.public(
   "post",
   "/:provider",
-  { ...PUBLIC, reason: "Provider webhook (GitHub) - HMAC/signature verified in handler" },
+  { ...PUBLIC, reason: "Provider webhook - HMAC/signature verified in handler" },
   bodyCap,
   webhookRawBody,
   handleWebhook,

@@ -12,15 +12,8 @@ import { presentProject } from "../../../projects";
 import { failOperation } from "../../lib/operation-errors";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import * as projectService from "./project.service";
-import {
-  updateWebhook,
-  getAvailableStrategies,
-  getRecentCommits,
-  resolveDefaultBranch,
-  resolveWebhookStrategy,
-  listBranches as listGitHubBranches,
-} from "../github/github.service";
 import { resolveInstallUrl } from "../github/github.auth";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { domainWebhookUrl } from "../../lib/public-url";
@@ -40,13 +33,19 @@ async function disableSharedWebhookIfUnused(
   owner: string,
   repo: string,
   webhookId: number | null,
+  provider: string | null | undefined,
 ) {
   const repoProjects = await repos.project.findByGitRepo(owner, repo);
-  if (repoProjects.some((p) => p.autoDeploy)) return;
-  const projects = repoProjects.filter((p) => p.organizationId === organizationId);
+  const expectedProvider = provider || "github";
+  const projects = repoProjects.filter(
+    (p) =>
+      p.organizationId === organizationId &&
+      (p.gitProvider || "github") === expectedProvider,
+  );
+  if (projects.some((p) => p.autoDeploy)) return;
   const hookId = webhookId ?? projects.find((p) => typeof p.webhookId === "number")?.webhookId;
   if (hookId) {
-    await updateWebhook(ctx, owner, repo, hookId, {
+    await VcsStrategyFactory.getStrategy(provider).updateWebhook(ctx, owner, repo, hookId, {
       active: false,
     });
   }
@@ -202,8 +201,9 @@ export function createProjectGitOperations(
       // Overview can't answer "is auto-deploy wired up?" differently.
       const { strategy, webhookActive, installationInstalled } =
         await projectService.resolveProjectWebhookState(organizationId, info);
+      const vcs = VcsStrategyFactory.getStrategy(info.gitProvider);
       // Get available strategies for the UI
-      const strategies = await getAvailableStrategies(ctx, info);
+      const strategies = await vcs.getAvailableStrategies(ctx, info);
       // Get project domains for webhook domain picker
       const domains = await repos.domain.listByProject(id);
       const verifiedDomains = domains
@@ -211,10 +211,10 @@ export function createProjectGitOperations(
         .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
       let branch = info.gitBranch ?? "";
       if (!branch && info.gitOwner && info.gitRepo) {
-        branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+        branch = (await vcs.getRepository(ctx, info.gitOwner, info.gitRepo)).default_branch;
       }
       const commits = branch
-        ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
+        ? await vcs.getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
         : [];
       const installUrl =
         strategy === "app" && !installationInstalled
@@ -251,19 +251,27 @@ export function createProjectGitOperations(
       if (!info.gitOwner || !info.gitRepo) {
         return failOperation({ success: false, error: "No repository connected" }, 400);
       }
-      const { branches, page, perPage, hasMore } = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, input);
+      const { branches, page, perPage, hasMore } = await VcsStrategyFactory.getStrategy(
+        info.gitProvider,
+      ).getBranches(ctx, info.gitOwner, info.gitRepo, input);
       return {
-        data: branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected })),
+        data: branches.map((branch) => ({
+          name: branch.name,
+          sha: branch.commit.sha,
+          protected: branch.protected,
+        })),
         pagination: { page, perPage, hasMore },
       };
     },
     async linkRepo(ctx, id, input) {
-      const { owner, repo, branch, installationId } = input;
+      const { owner, repo, branch, installationId, gitProvider, gitUrl } = input;
       const result = await projectService.linkProjectRepo(ctx, id, {
         owner,
         repo,
         branch,
         installationId,
+        gitProvider,
+        gitUrl,
       });
       if (!result.ok) {
         if (result.code === "not_found") return failOperation({ error: "Project not found" }, 404);
@@ -319,6 +327,7 @@ export function createProjectGitOperations(
           before.gitOwner,
           before.gitRepo,
           before.webhookId,
+          before.gitProvider,
         ).catch(() => {});
       }
       recordAudit(ctx, {
@@ -353,7 +362,9 @@ export function createProjectGitOperations(
         if (!owner || !repo) {
           return failOperation({ success: false, error: "No repository linked" }, 400);
         }
-        const strategy = await resolveWebhookStrategy(project, organizationId);
+        const strategy = await VcsStrategyFactory.getStrategy(
+          project.gitProvider,
+        ).resolveWebhookStrategy(project, organizationId);
         // In "none" mode, auto-deploy can't work - suggest options
         if (strategy === "none" && enabled) {
           return failOperation(
@@ -395,6 +406,7 @@ export function createProjectGitOperations(
                 owner,
                 repo,
                 project.webhookId,
+                project.gitProvider,
               );
             }
           } else if (enabled) {
@@ -420,6 +432,7 @@ export function createProjectGitOperations(
               owner,
               repo,
               project.webhookId,
+              project.gitProvider,
             );
           }
         } catch (err) {

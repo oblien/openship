@@ -95,6 +95,7 @@ export interface GitHubCheckRun {
   id: number;
   status: string;
   conclusion: string | null;
+  html_url?: string;
 }
 
 // ─── Push webhook payload ────────────────────────────────────────────────────

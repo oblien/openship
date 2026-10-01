@@ -351,4 +351,21 @@ does not exist). Confirm the repo appears in `GET /api/github/home` first.
 | --- | --- | --- |
 | GitHub OAuth callback — browser navigates here, no session yet. | HTTP only | `GET /api/github/connect/redirect`<br />`Handler authentication` |
 
+### Provider-neutral repository transport
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List repositories in an organization through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/orgs/:org/repos`<br />`github:list` |
+| List repositories available through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos`<br />`github:list` |
+| Read repository metadata through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo`<br />`github:read` |
+| List repository branches through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/branches`<br />`github:list` |
+| Obtain a short-lived clone credential through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/clone-token`<br />`github:read` |
+| Detect build configuration through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/detect`<br />`github:read` |
+| Read repository file content through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/file`<br />`github:read` |
+| List repository files at a path through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/files`<br />`github:list` |
+| Read a repository tree through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/tree`<br />`github:list` |
+| List repository webhooks through the selected version-control provider. | HTTP only | `GET /api/vcs/:provider/repos/:owner/:repo/webhooks`<br />`github:list` |
+| Register a repository webhook through the selected version-control provider. | HTTP only | `POST /api/vcs/:provider/repos/:owner/:repo/webhooks`<br />`github:write` |
+| Delete a repository webhook through the selected version-control provider. | HTTP only | `DELETE /api/vcs/:provider/repos/:owner/:repo/webhooks`<br />`github:admin` |
+
 {/* api-operations:end */}

@@ -150,7 +150,7 @@ beforeEach(() => {
     if (url === endpoints.settings.get)
       return { cloneToken: { ...credential }, forwardGitToServer: false };
     if (url === endpoints.github.status || url === endpoints.github.userHome) return home();
-    if (url === endpoints.github.userRepos) {
+    if (url === endpoints.vcs.userRepos("github")) {
       const data = home().repos.filter((repo) => repo.owner === options?.params?.owner);
       return { data, total: data.length, count: data.length, totalPages: 1 };
     }

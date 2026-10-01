@@ -236,7 +236,12 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     const handleLinkRepo = async (ownerLogin: string, repo: GitHubRepo) => {
       setIsLinking(true);
       try {
-        const result = await projectsApi.linkRepo(id, { owner: ownerLogin, repo: repo.name });
+        const result = await projectsApi.linkRepo(id, {
+          owner: ownerLogin,
+          repo: repo.name,
+          gitProvider: "github",
+          gitUrl: repo.clone_url,
+        });
         if (result.success) {
           showToast(
             interpolate(t.projectSettings.git.toast.linked, { repo: `${ownerLogin}/${repo.name}` }),

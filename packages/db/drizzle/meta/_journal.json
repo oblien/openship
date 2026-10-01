@@ -1086,6 +1086,13 @@
       "when": 1790670000000,
       "tag": "0154_github_repository_authorization",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1790670000001,
+      "tag": "0155_checked_git_provider",
+      "breakpoints": true
     }
   ]
 }

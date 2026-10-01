@@ -75,6 +75,7 @@ export async function syncProjectToServerManifest(input: {
       gitOwner: project.gitOwner,
       gitRepo: project.gitRepo,
       gitBranch: project.gitBranch,
+      gitUrl: project.gitUrl,
       runtimeMode: meta.runtimeMode ?? null,
       autoDeploy: project.autoDeploy,
       environmentSlug: project.environmentSlug,

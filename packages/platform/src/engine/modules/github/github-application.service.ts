@@ -820,6 +820,7 @@ export async function detectStack(ctx: ExecutionContext, input: NonNullable<Para
 
   const info = await resolveProjectInfo({
     source: "github",
+    provider: "github",
     owner,
     repo,
     ctx,

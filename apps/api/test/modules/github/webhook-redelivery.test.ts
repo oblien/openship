@@ -6,6 +6,7 @@ import { seedOrg, seedProject } from "../../helpers/seed";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { registerWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
 import { githubWebhookProvider } from "../../../src/modules/github/github.webhook";
+import { handlePush } from "../../../src/modules/github/webhook-push";
 import { webhookRoutes } from "../../../src/modules/webhooks/webhook.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
@@ -101,6 +102,51 @@ async function fixture() {
     )[0];
   return { organizationId, userId, fields, project, body, send, deliveryId, anchor };
 }
+
+describe("provider-scoped push routing", () => {
+  it("deploys the project owned by the incoming provider", async () => {
+    const { organizationId } = await seedOrg();
+    const repo = `provider-push-${sequence++}`;
+    const gitlabProject = await seedProject(organizationId, {
+      gitProvider: "gitlab",
+      gitOwner: "acme",
+      gitRepo: repo,
+      gitBranch: "main",
+      autoDeploy: true,
+    });
+    await seedProject(organizationId, {
+      gitProvider: "github",
+      gitOwner: "acme",
+      gitRepo: repo,
+      gitBranch: "main",
+      autoDeploy: false,
+    });
+
+    const result = await handlePush(
+      "gitlab",
+      {
+        ref: "refs/heads/main",
+        head_commit: { id: "2".repeat(40), message: "Fix provider routing" },
+        commits: [{ added: [], modified: ["app.ts"], removed: [] }],
+        repository: {
+          name: repo,
+          full_name: `acme/${repo}`,
+          owner: { login: "acme", id: 1 },
+          default_branch: "main",
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      message: `Triggered 1 deployment(s) for acme/${repo}#main`,
+    });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ organizationId }),
+      expect.objectContaining({ projectId: gitlabProject.id, branch: "main" }),
+    );
+  });
+});
 
 describe("GitHub blocked deployment redelivery (#847)", () => {
   it("reports a blocked push as failed, records it, then accepts redelivery of the same id", async () => {
