@@ -16,6 +16,7 @@ import {
   extractDockerBuildFailureHint,
   getDockerBuildIdleTimeoutMs,
   startDockerBuildIdleMonitor,
+  startDockerTaggedImageWatch,
 } from "./docker-build-diagnostics";
 import { DockerRuntime } from "./docker";
 
@@ -152,6 +153,37 @@ describe("Docker build inactivity monitor", () => {
     expect(onTimeout).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues once the build tag exists and ignores misses before that", async () => {
+    const onTagged = vi.fn();
+    let tagged = false;
+    const watch = startDockerTaggedImageWatch({
+      intervalMs: 5_000,
+      inspect: () => (tagged ? Promise.resolve({ Id: "sha256:abc" }) : Promise.reject(new Error("missing"))),
+      onTagged,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(onTagged).not.toHaveBeenCalled();
+    tagged = true;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(onTagged).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(onTagged).toHaveBeenCalledTimes(1);
+    watch.stop();
+  });
+
+  it("stops checking for a tagged image after stop", async () => {
+    const onTagged = vi.fn();
+    const watch = startDockerTaggedImageWatch({
+      intervalMs: 5_000,
+      inspect: () => Promise.resolve({ Id: "sha256:abc" }),
+      onTagged,
+    });
+    watch.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(onTagged).not.toHaveBeenCalled();
   });
 
   it("releases its deadline when stopped", async () => {
@@ -354,6 +386,33 @@ describe("DockerRuntime build failure paths", () => {
       });
     },
   );
+
+  it("finishes a classic build whose progress stream contains Docker 29 NUL separators", async () => {
+    const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+    Object.assign(runtime, {
+      _docker: new Dockerode({ socketPath: "/tmp/openship-test-absent.sock" }),
+    });
+    const stream = new PassThrough();
+    const onLog = vi.fn();
+    const result = (runtime as any).streamDockerodeBuild(stream, new BuildLogger(onLog));
+    const step1 = `${JSON.stringify({ stream: "Step 1/2 : FROM alpine:3.20\n" })}\n`;
+    const step2 = `${JSON.stringify({ stream: "Step 2/2 : RUN echo hi\n" })}\n`;
+    const done = `${JSON.stringify({ stream: "Successfully tagged openship/test:build\n" })}\n`;
+    stream.write(step1);
+    stream.write(Buffer.from(`\u0000${step2}\u0000${done}`));
+    stream.end();
+
+    await expect(result).resolves.toBeUndefined();
+    expect(onLog).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("Step 2/2 : RUN echo hi") }),
+    );
+    expect(onLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Successfully tagged openship/test:build"),
+      }),
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it.each([false, true])(
     "uses the final Docker result after a BuildKit vertex error (failed=%s)",
