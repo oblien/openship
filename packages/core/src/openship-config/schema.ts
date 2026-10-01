@@ -12,7 +12,7 @@
  * reference page for the mapping table.
  */
 
-import type { StackId } from "../stacks";
+import type { StackId, StackRole } from "../stacks";
 import type { RoutingConfig } from "../metadata/types";
 import type { OpenshipReadiness } from "../types";
 
@@ -201,6 +201,17 @@ export interface OpenshipConfig {
    */
   workload?: OpenshipWorkload;
   port?: number;
+  /**
+   * Runtime roles beyond the web process - workers, schedulers (issue #935).
+   * Presence of this field, EVEN `[]`, overrides the stack's own presets
+   * (`STACKS[framework].defaultRoles`) outright; absence derives them from
+   * detected deps/files. See `resolveStackRoles` in `../stack-roles`. A role
+   * with `kind: "web"` is rejected here - the web role is always derived from
+   * `startCommand`. Deriving presets is a creation-time act: the deploy path
+   * resolves the persisted `project.roles`, where null means web only, so an
+   * existing project never gains a process on redeploy (#935 Q2).
+   */
+  roles?: StackRole[];
   // ── Env ──
   env?: OpenshipEnv;
   // ── Domains + routing ──

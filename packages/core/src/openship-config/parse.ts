@@ -7,7 +7,7 @@
  * Every field is optional; unknown top-level keys are warnings, not errors.
  */
 
-import { STACK_IDS } from "../stacks";
+import { STACK_IDS, ROLE_KINDS, ROLE_HEALTH_KINDS, type RoleHealth, type StackRole } from "../stacks";
 import { ALL_PACKAGE_MANAGERS } from "../stacks";
 import type { RoutingConfig } from "../metadata/types";
 import {
@@ -50,6 +50,7 @@ const TOP_LEVEL_KEYS = new Set([
   "productionMode",
   "workload",
   "port",
+  "roles",
   "env",
   "domains",
   "routes",
@@ -385,6 +386,91 @@ function parseServices(ctx: Ctx, v: unknown, path: string): OpenshipService[] | 
   return out;
 }
 
+function parseRoleHealth(ctx: Ctx, v: unknown, path: string): RoleHealth | undefined {
+  if (v === undefined) return undefined;
+  if (!ctx.isObj(v)) {
+    ctx.err(path, "must be an object");
+    return undefined;
+  }
+  if (v.kind === undefined) {
+    ctx.err(`${path}.kind`, "is required");
+    return undefined;
+  }
+  const kind = ctx.enumOf(v.kind, `${path}.kind`, ROLE_HEALTH_KINDS);
+  if (kind === undefined) return undefined;
+  return {
+    kind,
+    path: ctx.str(v.path, `${path}.path`),
+    command: ctx.str(v.command, `${path}.command`),
+  };
+}
+
+/**
+ * Runtime roles beyond the web process (issue #935). Presence of the field at
+ * all - including `[]` - overrides the stack's own `defaultRoles` presets;
+ * see `resolveStackRoles`. `kind: "web"` is rejected: the web role is always
+ * derived from `startCommand`, never declared here.
+ */
+function parseRoles(ctx: Ctx, v: unknown, path: string): StackRole[] | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v)) {
+    ctx.err(path, "must be an array of role objects");
+    return undefined;
+  }
+  const out: StackRole[] = [];
+  const seen = new Set<string>();
+  v.forEach((item, i) => {
+    const p = `${path}[${i}]`;
+    if (!ctx.isObj(item)) {
+      ctx.err(p, "must be an object");
+      return;
+    }
+    const name = ctx.str(item.name, `${p}.name`);
+    if (!name) {
+      ctx.err(p, "requires a non-empty `name`");
+      return;
+    }
+    if (seen.has(name)) {
+      ctx.err(`${p}.name`, `duplicates role "${name}"; each role needs a unique name`);
+      return;
+    }
+    seen.add(name);
+    const kind = ctx.enumOf(item.kind, `${p}.kind`, ROLE_KINDS);
+    if (kind === undefined) return;
+    if (kind === "web") {
+      ctx.err(`${p}.kind`, '"web" is derived from `startCommand`, not declared in `roles`');
+      return;
+    }
+    const command = ctx.str(item.command, `${p}.command`);
+    if (!command) {
+      ctx.err(p, "requires a non-empty `command`");
+      return;
+    }
+    const replicas = parseReplicas(ctx, item.replicas, `${p}.replicas`);
+    // A scheduler is, by definition, one instance - force it regardless of
+    // what (if anything) was declared.
+    const singleton = kind === "scheduler" ? true : ctx.bool(item.singleton, `${p}.singleton`);
+    out.push({
+      name,
+      kind,
+      command,
+      replicas,
+      singleton,
+      health: parseRoleHealth(ctx, item.health, `${p}.health`),
+    });
+  });
+  return out;
+}
+
+function parseReplicas(ctx: Ctx, v: unknown, path: string): number | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
+    ctx.err(path, "must be an integer >= 1");
+    return undefined;
+  }
+  return v;
+}
+
 function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | undefined {
   if (v === undefined) return undefined;
   if (!ctx.isObj(v)) {
@@ -492,6 +578,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     productionMode: ctx.enumOf(raw.productionMode, "productionMode", OPENSHIP_PRODUCTION_MODES),
     workload: ctx.enumOf(raw.workload, "workload", OPENSHIP_WORKLOADS),
     port: ctx.int(raw.port, "port", 1, 65535),
+    roles: parseRoles(ctx, raw.roles, "roles"),
     env: parseEnv(ctx, raw.env, "env"),
     domains: parseDomains(ctx, raw.domains, "domains"),
     routes: parseRoutes(ctx, raw.routes, "routes"),
