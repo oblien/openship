@@ -241,3 +241,31 @@ describe("rules_guard.lua keeps the properties its comments promise", () => {
     expect(at("local hot = spec.hotlink")).toBeLessThan(at("local rl = spec.rl"));
   });
 });
+
+describe("pathPrefix: a JSON null is userdata in Lua, never nil", () => {
+  // `serializeProjectRules` emits "pathPrefix":null for a whole-project rule (the
+  // `route-rule-push` tests pin that wire shape), and lua-cjson decodes JSON null
+  // to the `cjson.null` userdata sentinel — NOT nil. Left in an entry, every
+  // `p == nil` check is false, the guard takes `#p` on userdata, and the throw
+  // happens inside access_by_lua: every request on the host 500s. (Observed in
+  // production: "attempt to get length of local 'p' (a userdata value)".)
+
+  it("rules_lib.parse coerces a non-string pathPrefix to nil", () => {
+    // Normalizing at the decode boundary is what protects EVERY consumer: fixing
+    // only the guard's match loop would still leave `(chosen.pathPrefix or "/")`
+    // concatenating userdata into the rate-limit key, because cjson.null is truthy.
+    const parseBody = lib.slice(lib.indexOf("local function parse"));
+    expect(parseBody).toContain('if type(prefix) ~= "string" then prefix = nil end');
+    expect(parseBody).toContain("pathPrefix = prefix");
+  });
+
+  it("rules_guard still treats a non-string pathPrefix as the catch-all", () => {
+    // Defense in depth on the request path: if an un-normalized entry ever reaches
+    // the guard (hand-written dict data, a future producer), it must degrade to
+    // "no prefix", not throw.
+    const loop = guard.slice(guard.indexOf("Longest matching pathPrefix"));
+    expect(loop).toContain('if type(p) ~= "string" then p = nil end');
+    // The normalized value lands in the SAME nil/""/"/" catch-all branch as before.
+    expect(loop).toContain('if p == nil or p == "" or p == "/" then');
+  });
+});

@@ -35,7 +35,10 @@ local uri = ngx.var.uri or "/"
 local chosen, chosen_len = nil, -1
 for i = 1, n do
     local e = entries[i]
+    -- rules_lib.parse already coerces cjson.null to nil; re-check on the hot path
+    -- anyway — `#p` on userdata aborts the access phase for every request.
     local p = e.pathPrefix
+    if type(p) ~= "string" then p = nil end
     if p == nil or p == "" or p == "/" then
         if chosen_len < 0 then chosen, chosen_len = e, 0 end
     elseif uri == p or string.sub(uri, 1, #p) == p then
