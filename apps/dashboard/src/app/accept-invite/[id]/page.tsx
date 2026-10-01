@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient, useSession } from "@/lib/auth-client";
+import { needsTwoFactor } from "@/lib/account-security";
+import { buildAuthPageHref } from "@/lib/cloud-auth";
 import { api } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -219,6 +221,10 @@ export default function AcceptInvitePage() {
     if (si.error) {
       setSignupBusy(false);
       setSignupError(si.error.message ?? m.signInFailed);
+      return;
+    }
+    if (needsTwoFactor(si.data)) {
+      router.push(buildAuthPageHref("/two-factor", new URLSearchParams({ returnTo: `/accept-invite/${inviteId}` })));
       return;
     }
     await handleAccept(organizationName);

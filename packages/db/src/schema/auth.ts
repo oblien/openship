@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 // ─── Better Auth core tables ─────────────────────────────────────────────────
 // These tables are required by Better Auth. Column names must match exactly.
@@ -8,6 +8,7 @@ export const user = pgTable("user", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   image: text("image"),
   role: text("role").notNull().default("user"), // custom: "user" | "admin"
   autoProvisioned: boolean("auto_provisioned").notNull().default(false), // true for desktop local users
@@ -54,4 +55,39 @@ export const verification = pgTable("verification", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Better Auth passkey plugin. The credential material here is public WebAuthn
+// data; the private key never leaves the user's authenticator.
+export const passkey = pgTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: boolean("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at").defaultNow(),
+    aaguid: text("aaguid"),
+  },
+  (table) => [
+    index("passkey_user_id_idx").on(table.userId),
+    uniqueIndex("passkey_credential_id_idx").on(table.credentialID),
+  ],
+);
+
+// Better Auth encrypts both fields with BETTER_AUTH_SECRET. Neither is returned
+// on the user/session API; recovery codes are disclosed during setup/reset only.
+export const twoFactor = pgTable("two_factor", {
+  id: text("id").primaryKey(),
+  secret: text("secret").notNull(),
+  backupCodes: text("backup_codes").notNull(),
+  userId: text("user_id").notNull().unique()
+    .references(() => user.id, { onDelete: "cascade" }),
 });

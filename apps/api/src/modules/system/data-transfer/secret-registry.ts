@@ -35,6 +35,8 @@ export interface SecretColumn {
 
 /** table.column → { drizzle table, scheme }. Keys mirror ENCRYPTED_COLUMNS. */
 const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> = {
+  "two_factor.secret": { table: schema.twoFactor, scheme: "better-auth" },
+  "two_factor.backupCodes": { table: schema.twoFactor, scheme: "better-auth" },
   "cluster_database.secretEncrypted": { table: schema.clusterDatabase, scheme: "scalar" },
   "cluster_database.envValueEncrypted": { table: schema.clusterDatabase, scheme: "scalar" },
   "user_settings.cloudSessionToken": { table: schema.userSettings, scheme: "scalar" },

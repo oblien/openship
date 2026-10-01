@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
+import { needsTwoFactor, passkeysSupported } from "@/lib/account-security";
 import { useToast } from "@/components/toast";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useAuthContext } from "../providers";
@@ -58,10 +59,24 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
   const callbackError = searchParams.get("error");
 
   const postLoginUrl = getPostAuthRedirect(searchParams);
+
+  useEffect(() => {
+    setPasskeySupported(passkeysSupported());
+  }, []);
+
+  function completeSignIn(data: unknown) {
+    if (needsTwoFactor(data)) {
+      router.push(buildAuthPageHref("/two-factor", searchParams));
+      return;
+    }
+    if (postLoginUrl) window.location.href = postLoginUrl;
+    else router.push("/");
+  }
 
   // Zero-auth mode has no form — the page exists only to bounce the browser at
   // desktop-login. Decide that BEFORE navigating, so a browser the server will
@@ -108,16 +123,30 @@ function LoginPageInner() {
       // *starts* the client transition, and the dashboard takes a moment to
       // render. Keeping the button in its loading state until this page unmounts
       // avoids the dead "idle button, no navigation yet" gap.
-      if (postLoginUrl) {
-        window.location.href = postLoginUrl;
-      } else {
-        router.push("/");
-      }
+      completeSignIn(result.data);
     } catch (err) {
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
       setLoading(false); // stayed on the page — re-enable the form
+    }
+  }
+
+  async function handlePasskeySignIn() {
+    setLoading(true);
+    try {
+      const result = await signIn.passkey();
+      if (result.error) {
+        toast("error", result.error.message ?? t.auth.security.passkeyFailed);
+        setLoading(false);
+        return;
+      }
+      completeSignIn(result.data);
+    } catch (err) {
+      toast("error", isNetworkError(err)
+        ? t.auth.errors.serverUnreachable
+        : t.auth.security.passkeyFailed);
+      setLoading(false);
     }
   }
 
@@ -309,13 +338,33 @@ function LoginPageInner() {
         </Button>
       </form>
 
+      {passkeySupported && (
+        <>
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            <span>{t.auth.oauth.or}</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={loading}
+            className="w-full"
+            onClick={() => void handlePasskeySignIn()}
+          >
+            <UiIcon name="key" className="size-4" />
+            {t.auth.security.passkeySignIn}
+          </Button>
+        </>
+      )}
+
       {/* Whatever the SERVER says it has credentials for. It used to be
           `!selfHosted &&` — a stand-in for "are any providers configured?" that
           hid working buttons from every self-hosted operator who had set
           GITHUB_CLIENT_ID/SECRET. OAuthButtons renders nothing (not even the
           divider) when the list is empty, which is the default self-hosted
           instance, so this is safe to mount unconditionally. */}
-      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} />
+      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} showDivider={!passkeySupported} />
 
       {/* Public sign-up is a SaaS-only front door. On a self-hosted instance the
           only account is the CLI-created admin; everyone else joins via an

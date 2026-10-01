@@ -33,9 +33,11 @@ const PROVIDER_ICONS: Record<RenderableOAuthProviderId, IconName> = {
 export function OAuthButtons({
   providers,
   callbackURL = "/",
+  showDivider = true,
 }: {
   providers: readonly AdvertisedAuthProvider[] | undefined;
   callbackURL?: string;
+  showDivider?: boolean;
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -85,14 +87,14 @@ export function OAuthButtons({
   return (
     <>
       {/* Divider */}
-      <div className="my-6 flex items-center gap-3">
+      {showDivider && <div className="my-6 flex items-center gap-3">
         <div className="h-px flex-1 bg-border" />
         <span className="select-none text-xs text-muted-foreground">{t.auth.oauth.or}</span>
         <div className="h-px flex-1 bg-border" />
-      </div>
+      </div>}
 
       {/* OAuth buttons */}
-      <div className="space-y-2.5">
+      <div className={showDivider ? "space-y-2.5" : "mt-2.5 space-y-2.5"}>
         {visible.map((provider) => (
           <Button
             key={provider}

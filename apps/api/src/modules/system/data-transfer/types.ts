@@ -24,7 +24,7 @@ export type {
 export type ImportMode = "wipe" | "merge";
 
 /** How a given column is encrypted at rest — drives decrypt/re-encrypt dispatch. */
-export type SecretScheme = "scalar" | "enc1" | "map" | "notification-config" | "plaintext" | "json";
+export type SecretScheme = "scalar" | "enc1" | "map" | "notification-config" | "plaintext" | "json" | "better-auth";
 
 /** One secret cell's plaintext, keyed to its row. Only one payload field is set. */
 export interface SecretEntry {

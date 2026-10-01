@@ -3,6 +3,8 @@ import { db, eq, schema, sql, repos } from "@repo/db";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { env } from "@repo/platform/engine/config/env";
 
 vi.mock("@repo/platform/engine/config/env", async () => ({
   env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
@@ -462,6 +464,54 @@ describe("project control-plane export and import", () => {
     expect(openTransferSecrets(file.secrets)!.entries).toContainEqual(expect.objectContaining({
       table: "env_var", id: "env_web", value: "environment-secret",
     }));
+  });
+
+  it("preserves passkeys and re-encrypts 2FA through a complete instance transfer", async () => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const sourceKey = "source-account-security-secret-000000000000";
+    const destinationKey = "destination-account-security-secret-000000";
+    const seed = "transfer-authenticator-seed";
+    const recovery = '["one-time-recovery-code"]';
+    try {
+      env.BETTER_AUTH_SECRET = sourceKey;
+      await identity(sourceContext.organizationId, sourceContext.userId);
+      await db.update(schema.user).set({ twoFactorEnabled: true }).where(eq(schema.user.id, sourceContext.userId));
+      await db.insert(schema.twoFactor).values({
+        id: "transfer-factor", userId: sourceContext.userId,
+        secret: await symmetricEncrypt({ key: sourceKey, data: seed }),
+        backupCodes: await symmetricEncrypt({ key: sourceKey, data: recovery }),
+      });
+      await db.insert(schema.passkey).values({
+        id: "transfer-passkey", userId: sourceContext.userId, name: "Laptop",
+        credentialID: "test-credential", publicKey: "test-public-key", counter: 42,
+        deviceType: "multiDevice", backedUp: true,
+      });
+      const file: DataTransferFile = JSON.parse(JSON.stringify(await exportInstance({ selection: { scope: "instance", includeSecrets: true } })));
+      // Account secrets travel only in the explicit credential bundle. The
+      // metadata portion cannot inject source ciphertext into the destination.
+      expect(JSON.stringify(file.dump)).not.toContain(seed);
+      expect(JSON.stringify(file.dump)).not.toContain(recovery);
+      await reset();
+      env.BETTER_AUTH_SECRET = destinationKey;
+      await importInstance({ file, mode: "wipe" });
+      const [user] = await db.select().from(schema.user).where(eq(schema.user.id, sourceContext.userId));
+      const [factor] = await db.select().from(schema.twoFactor);
+      expect(user!.twoFactorEnabled).toBe(true);
+      expect(await symmetricDecrypt({ key: destinationKey, data: factor!.secret })).toBe(seed);
+      expect(await symmetricDecrypt({ key: destinationKey, data: factor!.backupCodes })).toBe(recovery);
+      await expect(symmetricDecrypt({ key: sourceKey, data: factor!.secret })).rejects.toThrow();
+      expect((await db.select().from(schema.passkey))[0]).toMatchObject({ credentialID: "test-credential", counter: 42, userId: user!.id });
+
+      // A later merge must not replace credentials already owned by the target.
+      const replacement = await symmetricEncrypt({ key: destinationKey, data: "replacement-authenticator-seed" });
+      await db.update(schema.twoFactor).set({ secret: replacement }).where(eq(schema.twoFactor.id, factor!.id));
+      await importInstance({ file, mode: "merge" });
+      expect((await db.select().from(schema.twoFactor))[0]!.secret).toBe(replacement);
+      await expect(importInstance({ file, mode: "wipe", selection: { scope: "instance", includeSecrets: false } })).rejects.toThrow("Include their credentials");
+      expect((await db.select().from(schema.twoFactor))[0]!.secret).toBe(replacement);
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+    }
   });
 
   it("exports a complete plaintext instance and replaces older destination records", async () => {

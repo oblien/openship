@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
-import { organizationClient, emailOTPClient } from "better-auth/client/plugins";
+import { organizationClient, emailOTPClient, twoFactorClient } from "better-auth/client/plugins";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { getAuthBaseUrl } from "@/lib/api/urls";
 
 /**
@@ -21,8 +22,15 @@ export const authClient = createAuthClient({
       delay: 0,
     },
   },
-  plugins: [organizationClient(), emailOTPClient()],
+  plugins: [organizationClient(), emailOTPClient(), passkeyClient(), twoFactorClient()],
 });
+
+/** Password creation for a freshly authenticated OAuth-only account. */
+export function setAccountPassword(newPassword: string) {
+  return authClient.$fetch<{ status: boolean }>("/account-security/set-password", {
+    method: "POST", body: { newPassword },
+  });
+}
 
 export const {
   signIn,

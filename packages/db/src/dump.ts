@@ -225,6 +225,18 @@ const TABLES: ReadonlyArray<TableSpec> = [
     hasOrganizationId: false,
   },
   {
+    sqlName: "passkey",
+    table: schema.passkey,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "two_factor",
+    table: schema.twoFactor,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
     sqlName: "member",
     table: schema.member,
     scopes: [{ in: "instance", via: "all-rows" }],
@@ -945,6 +957,8 @@ export interface EncryptedColumnSpec {
  * per-install), so it MUST be redacted on any cross-host move.
  */
 export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
+  { table: "two_factor", column: "secret" },
+  { table: "two_factor", column: "backupCodes" },
   { table: "cluster_database", column: "secretEncrypted" },
   { table: "cluster_database", column: "envValueEncrypted" },
   { table: "user_settings", column: "cloudSessionToken" },
