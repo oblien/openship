@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * The edge-orphan sweep's I/O half.
@@ -48,6 +48,18 @@ vi.mock("@repo/adapters", () => ({
             h.sites.find((s) => s.serverNames.some((n) => n.toLowerCase() === host)) ?? null,
         }
       : null,
+  edgeProxyFor: (
+    _executor: unknown,
+    _kind: string,
+    opts: { ours?: boolean; container?: string | null },
+  ) => ({
+    kind: "openresty",
+    ours: opts.ours ?? false,
+    container: opts.container ?? null,
+    listSites: async () => ({ proxy: "openresty", sites: h.sites, warnings: [] }),
+    siteFor: async (host: string) =>
+      h.sites.find((s) => s.serverNames.some((n) => n.toLowerCase() === host)) ?? null,
+  }),
 }));
 
 vi.mock("../../src/lib/controller-helpers", () => ({
@@ -88,6 +100,8 @@ beforeEach(() => {
   h.inventoryFailure = false;
   h.removeRoute.mockClear();
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 it("refuses cleanup when the tracked hostname inventory cannot be read", async () => {
   h.sites = [staticSite("live.example.com")];
@@ -145,6 +159,21 @@ describe("scanEdgeOrphans", () => {
     expect(scan.scanned).toBe(false);
     expect(scan.reason).toBeTruthy();
     expect(scan.orphans).toEqual([]);
+  });
+
+  it("reads the bind-mounted compose edge when the API image has no Docker CLI", async () => {
+    vi.stubEnv("OPENSHIP_EDGE_MODE", "docker");
+    vi.stubEnv("OPENSHIP_EDGE_CONTAINER", "openship-edge");
+    h.edgePresent = false; // the shell-based probe cannot run without the Docker CLI
+    h.sites = [staticSite("forgotten.example.com")];
+
+    const scan = await scanEdgeOrphans();
+
+    expect(scan).toMatchObject({
+      scanned: true,
+      knownCount: 0,
+      orphans: [{ hostname: "forgotten.example.com" }],
+    });
   });
 
   it("refuses to judge a FOREIGN proxy's vhosts", async () => {

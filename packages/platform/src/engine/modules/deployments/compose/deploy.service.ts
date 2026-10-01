@@ -102,7 +102,7 @@ import {
 } from "../../../lib/public-endpoints";
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
-import { resolveAcmeProviderOptions } from "../../../lib/acme-config";
+import { resolveEdgeProviderOptions } from "../../../lib/edge-provider-options";
 import { pinnedEdgeImage } from "../../../lib/edge-image";
 import * as sessionManager from "../session-manager";
 import { parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
@@ -1144,7 +1144,7 @@ async function deployComposeServicesUnlocked(
             {
               promptUser: opts.promptUser,
               onLog: systemLog,
-              nginx: resolveAcmeProviderOptions(),
+              nginx: await resolveEdgeProviderOptions(opts.serverId),
               edgeImage: pinnedEdgeImage(),
             },
           );

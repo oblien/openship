@@ -293,6 +293,7 @@ export {
   type ContainerEdgeOptions,
   type ContainerEdgeResult,
   type EdgeServingVerdict,
+  type EdgeProviderOptions,
 } from "./system/proxy/ensure-container-edge";
 export {
   ensureContainerMail,

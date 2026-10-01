@@ -27,6 +27,7 @@ import {
   stat as fsStat,
   symlink as fsSymlink,
 } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile as cpExecFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
@@ -34,6 +35,7 @@ import { posix as edgePath } from "node:path";
 
 import type {
   CommandExecutor,
+  ProvisionLock,
   ManualCert,
   RouteConfig,
   RouteHeaderRule,
@@ -61,6 +63,7 @@ import {
 import { reloadBareOpenResty } from "./openresty-reload";
 import {
   safeErrorMessage,
+  withKeyedMutex,
   isLoopbackHost,
   sanitizeProxySettings,
   resolveRedirectStatus,
@@ -825,6 +828,9 @@ export interface NginxProviderOptions {
    * `root` is always the container path.
    */
   challengeDir?: string;
+  /** Serializes config transactions on this edge, including across API replicas.
+   * Adapter-only callers fall back to a process-wide lock for the sites path. */
+  configLock?: ProvisionLock;
 }
 
 const DEFAULT_CERT_DIR = "/etc/letsencrypt/live";
@@ -1265,6 +1271,8 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private readonly pinPaths: boolean;
   private readonly containerEdge: boolean;
   private readonly challengeDir: string;
+  private readonly configLock: ProvisionLock;
+  private readonly configContext = new AsyncLocalStorage<{ active: boolean }>();
   /**
    * nginx version of the edge, when `detectOpenRestyPaths` could read it. Gates the
    * one directive whose syntax is version-dependent (`http2`); undefined = unknown,
@@ -1290,6 +1298,23 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     this.reloadCommand = buildReloadCommand(opts.paths);
     this.pinPaths = opts.pinPaths ?? false;
     this.challengeDir = opts.challengeDir ?? EDGE_CHALLENGE_DIR;
+    this.configLock = opts.configLock ?? {
+      run: (fn, signal) => withKeyedMutex(`edge-config:${opts.paths.sitesDir}`, fn, signal),
+    };
+  }
+
+  private withConfigLock<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    // TLS activation and route replay call registerRoute, which calls reload.
+    // Nested calls share the transaction; unrelated async requests still queue.
+    if (this.configContext.getStore()?.active) return fn();
+    return this.configLock.run(async () => {
+      const context = { active: true };
+      try {
+        return await this.configContext.run(context, fn);
+      } finally {
+        context.active = false;
+      }
+    }, signal);
   }
 
   // ── File operation helpers (dual-path: local or remote) ──────────────
@@ -1357,8 +1382,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       await fsAccess(path);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
     }
   }
 
@@ -1366,15 +1392,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     if (this.executor) {
       await this.executor.rm(path);
     } else {
-      try {
-        // recursive: every CommandExecutor.rm is `rm -rf`, and callers pass DIRS as
-        // well as files (staged cert dirs, the bootstrap cert dir). A plain fsRm
-        // throws on a directory, and the catch below would swallow it — leaving the
-        // directory behind on the local path only.
-        await fsRm(path, { recursive: true, force: true });
-      } catch {
-        // Already gone
-      }
+      // force ignores a missing path, but permission/I/O failures must reach the
+      // config transaction so it can restore the other files before returning.
+      await fsRm(path, { recursive: true, force: true });
     }
   }
 
@@ -1809,6 +1829,39 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     await this._writeFile(path, snapshot.content ?? "");
   }
 
+  /** Called under the edge config lock. Publish all files before one validation
+   * and reload; restore every snapshot on any write, removal, or reload failure. */
+  private async updateConfig(changes: { path: string; content: string | null }[]): Promise<void> {
+    const snapshots = await Promise.all(
+      changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
+    );
+    try {
+      for (const { path, content } of changes) {
+        if (content === null) await this._rm(path);
+        else await this._writeFile(path, content);
+      }
+      await this.reload();
+    } catch (error) {
+      const failures: string[] = [];
+      // One failed restore must not prevent restoration of the other files.
+      for (const { path, snapshot } of snapshots) {
+        await this._restoreFile(path, snapshot).catch((err) => {
+          failures.push(`${path}: ${safeErrorMessage(err)}`);
+        });
+      }
+      // Never reload a partially restored configuration.
+      if (!failures.length) {
+        await this.reload().catch((err) => failures.push(safeErrorMessage(err)));
+      }
+      if (failures.length) {
+        throw new Error(`${safeErrorMessage(error)}; rollback failed: ${failures.join("; ")}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+
   // ── Routing ──────────────────────────────────────────────────────────
 
   /**
@@ -1820,6 +1873,10 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * via provisionCert).
    */
   async registerRoute(route: RouteConfig): Promise<void> {
+    return this.withConfigLock(() => this.writeRoute(route));
+  }
+
+  private async writeRoute(route: RouteConfig): Promise<void> {
     assertValidDomain(route.domain);
     await this._mkdir(this.sitesDir);
 
@@ -2084,21 +2141,20 @@ ${serveLocation}
       serverBlock = httpOnlyBlock;
     }
 
-    // Snapshot the prior conf so a block that fails `openresty -t` can be
-    // rolled back — otherwise a bad conf stays on disk and poisons every
-    // subsequent reload box-wide (same self-rollback applyRateLimit uses).
-    const snapshot = await this._captureFile(configPath);
+    // The target-check vhost is created before a project route can exist. Once a
+    // real route claims the same hostname it answers that challenge itself, so the
+    // single-purpose vhost must retire in the SAME config transaction. Leaving it
+    // behind produces nginx's duplicate-server-name warning and, because `_` sorts
+    // first, can make the challenge-only 404 vhost win over the application.
+    const challenges = await this.ownedChallengeVhosts(route.domain);
     // The prelude carries http-scope `map` blocks, so it goes ABOVE the server
     // block(s) — one file may hold both the :80 and :443 blocks, and a map may
     // appear only once for the pair.
-    await this._writeFile(configPath, `${prelude}${serverBlock}`);
-    try {
-      await this.reload();
-    } catch (err) {
-      await this._restoreFile(configPath, snapshot);
-      await this.reload().catch(() => undefined);
-      throw err;
-    }
+    await this.updateConfig([
+      { path: configPath, content: `${prelude}${serverBlock}` },
+      { path: this.routeStatePath(slug), content: JSON.stringify(route) },
+      ...challenges.map((path) => ({ path, content: null })),
+    ]);
 
     // The conf we just loaded doesn't reference the placeholder, so nothing is
     // serving it — drop it. Keyed on what was EMITTED rather than on "a real cert
@@ -2113,11 +2169,8 @@ ${serveLocation}
       await this._rm(this.bootstrapCertDir(route.domain)).catch(() => undefined);
     }
 
-    // Persist the full RouteConfig alongside the conf so `provisionCert` can
-    // re-register the EXACT route (proxyLocations + webhookProxy) after issuing a
-    // cert, instead of regex-reconstructing it from the generated conf (which
-    // only recovered the primary target and dropped composite locations).
-    await this._writeFile(this.routeStatePath(slug), JSON.stringify(route)).catch(() => undefined);
+    // The full RouteConfig sidecar was committed with the vhost above, so TLS
+    // activation can recover composite locations and never replay stale state.
   }
 
   private routeStatePath(slug: string): string {
@@ -2154,7 +2207,11 @@ ${serveLocation}
    * reconstructed from its conf: the scrape recovers only the primary target, so replaying
    * it would drop composite locations and the webhook proxy.
    */
-  async reapplyStoredRoutes(): Promise<{
+  async reapplyStoredRoutes() {
+    return this.withConfigLock(() => this.replayRoutes());
+  }
+
+  private async replayRoutes(): Promise<{
     scanned: number;
     repaired: string[];
     failed: { slug: string; reason: string }[];
@@ -2285,6 +2342,10 @@ ${serveLocation}
    * vanish on the next unrelated reload). The error is re-thrown for retry.
    */
   async removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    return this.withConfigLock(() => this.deleteRoute(domain, opts), opts?.signal);
+  }
+
+  private async deleteRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void> {
     assertValidDomain(domain);
     if (opts?.signal?.aborted) {
       throw new Error(`Route removal aborted before it started: ${domain}`);
@@ -2294,9 +2355,9 @@ ${serveLocation}
     const statePath = this.routeStatePath(slug);
     const confSnapshot = await this._captureFile(configPath);
     const stateSnapshot = await this._captureFile(statePath);
-    await this._rm(configPath);
-    await this._rm(statePath).catch(() => undefined);
     try {
+      await this._rm(configPath);
+      await this._rm(statePath);
       await this.reload({ allowStopped: true });
     } catch (err) {
       // A timed-out caller may already be retaining the project and refusing a
@@ -2327,12 +2388,43 @@ ${serveLocation}
 
   // ── Edge-target challenge ────────────────────────────────────────────
 
-  /** Filename for a host's challenge vhost. The leading `_` is a namespace
+  /** Candidate filenames for a host's challenge vhost. The leading `_` is a namespace
    *  `resolveSlug` can never produce (`domainSlug` emits only `[A-Za-z0-9-]`), so no
    *  `registerRoute`/`removeRoute` for any domain can overwrite or delete it —
    *  matching the existing `_default.conf` / `_management.conf` convention. */
-  private challengeVhostPath(host: string): string {
-    return join(this.sitesDir, `_oblien-challenge-${this.domainSlug(host)}.conf`);
+  private challengeVhostPaths(host: string): string[] {
+    const normalized = host.toLowerCase().replace(/\.$/, "");
+    const base = `_oblien-challenge-${this.domainSlug(normalized)}`;
+    return [base, `${base}-${this.slugSuffix(normalized)}`].map((stem) =>
+      join(this.sitesDir, `${stem}.conf`),
+    );
+  }
+
+  private isChallengeFor(conf: string, host: string): boolean {
+    const names = this.serverNamesIn(conf);
+    return /^# openship-oblien-challenge:/m.test(conf) && names.length > 0 &&
+      names.every((name) => name === host.toLowerCase().replace(/\.$/, ""));
+  }
+
+  /** A lossy filename is never proof of ownership. Also preserve manually
+   * modified configs serving additional hostnames, even in our namespace. */
+  private async ownedChallengeVhosts(host: string): Promise<string[]> {
+    const owned: string[] = [];
+    const normalized = host.toLowerCase().replace(/\.$/, "");
+    for (const path of this.challengeVhostPaths(host)) {
+      const snapshot = await this._captureFile(path);
+      if (!snapshot.exists) continue;
+      if (this.isChallengeFor(snapshot.content!, host)) {
+        owned.push(path);
+      } else if (this.serverNamesIn(snapshot.content!).includes(normalized)) {
+        // Keeping a second config for the same host is unsafe too: nginx only
+        // warns and may continue serving the underscore-prefixed file instead.
+        throw new Error(
+          `Cannot configure ${host}: ${path} claims this hostname but is not an exclusively owned Openship challenge vhost.`,
+        );
+      }
+    }
+    return owned;
   }
 
   /**
@@ -2359,7 +2451,11 @@ ${serveLocation}
    * are served; none is ever removed — Oblien re-probes the SAME token near its
    * 90-day expiry, so dropping one silently kills that route ~83 days later.
    */
-  async serveEdgeChallenge(input: { host: string; tokens?: readonly string[] }): Promise<{
+  async serveEdgeChallenge(input: { host: string; tokens?: readonly string[] }) {
+    return this.withConfigLock(() => this.writeEdgeChallenge(input));
+  }
+
+  private async writeEdgeChallenge(input: { host: string; tokens?: readonly string[] }): Promise<{
     served: boolean;
     via: "existing-vhost" | "challenge-vhost" | null;
     claimedBy?: string;
@@ -2387,7 +2483,7 @@ ${serveLocation}
     const base = this.domainSlug(host);
     for (const stem of [base, `${base}-${this.slugSuffix(host)}`]) {
       const path = join(this.sitesDir, `${stem}.conf`);
-      const conf = await this._readFile(path).catch(() => "");
+      const conf = (await this._captureFile(path)).content;
       if (!conf || !this.serverNamesIn(conf).includes(host)) continue;
       // It claims the host. If it already carries the challenge location (written by
       // a build with this support) there is nothing to do — and crucially we must NOT
@@ -2404,7 +2500,18 @@ ${serveLocation}
       // tenant's own config), reporting a host as already-served when nothing here
       // answers the challenge. This gates a domain-control claim, so it has to mean
       // "there is a location for it", not "the string appears".
-      if (conf.includes(`${EDGE_CHALLENGE_URL_PREFIX} {`)) {
+      if (locationBlocks(stripComments(conf)).some(({ path }) =>
+        path === EDGE_CHALLENGE_URL_PREFIX || path === `^~ ${EDGE_CHALLENGE_URL_PREFIX}`,
+      )) {
+        // A dedicated challenge vhost may predate this route. The generated route
+        // now serves the same token directory, so keeping both is invalid nginx
+        // state: duplicate server_name, with the underscore-prefixed file loaded
+        // first. Retire it transactionally so an unrelated reload failure cannot
+        // leave disk and the running edge disagreeing.
+        const challenges = await this.ownedChallengeVhosts(host);
+        if (challenges.length) {
+          await this.updateConfig(challenges.map((path) => ({ path, content: null })));
+        }
         return { served: true, via: "existing-vhost" };
       }
       return {
@@ -2428,19 +2535,17 @@ ${serveLocation}
     //    location by what it serves, so a `return`-only one leaves this block
     //    classified as the scaffolding it is (see `isAcmeWebrootOnly`).
     const vhost = edgeChallengeVhostConf(host);
-    const path = this.challengeVhostPath(host);
-    const existing = await this._readFile(path).catch(() => "");
-    if (existing === vhost) return { served: true, via: "challenge-vhost" };
-
-    const snapshot = await this._captureFile(path);
-    await this._writeFile(path, vhost);
-    try {
-      await this.reload();
-    } catch (err) {
-      await this._restoreFile(path, snapshot);
-      await this.reload().catch(() => undefined);
-      throw err;
+    const slug = await this.resolveSlug(host, "_oblien-challenge-");
+    const path = join(this.sitesDir, `${slug}.conf`);
+    const existing = await this._captureFile(path);
+    const duplicates = (await this.ownedChallengeVhosts(host)).filter((p) => p !== path);
+    if (existing.content === vhost && !duplicates.length) {
+      return { served: true, via: "challenge-vhost" };
     }
+    await this.updateConfig([
+      { path, content: vhost },
+      ...duplicates.map((path) => ({ path, content: null })),
+    ]);
     return { served: true, via: "challenge-vhost" };
   }
 
@@ -2589,6 +2694,10 @@ ${serveLocation}
 
   /** One route activation path for Certbot, manual DNS, and uploaded certs. */
   async activateCert(domain: string): Promise<void> {
+    return this.withConfigLock(() => this.activateRouteCert(domain));
+  }
+
+  private async activateRouteCert(domain: string): Promise<void> {
     assertValidDomain(domain);
     // Rewrite the config with SSL now that certs exist
     const slug = await this.resolveSlug(domain);
@@ -2895,6 +3004,10 @@ ${serveLocation}
    * be bypassed by a new caller that forgets it.
    */
   async installCert(domain: string, cert: ManualCert): Promise<SslResult> {
+    return this.withConfigLock(() => this.writeCert(domain, cert));
+  }
+
+  private async writeCert(domain: string, cert: ManualCert): Promise<SslResult> {
     assertValidDomain(domain);
 
     // Validate before touching disk. The pair must parse and the key must match,
@@ -2942,7 +3055,7 @@ ${serveLocation}
   /** Every `server_name` token declared in a vhost body. */
   private serverNamesIn(conf: string): string[] {
     const names: string[] = [];
-    for (const m of conf.matchAll(/server_name\s+([^;]+);/g)) {
+    for (const m of stripComments(conf).matchAll(/(?:^|[;{}\s])server_name\s+([^;]+);/g)) {
       for (const tok of m[1]!.trim().split(/\s+/)) {
         if (tok) names.push(tok.toLowerCase().replace(/\.$/, ""));
       }
@@ -2990,24 +3103,25 @@ ${serveLocation}
    * keep the FIRST, so the route we were asked to create would not take effect at
    * all. Losing the sibling is at least the outcome the caller asked for.
    */
-  private async resolveSlug(domain: string): Promise<string> {
-    const base = this.domainSlug(domain);
+  private async resolveSlug(domain: string, prefix = ""): Promise<string> {
+    const base = `${prefix}${this.domainSlug(domain)}`;
     const suffixed = `${base}-${this.slugSuffix(domain)}`;
     const host = domain.toLowerCase().replace(/\.$/, "");
 
-    if (await this._exists(join(this.sitesDir, `${suffixed}.conf`)).catch(() => false)) {
-      return suffixed;
+    const belongsToHost = (conf: string) => {
+      if (prefix) return this.isChallengeFor(conf, host);
+      const names = this.serverNamesIn(conf);
+      return names.length === 0 || names.includes(host);
+    };
+    const disambiguated = await this._captureFile(join(this.sitesDir, `${suffixed}.conf`));
+    if (disambiguated.exists) {
+      if (belongsToHost(disambiguated.content!)) return suffixed;
+      throw new Error(`Refusing to overwrite another hostname's vhost: ${suffixed}.conf`);
     }
 
     const basePath = join(this.sitesDir, `${base}.conf`);
-    if (await this._exists(basePath).catch(() => false)) {
-      const conf = await this._readFile(basePath).catch(() => "");
-      // Unreadable/empty → treat as ours rather than fragmenting on a read blip.
-      if (conf) {
-        const names = this.serverNamesIn(conf);
-        if (names.length > 0 && !names.includes(host)) return suffixed;
-      }
-    }
+    const incumbent = await this._captureFile(basePath);
+    if (incumbent.exists && !belongsToHost(incumbent.content!)) return suffixed;
     return base;
   }
 
@@ -3019,6 +3133,10 @@ ${serveLocation}
    * in sync without requiring an API restart.
    */
   private async reload(opts: { allowStopped?: boolean } = {}): Promise<void> {
+    return this.withConfigLock(() => this.reloadConfig(opts));
+  }
+
+  private async reloadConfig(opts: { allowStopped?: boolean }): Promise<void> {
     if (this.executor) {
       if (!this.pinPaths) {
         try {
@@ -3151,6 +3269,10 @@ ${serveLocation}
    * Pass rps=0 to disable rate limiting entirely.
    */
   async applyRateLimit(config: RateLimitConfig): Promise<void> {
+    return this.withConfigLock(() => this.writeRateLimit(config));
+  }
+
+  private async writeRateLimit(config: RateLimitConfig): Promise<void> {
     const confPath = this.rateLimitConfPath;
     const nginxConfPath = join(dirname(this.sitesDir), "nginx.conf");
     const snapshots = {

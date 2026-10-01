@@ -36,7 +36,7 @@ function containerEdgeHost(): CommandExecutor {
 
 describe("scanOpenshipEdge", () => {
   it("reads vhosts from the host when they're there, without touching Docker", async () => {
-    const exec = vi.fn(async (cmd: string) => (cmd.startsWith("cat ") ? VHOST : ""));
+    const exec = vi.fn(async (cmd: string) => (cmd.startsWith("sh -c ") ? VHOST : ""));
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
 
     expect(result.sites).toHaveLength(1);
@@ -48,7 +48,7 @@ describe("scanOpenshipEdge", () => {
     const exec = vi.fn(async (_cmd: string) => "");
     await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
 
-    const cat = exec.mock.calls.map(([cmd]) => cmd).find((cmd) => cmd.startsWith("cat "))!;
+    const cat = exec.mock.calls.map(([cmd]) => cmd).find((cmd) => cmd.startsWith("sh -c "))!;
     expect(cat).toContain("/var/lib/openship/edge/sites-enabled/*.conf");
     expect(cat).toContain("/usr/local/openresty/nginx/conf/sites-enabled/*.conf");
     expect(cat).toContain("/etc/openresty/sites-enabled/*.conf");
@@ -82,7 +82,7 @@ describe("scanOpenshipEdge", () => {
     // Sanity: the bytes under test really are the ones carrying the inlined page.
     expect(catchAll).toContain("return 404 '<!doctype html>");
     const dumped = [catchAll, edgeChallengeVhostConf("203.0.113.10"), VHOST].join("\n");
-    const exec = vi.fn(async (cmd: string) => (cmd.startsWith("cat ") ? dumped : ""));
+    const exec = vi.fn(async (cmd: string) => (cmd.startsWith("sh -c ") ? dumped : ""));
 
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
 
@@ -106,7 +106,7 @@ describe("scanOpenshipEdge", () => {
     // as a static vhost rooted at a directory with no index — which the edge answers
     // with a 500 — and would claim the hostname away from the real deployment.
     const exec = vi.fn(async (cmd: string) =>
-      cmd.startsWith("cat ") ? edgeChallengeVhostConf("box.example.com") : "",
+      cmd.startsWith("sh -c ") ? edgeChallengeVhostConf("box.example.com") : "",
     );
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
     expect(result.sites).toEqual([]);
@@ -162,7 +162,7 @@ describe("scanForeignOpenResty", () => {
     // an edge whose sites DO sit in a known tree.
     const exec = vi.fn(async (cmd: string) => {
       if (cmd.startsWith("openresty -T")) return "";
-      return cmd.startsWith("cat ") ? VHOST : "";
+      return cmd.startsWith("sh -c ") ? VHOST : "";
     });
     const result = await scanForeignOpenResty({ exec } as unknown as CommandExecutor);
 

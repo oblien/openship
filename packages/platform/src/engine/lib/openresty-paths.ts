@@ -7,6 +7,7 @@ import {
 import type { CommandExecutor } from "@repo/adapters";
 import { sshManager } from "./ssh-manager";
 import { cacheStore } from "./cache-store/index";
+import { resolveEdgeProviderOptions } from "./edge-provider-options";
 
 // 1h TTL — OpenResty path layout is effectively immutable per server,
 // but cap it so a redeploy that moves nginx is caught within the hour.
@@ -66,7 +67,11 @@ export async function withOpenRestyRouting<T>(
 
     const run = async (forceRefresh = false) => {
       const paths = await getOpenRestyPaths(serverId, executor, forceRefresh);
-      const routing = new NginxProvider({ paths, executor: edgeExecutor });
+      const routing = new NginxProvider({
+        ...(await resolveEdgeProviderOptions(serverId)),
+        paths,
+        executor: edgeExecutor,
+      });
       return fn(routing);
     };
 

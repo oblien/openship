@@ -33,7 +33,7 @@ import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
 import { boxOwningOrgId, isLocalHostRow } from "./box-org";
 import { isConnectionLoss } from "./remote-state";
-import { resolveAcmeProviderOptions } from "./acme-config";
+import { edgeProviderOptions } from "./edge-provider-options";
 import { findLocalServer } from "./startup/self-server";
 import { requireOrgServer } from "./server-target";
 import { registryAuthResolver } from "../modules/credentials/registry-auth";
@@ -597,7 +597,7 @@ async function createPlatformForResolvedServer(
         runtimeMode === "docker"
           ? { transport: "socket" as const, resolveRegistryAuth }
           : undefined,
-      nginx: resolveAcmeProviderOptions(),
+      nginx: edgeProviderOptions(),
       provisionLock: createProvisionLock("provision:local"),
     }));
   }
@@ -611,7 +611,7 @@ async function createPlatformForResolvedServer(
       runtimeMode === "docker"
         ? { ...toDockerSshTransport(ssh!, executor), resolveRegistryAuth }
         : undefined,
-    nginx: resolveAcmeProviderOptions(),
+    nginx: edgeProviderOptions(id),
     // Serialize provisioning per target server, so concurrent deploys (across
     // projects / single-app + compose) never race apt/openresty/networks/state.
     provisionLock: createProvisionLock(`provision:server:${id}`),
@@ -683,7 +683,7 @@ export async function resolveTargetPlatform(
     localHost: true,
     docker:
       runtimeMode === "docker" ? { transport: "socket" as const, resolveRegistryAuth } : undefined,
-    nginx: resolveAcmeProviderOptions(),
+    nginx: edgeProviderOptions(),
     // Still serialize provisioning: two local deploys share the same host's
     // openresty/docker/state. Same lock name as the isLocal row's branch, because
     // it is the same host being provisioned.

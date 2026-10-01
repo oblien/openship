@@ -42,6 +42,31 @@ export interface EdgeOrphanScan {
 }
 
 /**
+ * Resolve the edge owned by this Openship instance.
+ *
+ * A compose install deliberately keeps the API image small: it mounts the edge's
+ * sites tree and Docker socket, but does not ship the Docker CLI. The generic edge
+ * probe shells out to `docker`, so using it from inside that API container reports
+ * "no reverse proxy" even while `openship-edge` is serving production traffic.
+ *
+ * This service only ever inspects the local instance (its executor is created with
+ * no SSH target). `OPENSHIP_EDGE_MODE=docker` is therefore an authoritative compose
+ * topology signal, and the bind-mounted sites tree is the authoritative inventory.
+ * Remote-server callers must keep using `edgeProxy`, which probes their executor.
+ */
+async function localEdgeProxy() {
+  const { edgeProxy, edgeProxyFor, createExecutor } = await import("@repo/adapters");
+  const executor = createExecutor();
+  if (process.env.OPENSHIP_EDGE_MODE === "docker") {
+    return edgeProxyFor(executor, "openresty", {
+      ours: true,
+      container: process.env.OPENSHIP_EDGE_CONTAINER?.trim() || null,
+    });
+  }
+  return edgeProxy(executor);
+}
+
+/**
  * Every hostname Openship believes it should be serving on this box.
  *
  * Assembled from the SAME producers that write vhosts, so the sweep doesn't flag
@@ -104,10 +129,9 @@ export async function scanEdgeOrphans(): Promise<EdgeOrphanScan> {
     knownCount: 0,
   });
 
-  let api: Awaited<ReturnType<typeof import("@repo/adapters").edgeProxy>>;
+  let api: Awaited<ReturnType<typeof localEdgeProxy>>;
   try {
-    const { edgeProxy, createExecutor } = await import("@repo/adapters");
-    api = await edgeProxy(createExecutor());
+    api = await localEdgeProxy();
   } catch (err) {
     return empty(`Could not read the edge: ${safeErrorMessage(err)}`);
   }
@@ -125,7 +149,7 @@ export async function scanEdgeOrphans(): Promise<EdgeOrphanScan> {
   // sites as orphans and make a subsequent remove take down a live domain.
   if (!comparison) return empty("Tracked hostnames could not be read.");
   const [scan, knownHostnames] = comparison;
-  if (!scan) return empty("The edge's site list could not be read.");
+  if (!scan || scan.readable === false) return empty("The edge's site list could not be read.");
 
   return {
     scanned: true,
@@ -148,8 +172,7 @@ export async function untrackedSiteFor(hostname: string): Promise<UntrackedEdgeS
   const host = normalizeServedHostname(hostname);
   if (!host) return null;
   try {
-    const { edgeProxy, createExecutor } = await import("@repo/adapters");
-    const api = await edgeProxy(createExecutor());
+    const api = await localEdgeProxy();
     if (!api?.ours) return null;
 
     const site = await api.siteFor(host).catch(() => null);

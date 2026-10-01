@@ -1,7 +1,7 @@
 import type { PlatformConfig } from "@repo/adapters";
 import { env } from "../config/env";
 import { isOblienConfigured } from "./platform-mode";
-import { resolveAcmeProviderOptions } from "./acme-config";
+import { edgeProviderOptions } from "./edge-provider-options";
 import { join } from "node:path";
 export { getPlatform as platform } from "@repo/adapters";
 
@@ -42,7 +42,7 @@ export function resolvePlatformConfig(): PlatformConfig {
   return {
     target: "selfhosted",
     runtime: env.DEPLOY_MODE === "bare" ? "bare" : "docker",
-    nginx: resolveAcmeProviderOptions(),
+    nginx: edgeProviderOptions(),
     ...(process.env.OPENSHIP_NATIVE === "true" && { bare: { workDir: join(process.env.OPENSHIP_DATA_DIR!, "workloads") } }),
   };
 }

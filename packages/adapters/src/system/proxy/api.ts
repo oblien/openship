@@ -322,6 +322,7 @@ function makeApi(
     scan ??= (ours ? scanOpenshipEdge(exec) : scanImportableSites(exec, kind)).catch(() => ({
       proxy: kind,
       sites: [],
+      readable: false,
       warnings: [`${kind}: config scan failed`],
     }));
     return scan;

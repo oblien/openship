@@ -16,7 +16,7 @@ import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
 import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
 import { deliverManagedImage } from "../../lib/deliver-managed-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
+import { resolveEdgeProviderOptions } from "../../lib/edge-provider-options";
 import { manageDomainSsl, tlsIssuedElsewhere } from "../../lib/domain-ssl";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { createProvisionLock } from "../../lib/provision-lock";
@@ -123,7 +123,7 @@ export async function prepareServerEdge(
         {
           onLog: opts.onLog,
           promptUser,
-          nginx: resolveAcmeProviderOptions(),
+          nginx: await resolveEdgeProviderOptions(server),
           edgeImage: pinnedEdgeImage(),
         },
       );

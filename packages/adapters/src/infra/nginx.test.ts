@@ -29,6 +29,7 @@ import {
   EDGE_CHALLENGE_ROOT,
   EDGE_CHALLENGE_URL_PREFIX,
   ensureOpenRestyConfig,
+  edgeChallengeVhostConf,
   edgeDefaultCertPaths,
   type OpenRestyPaths,
 } from "./openresty-lua";
@@ -669,6 +670,50 @@ describe("NginxProvider.serveEdgeChallenge", () => {
     expect(r).toMatchObject({ served: true, via: "existing-vhost" });
     expect(files.get(`${SITES}/_oblien-challenge-app-example-com.conf`)).toBeUndefined();
     expect(files.get(`${SITES}/app-example-com.conf`)).toBe(before); // untouched
+  });
+
+  test("registering a real route retires the earlier single-purpose challenge vhost", async () => {
+    const { nginx, files, conf } = setup();
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.serveEdgeChallenge({
+      host: "app.example.com",
+      tokens: ["tok-abcdef123456"],
+    });
+    expect(files.get(challenge)).toBeDefined();
+
+    await nginx.registerRoute(PROXY);
+
+    expect(files.get(challenge)).toBeUndefined();
+    expect(conf("app-example-com")).toContain(`location ^~ ${EDGE_CHALLENGE_URL_PREFIX} {`);
+    // Tokens stay in the shared directory because the full vhost serves them now.
+    expect(files.get(`${EDGE_CHALLENGE_DIR}/tok-abcdef123456`)).toBe("tok-abcdef123456");
+  });
+
+  test("restores the challenge vhost when the replacement route cannot reload", async () => {
+    const opts: FakeOpts = {};
+    const { nginx, files, conf } = setup(opts);
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.serveEdgeChallenge({ host: "app.example.com" });
+    const before = files.get(challenge);
+    opts.failReload = true;
+
+    await expect(nginx.registerRoute(PROXY)).rejects.toThrow();
+
+    expect(files.get(challenge)).toBe(before);
+    expect(conf("app-example-com")).toBeUndefined();
+  });
+
+  test("the readiness sweep removes a stale challenge vhost beside a full route", async () => {
+    const { nginx, files } = setup();
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.registerRoute(PROXY);
+    // What an older build left after the full route was registered.
+    files.set(challenge, edgeChallengeVhostConf("app.example.com"));
+
+    const r = await nginx.serveEdgeChallenge({ host: "app.example.com" });
+
+    expect(r).toMatchObject({ served: true, via: "existing-vhost" });
+    expect(files.get(challenge)).toBeUndefined();
   });
 
   test("refuses (with the file named) when a STALE vhost claims the host", async () => {
@@ -1755,7 +1800,7 @@ describe("the generated vhost carries the tunables in every server block", () =>
 describe("render → parse round-trip (the renderer and the read-back agree)", () => {
   /** Read our own edge back the way the live read-back and migrate both do. */
   async function scanBack(conf: string) {
-    const exec = async (cmd: string) => (cmd.startsWith("cat ") ? conf : "");
+    const exec = async (cmd: string) => (cmd.startsWith("sh -c ") ? conf : "");
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
     return result.sites.find((s) => s.serverNames.includes("app.example.com"))!;
   }
