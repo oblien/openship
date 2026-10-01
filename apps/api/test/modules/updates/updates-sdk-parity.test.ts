@@ -21,7 +21,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 
 // Keep the repositories, cache, drift comparison, policy and HTTP adapters real.
 // Only the external upstream request and actual redeployment are replaced.
-const provider = vi.hoisted(() => ({ poll: vi.fn(), redeploy: vi.fn() }));
+const provider = vi.hoisted(() => ({ poll: vi.fn(), redeploy: vi.fn(), deploy: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (original) => ({
   ...(await original<object>()),
   resolveUpstreamDrift: provider.poll,
@@ -29,6 +29,7 @@ vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (or
 vi.mock("@repo/platform/engine/modules/deployments/build.service", async (original) => ({
   ...(await original<object>()),
   redeployBuildSession: provider.redeploy,
+  triggerDeployment: provider.deploy,
 }));
 
 installFakeRunner();
@@ -48,6 +49,7 @@ beforeEach(() => {
     latestMessage: "Next version",
   }));
   provider.redeploy.mockReset();
+  provider.deploy.mockReset();
 });
 
 async function clients(owner: SeededOwner) {
@@ -205,6 +207,41 @@ describe("updates shared SDK/HTTP operations", () => {
       .from(schema.auditEvent)
       .where(eq(schema.auditEvent.resourceId, p.id));
     expect(events).toHaveLength(2);
+  });
+
+  it("uses the same exact image-update scope through native SDK and HTTP", async () => {
+    const owner = await seedOwner(),
+      p = await project(owner, "images"),
+      c = await clients(owner);
+    await repos.project.update(p.id, { gitProvider: null, gitOwner: null, gitRepo: null });
+    const local = await repos.service.create({
+      projectId: p.id, name: "local", image: "my-app:custom", enabled: true,
+    });
+    const sidecar = await repos.service.create({
+      projectId: p.id, name: "sidecar", image: "redis:7-alpine", enabled: true,
+    });
+    for (const [service, digest] of [[local, null], [sidecar, `sha256:${"1".repeat(64)}`]] as const) {
+      await repos.service.upsertServiceDeployment({
+        deploymentId: p.activeDeploymentId!, serviceId: service.id, status: "success",
+        imageRef: service.image, imageDigest: digest, containerId: `container-${service.id}`,
+      });
+    }
+    provider.poll.mockResolvedValue({
+      supported: true, mode: "image",
+      digestByRef: { "my-app:custom": null, "redis:7-alpine": `sha256:${"2".repeat(64)}` },
+    });
+    provider.deploy.mockResolvedValue({ deployment: { id: "image-update" } });
+    for (const client of [c.native.updates, c.remote.updates]) {
+      expect(await client.apply(p.id)).toEqual({ success: true, project_id: p.id, deployment_id: "image-update" });
+    }
+    expect(provider.deploy).toHaveBeenCalledTimes(2);
+    for (const [ctx, input] of provider.deploy.mock.calls) {
+      expect(ctx).toMatchObject({ organizationId: owner.orgId, userId: owner.userId });
+      expect(input).toMatchObject({
+        projectId: p.id, trigger: "update", serviceIds: [sidecar.id], strictServiceScope: true,
+      });
+    }
+    expect(provider.redeploy).not.toHaveBeenCalled();
   });
 
   it("refuses undeployed updates, invalid inputs and revoked membership before provider work", async () => {

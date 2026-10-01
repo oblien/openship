@@ -951,7 +951,7 @@ describe("triggerDeployment", () => {
     expect(resolveProjectInfo).toHaveBeenCalledOnce();
   });
 
-  it("persists exact scope and force-pull intent for an incoming multi-service hook", async () => {
+  it.each(["webhook", "update"])("persists the exact service scope for an %s deployment", async (trigger) => {
     const targets = ["svc-api", "svc-worker"];
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -968,17 +968,17 @@ describe("triggerDeployment", () => {
       projectId: "project-1",
       serviceIds: targets,
       strictServiceScope: true,
-      forcePullImages: true,
-      trigger: "webhook",
+      forcePullImages: trigger === "webhook",
+      trigger,
     });
 
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        trigger: "webhook",
+        trigger,
         meta: expect.objectContaining({
           targetServiceIds: targets,
           strictServiceScope: true,
-          forcePullImages: true,
+          ...(trigger === "webhook" ? { forcePullImages: true } : {}),
         }),
       }),
     );
@@ -997,7 +997,7 @@ describe("triggerDeployment", () => {
     expect(meta.strictServiceScope).toBeUndefined();
   });
 
-  it("rejects a stale exact target after compose reconciliation and queues nothing", async () => {
+  it.each(["webhook", "update"])("%s rejects a stale exact target after compose reconciliation and queues nothing", async (trigger) => {
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-api", name: "api", enabled: true, advanced: null },
     ]);
@@ -1008,7 +1008,7 @@ describe("triggerDeployment", () => {
         serviceIds: ["svc-api", "svc-deleted"],
         strictServiceScope: true,
         forcePullImages: true,
-        trigger: "webhook",
+        trigger,
       }),
     ).rejects.toThrow(/svc-deleted/);
 
@@ -1016,7 +1016,7 @@ describe("triggerDeployment", () => {
     expect(kickoffBuild).not.toHaveBeenCalled();
   });
 
-  it("rejects replacing a namespace provider without its dependent", async () => {
+  it.each(["webhook", "update"])("%s rejects replacing a namespace provider without its dependent", async (trigger) => {
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-vpn", name: "vpn", enabled: true, advanced: null },
       {
@@ -1033,7 +1033,7 @@ describe("triggerDeployment", () => {
         serviceIds: ["svc-vpn"],
         strictServiceScope: true,
         forcePullImages: true,
-        trigger: "webhook",
+        trigger,
       }),
     ).rejects.toThrow(/svc-sidecar/);
 

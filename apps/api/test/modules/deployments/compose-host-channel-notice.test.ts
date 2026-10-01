@@ -1171,7 +1171,7 @@ describe("compose deploy — host channel unavailable", () => {
     ]);
   });
 
-  it("pre-pulls the entire selected image cohort before touching any running service", async () => {
+  it.each(["webhook", "update"])("%s pre-pulls the selected image cohort before touching any running service", async (trigger) => {
     const { DockerRuntime } = await import("@repo/adapters");
     const runtime = await DockerRuntime.create({
       dockerSocketPath: "/tmp/openship-test-absent.sock",
@@ -1219,19 +1219,23 @@ describe("compose deploy — host channel unavailable", () => {
         image: "ghcr.io/acme/worker:staging",
         exposed: false,
       },
+      {
+        id: "svc-local", projectId: "p1", name: "local-app", enabled: true,
+        dependsOn: [], advanced: null, ports: [], image: "my-private-app:local", exposed: false,
+      },
     ];
 
     const { logger } = recordingLogger();
     await expect(
       deployComposeServices(
         { ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" } as never,
-        dep,
+        { ...dep, trigger },
         runtime,
         logger,
         {
           targetServiceIds: new Set(["svc-api", "svc-worker"]),
           strictScope: true,
-          forcePullImages: true,
+          forcePullImages: trigger === "webhook",
         },
       ),
     ).rejects.toThrow("registry unavailable");
@@ -1240,8 +1244,58 @@ describe("compose deploy — host channel unavailable", () => {
     expect(pullImage).toHaveBeenNthCalledWith(2, "ghcr.io/acme/worker:staging", { force: true });
     expect(pullImage).toHaveBeenCalledTimes(2);
     expect(pullImage).not.toHaveBeenCalledWith("postgres:17", expect.anything());
+    expect(pullImage).not.toHaveBeenCalledWith("my-private-app:local", expect.anything());
     expect(deployServiceWorkload).not.toHaveBeenCalled();
     expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("updates a selected image while carrying the untouched local service into the new deployment", async () => {
+    const { DockerRuntime } = await import("@repo/adapters");
+    const pullImage = vi.fn(async () => undefined);
+    const deployServiceWorkload = vi.fn(async () => ({
+      status: "running", containerId: "container-new-api", ip: "172.18.0.3",
+    }));
+    const runtime = Object.assign(Object.create(DockerRuntime.prototype), {
+      name: "docker", unsupportedComposeKeys: new Set(),
+      supports: (cap: string) => cap === "containerIp" || cap === "containerInfo",
+      ensureServiceGroup: vi.fn(async () => ({ id: "group-1" })),
+      getContainerInfo: vi.fn(async (id: string) => ({
+        containerId: id, status: "running", ip: "172.18.0.2",
+      })),
+      getContainerIp: vi.fn(async () => "172.18.0.3"),
+      destroy: vi.fn(async () => undefined),
+      pullImage, deployServiceWorkload,
+    }) as DockerRuntime;
+    h.services = [
+      { id: "svc-local", projectId: "p1", name: "local-app", image: "my-app:custom",
+        enabled: true, dependsOn: [], advanced: null, ports: [], exposed: false },
+      { id: "svc-api", projectId: "p1", name: "api", image: "ghcr.io/acme/api:stable",
+        enabled: true, dependsOn: [], advanced: null, ports: [], exposed: false },
+    ];
+    h.previousServiceRows = [{
+      id: "sd-local", deploymentId: "d-old", serviceId: "svc-local", serviceName: "local-app",
+      containerId: "container-local", status: "success", imageRef: "my-app:custom", imageDigest: null,
+      ip: "172.18.0.2",
+    }];
+    const { logger } = recordingLogger();
+    const result = await deployComposeServices(
+      { ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" } as Project,
+      { ...dep, trigger: "update" }, runtime, logger,
+      { targetServiceIds: new Set(["svc-api"]), strictScope: true },
+    );
+    expect(result.status).toBe("ready");
+    expect(pullImage).toHaveBeenCalledExactlyOnceWith("ghcr.io/acme/api:stable", { force: true });
+    expect(deployServiceWorkload).toHaveBeenCalledOnce();
+    expect(deployServiceWorkload).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      serviceName: "api", forcePull: false,
+    }), expect.anything());
+    expect(result.services).toContainEqual(expect.objectContaining({
+      serviceId: "svc-local", containerId: "container-local", carried: true,
+    }));
+    expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+      serviceId: "svc-local", containerId: "container-local", imageRef: "my-app:custom",
+    }));
+    expect(runtime.destroy).not.toHaveBeenCalledWith("container-local");
   });
 
   it("does not try to pull a static sub-app's host artifact as a Docker image", async () => {
