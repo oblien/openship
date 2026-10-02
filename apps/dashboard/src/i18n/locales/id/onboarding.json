@@ -1,0 +1,149 @@
+{
+  "common": {
+    "goBack": "Kembali",
+    "continue": "Lanjutkan",
+    "back": "Kembali",
+    "optional": "(opsional)"
+  },
+  "topBar": {
+    "website": "Situs web",
+    "github": "GitHub",
+    "theme": "Ubah tema",
+    "language": "Bahasa"
+  },
+  "choose": {
+    "title": "Selamat datang di OpenShip",
+    "subtitle": "Pilih cara menjalankan OpenShip. Kedua opsi memberikan setiap fitur — dan Anda bisa beralih kapan saja.",
+    "cloud": {
+      "name": "OpenShip Cloud",
+      "desc": "Kami menangani infrastruktur, pembaruan, dan backup. Cukup masuk dan mulai deploy.",
+      "perk1": "Tanpa server",
+      "perk2": "Tier gratis disertakan",
+      "perk3": "Terkelola & selalu terbaru",
+      "cta": "Lanjutkan dengan Cloud"
+    },
+    "or": "atau",
+    "selfhost": {
+      "name": "Self-Hosted",
+      "desc": "Jalankan OpenShip di perangkat keras Anda sendiri. Hubungkan server remote atau gunakan mesin ini.",
+      "perk1": "Kepemilikan data penuh",
+      "perk2": "Server remote atau Mac ini",
+      "perk3": "Kami menangani sisanya",
+      "cta": "Atur Server Saya"
+    },
+    "migrateNote": "Beralih antara Cloud dan Self-Hosted kapan saja dengan satu klik — tanpa penguncian, selamanya.",
+    "skip": "Lewati untuk saat ini"
+  },
+  "selfhost": {
+    "title": "Di mana OpenShip harus berjalan?",
+    "subtitleLine1": "Pilih di mana menginstal platform OpenShip.",
+    "subtitleLine2": "Kedua opsi memberikan kendali penuh dan kepemilikan data.",
+    "local": {
+      "title": "Mesin Ini",
+      "badge": "Beta",
+      "desc": "Instal OpenShip di sini — tanpa SSH, tanpa pengaturan remote",
+      "comingSoon": "Segera hadir",
+      "comingSoonDesc": "Menjalankan OpenShip langsung di mesin ini belum siap — hubungkan server untuk saat ini."
+    },
+    "remote": {
+      "title": "Server Lain",
+      "desc": "Hubungkan ke server remote, VPS, atau mesin mana pun di jaringan Anda melalui SSH"
+    }
+  },
+  "ssh": {
+    "title": "Hubungkan ke server Anda",
+    "subtitleLine1": "Masukkan detail server Anda dan pilih metode autentikasi.",
+    "subtitleLine2": "Kami akan menginstal dan mengonfigurasi semuanya secara otomatis.",
+    "serverNameLabel": "Nama Server",
+    "serverNamePlaceholder": "Produksi, Staging, Dev…",
+    "serverIpLabel": "Alamat IP Server",
+    "usernameLabel": "Nama pengguna",
+    "methodPassword": "Password",
+    "methodKey": "SSH Key",
+    "methodAgent": "Agent",
+    "agentHint": "Menggunakan SSH agent mesin ini — seperti VSCode, tanpa password atau key. Host yang menjalankan OpenShip harus sudah memiliki akses ke server ini (key yang dimuat di ssh-agent-nya).",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Password server",
+    "keyPathLabel": "Path Key",
+    "browse": "Jelajahi",
+    "passphraseLabel": "Passphrase",
+    "passphrasePlaceholder": "Kosongkan jika tidak ada",
+    "advanced": "Lanjutan",
+    "sshPortLabel": "Port SSH",
+    "jumpHostLabel": "Jump Host",
+    "extraArgsLabel": "Argumen SSH Tambahan",
+    "submit": "Simpan & Lanjutkan",
+    "tutorial": "Tutorial pengaturan langkah demi langkah",
+    "testConnection": "Uji koneksi",
+    "testing": "Menguji…",
+    "connected": "Tersambung",
+    "testFailed": "Koneksi gagal",
+    "testHint": "Pastikan server dapat diakses sebelum melanjutkan."
+  },
+  "tunnel": {
+    "title": "Akses Internet",
+    "subtitle": "Server Anda perlu cara untuk dapat diakses dari internet untuk webhook, SSL, dan akses publik.",
+    "providers": {
+      "edge": {
+        "title": "OpenShip Edge",
+        "desc": "Zero config. SSL otomatis, ketersediaan tinggi, dan perlindungan DDoS — semuanya sudah termasuk.",
+        "badge": "Direkomendasikan"
+      },
+      "cloudflare": {
+        "title": "Cloudflare Tunnel",
+        "desc": "Gunakan akun Cloudflare Anda sendiri. Tier gratis tersedia."
+      },
+      "ngrok": {
+        "title": "ngrok",
+        "desc": "Exposes layanan dengan auth token ngrok Anda."
+      }
+    },
+    "cloudflareTokenLabel": "Token Cloudflare Tunnel",
+    "ngrokTokenLabel": "Auth Token ngrok",
+    "cloudflarePlaceholder": "Tempel token tunnel Anda",
+    "ngrokPlaceholder": "Tempel auth token ngrok Anda",
+    "edgeHint": "OpenShip Edge memerlukan akun OpenShip. Anda akan masuk untuk melanjutkan.",
+    "signInContinue": "Masuk & Lanjutkan"
+  },
+  "preferences": {
+    "title": "Preferensi Build",
+    "subtitleLine1": "Pilih cara proyek Anda dibangun saat deploy.",
+    "subtitleLine2": "Anda bisa mengubah ini nanti di pengaturan.",
+    "options": {
+      "auto": {
+        "title": "Otomatis",
+        "desc": "Kami memilih opsi terbaik per framework"
+      },
+      "server": {
+        "title": "Remote",
+        "desc": "Bangun di server deployment langsung"
+      },
+      "local": {
+        "title": "Lokal",
+        "desc": "Bangun di Mac ini, lalu push ke server"
+      }
+    },
+    "hint": "Git push deployment selalu membangun di server — ini hanya berlaku untuk deploy manual."
+  },
+  "loading": {
+    "connecting": "Menghubungkan…",
+    "verifying": "Memverifikasi server Anda",
+    "retry": "Coba lagi",
+    "openingCloud": "Membuka OpenShip Cloud…",
+    "waitingAuth": "Menunggu autentikasi selesai",
+    "couldNotStartAuthTitle": "Tidak dapat memulai autentikasi cloud",
+    "authFailedTitle": "Autentikasi cloud gagal",
+    "couldNotStartAuthMsg": "Alur autentikasi desktop tidak dapat dimulai.",
+    "authFailedMsg": "Silakan coba lagi dan selesaikan masuk di browser Anda.",
+    "completingSignIn": "Menyelesaikan masuk…",
+    "returningToOpenship": "Kembali ke OpenShip",
+    "redirectingCloud": "Mengalihkan ke OpenShip Cloud…",
+    "newTabSignIn": "Anda akan menyelesaikan masuk di tab baru",
+    "couldNotSaveTitle": "Tidak dapat menyimpan konfigurasi",
+    "couldNotSaveMsg": "API tidak merespons. Pastikan layanan berjalan.",
+    "savingConfig": "Menyimpan konfigurasi…",
+    "almostThere": "Hampir sampai",
+    "settingUpAccount": "Mengatur akun Anda…",
+    "creatingSession": "Membuat sesi Anda"
+  }
+}
