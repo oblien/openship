@@ -226,6 +226,11 @@ r.post(
   admin.restartAllComponentsHandler,
 );
 r.post(
+  "/admin/:serverId/migrate-to-container",
+  { tag: "mail_server:admin" },
+  admin.migrateToContainerHandler,
+);
+r.post(
   "/admin/:serverId/components/:key/:action",
   { tag: "mail_server:admin", mcp: { description: "Run a supported action on a managed mail component. Read health for component keys and supported actions; inspect health again to confirm recovery." } },
   admin.runComponentActionHandler,
