@@ -6,7 +6,7 @@
  * the STACKS registry in @repo/core - no duplication.
  *
  * Supports:
- *   JS/TS:   Next.js, Nuxt, SvelteKit, Astro, Vite, Angular, Gatsby, Remix,
+ *   JS/TS:   Farm.js, Next.js, Nuxt, SvelteKit, Astro, Vite, Angular, Gatsby, Remix,
  *            TanStack Start, CRA, Vue, Express, Fastify, Hono, NestJS, Koa,
  *            AdonisJS, Elysia
  *   Go:      Standard, Gin, Fiber, Echo
@@ -250,6 +250,7 @@ function hasAnyContentMatch(detection: StackDetection | undefined, fileContents:
 const FRAMEWORK_RULES: FrameworkRule[] = [
   // ── Frontend / Fullstack JS (check first - they may also have backend deps) ──
   { stack: "nextjs" },
+  { stack: "farmjs" },
   { stack: "nuxt" },
   { stack: "sveltekit" },
   { stack: "astro" },

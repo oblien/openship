@@ -60,6 +60,24 @@ const POSITIVE_STACK_CASES: StackCase[] = [
   },
   // ── JS/TS Frontend & Fullstack ──────────────────────────────────────────
   {
+    name: "Farm.js - farm.config.ts + @farm.js/core",
+    files: files("package.json", "farm.config.ts", "src/", "pnpm-lock.yaml"),
+    packageJson: {
+      dependencies: { "@farm.js/core": "^0.1.0", react: "^19.0.0" },
+      devDependencies: { "@farm.js/cli": "^0.1.0" },
+    },
+    expectedStack: "farmjs",
+    expectedCategory: "fullstack",
+    expectedProjectType: "app",
+    expectedStartCommand: "node .farm/.output/server/index.mjs",
+  },
+  {
+    name: "Farm.js - farm.config.mjs is also detected",
+    files: files("package.json", "farm.config.mjs"),
+    packageJson: { dependencies: { "@farm.js/core": "^0.1.0" } },
+    expectedStack: "farmjs",
+  },
+  {
     name: "Next.js - next.config.js + next dep",
     files: files("package.json", "next.config.js"),
     packageJson: { dependencies: { next: "^15.0.0", react: "^19.0.0" } },
@@ -516,6 +534,18 @@ describe("detectStack - rule ordering & gate disambiguation", () => {
     expect(result.stack).toBe("nextjs");
   });
 
+  it("Farm.js requires both its config marker and package dependency", () => {
+    const configOnly = detectStack(files("package.json", "farm.config.ts"), {
+      dependencies: { react: "^19.0.0" },
+    });
+    expect(configOnly.stack).not.toBe("farmjs");
+
+    const dependencyOnly = detectStack(files("package.json"), {
+      dependencies: { "@farm.js/core": "^0.1.0" },
+    });
+    expect(dependencyOnly.stack).not.toBe("farmjs");
+  });
+
   it("Nuxt wins over plain vue when both deps are present", () => {
     const result = detectStack(files("package.json", "nuxt.config.ts"), {
       dependencies: { nuxt: "^3.0.0", vue: "^3.0.0" },
@@ -905,6 +935,17 @@ describe("detectStack - output directory and build image", () => {
     expect(detectStack(files("package.json", "next.config.js"), { dependencies: { next: "^15" } }).outputDirectory).toBe(".next");
     expect(detectStack(files("package.json", "vite.config.ts"), { dependencies: { vite: "^5" } }).outputDirectory).toBe("dist");
     expect(detectStack(files("package.json", "astro.config.mjs"), { dependencies: { astro: "^4" } }).outputDirectory).toBe("dist");
+  });
+
+  it("uses Farm.js's universal output and Node server entry", () => {
+    const result = detectStack(files("package.json", "farm.config.ts"), {
+      dependencies: { "@farm.js/core": "^0.1.0" },
+    });
+    expect(result.outputDirectory).toBe(".farm/.output");
+    expect(result.productionPaths).toEqual([".farm/.output"]);
+    expect(result.buildCommand).toBe("farm build");
+    expect(result.startCommand).toBe("node .farm/.output/server/index.mjs");
+    expect(result.port).toBe(3000);
   });
 
   it("bun build image swaps to oven/bun for JS/TS stacks", () => {

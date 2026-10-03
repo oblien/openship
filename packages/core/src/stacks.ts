@@ -253,6 +253,36 @@ export const STACKS = {
       deps: ["next"],
     },
   },
+  farmjs: {
+    name: "Farm.js",
+    language: "typescript",
+    category: "fullstack",
+    // Farm's universal Node build is emitted under the default `.farm` dist
+    // directory. Keep the output directory and start command together so the
+    // runtime can launch the Nitro server without needing the source config or
+    // the Farm CLI in the production image.
+    outputDirectory: ".farm/.output",
+    defaultPort: 3000,
+    defaultBuildCommand: "farm build",
+    defaultStartCommand: "node .farm/.output/server/index.mjs",
+    productionPaths: [".farm/.output"],
+    detection: {
+      // Farm accepts all of these config extensions. Requiring both a config
+      // marker and the core/CLI package avoids classifying a library that only
+      // imports a Farm helper as a Farm application.
+      rootMarkers: [
+        "farm.config.ts",
+        "farm.config.tsx",
+        "farm.config.mts",
+        "farm.config.cts",
+        "farm.config.js",
+        "farm.config.jsx",
+        "farm.config.mjs",
+        "farm.config.cjs",
+      ],
+      deps: ["@farm.js/core", "@farm.js/cli"],
+    },
+  },
   nuxt: {
     name: "Nuxt",
     language: "typescript",
@@ -1308,6 +1338,7 @@ const DI = "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons";
 export const STACK_ICONS: Partial<Record<StackId, string>> = {
   // JS/TS - Frontend & Fullstack
   nextjs:      `${DI}/nextjs/nextjs-original.svg`,
+  farmjs:      "https://raw.githubusercontent.com/farming-labs/farm.js/main/.github/assets/farmjs-lockup.svg",
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
