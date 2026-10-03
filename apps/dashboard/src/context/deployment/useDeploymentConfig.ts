@@ -11,7 +11,7 @@ import type {
   PrepareMonorepoApp,
 } from "@/lib/api/deploy";
 import type { Service } from "@/lib/api/services";
-import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
@@ -46,6 +46,23 @@ import { normalizeSubdomain } from "@/utils/subdomain";
 import { useDefaultDomainType } from "@/context/CloudContext";
 
 type PersistedProject = Record<string, any> | null;
+
+/** Source values are optional for setup: a deploy grant permits a masked scan.
+ * The API conceals missing content access behind NOT_FOUND. Retry that GitHub
+ * read once without values; it still enforces repository access itself. */
+async function prepareForEditor(source: PrepareProjectSource): Promise<PrepareProjectResponse> {
+  try {
+    return await deployApi.prepare({ ...source, includeEnv: true });
+  } catch (error) {
+    if (
+      source.source === "local" ||
+      !(error instanceof ApiError) ||
+      error.status !== 404 ||
+      getApiErrorCode(error) !== "NOT_FOUND"
+    ) throw error;
+    return deployApi.prepare({ ...source, includeEnv: false });
+  }
+}
 
 interface PreparedConfigArgs {
   response: PrepareProjectResponse;
@@ -997,7 +1014,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, changesSavedBranch ? null : project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await prepareForEditor(preparedSource);
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1084,12 +1101,11 @@ export function useDeploymentConfig() {
       rescanInProgress.current = true;
       setIsRescanning(true);
       try {
-        const response = await deployApi.prepare({
+        const response = await prepareForEditor({
           owner: config.owner,
           repo: config.repo,
           branch: requestedBranch,
           ...scanEnv(config.envVars),
-          includeEnv: true,
         });
         if (response.error) return { success: false, error: response.error };
 
@@ -1190,7 +1206,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await prepareForEditor(preparedSource);
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
