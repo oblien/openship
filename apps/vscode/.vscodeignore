@@ -1,0 +1,9 @@
+**/*
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!media/icon.png
+!media/openship.svg
+!schemas/openship.schema.json
+!dist/extension.cjs

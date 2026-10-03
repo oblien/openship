@@ -18,6 +18,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   baseTarget: "selfhosted" as "selfhosted" | "desktop" | "cloud",
+  baseRuntime: "docker" as "docker" | "bare",
+  ownedBareRuntime: { name: "bare" },
+  bareCreates: [] as Array<{ executor?: unknown }>,
+  released: 0,
   /** Every DockerRuntime.create — transport plus, for ssh, the host it dialed. */
   creates: [] as Array<{ transport: string; host?: string }>,
   platformCalls: 0,
@@ -26,6 +30,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/adapters", () => ({
+  BareRuntime: class {
+    readonly name = "bare";
+    constructor(options: { executor?: unknown }) { h.bareCreates.push(options); }
+  },
   DockerRuntime: {
     create: async (opts: { transport: string; host?: string }) => {
       h.creates.push({ transport: opts?.transport, host: opts?.host });
@@ -57,7 +65,8 @@ vi.mock("@repo/platform/engine/lib/box-org", async (original) => ({
 
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
-    retainExecutor: () => () => {},
+    retainExecutor: () => () => { h.released++; },
+    acquireHostChannel: async () => ({ hostChannel: true }),
     acquire: async () => ({
       readFile: async (path: string) => {
         if (path === "/etc/machine-id") return "0123456789abcdef0123456789abcdef\n";
@@ -111,7 +120,11 @@ const sshHosts = () => h.creates.filter((c) => c.transport === "ssh").map((c) =>
 const socketCalls = () => h.creates.filter((c) => c.transport === "socket").length;
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   h.baseTarget = "selfhosted";
+  h.baseRuntime = "docker";
+  h.bareCreates = [];
+  h.released = 0;
   h.creates = [];
   h.platformCalls = 0;
   h.serverGets = [];
@@ -119,6 +132,70 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("reads native process logs through the owned runtime and its isolated work directory", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "true");
+    h.baseTarget = "desktop";
+    h.baseRuntime = "bare";
+    const resolved = await mod.resolveDeploymentRuntimeForRead(
+      { meta: {}, organizationId: "org1" },
+      { runtime: "deployment" },
+    );
+    expect(resolved.runtime).toBe(h.ownedBareRuntime);
+    expect(h.creates).toEqual([]);
+    expect(h.bareCreates).toEqual([]);
+    expect(h.platformCalls).toBe(0);
+  });
+
+  it("keeps container reads on Docker even when the project's app runs bare", async () => {
+    h.baseRuntime = "bare";
+    await read({ deployTarget: "local", runtimeMode: "bare" });
+    expect(socketCalls()).toBe(1);
+    expect(h.bareCreates).toEqual([]);
+  });
+
+  it("preserves the native host execution gate for process log reads", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "false");
+    h.baseTarget = "desktop";
+    h.baseRuntime = "bare";
+    await expect(mod.resolveDeploymentRuntimeForRead(
+      { meta: {}, organizationId: "org1" },
+      { runtime: "deployment" },
+    )).rejects.toMatchObject({ code: "HOST_EXECUTION_DISABLED" });
+    expect(h.creates).toEqual([]);
+    expect(h.bareCreates).toEqual([]);
+  });
+
+  it("reads a remote bare deployment without provisioning and releases its transport", async () => {
+    const resolved = await mod.resolveDeploymentRuntimeForRead(
+      { meta: { serverId: "srv-bare", runtimeMode: "bare" }, organizationId: "org1" },
+      { runtime: "deployment" },
+    );
+    expect(resolved.runtime.name).toBe("bare");
+    expect(resolved.serverId).toBe("srv-bare");
+    expect(h.serverGets).toEqual(["srv-bare"]);
+    expect(h.bareCreates).toHaveLength(1);
+    expect(h.platformCalls).toBe(0);
+    expect(h.creates).toEqual([]);
+    await resolved.runtime.dispose?.();
+    await resolved.runtime.dispose?.();
+    expect(h.released).toBe(1);
+  });
+
+  it("reads local bare deployments through the host channel without provisioning", async () => {
+    const resolved = await mod.resolveDeploymentRuntimeForRead(
+      { meta: { deployTarget: "local", runtimeMode: "bare" }, organizationId: "org1" },
+      { runtime: "deployment" },
+    );
+    expect(resolved.runtime.name).toBe("bare");
+    expect(h.bareCreates).toEqual([{ executor: { hostChannel: true } }]);
+    expect(h.platformCalls).toBe(0);
+    expect(h.creates).toEqual([]);
+    await resolved.runtime.dispose?.();
+    expect(h.released).toBe(1);
+  });
+
   it("never falls back to this host when a bound Cloud Docker project is disconnected", async () => {
     await expect(read({ deployTarget: "cloud", buildStrategy: "server", cloudDockerWorkspace: { projectId: "p1", workspaceId: "vm1" } })).rejects.toThrow("linked Openship Cloud");
     expect(socketCalls()).toBe(0);
@@ -219,7 +296,7 @@ describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without
 
 // The application seams moved with the shared engine.
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({
-  platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
+  platform: () => ({ target: h.baseTarget, runtime: h.baseRuntime === "bare" ? h.ownedBareRuntime : { name: "docker" } }),
 }));
 
 vi.mock("@repo/platform/engine/lib/resource-access", () => ({
