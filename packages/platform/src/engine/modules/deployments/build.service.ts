@@ -800,7 +800,7 @@ function composeCouldHaveChanged(project: Project, changedPaths: string[]): bool
     const changed = rawPath.replace(/^\.\//, "");
     // openship.json can itself declare the complete native service set and its
     // buildArgs, so it is a Compose-source change even when no YAML changed.
-    if (changed.toLowerCase() === "openship.json") return true;
+    if (/(^|\/)openship\.json$/i.test(changed)) return true;
     if (COMPOSE_PATH_RE.test(changed)) return true;
     if (!declared) return false;
     return changed === declared || changed.startsWith(`${declared}/`);
@@ -875,8 +875,8 @@ async function reconcileComposeSource(
       return; // this push didn't touch the compose file → no drift possible
     }
     const composePath = project.composePath ?? undefined;
-    // Without composePath, a subpath project re-scans at the detected root and
-    // finds no compose (or the wrong one), so reconciliation silently stops.
+    // Without rootDirectory, a subpath project re-scans at the detected root and
+    // finds no compose (or the wrong one), so the deploy fails.
     // Local wins when present because that is the build source transferred to a
     // remote server; any stale Git metadata must not change what gets parsed.
     const info = isLocalSource
@@ -884,6 +884,7 @@ async function reconcileComposeSource(
           source: "local",
           path: localPath!,
           composePath,
+          rootDirectory: project.rootDirectory ?? undefined,
           env: options.interpolationEnv,
         })
       : await resolveProjectInfo({
@@ -893,6 +894,7 @@ async function reconcileComposeSource(
           branch,
           ctx,
           composePath,
+          rootDirectory: project.rootDirectory ?? undefined,
           env: options.interpolationEnv,
         });
     const services = info.services ?? [];

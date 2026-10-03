@@ -174,6 +174,156 @@ describe("resolveProjectInfo", () => {
     });
   });
 
+  it("scans a subpath project's own openship.json when its rootDirectory is pinned", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-subpath-services-"));
+    tempDirs.push(tempDir);
+    await writeFile(
+      join(tempDir, "openship.json"),
+      JSON.stringify({
+        framework: "fastapi",
+        env: { ROOT_APP_ONLY: "not-for-go-api" },
+      }),
+    );
+    await mkdir(join(tempDir, "go-api"));
+    await writeFile(join(tempDir, "go-api", "Dockerfile"), "FROM golang:1.25-alpine\n");
+    await writeFile(
+      join(tempDir, "go-api", "openship.json"),
+      JSON.stringify({
+        framework: "docker-compose",
+        rootDirectory: "./",
+        env: { API_URL: "https://child.example.com" },
+        services: [{ name: "backend", build: "." }],
+      }),
+    );
+
+    expect((await resolveProjectInfo({ source: "local", path: tempDir })).services ?? []).toEqual(
+      [],
+    );
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      rootDirectory: "go-api",
+    });
+    expect(info.rootDirectory).toBe("go-api");
+    expect(info.services).toEqual([expect.objectContaining({ name: "backend", build: "." })]);
+    expect(info.openshipEnv).toEqual({ API_URL: "https://child.example.com" });
+    expect(info.rootEnv).toEqual({ API_URL: "https://child.example.com" });
+  });
+
+  describe("repository-root config for a saved subfolder", () => {
+    async function repoWithBuildDirectory() {
+      const path = await mkdtemp(join(tmpdir(), "openship-subfolder-config-"));
+      tempDirs.push(path);
+      await mkdir(join(path, "deploy"));
+      await writeFile(join(path, "deploy", "Dockerfile"), "FROM node:22-alpine\n");
+      return path;
+    }
+
+    it("retains native service definitions across an initial scan and refresh", async () => {
+      const path = await repoWithBuildDirectory();
+      await writeFile(
+        join(path, "openship.json"),
+        JSON.stringify({
+          rootDirectory: "deploy",
+          services: [{ name: "api", build: "." }],
+        }),
+      );
+
+      const initial = await resolveProjectInfo({ source: "local", path });
+      expect(initial.rootDirectory).toBe("deploy");
+      expect(initial.services).toEqual([expect.objectContaining({ name: "api", build: "." })]);
+
+      const refreshed = await resolveProjectInfo({
+        source: "local",
+        path,
+        rootDirectory: initial.rootDirectory,
+      });
+
+      expect(refreshed.rootDirectory).toBe("deploy");
+      expect(refreshed.projectType).toBe("services");
+      expect(refreshed.services).toEqual(initial.services);
+    });
+
+    it("retains env defaults and a declared Compose path across refreshes", async () => {
+      const path = await repoWithBuildDirectory();
+      await writeFile(
+        join(path, "openship.json"),
+        JSON.stringify({
+          composePath: "deploy/stack.yml",
+          env: { API_URL: "https://api.example.com" },
+        }),
+      );
+      await writeFile(join(path, "deploy", ".env"), "CHANNEL=stable\n");
+      await writeFile(
+        join(path, "deploy", "stack.yml"),
+        [
+          "services:",
+          "  api:",
+          "    build: .",
+          "    environment:",
+          "      API_URL: ${API_URL:?Set API_URL}",
+          "      CHANNEL: ${CHANNEL}",
+        ].join("\n"),
+      );
+
+      const initial = await resolveProjectInfo({ source: "local", path });
+      expect(initial.rootDirectory).toBe("deploy");
+      expect(initial.openshipEnv).toEqual({ API_URL: "https://api.example.com" });
+      expect(initial.services?.[0]?.environment).toEqual({
+        API_URL: "https://api.example.com",
+        CHANNEL: "stable",
+      });
+
+      for (const composePath of [undefined, initial.composePath]) {
+        const refreshed = await resolveProjectInfo({
+          source: "local",
+          path,
+          rootDirectory: initial.rootDirectory,
+          composePath,
+        });
+
+        expect(refreshed.rootDirectory).toBe("deploy");
+        expect(refreshed.composePath).toBe("deploy/stack.yml");
+        expect(refreshed.openshipEnv).toEqual(initial.openshipEnv);
+        expect(refreshed.services?.[0]?.environment).toEqual(initial.services?.[0]?.environment);
+        expect(refreshed.missingRequiredEnv).toBeUndefined();
+      }
+
+      const overridden = await resolveProjectInfo({
+        source: "local",
+        path,
+        rootDirectory: "deploy",
+        env: { API_URL: "https://operator.example.com" },
+      });
+      expect(overridden.services?.[0]?.environment).toEqual({
+        API_URL: "https://operator.example.com",
+        CHANNEL: "stable",
+      });
+    });
+
+    it.each(["{}", "", "{ broken json"])(
+      "does not inherit another app's config when the subfolder manifest contains %j",
+      async (content) => {
+        const path = await repoWithBuildDirectory();
+        await writeFile(
+          join(path, "openship.json"),
+          JSON.stringify({
+            env: { ROOT_APP_SECRET: "belongs-to-root-app" },
+            services: [{ name: "root-app", image: "nginx:alpine" }],
+          }),
+        );
+        await writeFile(join(path, "deploy", "openship.json"), content);
+
+        const info = await resolveProjectInfo({ source: "local", path, rootDirectory: "deploy" });
+
+        expect(info.rootDirectory).toBe("deploy");
+        expect(info.services).toBeUndefined();
+        expect(info.openshipEnv).toBeUndefined();
+        if (content === "{ broken json") expect(info.configDiagnostics?.wholeFile).toBe(true);
+      },
+    );
+  });
+
   it("#795 retains a Compose build-arg template alongside openship.json env", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-compose-build-args-"));
     tempDirs.push(tempDir);

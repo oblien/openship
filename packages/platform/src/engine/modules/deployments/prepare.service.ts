@@ -83,6 +83,8 @@ export type Source =
       ctx?: RequestContext;
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
+      /** See {@link ResolveOptions.rootDirectory}. */
+      rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
     }
@@ -90,6 +92,7 @@ export type Source =
       source: "local";
       path: string;
       composePath?: string;
+      rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
     };
@@ -107,6 +110,12 @@ export interface ResolveOptions {
    * buildpack build (the confusing behaviour this option exists to replace).
    */
   composePath?: string;
+  /**
+   * The project's own directory, for a project already deployed from a subpath.
+   * Pins the scan there instead of re-detecting a root. Its `openship.json`
+   * takes precedence; when absent, the repository-root manifest still applies.
+   */
+  rootDirectory?: string;
   /**
    * Env the caller already holds for this deploy (the values configured on the
    * project / entered in the wizard). Compose interpolation resolves against
@@ -236,11 +245,11 @@ export interface ProjectInfo {
    * API response mappers expose names, never these values.
    */
   openshipEnv?: OpenshipEnv;
-  /** Routing config parsed from the repo-root `vercel.json`/`openship.json`
+  /** Routing config parsed from the selected `vercel.json`/`openship.json`
    *  (rewrites/redirects/headers/cleanUrls/trailingSlash). Persisted on the
    *  project + compiled to OpenResty at deploy. */
   routing?: RoutingConfig;
-  // ── Declared overlay (repo-root `openship.json`) ─────────────────────────
+  // ── Declared overlay (`openship.json`) ──────────────────────────────────
   // Fields the heuristic detector doesn't produce, declared by the user and
   // authoritative when present. Build-shaping fields (framework/commands/
   // output/routing) fold in through the metadata parser and appear above.
@@ -268,7 +277,7 @@ export interface ProjectInfo {
    */
   releaseCommands?: string[];
   /**
-   * What the root `openship.json` parse REFUSED, when it refused anything (#641).
+   * What the selected `openship.json` parse REFUSED, when it refused anything (#641).
    * Advisory only: an invalid config has never failed a scan or a deploy, it just
    * silently didn't apply — which IS the bug. Absent when the repo has no file or
    * it parsed clean, so an unaffected repo's payload is unchanged.
@@ -308,9 +317,9 @@ export interface DeclaredPublicEndpoint {
 }
 
 /**
- * Routing config is a repo-ROOT concern (the root `vercel.json`), so read it
- * from the root snapshot's file contents regardless of which sub-app is selected
- * as the primary. Returns the first source that declares routing (vercel today).
+ * Read routing from the selected configuration snapshot. Automatic detection
+ * uses repository-root configuration; a pinned subfolder can own its manifest.
+ * Returns the first source that declares routing.
  */
 function extractRootRouting(fileContents: Record<string, string>): RoutingConfig | undefined {
   const lower: Record<string, string> = {};
@@ -369,7 +378,7 @@ interface ExtractedOpenshipConfig {
 }
 
 /**
- * Parse the repo-ROOT `openship.json` (case-insensitive). The overlay stays
+ * Parse the selected `openship.json` (case-insensitive). The overlay stays
  * LENIENT — a refused field is skipped, an unparseable file applies nothing, and
  * neither ever fails the scan — but what was refused now comes BACK instead of
  * being dropped (#641), so "my config did nothing" is answerable. The
@@ -536,7 +545,7 @@ function mergeMonorepoApps(
 }
 
 /**
- * Overlay a repo-root `openship.json` onto detected ProjectInfo. Only the fields
+ * Overlay the selected `openship.json` onto detected ProjectInfo. Only the fields
  * the metadata parser can't carry (runtime/port/productionMode/sleepMode/domains/
  * env) are applied here; each present field wins over detection, absent fields
  * keep the detected value. Mutates + returns `info` for call-site brevity.
@@ -852,6 +861,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     }
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
       composePath: input.composePath,
+      rootDirectory: input.rootDirectory,
       env: input.env,
     });
   }
@@ -862,7 +872,11 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path, { composePath: input.composePath, env: input.env });
+  return resolveFromLocal(input.path, {
+    composePath: input.composePath,
+    rootDirectory: input.rootDirectory,
+    env: input.env,
+  });
 }
 
 /**
@@ -952,9 +966,20 @@ export async function resolveFromReader(
   selectedBranch: string,
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
-  const rootSnapshot = await readProjectSnapshot(reader);
-  const routing = extractRootRouting(rootSnapshot.fileContents ?? {});
-  const openship = extractOpenshipConfig(rootSnapshot.fileContents ?? {});
+  const rootSnapshot = await readProjectSnapshot(reader, opts.rootDirectory);
+  // A saved build directory need not contain the project's manifest: existing
+  // projects can declare services, env, and composePath at the repository root.
+  // Prefer a subfolder manifest by presence, not parse success, so a malformed
+  // file never silently selects another app's configuration.
+  const configSnapshot =
+    rootSnapshot.rootDirectory &&
+    !rootSnapshot.files.some(
+      (file) => file.type !== "dir" && file.name.toLowerCase() === "openship.json",
+    )
+      ? await readProjectSnapshot(reader)
+      : rootSnapshot;
+  const routing = extractRootRouting(configSnapshot.fileContents ?? {});
+  const openship = extractOpenshipConfig(configSnapshot.fileContents ?? {});
 
   // Configs SEED defaults; an explicit caller value — the user's own edit,
   // persisted on the project — wins over the repo-declared one. Resolved before
@@ -963,7 +988,13 @@ export async function resolveFromReader(
   const declaredComposePath = opts.composePath?.trim() || openship.config?.composePath?.trim();
   const root = declaredComposePath
     ? await resolveDeclaredRoot(reader, declaredComposePath)
-    : await resolveDetectedRoot(reader, rootSnapshot);
+    : rootSnapshot.rootDirectory
+      ? {
+          selected: buildProjectRootSnapshot(rootSnapshot),
+          monorepo: null,
+          composeFiles: presentComposeFiles(rootSnapshot.files, COMPOSE_FILES),
+        }
+      : await resolveDetectedRoot(reader, rootSnapshot);
 
   // `.env` sits next to the compose file, which is what compose itself resolves
   // against — for a declared root that is the pinned directory, not the repo root.
@@ -1008,11 +1039,13 @@ export async function resolveFromReader(
     );
   }
 
-  if (root.declaredComposePath) {
+  if (root.declaredComposePath || rootSnapshot.rootDirectory) {
     // The compose directory IS this project's root — it anchors every relative
-    // `build:` context. Re-pin it after the overlay so a stray `rootDirectory` in
-    // openship.json can't desync the two and send builds at the wrong folder.
+    // `build:` context. A saved project directory is authoritative too; neither
+    // can be relocated by an openship.json default after the source was read.
     overlaid.rootDirectory = root.selected.rootDirectory || "./";
+  }
+  if (root.declaredComposePath) {
     overlaid.composePath = root.declaredComposePath;
   }
   return overlaid;

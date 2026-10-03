@@ -10,6 +10,10 @@ project. It mirrors what you'd otherwise set in the [deploy wizard](/docs/guides
 so a repo becomes "ready to ship on Openship" and [auto-deploy on push](/docs/guides/auto-deploy)
 and `openship deploy` become deterministic — no wizard needed.
 
+When refreshing services for a project with a saved subfolder, Openship uses that subfolder's
+`openship.json` when present. Otherwise, it uses the repository-root manifest, preserving existing
+service definitions and environment defaults. The saved build directory still applies.
+
 <Callout title="Authoritative overlay">
   Openship **auto-detects** your stack first, then applies every field present in `openship.json` on
   top. Fields you omit keep their detected value. So a good `openship.json` is **small** — declare
