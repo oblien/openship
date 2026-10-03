@@ -190,6 +190,8 @@ export interface ServerReachability {
 export interface ServerInfo {
   id: string;
   name: string | null;
+  /** Managed hosts accept deploy/component writes; observe-only hosts expose read-only inventory and monitoring. */
+  managementMode?: "managed" | "observe_only";
   /** The auto-registered host row (VPS / server-host mode) — "This Server".
    *  Deploys to it run on the local host, and its SSH fields are placeholders. */
   isLocal?: boolean;

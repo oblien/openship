@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   releaseLock: vi.fn(async () => undefined),
   sshWithExecutor: vi.fn(),
   upsertMailServer: vi.fn(),
+  getServerInOrganization: vi.fn(),
   streamSSE: vi.fn(),
   preflight: vi.fn(),
 }));
@@ -23,6 +24,9 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos: {
     mailServer: {
       upsert: mocks.upsertMailServer,
+    },
+    server: {
+      getInOrganization: mocks.getServerInOrganization,
     },
   },
   tryAcquireAdvisoryLock: mocks.acquireLock,
@@ -74,6 +78,7 @@ describe("startSetup concurrency", () => {
     mocks.acquireLock.mockResolvedValue({ release: mocks.releaseLock });
     mocks.sshWithExecutor.mockRejectedValue(new Error("ssh unavailable"));
     mocks.upsertMailServer.mockResolvedValue({});
+    mocks.getServerInOrganization.mockResolvedValue({ managementMode: "managed" });
     mocks.streamSSE.mockReturnValue({ stream: true });
     mocks.preflight.mockResolvedValue(null);
   });

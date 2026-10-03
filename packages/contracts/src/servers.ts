@@ -36,8 +36,14 @@ import {
 } from "./server-containers";
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
+export const ServerManagementModeSchema = Type.Union([
+  Type.Literal("managed"),
+  Type.Literal("observe_only"),
+]);
+export type ServerManagementMode = Static<typeof ServerManagementModeSchema>;
 const connectionFields = {
   name: Type.Optional(nullableString),
+  managementMode: Type.Optional(ServerManagementModeSchema),
   sshHost: Type.Optional(nullableString),
   sshPort: Type.Optional(Type.Union([Type.Integer({ minimum: 1, maximum: 65535 }), Type.Null()])),
   sshUser: Type.Optional(nullableString),
@@ -85,6 +91,7 @@ const serverFields = {
   id: Type.String(),
   name: nullableString,
   isLocal: Type.Boolean(),
+  managementMode: ServerManagementModeSchema,
   sshHost: Type.String(),
   sshPort: Type.Union([Type.Number(), Type.Null()]),
   sshUser: nullableString,

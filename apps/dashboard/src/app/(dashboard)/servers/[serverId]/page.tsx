@@ -503,6 +503,15 @@ export default function ServerDetailPage({
     })();
   }, [serverId, fetchData, runHealthCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A copied deep link must not mount a management surface after a server is
+  // switched to observe-only mode. Keep the two read-only views available.
+  useEffect(() => {
+    if (server?.managementMode !== "observe_only") return;
+    if (activeTab === "overview" || activeTab === "security") return;
+    setActiveTab("overview");
+    router.replace(`/servers/${serverId}?tab=overview`, { scroll: false });
+  }, [activeTab, router, server?.managementMode, serverId]);
+
   const [removeOpen, setRemoveOpen] = useState(false);
   const handleDelete = useCallback(() => setRemoveOpen(true), []);
 
@@ -592,6 +601,10 @@ export default function ServerDetailPage({
   const visibleActionFinalStatus = manualActionComponents.length > 0
     ? manualActionFinalStatus
     : setupStream.finalStatus;
+  const displayTab =
+    server.managementMode === "observe_only" && activeTab !== "overview" && activeTab !== "security"
+      ? "overview"
+      : activeTab;
 
   return (
     <PageContainer>
@@ -613,6 +626,11 @@ export default function ServerDetailPage({
               style={{ letterSpacing: "-0.2px" }}
             >
               {server.name || <BlurIp>{server.sshHost}</BlurIp>}
+              {server.managementMode === "observe_only" && (
+                <span className="ms-2 rounded bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground align-middle">
+                  {t.servers.list.observeOnly}
+                </span>
+              )}
             </h1>
             {/* Connection line: user@host + a clean status pill (no loud dot).
                 The country flag lives on the connection card's Host row — beside
@@ -671,6 +689,12 @@ export default function ServerDetailPage({
           </div>
         </div>
 
+        {server.managementMode === "observe_only" && (
+          <div className="mb-6 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            {t.servers.detail.observeOnlyNotice}
+          </div>
+        )}
+
         {/* Connection error banner - surfaces SSH-unreachable / auth-failed /
             mis-configured state above the tabs so the user has context the
             moment they open the page, not just a toast that disappears. */}
@@ -693,9 +717,12 @@ export default function ServerDetailPage({
             cmd-clickable; a plain click still switches client-side. */}
         <Tabs
           className="mb-6"
-          value={activeTab}
+          value={displayTab}
           onChange={(key) => changeTab(key)}
-          tabs={TABS.map(({ key, icon, desktopOnly }) => ({
+          tabs={TABS.filter(
+            ({ key }) =>
+              server.managementMode !== "observe_only" || key === "overview" || key === "security",
+          ).map(({ key, icon, desktopOnly }) => ({
             key,
             label: t.servers.detail.tabs[key],
             icon,
@@ -708,12 +735,12 @@ export default function ServerDetailPage({
 
         {/* Main Grid — the Migrations tab spans full width (its flow renders its
             own right column: connection card → migrate config / live progress). */}
-        <div className={`grid grid-cols-1 gap-6 items-start ${activeTab === "migrations" ? "" : "lg:grid-cols-[1fr_340px]"}`}>
+        <div className={`grid grid-cols-1 gap-6 items-start ${displayTab === "migrations" ? "" : "lg:grid-cols-[1fr_340px]"}`}>
           {/* Left column */}
           <div className="min-w-0">
 
             {/* Tab content */}
-            {activeTab === "overview" && (
+            {displayTab === "overview" && (
               <OverviewTab
                 stats={monitor.stats}
                 components={components}
@@ -724,7 +751,7 @@ export default function ServerDetailPage({
               />
             )}
 
-            {activeTab === "components" && (
+            {displayTab === "components" && (
               <>
               {serverId && <ServerContainerUpdates serverId={serverId} />}
               {serverId && <ServerModuleUpdates serverId={serverId} />}
@@ -754,18 +781,20 @@ export default function ServerDetailPage({
               </>
             )}
 
-            {activeTab === "github" && serverId && (
+            {displayTab === "github" && serverId && (
               <ServerGitHubConnect serverId={serverId} variant="card" />
             )}
 
-            {activeTab === "security" && (
+            {displayTab === "security" && (
               <div className="space-y-6">
                 <ExposedPortsCard serverId={serverId} />
-                <RateLimitSettings serverId={serverId} />
+                {server.managementMode !== "observe_only" && (
+                  <RateLimitSettings serverId={serverId} />
+                )}
               </div>
             )}
 
-            {activeTab === "ports" && isDesktop && serverId && (
+            {displayTab === "ports" && isDesktop && serverId && (
               <PortForwardingCard
                 serverId={serverId}
                 tunnels={tunnels}
@@ -774,11 +803,11 @@ export default function ServerDetailPage({
               />
             )}
 
-            {activeTab === "terminal" && (
+            {displayTab === "terminal" && (
               <TerminalTab
                 serverId={serverId}
                 serverName={server?.name ?? undefined}
-                enabled={activeTab === "terminal"}
+                enabled={displayTab === "terminal"}
               />
             )}
 
@@ -786,8 +815,8 @@ export default function ServerDetailPage({
                 that opens each run's steps + logs IN-PAGE, plus the scan-first
                 migrate flow (both are the reused ServerMigrationWizard). Kept
                 MOUNTED (visibility-toggled) so a scan/flow survives tab switches. */}
-            {serverId && (
-              <div className={activeTab === "migrations" ? "" : "hidden"}>
+            {serverId && server.managementMode !== "observe_only" && (
+              <div className={displayTab === "migrations" ? "" : "hidden"}>
                 <MigrationsTab serverId={serverId} server={server} />
               </div>
             )}
@@ -795,7 +824,7 @@ export default function ServerDetailPage({
 
           {/* Right sidebar — connection summary. Hidden on the Migrations tab,
               whose flow renders its own right column. */}
-          {activeTab !== "migrations" && (
+          {displayTab !== "migrations" && (
             <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
               <ServerConnectionCard server={server} />
               <ServerInfrastructure serverId={serverId} />

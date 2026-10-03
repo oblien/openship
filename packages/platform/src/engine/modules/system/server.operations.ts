@@ -50,6 +50,9 @@ import { clusterRuntimeCollection } from "./cluster-runtime.operations";
 import { clusterStorageCollection } from "./cluster-storage.operations";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
+import { assertManagedServer } from "../../lib/server-target";
+import { getActiveSetupSession } from "./setup-session";
+import { hasActiveContainerApplySession } from "../../lib/server-container-session";
 
 function validateConnectionOptions(settings: Parameters<typeof assertSshSettings>[0]): void {
   try {
@@ -68,6 +71,7 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
     // The auto-registered host row (VPS / server-host mode). The dashboard
     // badges it "This Server" and hides SSH-credential fields for it.
     isLocal: s.isLocal,
+    managementMode: s.managementMode ?? "managed",
     sshHost: s.sshHost,
     sshPort: s.sshPort,
     sshUser: s.sshUser,
@@ -202,6 +206,9 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
       sshTransport: body.sshTransport,
     })
   ) {
+    if (body.managementMode === "observe_only") {
+      return failServer({ error: "This Server must remain a managed deployment target." }, 400);
+    }
     // Only the box-owning org may register the local host — running on it is
     // code execution on the control plane (host executor + mounted docker socket,
     // DooD ≈ root). A teammate's org (any member can POST /servers) is refused so
@@ -242,6 +249,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
   const server = await repos.server.create({
     organizationId: ctx.organizationId,
     name: body.name?.trim() || null,
+    managementMode: body.managementMode ?? "managed",
     sshHost: host,
     sshPort: body.sshPort ?? 22,
     sshUser: body.sshUser?.trim() || "root",
@@ -279,6 +287,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
       sshAuthMethod: server.sshAuthMethod,
       sshJumpHost: server.sshJumpHost,
       sshTransport: server.sshTransport,
+      managementMode: server.managementMode,
     },
   });
 
@@ -306,6 +315,13 @@ const LOCAL_ROW_READONLY_FIELDS = [
 ] as const;
 
 async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServerInput) {
+  if (body.managementMode !== undefined) {
+    return withServerInventoryLock(ctx.organizationId, () => updateServerUnderLock(ctx, id, body));
+  }
+  return updateServerUnderLock(ctx, id, body);
+}
+
+async function updateServerUnderLock(ctx: ExecutionContext, id: string, body: UpdateServerInput) {
   assertSelfHosted();
 
   // Primary gate: permission resolver. Updating server config is a write.
@@ -351,6 +367,62 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   const patch: Record<string, unknown> = {};
 
   if (body.name !== undefined) patch.name = body.name?.trim() || null;
+  if (body.managementMode !== undefined) {
+    if (existing.isLocal && body.managementMode !== "managed") {
+      return failServer({ error: "This Server must remain a managed deployment target." }, 400);
+    }
+    if (body.managementMode === "observe_only") {
+      const setup = getActiveSetupSession();
+      if (setup?.serverId === id || hasActiveContainerApplySession(id)) {
+        return failServer(
+          {
+            error: "Wait for this server's component operation to finish before changing it to observe-only mode.",
+            code: "SERVER_COMPONENT_OPERATION_IN_PROGRESS",
+          },
+          409,
+        );
+      }
+      const mail = await repos.mailServer.get(id).catch(() => undefined);
+      if (mail && !mail.installedAt) {
+        return failServer(
+          {
+            error: "Wait for mail setup to finish before changing this server to observe-only mode.",
+            code: "SERVER_MAIL_SETUP_IN_PROGRESS",
+          },
+          409,
+        );
+      }
+      if (await repos.deployment.hasInFlightByServer(ctx.organizationId, id)) {
+        return failServer(
+          {
+            error: "Wait for this server's active deployment to finish before changing it to observe-only mode.",
+            code: "SERVER_DEPLOYMENT_IN_PROGRESS",
+          },
+          409,
+        );
+      }
+      const counts = await repos.project.countActiveByServer(ctx.organizationId);
+      if ((counts[id] ?? 0) > 0) {
+        return failServer(
+          {
+            error: "Move this server's active projects before changing it to observe-only mode.",
+            code: "SERVER_HAS_ACTIVE_PROJECTS",
+          },
+          409,
+        );
+      }
+      if (await repos.serverCluster.membership(id)) {
+        return failServer(
+          {
+            error: "Detach this server from its cluster before changing it to observe-only mode.",
+            code: "SERVER_IN_CLUSTER",
+          },
+          409,
+        );
+      }
+    }
+    patch.managementMode = body.managementMode;
+  }
   if (body.sshHost !== undefined) patch.sshHost = body.sshHost?.trim() || existing.sshHost;
   if (body.sshPort !== undefined) patch.sshPort = body.sshPort ?? 22;
   if (body.sshUser !== undefined) patch.sshUser = body.sshUser?.trim() || "root";
@@ -383,6 +455,8 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   // Audit only the fields the caller intended to touch. Skip secrets entirely.
   const auditAfter: Record<string, unknown> = {};
   if (body.name !== undefined) auditAfter.name = updated?.name ?? null;
+  if (body.managementMode !== undefined)
+    auditAfter.managementMode = updated?.managementMode ?? "managed";
   if (body.sshHost !== undefined) auditAfter.sshHost = updated?.sshHost ?? null;
   if (body.sshPort !== undefined) auditAfter.sshPort = updated?.sshPort ?? null;
   if (body.sshUser !== undefined) auditAfter.sshUser = updated?.sshUser ?? null;
@@ -713,6 +787,7 @@ async function execOnServer(
   // from "not yours".
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  assertManagedServer(server);
 
   const command = body.command?.trim();
   if (!command) return failServer({ error: "command required", code: "COMMAND_REQUIRED" }, 400);

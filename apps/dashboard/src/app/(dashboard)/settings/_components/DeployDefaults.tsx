@@ -9,6 +9,7 @@ import { systemApi } from "@/lib/api/system";
 import type { ServerInfo } from "@/lib/api/system";
 import type { DefaultDeployTarget } from "@/lib/api/settings";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
+import { deployableServers, isManagedServer } from "@/lib/server/management-mode";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -46,9 +47,14 @@ export function DeployDefaults() {
         settingsApi.get(),
         systemApi.listServers().catch(() => [] as ServerInfo[]),
       ]);
-      setTarget(res?.defaultDeployTarget ?? null);
-      setServerId(res?.defaultServerId ?? null);
-      setServers(serverList);
+      const managedServers = deployableServers(serverList);
+      const savedServerId = res?.defaultServerId ?? null;
+      const validSavedServer =
+        res?.defaultDeployTarget !== "server" ||
+        (savedServerId !== null && managedServers.some(server => server.id === savedServerId));
+      setTarget(validSavedServer ? (res?.defaultDeployTarget ?? null) : null);
+      setServerId(validSavedServer ? savedServerId : null);
+      setServers(managedServers);
     } catch {
       /* silent */
     } finally {
@@ -160,6 +166,7 @@ export function DeployDefaults() {
                     disabled={saving}
                     onClick={() =>
                       openAddServer((created) => {
+                        if (!isManagedServer(created)) return;
                         setServers((prev) =>
                           prev.some((s) => s.id === created.id) ? prev : [...prev, created],
                         );

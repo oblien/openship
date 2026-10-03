@@ -129,6 +129,20 @@ async function fillServer() {
 }
 
 describe("add server from backup destination (#836)", () => {
+  it("persists an observe-only server profile", async () => {
+    await open();
+    await fillServer();
+    api.createServer.mockResolvedValueOnce({ ...savedServer, managementMode: "observe_only" });
+    await click(form.modeObserveOnly, false);
+    await click(form.saveServer);
+    expect(api.createServer).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        sshHost: savedServer.sshHost,
+        managementMode: "observe_only",
+      }),
+    );
+  });
+
   it.each(["platform", "mail"] as const)(
     "saves and selects the new server without losing the %s destination form",
     async (view) => {

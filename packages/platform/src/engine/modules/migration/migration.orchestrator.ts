@@ -64,6 +64,7 @@ import { PromptRegistry, type PromptPayload } from "../../lib/prompt-gateway";
 import { prepareServerEdge, applyProjectEdgeRoutes } from "../domains/project-edge.service";
 import { sizeOfMoveSet, volumeBytes } from "./migration-size";
 import { withKeyedMutex } from "../../lib/provision-lock";
+import { requireManagedOrgServer } from "../../lib/server-target";
 import { requestBuildAccess } from "../deployments/build.service";
 import { restartServiceContainer } from "../services/service.service";
 import { describeLiveState, resolveLiveServiceState } from "../services/live-state";
@@ -488,6 +489,7 @@ class MigrationOrchestratorImpl {
     // makes the guard atomic in-process. (A multi-process API would additionally
     // need a DB constraint; self-hosted runs one API process.)
     return withKeyedMutex("docker-migration:begin", async () => {
+      await requireManagedOrgServer(input.targetServerId, input.organizationId);
       const active = [
         ...(await repos.dockerMigrationRun.findActiveForServer(input.sourceServerId)),
         ...(await repos.dockerMigrationRun.findActiveForServer(input.targetServerId)),
