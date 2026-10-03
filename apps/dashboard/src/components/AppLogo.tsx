@@ -87,6 +87,9 @@ const BRAND_LOGO: Record<
   // MindWire's own monochrome mark is vendored so the catalog works offline and
   // the brand stays legible on both dashboard themes.
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
+  // simpleicons carries no Kan.bn mark (cdn.simpleicons.org/kanbn 404s), so resolve
+  // its official favicon like convex/slack/valkey above. Colored, no invert needed.
+  kanbn: { src: "https://www.google.com/s2/favicons?domain=kan.bn&sz=128" },
 };
 
 // The Valkey app retains the historical "redis" template ID. Keep that alias
