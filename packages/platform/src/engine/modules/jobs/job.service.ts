@@ -11,7 +11,7 @@ import { repos, type Job } from "@repo/db";
 import { nativeJobsEnabled, assertNativeJobs } from "../../native/execution-policy";
 import { NotFoundError, ValidationError, safeErrorMessage, generateId } from "@repo/core";
 import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
-import { scheduleSystemJob, recordJobRun, type JobSummary } from "@repo/platform/engine/lib/system-jobs";
+import { recordJobRun, type JobSummary } from "@repo/platform/engine/lib/system-jobs";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { validateCronExpression } from "@repo/platform/engine/modules/backups/triggers/cron";
 import { policyOrganizationId } from "@repo/platform/engine/modules/backups/backup.service";
@@ -21,8 +21,7 @@ import { JOB_TRIGGER_EVENT_IDS, refreshTriggerArm } from "@repo/platform/engine/
 import { resolveServerIds, type CommandConfig, type JobNotifyConfig } from "@repo/platform/engine/modules/jobs/job.types";
 import type { TCreateJobBody, TUpdateJobBody } from "@repo/contracts";
 
-/** Resolve a job row's action. Builtin → the registry `run`; custom command
- *  execution is a later phase (returns null so it isn't scheduled/run yet). */
+/** Built-in actions are registry-owned; commands use the shared job executor. */
 function resolveRun(row: Job): (() => Promise<JobSummary>) | null {
   if (row.actionType === "builtin") {
     return SYSTEM_JOB_BY_KEY.get(row.key)?.run ?? null;
@@ -81,29 +80,32 @@ async function syncJob(row: Job): Promise<boolean> {
     await SYSTEM_JOB_BY_KEY.get(row.key)?.onDisabled?.();
     return false;
   }
-  // Custom command jobs run their own streaming executor per tick (reads the
-  // latest row so edits apply next fire); builtins use the recorded wrapper.
-  if (row.actionType === "command") {
-    await runner.scheduleRecurring({
-      jobId: row.key,
-      cronExpression: row.cronExpression!,
-      onTick: async () => {
-        try {
-          await runCommandJobTick(row.key);
-        } catch (err) {
-          console.error(`[job] ${row.key} failed:`, safeErrorMessage(err));
-        }
-      },
-    });
-    return true;
-  }
-  const run = resolveRun(row);
-  if (!run) {
+  if (row.actionType !== "command" && !resolveRun(row)) {
     await runner.removeRecurring(row.key);
     return false;
   }
-  await scheduleSystemJob({ jobId: row.key, cronExpression: row.cronExpression!, run });
+  await runner.scheduleRecurring({
+    jobId: row.key,
+    cronExpression: row.cronExpression!,
+    onTick: () => runScheduledJob(row.key),
+  });
   return true;
+}
+
+/** A queue consumer can resolve a persisted job created on another replica.
+ * Re-read the row on every tick so deletion, disable and schedule edits apply
+ * even when that worker retains an older in-memory registration. */
+export async function runScheduledJob(key: string): Promise<void> {
+  assertNativeJobs();
+  const row = await repos.job.findByKey(key);
+  if (!row?.enabled || row.scheduleType !== "recurring" || !row.cronExpression ||
+      !validateCronExpression(row.cronExpression).valid || systemJobAvailability(key) === "unavailable") return;
+  if (row.actionType === "command") {
+    await runCommandJobTick(key);
+  } else {
+    const run = resolveRun(row);
+    if (run) await recordJobRun(key, { trigger: "schedule" }, run);
+  }
 }
 
 /**
@@ -175,10 +177,12 @@ async function toView(row: Job, limit = 5): Promise<JobView> {
   };
 }
 
-/** List all jobs with their next scheduled fire + recent run history. */
-export async function listJobs(): Promise<JobView[]> {
+/** Filter authority before loading run history from other tenants. */
+export async function listJobs(include?: (row: Job) => Promise<boolean>): Promise<JobView[]> {
   const jobs = await repos.job.listAll();
-  return Promise.all(jobs.map((row) => toView(row)));
+  const visible: Job[] = [];
+  for (const row of jobs) if (!include || await include(row)) visible.push(row);
+  return Promise.all(visible.map((row) => toView(row)));
 }
 
 /** One job with its next fire + recent run history (detail page). */

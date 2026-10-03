@@ -7,6 +7,7 @@ import { domainsApi } from "@/lib/api";
 import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Input } from "@/components/ui/input";
 import DnsConfiguration from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DnsConfiguration";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { normalizeSubdomain, normalizeSubdomainInput } from "@/utils/subdomain";
@@ -249,7 +250,9 @@ export function RoutingSettingsCard({
   // so the row aligns cleanly with no dead whitespace.
   const portInlineField = showsPortTarget ? (
     <div className="shrink-0">
-      <input
+      <Input
+        dir="ltr"
+        variant="filled"
         type="text"
         inputMode="numeric"
         aria-label={w.exposedPort}
@@ -265,7 +268,7 @@ export function RoutingSettingsCard({
         placeholder={w.exposedPort}
         disabled={disabled}
         list={hasPortOptions ? portListId : undefined}
-        className="w-24 h-11 rounded-2xl border border-border/50 bg-background/60 px-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
+        className="w-24"
       />
       {hasPortOptions && (
         <datalist id={portListId}>
@@ -290,6 +293,8 @@ export function RoutingSettingsCard({
         </div>
         <div className="min-w-[190px] flex-1">
           <CustomSelect
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
             value={redirect.to}
             onChange={(next) => void redirect.onChange({ to: next, status: redirect.status || 301 })}
             options={[
@@ -304,6 +309,8 @@ export function RoutingSettingsCard({
         {redirect.to ? (
           <div className="w-[132px]">
             <CustomSelect
+              variant="filled"
+              triggerClassName="bg-muted/60 hover:bg-muted"
               value={String(redirect.status || 301)}
               onChange={(next) => void redirect.onChange({ to: redirect.to, status: Number(next) })}
               options={[
@@ -375,8 +382,10 @@ export function RoutingSettingsCard({
           {domainType === "free" ? (
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1 flex items-center gap-2">
-                <div className="flex-1 flex items-center rounded-2xl border border-border/50 bg-background/60 overflow-hidden h-11">
-                  <input
+                <div dir="ltr" className="min-w-0 flex-1 flex items-center rounded-xl bg-background focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-offset-2 focus-within:ring-offset-background">
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftDomain : domain}
                     onChange={(event) => {
                       const next = normalizeSubdomainInput(event.target.value);
@@ -392,7 +401,7 @@ export function RoutingSettingsCard({
                       if (saveMode === "explicit" && draftDomain !== domain) commitFreeDomain();
                     }}
                     placeholder={projectName || "my-project"}
-                    className="min-w-0 flex-1 h-full ps-3.5 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="min-w-0 flex-1 bg-transparent pe-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                   <span className="shrink-0 ps-2 pe-3.5 text-sm text-muted-foreground">.{baseDomain}</span>
                 </div>
@@ -414,8 +423,9 @@ export function RoutingSettingsCard({
             <div className="space-y-2">
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-2">
-                  <div className="flex-1 flex items-center rounded-2xl border border-border/50 bg-background/60 overflow-hidden h-11">
-                  <input
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftCustomDomain : customDomain}
                     onChange={(event) => {
                       const next = event.target.value.toLowerCase();
@@ -427,9 +437,8 @@ export function RoutingSettingsCard({
                     }}
                     onBlur={handleCustomDomainBlur}
                     placeholder="app.example.com"
-                    className="flex-1 h-full px-3.5 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="min-w-0 flex-1"
                   />
-                </div>
                 {saveMode === "explicit" && draftCustomDomain !== customDomain && (
                   <button
                     type="button"
@@ -455,7 +464,7 @@ export function RoutingSettingsCard({
                   : t.projectSettings.domains.wildcard.scope}</p>
               )}
               {hasRecords && (
-                <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
+                <div className="rounded-xl bg-card overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">
                     <UiIcon name="server" className="size-3 text-muted-foreground shrink-0" />
                     <p className="text-sm text-muted-foreground flex-1">
@@ -487,7 +496,9 @@ export function RoutingSettingsCard({
                 <UiIcon name="hash" className="size-3.5 text-muted-foreground" />
                 <span className="text-[13px] text-muted-foreground font-medium">{w.exposedPort}</span>
               </div>
-              <input
+              <Input
+                dir="ltr"
+                variant="filled"
                 type="text"
                 inputMode="numeric"
                 value={saveMode === "explicit" ? draftPort : exposedPort}
@@ -504,7 +515,7 @@ export function RoutingSettingsCard({
                 placeholder="3000"
                 disabled={disabled}
                 list={hasPortOptions ? portListId : undefined}
-                className="w-24 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
+                className="w-24"
               />
               {hasPortOptions && (
                 <datalist id={portListId}>
@@ -552,7 +563,9 @@ export function RoutingSettingsCard({
                   <span className="text-[13px] text-muted-foreground font-medium">{w.staticPath}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-1">
-                  <input
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftTargetPath : (targetPath || "/")}
                     onChange={(event) => {
                       if (saveMode === "explicit") {
@@ -563,7 +576,7 @@ export function RoutingSettingsCard({
                     }}
                     placeholder="/"
                     disabled={disabled}
-                    className="flex-1 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
+                    className="min-w-0 flex-1"
                   />
                   {saveMode === "explicit" && draftTargetPath !== (targetPath ?? "/") && (
                     <button

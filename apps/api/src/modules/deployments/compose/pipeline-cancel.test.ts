@@ -519,7 +519,7 @@ describe("executeComposePipeline — cancellation", () => {
     expect(mocks.onFailure).not.toHaveBeenCalled();
   });
 
-  it("fails a cloud mutable-image cohort before any workspace is touched", async () => {
+  it("uses the shared Docker refresh flow for mutable images on a managed server", async () => {
     vi.mocked(repos.service.listByDeployment).mockResolvedValueOnce([
       {
         serviceId: "svc-api",
@@ -527,7 +527,7 @@ describe("executeComposePipeline — cancellation", () => {
       } as never,
     ]);
 
-    await run(
+    await expect(run(
       {
         cancelled: false,
         buildFailures: new Map(),
@@ -546,18 +546,11 @@ describe("executeComposePipeline — cancellation", () => {
         strictServiceScope: true,
         forcePullImages: true,
       } as typeof SNAPSHOT,
-      { runtimeName: "cloud", activeDeploymentId: "dep-live" },
-    );
+      { runtimeName: "docker", activeDeploymentId: "dep-live" },
+    )).rejects.toBe(REACHED_DEPLOY);
 
-    expect(mocks.deployComposeServices).not.toHaveBeenCalled();
-    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
-      expect.anything(),
-      "openship/worker:bld_x",
-    );
-    expect(mocks.onFailure).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringMatching(/cannot refresh mutable image.*cloud service api/i),
-      23,
-    );
+    expect(mocks.deployComposeServices).toHaveBeenCalledOnce();
+    expect(mocks.onFailure).not.toHaveBeenCalled();
   });
+
 });

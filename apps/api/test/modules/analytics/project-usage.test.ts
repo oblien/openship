@@ -35,6 +35,7 @@ const h = vi.hoisted(() => ({
   caps: new Set<string>(["usage", "hostContainerQuery"]),
   usageByContainer: new Map<string, ReturnType<typeof usage> | Error>(),
   getUsage: vi.fn(),
+  getInfo: vi.fn(),
   dispose: vi.fn(async () => {}),
   capacity: { cpuCores: 4, memoryMb: 8192 } as Record<string, unknown> | null,
 }));
@@ -64,6 +65,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
           }
         : undefined,
       getUsage: h.getUsage,
+      getContainerInfo: h.getInfo,
       dispose: h.dispose,
     },
     serverId: "s1",
@@ -95,12 +97,13 @@ beforeEach(() => {
   h.deployment = { id: "d1", projectId: "p1", containerId: "c-primary", meta: {}, organizationId: "org1" };
   h.services = [];
   h.serviceDeployments = [];
-  h.liveContainers = [];
+  h.liveContainers = [{ ...container("c-primary", "app"), labels: {} }];
   h.caps = new Set(["usage", "hostContainerQuery"]);
   h.listCalls = 0;
   h.capacity = { cpuCores: 4, memoryMb: 8192 };
   h.usageByContainer = new Map();
   h.dispose.mockClear();
+  h.getInfo.mockReset().mockImplementation(async (containerId: string) => ({ containerId, status: "running" }));
   h.getUsage.mockReset();
   h.getUsage.mockImplementation(async (id: string) => {
     const v = h.usageByContainer.get(id);
@@ -262,16 +265,16 @@ describe("compose project", () => {
   });
 });
 
-describe("cloud (no host enumeration)", () => {
-  it("falls back to the recorded workspace ids when the runtime can't list containers", async () => {
-    // Oblien services are workspaces; there is no `docker ps` equivalent.
-    h.caps = new Set(["usage"]);
+describe("managed server with unavailable host enumeration", () => {
+  it("inspects recorded containers when host enumeration is unavailable", async () => {
+    // The runtime can inspect individual containers even if listing is unavailable.
+    h.caps = new Set(["usage", "containerInfo"]);
     h.services = [{ id: "sv-web", name: "web" }];
-    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "ws-123" }];
-    h.usageByContainer.set("ws-123", usage(20, 512));
+    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "managed-web" }];
+    h.usageByContainer.set("managed-web", usage(20, 512));
 
     const r = await collectProjectUsage(ctx, "p1");
-    expect(r.services[0]).toMatchObject({ containerId: "ws-123", usage: expect.anything() });
+    expect(r.services[0]).toMatchObject({ containerId: "managed-web", usage: expect.anything() });
     expect(r.overall.cpuPercent).toBe(20);
   });
 
@@ -284,6 +287,18 @@ describe("cloud (no host enumeration)", () => {
     const r = await collectProjectUsage(ctx, "p1");
     expect(r.services[0].containerId).toBe("c-web");
     expect(r.overall.cpuPercent).toBe(4);
+  });
+
+  it("keeps unknown status and omits usage when both inventory and individual inspection fail", async () => {
+    h.services = [{ id: "sv-web", name: "web" }];
+    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "c-web" }];
+    h.liveContainers = null;
+    h.getInfo.mockRejectedValue(new Error("server disconnected"));
+    h.usageByContainer.set("c-web", usage(99, 999));
+
+    const result = await collectProjectUsage(ctx, "p1");
+    expect(result.services[0]).toMatchObject({ containerId: "c-web", status: "unknown", usage: null });
+    expect(h.getUsage).not.toHaveBeenCalled();
   });
 });
 

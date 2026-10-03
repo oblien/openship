@@ -2,9 +2,9 @@
  * Custom (command) job execution.
  *
  * A custom job runs a shell command — which may be `docker run --rm <image>
- * <cmd>` — on one or more servers over the pooled SSH executor, streaming each
+ * <cmd>` — on one or more connected or managed servers, streaming each
  * output line to the job-run SSE bus and storing captured output on the row.
- * Reuses the platform's `sshManager.withExecutor → streamExec` primitive.
+ * Reuses the shared server connection and streamExec primitive.
  *
  * Advanced policies handled here:
  *   - timeout    aborts the executor stream and awaits settlement before releasing
@@ -24,15 +24,19 @@
 import { repos, type Job, type JobRun } from "@repo/db";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
+import { OperationError } from "@repo/contracts";
 import type { LogEntry } from "@repo/adapters";
-import { sshManager } from "../../lib/ssh-manager";
+import { withServerExecution } from "../../lib/server-execution";
+import { env } from "../../config";
+import { assertManagedServerCanWork } from "../../lib/cloud-workspace-access";
 import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import { jobRunBus } from "./job-run.sse";
 import { boundedStorableText } from "../deployments/build-log-sanitize";
 import {
   resolveServerIds,
+  jobTargetsOrganization,
   type CommandConfig,
   type JobNotifyConfig,
   type JobRunState,
@@ -73,8 +77,36 @@ function buildCommand(cfg: CommandConfig): string {
   return exports ? `${exports}; ${command}` : command;
 }
 
+async function commandTargets(cfg: CommandConfig) {
+  const ids = resolveServerIds(cfg);
+  const servers = await repos.server.getMany(ids);
+  const organizationId = jobTargetsOrganization(ids, servers);
+  if (!organizationId || ids.some(id => !servers.has(id) || (env.CLOUD_MODE && !servers.get(id)?.workspaceId)))
+    throw new NotFoundError("Job target server");
+  return { organizationId, servers: ids.map(id => servers.get(id)!) };
+}
+
+/** Check every target before starting any command, including every retry. */
+async function assertCommandTargetsReady(cfg: CommandConfig, expectedOrganizationId?: string) {
+  const targets = await commandTargets(cfg);
+  if (expectedOrganizationId && targets.organizationId !== expectedOrganizationId)
+    throw new NotFoundError("Job target server");
+  for (const server of targets.servers) {
+    if (!server.workspaceId) continue;
+    try {
+      await assertManagedServerCanWork(targets.organizationId, server.workspaceId);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "CLOUD_BILLING_BLOCKED")
+        throw new OperationError(error.message, error.statusCode, error.code, { workspaceId: server.workspaceId, serverId: server.id });
+      throw error;
+    }
+  }
+  return targets;
+}
+
 /** Run the command on one server, holding the pooled connection for the run. */
 async function runOnServer(
+  organizationId: string,
   serverId: string,
   command: string,
   onLine: (entry: LogEntry) => void,
@@ -82,13 +114,11 @@ async function runOnServer(
 ): Promise<{ code: number; output: string }> {
   const abort = new AbortController();
   const timer = timeoutMs ? setTimeout(() => abort.abort(), timeoutMs) : undefined;
-  let retained = false;
   try {
-    sshManager.retain(serverId);
-    retained = true;
-    const result = await sshManager.withExecutor(serverId, (executor) =>
-      executor.streamExec(command, onLine, { signal: abort.signal }),
-    );
+    const result = await withServerExecution(organizationId, serverId, executor => {
+      abort.signal.throwIfAborted();
+      return executor.streamExec(command, onLine, { signal: abort.signal });
+    }, { mutation: true, scope: "job" });
     if (abort.signal.aborted) throw new Error(`Command timed out after ${timeoutMs}ms`);
     return result;
   } catch (error) {
@@ -96,7 +126,6 @@ async function runOnServer(
     throw error;
   } finally {
     if (timer) clearTimeout(timer);
-    if (retained) sshManager.release(serverId);
   }
 }
 
@@ -108,6 +137,7 @@ async function runOnServer(
 async function executeAttempt(
   cfg: CommandConfig,
   streamId: string,
+  organizationId: string | null,
 ): Promise<{ status: JobRunState; output: string; error?: string; exitCode?: number }> {
   const publish = (line: string, level: LogEntry["level"]) =>
     jobRunBus.publish(streamId, { type: "log", line, level });
@@ -116,19 +146,21 @@ async function executeAttempt(
     if (!servers.length || !cfg.command?.trim()) {
       throw new Error("Custom job is missing a target server or command.");
     }
+    if (!organizationId) throw new NotFoundError("Job target server");
+    await assertCommandTargetsReady(cfg, organizationId);
     const command = buildCommand(cfg);
 
     let code: number | null;
     let output: string;
     if (servers.length === 1) {
-      const r = await runOnServer(servers[0], command, (e) => publish(e.message, e.level), cfg.timeoutMs);
+      const r = await runOnServer(organizationId, servers[0], command, (e) => publish(e.message, e.level), cfg.timeoutMs);
       output = r.output;
       code = r.code;
     } else {
       const results = await Promise.all(
         servers.map(async (sid) => {
           try {
-            const r = await runOnServer(sid, command, (e) => publish(`[${sid}] ${e.message}`, e.level), cfg.timeoutMs);
+            const r = await runOnServer(organizationId, sid, command, (e) => publish(`[${sid}] ${e.message}`, e.level), cfg.timeoutMs);
             return { sid, code: r.code, output: r.output };
           } catch (err) {
             const msg = safeErrorMessage(err);
@@ -168,8 +200,9 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
   const maxAttempts = Math.max(1, cfg.retry?.maxAttempts ?? 1);
   const backoffMs = Math.max(0, (cfg.retry?.backoffSeconds ?? 0) * 1000);
   const startedMs = Date.now();
+  const organizationId = await commandTargets(cfg).then(targets => targets.organizationId).catch(() => null);
 
-  await emitJobRun(row, run.id, "running");
+  await emitJobRun(row, run.id, "running", organizationId);
 
   let finalStatus: JobRunState = "failed";
   let exitCode: number | undefined;
@@ -184,7 +217,7 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
       jobRunBus.publish(run.id, { type: "log", line: marker, level: "info" });
       chunks.push(marker);
     }
-    const res = await executeAttempt(cfg, run.id);
+    const res = await executeAttempt(cfg, run.id, organizationId);
     chunks.push(res.output);
     exitCode = res.exitCode;
     if (res.status === "success") {
@@ -216,13 +249,13 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
     );
   }
 
-  await emitJobRun(row, run.id, finalStatus, {
+  await emitJobRun(row, run.id, finalStatus, organizationId, {
     durationMs,
     exitCode,
     error: lastError ? boundedStorableText(lastError, MAX_ERROR) : undefined,
     output: chunks.join("\n"),
   });
-  if (finalStatus === "success") await fireDependents(row.key);
+  if (finalStatus === "success" && organizationId) await fireDependents(row.key, organizationId);
 }
 
 type FinishData = {
@@ -275,7 +308,7 @@ async function finishRunRow(runId: string, jobKey: string, data: FinishData): Pr
 export async function runCommandJobTick(key: string): Promise<void> {
   assertNativeJobs();
   const row = await repos.job.findByKey(key);
-  if (!row || !row.enabled || row.actionType !== "command") return;
+  if (!row || !row.enabled || row.actionType !== "command" || row.scheduleType !== "recurring") return;
   const cfg = (row.actionConfig ?? {}) as CommandConfig;
   const single = primaryServerId(cfg);
   const run = await repos.jobRun.start({ jobId: key, kind: "custom", trigger: "schedule", serverId: single, serverIds: resolveServerIds(cfg) });
@@ -290,6 +323,7 @@ export async function startCommandRun(
 ): Promise<string> {
   assertNativeJobs();
   const cfg = (row.actionConfig ?? {}) as CommandConfig;
+  if (trigger === "manual") await assertCommandTargetsReady(cfg);
   const single = primaryServerId(cfg);
   const run = await repos.jobRun.start({ jobId: row.key, kind: "custom", trigger, serverId: single, serverIds: resolveServerIds(cfg) });
   void deferBackgroundWork(() => runLoop(row, run)).catch((err) =>
@@ -322,11 +356,6 @@ const STATE_EVENT: Record<JobRunState, string> = {
   failed: "job_run.failed",
 };
 
-async function resolveOrgIdForUser(userId: string): Promise<string | null> {
-  const members = await repos.member.listByUser(userId).catch(() => []);
-  return members[0]?.organizationId ?? null;
-}
-
 const MAX_NOTIFY_LOG_LINES = 20;
 const MAX_NOTIFY_LOG_CHARS = 2000;
 
@@ -346,6 +375,7 @@ async function emitJobRun(
   row: Job,
   runId: string,
   status: JobRunState,
+  organizationId: string | null,
   meta?: {
     durationMs?: number;
     exitCode?: number;
@@ -353,6 +383,7 @@ async function emitJobRun(
     output?: string;
   },
 ): Promise<void> {
+  if (!organizationId) return;
   try {
     const logExcerpt = extractLogExcerpt(meta?.output);
     const payload: Record<string, unknown> = {
@@ -373,11 +404,10 @@ async function emitJobRun(
       for (const channelId of notify.channels) {
         const channel = await repos.notificationChannel.findById(channelId);
         if (!channel || !channel.enabled || !channel.verified) continue;
-        const orgId = await resolveOrgIdForUser(channel.userId);
-        if (!orgId) continue;
+        if (!(await repos.member.isMember(organizationId, channel.userId))) continue;
         await repos.notificationDelivery.create({
           userId: channel.userId,
-          organizationId: orgId,
+          organizationId,
           auditEventId: null,
           category: `job.run.${status === "success" ? "succeeded" : status === "failed" ? "failed" : "started"}`,
           channelId: channel.id,
@@ -391,10 +421,8 @@ async function emitJobRun(
     }
 
     // Global: route through the dispatcher (maps eventType → category → subs).
-    const orgId = row.createdBy ? await resolveOrgIdForUser(row.createdBy) : null;
-    if (!orgId) return;
     notification.emit({
-      organizationId: orgId,
+      organizationId,
       eventType: STATE_EVENT[status],
       resourceType: "job",
       resourceId: row.key,
@@ -410,15 +438,19 @@ async function emitJobRun(
 /** On a job's success, fire any enabled job that depends on it — but only once
  *  ALL of that dependent's dependencies are currently green. Cycles are
  *  rejected at create/update time, so this terminates. */
-async function fireDependents(jobKey: string): Promise<void> {
+async function fireDependents(jobKey: string, organizationId: string): Promise<void> {
   try {
     const jobs = await repos.job.listAll();
+    const ids = new Map(jobs.map(job => [job.key, resolveServerIds((job.actionConfig ?? {}) as CommandConfig)]));
+    const servers = await repos.server.getMany([...new Set([...ids.values()].flat())]);
     for (const dep of jobs) {
       if (!dep.enabled || dep.actionType !== "command") continue;
+      if (jobTargetsOrganization(ids.get(dep.key)!, servers) !== organizationId) continue;
       const deps = dep.dependsOn ?? [];
       if (!deps.includes(jobKey)) continue;
       const greens = await Promise.all(
         deps.map(async (k) => {
+          if (jobTargetsOrganization(ids.get(k) ?? [], servers) !== organizationId) return false;
           const [last] = await repos.jobRun.listRecent({ jobId: k, limit: 1 });
           return last?.status === "success";
         }),

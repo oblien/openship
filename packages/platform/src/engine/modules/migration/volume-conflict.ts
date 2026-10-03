@@ -24,7 +24,7 @@
 
 import { resolveExecutor, type ServiceHandle } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
-import { createServerDockerRuntime } from "../../lib/deployment-runtime";
+import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
 
 /**
  * The ONE per-volume verdict: may this target volume be written over?

@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} 条备份策略 · 部署前：{preDeploy}",
     "backupManage": "管理备份",
     "on": "开启",
-    "off": "关闭"
+    "off": "关闭",
+    "previewTitle": "部署预览",
+    "previewHint": "继续配置应用。部署将从下一页开始。",
+    "back": "返回"
   },
   "summary": {
     "buildAndDeploy": "构建并部署：",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} 个版本",
     "rollbackOther": "{count} 个版本",
     "rollbackAuto": "回滚：自动",
-    "rollbackSnapshotHint": "会保留每个版本的副本，因此回滚无需重新构建。可在“高级”中更改。",
-    "rollbackGitHint": "有多少个历史版本可供恢复。可在“高级”中更改。"
+    "rollbackSnapshotHint": "保留每个版本的副本，回滚无需重新构建。可在部署设置中更改。",
+    "rollbackGitHint": "可恢复的历史版本数量。可在部署设置中更改。"
   },
   "power": {
     "heading": "性能",

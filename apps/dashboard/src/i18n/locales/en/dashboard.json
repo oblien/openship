@@ -83,7 +83,8 @@
       "delivery": "Delivery",
       "system": "System",
       "account": "Account"
-    }
+    },
+    "workspaces": "Workspaces"
   },
   "sidebar": {
     "expand": "Expand sidebar",
@@ -101,13 +102,13 @@
       "description": "One-click managed services — install and run Convex, WordPress, mail, and more.",
       "createButton": "Install App",
       "loading": "Loading apps…",
-      "countOne": "{count} app installed",
-      "countOther": "{count} apps installed",
+      "countOne": "{count} app",
+      "countOther": "{count} apps",
       "emptyTitle": "Install your first app",
-      "emptyDescription": "Spin up Convex, n8n, Ghost, and more — one click, fully self-hosted. Pick one to get started.",
+      "emptyDescription": "Deploy databases, tools and services from the app catalog.",
       "popular": "Popular apps",
       "alsoDeploy": "You can also deploy",
-      "browseAll": "Browse all apps",
+      "browseAll": "Explore all apps",
       "moreApps": "+{count} more",
       "catalogTitle": "Install an app",
       "catalogDescription": "One-click managed services. Pick one to install it as an app.",

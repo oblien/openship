@@ -52,7 +52,7 @@ export async function syncCloudEdgeProxy(
   // normalized string — so these two must not be able to spell it differently.
   const target = canonicalEdgeTarget(input.target);
 
-  const { client, namespace } = await getNamespaceClient(organizationId);
+  const { client, namespace } = await getNamespaceClient(organizationId, null);
 
   // Namespace isolation: Oblien scopes edgeProxy.list/update/enable to
   // the namespace token's owner, so the look-up-by-slug + mutate path
@@ -144,7 +144,7 @@ export async function requestCloudEdgeVerification(
   if (refusal) return refusal;
 
   const target = canonicalEdgeTarget(input.target);
-  const { client } = await getNamespaceClient(organizationId);
+  const { client } = await getNamespaceClient(organizationId, null);
   const { verification } = await client.edgeProxy.requestVerification(target);
   return {
     ok: true,
@@ -186,7 +186,7 @@ export async function checkCloudEdgeVerification(
     return { ok: false, status: 400, error: "verificationId must be a positive integer" };
   }
 
-  const { client } = await getNamespaceClient(organizationId);
+  const { client } = await getNamespaceClient(organizationId, null);
   const { verification } = await client.edgeProxy.checkVerification(input.verificationId);
   return {
     ok: true,
@@ -219,7 +219,7 @@ export async function deleteCloudEdgeProxy(
     return { ok: false, status: 400, error: "Invalid slug" };
   }
 
-  const { client } = await getNamespaceClient(organizationId);
+  const { client } = await getNamespaceClient(organizationId, null);
   const { proxies } = await client.edgeProxy.list();
   const existing = proxies.find((p) => p.slug === slug);
   if (!existing) {

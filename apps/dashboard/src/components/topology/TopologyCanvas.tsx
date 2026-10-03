@@ -19,8 +19,11 @@ import {
   type Connection,
   type Node,
   type NodeProps,
+  type FitViewOptions,
 } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { optionCardSurface } from "@/components/shared/OptionCard";
 import { ResourceIcon } from "@/components/scale/ResourceIcon";
 import { TrafficEdge, type ScaleFlowEdge } from "@/components/scale/TrafficEdge";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
@@ -34,11 +37,20 @@ import { readTopologyPositions, saveTopologyPositions } from "./layout";
 import "@xyflow/react/dist/style.css";
 
 export type TopologySelection = { kind: "node" | "edge"; id: string } | null;
+/** An optional selection action for unsaved resources, such as an import scan. */
+export interface TopologyNodeAction {
+  label: string;
+  ariaLabel: string;
+  selected: boolean;
+  disabled?: boolean;
+  hint?: string;
+  statusLabel?: string;
+  readOnly?: boolean;
+}
 type ResourceFlowNode = Node<
-  { resource: TopologyResource; onOpen: (id: string) => void },
+  { resource: TopologyResource; onOpen: (id: string) => void; action?: TopologyNodeAction },
   "resource"
 >;
-
 const stateLabels: Record<TopologyState, string> = {
   running: "Running",
   starting: "Starting",
@@ -58,7 +70,13 @@ export function TopologyResourceIcon({
   resource: TopologyResource;
   className?: string;
 }) {
-  if (resource.service) return <ServiceIcon service={resource.service} className={className} />;
+  if (resource.service || resource.kind === "service")
+    return (
+      <ServiceIcon
+        service={resource.service ?? { name: resource.name, image: resource.image }}
+        className={className}
+      />
+    );
   if (resource.volume) return <UiIcon name="hard-drive" className={className} />;
   if (resource.database || (resource.clusterPod && resource.tone !== "service")) {
     return <ResourceIcon kind={resource.tone} className={className} />;
@@ -83,7 +101,7 @@ export function TopologyStatus({ state }: { state: TopologyState }) {
 }
 
 const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
-  const { resource, onOpen } = data;
+  const { resource, onOpen, action } = data;
   const isService = resource.kind === "service";
   const canInspectInstance =
     (isService && !!resource.container?.containerId && !resource.pending) ||
@@ -96,12 +114,14 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
     resource.version;
   return (
     <article
-      className="topology-node scale-resource-tone w-[250px] rounded-2xl text-start"
+      className={`topology-node scale-resource-tone w-[250px] rounded-2xl text-start ${action?.selected ? `border ${optionCardSurface(true)}` : ""}`}
       data-kind={resource.tone}
       data-pending={resource.pending}
+      data-picked={action?.selected || undefined}
+      data-unavailable={action?.disabled || undefined}
       aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
     >
-      <Handle type="target" position={Position.Left} isConnectable={isService} />
+      <Handle type="target" position={Position.Left} isConnectable={isService && !action} />
       <div className="flex items-center gap-3 p-4 pb-3">
         <span className="topology-node-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
           <TopologyResourceIcon resource={resource} />
@@ -128,44 +148,65 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
           )}
         </div>
       )}
-      <div className="px-3 pb-3">
-        <button
-          type="button"
-          className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen(resource.id);
-          }}
-          aria-label={
-            canInspectInstance
-              ? `View instances of ${resource.name}`
-              : resource.clusterPod
-                ? `Inspect ${resource.name}`
-                : `Configure ${resource.name}`
-          }
-        >
-          <span className="min-w-0 truncate">
-            {canInspectInstance
-              ? "Instances"
-              : resource.clusterPod
-                ? "Inspect instance"
-                : resource.kind === "traffic"
-                  ? "View traffic"
-                  : resource.kind === "linked"
-                    ? "View connection"
-                    : "Configuration"}
-          </span>
-          <span className="flex shrink-0 items-center gap-2">
-            {applicationRelease ? (
-              <span className="text-[11px] text-muted-foreground">Deployed {resource.version}</span>
-            ) : (
-              <TopologyStatus state={resource.state} />
-            )}
-            <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />
-          </span>
-        </button>
-      </div>
-      <Handle type="source" position={Position.Right} isConnectable={isService} />
+      {action?.readOnly ? (
+        <div className="px-4 pb-3 text-xs topology-status" data-state={resource.state}>
+          {action.statusLabel}
+        </div>
+      ) : (
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            role={action ? "checkbox" : undefined}
+            aria-checked={action?.selected}
+            disabled={action?.disabled}
+            title={action?.hint}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen(resource.id);
+            }}
+            aria-label={
+              action
+                ? action.ariaLabel
+                : canInspectInstance
+                  ? `View instances of ${resource.name}`
+                  : resource.clusterPod
+                    ? `Inspect ${resource.name}`
+                    : `Configure ${resource.name}`
+            }
+          >
+            <span className="flex min-w-0 items-center gap-2 truncate">
+              {action && <Checkbox asButton={false} checked={action.selected} />}
+              {action
+                ? action.label
+                : canInspectInstance
+                  ? "Instances"
+                  : resource.clusterPod
+                    ? "Inspect instance"
+                    : resource.kind === "traffic"
+                      ? "View traffic"
+                      : resource.kind === "linked"
+                        ? "View connection"
+                        : "Configuration"}
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              {applicationRelease ? (
+                <span className="text-[11px] text-muted-foreground">
+                  Deployed {resource.version}
+                </span>
+              ) : action?.statusLabel ? (
+                <span className="topology-status text-xs" data-state={resource.state}>
+                  {action.statusLabel}
+                </span>
+              ) : (
+                <TopologyStatus state={resource.state} />
+              )}
+              {!action && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
+            </span>
+          </button>
+        </div>
+      )}
+      <Handle type="source" position={Position.Right} isConnectable={isService && !action} />
     </article>
   );
 });
@@ -173,6 +214,10 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
 const nodeTypes = { resource: Resource };
 const edgeTypes = { traffic: TrafficEdge };
 const fitViewOptions = { padding: 0.2, maxZoom: 1 };
+const selectionFitViewOptions: FitViewOptions = {
+  padding: { top: "24px", bottom: "72px", left: "32px", right: "32px" },
+  maxZoom: 1,
+};
 const ariaLabelConfig = {
   "node.a11yDescription.default": "Press Enter or Space to open details.",
   "edge.a11yDescription.default": "Press Enter or Space to open details.",
@@ -182,7 +227,13 @@ const defaultEdgeOptions = {
   markerEnd: { type: MarkerType.ArrowClosed, color: "var(--th-on-30)", width: 15, height: 15 },
 };
 
-function CanvasTools({ onArrange }: { onArrange: () => void }) {
+function CanvasTools({
+  onArrange,
+  fitOptions,
+}: {
+  onArrange: () => void;
+  fitOptions: FitViewOptions;
+}) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
   return (
@@ -205,7 +256,7 @@ function CanvasTools({ onArrange }: { onArrange: () => void }) {
         size="icon"
         title="Fit topology to view"
         aria-label="Fit topology to view"
-        onClick={() => void fitView({ ...fitViewOptions, duration: 200 })}
+        onClick={() => void fitView({ ...fitOptions, duration: 200 })}
       >
         <UiIcon name="scan" />
       </Button>
@@ -222,7 +273,15 @@ function CanvasTools({ onArrange }: { onArrange: () => void }) {
   );
 }
 
-function FitOnChange({ revision, fullscreen }: { revision: number; fullscreen: boolean }) {
+function FitOnChange({
+  revision,
+  fullscreen,
+  fitOptions,
+}: {
+  revision: number;
+  fullscreen: boolean;
+  fitOptions: FitViewOptions;
+}) {
   const initialized = useNodesInitialized();
   const { fitView } = useReactFlow();
   // React Flow fits the initial measurements before revealing the nodes.
@@ -233,22 +292,26 @@ function FitOnChange({ revision, fullscreen }: { revision: number; fullscreen: b
     if (!initialized || fitted.current === view) return;
     const frame = requestAnimationFrame(() => {
       fitted.current = view;
-      void fitView({ ...fitViewOptions, duration: revision === 0 ? 0 : 200 });
+      void fitView({ ...fitOptions, duration: revision === 0 ? 0 : 200 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [initialized, revision, fullscreen, fitView]);
+  }, [initialized, revision, fullscreen, fitView, fitOptions]);
   return null;
 }
 
 interface TopologyCanvasProps {
-  layoutKey: string;
+  /** null keeps an unsaved discovery graph in memory only. */
+  layoutKey: string | null;
   graph: ProjectTopologyGraph;
   selection: TopologySelection;
   fullscreen: boolean;
   inert: boolean;
   onSelect: (selection: TopologySelection) => void;
   onOpen: (id: string) => void;
-  onConnect: (connection: Connection) => void;
+  onConnect?: (connection: Connection) => void;
+  nodeActions?: Readonly<Record<string, TopologyNodeAction>>;
+  ariaLabel?: string;
+  nodeDescription?: string;
 }
 
 function Canvas({
@@ -260,10 +323,15 @@ function Canvas({
   onSelect,
   onOpen,
   onConnect,
+  nodeActions,
+  ariaLabel = "Project topology",
+  nodeDescription,
 }: TopologyCanvasProps) {
+  const fitOptions = nodeActions ? selectionFitViewOptions : fitViewOptions;
   const positions = useMemo(() => topologyPositions(graph), [graph]);
   const storedPositions = useRef<ReturnType<typeof readTopologyPositions> | null>(null);
-  if (storedPositions.current === null) storedPositions.current = readTopologyPositions(layoutKey);
+  if (storedPositions.current === null)
+    storedPositions.current = layoutKey ? readTopologyPositions(layoutKey) : {};
   const [nodes, setNodes] = useState<ResourceFlowNode[]>([]);
   const [fitRevision, setFitRevision] = useState(0);
   const previousIds = useRef<string>("");
@@ -295,7 +363,7 @@ function Canvas({
           id: resource.id,
           type: "resource" as const,
           position,
-          data: { resource, onOpen },
+          data: { resource, onOpen, action: nodeActions?.[resource.id] },
         };
       });
     });
@@ -306,7 +374,7 @@ function Canvas({
     if (previousIds.current && previousIds.current !== ids)
       setFitRevision((revision) => revision + 1);
     previousIds.current = ids;
-  }, [graph, positions, onOpen]);
+  }, [graph, positions, onOpen, nodeActions]);
   const edges = useMemo<ScaleFlowEdge[]>(
     () =>
       graph.edges.map((relation) => ({
@@ -335,7 +403,7 @@ function Canvas({
         if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge"))
           return;
         const id = target.getAttribute("data-id");
-        if (!id) return;
+        if (!id || nodeActions?.[id]?.disabled || nodeActions?.[id]?.readOnly) return;
         event.preventDefault();
         onSelect({ kind: target.classList.contains("react-flow__node") ? "node" : "edge", id });
       }}
@@ -351,10 +419,11 @@ function Canvas({
           const next = { ...storedPositions.current };
           for (const item of dragged.length ? dragged : [node]) next[item.id] = item.position;
           storedPositions.current = next;
-          saveTopologyPositions(layoutKey, next);
+          if (layoutKey) saveTopologyPositions(layoutKey, next);
         }}
         onNodeClick={(event, node) => {
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
+          if (nodeActions?.[node.id]?.disabled || nodeActions?.[node.id]?.readOnly) return;
           onSelect({ kind: "node", id: node.id });
         }}
         onEdgeClick={(event, edge) => {
@@ -365,25 +434,30 @@ function Canvas({
         onConnect={onConnect}
         deleteKeyCode={null}
         fitView
-        fitViewOptions={fitViewOptions}
+        fitViewOptions={fitOptions}
         minZoom={0.25}
         maxZoom={1.6}
         nodesDraggable={!inert}
-        nodesConnectable={!inert}
+        nodesConnectable={!inert && !!onConnect}
         elementsSelectable={false}
         selectNodesOnDrag={false}
         panOnDrag={!inert}
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
-        aria-label="Project topology"
-        ariaLabelConfig={ariaLabelConfig}
+        aria-label={ariaLabel}
+        ariaLabelConfig={
+          nodeDescription
+            ? { ...ariaLabelConfig, "node.a11yDescription.default": nodeDescription }
+            : ariaLabelConfig
+        }
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--th-on-10)" />
-        <FitOnChange revision={fitRevision} fullscreen={fullscreen} />
+        <FitOnChange revision={fitRevision} fullscreen={fullscreen} fitOptions={fitOptions} />
         <CanvasTools
+          fitOptions={fitOptions}
           onArrange={() => {
             storedPositions.current = positions;
-            saveTopologyPositions(layoutKey, positions);
+            if (layoutKey) saveTopologyPositions(layoutKey, positions);
             setNodes((current) =>
               current.map((node) => ({ ...node, position: positions[node.id] })),
             );

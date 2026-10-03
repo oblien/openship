@@ -23,7 +23,7 @@ export function MonitoringNavigation({
   const navigation = useRef<HTMLDivElement>(null);
   const tabs: TabDef<MonitoringTab>[] = [
     { key: "open", label: c.tabs.open },
-    { key: "health", label: c.tabs.health, hidden: !selfHosted },
+    { key: "health", label: c.tabs.health },
     { key: "resolved", label: c.tabs.resolved },
   ];
 

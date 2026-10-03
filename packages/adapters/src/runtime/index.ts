@@ -38,7 +38,6 @@ export {
 } from "./docker";
 export { containerInfoFromDockerSummary } from "./docker-container-info";
 export { BareRuntime, type BareRuntimeOptions } from "./bare";
-export { CloudRuntime } from "./cloud";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────
 export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";
@@ -53,7 +52,7 @@ import type { DockerConnectionOptions } from "./docker";
 import type { BareRuntimeOptions } from "./bare";
 import type { SystemManager } from "../system/setup";
 
-export type RuntimeMode = "docker" | "bare" | "cloud";
+export type RuntimeMode = "docker" | "bare";
 
 export interface CreateRuntimeOptions {
   mode: RuntimeMode;
@@ -63,12 +62,7 @@ export interface CreateRuntimeOptions {
   systemManager?: SystemManager | null;
   /** Bare runtime config (only used when mode="bare") */
   bare?: BareRuntimeOptions;
-  /** Oblien client ID (cloud - master creds) */
-  cloudClientId?: string;
-  /** Oblien client secret (cloud - master creds) */
-  cloudClientSecret?: string;
-  /** Oblien namespace-scoped token (cloud - local instances) */
-  cloudToken?: string;
+
 }
 
 /**
@@ -76,7 +70,7 @@ export interface CreateRuntimeOptions {
  *
  * ZERO BLEED GUARANTEE:
  *   Docker-related code (dockerode, ssh2) is only imported when mode="docker".
- *   "cloud" and "bare" modes never load those dependencies.
+ *   Bare mode never load those dependencies.
  */
 export async function createRuntime(opts: CreateRuntimeOptions): Promise<RuntimeAdapter> {
   switch (opts.mode) {
@@ -87,17 +81,6 @@ export async function createRuntime(opts: CreateRuntimeOptions): Promise<Runtime
     case "bare": {
       const { BareRuntime } = await import("./bare");
       return new BareRuntime(opts.bare);
-    }
-    case "cloud": {
-      const { Oblien } = await import("../oblien");
-      const { CloudRuntime } = await import("./cloud");
-      const client = opts.cloudToken
-        ? new Oblien({ token: opts.cloudToken })
-        : new Oblien({
-            clientId: opts.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
-            clientSecret: opts.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
-          });
-      return new CloudRuntime(client);
     }
   }
 }

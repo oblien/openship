@@ -1,244 +1,64 @@
 "use client";
 
-import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
-
-import { useState, useEffect, useCallback } from "react";
-import { BlurIp } from "@/components/BlurIp";
+import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "@/lib/api";
-import { systemApi } from "@/lib/api/system";
-import type { ServerInfo } from "@/lib/api/system";
-import type { DefaultDeployTarget } from "@/lib/api/settings";
-import { useAddServerModal } from "@/components/servers/add-server-modal";
+import { useSession } from "@/lib/auth-client";
+import { useServerSelection, ServerSelectorView, type ServerOption } from "@/components/shared/ServerSelector";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-// Static target options. "server" gets a server-id sub-picker below.
-//
-// A default is a BINDING, so there are only two: a server row, or a cloud
-// workspace. There is deliberately no "This Machine" — when Openship runs on a
-// server, that machine is already the "This Server" row in the picker below, and
-// choosing the other name for it dropped the row's real address (a deploy then
-// reported `http://localhost:<port>` for a VPS). Desktop still deploys to its own
-// machine; it just derives that instead of storing it.
-const TARGET_OPTIONS: {
-  value: DefaultDeployTarget;
-  icon: IconName;
-}[] = [
-  { value: "server", icon: "server" },
-  { value: "cloud", icon: "cloud" },
-];
-
 export function DeployDefaults() {
   const { showToast } = useToast();
   const { t } = useI18n();
-  const [target, setTarget] = useState<DefaultDeployTarget | null>(null);
-  const [serverId, setServerId] = useState<string | null>(null);
-  const [servers, setServers] = useState<ServerInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: session } = useSession();
+  const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const [saved, setSaved] = useState<{ contextKey: string; serverId: string | null } | null>(null);
   const [saving, setSaving] = useState(false);
-  const openAddServer = useAddServerModal();
+  const [error, setStateError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const loading = saved?.contextKey !== contextKey;
+  const serverId = !loading ? saved.serverId : null;
+  useEffect(() => {
+    let active = true;
+    setStateError(null);
+    void settingsApi.get().then(settings => {
+      if (active) setSaved({ contextKey, serverId: settings.defaultServerId });
+    }).catch(() => { if (active) setStateError(t.settings.deployDefaults.toast.failed); });
+    return () => { active = false; };
+  }, [contextKey, revision, t.settings.deployDefaults.toast.failed]);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [res, serverList] = await Promise.all([
-        settingsApi.get(),
-        systemApi.listServers().catch(() => [] as ServerInfo[]),
-      ]);
-      setTarget(res?.defaultDeployTarget ?? null);
-      setServerId(res?.defaultServerId ?? null);
-      setServers(serverList);
-    } catch {
-      /* silent */
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  // Save the picked target. For target='server' we require a serverId;
-  // we don't auto-pick the first server because that hides the choice
-  // from the user - they should select one explicitly.
-  async function save(nextTarget: DefaultDeployTarget | null, nextServerId: string | null) {
-    if (nextTarget === "server" && !nextServerId) {
-      showToast(t.settings.deployDefaults.toast.pickServer, "error", t.settings.common.toast.defaults);
-      return;
-    }
+  async function save(server: ServerOption | null) {
+    if (saving) return;
+    const owner = contextKey;
     setSaving(true);
-    const prevTarget = target;
-    const prevServerId = serverId;
-    setTarget(nextTarget);
-    setServerId(nextTarget === "server" ? nextServerId : null);
     try {
       await settingsApi.updateDeployDefaults({
-        defaultDeployTarget: nextTarget,
-        defaultServerId: nextTarget === "server" ? nextServerId : null,
+        defaultDeployTarget: server ? (server.raw.managed ? "cloud" : "server") : null,
+        defaultServerId: server?.id ?? null,
       });
-      showToast(
-        nextTarget === null
-          ? t.settings.deployDefaults.toast.cleared
-          : interpolate(t.settings.deployDefaults.toast.setTo, {
-              label: labelFor(nextTarget, nextServerId, servers, t.settings.deployDefaults.labelFor),
-            }),
-        "success",
-        t.settings.common.toast.defaults,
-      );
+      if (contextRef.current !== owner) return;
+      setSaved({ contextKey, serverId: server?.id ?? null });
+      showToast(server ? interpolate(t.settings.deployDefaults.toast.setTo, { label: server.name })
+        : t.settings.deployDefaults.toast.cleared, "success", t.settings.common.toast.defaults);
     } catch {
-      setTarget(prevTarget);
-      setServerId(prevServerId);
-      showToast(t.settings.deployDefaults.toast.failed, "error", t.settings.common.toast.defaults);
+      if (contextRef.current === owner) showToast(t.settings.deployDefaults.toast.failed, "error", t.settings.common.toast.defaults);
     } finally {
       setSaving(false);
     }
   }
-
+  const selection = useServerSelection({ value: serverId, disabled: loading || saving, onSelect: server => { void save(server); } });
   return (
-    <SettingsSection
-      icon={"rocket"}
-      title={t.settings.deployDefaults.title}
-      description={t.settings.deployDefaults.description}
-      iconBg="bg-blue-500/10"
-      iconColor="text-blue-500"
-      collapsible
-    >
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <UiIcon name="spinner" className="size-4 animate-spin" />
-          {t.settings.deployDefaults.loading}
-        </div>
-      ) : (
-        <>
-          <p className="text-sm text-muted-foreground mb-4">
-            {t.settings.deployDefaults.intro}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {TARGET_OPTIONS.map(({ value, icon: ModeIcon }) => {
-              const active = target === value;
-              return (
-                <button
-                  key={value}
-                  onClick={() => save(value, value === "server" ? serverId : null)}
-                  disabled={saving}
-                  className={`relative text-start rounded-xl border p-4 transition-all ${
-                    active
-                      ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
-                      : "border-border/50 bg-card hover:bg-muted/40 hover:border-border"
-                  } disabled:opacity-50`}
-                >
-                  <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                    <UiIcon name={ModeIcon} className="size-4 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm font-medium text-foreground">{t.settings.deployDefaults.targets[value].label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t.settings.deployDefaults.targets[value].desc}</p>
-                  {active && (
-                    <div className="absolute top-3 end-3">
-                      <UiIcon name="check" className="size-4 text-primary" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Server sub-picker - only when target=server */}
-          {target === "server" && (
-            <div className="mt-4 rounded-xl border border-border/50 bg-muted/20 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                {t.settings.deployDefaults.defaultServer}
-              </p>
-              {servers.length === 0 ? (
-                // Picking "server" with none connected left the setting
-                // unsaveable. Add one here and it becomes the saved default.
-                <div className="px-1 py-1.5 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    {t.settings.deployDefaults.noServers}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() =>
-                      openAddServer((created) => {
-                        setServers((prev) =>
-                          prev.some((s) => s.id === created.id) ? prev : [...prev, created],
-                        );
-                        void save("server", created.id);
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
-                  >
-                    <UiIcon name="plus" className="size-3.5" />
-                    {t.widgets.shared.serverSelector.addServer}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {servers.map((s) => {
-                    const isSelected = serverId === s.id;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        disabled={saving}
-                        onClick={() => save("server", s.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all ${
-                          isSelected
-                            ? "bg-primary/10 border border-primary/30"
-                            : "bg-card/60 border border-border/30 hover:border-primary/20 hover:bg-muted/30"
-                        } disabled:opacity-50`}
-                      >
-                        <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-                          isSelected ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
-                        }`}>
-                          <UiIcon name="server" className="size-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {s.name || s.sshHost}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {s.sshUser || "root"}@<BlurIp>{s.sshHost}</BlurIp>:{s.sshPort || 22}
-                          </p>
-                        </div>
-                        {isSelected && (
-                          <UiIcon name="check" className="size-4 text-primary shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Clear */}
-          {target !== null && (
-            <button
-              type="button"
-              onClick={() => save(null, null)}
-              disabled={saving}
-              className="mt-4 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              <UiIcon name="close" className="size-3" />
-              {t.settings.deployDefaults.clearDefault}
-            </button>
-          )}
-        </>
-      )}
+    <SettingsSection icon="rocket" title={t.settings.deployDefaults.title}
+      description={t.settings.deployDefaults.description} iconBg="bg-primary/10" iconColor="text-primary" collapsible>
+      {error ? <div role="alert" className="space-y-2 text-sm text-danger">
+        <p>{error}</p><Button variant="secondary" size="sm" onClick={() => setRevision(value => value + 1)}>{t.billing.plansRoute.tryAgain}</Button>
+      </div> : loading ? <div aria-busy="true" className="h-16 animate-pulse rounded-xl bg-muted/50" />
+        : <ServerSelectorView selection={selection} label={t.settings.deployDefaults.defaultServer} />}
+      {serverId && <Button variant="ghost" size="sm" disabled={saving} onClick={() => void save(null)}>{t.settings.deployDefaults.clearDefault}</Button>}
     </SettingsSection>
   );
-}
-
-function labelFor(
-  target: DefaultDeployTarget,
-  serverId: string | null,
-  servers: ServerInfo[],
-  labels: { yourServer: string; cloud: string },
-): string {
-  if (target === "server") {
-    const s = servers.find((srv) => srv.id === serverId);
-    return s ? (s.name || s.sshHost) : labels.yourServer;
-  }
-  return labels.cloud;
 }

@@ -40,7 +40,7 @@ vi.mock("@repo/db", () => ({
 // diagnosis and a stand-in for it would keep passing after the two stopped agreeing.
 vi.mock("@repo/platform/engine/lib/ssh-manager", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  sshManager: { withExecutor: h.withExecutor, diagnoseReachability: h.diagnose },
+  sshManager: { acquire: vi.fn(async () => ({})), retain: vi.fn(), release: vi.fn(), withExecutor: h.withExecutor, diagnoseReachability: h.diagnose },
 }));
 
 vi.mock("../../lib/permission", () => ({ permission: { assert: h.assert } }));

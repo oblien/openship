@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "Segurança",
       "ports": "Encaminhamento de portas",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "activity": "Atividade"
     },
     "healthy": "Saudável",
     "issues": "Problemas",
@@ -436,12 +437,19 @@
       "sensitiveHint": "Não deveria estar exposto à internet",
       "sensitiveReachable": "Serviço sensível acessível pela internet",
       "reachableLegend": "«Acessível» foi confirmado conectando-se à porta de fora do servidor; «Bloqueado pelo firewall» está vinculado mas bloqueado (p. ex. por um firewall na nuvem).",
-      "summaryReachable": "{total} portas em escuta · {reachable} acessíveis pela internet · {firewalled} bloqueadas pelo firewall"
+      "summaryReachable": "{total} portas em escuta · {reachable} acessíveis pela internet · {firewalled} bloqueadas pelo firewall",
+      "managedTitle": "Portas em escuta",
+      "managedSubtitle": "Processos em escuta neste servidor",
+      "managedHint": "Essas portas estão em escuta dentro do seu servidor gerenciado. O acesso público é controlado pela Rede e pelos domínios de cada projeto.",
+      "managedSummary": "{total} portas em escuta · {exposed} vinculadas a interfaces de rede",
+      "managedLoopbackSummary": "{total} portas em escuta · somente localhost",
+      "managedListener": "Escuta de rede",
+      "managedInconclusiveHint": "Não foi possível ler a tabela de sockets. Tente novamente ou verifique a conexão do servidor no Terminal."
     }
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Shells SSH ao vivo via WebSocket. Até 3 simultâneos — copia ao selecionar."
+    "description": "Terminal do servidor ao vivo. Limite de sessões: {count} — copia ao selecionar."
   },
   "setup": {
     "editServer": "Editar Servidor",
@@ -954,5 +962,18 @@
     "hostname": "Nome do host do Access",
     "help": "Use o nome do host do Cloudflare Access e as credenciais SSH do servidor. Entre no Cloudflare na máquina que executa o OpenShip. O aplicativo Windows inclui o cliente necessário; outras instalações precisam do cloudflared.",
     "openAccess": "Abrir Cloudflare Access"
+  },
+  "acquire": {
+    "connected": {
+      "label": "Conectar seu servidor",
+      "description": "Use um servidor que você já possui via SSH."
+    },
+    "managed": {
+      "label": "Obter um servidor gerenciado",
+      "description": "O Openship Cloud cuida da configuração, das rotas e do HTTPS."
+    },
+    "signInHint": "Conecte sua conta Cloud para usar um servidor gerenciado existente ou obter um novo.",
+    "chooseExisting": "Escolher um servidor Cloud existente",
+    "useServer": "Usar este servidor"
   }
 }

@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "{freeSubdomains} free {freeDomainSuffix} subdomains when you connect to Cloud",
     "usageCredits": "{credits} usage credits per month",
     "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB disk",
-    "finiteUsage": "Continuous hosting may need credit top-ups.",
-    "oneRunningService": "1 running app, database or worker"
+    "finiteUsage": "Continuous hosting may need credit top-ups."
   },
   "selfHosted": {
     "name": "Self-hosted",

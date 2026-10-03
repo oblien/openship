@@ -23,6 +23,7 @@ export {
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
+export type { CloudWorkspaceOperation, CloudWorkspaceActivity, LinkedCloudServer } from "./schema/cloud-workspace";
 export type { ServerContainerDetail } from "./schema/server-container-status";
 export type {
   IncomingWebhookActionType,
@@ -49,6 +50,7 @@ export {
   EXCLUDED_TABLES,
   topoOrderedTables,
   stripEncryptedInPlace,
+  stripInstanceRefsInPlace,
   type DatabaseDump,
   type DumpOptions,
   type RestoreOptions,
@@ -68,6 +70,8 @@ export {
   createProjectRepo,
   createCloudDockerWorkspaceRepo,
   type CloudDockerWorkspace,
+  createCloudWorkspaceRepo,
+  type CloudWorkspace,
   createDeploymentRepo,
   createDomainRepo,
   createDomainDnsChallengeRepo,
@@ -135,6 +139,7 @@ export {
   type UserSettings,
   type NewUserSettings,
   type Server,
+  type ConnectedServer,
   type NewServer,
   type ServerGithubAuth,
   type NewServerGithubAuth,

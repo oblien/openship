@@ -12,9 +12,10 @@
  * plugin's invariants and audit hooks stay correct.
  */
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import type { Database } from "../client";
 import { organization } from "../schema/organization";
+import { cloudWorkspace } from "../schema/cloud-workspace";
 
 export type Organization = typeof organization.$inferSelect;
 
@@ -125,7 +126,9 @@ export function createOrganizationRepo(db: Database) {
       return db
         .select({ id: organization.id })
         .from(organization)
-        .where(isNull(organization.oblienNamespace))
+        .where(and(isNull(organization.oblienNamespace), notExists(
+          db.select({ id: cloudWorkspace.id }).from(cloudWorkspace).where(eq(cloudWorkspace.organizationId, organization.id)),
+        )))
         .limit(limit);
     },
   };

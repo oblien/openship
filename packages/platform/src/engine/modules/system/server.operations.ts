@@ -16,10 +16,17 @@ import {
   type CreateServerInput,
   type UpdateServerInput,
   type ServerOperations,
+  type CloudWorkspaceSummary,
 } from "@repo/contracts";
 import { repos } from "@repo/db";
+import { env } from "../../config";
+import { requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
+import * as managed from "../cloud-workspaces/cloud-workspace.service";
+import { withServerExecution } from "../../lib/server-execution";
+import { managedServerCollection, serverLifecycleResources } from "./server-lifecycle.operations";
+import { serverNetworkSettings } from "./server-network-settings.operations";
 import { hostControlDisabled } from "@repo/adapters";
-import { assertSshSettings, normalizeSshTransport, safeErrorMessage } from "@repo/core";
+import { AppError, assertSshSettings, normalizeSshTransport, safeErrorMessage } from "@repo/core";
 import { invalidateOpenRestyPaths } from "../../lib/openresty-paths";
 import { invalidateHostCapacity } from "../../lib/host-capacity";
 import { sshManager, type ReachabilityDiagnosis } from "../../lib/ssh-manager";
@@ -34,7 +41,8 @@ import {
   serverContainerResources,
   serverContainerStreams,
 } from "./server-containers.operations";
-import { primeGeo, countryForIp } from "../../lib/geo-ip";
+import { primeGeo } from "../../lib/geo-ip";
+import { serializeServer } from "./server-view";
 import { execOnHost } from "../../lib/agent-exec";
 import { serverMaintenanceResources } from "./server-maintenance.operations";
 import { serverCheckResources, testConnection } from "./server-check.operations";
@@ -59,50 +67,26 @@ function validateConnectionOptions(settings: Parameters<typeof assertSshSettings
   }
 }
 
-/** Public shape - what the controller returns to clients (no SSH secrets). */
-function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
-  if (!s) return null;
-  return {
-    id: s.id,
-    name: s.name,
-    // The auto-registered host row (VPS / server-host mode). The dashboard
-    // badges it "This Server" and hides SSH-credential fields for it.
-    isLocal: s.isLocal,
-    sshHost: s.sshHost,
-    sshPort: s.sshPort,
-    sshUser: s.sshUser,
-    sshAuthMethod: s.sshAuthMethod,
-    sshKeyPath: s.sshKeyPath,
-    // Never return the key material itself — only whether one is stored, so the
-    // edit form can offer "a key is stored; leave blank to keep it" (same idea as
-    // the password field, which is simply absent from this shape).
-    hasStoredKeyMaterial: !!s.sshPrivateKey,
-    sshJumpHost: s.sshJumpHost,
-    sshTransport: s.sshTransport ?? "direct",
-    sshArgs: s.sshArgs,
-    createdAt: s.createdAt,
-    // ISO country for the row's flag; null for hostnames/private IPs or until
-    // the geo DB is warmed (callers prime it via primeGeo before serializing).
-    country: countryForIp(s.sshHost),
-  };
-}
-
 /** GET /servers - list servers in the caller's active organization. */
-async function listServers(ctx: ExecutionContext) {
-  assertSelfHosted();
+async function listServers(ctx: ExecutionContext, live = true) {
 
   // Org-scoped: only the caller's org's servers.
   // Self-heal: "this box is a deploy target" is an invariant about the MACHINE, so
   // materialize it on read instead of trusting whichever install branch ran (that
   // trust is why a free-domain install listed no servers). Idempotent, single-flight
   // and a no-op — one findLocal — once the row exists.
-  await ensureLocalServer().catch(() => null);
-  const rows = await repos.server.listByOrganization(ctx.organizationId);
+  if (!env.CLOUD_MODE) await ensureLocalServer().catch(() => null);
+  const rows = await repos.server.listByOrganization(ctx.organizationId, true);
   // Host control off (`openship up --no-host-control`): this box is not a deploy
   // target and every host operation refuses, so the local row is hidden rather
   // than listed-but-dead. Enforced by createHostExecutor throwing — this only
   // stops the UI from offering something the API will reject.
-  const all = hostControlDisabled() ? rows.filter((s) => !s.isLocal) : rows;
+  const eligible = rows.filter((s) => !env.CLOUD_MODE || !!s.workspaceId);
+  const all = [];
+  for (const server of eligible) {
+    if (server.isLocal && hostControlDisabled()) continue;
+    if (await authorization.checkPermissionOnResource(ctx, { resourceType: "server", resourceId: server.id, action: "read" })) all.push(server);
+  }
   await primeGeo();
   // Projects currently deployed to each server (active deployment → meta.serverId).
   const projectCounts = await repos.project
@@ -117,21 +101,21 @@ async function listServers(ctx: ExecutionContext) {
     // whole list. An annotation that can break the page it annotates is a gate.
     all.map((s) => (s.isLocal ? localServerHostChannel(s.id).catch(() => null) : null)),
   );
-  return all.map((s, i) => ({
-    ...serializeServer(s),
-    projectCount: projectCounts[s.id] ?? 0,
-    hostChannel: channels[i] ?? null,
+  return Promise.all(all.map(async (s, i) => {
+    const cloud = s.workspaceId ? await managed.summary(await requireCloudWorkspace(ctx.organizationId, s.workspaceId), live) : null;
+    return { ...serializeServer(s, cloud), projectCount: cloud?.projectCount ?? projectCounts[s.id] ?? 0, hostChannel: channels[i] ?? null };
   }));
 }
 
 /** GET /servers/:id - get a single server. */
 async function getServer(ctx: ExecutionContext, id: string) {
-  assertSelfHosted();
 
   // Primary gate: permission resolver (404 on deny, IDOR-safe).
   // Org-scoped: out-of-org server ids 404 indistinguishably from missing.
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  const cloud = server.workspaceId ? await managed.get(ctx, server.workspaceId) : null;
 
   await primeGeo();
   // Same name, same source, same meaning as the list's `projectCount` — the detail
@@ -145,8 +129,8 @@ async function getServer(ctx: ExecutionContext, id: string) {
     .countActiveByServer(ctx.organizationId)
     .catch(() => ({}) as Record<string, number>);
   return {
-    ...serializeServer(server),
-    projectCount: projectCounts[id] ?? 0,
+    ...serializeServer(server, cloud),
+    projectCount: cloud?.projectCount ?? projectCounts[id] ?? 0,
     hostChannel: server.isLocal ? await localServerHostChannel(server.id).catch(() => null) : null,
   };
 }
@@ -163,10 +147,18 @@ async function getServer(ctx: ExecutionContext, id: string) {
  * supposed to be closed, on the wrong machine (#490).
  */
 async function probeReachability(ctx: ExecutionContext, id: string) {
-  assertSelfHosted();
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  if (server.workspaceId) {
+    try {
+      await withServerExecution(ctx.organizationId, id, executor => executor.exec("true", { timeout: 10_000 }));
+      return { reachable: true, code: "ok", target: null, port: null, hint: null, rule: null, channel: null };
+    } catch (error) {
+      return { reachable: false, code: "managed_unavailable", target: null, port: null, hint: safeErrorMessage(error), rule: null, channel: null };
+    }
+  }
 
   const d: ReachabilityDiagnosis = await sshManager
     .diagnoseReachability(id)
@@ -306,12 +298,19 @@ const LOCAL_ROW_READONLY_FIELDS = [
 ] as const;
 
 async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServerInput) {
-  assertSelfHosted();
 
   // Primary gate: permission resolver. Updating server config is a write.
   // Org-scoped: refuse to update a server outside the caller's org.
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return failServer({ error: "Server not found" }, 404);
+  if (existing.workspaceId) {
+    if (Object.keys(body).some(key => key !== "name") || !body.name?.trim())
+      return failServer({ error: "Managed server connections are configured by Openship Cloud. Only the name can be edited.", code: "MANAGED_SERVER_CONNECTION" }, 400);
+    const cloud = await managed.rename(ctx, existing.workspaceId, { name: body.name });
+    audit.recordAsync(operationAuditContext(ctx), { eventType: "server:write", resourceType: "server", resourceId: id, after: { name: cloud.name } });
+    return serializeServer({ ...existing, name: cloud.name }, cloud);
+  }
+  assertSelfHosted();
 
   // #527: an isLocal row's ssh* fields are DISPLAY-ONLY. Every operation on this box goes
   // through the container→host channel, whose credentials come from OPENSHIP_HOST_SSH_*
@@ -424,6 +423,7 @@ async function serverDeletionPreview(ctx: ExecutionContext, id: string) {
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (server.workspaceId) return failServer({ error: "Delete this server through its Cloud workspace", code: "MANAGED_SERVER_LIFECYCLE_REQUIRED" }, 409);
 
   const [workloads, mail, tunnels, github, destinations] = await Promise.all([
     repos.project.listActiveByServer(ctx.organizationId, id).catch(() => []),
@@ -706,7 +706,6 @@ async function execOnServer(
   id: string,
   body: Parameters<ServerOperations["exec"]>[1],
 ) {
-  assertSelfHosted();
 
   // Primary gate: permission resolver (404 on deny, IDOR-safe). Asserted BEFORE the
   // row is read, so a caller without access cannot distinguish "no such server"
@@ -717,17 +716,17 @@ async function execOnServer(
   const command = body.command?.trim();
   if (!command) return failServer({ error: "command required", code: "COMMAND_REQUIRED" }, 400);
 
-  await assertServerExecution(server);
-  const result = await sshManager
-    .withExecutor(id, (executor) =>
+  const result = await withServerExecution(ctx.organizationId, id, (executor) =>
       execOnHost(executor, {
         command,
         cwd: body.cwd,
         timeoutMs: body.timeoutMs,
         maxOutputBytes: body.maxOutputBytes,
       }),
+      { mutation: true },
     )
     .catch((err: unknown) => {
+      if (err instanceof AppError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       return { transportError: message };
     });
@@ -774,7 +773,12 @@ export const serverDependencies: ServerDependencies = {
   networks: networkSetupStreams,
   collection: {
     list: listServers,
+    async destinations(ctx) {
+      const servers = await listServers(ctx, false);
+      return { servers };
+    },
     create: createServer,
+    ...managedServerCollection,
     testConnection,
     ...serverContainerCollection,
     ...serverClusterCollection,
@@ -787,6 +791,8 @@ export const serverDependencies: ServerDependencies = {
     ...networkSetupMemberCollection,
   },
   resources: {
+    ...serverLifecycleResources,
+    ...serverNetworkSettings,
     ...infrastructureResources,
     get: getServer,
     reachability: probeReachability,

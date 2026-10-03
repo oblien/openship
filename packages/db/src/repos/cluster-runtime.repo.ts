@@ -94,7 +94,7 @@ export function createClusterRuntimeRepo(db: Database) {
         if (!current || current.deletionInProgress) throw new NotFoundError("Project", projectId);
         if (current.updatedAt.toISOString() !== expectedUpdatedAt)
           throw conflict("Project settings changed. Reload before applying this target.");
-        if (current.cloudWorkspaceId)
+        if (current.workspaceId)
           throw conflict("Cloud projects cannot be assigned to self-hosted clusters.");
         if (current.clusterId !== clusterId) {
           const [database] = await tx

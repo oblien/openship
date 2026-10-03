@@ -274,7 +274,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
         return h.applyBody;
       },
     }),
-    resolveExecutor: () => new TestExecutor({ docker: fakeDaemon } as never),
+    resolveExecutor: () => new TestExecutor({ docker: fakeDaemon, assertBackupAccess: async () => {} } as never),
   };
 });
 

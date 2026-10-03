@@ -34,14 +34,15 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 }));
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { eq } from "@repo/db";
-import { planLimits, resolvePlan } from "@repo/core";
+import { resolvePlan } from "@repo/core";
+import { savedLimits as planLimits } from "../../helpers/saved-cloud-offer";
 import { createService, updateService, startServiceContainer, restartServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 import { createQueuedDeployment, type DeploymentConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
 import { createServicesProjectWithId } from "@repo/platform/engine/modules/projects/project-crud.service";
 import { enableProject } from "@repo/platform/engine/modules/projects/project-runtime.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 
-let organizationId: string, projectId: string;
+let organizationId: string, projectId: string, managedWorkspaceId: string, serverId: string;
 let sequence = 0;
 const id = (prefix: string) => `${prefix}-cloud-quota-${++sequence}`;
 const resources = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
@@ -49,13 +50,13 @@ const snapshot = (): DeploymentConfigSnapshot => ({
   repoUrl: "", branch: "main", framework: "node", buildImage: "", runtimeImage: "", packageManager: "",
   installCommand: "", buildCommand: "", outputDirectory: "", productionPaths: [], volumes: [], rootDirectory: "",
   port: 3000, startCommand: "node app.js", resources, buildResources: null, hasServer: true, hasBuild: false,
-  deployTarget: "cloud", serviceDeploymentMode: "single",
+  deployTarget: "cloud", serverId, managedWorkspaceId, serviceDeploymentMode: "single",
 });
 async function project() {
   const projectId = id("project");
   const groupId = id("group");
   await db.insert(schema.projectGroup).values({ id: groupId, organizationId, name: groupId, slug: groupId });
-  await db.insert(schema.project).values({ id: projectId, groupId, organizationId, name: projectId, slug: projectId, resources });
+  await db.insert(schema.project).values({ id: projectId, groupId, organizationId, name: projectId, slug: projectId, resources, serverId });
   return projectId;
 }
 async function activateProject() {
@@ -81,9 +82,9 @@ async function deployedService(serviceId: string) {
   return deploymentId;
 }
 function existingRuntime(appliedResources: { cpuCores: number; memoryMb: number }) {
-  const runtime = { name: "cloud", supports: () => false, start: vi.fn(), restart: vi.fn(), dispose: vi.fn(),
+  const runtime = { name: "docker", supports: (cap?: string) => cap === "dockerHost", start: vi.fn(), restart: vi.fn(), dispose: vi.fn(),
     getContainerInfo: vi.fn().mockResolvedValue({ containerId: "deployed-container", status: "stopped", resources: appliedResources }) };
-  h.readRuntime.mockResolvedValue({ runtime, serverId: null });
+  h.readRuntime.mockResolvedValue({ runtime, serverId, effectiveTarget: "cloud" });
   return runtime;
 }
 function queue(target: string, meta = snapshot()) {
@@ -110,7 +111,10 @@ beforeEach(async () => {
     },
   }));
   const owner = await seedOwner(); organizationId = owner.orgId;
-  await db.update(schema.organization).set({ oblienNamespace: `namespace-${organizationId}`, planTierId: "starter" }).where(eq(schema.organization.id, organizationId));
+  const managed = await repos.cloudWorkspace.create({ organizationId, name: "Production" });
+  managedWorkspaceId = managed.id;
+  await repos.cloudWorkspace.setNamespace(managed.id, organizationId, `namespace-${organizationId}`);
+  serverId = (await repos.server.findByWorkspace(managed.id, organizationId))!.id;
   projectId = await project();
   h.readRuntime.mockRejectedValue(new Error("Unexpected provider access"));
 });
@@ -346,17 +350,15 @@ describe("Cloud quotas at real application mutation boundaries", () => {
     expect((await repos.project.findById(target))?.disabledAt).not.toBeNull();
     expect(h.readRuntime).not.toHaveBeenCalled();
   });
-  it("resumes a Cloud static site on a static-only plan without reserving a compute slot", async () => {
-    h.tier = "free";
+  it("resumes a containerized static site without counting an application slot", async () => {
     const activeId = id("deployment");
     await db.insert(schema.deployment).values({ id: activeId, projectId, organizationId, branch: "main", status: "ready",
-      containerId: "page:static-site.opsh.io", meta: { ...snapshot(), hasServer: false, workload: "static" } });
+      containerId: "static-container", meta: { ...snapshot(), hasServer: false, workload: "static" } });
     await db.update(schema.project).set({ activeDeploymentId: activeId, disabledAt: new Date(),
-      hasServer: false, workloadType: "static", cloudWorkspaceId: "static-workspace" }).where(eq(schema.project.id, projectId));
-    const start = vi.fn();
-    h.readRuntime.mockResolvedValue({ runtime: { name: "cloud", start, dispose: vi.fn() }, serverId: null });
+      hasServer: false, workloadType: "static" }).where(eq(schema.project.id, projectId));
+    const { start } = existingRuntime(resources);
     await expect(enableProject(projectId, organizationId)).resolves.toMatchObject({ success: true });
-    expect(start).toHaveBeenCalledWith("page:static-site.opsh.io");
+    expect(start).toHaveBeenCalledWith("static-container");
     expect(await repos.service.countRunningForOrg(organizationId)).toBe(0);
   });
   it("serializes project creation so two imports cannot claim the final project slot", async () => {

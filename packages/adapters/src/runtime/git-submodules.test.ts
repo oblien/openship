@@ -9,7 +9,6 @@ import type { BuildConfig, CommandExecutor } from "../types";
 import { BuildLogger, runBuildPipeline } from "./build-pipeline";
 import { prepareSourceTree } from "./docker-build-context";
 import { DockerRuntime } from "./docker";
-import { CloudRuntime } from "./cloud";
 
 const exec = promisify(execFile);
 let fixture: string;
@@ -160,48 +159,6 @@ describe.each([false, true])("Git submodule materialization (rollback=%s)", (rol
     );
     expect(result.status).toBe("deploying");
     await assertSource(target, rollback, false);
-  });
-
-  it("includes recursive dependencies in the cloud Dockerfile context", async () => {
-    const workspace = join(fixture, `cloud-${rollback}`);
-    const runtime = Object.create(CloudRuntime.prototype);
-    Object.assign(runtime, {
-      ensureWorkspaceGit: async () => {},
-      execAndStream: async (_runtime: unknown, command: string[]) =>
-        // Execute the product's workspace script locally, remapping only its
-        // isolated filesystem root. No cloud client or provisioned workspace.
-        shell(command[2].replaceAll("/openship", workspace)),
-    });
-    await runtime.cloneDockerfileContext(
-      config(rollback),
-      { kind: "remote", contextRelativePath: "" },
-      {},
-      new BuildLogger(),
-    );
-    await assertSource(join(workspace, "context"), rollback, true);
-  });
-
-  it("finds a Dockerfile inside a submodule during cloud source inspection", async () => {
-    const workspace = join(fixture, `cloud-inspect-${rollback}`);
-    const runtime = Object.create(CloudRuntime.prototype);
-    const run = (command: string) => shell(command.replaceAll("/openship", workspace));
-    Object.assign(runtime, {
-      provisionWorkspace: async () => ({ workspaceId: "test-workspace", runtime: {} }),
-      trackActiveBuildWorkspace: () => {},
-      untrackActiveBuildWorkspace: () => {},
-      ensureWorkspaceGit: async () => {},
-      workspaceExecutor: () => ({
-        exec: run,
-        streamExec: async (command: string) => ({ code: 0, output: await run(command) }),
-      }),
-      ws: () => ({ delete: async () => {} }),
-    });
-    const source = await runtime.resolveRemoteDockerfileBuildSource(
-      { ...config(rollback), buildContextDirectory: "lib/auth" },
-      new BuildLogger(),
-    );
-    expect(source.dockerfile).toBe("FROM scratch\nCOPY version.txt /version\n");
-    await source.cleanup();
   });
 });
 

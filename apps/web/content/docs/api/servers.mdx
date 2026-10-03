@@ -5,13 +5,92 @@ description: Register and operate servers through the SDK or REST API.
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-Servers are the hosts where Openship builds and runs applications. Register SSH connection details,
-check required components, and install what the target needs. Server administration requires the relevant
-permissions and host execution policy. These operations are self-hosted only.
+Servers identify where Openship builds and runs applications. The same `serverId`
+is used for Cloud-managed instances and connected SSH/local hosts. Responses
+include `capabilities`; offer only the actions supported by that server. The
+`terminalSessionLimit` field reports the supported concurrent host shell count.
+
+Server administration requires a server grant. Shared host access can affect all
+projects on that host. SSH setup, components and edge administration are available
+only for self-hosted connections. Openship Cloud manages those automatically.
+
+## Managed Cloud servers
+
+The normal Cloud flow creates the first shared server automatically when a
+customer chooses a plan or creates a project. To create an additional server:
+
+```ts
+const managed = await ship.servers.createManaged({ name: "Production" });
+const checkout = await ship.billing.createSubscription({
+  workspaceId: managed.id,
+  planTierId: "pro",
+  interval: "monthly",
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Complete checkout through the [billing workflow](/docs/api/billing). Verified
+payment queues server setup. Use `managed.serverId` for project placement,
+server usage, terminal access and lifecycle operations. `managed.id` is the
+subscription owner identifier used only for billing.
+
+Self-hosted and desktop installations can use these same managed servers after
+connecting an Openship Cloud account. Create a new server with `createManaged`,
+or list and link an existing server:
+
+```ts
+const available = await ship.servers.availableManaged();
+const selected = available.servers[0];
+if (selected) {
+  const linked = await ship.servers.connectManaged({ serverId: selected.id });
+  console.log(linked.serverId); // This installation's deployment destination.
+}
+```
+
+Linking requires administration of the server in Cloud and permission to add a
+server locally. The link pins the Cloud API, account and organization. Changing
+the connected account cannot silently redirect existing projects. Project
+configuration stays on the installation that created it; the managed server's
+subscription and host lifecycle remain controlled by Cloud.
+
+`servers.ensure(id)`, `resize(id, input)`, `retry(id)` and `removeManaged(id, input)`
+queue durable work. Poll `servers.get(id)` and read `managed.operation` for logs,
+errors and retry timing. An HTTP 202 means accepted; inspect operation completion
+before claiming readiness. Reads never create or resume a server.
+
+`servers.usage(id)` returns measured host usage and accessible projects. Missing
+measurements are `null`; purchased disk capacity is never substituted for bytes
+used. `servers.previewResize(id)` returns the current and purchased sizes, affected
+projects and a revision. After approval, send that revision with
+`confirmRestart: true` and an idempotency key to `servers.resize`.
+
+Reuse the same resize key after an uncertain response. A changed plan or project
+membership requires a fresh preview. Disk shrinking requires migration. Deleting
+a managed server also requires billing administration, no projects, no unsettled
+checkout and an ended subscription. Deleting one project never deletes a shared
+server or its siblings.
+
+Cloud includes projects registered by linked installations when checking whether
+a server is empty or safe to resize. A linked installation must finish or recover
+its active operation before another controller can change that server. Cloud
+cannot report complete service counts or build minutes for projects whose records
+live on another installation; those billing counters are `null` rather than a
+partial total. Host measurements and provider billing remain available.
+
+`servers.getNetworkSettings(id)` reads the supported provider network fields.
+`updateNetworkSettings(id, { internetAccess, expectedInternetAccess, confirm: true })`
+changes outbound internet only. Disabling it affects external APIs and builds
+for every project. Ingress, domains and private connectivity remain managed by
+project routing. Host terminals use the normal authenticated terminal endpoint;
+the provider supports one host terminal session per managed server at a time.
+
+Use these same operations through [MCP](/docs/api/mcp-tools), checking permissions,
+capabilities and operation results. See the [managed server guide](/docs/guides/cloud-workspaces)
+for deployment, capacity and recovery behavior.
 
 ## Register a server
 
-A server is an SSH target you deploy onto. Responses never include SSH secrets — passwords and key passphrases
+On self-hosted Openship, register a machine you own as an SSH deployment target. Responses never include SSH secrets — passwords and key passphrases
 are encrypted at rest and only decrypted inside the SSH client. See the
 [custom servers guide](/docs/guides/custom-servers).
 
@@ -501,19 +580,19 @@ shared storage before removing the cluster runtime.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Stream server monitoring data. | `servers.monitor(id, options?)` | `GET /api/system/monitor/stream`<br />`server:read` · Self-hosted |
-| List registered servers. | `servers.list()` | `GET /api/system/servers`<br />`server:list` · Self-hosted |
+| Stream server monitoring data. | `servers.monitor(id, options?)` | `GET /api/system/monitor/stream`<br />`server:read` |
+| List accessible connected or managed servers with their supported capabilities. | `servers.list()` | `GET /api/system/servers`<br />`server:list` |
 | Register an SSH server. | `servers.create(input)` | `POST /api/system/servers`<br />`server:write` · Self-hosted |
 | Test the supplied SSH connection configuration. | `servers.testConnection(input)` | `POST /api/system/test-connection`<br />`server:write` · Self-hosted |
 | Read the private networks and compute cluster associated with a server. | `servers.infrastructure(id)` | `GET /api/system/servers/:id/infrastructure`<br />`server:read` · Self-hosted |
-| Read a server’s configuration and state. | `servers.get(id)` | `GET /api/system/servers/:id`<br />`server:read` · Self-hosted |
-| Read server reachability. | `servers.reachability(id)` | `GET /api/system/servers/:id/reachability`<br />`server:read` · Self-hosted |
-| Change registered server configuration. | `servers.update(id, input)` | `PATCH /api/system/servers/:id`<br />`server:write` · Self-hosted |
+| Read server details, managed plan, live provider state and durable operation progress. | `servers.get(id)` | `GET /api/system/servers/:id`<br />`server:read` |
+| Read server reachability. | `servers.reachability(id)` | `GET /api/system/servers/:id/reachability`<br />`server:read` |
+| Change registered server configuration. | `servers.update(id, input)` | `PATCH /api/system/servers/:id`<br />`server:write` |
 | Inspect workloads affected by removing the server. | `servers.deletionPreview(id)` | `GET /api/system/servers/:id/deletion-preview`<br />`server:read` · Self-hosted |
 | Remove a server using the requested workload cleanup policy. | `servers.remove(id, input?)` | `DELETE /api/system/servers/:id`<br />`server:admin` · Self-hosted |
-| Execute an authorized command on the server. | `servers.exec(id, input)` | `POST /api/system/servers/:id/exec`<br />`server:admin` · Self-hosted |
-| Run a server health check. | `servers.check(id, input?)` | `POST /api/system/check`<br />`server:admin` · Self-hosted |
-| Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` · Self-hosted |
+| Execute an authorized command on the server. | `servers.exec(id, input)` | `POST /api/system/servers/:id/exec`<br />`server:admin` |
+| Run a server health check. | `servers.check(id, input?)` | `POST /api/system/check`<br />`server:admin` |
+| Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` |
 
 ### Private networks
 
@@ -608,6 +687,28 @@ shared storage before removing the cluster runtime.
 | Remove a port-forward configuration. | `servers.removeTunnel(id, input)` | `DELETE /api/system/servers/:id/tunnels/:tunnelId`<br />`server:write` · Self-hosted |
 | Read per-server request rate-limit configuration. | `servers.getRateLimit(id)` | `GET /api/system/servers/:id/rate-limit`<br />`server:read` · Self-hosted |
 | Update per-server request rate limits. | `servers.updateRateLimit(id, input)` | `PATCH /api/system/servers/:id/rate-limit`<br />`server:admin` · Self-hosted |
+
+### Managed servers
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Create a server identity without purchasing or provisioning resources. | `servers.createManaged(input)` | `POST /api/system/servers/managed`<br />`server:admin` |
+| List servers available through the connected Cloud account without creating resources or copying projects. | `servers.availableManaged()` | `GET /api/system/servers/managed/available`<br />`server:admin` |
+| Link an existing Cloud server to this organization after verifying its administrator and account identity; return the local serverId for deployments. | `servers.connectManaged(input)` | `POST /api/system/servers/managed/connect`<br />`server:admin` |
+| Measure host usage and accessible project disk data separately from provisioned capacity. | `servers.usage(id)` | `GET /api/system/servers/:id/usage`<br />`server:read` |
+| Queue idempotent provisioning or resume of the subscribed Docker host. | `servers.ensure(id)` | `POST /api/system/servers/:id/ensure`<br />`server:write` |
+| Retry a failed server operation using its saved provider identity and recovery checkpoint. | `servers.retry(id)` | `POST /api/system/servers/:id/retry`<br />`server:admin` |
+| Preview purchased capacity and projects that may restart, without changing the host. | `servers.previewResize(id)` | `GET /api/system/servers/:id/resize`<br />`server:read` |
+| Queue a reviewed resize with a revision, request key and explicit restart confirmation. | `servers.resize(id, input)` | `POST /api/system/servers/:id/resize`<br />`server:admin` |
+| Remove an empty server after its subscription ends and provider cleanup is confirmed. | `servers.removeManaged(id, input)` | `DELETE /api/system/servers/:id/managed`<br />`server:admin` |
+| Read provider outbound internet settings and route-managed ingress ports without starting the server. | `servers.getNetworkSettings(id)` | `GET /api/system/servers/:id/network-settings`<br />`server:read` |
+| Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity. | `servers.updateNetworkSettings(id, input)` | `PATCH /api/system/servers/:id/network-settings`<br />`server:admin` |
+
+### Observe
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read accessible deployment servers, including linked managed servers, with their capabilities and readiness. | `servers.destinations()` | `GET /api/system/servers/destinations`<br />`server:list` |
 
 ### Legacy network URLs
 

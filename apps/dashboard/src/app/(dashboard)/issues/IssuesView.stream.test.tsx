@@ -205,13 +205,15 @@ describe("Monitoring health navigation", () => {
     expect(buttons("View logs")).toHaveLength(1);
   });
 
-  it("excludes local health controls and scan-status polling in cloud mode", async () => {
+  it("offers Cloud health without exposing the control-plane administrator's fleet scan", async () => {
     mocks.selfHosted = false;
     await render();
-    expect(buttons("Health")).toHaveLength(0);
+    expect(buttons("Health")).toHaveLength(1);
     expect(buttons("Manage monitoring")).toHaveLength(0);
     expect(buttons("Re-scan")).toHaveLength(0);
     expect(mocks.rescanStatus).not.toHaveBeenCalled();
+    await click("Health");
+    expect(container.querySelector('[role="tabpanel"]')).not.toBeNull();
     expect(mocks.install).not.toHaveBeenCalled();
   });
 });

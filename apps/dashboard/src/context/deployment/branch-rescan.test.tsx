@@ -51,6 +51,8 @@ vi.mock("@/lib/api", () => ({
   getApiErrorMessage: (error: Error) => error.message,
 }));
 vi.mock("@/lib/api/folder", () => ({ folderApi: { scan: api.folderScan } }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: async () => ({ servers: [] }) } }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: async () => ({}) } }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getBranchPage: api.getBranchPage } }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { listBranches: api.getBranchPage } }));
@@ -151,7 +153,7 @@ function Harness() {
         } satisfies DeploymentContextType
       }
     >
-      <Sidebar />
+      <Sidebar destinationReady />
       {current.config.projectType === "app" && <ProjectSettings />}
       {current.config.projectType === "app" && <BuildSettings />}
     </DeploymentContext.Provider>
@@ -263,6 +265,19 @@ describe("deploy branch detection", () => {
     api.listServices.mockResolvedValueOnce({ services: [] });
     await act(async () => { await current.initializeFromProject("project-1"); });
     expect(current.config.releaseCommands).toEqual(["node migrate.js"]);
+  });
+
+  it.each([false, true])("keeps the managed server on Cloud draft restoration (empty service read: %s)", async empty => {
+    api.getInfo.mockResolvedValueOnce({ data: { project: {
+      id: "project-1", name: "Cloud app", framework: "docker-compose", gitOwner: "example", gitRepo: "demo",
+      gitBranch: "main", deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production",
+    } } });
+    api.listServices.mockResolvedValueOnce({ services: empty ? [] : services });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config).toMatchObject({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production" });
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ serverId: "managed-server" }));
+    expect(api.buildAccess).toHaveBeenCalledWith(expect.objectContaining({ deployTarget: "cloud", serverId: "managed-server" }));
   });
 
   it("seeds a new project from openship.json and lets the operator remove a command", async () => {
@@ -556,7 +571,7 @@ describe("Cloud pricing is offered only at deployment time", () => {
     await selectBranch("openship");
     api.selfHosted = false;
     api.query = "";
-    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: undefined, noPublicRoute: true }));
+    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", noPublicRoute: true }));
   }
   it("lets a paid Cloud deployment pass the former waitlist gate", async () => {
     await configureCloud();

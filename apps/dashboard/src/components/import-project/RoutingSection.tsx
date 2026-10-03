@@ -48,18 +48,19 @@ const RoutingSection: React.FC = () => {
   if (count === 0) return null;
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
+    <div className="bg-card rounded-2xl">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-start"
+        className="flex w-full items-center justify-between gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <UiIcon name="route" className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-foreground">
+            <h3 className="text-sm font-semibold text-foreground">
               {r.title} · {count}
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -74,7 +75,7 @@ const RoutingSection: React.FC = () => {
         )}
       </button>
       {open && (
-        <div className="border-t border-border/40 bg-muted/10 px-5 py-5">
+        <div className="border-t border-border/40 px-5 py-5">
           <RoutingConfigEditor value={routing} onChange={(next) => updateConfig({ routingConfig: next })} />
         </div>
       )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import Link from "next/link";
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { PLANS } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
 import { interpolate, useI18n } from "@/components/i18n-provider";

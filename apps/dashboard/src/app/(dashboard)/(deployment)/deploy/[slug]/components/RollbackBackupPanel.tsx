@@ -39,7 +39,7 @@ export function RollbackBackupPanel({
 }: {
   /** Null until the project exists (first deploy through the wizard). */
   projectId?: string | null;
-  /** The Advanced disclosure is open — don't fetch while collapsed. */
+  /** Whether the destination settings are being viewed. */
   enabled: boolean;
   artifactKind?: "image" | "files";
 }) {

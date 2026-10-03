@@ -4,39 +4,20 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  RESOURCE_TIER_ORDER,
-  RESOURCE_TIER_SPECS,
-  formatCpuCores,
   formatMemoryMb,
   type ProjectResources,
   type ResourceTier,
 } from "@repo/core";
+import { ResourceTierPicker, useResourceTierLabels } from "@/components/deploy/ResourceTierPicker";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 
-/**
- * Project → machine power. Editable in place.
- *
- * The same tier vocabulary the cloud (Oblien) picker uses, plus two things that
- * only make sense self-hosted:
- *
- *   - "No limits" is a real, DEFAULT option. The operator owns the box, so the
- *     machine is the ceiling. Openship used to silently apply the cloud free
- *     tier (0.5 vCPU · 512 MB) to every self-hosted container, which OOM-killed
- *     memory-hungry images while the deploy still reported ready.
- *   - Custom is bounded by the TARGET MACHINE's probed capacity, shown inline,
- *     instead of a hardcoded 4-core / 8 GB ceiling that made a big box
- *     impossible to use.
- *
- * Cloud keeps the presets and cannot pick "no limits" — a metered workspace has
- * to be provisioned at a concrete size. The backend enforces that too
- * (`requiresLimit`); this component just doesn't offer the option.
- */
+/** Persisted resource settings use the same limits editor as deployment setup. */
 
 /** Header doubles as the collapse toggle (same shape as RoutingConfigCard): a
- *  six-tile picker is a lot of vertical weight for a setting you touch rarely,
+ *  preset picker is a lot of vertical weight for a setting you touch rarely,
  *  so it stays tucked away with the live tier readable in the header. The
  *  divider belongs to the body, not the header — otherwise a collapsed card
  *  ends in a rule with nothing under it. */
@@ -89,27 +70,14 @@ export const ResourceSettings: React.FC = () => {
   const { t } = useI18n();
   const { showToast } = useToast();
   const r = t.projectSettings.resources;
+  const labels = useResourceTierLabels();
 
   const [view, setView] = useState<ProjectResources | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState<ResourceTier | null>(null);
-  const [selected, setSelected] = useState<ResourceTier>("unlimited");
-  const [customCpu, setCustomCpu] = useState("0");
-  const [customMemory, setCustomMemory] = useState("0");
-  const [showCustom, setShowCustom] = useState(false);
   const [open, setOpen] = useState(false);
   const loadRequest = useRef(0);
-
-  /** Seed every field from a server response. The custom inputs track the SAVED
-   *  values even when a preset was chosen, so opening Custom afterwards starts
-   *  from what's live rather than from whatever was last typed. */
-  const applyView = useCallback((data: ProjectResources) => {
-    setView(data);
-    setSelected(data.tier);
-    setCustomCpu(String(data.production.cpuCores));
-    setCustomMemory(String(data.production.memoryMb));
-  }, []);
 
   const load = useCallback(async () => {
     const request = ++loadRequest.current;
@@ -117,7 +85,7 @@ export const ResourceSettings: React.FC = () => {
     setLoadError(null);
     try {
       const { data } = await projectsApi.getResources(id);
-      if (request === loadRequest.current) applyView(data);
+      if (request === loadRequest.current) setView(data);
     } catch (err) {
       if (request === loadRequest.current) {
         setLoadError(getApiErrorMessage(err, r.loadFailed));
@@ -125,7 +93,7 @@ export const ResourceSettings: React.FC = () => {
     } finally {
       if (request === loadRequest.current) setLoading(false);
     }
-  }, [id, applyView, r.loadFailed]);
+  }, [id, r.loadFailed]);
 
   useEffect(() => {
     void load();
@@ -142,72 +110,27 @@ export const ResourceSettings: React.FC = () => {
   const capacityKnown = !!capacity && capacity.source !== "unknown";
 
   const save = async (tier: ResourceTier, values?: { cpuCores: number; memoryMb: number }) => {
-    if (saving) return;
+    if (saving) return false;
     setSaving(tier);
     try {
       const { data } = await projectsApi.updateResources(id, {
         production: tier === "custom" ? { tier, ...values } : { tier },
       });
-      applyView(data);
-      setShowCustom(false);
+      setView(data);
       showToast(r.toast.updated, "success");
+      return true;
     } catch (err) {
       showToast(getApiErrorMessage(err, r.toast.updateFailed), "error");
+      return false;
     } finally {
       setSaving(null);
     }
   };
 
-  const saveCustom = () => {
-    const cpuCores = Number(customCpu);
-    const memoryMb = Number(customMemory);
-    if (!Number.isFinite(cpuCores) || !Number.isFinite(memoryMb) || cpuCores < 0 || memoryMb < 0) {
-      showToast(r.toast.invalidValues, "error");
-      return;
-    }
-    void save("custom", { cpuCores, memoryMb });
-  };
-
-  // "unlimited" leads on self-hosted because it's the default and the honest
-  // answer for owned hardware; cloud never gets the option.
-  const tiers: ResourceTier[] = requiresLimit
-    ? [...RESOURCE_TIER_ORDER, "custom"]
-    : ["unlimited", ...RESOURCE_TIER_ORDER, "custom"];
-
-  const specLabel = (tier: ResourceTier): string => {
-    if (tier === "unlimited") return r.tiers.unlimited.spec;
-    if (tier === "custom") {
-      const cpu = Number(customCpu) || 0;
-      const mem = Number(customMemory) || 0;
-      return cpu || mem ? `${formatCpuCores(cpu)} · ${formatMemoryMb(mem)}` : r.custom.notSet;
-    }
-    const spec = RESOURCE_TIER_SPECS[tier];
-    return `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`;
-  };
-
-  /**
-   * Tier copy, and it must NEVER be a hard index into the dictionary.
-   *
-   * `RESOURCE_TIER_ORDER` (packages/core) is the source of truth for which tiers exist, and this
-   * component renders every one of them. When `xlarge` was added there without its locale keys,
-   * `r.tiers[tier].name` read `undefined.name` and took the whole Resources tab down with a
-   * runtime TypeError — a white screen for a missing translation.
-   *
-   * A locale is data that lags the code by definition (nine files, and five of them have no
-   * `resources` block at all and inherit English). So an absent key degrades to the tier's own
-   * id, which is ugly and completely usable, instead of crashing.
-   */
-  const tierCopy = (tier: ResourceTier): { name?: string; description?: string } | undefined =>
-    tier === "custom" ? r.custom : (r.tiers as Record<string, { name?: string; description?: string }>)[tier];
-  const tierName = (tier: ResourceTier): string => tierCopy(tier)?.name ?? tier;
-  const tierDescription = (tier: ResourceTier): string => tierCopy(tier)?.description ?? "";
-
-  // Collapsed-header readout of what's live. "No limits" already says it all, so
-  // it doesn't get its "Machine capacity" spec appended.
-  const summaryLabel = (): string =>
-    selected === "unlimited"
-      ? tierName("unlimited")
-      : `${tierName(selected)} · ${specLabel(selected)}`;
+  const summaryLabel = view
+    ? view.tier === "unlimited" ? labels.name(view.tier)
+      : `${labels.name(view.tier)} · ${labels.spec(view.tier, view.production)}`
+    : "";
 
   return (
     <SectionCard
@@ -230,7 +153,7 @@ export const ResourceSettings: React.FC = () => {
                 })}
               </span>
             ) : null}
-            <span className="truncate text-[12px] text-muted-foreground">{summaryLabel()}</span>
+            <span className="truncate text-[12px] text-muted-foreground">{summaryLabel}</span>
           </>
         )
       }
@@ -256,130 +179,16 @@ export const ResourceSettings: React.FC = () => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {tiers.map((tier) => {
-              const isSelected = selected === tier;
-              const isSaving = saving === tier;
-              // A preset larger than the machine can't be honored — offering it
-              // would just produce a container that never gets what it asked for.
-              const overCapacity =
-                capacityKnown &&
-                tier !== "unlimited" &&
-                tier !== "custom" &&
-                (RESOURCE_TIER_SPECS[tier].memoryMb > capacity!.memoryMb ||
-                  RESOURCE_TIER_SPECS[tier].cpuCores > capacity!.cpuCores);
-              return (
-                <button
-                  key={tier}
-                  type="button"
-                  disabled={!!saving || overCapacity}
-                  onClick={() => {
-                    if (tier === "custom") {
-                      setSelected("custom");
-                      setShowCustom(true);
-                      return;
-                    }
-                    void save(tier);
-                  }}
-                  className={`relative flex items-start gap-3 rounded-xl border-2 p-3 text-start transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isSelected
-                      ? "border-primary bg-primary/10"
-                      : "border-transparent bg-muted/60 hover:bg-muted"
-                  }`}
-                >
-                  <div
-                    className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                      isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {isSaving ? (
-                      <UiIcon name="spinner" className="size-4 animate-spin" />
-                    ) : tier === "unlimited" ? (
-                      <UiIcon name="infinity" className="size-4" />
-                    ) : tier === "custom" ? (
-                      <UiIcon name="sliders" className="size-4" />
-                    ) : (
-                      <UiIcon name="cpu" className="size-4" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-foreground">{tierName(tier)}</p>
-                    <p className={`text-[11px] ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
-                      {tierDescription(tier)}
-                    </p>
-                    <p className="mt-1 text-[11px] font-medium text-foreground/70">
-                      {overCapacity ? r.exceedsMachine : specLabel(tier)}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {showCustom && selected === "custom" && (
-            <div className="mt-3 space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
-              <p className="text-[12px] text-muted-foreground">
-                {capacityKnown
-                  ? interpolate(r.customPanel.boundedBy, {
-                      cpu: String(capacity!.cpuCores),
-                      memory: formatMemoryMb(capacity!.memoryMb),
-                    })
-                  : r.customPanel.capacityUnknown}
-              </p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[12px] font-medium text-foreground/70">
-                    {r.customPanel.cpuCores}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={capacityKnown ? capacity!.cpuCores : undefined}
-                    step="0.25"
-                    value={customCpu}
-                    onChange={(e) => setCustomCpu(e.target.value)}
-                    className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  />
-                  <span className="text-[11px] text-muted-foreground">{r.customPanel.zeroMeansNoLimit}</span>
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[12px] font-medium text-foreground/70">
-                    {r.customPanel.memory}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={capacityKnown ? capacity!.memoryMb : undefined}
-                    step="128"
-                    value={customMemory}
-                    onChange={(e) => setCustomMemory(e.target.value)}
-                    className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  />
-                  <span className="text-[11px] text-muted-foreground">{r.customPanel.zeroMeansNoLimit}</span>
-                </label>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCustom(false);
-                    setSelected(view?.tier ?? "unlimited");
-                  }}
-                  disabled={!!saving}
-                  className="flex-1 rounded-lg border border-border/60 bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
-                >
-                  {r.customPanel.cancel}
-                </button>
-                <button
-                  type="button"
-                  onClick={saveCustom}
-                  disabled={!!saving}
-                  className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {saving ? r.customPanel.saving : r.customPanel.save}
-                </button>
-              </div>
-            </div>
+          {view && (
+            <ResourceTierPicker
+              key={id}
+              value={view.tier}
+              values={view.production}
+              requiresLimit={requiresLimit}
+              capacity={capacityKnown ? capacity : undefined}
+              saving={saving}
+              onSelect={save}
+            />
           )}
 
           {/* A cap only takes effect when the container is recreated. Saying so

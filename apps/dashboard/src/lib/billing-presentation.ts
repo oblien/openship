@@ -2,9 +2,9 @@ import type { BillingState } from "./api/billing";
 
 /** Complimentary grants provide a plan without a paid provider subscription. */
 export function needsCloudPlan(state: Pick<BillingState, "tier" | "subscription" | "complimentary">): boolean {
-  if (state.tier === "free") return true;
   if (state.complimentary) return false;
-  return state.subscription === null || state.subscription?.status === "canceled";
+  if (state.subscription) return state.subscription.status === "canceled";
+  return state.tier === "free" || state.subscription === null;
 }
 
 export function hasUnlimitedCloudCredits(state: BillingState): boolean {
@@ -20,7 +20,9 @@ export function cloudUsagePercent(state: BillingState): number | null {
 
 /** Do not hide invoices or purchased credits from an earlier billing customer. */
 export function isNewCloudCustomer(state: BillingState): boolean {
-  return state.tier === "free" && state.subscription == null
+  return state.tier === "free" && state.subscription == null && !state.complimentary
+    && !state.workspace?.provisioned
+    && (state.capacity?.workspaces?.used ?? 0) === 0
     && state.balance.quotaUsed === 0 && (state.balance.quotaRemaining ?? 0) === 0
     && (state.balance.quotaLimit ?? 0) === 0;
 }

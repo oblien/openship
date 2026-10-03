@@ -32,14 +32,14 @@ describe("admin-only cloud delegation", () => {
   });
   it("rejects another customer's workspace before exporting a page", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
-    await expect(proxy.createPage({ workspace_id: "ws-other", path: "/app/dist", name: "test", slug: "test" })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(proxy.pages!.create({ workspace_id: "ws-other", path: "/app/dist", name: "test", slug: "test" })).rejects.toMatchObject({ statusCode: 404 });
     expect(h.pageCreate).not.toHaveBeenCalled();
   });
   it("pins page creation to the authenticated namespace", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
     await proxy.pages!.create({ workspace_id: "ws-own", path: "/app/dist", name: "test", slug: "test", namespace: "ns-other" });
     expect(h.pageCreate).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-own" }));
-    expect(h.spend).toHaveBeenCalledWith("org-one");
+    expect(h.spend).toHaveBeenCalledWith("org-one", undefined);
   });
   it("cannot read, replace or delete another customer's page", async () => {
     const pages = createTenantCloudAdmin("org-one", "ns-own").pages!;
@@ -52,8 +52,8 @@ describe("admin-only cloud delegation", () => {
   it("allows cleanup even when new spending is blocked", async () => {
     h.spend.mockRejectedValue(new Error("out of credits"));
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
-    await proxy.disablePage!("own-page");
-    await proxy.deletePage!("own-page");
+    await proxy.pages!.disable("own-page");
+    await proxy.pages!.delete("own-page");
     expect(h.pageDelete).toHaveBeenCalledWith("own-page");
     expect(h.spend).not.toHaveBeenCalled();
   });

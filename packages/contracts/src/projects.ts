@@ -27,6 +27,7 @@ export const ProjectSchema = Type.Object({
   packageManager: Type.Optional(nullableString()),
   localPath: Type.Optional(nullableString()),
   serverId: Type.Optional(nullableString()),
+  workspaceId: Type.Optional(nullableString()),
   clusterId: Type.Optional(nullableString()),
   activeDeploymentId: Type.Optional(nullableString()),
   runtimeMode: Type.Optional(nullableString()),

@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
 vi.mock("@/lib/api/system", () => ({
   systemApi: {
     listServers: api.list,
+    listServerDestinations: async () => ({ servers: await api.list() }),
     createServerEntry: api.createServer,
     hasNativeFilePicker: () => false,
   },
@@ -46,7 +47,9 @@ vi.mock("@/context/GitHubContext", () => ({
 }));
 vi.mock("@/context/CloudContext", () => ({
   CloudProvider: ({ children }: { children: ReactNode }) => children,
+  useCloud: () => ({ connected: false, loading: false }),
 }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/context/MailScopeContext", () => ({
   MailScopeProvider: ({ children }: { children: ReactNode }) => children,
 }));
@@ -59,12 +62,16 @@ const savedServer = {
   sshHost: "192.0.2.10",
   sshPort: 22,
   sshUser: "root",
+  capabilities: { ssh: true, exec: true, terminal: true, monitor: true, hostConfiguration: true },
 };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.list.mockResolvedValue([]);
-  api.createServer.mockResolvedValue(savedServer);
+  api.createServer.mockImplementation(async () => {
+    api.list.mockResolvedValue([savedServer]);
+    return savedServer;
+  });
   api.createDestination.mockResolvedValue({ id: "destination-new" });
   host = document.createElement("div");
   document.body.append(host);

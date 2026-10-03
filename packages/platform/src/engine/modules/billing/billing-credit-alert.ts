@@ -7,6 +7,7 @@ export function creditAlertNotification(input: {
   timestamp: unknown;
   data: Record<string, unknown>;
   organizationId: string;
+  workspaceId?: string;
   entitlement: OblienEntitlement;
   dashboardUrl: string;
 }) {
@@ -40,6 +41,7 @@ export function creditAlertNotification(input: {
 
   const url = new URL("/cloud-billing", input.dashboardUrl);
   url.searchParams.set("organizationId", organizationId);
+  if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId);
   const message =
     alert.state === "depleted"
       ? "Your Cloud credits are exhausted. New workloads are blocked. Open billing to buy more credits or review your plan."

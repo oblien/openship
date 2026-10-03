@@ -55,7 +55,7 @@ import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
 import { reconcileAllSchedules } from "@repo/platform/engine/modules/backups/triggers/cron";
-import { reconcileJobs } from "@repo/platform/engine/modules/jobs/job.service";
+import { reconcileJobs, runScheduledJob } from "@repo/platform/engine/modules/jobs/job.service";
 import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
 import { ensureOblienWebhook } from "@repo/platform/engine/lib/openship-cloud";
 import { ensureOblienDefaultQuota } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
@@ -303,6 +303,16 @@ setupWebSocket(app);
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
+// Host resources resolve their own connection; machine-local setup remains self-hosted.
+{
+  const { serverResourceRoutes } = await import("./modules/system/server-resource.routes");
+  app.route("/api/system", serverResourceRoutes);
+  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
+  app.route("/api/terminal", terminalRoutes);
+  const { migrationRoutes } = await import("./modules/migration/migration.routes");
+  app.route("/api/migration", migrationRoutes);
+}
+
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
@@ -329,19 +339,6 @@ if (env.CLOUD_MODE) {
   /** Mail server setup - self-hosted iRedMail wizard */
   const { mailRoutes } = await import("./modules/mail/mail.routes");
   app.route("/api/mail", mailRoutes);
-
-  /** Docker migration - inspect a server's Docker and adopt it as a project */
-  const { migrationRoutes } = await import("./modules/migration/migration.routes");
-  app.route("/api/migration", migrationRoutes);
-
-  /**
-   * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).
-   * Self-hosted only — exposes the host's SSH-managed servers.
-   * setupWebSocket(app) already ran unconditionally above; this
-   * branch only mounts the SSH-flavored routes.
-   */
-  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
-  app.route("/api/terminal", terminalRoutes);
 
   /** Cloud account management - connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
@@ -397,9 +394,9 @@ if (env.CLOUD_MODE) {
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
-  // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
-  // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
-  if (!env.CLOUD_MODE) {
+  // interrupted run. Per-run advisory leases leave workers on other Cloud
+  // replicas untouched; the same recovery is used by self-hosted installations.
+  {
     const { migrationOrchestrator } = await import("@repo/platform/engine/modules/migration/migration.orchestrator");
     await migrationOrchestrator.recoverInterruptedMigrations();
   }
@@ -407,6 +404,7 @@ if (env.CLOUD_MODE) {
   const runner = await getJobRunner();
   await runner.start({
     processRun: (runId) => backupOrchestrator.execute(runId),
+    processRecurring: runScheduledJob,
   });
   console.log(`[boot] backup runner: ${runner.describe()}`);
 
@@ -442,18 +440,6 @@ if (env.CLOUD_MODE) {
   void ensureOblienDefaultQuota().catch((err) =>
     console.warn("[boot] ensureOblienDefaultQuota failed:", err),
   );
-
-  // Retry incomplete namespace onboarding, bounded per boot.
-  void import("@repo/platform/engine/modules/billing/billing-namespace.provision")
-    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
-    .then((stats) => {
-      if (stats.done > 0 || stats.failed > 0) {
-        console.log(
-          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
-        );
-      }
-    })
-    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
   if (env.CLOUD_MODE) {
     void import("@repo/platform/engine/modules/cloud-support/index")

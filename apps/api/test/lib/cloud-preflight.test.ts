@@ -23,7 +23,7 @@ describe("Cloud preflight", () => {
     expect(await runCloudPreflight("org-a", { slug: "site" })).toMatchObject({ runtime: { ok: true }, slug: { available: true } });
     expect(h.createPlatform).toHaveBeenCalledWith(expect.objectContaining({ cloudNamespace: "ns-a", cloudToken: "test-namespace-token" }));
     expect(h.routes).toHaveBeenCalledWith({ namespace: "ns-a" });
-    expect(h.spend).toHaveBeenCalledWith("org-a");
+    expect(h.spend).toHaveBeenCalledWith("org-a", undefined);
   });
   it("does not consider another namespace's hostname available", async () => {
     h.routes.mockResolvedValue({ data: [{ namespace: "ns-b", hostname: "site.opsh.io" }] });
@@ -44,7 +44,7 @@ describe("Cloud preflight", () => {
   it("does not block an entitled customer on the account-level workspace quota endpoint", async () => {
     h.quota.mockRejectedValue(new Error("Account quota is unavailable for scoped tokens"));
     expect(await runCloudPreflight("org-a", {})).toMatchObject({ runtime: { ok: true } });
-    expect(h.spend).toHaveBeenCalledWith("org-a");
+    expect(h.spend).toHaveBeenCalledWith("org-a", undefined);
     expect(h.quota).not.toHaveBeenCalled();
   });
 });

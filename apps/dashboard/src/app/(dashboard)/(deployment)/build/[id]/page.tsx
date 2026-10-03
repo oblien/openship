@@ -25,7 +25,7 @@ const BuildPage: React.FC = () => {
   const deploymentId = params.id as string;
   const { state, config, connectToBuild, loadBuildSession, redeploy, maybeOpenCredentialModal } = useDeployment();
   const { t } = useI18n();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(config.workspaceId);
   const initializedDeploymentRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   /** Load failure that is NOT a missing deployment — a hydration exception,

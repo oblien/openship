@@ -10,6 +10,7 @@ const { listByProject, broadcastServiceStatus } = vi.hoisted(() => ({
   listByProject: vi.fn(),
   broadcastServiceStatus: vi.fn(),
 }));
+vi.mock("../../../config/env", () => ({ env: { CLOUD_MODE: false } }));
 vi.mock("@repo/db", () => ({ repos: { service: { listByProject } } }));
 vi.mock("../session-manager", () => ({
   broadcastServiceStatus,

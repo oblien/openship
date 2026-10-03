@@ -1,12 +1,88 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "Se detectó {proxy} en el servidor de origen",
+      "detected": "{proxy} detectado",
       "handoff": "Revisa los dominios asociados a continuación. La migración configura el proxy de entrada del servidor de destino y pide confirmación si es necesario reemplazar un proxy existente.",
       "warnings": "Revisar {count} avisos de detección"
+    },
+    "steps": {
+      "mapNoRepo": "Vincula un repositorio para asignar los contenedores detectados a sus servicios (opcional).",
+      "linkRepoDesc": "Usa Git para futuras compilaciones y despliegues automáticos.",
+      "repoOnSourceHint": "Vincula un repositorio en el siguiente paso.",
+      "mapHint": "Asocia cada contenedor con su servicio en el repositorio."
     }
   },
   "entry": {
     "tab": "Importar proyecto existente"
+  },
+  "sources": {
+    "title": "Conectar un servidor de origen",
+    "connect": "Conectar origen",
+    "disconnect": "Desconectar origen",
+    "empty": "Conecta el servidor desde el que quieres importar.",
+    "hint": "Solo para migraciones. Elimina la conexión al terminar.",
+    "importHint": "Copia aplicaciones y datos a un servidor administrado de Openship. Conserva el origen hasta confirmar el cambio."
+  },
+  "tab": {
+    "safetyTitle": "Los datos de origen se conservan.",
+    "safetyBody": "Los datos se copian. Los contenedores de origen seleccionados se detienen durante la transferencia; sus datos permanecen en el origen. Eliminar los contenedores originales requiere tu aprobación."
+  },
+  "run": {
+    "downtimeNote": "Los contenedores de origen seleccionados se detienen mientras se copian los datos y arranca el destino. Prevé un periodo de inactividad.",
+    "routeHint": "Tus servicios siguen siendo privados hasta configurar rutas. Añade o revisa sus dominios en la pestaña Dominios del proyecto."
+  },
+  "cutover": {
+    "warning": "El destino está activo. Puedes eliminar los contenedores originales o conservarlos detenidos. Los volúmenes de origen se conservan.",
+    "warningRestart": "El destino está activo. Conservar originales reinicia los contenedores de origen que estaban en ejecución como copias independientes. Eliminar originales los retira. Los volúmenes de origen se conservan."
+  },
+  "discover": {
+    "chooseProject": "Elige qué importar",
+    "chooseHint": "Selecciona un proyecto Compose o servicios individuales.",
+    "topology": "Topología",
+    "cards": "Tarjetas",
+    "viewLabel": "Vista de resultados",
+    "topologyHint": "Las líneas muestran las dependencias de inicio detectadas.",
+    "unavailable": "No disponible",
+    "selected": "Seleccionado",
+    "selectService": "Seleccionar servicio",
+    "selectNamedService": "Seleccionar {name}",
+    "selectProject": "Seleccionar todos los servicios de {name}",
+    "clearSelection": "Borrar selección",
+    "selectionKeyboard": "Pulsa Intro o Espacio para seleccionar un servicio.",
+    "expandProject": "Servicios de {name}"
+  },
+  "review": {
+    "progress": "Progreso de importación",
+    "title": "Revisar servicios",
+    "hint": "Revisa el acceso y los datos antes de migrar.",
+    "expandAll": "Expandir todo",
+    "collapseAll": "Contraer todo",
+    "configureService": "Configurar {name}",
+    "internal": "Solo interno",
+    "detected": "Detectado",
+    "finishRoute": "Completar ruta",
+    "finishRouteHint": "Completa el dominio y el puerto o elige Solo interno.",
+    "routingTitle": "Dominios y rutas",
+    "scanOptions": "Opciones de análisis",
+    "destination": "Destino",
+    "summary": "Resumen de importación",
+    "publicServices": "Servicios públicos",
+    "internalServices": "Servicios internos",
+    "dataMounts": "Montajes de datos",
+    "destinationNext": "Elige dónde ejecutar estos servicios en el siguiente paso.",
+    "importDetails": "Detalles de importación",
+    "detectProjects": "Detectar proyectos",
+    "includeManaged": "Incluir contenedores gestionados"
+  },
+  "reimport": {
+    "review": "Recuperar proyecto",
+    "reviewNamed": "Recuperar {name}",
+    "groupLabel": "Proyecto de Openship",
+    "recoverHint": "Restaura su configuración y vuelve a vincular los contenedores en ejecución.",
+    "configuration": "Configuración",
+    "snapshot": "Instantánea guardada",
+    "containerMetadata": "Desde contenedores",
+    "checkSettings": "Revisa los ajustes de compilación después de la recuperación.",
+    "chooseHint": "Selecciona un proyecto para recuperar su configuración y sus servicios activos."
   }
 }

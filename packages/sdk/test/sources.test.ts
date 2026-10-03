@@ -119,7 +119,7 @@ describe("SDK source deployments", () => {
       projectId: "existing", serverId: "server-a", name: "detected", deploymentEnvironment: "preview",
     });
     expect(s.commands[3]?.body).toMatchObject({
-      projectId: "project-a", uploadSessionId: "session/opaque", deployTarget: "server", serverId: "server-a",
+      projectId: "project-a", uploadSessionId: "session/opaque", serverId: "server-a",
       serviceIds: ["web"], environment: "preview", services: [{ name: "web", image: "node:22", ports: [], dependsOn: [], environment: {}, volumes: [] }],
     });
   });
@@ -135,6 +135,17 @@ describe("SDK source deployments", () => {
     expect(s.tar()).toContain("static-site-marker");
     expect(s.tar()).not.toContain("dependency-marker");
     expect(s.tar()).not.toContain("git-credential-marker");
+  });
+
+  it("uses the scanned managed server for creation and deployment without forcing an SSH target", async () => {
+    const s = server({ serverId: "managed-server", workspaceId: "billing-owner" });
+    await s.client.deploy({ source: { type: "files", files: { "index.js": "" } } });
+    const creation = s.commands.find(command => command.path === "/api/projects/ensure")!.body;
+    const deployment = s.commands.find(command => command.path === "/api/deployments/build/access")!.body;
+    expect(creation.serverId).toBe("managed-server");
+    expect(deployment.serverId).toBe("managed-server");
+    expect(creation).not.toHaveProperty("workspaceId");
+    expect(deployment).not.toHaveProperty("deployTarget");
   });
 
   it.each(["../escape", "/absolute", "C:/absolute", "a/../b", "a\\b", "a//b"])(

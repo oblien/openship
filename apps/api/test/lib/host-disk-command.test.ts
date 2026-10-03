@@ -32,7 +32,8 @@ describe("host-disk probe", () => {
 
   it("execs exactly one command, and only that constant", () => {
     const execCalls = [...src.matchAll(/\.exec\(([^)]*)\)/g)].map((m) => m[1].trim());
-    expect(execCalls).toEqual(["DISK_COMMAND"]);
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]).toMatch(/^DISK_COMMAND(?:, \{ timeout: \d+_?\d* \})?$/);
   });
 
   it("gates on CLOUD_MODE before resolving any executor", () => {

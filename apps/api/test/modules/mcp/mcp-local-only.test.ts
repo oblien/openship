@@ -1,19 +1,4 @@
-/**
- * A `localOnly` route is not advertised as an MCP tool on the hosted control plane.
- *
- * The bug this pins: `app.ts` mounts the jobs router unconditionally, while
- * `job.routes.ts` restricts it to self-hosted. When that restriction was applied as
- * `r.use("*", localOnly)` it never reached the route REGISTRY — Hono middleware is
- * invisible there — so `getMcpTools()` had no way to know, and all 11 jobs tools
- * were listed on the SaaS where every one of them 404s. Router-level `localOnly` is
- * now a `secureRouter` option that folds into each registered spec, which is what
- * makes this filterable at all.
- *
- * Registry entries are written at module-import time, so importing the route module
- * is what populates them; `resetMcpToolCache()` is what stops the memo from freezing
- * a list built under the wrong mode.
- */
-
+/** MCP advertises shared jobs in both modes and filters host-only operations. */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 // `vi.hoisted` because vi.mock is lifted above ordinary top-level declarations —
@@ -51,6 +36,8 @@ import { getMcpTools, resetMcpToolCache } from "../../../src/modules/mcp/mcp-too
 // Imported for its side effect: registering the jobs routes. Jobs is the module the
 // original bug was found in, and it is 100% mcp-annotated, so it is the sharpest probe.
 import "../../../src/modules/jobs/job.routes";
+import "../../../src/modules/system/server-management.routes";
+import "../../../src/modules/system/server-resource.routes";
 
 function toolPaths(): string[] {
   return getMcpTools().map((t) => `${t.method} ${t.path}`);
@@ -65,12 +52,12 @@ afterEach(() => {
   resetMcpToolCache();
 });
 
-describe("the registry knows a route is self-hosted-only", () => {
-  it("every jobs route carries localOnly in its SPEC, not just in middleware", () => {
+describe("the registry exposes jobs for connected and managed servers", () => {
+  it("jobs routes are available through the shared server execution boundary", () => {
     const jobRoutes = getRouteRegistry().filter((r) => r.module === "jobs");
     expect(jobRoutes.length, "jobs routes should be registered").toBeGreaterThan(0);
     for (const r of jobRoutes) {
-      expect(r.spec.localOnly, `${r.method} ${r.path}`).toBe(true);
+      expect(r.spec.localOnly, `${r.method} ${r.path}`).not.toBe(true);
     }
   });
 });
@@ -82,11 +69,12 @@ describe("tools/list respects the mode", () => {
     expect(paths).toContain("POST /api/jobs/");
   });
 
-  it("cloud advertises NONE of them", () => {
+  it("cloud advertises jobs for managed servers", () => {
     envMock.CLOUD_MODE = true;
     resetMcpToolCache();
     const paths = toolPaths();
-    expect(paths.filter((p) => p.includes("/api/jobs"))).toEqual([]);
+    expect(paths).toContain("GET /api/jobs/");
+    expect(paths).toContain("POST /api/jobs/");
   });
 
   it("cloud drops exactly the localOnly tools and keeps the rest", () => {

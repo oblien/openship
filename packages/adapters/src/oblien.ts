@@ -240,5 +240,18 @@ export class Oblien extends OblienSdk {
       }
       return body as T;
     };
+    // SDK 2.5 types get() as WorkloadInfo but leaves the HTTP envelope intact,
+    // unlike create() and list(). Normalize at the provider boundary so process
+    // control and server-resize recovery read the same saved workload record.
+    const getWorkload = this.workspaces.workloads.get.bind(this.workspaces.workloads);
+    this.workspaces.workloads.get = async (workspaceId, workloadId) => {
+      const response = await getWorkload(workspaceId, workloadId);
+      const workload = response.workload ?? response;
+      if (!workload || typeof workload !== "object" || Array.isArray(workload) ||
+          !("id" in workload) || typeof workload.id !== "string") {
+        throw new OblienError("Oblien returned an invalid application process record", 502, "OBLIEN_WORKLOAD_INVALID");
+      }
+      return workload as typeof response;
+    };
   }
 }

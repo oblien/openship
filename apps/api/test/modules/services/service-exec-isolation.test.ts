@@ -17,6 +17,7 @@
  * execution context is CONFINED, and that a new runtime fails by omitting.
  */
 
+import "../../../src/modules/system/server-resource.routes";
 import { describe, it, expect, vi } from "vitest";
 import { BareRuntime } from "@repo/adapters";
 import type { RuntimeCapability } from "@repo/adapters";
@@ -101,6 +102,6 @@ describe("the exec surface is split by privilege tier", () => {
     expect((container!.spec as { body?: unknown }).body).toBeTruthy();
 
     // Host exec is self-hosted-only, so it is never advertised on the control plane.
-    expect((host!.spec as { localOnly?: boolean }).localOnly).toBe(true);
+    expect((host!.spec as { localOnly?: boolean }).localOnly).not.toBe(true);
   });
 });

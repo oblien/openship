@@ -45,7 +45,7 @@ vi.mock("@repo/platform/engine/lib/domain-claims", () => ({
 }));
 vi.mock("../../lib/controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
 
-import { CloudDockerRuntime } from "@repo/adapters";
+import { CloudInfraProvider } from "@repo/adapters";
 import {
   applyCloudRouting,
   applyProjectRouting,
@@ -69,11 +69,10 @@ beforeEach(() => {
 describe("Cloud Docker route tables", () => {
   const publish = vi.fn();
   const target = vi.fn();
-  const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
-    name: "cloud",
+  const routing = Object.assign(Object.create(CloudInfraProvider.prototype), {
     publishRoute: publish,
     resolveRoutingTarget: target,
-  }) as CloudDockerRuntime;
+  }) as CloudInfraProvider;
   const web = {
     id: "web",
     name: "web",
@@ -104,7 +103,7 @@ describe("Cloud Docker route tables", () => {
     port: 8080,
     routingConfig: null,
     compositeRoutes: null,
-    cloudWorkspaceId: "shared-vm",
+    workspaceId: "shared-vm",
   };
   const liveRows = [
     { serviceId: "web", containerId: "web-container" },
@@ -115,8 +114,7 @@ describe("Cloud Docker route tables", () => {
       project: project as never,
       defs: defs as never,
       liveRows: liveRows as never,
-      runtime,
-      usesManaged: false,
+      routing,
     });
   beforeEach(() => {
     vi.clearAllMocks();
@@ -329,7 +327,7 @@ const project = (routeStrategy = "auto") => ({
     { hostname: "app.example.com", isCustomDomain: true, rootServiceId: "svc_1", locations: [] },
   ],
   slug: "app",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   webhookDomain: null,
 });
 

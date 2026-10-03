@@ -1,4 +1,17 @@
 {
+  "acquire": {
+    "connected": {
+      "label": "Connect your server",
+      "description": "Use a server you already own over SSH."
+    },
+    "managed": {
+      "label": "Get a managed server",
+      "description": "Openship Cloud handles setup, routing and HTTPS."
+    },
+    "signInHint": "Connect your Cloud account to use an existing managed server or get a new one.",
+    "chooseExisting": "Choose an existing Cloud server",
+    "useServer": "Use this server"
+  },
   "clusters": {
     "listTitle": "Server clusters",
     "listDescription": "Organize your servers into groups and manage cluster membership.",
@@ -260,6 +273,7 @@
   "detail": {
     "tabs": {
       "overview": "Overview",
+      "activity": "Activity",
       "migrations": "Migrations",
       "components": "Components",
       "github": "Git auth",
@@ -496,6 +510,13 @@
     "toastInvalidIp": "Invalid IP/CIDR format",
     "toastAlreadyWhitelisted": "Already in whitelist",
     "ports": {
+      "managedTitle": "Listening ports",
+      "managedSubtitle": "Processes listening inside this server",
+      "managedHint": "These listeners are inside your managed server. Public access is controlled by Networking and each project’s domains.",
+      "managedSummary": "{total} listening ports · {exposed} bound to network interfaces",
+      "managedLoopbackSummary": "{total} listening ports · localhost only",
+      "managedListener": "Network listener",
+      "managedInconclusiveHint": "Couldn’t read the socket table. Retry or check the server connection in Terminal.",
       "title": "Port exposure",
       "subtitle": "See which listening ports are reachable from the network",
       "introHint": "Scan every port listening on this machine and flag the ones bound to a public interface instead of loopback.",
@@ -525,7 +546,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Live SSH shells over WebSocket. Up to 3 concurrent — copy on select."
+    "description": "Live server terminal. Session limit: {count} — copy on select."
   },
   "setup": {
     "editServer": "Edit Server",

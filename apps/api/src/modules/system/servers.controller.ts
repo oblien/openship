@@ -5,6 +5,9 @@ import { param } from "../../lib/controller-helpers";
 import { operationContext, operationData } from "../../lib/operation-context";
 
 const operations = () => getPlatformKernel().servers;
+export async function serverDestinations(c: Context) {
+  return c.json(await operationData(c, operations().destinations(operationContext(c))));
+}
 export async function listServers(c: Context) {
   return c.json(await operationData(c, operations().list(operationContext(c))));
 }
@@ -34,4 +37,38 @@ export async function deleteServer(c: Context) {
 }
 export async function execOnServer(c: Context) {
   return c.json({ data: await operationData(c, operations().exec(operationContext(c), param(c, "id"), await c.req.json())) });
+}
+
+export async function createManagedServer(c: Context) {
+  return c.json(await operationData(c, operations().createManaged(operationContext(c), await c.req.json())), 201);
+}
+export async function availableManagedServers(c: Context) {
+  return c.json(await operationData(c, operations().availableManaged(operationContext(c))));
+}
+export async function connectManagedServer(c: Context) {
+  return c.json(await operationData(c, operations().connectManaged(operationContext(c), await c.req.json())), 201);
+}
+export async function serverUsage(c: Context) {
+  return c.json(await operationData(c, operations().usage(operationContext(c), param(c, "id"))));
+}
+export async function getServerNetworkSettings(c: Context) {
+  return c.json(await operationData(c, operations().getNetworkSettings(operationContext(c), param(c, "id"))));
+}
+export async function updateServerNetworkSettings(c: Context) {
+  return c.json(await operationData(c, operations().updateNetworkSettings(operationContext(c), param(c, "id"), await c.req.json())));
+}
+export async function ensureServer(c: Context) {
+  return c.json(await operationData(c, operations().ensure(operationContext(c), param(c, "id"))), 202);
+}
+export async function previewServerResize(c: Context) {
+  return c.json(await operationData(c, operations().previewResize(operationContext(c), param(c, "id"))));
+}
+export async function resizeServer(c: Context) {
+  return c.json(await operationData(c, operations().resize(operationContext(c), param(c, "id"), await c.req.json())), 202);
+}
+export async function retryServerOperation(c: Context) {
+  return c.json(await operationData(c, operations().retry(operationContext(c), param(c, "id"))), 202);
+}
+export async function removeManagedServer(c: Context) {
+  return c.json(await operationData(c, operations().removeManaged(operationContext(c), param(c, "id"), await c.req.json())), 202);
 }

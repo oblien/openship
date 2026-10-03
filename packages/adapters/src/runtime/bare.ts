@@ -58,11 +58,12 @@ import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
 import { isExcludedDocRootEntry } from "./docker-build-plan";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
-import type { ProcessSupervisor } from "./supervisor/types";
+import type { ProcessSupervisor, SupervisorFactory } from "./supervisor/types";
 import { detectSupervisor } from "./supervisor/detect";
 import { probeListeningPort } from "./port-conflict";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import { releaseCommandDeadline } from "./release-command-deadline";
+import { HostBuildForbiddenError } from "./host-build-policy";
 
 /** Parent of a POSIX path on the TARGET machine — node:path would resolve
  *  against the local platform's separator, which is wrong over SSH from Windows. */
@@ -92,6 +93,16 @@ export interface BareRuntimeOptions {
   executor?: CommandExecutor;
   /** Optional system manager for ensuring remote runtime prerequisites. */
   systemManager?: BareSystemManager;
+  /** Supply the host's process manager while keeping the shared build/release lifecycle. */
+  supervisorFactory?: SupervisorFactory;
+  /** Optional project boundary for a managed/shared execution host. */
+  projectId?: string;
+  /** Managed control planes never execute builds or read project sources locally. */
+  allowHostBuild?: boolean;
+  /** Supply uploaded/inline source through the same build pipeline as Git. */
+  prepareSource?: (config: BuildConfig, directory: string, logger: BuildLogger) => Promise<boolean>;
+  /** Host admission (subscription and availability) before billable application work. */
+  beforeWork?: () => Promise<void>;
 }
 
 const DEFAULT_WORK_DIR = "/opt/openship";
@@ -162,6 +173,7 @@ export class BareRuntime implements RuntimeAdapter {
   private readonly buildTimeout: number;
   private executor: CommandExecutor;
   private readonly systemManager: BareSystemManager | null;
+  private readonly supervisorFactory: SupervisorFactory;
   /** True if we created the executor ourselves (must dispose on cleanup) */
   private readonly ownsExecutor: boolean;
   /** Track active builds by sessionId for cancellation */
@@ -170,7 +182,8 @@ export class BareRuntime implements RuntimeAdapter {
   private _supervisor: ProcessSupervisor | null = null;
   private _supervisorPromise: Promise<ProcessSupervisor> | null = null;
 
-  constructor(opts?: BareRuntimeOptions) {
+  constructor(private readonly options: BareRuntimeOptions = {}) {
+    const opts = options;
     this.workDir = opts?.workDir ?? DEFAULT_WORK_DIR;
     this.buildTimeout = opts?.buildTimeout ?? DEFAULT_BUILD_TIMEOUT;
 
@@ -183,6 +196,8 @@ export class BareRuntime implements RuntimeAdapter {
     }
 
     this.systemManager = opts?.systemManager ?? null;
+    this.supervisorFactory = opts?.supervisorFactory ?? detectSupervisor;
+    if (opts.projectId) (this.capabilities as Set<RuntimeCapability>).add("projectContainerSweep");
   }
 
   /** The underlying command executor (local or SSH). Exposed so the
@@ -190,6 +205,10 @@ export class BareRuntime implements RuntimeAdapter {
    *  connection (mirrors how DockerRuntime exposes its client). */
   get commandExecutor(): CommandExecutor {
     return this.executor;
+  }
+
+  get scopedProjectId(): string | undefined {
+    return this.options.projectId;
   }
 
   /** A bare deployment is a host process, so "inside the instance" == the host.
@@ -213,9 +232,12 @@ export class BareRuntime implements RuntimeAdapter {
   private async supervisor(): Promise<ProcessSupervisor> {
     if (this._supervisor) return this._supervisor;
     if (!this._supervisorPromise) {
-      this._supervisorPromise = detectSupervisor(this.executor, this.workDir).then((s) => {
+      this._supervisorPromise = this.supervisorFactory(this.executor, this.workDir).then((s) => {
         this._supervisor = s;
         return s;
+      }).catch((error) => {
+        this._supervisorPromise = null;
+        throw error;
       });
     }
     return this._supervisorPromise;
@@ -225,7 +247,29 @@ export class BareRuntime implements RuntimeAdapter {
     return this.capabilities.has(cap);
   }
 
+  async listProjectContainerIds(projectId: string): Promise<string[]> {
+    this.assertProject(projectId);
+    const supervisor = await this.supervisor();
+    if (!supervisor.listProjectDeploymentIds) throw new Error("This supervisor does not support project inventory");
+    return supervisor.listProjectDeploymentIds(projectId);
+  }
+
+  /** This runtime's root is project-owned only when a project boundary was supplied. */
+  async cleanupProject(projectId: string, options?: { wipeVolumes?: boolean }): Promise<void> {
+    if (!this.options.projectId) return;
+    this.assertProject(projectId);
+    if ((await this.listProjectContainerIds(projectId)).length)
+      throw new Error("Project processes must be removed before their release files");
+    const paths = ["releases", ".builds", ".pids", projectId];
+    if (options?.wipeVolumes) paths.push("shared");
+    // The entire base is scoped to this project; never remove a shared host root.
+    for (const relative of paths) {
+      await this.executor.exec(`rm -rf -- ${sq(`${this.workDir}/${relative}`)}`);
+    }
+  }
+
   async dispose(): Promise<void> {
+    await this._supervisor?.dispose?.();
     if (this.ownsExecutor) {
       await this.executor.dispose();
     }
@@ -255,6 +299,15 @@ export class BareRuntime implements RuntimeAdapter {
     return `${this.workDir}/shared/${projectId}`;
   }
 
+  persistentPaths(projectId: string, volumes: readonly string[]) {
+    this.assertProject(projectId);
+    return [...new Set(appVolumeTargets(volumes))].map(relative => {
+      if (!relative || relative.includes("\0") || relative.split("/").some(part => !part || part === "." || part === ".."))
+        throw new Error("Persistent paths must stay inside the application directory");
+      return { relative, source: `${this.sharedDir(projectId)}/${relative}`, target: `/app/${relative}` };
+    });
+  }
+
   /**
    * Repoint the release's persistent paths at `shared/`, so a redeploy doesn't
    * take the app's data with the old release.
@@ -277,13 +330,11 @@ export class BareRuntime implements RuntimeAdapter {
     strict = false,
     signal?: AbortSignal,
   ): Promise<void> {
-    const targets = appVolumeTargets(volumes ?? []);
+    const targets = this.persistentPaths(projectId, volumes ?? []);
     if (targets.length === 0) return;
 
-    const shared = this.sharedDir(projectId);
-    for (const relative of targets) {
+    for (const { relative, source: sharedPath } of targets) {
       signal?.throwIfAborted();
-      const sharedPath = `${shared}/${relative}`;
       const releasePath = `${releaseDir}/${relative}`;
       try {
         if (!(await this.executor.exists(sharedPath))) {
@@ -307,7 +358,7 @@ export class BareRuntime implements RuntimeAdapter {
         });
       } catch (err) {
         signal?.throwIfAborted();
-        if (strict) throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
+        if (strict || this.options.projectId) throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
         log?.({
           timestamp: new Date().toISOString(),
           message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
@@ -441,6 +492,11 @@ export class BareRuntime implements RuntimeAdapter {
   // ── Build lifecycle ────────────────────────────────────────────────────
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
+    this.assertProject(config.projectId);
+    if (this.options.allowHostBuild === false && (config.buildStrategy === "local" || config.localPath)) {
+      throw new HostBuildForbiddenError("Managed builds execute on the selected server; local control-plane sources are unavailable");
+    }
+    await this.options.beforeWork?.();
     const log = logger ?? new BuildLogger();
 
     // "local" = build on the API host, then transfer output to the target.
@@ -597,6 +653,8 @@ export class BareRuntime implements RuntimeAdapter {
     await this.executor.rm(dir);
     await this.executor.mkdir(dir);
 
+    const sourceStaged = await this.options.prepareSource?.(config, dir, log);
+
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
       exec: async (command, logCb) => {
@@ -626,7 +684,7 @@ export class BareRuntime implements RuntimeAdapter {
       writeSecretFile: (p, content) => this.executor.writeFile(p, content),
     };
 
-    const result = await runBuildPipeline(buildEnv, config, log);
+    const result = await runBuildPipeline(buildEnv, sourceStaged ? { ...config, sourceStaged: true } : config, log);
     return {
       sessionId: config.sessionId,
       status: result.status,
@@ -692,6 +750,8 @@ export class BareRuntime implements RuntimeAdapter {
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
   async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
+    this.assertProject(config.projectId);
+    await this.options.beforeWork?.();
     // Adopt mode: attach to an already-running, externally-supervised process
     // (e.g. the Openship control plane launched by `openship up`). We never
     // promote a build artifact or start a supervisor unit — that would bind a
@@ -768,6 +828,7 @@ export class BareRuntime implements RuntimeAdapter {
         workDir,
         startCommand: startBinPath ? `${startBinPath} && ${resolvedStart}` : resolvedStart,
         port: config.port,
+        ports: config.portless ? [] : [...new Set([config.port, ...(config.publicEndpoints ?? []).map(endpoint => endpoint.port ?? config.port)])],
         env,
       });
     } catch (err) {
@@ -805,6 +866,8 @@ export class BareRuntime implements RuntimeAdapter {
     onLog: LogCallback,
     opts?: ReleaseCommandOptions,
   ): Promise<void> {
+    this.assertProject(config.projectId);
+    await this.options.beforeWork?.();
     const artifactPath = config.imageRef;
     if (!artifactPath) throw new Error("Release commands require a staged build artifact");
     // A forward deploy may reuse the active release for an environment refresh.
@@ -1108,31 +1171,42 @@ export class BareRuntime implements RuntimeAdapter {
   }
 
   async makeActive(input: RollbackInput): Promise<MakeActiveResult> {
+    this.assertProject(input.to.projectId);
+    if (input.from && input.from.projectId !== input.to.projectId)
+      throw new Error("Rollback releases must belong to the same project");
     // Nohup has no saved restart configuration; a removed systemd unit cannot
     // restart either. Refuse before stopping the currently serving process.
     if (!await this.canRestoreUnit(input.to)) {
       throw new Error(`Cannot restart deployment ${input.to.id} from its retained unit. Redeploy it from source.`);
     }
-    if (input.from?.containerId) {
-      try {
-        await this.stop(input.from.containerId);
-      } catch {
-        // already stopped / gone — ignore
-      }
+    const targetId = input.to.containerId!;
+    const previousId = input.from?.containerId;
+    if (previousId === targetId) return { containerId: targetId };
+    const supervisor = await this.supervisor();
+    const restorePrevious = previousId && await supervisor.isRunning(previousId);
+    let activationStarted = false;
+    try {
+      if (previousId) await this.stop(previousId);
+      activationStarted = true;
+      await this.start(targetId);
+    } catch (error) {
+      const failures: unknown[] = [error];
+      // A start can fail after spawning the process. Free its port before
+      // restoring the current release, and keep both failures observable.
+      if (activationStarted) await this.stop(targetId).catch(failure => failures.push(failure));
+      if (restorePrevious) await this.start(previousId!).catch(failure => failures.push(failure));
+      if (failures.length > 1)
+        throw new AggregateError(failures, "Rollback failed and the previous process could not be fully restored", { cause: error });
+      throw error;
     }
-    await this.start(input.to.containerId!);
-    return { containerId: input.to.containerId! };
+    return { containerId: targetId };
   }
 
   async archive(deployment: DeploymentRef): Promise<void> {
     // Stop the supervisor unit. Release dir is intentionally NOT
     // removed — it's the artifact for future makeActive.
     if (!deployment.containerId) return;
-    try {
-      await this.stop(deployment.containerId);
-    } catch {
-      // already stopped — ignore
-    }
+    if (!isArtifactPathRef(deployment.containerId)) await this.stop(deployment.containerId);
   }
 
   async purge(deployment: DeploymentRef): Promise<void> {
@@ -1177,12 +1251,20 @@ export class BareRuntime implements RuntimeAdapter {
 
   async getContainerInfo(containerId: string): Promise<ContainerInfo> {
     const sv = await this.supervisor();
+    if (sv.getInfo) return sv.getInfo(containerId);
     const running = await sv.isRunning(containerId);
 
     return {
       containerId,
       status: running ? "running" : "stopped",
     };
+  }
+
+  private assertProject(projectId: string) {
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(projectId)) throw new Error("Invalid project identity");
+    if (this.options.projectId && this.options.projectId !== projectId) {
+      throw new Error("Application does not belong to this runtime's project");
+    }
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {

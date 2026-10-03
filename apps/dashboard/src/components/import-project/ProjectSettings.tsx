@@ -9,6 +9,7 @@ import { STACKS } from "@repo/core";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useI18n } from "@/components/i18n-provider";
 import type { FrameworkId } from "./types";
+import { Button } from "@/components/ui/button";
 
 const ProjectSettings: React.FC = () => {
   const { config, updateConfig } = useDeployment();
@@ -60,11 +61,11 @@ const ProjectSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Framework - auto-detected state */}
       {isAutoDetected && !showFrameworkPicker && detectedFw && (
-        <div className="bg-card rounded-2xl border border-border/50 p-5">
-          <label className="text-[15px] font-semibold text-foreground mb-3 block">
+        <div className="bg-card rounded-2xl p-5">
+          <p className="text-sm font-semibold text-foreground mb-3">
             {t.importProject.projectSettings.framework}
-          </label>
-          <div className="flex items-center justify-between p-3.5 rounded-xl border border-border/50 bg-muted/40">
+          </p>
+          <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-card">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
                 {detectedFw.icon("var(--primary)")}
@@ -74,32 +75,33 @@ const ProjectSettings: React.FC = () => {
                   {detectedFw.name}
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-[10px] font-medium text-primary">
-                    <UiIcon name="sparkles" className="size-2.5" />
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-xs font-medium text-primary">
+                    <UiIcon name="sparkles" className="size-3" />
                     {t.importProject.projectSettings.detected}
                   </span>
                 </div>
               </div>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleChangeClick}
-              className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
             >
               {t.importProject.projectSettings.change}
               <UiIcon name="chevron-down" className="size-3.5" />
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {/* Framework - full picker */}
       {(!isAutoDetected || showFrameworkPicker) && (
-        <div className="bg-card rounded-2xl border border-border/50 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-[15px] font-semibold text-foreground">
+        <div className="bg-card rounded-2xl p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <p className="text-sm font-semibold text-foreground">
               {t.importProject.projectSettings.framework}
-            </label>
+            </p>
             {showFrameworkPicker && detectedFw && (
               <button
                 type="button"
@@ -118,16 +120,17 @@ const ProjectSettings: React.FC = () => {
           </div>
 
           {/* Category tabs */}
-          <div className="flex flex-wrap gap-1 p-1 bg-muted/50 rounded-lg mb-4 w-fit max-w-full">
+          <div className="flex flex-wrap gap-1 mb-4">
             {stackCategories.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setActiveTab(cat.id)}
-                className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all ${
+                aria-pressed={activeTab === cat.id}
+                className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                   activeTab === cat.id
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
               >
                 {t.importProject.categories[cat.id]}
@@ -144,7 +147,8 @@ const ProjectSettings: React.FC = () => {
                   key={fw.id}
                   onClick={() => handleFrameworkChange(fw.id)}
                   type="button"
-                  className={`flex flex-col items-center gap-2.5 p-3.5 rounded-xl border transition-all ${
+                  aria-pressed={isSelected}
+                  className={`flex min-w-0 flex-col items-center gap-2.5 p-3.5 rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                     isSelected
                       ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                       : "border-border/50 hover:border-border hover:bg-muted/30"
@@ -153,14 +157,14 @@ const ProjectSettings: React.FC = () => {
                   <div className="w-8 h-8 flex items-center justify-center">
                     {fw.icon(isSelected ? "var(--primary)" : "var(--foreground)")}
                   </div>
-                  <span className={`text-xs font-medium ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
+                  <span className={`max-w-full break-words text-xs font-medium ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
                     {fw.name}
                   </span>
                 </button>
               );
             })}
           </div>
-          <p className="text-sm text-muted-foreground mt-3">
+          <p className="text-xs text-muted-foreground mt-3">
             {t.importProject.projectSettings.selectHint}
           </p>
         </div>

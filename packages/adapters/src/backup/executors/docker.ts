@@ -14,6 +14,7 @@
 
 import type Dockerode from "dockerode";
 import { PassThrough, Readable } from "node:stream";
+import { posix } from "node:path";
 import { safeErrorMessage, withTimeout, shellQuote } from "@repo/core";
 import { DockerRuntime, resolveExecExitCode } from "../../runtime/docker";
 import { demuxDockerStream } from "../../runtime/docker-demux";
@@ -318,6 +319,7 @@ export class DockerBackupExecutor implements BackupExecutor {
   }
 
   async listSources(service: ServiceHandle): Promise<BackupSource[]> {
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     // Two sources of truth:
     //  1. Live container's actual Mounts (authoritative when the
     //     service is deployed). Captures Docker's resolution of relative
@@ -342,11 +344,9 @@ export class DockerBackupExecutor implements BackupExecutor {
         const sources: BackupSource[] = [];
         for (const [i, mount] of mounts.entries()) {
           if (mount.Type !== "volume" && mount.Type !== "bind") continue;
-          if (
-            mount.Type === "bind" &&
-            (!mount.Destination ||
-              !(await this.containerPathIsDirectory(container, mount.Destination)))
-          ) {
+          const file = mount.Type === "bind" &&
+            (!mount.Destination || !(await this.containerPathIsDirectory(container, mount.Destination)));
+          if (file && !service.includeFileBinds) {
             continue;
           }
           sources.push({
@@ -354,8 +354,10 @@ export class DockerBackupExecutor implements BackupExecutor {
             target: mount.Destination ?? "",
             source: mount.Name ?? mount.Source ?? "",
             type: mount.Type,
+            ...(file ? { isDirectory: false } : {}),
           });
         }
+        await this.runtime.assertBackupAccess(service.projectId, { sources: sources.map(source => source.source) });
         return sources;
       }
     }
@@ -388,6 +390,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       })
       .filter((x): x is BackupSource => x !== null);
 
+    await this.runtime.assertBackupAccess(service.projectId, { sources: sources.map(source => source.source) });
     if (!sources.some((source) => source.type === "bind")) return sources;
     await this.ensureImage(HELPER_IMAGE);
 
@@ -395,6 +398,8 @@ export class DockerBackupExecutor implements BackupExecutor {
     for (const source of sources) {
       if (source.type !== "bind" || (await this.declaredBindIsDirectory(source.source))) {
         backupable.push(source);
+      } else if (service.includeFileBinds) {
+        backupable.push({ ...source, isDirectory: false });
       }
     }
     return backupable;
@@ -411,6 +416,7 @@ export class DockerBackupExecutor implements BackupExecutor {
    */
   async readContainerEnv(service: ServiceHandle): Promise<Record<string, string>> {
     if (!service.containerId) return {};
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       const data = await this.dockerode.getContainer(service.containerId).inspect();
       const pairs = ((data.Config?.Env ?? []) as string[]) ?? [];
@@ -439,6 +445,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       );
     }
 
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     const container = this.dockerode.getContainer(service.containerId);
     const exec = await container.exec({
       Cmd: cmd,
@@ -501,13 +508,17 @@ export class DockerBackupExecutor implements BackupExecutor {
     // unchanged because the shell strips the quotes before exec.
     const excludeArgs = (opts?.exclude ?? []).flatMap((p) => ["--exclude", shellQuote(p)]);
     const tarFlags = compressionFlag(compression);
-    const tarCmd = `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} .`;
+    const isFile = source.type === "bind" && source.isDirectory === false;
+    if (opts?.allowEmpty && source.type === "volume") await this.dockerode.getVolume(source.source).inspect();
+    const tarCmd = `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} ${isFile ? "file" : "."}`;
     const helperImage = compression === "zstd" ? "alpine:3" : HELPER_IMAGE;
 
     await this.ensureImage(helperImage);
 
     const hostConfig: Dockerode.HostConfig = {
-      Binds: [`${source.source}:/mnt:ro`],
+      ...(source.type === "bind"
+        ? { Mounts: [{ Type: "bind" as const, Source: source.source, Target: `/mnt${isFile ? "/file" : ""}`, ReadOnly: true }] }
+        : { Binds: [`${source.source}:/mnt:ro`] }),
       // OFF, for the reason demuxContainerStream already documents but this line
       // used to contradict: AutoRemove lets the daemon reap the helper before
       // container.wait() answers and before the attach stream has drained, which
@@ -574,7 +585,7 @@ export class DockerBackupExecutor implements BackupExecutor {
             // the operator has `payloadConfig.sourceIds` to narrow the policy. Silence
             // is the only outcome that cannot be recovered from.
             `SRC=${shellQuote(sourceId)}`,
-            `[ -n "$(ls -A /mnt 2>/dev/null)" ] || { echo "openship: backup source $SRC is ` +
+            opts?.allowEmpty ? "true" : `[ -n "$(ls -A /mnt 2>/dev/null)" ] || { echo "openship: backup source $SRC is ` +
               `empty or missing on this host, so this archive would contain nothing. ` +
               `Refusing to record it as a backup. If it is a mount, check that it is ` +
               `mounted; if it is empty on purpose, narrow the policy's sourceIds." >&2; ` +
@@ -658,6 +669,22 @@ export class DockerBackupExecutor implements BackupExecutor {
     const helperImage = compression === "zstd" ? "alpine:3" : HELPER_IMAGE;
     await this.ensureImage(helperImage);
 
+    const isFile = opts?.sourceIsFile ?? (source.type === "bind" && source.isDirectory === false);
+    if (isFile) {
+      if (source.type !== "bind") throw new Error("A file archive requires a bind-file destination");
+      // Docker creates a missing Binds source as a directory. Create only this
+      // file first, through the destination daemon, so its mount type is exact.
+      await this.withHelper({
+        Image: helperImage, NetworkDisabled: true,
+        HostConfig: { Binds: [`${posix.dirname(source.source)}:/destination`], AutoRemove: false },
+        Cmd: ["sh", "-ec", `path=${shellQuote(`/destination/${posix.basename(source.source)}`)}; [ ! -d "$path" ]; if [ ! -e "$path" ]; then touch "$path"; fi`],
+      }, async helper => {
+        await helper.start();
+        const exit = await helper.wait();
+        if (exit.StatusCode !== 0) throw new Error(`Cannot prepare file destination ${source.source}`);
+      });
+    }
+
     // ORDER IS THE FIX HERE, and it is the difference between a failed restore and
     // destroyed data.
     //
@@ -695,7 +722,7 @@ export class DockerBackupExecutor implements BackupExecutor {
           'restore helper. Refusing to clear the target; your data is untouched." >&2; exit 90; }'
         : null,
       // Only now, with every tool proven present.
-      opts?.clearTarget ? "find /mnt -mindepth 1 -delete 2>/dev/null || true" : null,
+      opts?.clearTarget && !isFile ? "find /mnt -mindepth 1 -delete 2>/dev/null || true" : null,
     ]
       .filter(Boolean)
       .join("\n");
@@ -709,7 +736,7 @@ export class DockerBackupExecutor implements BackupExecutor {
         // /containers/{id}/wait answered, and the exit status was then unknowable.
         // withHelper reaps instead — which also plugs a leak AutoRemove never
         // covered, since it only fires for a container that actually started.
-        HostConfig: { Binds: [`${source.source}:/mnt`], AutoRemove: false },
+        HostConfig: { Binds: [`${source.source}:/mnt${isFile ? "/file" : ""}`], AutoRemove: false },
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
@@ -1006,37 +1033,41 @@ export class DockerBackupExecutor implements BackupExecutor {
     sourceId: string,
   ): Promise<{ exists: boolean; empty: boolean }> {
     const source = matchBackupSource(await this.listSources(service), sourceId);
-    if (!source || source.type !== "volume" || !source.source) {
-      return { exists: false, empty: true };
+    if (!source || !["volume", "bind"].includes(source.type) || !source.source) {
+      throw new Error(`Cannot inspect data source ${sourceId}`);
     }
-    try {
+    if (source.type === "volume") try {
       await this.dockerode.getVolume(source.source).inspect();
-    } catch {
-      return { exists: false, empty: true }; // not present → safe to create
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return { exists: false, empty: true };
+      throw error;
     }
     await this.ensureImage(HELPER_IMAGE);
-    return this.withHelper(
+    try { return await this.withHelper(
       {
         Image: HELPER_IMAGE,
         Cmd: [
           "sh",
           "-c",
-          'if [ -z "$(ls -A /probe 2>/dev/null)" ]; then echo VOLEMPTY; else echo VOLDATA; fi',
+          'if [ -d /probe ]; then entries=$(ls -A /probe) || exit 1; [ -z "$entries" ] && echo VOLEMPTY || echo VOLDATA; elif [ -f /probe ]; then [ -s /probe ] && echo VOLDATA || echo VOLEMPTY; else exit 1; fi',
         ],
-        HostConfig: { Binds: [`${source.source}:/probe:ro`] },
+        HostConfig: { Mounts: [{ Type: source.type as "volume" | "bind", Source: source.source, Target: "/probe", ReadOnly: true }] },
         Tty: true,
         NetworkDisabled: true,
       },
       async (helper) => {
         await helper.start();
-        await helper.wait();
+        const status = await helper.wait();
         const out = await helper
           .logs({ follow: false, stdout: true, stderr: true })
           .then((b) => b.toString())
           .catch(() => "");
-        return { exists: true, empty: out.includes("VOLEMPTY") };
+        return { exists: true, empty: status.StatusCode === 0 && out.includes("VOLEMPTY") };
       },
-    );
+    ); } catch (error) {
+      if (source.type === "bind" && isMissingBindSourceError(error)) return { exists: false, empty: true };
+      throw error;
+    }
   }
 
   async pipeIntoCommand(
@@ -1050,6 +1081,7 @@ export class DockerBackupExecutor implements BackupExecutor {
         `Cannot exec in service ${service.name}: no containerId. Service must be deployed.`,
       );
     }
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     const container = this.dockerode.getContainer(service.containerId);
     const exec = await container.exec({
       Cmd: cmd,
@@ -1195,6 +1227,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
   async stopService(service: ServiceHandle): Promise<void> {
     if (!service.containerId) return;
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       await this.dockerode.getContainer(service.containerId).stop({ t: 30 });
     } catch (error) {
@@ -1207,6 +1240,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     if (!service.containerId) {
       throw new Error(`Cannot start service ${service.name}: no containerId`);
     }
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       await this.dockerode.getContainer(service.containerId).start();
     } catch (err: unknown) {
@@ -1218,6 +1252,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
   async isRunning(service: ServiceHandle): Promise<boolean> {
     if (!service.containerId) return false;
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       const data = await this.dockerode.getContainer(service.containerId).inspect();
       return !!data.State?.Running;

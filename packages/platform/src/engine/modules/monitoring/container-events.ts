@@ -44,12 +44,14 @@
  */
 
 import { safeErrorMessage } from "@repo/core";
+import { repos } from "@repo/db";
+import { activeDeploymentForProject } from "../../lib/active-deployment";
 import { trackBackgroundWork } from "../../lib/background-work";
 import {
   type ContainerLifecycleEvent,
   type RuntimeAdapter,
 } from "@repo/adapters";
-import { containerHealthEventsAvailable } from "./health-watch-policy";
+import { containerHealthEventsAvailable, isManagedServerIdle } from "./health-watch-policy";
 import { resolveDeploymentRuntimeForRead } from "@repo/platform/engine/lib/deployment-runtime";
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { isTrackedHealthContainer, parseWatchGroupKey, runHealthWatch } from "@repo/platform/engine/modules/monitoring/health-watch";
@@ -101,6 +103,7 @@ interface Subscription {
   key: string;
   serverId: string | null;
   organizationId: string;
+  projectId?: string;
   /** Held for the subscription's whole life — not disposed per sweep. */
   runtime: RuntimeAdapter | null;
   stopStream: (() => void) | null;
@@ -156,12 +159,13 @@ export async function renewEventWatchers(groupKeys: readonly string[]): Promise<
       armLease(existing);
       continue;
     }
-    const { serverId, organizationId } = parseWatchGroupKey(key);
+    const { serverId, organizationId, projectId } = parseWatchGroupKey(key);
     if (!organizationId) continue;
     const sub: Subscription = {
       key,
       serverId,
       organizationId,
+      projectId,
       runtime: null,
       stopStream: null,
       retained: false,
@@ -216,9 +220,19 @@ async function connect(sub: Subscription): Promise<void> {
     // The same read-path resolver the sweep uses, so the transport decision (local
     // socket vs SSH bridge) is made in exactly one place. Re-resolved on every
     // reconnect, which is how a credential change is picked up.
+    let savedMeta = {};
+    if (sub.projectId) {
+      const project = await repos.project.findByIdInOrganization(sub.projectId, sub.organizationId);
+      const current = project?.activeDeploymentId ? await repos.deployment.findById(project.activeDeploymentId) : null;
+      const deployment = project ? activeDeploymentForProject(project, current) : null;
+      if (!deployment || project?.serverId !== sub.serverId)
+        throw new Error("Managed event watcher no longer has an active deployment on this server");
+      savedMeta = deployment.meta ?? {};
+    }
     const { runtime } = await resolveDeploymentRuntimeForRead({
-      meta: { serverId: sub.serverId ?? undefined },
+      meta: { ...savedMeta, serverId: sub.serverId ?? undefined, runtimeMode: "docker" },
       organizationId: sub.organizationId,
+      projectId: sub.projectId,
     });
     if (sub.closed) {
       await closeTransport(runtime, sub.key);
@@ -237,7 +251,7 @@ async function connect(sub: Subscription): Promise<void> {
       return;
     }
 
-    if (sub.serverId) {
+    if (sub.serverId && !sub.projectId) {
       sshManager.retain(sub.serverId);
       sub.retained = true;
     }
@@ -252,6 +266,10 @@ async function connect(sub: Subscription): Promise<void> {
     // were not listening has no event left to replay.
     schedule(sub);
   } catch (err) {
+    if (isManagedServerIdle(err)) {
+      await teardown(sub, "managed server is stopped or starting");
+      return;
+    }
     await onClose(sub, err instanceof Error ? err : new Error(safeErrorMessage(err)));
   } finally {
     sub.connecting = false;

@@ -1,3 +1,4 @@
+import "../../../src/modules/system/server-resource.routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";

@@ -139,6 +139,7 @@ async function checkCustomDomain(
   }
 
   const expectedHost = server.sshHost;
+  if (server.workspaceId || !expectedHost) return { ok: false, detail: "This check requires a connected host. Manage Cloud routing through its workspace." };
   // Node ESM dns.promises — dynamic import keeps this module clean to
   // import in non-Node environments (e.g. unit tests against schema).
   const dns = await import("node:dns/promises");

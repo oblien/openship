@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "バックアップ設定 {count} 件 · デプロイ前: {preDeploy}",
     "backupManage": "バックアップを管理",
     "on": "有効",
-    "off": "無効"
+    "off": "無効",
+    "previewTitle": "デプロイのプレビュー",
+    "previewHint": "続行してアプリを設定します。デプロイは次のページから開始します。",
+    "back": "戻る"
   },
   "summary": {
     "buildAndDeploy": "ビルドとデプロイ:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} バージョン",
     "rollbackOther": "{count} バージョン",
     "rollbackAuto": "ロールバック: 自動",
-    "rollbackSnapshotHint": "各バージョンのコピーを保持するため、ロールバックで再ビルドは発生しません。「詳細設定」で変更できます。",
-    "rollbackGitHint": "復元可能な過去バージョンの数です。「詳細設定」で変更できます。"
+    "rollbackSnapshotHint": "各バージョンを保存するため、ロールバックで再ビルドは不要です。デプロイ設定で変更できます。",
+    "rollbackGitHint": "復元可能な過去のバージョン数です。デプロイ設定で変更できます。"
   },
   "power": {
     "heading": "パワー",

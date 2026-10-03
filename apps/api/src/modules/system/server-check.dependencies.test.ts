@@ -57,7 +57,7 @@ vi.mock("../../lib/request-context", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/ssh-manager", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  sshManager: { withExecutor: h.withExecutor, refreshAuthentication: h.refreshAuthentication },
+  sshManager: { acquire: vi.fn(async () => ({})), retain: vi.fn(), release: vi.fn(), withExecutor: h.withExecutor, refreshAuthentication: h.refreshAuthentication },
 }));
 vi.mock("../../lib/sse", () => ({ streamSSE: h.streamSSE }));
 vi.mock("@repo/platform/engine/lib/deliver-managed-image", () => ({

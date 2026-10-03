@@ -14,7 +14,7 @@ export type MigrationRunEvent =
       bytesMoved?: number | null;
       deploymentId?: string | null;
     }
-  | { type: "snapshot"; run: DockerMigrationRun & { pendingPrompt?: PromptPayload | null } }
+  | { type: "snapshot"; run: Omit<DockerMigrationRun, "recovery"> & { pendingPrompt?: PromptPayload | null } }
   | { type: "log"; line: string }
   | {
       /** Live data-move progress during `moving_data`. `movedBytes` is the

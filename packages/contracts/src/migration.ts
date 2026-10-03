@@ -1,4 +1,5 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
+import { CreateServerInputSchema } from "./servers";
 import { ResourceIdSchema } from "./deployment-resources";
 import { UpdateTransferPrefsBody } from "./settings-inputs";
 
@@ -69,7 +70,20 @@ const sourceAndTarget = {
   ...selectedServices,
   customPaths,
 };
+
+/** Intentionally excludes agent, key paths, jump hosts and local SSH options. */
+export const MigrationSourceInputSchema = Type.Object({
+  ...Type.Pick(CreateServerInputSchema, ["name", "sshHost", "sshPort", "sshUser"]).properties,
+  sshHost: Type.String({ minLength: 1, maxLength: 253 }),
+  sshAuthMethod: Type.Union([Type.Literal("password"), Type.Literal("key")]),
+  sshPassword: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+  sshPrivateKey: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
+  sshKeyPassphrase: Type.Optional(Type.String({ maxLength: 4096 })),
+}, { additionalProperties: false });
+export type MigrationSourceInput = Static<typeof MigrationSourceInputSchema>;
+
 export const MigrationRequestSchemas = {
+  source: MigrationSourceInputSchema,
   scan: Type.Object({ serverId: ResourceIdSchema, flatDocker: selectedServices.flatDocker }),
   repoCompose: Type.Object({
     owner: Type.String({ minLength: 1 }),

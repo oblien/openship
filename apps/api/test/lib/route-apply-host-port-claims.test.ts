@@ -24,7 +24,7 @@ const project = {
   id: "proj_1",
   slug: "app",
   organizationId: "org_1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   activeDeploymentId: "dep_1",
 };
 const owner = { projectId: project.id, serviceId: "svc_api", containerPort: 3000, port: 23000 };

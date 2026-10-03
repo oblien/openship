@@ -31,13 +31,19 @@ import { sharedServiceAlias, ensureSharedServiceNetwork, disconnectSharedService
 import { encrypt, decrypt } from "../../lib/encryption";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
 
 const ENVIRONMENT = "production";
 
 /** Match service/project deletion locks; a stable order also allows reciprocal links. */
-function withConnectionLocks<T>(sourceId: string, targetId: string, run: () => Promise<T>): Promise<T> {
+async function withConnectionLocks<T>(sourceId: string, targetId: string, run: () => Promise<T>): Promise<T> {
   const [first, second] = [sourceId, targetId].sort();
-  return withProjectRuntimeLock(first, () => withProjectRuntimeLock(second, run));
+  const projects = await Promise.all([repos.project.findById(first), repos.project.findById(second)]);
+  const workspaces = [...new Set(projects.flatMap(project => project?.workspaceId ? [project.workspaceId] : []))].sort();
+  const acquire = (index: number): Promise<T> => index === workspaces.length
+    ? withProjectRuntimeLock(first, () => withProjectRuntimeLock(second, run))
+    : withCloudWorkspaceActivity(workspaces[index], () => acquire(index + 1), undefined, { scope: `connection:${first}:${second}` });
+  return acquire(0);
 }
 
 /** Both connection pickers use the same uncapped, permission-filtered choices. */
@@ -300,9 +306,9 @@ async function loadConnectionEnds(
  * `openship-<slug>` networks, so treating those as different machines refuses pairs
  * that are demonstrably co-located.
  */
-type ProjectHost = { kind: "cloud" } | { kind: "box" } | { kind: "server"; id: string };
+type ProjectHost = { kind: "cloud" } | { kind: "box" } | { kind: "server"; id: string } | { kind: "workspace"; id: string };
 
-const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.id}` : h.kind);
+const hostKey = (h: ProjectHost): string => (h.kind === "server" || h.kind === "workspace" ? `${h.kind}:${h.id}` : h.kind);
 
 /**
  * Resolve which machine a project's workload sits on.
@@ -313,11 +319,8 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.i
  * running container. (`resolveSnapshotTarget` and `countActiveByServer` deliberately
  * invert this — they answer "where would the NEXT deploy go", a different question.)
  *
- * Cloud is the UNION of both signals, mirroring project-resources.service: the
- * `cloudWorkspaceId` column alone is not enough, because a self-hosted instance
- * orchestrating a cloud deploy deliberately leaves it null to stay local-canonical
- * (deployment-lifecycle, `isLocalOrchestratedCloud`) — for that shape the snapshot is
- * the only cloud signal there is, and reading the column alone declares it local.
+ * Managed projects share private Docker networks only within the same owned
+ * server. An unbound Cloud snapshot cannot establish that co-location.
  *
  * A project bound to nothing and never deployed is NOT unknown: `resolveSnapshotTarget`
  * resolves exactly that shape to the host default, so its first deploy lands on this
@@ -326,11 +329,16 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.i
  * project that was about to deploy somewhere else entirely.
  */
 async function resolveProjectHost(project: Project): Promise<ProjectHost> {
+  if (project.workspaceId) {
+    const workspace = await repos.cloudWorkspace.findByIdInOrganization(project.workspaceId, project.organizationId);
+    if (!workspace) throw new Error("Managed server is unavailable");
+    return { kind: "workspace", id: workspace.id };
+  }
   const dep = project.activeDeploymentId
     ? await findActiveDeployment(project).catch(() => null)
     : null;
   const meta = (dep?.meta ?? null) as { deployTarget?: string; serverId?: string } | null;
-  if (meta?.deployTarget === "cloud" || project.cloudWorkspaceId) return { kind: "cloud" };
+  if (meta?.deployTarget === "cloud") return { kind: "cloud" };
 
   const serverId = meta?.serverId ?? project.serverId ?? null;
   if (!serverId) return { kind: "box" };
@@ -352,7 +360,7 @@ export async function privateConnectionError(source: Project, target: Project): 
     resolveProjectHost(source), resolveProjectHost(target),
     target.activeDeploymentId ? findActiveDeployment(target) : null,
   ]);
-  if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") return "Internal mode isn't available for a cloud-hosted app yet — use Public.";
+  if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") return "Select a managed server for this Cloud project before creating a private connection.";
   if (hostKey(sourceHost) !== hostKey(targetHost)) return "Internal mode needs both projects on the same server — they're on different servers.";
   const runtimeMode = (targetDeployment?.meta as { runtimeMode?: string } | null)?.runtimeMode ?? target.runtimeMode;
   if (runtimeMode === "bare") return "Private service connections require a Docker deployment for the consuming project.";

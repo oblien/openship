@@ -337,12 +337,12 @@ export function createDomainRepo(db: Database) {
      * custom hostnames. Soft-deleted projects are excluded: their rows are
      * unreachable, and a slot that can't be used must not be charged for.
      */
-    async listHostnamesForOrg(organizationId: string): Promise<string[]> {
+    async listHostnamesForOrg(organizationId: string, workspaceId?: string | null): Promise<string[]> {
       const rows = await db
         .select({ hostname: domain.hostname })
         .from(domain)
         .innerJoin(project, eq(domain.projectId, project.id))
-        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`));
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`, projectWorkspaceScope(workspaceId)));
       return rows.map((r) => r.hostname);
     },
 
@@ -359,7 +359,7 @@ export function createDomainRepo(db: Database) {
      * Same join and filters as the counting query, so the list and the count can
      * never disagree about what occupies a slot.
      */
-    async listForOrgWithProject(organizationId: string): Promise<
+    async listForOrgWithProject(organizationId: string, workspaceId?: string | null): Promise<
       {
         id: string;
         hostname: string;
@@ -386,7 +386,7 @@ export function createDomainRepo(db: Database) {
         })
         .from(domain)
         .innerJoin(project, eq(domain.projectId, project.id))
-        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`))
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`, projectWorkspaceScope(workspaceId)))
         .orderBy(asc(project.name), asc(domain.hostname));
     },
 
@@ -812,3 +812,4 @@ export function createDomainRepo(db: Database) {
 
   return repository;
 }
+import { projectWorkspaceScope } from "./workspace-scope";

@@ -6,35 +6,60 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 6 offers
+## Version 8 offers
 
 | Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
 | --- | ---: | ---: | --- | --- | ---: | ---: |
-| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 2 GB | 3 | 1 |
-| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
-| Pro | $39 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
-| Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
+| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 4 GB | No set limit | No set limit |
+| Starter | $20 | 1,700 | 2 / 8 GB / 32 GB | 2 / 8 GB | No set limit | No set limit |
+| Pro | $39 | 3,500 | 4 / 16 GB / 128 GB | 4 / 16 GB | No set limit | No set limit |
+| Scale | $99 | 9,000 | 8 / 32 GB / 256 GB | 8 / 32 GB | No set limit | No set limit |
 
 CPU values are vCPU. New retail offers allow one service up to the full shared
-CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
+CPU and RAM pool. `limits.maxServiceResources` records that ceiling explicitly,
 including custom sizes; it does not change machine presets or workload defaults.
-Version 5 lowered Pro to $39/month. Version 6 raises Hobby storage to 25 GB and
-lets a Starter workspace use its 32 GB storage pool, so upgrading from Hobby does
-not require a smaller disk. Included credits, project/service counts and other
-capacity limits retain their v4 values.
-
-| Plan | Workspace count | Per VM: vCPU / RAM / disk |
-| --- | ---: | --- |
-| Hobby | 1 | 1 / 4 GB / 25 GB |
-| Starter | 3 | 2 / 6 GB / 32 GB |
-| Pro | 6 | 4 / 8 GB / 32 GB |
-| Scale | 12 | 8 / 12 GB / 64 GB |
+Version 8 sells one managed server per subscription. It removes the old
+project/service-count limits: a nine-service catalog app consumes the resources
+it uses on that server, not nine subscription slots. All projects share the
+purchased CPU, RAM and disk; the absence of a count limit does not make those
+resources unlimited. Prices, credits and hardware capacities are unchanged.
+The provider namespace allows exactly one VM. Another managed server has its
+own namespace and independently purchased subscription.
 
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
 
-All limits apply together. Workspace/service counts do not promise that every
-workspace or container can use its maximum size at the same time. CPU is shared
+## Custom server resources
+
+Custom is a resource configuration of the existing subscription, not another
+deployment or billing engine. `pricing.json#custom` owns the supported ranges
+and monthly additions: $5 per extra vCPU, $2.50 per extra GB RAM, and $0.10 per
+extra GB disk. It starts at Hobby's $5 for 1 vCPU, 4 GB RAM and 25 GB disk.
+
+The quote compares every retail bundle plus its resource additions and chooses
+the lowest total. A smaller configuration cannot cost more than a covering
+preset, and a bundle discount does not silently enlarge the selected server.
+For example, 1 vCPU / 4 GB / 50 GB costs $7.50; 3 vCPU / 12 GB / 80 GB receives
+Pro's bundle price of $39. Application allowances and support follow that bundle.
+80% of the additional resource charge funds additional credits at 100 credits
+per USD, on top of the bundle allowance. This remains finite metered usage,
+not guaranteed full-load runtime for the month.
+
+`GET /api/billing/subscription/quote` returns the price and a fingerprint of the
+complete offer. Checkout accepts only resources and that fingerprint; it
+recalculates all terms before invoking the existing tracked provider checkout.
+The saved Custom contract includes price, credits, application limits and
+single-server capacity. Renewals verify the saved snapshot, without reading
+new retail prices. Existing paid subscriptions are not rewritten.
+
+After a replacement subscription is paid, Billing exposes the existing server
+resize review: current and new resources, affected projects, and explicit
+restart confirmation. It uses the same revision check and durable worker as
+the server page. Disk shrinking is rejected before checkout and before resize.
+Creating a new server still follows the existing paid provisioning flow.
+
+All limits apply together. Containers cannot all use the server's maximum
+size at the same time. CPU is shared
 virtual CPU quota, not a dedicated physical core. An unpaid namespace has zero
 workspace and total capacity. Enterprise remains contact-sales; only a verified
 contract or audited operator grant can select it.
@@ -67,44 +92,42 @@ annual price and explicit funded annual allowance are published.
 
 ## Capacity enforcement
 
-- `max_workspaces` limits the allocated count, including build workspaces.
+- `max_workspaces` permits one managed server per paid subscription.
 - `max_vcpus`, `max_ram_mb`, `max_disk_gb` limit one VM.
 - `max_total_vcpus`, `max_total_ram_mb`, `max_total_disk_gb` limit the combined
   namespace allocation, including stopped VMs, managed disks and pending resizes.
-- Application project/service counts and per-container CPU/RAM are enforced by
-  Openship. The underlying VM and namespace pools are enforced by Oblien, even
-  when a caller uses the provider API directly.
+- Per-container CPU/RAM ceilings are enforced by Openship. The underlying VM
+  and namespace pools are enforced by Oblien, even when a caller uses the
+  provider API directly. Paid v8 offers impose no project/service-count cap.
 
 Openship submits its chosen policy; it does not calculate the owner's remaining
 capacity. Oblien intersects configured, paid, account and platform limits and
-reserves capacity atomically on create/resize. `readCloudCapacity` supplies the
-dashboard with provider allocations instead of estimating them from services.
+reserves capacity atomically on create/resize. `readCloudCapacity` supplies
+provider allocations for provisioning and resizing. Managed server pages show
+provisioned capacity separately from actual host CPU, memory and disk
+measurements. Project data is attributed from Docker and managed binds;
+shared images/cache/system storage is counted once.
 
-Service slots include enabled services in deployed projects, active containers,
-and accepted deployment reservations. Saving an undeployed draft consumes no
-service slots. Reservations remain until activation or worker cleanup finishes;
-redeploying the same service does not consume a second slot.
+Saved older offers can still have service-count limits. Those counts include
+enabled services in deployed projects, active containers and accepted deployment
+reservations. An undeployed draft consumes no slots, and redeploying the same
+service does not consume a second slot. New v8 offers skip count admission.
 
-An image-only Compose app gets only its service allocation plus Docker/OS room:
-a default 0.5-vCPU / 512 MB service uses a 0.5-vCPU / 1 GB host with an 8 GB disk.
-Runtime and source builds share the same pool. The SaaS engine reads Oblien's
-effective limits and allocated usage before choosing temporary build CPU/RAM;
-saved build settings are upper limits, and an unset setting uses available
-headroom. It protects the runtime allocation and does not borrow pending savings.
-After deployment, verified running container
-limits determine whether CPU/RAM can be released under the project runtime lock.
-Disks never shrink automatically. Unknown/unbounded containers prevent automatic
-downsizing. Captured running services are restored after a resize; intentionally
-stopped services stay stopped.
+Subscribed Docker workspaces use the same Docker build/runtime engine. Source
+builds use measured free host memory and CPU, within an optional saved cap; they
+do not create a temporary provider VM. Workspace activity locks coordinate
+builds, deployment changes, backups and reviewed host resizes. A host resize
+requires an explicit revision and restart confirmation, with a durable container
+checkpoint for recovery. Shared projects cannot resize or delete the host.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v6` saves the price, credits, grace, application limits and all
+`openship:<tier>:v8` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2–v6 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2–v8 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2/v3/v4/v5 subscriptions retain their original price, credits and capacity snapshot,
+Saved v2/v3/v4/v5/v6/v7 subscriptions retain their original price, credits and capacity snapshot,
 including the $40 price on existing v4 Pro subscriptions. New v5 offers use a
 distinct checkout reference so retries cannot reuse the older price.
 Version 6 raises Hobby's per-workspace and total storage limit from 16 GB to

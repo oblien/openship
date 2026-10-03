@@ -33,7 +33,7 @@ describe("Docker container information normalization", () => {
 
   it.each([
     ["running", "running"],
-    ["restarting", "running"],
+    ["restarting", "deploying"],
     ["dead", "failed"],
     ["exited", "stopped"],
   ] as const)("maps Docker state %s to runtime state %s", (state, status) => {

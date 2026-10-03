@@ -296,6 +296,7 @@ async function runWebmailInstall(
     const installed = await installApp(ctx, {
       templateId: WEBMAIL_TEMPLATE_ID,
       name: plan.name,
+      serverId: plan.serverId,
       routes: plan.routeAfterLink ? [] : plan.routes,
     });
     if (installed.kind !== "template") {
@@ -340,7 +341,7 @@ async function runWebmailInstall(
     projectId,
     serviceDeploymentMode: "services",
     deployTarget: plan.deployTarget,
-    serverId: plan.deployTarget === "server" ? plan.serverId : undefined,
+    serverId: plan.serverId,
   });
 
   return { projectId, deploymentId: dep.deployment_id };
@@ -637,7 +638,7 @@ export async function resolveWebmailSummary(
   const routed = rows ? pickCanonicalDomainRow(rows) ?? rows[0] ?? null : null;
   // No route of its own + running on the cloud = the mail VPS fronts it (see
   // the proxy variant above). Derived, so nothing has to be stored.
-  const proxied = rows !== null && !routed && !!project.cloudWorkspaceId;
+  const proxied = rows !== null && !routed && !!project.workspaceId;
   // A webmail on the mail server's OWN hostname has no domain row by design — that row
   // belongs to the mail install's certificate renewal and must stay project-less (#566,
   // see lib/mail-host-claim). Its address therefore has to come from the SERVICE's routing
@@ -691,13 +692,13 @@ async function routedServiceHostname(project: Pick<Project, "id" | "slug" | "nam
  * Idempotent: a redeploy re-points the proxy at the new URL.
  */
 export async function onWebmailDeployed(
-  project: Pick<Project, "id" | "appTemplateId" | "organizationId" | "cloudWorkspaceId">,
+  project: Pick<Project, "id" | "appTemplateId" | "organizationId" | "workspaceId">,
   deployedUrl?: string | null,
 ): Promise<void> {
   if (project.appTemplateId !== WEBMAIL_TEMPLATE_ID) return;
   // Only a CLOUD workload can need the proxy; a self-hosted webmail routes its
   // own hostname through the standard pipeline.
-  if (!project.cloudWorkspaceId || !deployedUrl) return;
+  if (!project.workspaceId || !deployedUrl) return;
 
   try {
     const mailServer = await repos.mailServer.findByWebmailProject(project.id);
@@ -757,7 +758,7 @@ export async function cleanupWebmailInstall(project: Project): Promise<string | 
   // that vhost), while skipping it leaves a proxy vhost on the mail VPS with no
   // project left to ever remove it.
   const rows: Domain[] = await listProjectRouteRows(project.id).catch(() => []);
-  if (rows.length > 0 || !project.cloudWorkspaceId) return null;
+  if (rows.length > 0 || !project.workspaceId) return null;
 
   const hostname = mailHostname(mailServer.domain);
   await withMailVpsPlatform(mailServer.serverId, project.organizationId, (platform) =>

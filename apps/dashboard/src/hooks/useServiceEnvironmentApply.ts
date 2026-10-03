@@ -11,10 +11,10 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 type ServiceTarget = { id: string; name: string };
 
 /** A service action: keep the editor open and report actual completion. */
-export function useServiceEnvironmentApply(projectId: string, onApplied: () => void | Promise<void>) {
+export function useServiceEnvironmentApply(projectId: string, onApplied: () => void | Promise<void>, workspaceId?: string | null) {
   const { t } = useI18n();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(workspaceId);
   const copy = t.projectDetail.services.detail.environmentApply;
   const [applyingServiceId, setApplyingServiceId] = useState<string | null>(null);
   const pending = useRef(false);

@@ -194,7 +194,8 @@
     "targetPending": "Beim Deploy gewählt",
     "type": "Typ",
     "typeApp": "App",
-    "typeProject": "Projekt"
+    "typeProject": "Projekt",
+    "subtextNoSource": "Verbinde eine Quelle, um dein erstes Deployment einzurichten."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: deine Änderungen behalten",
     "failedResolveDrift": "Drift konnte nicht aufgelöst werden",
     "failedCreateService": "Dienst konnte nicht erstellt werden",
-    "requestFailed": "Anfrage fehlgeschlagen"
+    "requestFailed": "Anfrage fehlgeschlagen",
+    "application": "Anwendung",
+    "applicationHint": "Wird über die Deployments dieses Projekts verwaltet.",
+    "companionsTitle": "Weitere App oder Dienst hinzufügen"
   },
   "serviceStatus": {
     "checking": "Prüfung…",

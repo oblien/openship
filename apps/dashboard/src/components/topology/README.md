@@ -27,6 +27,16 @@ routes, and shared project connections. `/scale` redirects to the project list.
 There is no second provisioning engine, deployment queue, or migration model.
 The canvas does not call mutation APIs when a node is moved or selected.
 
+Import discovery defaults to Cards and offers `TopologyCanvas`, projected from the scan by
+`migration/discovery-model.ts`. Each Compose group is independent, keyed by
+container identity. Connections show only detected startup dependencies, and
+the canvas actions select services without connecting handles or calling project
+configuration APIs. Discovery passes a null layout key so nothing is persisted.
+Both views edit the same selection and use the shared OptionCard selection surface.
+Compose and recovered Openship projects share this selector. Each expanded project
+has its own canvas with service nodes only. Recovered services are read-only, and
+the project header opens recovery in the sidebar through the existing re-import API.
+
 ## Scope and truthfulness
 
 - One logical service is one overview node. Its runtime view shows observed

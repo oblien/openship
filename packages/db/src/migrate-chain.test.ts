@@ -245,6 +245,94 @@ describe("migration chain applies to an existing, populated database", () => {
     expect(await appliedMigrations(client)).toBe(total);
   });
 
+  test("upgrades managed server identities and drops retired native placement fields", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0156_managed_servers");
+    expect(cutoff).toBeGreaterThan(0);
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec(`
+        INSERT INTO organization (id, name) VALUES ('org', 'Existing organization');
+        INSERT INTO project_app (id, organization_id, name, slug) VALUES ('group', 'org', 'Apps', 'apps');
+        INSERT INTO servers (id, organization_id, name, ssh_host, is_local) VALUES
+          ('ssh-host', 'org', 'SSH host', '192.0.2.1', false),
+          ('local-host', 'org', 'Local host', '127.0.0.1', true);
+        INSERT INTO cloud_workspace (id, organization_id, name, namespace, mode, runtime, plan_tier_id) VALUES
+          ('shared', 'org', 'Shared', 'shared-namespace', 'shared', 'docker', 'hobby'),
+          ('dedicated', 'org', 'Native', 'native-namespace', 'dedicated', 'native', 'starter');
+        INSERT INTO project (id, organization_id, app_id, environment_slug, name, slug, server_id, workspace_id, cloud_workspace_id) VALUES
+          ('ssh-app', 'org', 'group', 'ssh', 'SSH app', 'ssh-app', 'ssh-host', NULL, NULL),
+          ('local-app', 'org', 'group', 'local', 'Local app', 'local-app', 'local-host', NULL, NULL),
+          ('direct-app', 'org', 'group', 'direct', 'Direct app', 'direct-app', NULL, NULL, 'direct-provider-vm'),
+          ('shared-a', 'org', 'group', 'a', 'Shared A', 'shared-a', NULL, 'shared', NULL),
+          ('shared-b', 'org', 'group', 'b', 'Shared B', 'shared-b', NULL, 'shared', NULL),
+          ('native-app', 'org', 'group', 'native', 'Native app', 'native-app', NULL, 'dedicated', 'native-provider-vm');
+        INSERT INTO cloud_docker_workspace (owner_workspace_id, namespace, provision_key, workspace_id, image, resources, state)
+          VALUES ('shared', 'shared-namespace', 'existing-provision-key', 'shared-provider-vm', 'docker', '{"cpuCores":1,"memoryMb":4096,"diskMb":25600}', 'ready');
+      `);
+      const selectProjects = () =>
+        client.query<{ id: string; server_id: string | null; workspace_id: string | null }>(
+          "SELECT * FROM project ORDER BY id",
+        );
+      const original = (await selectProjects()).rows;
+      const bindings = (await client.query<Record<string, unknown>>("SELECT * FROM cloud_docker_workspace")).rows;
+      const workspaces = (await client.query<Record<string, unknown>>("SELECT * FROM cloud_workspace ORDER BY id")).rows;
+      const connected = (
+        await client.query<Record<string, unknown>>("SELECT * FROM servers ORDER BY id")
+      ).rows;
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      const managed = (
+        await client.query<{ id: string; workspace_id: string }>(
+          "SELECT id, workspace_id FROM servers WHERE workspace_id IS NOT NULL ORDER BY id",
+        )
+      ).rows;
+      expect(managed).toHaveLength(2);
+      for (const row of (await selectProjects()).rows) {
+        const old = original.find((project) => project.id === row.id)!;
+        const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, ...previous } = old as typeof old & Record<string, unknown>;
+        expect(row).toEqual({
+          ...previous,
+          server_id: previous.workspace_id
+            ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
+            : previous.server_id,
+        });
+      }
+      expect((await client.query("SELECT * FROM cloud_docker_workspace")).rows).toEqual(bindings.map(({ project_id: _, ...host }) => host));
+      expect((await client.query("SELECT * FROM cloud_workspace ORDER BY id")).rows).toEqual(
+        workspaces.map(({ mode: _mode, runtime: _runtime, ...owner }) => ({ ...owner, remote: null, activity: null, linked_projects: [] })),
+      );
+      expect(
+        (await client.query("SELECT * FROM servers WHERE workspace_id IS NULL ORDER BY id")).rows,
+      ).toEqual(connected.map((server) => ({
+        ...server,
+        workspace_id: null,
+        purpose: "deployment",
+        ssh_host_key: null,
+      })));
+      // Repeated startup retains execution IDs and cannot detach a managed project.
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(
+        (
+          await client.query(
+            "SELECT id, workspace_id FROM servers WHERE workspace_id IS NOT NULL ORDER BY id",
+          )
+        ).rows,
+      ).toEqual(managed);
+      await client.exec("UPDATE project SET workspace_id = NULL WHERE id = 'shared-a'");
+      expect(
+        (await selectProjects()).rows.find((project) => project.id === "shared-a")?.workspace_id,
+      ).toBe("shared");
+      await expect(
+        client.exec("UPDATE project SET server_id = 'ssh-host' WHERE id = 'shared-a'"),
+      ).rejects.toThrow(/explicit migration/);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
   for (const missingNetworkFlag of [true, false]) {
     test(`upgrades shared connections with the network flag ${missingNetworkFlag ? "missing" : "already present"}`, async () => {
       const sharedMigration = "0128_shared_service_connections";

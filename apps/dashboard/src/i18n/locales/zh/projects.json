@@ -194,7 +194,8 @@
     "targetPending": "部署时选择",
     "type": "类型",
     "typeApp": "应用",
-    "typeProject": "项目"
+    "typeProject": "项目",
+    "subtextNoSource": "连接源代码以配置首次部署。"
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}：已保留你的编辑",
     "failedResolveDrift": "解决偏差失败",
     "failedCreateService": "创建服务失败",
-    "requestFailed": "请求失败"
+    "requestFailed": "请求失败",
+    "application": "应用程序",
+    "applicationHint": "通过此项目的部署进行管理。",
+    "companionsTitle": "添加其他应用或服务"
   },
   "serviceStatus": {
     "checking": "检查中…",

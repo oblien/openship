@@ -1,6 +1,7 @@
 import { CLOUD_CAPABILITIES } from "@repo/core";
 import type { ExecutionContext } from "../../../context";
 import { assertCloudTenantScope } from "../../lib/cloud/scope";
+import { cloudFetchAsOrgOwner, type CloudIdentity } from "../../lib/cloud/transport";
 
 type ProxyResult = { status: number; payload: unknown };
 
@@ -23,15 +24,16 @@ export async function proxyToCloudBilling(
   path: string,
   method: string = "GET",
   body?: string,
+  identity?: CloudIdentity,
 ): Promise<ProxyResult> {
-  assertCloudTenantScope(ctx);
-  const { cloudClient } = await import("@repo/platform/engine/lib/cloud/client");
+  await assertCloudTenantScope(ctx);
 
   let res: Response | null;
   try {
-    res = await cloudClient({ organizationId: ctx.organizationId }).request(
+    res = await cloudFetchAsOrgOwner(ctx.organizationId,
       `/api/billing${path}`,
       { method, body },
+      identity,
     );
   } catch (err) {
     console.warn(
@@ -86,4 +88,3 @@ export async function proxyToCloudBilling(
 
   return { status: res.status as number, payload };
 }
-

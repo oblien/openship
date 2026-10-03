@@ -28,7 +28,7 @@ export interface TransferProject {
   slug: string;
   environmentName: string;
   serverId: string | null;
-  cloudWorkspaceId: string | null;
+  workspaceId: string | null;
   localPath: string | null;
 }
 

@@ -85,7 +85,7 @@ const BuildSummary: React.FC = () => {
       : (endpointHosts[0] ?? "—");
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
   return (
-    <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent border border-primary/10 space-y-3">
+    <div className="p-4 rounded-2xl bg-card space-y-3">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
         {t.deploy.buildSummary.title}
       </p>
@@ -138,7 +138,7 @@ const BuildSummary: React.FC = () => {
 
         {/* Compact app details */}
         {isApp && (
-          <div className="rounded-lg border border-border/40 bg-background/40 p-3">
+          <div className="rounded-xl bg-card p-3">
             <div className="space-y-1.5">
               {appDetailItems.map((item) => (
                 <div key={item.label} className="flex items-start gap-2 text-xs min-w-0">
@@ -155,19 +155,17 @@ const BuildSummary: React.FC = () => {
 
         {/* Compact stack/runtime details for non-app projects */}
         {!isApp && (
-          <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2">
+          <div className="rounded-xl bg-card p-3 space-y-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <div
                 className={`w-7 h-7 rounded-md flex items-center justify-center overflow-hidden shrink-0 ${
                   isServices || isDocker
-                    ? "bg-[#2496ED]/12 ring-1 ring-inset ring-[#2496ED]/25"
+                    ? "bg-info-bg"
                     : "bg-muted/60"
                 }`}
               >
                 {isServices || isDocker ? (
-                  // Docker / Compose: the whale in its brand blue on a faint
-                  // tinted chip — a light brand touch, not the full logo lockup.
-                  <UiIcon name="docker" className="size-4 text-[#2496ED]" />
+                  <UiIcon name="docker" className="size-4 text-info" />
                 ) : (
                   <UiIcon name="window" className="size-3.5 text-muted-foreground" />
                 )}

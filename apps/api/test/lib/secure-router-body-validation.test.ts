@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { IssueJobSchemas, parseInput } from "@repo/contracts";
+import { IssueJobSchemas, ManagedServerActivityInputSchema, parseInput } from "@repo/contracts";
 import { handleApiError } from "../../src/middleware/error-handler";
 
 /**
@@ -52,6 +53,11 @@ function buildApp() {
     c.json({ ok: true, got: await c.req.json() }),
   );
   r.post("/no-body", { resource: "project", action: "write" } as never, (c) => c.json({ ok: true }));
+  for (const path of ["/activity", "/activity/release"]) {
+    r.post(path, { tag: "server:admin", body: ManagedServerActivityInputSchema }, async c =>
+      c.json({ got: await c.req.json() }),
+    );
+  }
   r.post("/operation", {
     tag: "job:write", body: IssueJobSchemas.rescan.input, bodyValidatedByOperation: true,
   }, async c => {
@@ -101,6 +107,29 @@ describe("secureRouter auto-wires validation from spec.body", () => {
 
   it("still rejects malformed operation input through the shared contract", async () => {
     const response = await post(buildApp(), "/api/t/operation", { healthOnly: "yes" });
+    expect(response.status).toBe(400);
+  });
+
+  it.each(["/activity", "/activity/release"])("accepts a linked server operation through %s", async path => {
+    const input = {
+      id: randomUUID(), controllerId: "installation:cws_local", scope: "project:proj_app",
+      projects: [{ id: "proj_app", name: "Linked application" }],
+    };
+    const response = await post(buildApp(), `/api/t${path}`, input);
+    expect(await response.json()).toEqual({ got: input });
+    expect(response.status).toBe(200);
+  });
+
+  it.each([
+    { id: "invalid-operation" },
+    { controllerId: "" },
+    { scope: "server/other" },
+    { projects: [{ id: "../other", name: "Other" }] },
+    { namespace: "foreign" },
+  ])("rejects malformed linked server claims before execution: %j", async override => {
+    const response = await post(buildApp(), "/api/t/activity", {
+      id: randomUUID(), controllerId: "installation:cws_local", scope: "server", projects: [], ...override,
+    });
     expect(response.status).toBe(400);
   });
 });

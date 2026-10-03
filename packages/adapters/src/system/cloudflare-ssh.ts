@@ -61,11 +61,16 @@ export function openCloudflareSshStream(host: string): Duplex {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  // Wait for the process result before forwarding EOF. Otherwise ssh2 reports
-  // only "Connection lost before handshake" before stderr/the exit code arrive.
+  // Keep either stdio pipe closing from ending the SSH transport before the
+  // process result and stderr arrive. Duplex.from would otherwise turn stdin's
+  // early close into "Premature close", hiding the Access failure.
+  const input = new PassThrough();
   const output = new PassThrough();
+  // EPIPE can precede process close too; report the drained subprocess result.
+  child.stdin.on("error", () => {});
+  input.pipe(child.stdin);
   child.stdout.pipe(output, { end: false });
-  const stream = Duplex.from({ writable: child.stdin, readable: output });
+  const stream = Duplex.from({ writable: input, readable: output });
   // ssh2 attaches its listener immediately after this function returns. Keep an
   // error floor for teardown and for a subprocess that fails before that handoff.
   stream.on("error", () => {});
@@ -77,6 +82,10 @@ export function openCloudflareSshStream(host: string): Duplex {
     if (code === 0) output.end();
     else stream.destroy(new Error(`Cloudflare Access connection failed: ${stderr.trim() || `cloudflared exited with code ${code}`}`));
   });
-  stream.once("close", () => { if (child.exitCode === null) child.kill(); });
+  stream.once("close", () => {
+    input.unpipe(child.stdin);
+    child.stdout.unpipe(output);
+    if (child.exitCode === null) child.kill();
+  });
   return stream;
 }

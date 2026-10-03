@@ -26,7 +26,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { OptionCard } from "../[slug]/components/DeployTargetStep";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import {

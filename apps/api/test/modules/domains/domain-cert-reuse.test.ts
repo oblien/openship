@@ -128,7 +128,7 @@ const project = {
   id: "proj_1",
   organizationId: "org_1",
   activeDeploymentId: "dep_1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
 };
 const ctx = { organizationId: "org_1", userId: "u_1" } as never;
 

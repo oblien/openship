@@ -29,7 +29,7 @@ import { scanInstanceUpdates } from "@repo/platform/engine/modules/updates/updat
 import { scanInstanceModules } from "@repo/platform/engine/modules/system/server-modules.service";
 import { scanInstanceContainers } from "@repo/platform/engine/modules/system/server-containers.service";
 import { runHealthWatch, pruneResolvedIncidents } from "@repo/platform/engine/modules/monitoring/health-watch";
-import { containerHealthSupported, HEALTH_WATCH_JOB } from "../monitoring/health-watch-policy";
+import { HEALTH_WATCH_JOB } from "../monitoring/health-watch-policy";
 import { runUsageSampleSweep } from "@repo/platform/engine/modules/monitoring/usage-sampler";
 import { runAnalyticsScrapeSweep } from "@repo/platform/engine/modules/system/analytics-scraper";
 import { runDueOnceJobs } from "@repo/platform/engine/modules/jobs/job-command";
@@ -70,6 +70,13 @@ const ANALYTICS_ROLLUP_RETENTION_DAYS = 400;
 const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
+  {
+    key: "cloud:workspace-recovery",
+    label: "Cloud workspace operations",
+    defaultCron: "* * * * *",
+    available: () => true,
+    run: async () => (await import("../cloud-workspaces/cloud-workspace.service")).runCloudWorkspaceRecovery(),
+  },
   {
     key: "ssl:renew",
     label: "SSL certificate renewal",
@@ -160,8 +167,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // Only a seed — the job row is authoritative once created, so an operator with
     // many servers can stretch it from the Jobs UI without a code change.
     defaultCron: "13,43 * * * *",
-    // Cloud has no managed servers and no OpenResty: on the SaaS, traffic analytics
-    // live at Oblien's edge and are read through, never scraped into our DB.
+    // Cloud traffic analytics live at Oblien's edge and are read through,
+    // rather than scraped from a host OpenResty instance.
     available: () => platform().target !== "cloud",
     run: async () => runAnalyticsScrapeSweep(),
   },
@@ -174,9 +181,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // roughly a second, so sampling faster buys detail at a real and growing price.
     // Only a seed — the job row wins afterwards, so a large estate can stretch it.
     defaultCron: "1-59/5 * * * *",
-    // Desktop has no always-on process to sample from. Cloud is deliberately NOT
-    // excluded: CloudRuntime implements getUsage, so Oblien-hosted projects get
-    // history too — riding the health watch's `selfhosted` gate would have denied it.
+    // Docker and bare projects on connected and managed servers use the same
+    // historical sampler. Desktop has no continuously running control plane.
     available: () => platform().target !== "desktop",
     run: async () => runUsageSampleSweep(),
   },
@@ -208,15 +214,23 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     defaultCron: "29 4 * * *",
     // Matches resources:sample's gate, NOT analytics:retention-prune's. Collection
     // and pruning must be available in the same places or the difference is a leak:
-    // usage IS sampled on cloud (CloudRuntime implements getUsage), so folding this
-    // into the cloud-excluded analytics prune would have let SaaS rows accumulate
-    // forever — at ~288/day/service, indefinitely.
+    // Cloud runtime samples are stored here even though its edge traffic is not.
     available: () => platform().target !== "desktop",
     run: async () => {
       const cutoffMinute = Math.floor(
         (Date.now() - RESOURCE_USAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 60_000,
       );
       return { deleted: await repos.resourceUsage.pruneOlderThan(cutoffMinute) };
+    },
+  },
+  {
+    key: "migrations:recover",
+    label: "Migration recovery",
+    defaultCron: "* * * * *",
+    run: async () => {
+      const { migrationOrchestrator } = await import("../migration/migration.orchestrator");
+      await migrationOrchestrator.recoverInterruptedMigrations();
+      return {};
     },
   },
   {
@@ -376,8 +390,6 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     defaultCron: "* * * * *",
     // Enabled by default on supported installations. Desktop checks run while
     // Openship is running; saved disable/schedule choices survive reconciliation.
-    // Cloud workloads are excluded here and by the scanner's target resolution.
-    available: containerHealthSupported,
     onDisabled: async () => {
       const { stopAllContainerEventWatchers } = await import("../monitoring/container-events");
       await stopAllContainerEventWatchers();
@@ -388,7 +400,6 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     key: "incidents:prune",
     label: "Incident history prune",
     defaultCron: "51 4 * * *",
-    available: containerHealthSupported,
     run: async () => pruneResolvedIncidents(),
   },
   {

@@ -3,22 +3,26 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { formatCpuCores, formatMemoryMb } from "@repo/core";
 import {
   jobsApi,
   notificationsApi,
   getApiErrorMessage,
   type JobView,
-  type JobInput,
   type JobTriggerEvent,
   type JobRunState,
 } from "@/lib/api";
 import type { NotificationChannel } from "@/lib/api/notifications";
-import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Choice } from "@/components/ui/Choice";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
+import { useServerDestinations } from "@/hooks/useServerDestinations";
+import { Button } from "@/components/ui/button";
+import { scopedBillingHref } from "@/lib/billing-links";
 import { parseDotenv } from "@/lib/dotenv";
 
 type KV = { key: string; value: string };
@@ -55,6 +59,7 @@ export function JobForm({
   const j = t.jobs;
   const c = j.create;
   const { showToast } = useToast();
+  const { selfHosted } = usePlatform();
   const editing = !!job;
   const cfg = job?.actionConfig ?? undefined;
 
@@ -81,44 +86,50 @@ export function JobForm({
   const [notifyStates, setNotifyStates] = useState<JobRunState[]>(job?.notifyConfig?.states ?? ["failed"]);
   const [saving, setSaving] = useState(false);
 
-  const [servers, setServers] = useState<ServerInfo[]>([]);
+  const destinations = useServerDestinations();
+  const servers = destinations.data?.servers ?? [];
   const openAddServer = useAddServerModal();
   const addServer = () =>
     openAddServer((created) => {
-      setServers((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setServerIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
+      destinations.refresh();
     });
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [triggerCatalog, setTriggerCatalog] = useState<JobTriggerEvent[]>([]);
   const [otherJobs, setOtherJobs] = useState<JobView[]>([]);
 
   useEffect(() => {
+    let active = true;
+    setChannels([]);
+    setTriggerCatalog([]);
+    setOtherJobs([]);
     void (async () => {
-      const [srv, chn, trg, jobs] = await Promise.all([
-        systemApi.listServers().catch(() => [] as ServerInfo[]),
+      const [chn, trg, jobs] = await Promise.all([
         notificationsApi.listChannels().then((r) => r.channels).catch(() => [] as NotificationChannel[]),
         jobsApi.triggerEvents().then((r) => r.data).catch(() => [] as JobTriggerEvent[]),
         jobsApi.list().then((r) => r.data ?? []).catch(() => [] as JobView[]),
       ]);
-      setServers(srv);
+      if (!active) return;
       setChannels(chn);
       setTriggerCatalog(trg);
       setOtherJobs(jobs.filter((x) => x.kind === "custom" && x.key !== job?.key));
     })();
-  }, [job?.key]);
+    return () => { active = false; };
+  }, [job?.key, destinations.organizationId]);
 
   const canSave = useMemo(() => {
-    if (!label.trim() || !command.trim() || serverIds.length === 0 || saving) return false;
+    if (!label.trim() || !command.trim() || serverIds.length === 0 || saving || destinations.loading || destinations.error) return false;
+    if (serverIds.some(id => !servers.some(server => server.id === id && server.managed?.state !== "deleting"))) return false;
     if (scheduleType === "recurring" && !cron.trim()) return false;
     if (scheduleType === "once" && !runAt) return false;
     return true;
-  }, [label, command, serverIds, saving, scheduleType, cron, runAt]);
+  }, [label, command, serverIds, saving, scheduleType, cron, runAt, destinations.loading, destinations.error, servers]);
 
   const submit = async () => {
     if (!canSave) return;
     setSaving(true);
     try {
-      const payload: JobInput = {
+      const payload = {
         label: label.trim(),
         command: command.trim(),
         scheduleType,
@@ -133,9 +144,11 @@ export function JobForm({
         ...(editSecrets ? { secrets: rowsToMap(secretRows) } : {}),
         dependsOn,
         triggerEvents: triggerIds,
-        notifyConfig: notifyChannels.length ? { channels: notifyChannels, states: notifyStates } : null,
+        ...(notifyChannels.length ? { notifyConfig: { channels: notifyChannels, states: notifyStates } } : {}),
       };
-      const res = editing ? await jobsApi.update(job!.key, payload) : await jobsApi.create(payload);
+      const res = editing
+        ? await jobsApi.update(job!.key, { ...payload, notifyConfig: payload.notifyConfig ?? null })
+        : await jobsApi.create(payload);
       onSaved(res.data);
     } catch (err) {
       showToast(getApiErrorMessage(err, j.toast.createFailed), "error", j.toast.title);
@@ -240,22 +253,44 @@ export function JobForm({
 
         {/* Servers */}
         <Section title={c.sections.servers} icon={"server"} tone={SECTION_TONES.servers}>
-          {servers.length === 0 ? (
-            // A job with no server can't be saved, so this used to be a dead end.
-            // Add one right here and it's picked for the job being written.
-            <div className="space-y-2.5">
-              <p className="text-sm text-muted-foreground/60">{c.noServers}</p>
-              <button type="button" onClick={addServer} className={ghostBtn}>
-                <UiIcon name="plus" className="size-3.5" /> {t.widgets.shared.serverSelector.addServer}
-              </button>
+          {!selfHosted && <p className="text-sm text-muted-foreground">{c.cloudServersHint}</p>}
+          {destinations.loading ? (
+            <div aria-busy="true" aria-label={t.widgets.shared.serverSelector.loadingServers} className="h-12 animate-pulse rounded-xl bg-muted/50" />
+          ) : destinations.error ? (
+            <div role="alert" className="space-y-2">
+              <p className="text-sm text-danger">{destinations.error}</p>
+              <Button type="button" variant="secondary" size="sm" onClick={destinations.refresh}>{t.billing.plansRoute.tryAgain}</Button>
             </div>
+          ) : servers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{selfHosted ? c.noServers : t.billing.workspaces.noneAvailable}</p>
           ) : (
-            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {servers.map((s) => (
-                <Choice key={s.id} checked={serverIds.includes(s.id)} onToggle={() => toggle(serverIds, s.id, setServerIds)} label={s.name || s.sshHost} />
-              ))}
+            <div className="space-y-2">
+              {servers.map((server) => {
+                const selected = serverIds.includes(server.id);
+                const managed = server.managed;
+                const resources = managed?.resources;
+                return (
+                  <div key={server.id} className="space-y-1.5">
+                    <Choice checked={selected} onToggle={() => toggle(serverIds, server.id, setServerIds)}
+                      disabled={!selected && (managed?.state === "deleting" || server.capabilities?.exec === false)}
+                      label={server.name || server.sshHost || server.id}
+                      icon={<UiIcon name={managed ? "cloud" : "server"} className="size-4 text-muted-foreground" />}
+                      hint={resources ? `${formatCpuCores(resources.cpuCores)} · ${formatMemoryMb(resources.memoryMb)} ${t.deploy.power.ram}` : undefined} />
+                    {selected && managed?.state === "needs_plan" && (
+                      <Link href={scopedBillingHref("/billing/plans", { workspaceId: managed.id, organizationId: destinations.organizationId })}
+                        target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                        {t.billing.onboarding.choosePlan}<UiIcon name="external-link" className="size-3.5" />
+                      </Link>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
+          <Button type="button" variant="secondary" size="sm" onClick={addServer}>
+            <UiIcon name="plus" className="size-3.5" /> {selfHosted ? t.widgets.shared.serverSelector.addServer : c.addDedicatedServer}
+          </Button>
+          {!selfHosted && <p className="text-xs text-muted-foreground">{c.cloudUsageHint}</p>}
         </Section>
 
         {/* Reliability */}
@@ -286,7 +321,7 @@ export function JobForm({
                   <button key={tg.id} type="button" onClick={() => toggle(triggerIds, tg.id, setTriggerIds)}
                     aria-pressed={triggerIds.includes(tg.id)}
                     className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-1 py-1 text-start text-sm hover:bg-muted/40">
-                    <Checkbox checked={triggerIds.includes(tg.id)} size="sm" className="pointer-events-none mt-0.5" />
+                    <Checkbox checked={triggerIds.includes(tg.id)} asButton={false} size="sm" className="pointer-events-none mt-0.5" />
                     <span><span className="text-foreground">{tg.label}</span> <span className="text-muted-foreground/60">— {tg.description}</span></span>
                   </button>
                 ))}
@@ -324,7 +359,7 @@ export function JobForm({
                     <button key={s} type="button" onClick={() => toggle(notifyStates, s, setNotifyStates)}
                       aria-pressed={notifyStates.includes(s)}
                       className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
-                      <Checkbox checked={notifyStates.includes(s)} size="sm" className="pointer-events-none" />
+                      <Checkbox checked={notifyStates.includes(s)} asButton={false} size="sm" className="pointer-events-none" />
                       {j.status[s]}
                     </button>
                   ))}

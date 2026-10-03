@@ -1,153 +1,82 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPlatform, type Platform } from "../platform";
+import { BareRuntime } from "./bare";
+import { DockerRuntime } from "./docker";
+import { CloudDockerRuntime } from "./cloud/docker";
+import { CloudWorkspaceExecutor } from "./cloud/workspace-executor";
+import { CloudServerConnection } from "./cloud/server-connection";
+import { managedProjectRoutingScope } from "./cloud/routing-scope";
 
-import { CloudRuntime, isHostBuildForbiddenError } from "./cloud";
-import { blankComments } from "../system/source-scan.fixtures";
+const fixture = vi.hoisted(() => ({ client: {} as any }));
+vi.mock("../oblien", () => ({ Oblien: vi.fn(function () { return fixture.client; }) }));
+const platforms: Platform[] = [];
+const lock = { run: <T>(fn: () => Promise<T>) => fn() };
+const server = { workspaceId: "vm-a", ownerWorkspaceId: "subscription-a", projectId: "project-a", provisionLock: lock, resolveRegistryAuth: async () => undefined };
+const config = { target: "cloud" as const, cloudToken: "namespace-token", cloudNamespace: "namespace-a", cloudServer: server };
 
-/**
- * `CloudRuntime` has TWO arms that do work on the machine the API process runs on:
- *
- *   1. `buildStrategy: "local"` → runLocalBuild → `new LocalExecutor()` → a login
- *      shell running the project's own install/build commands.
- *   2. a Dockerfile build with `localPath` set → createDockerBuildContext, which
- *      mkdtemps, spawns `git` and `tar`, and reads the host filesystem. Gated on
- *      `localPath` and NEVER on buildStrategy, so it is not covered by anything that
- *      only inspects the strategy.
- *
- * On a multi-tenant control plane neither is acceptable, and the upstream gate
- * (`resolveStrategy`, which answers "server" under CLOUD_MODE) does not cover them:
- * a REUSED snapshot never asks it. A project promoted from a self-hosted install
- * carries a frozen `"local"`, so every subsequent redeploy or auto-update asked the
- * cloud runtime to build on the SaaS host — no attacker required.
- *
- * `grep -rn CLOUD_MODE packages/adapters/src/` is intentionally empty: adapters do
- * not read env. The permission is therefore INJECTED, and it defaults to DENY, so
- * forgetting to pass it fails closed. These tests pin that default, because it is the
- * opposite of every other optional knob on PlatformConfig and would otherwise look
- * like an oversight worth "tidying up".
- */
+beforeEach(() => {
+  const row = { id: "vm-a", namespace: "namespace-a", status: "running" };
+  fixture.client = { workspace: vi.fn(() => ({ get: vi.fn(async () => row), workloads: { list: vi.fn(async () => []) } })), workspaces: { get: vi.fn(async () => row), create: vi.fn(), delete: vi.fn() } };
+});
+afterEach(async () => {
+  for (const platform of platforms.splice(0)) await platform.runtime.dispose?.();
+  vi.restoreAllMocks();
+});
+async function make(overrides: Partial<Parameters<typeof createPlatform>[0]> = {}) {
+  const platform = await createPlatform({ ...config, ...overrides });
+  platforms.push(platform);
+  return platform;
+}
 
-const client = {} as never;
-
-/** Minimal BuildConfig — only the fields the refusal path reads. */
-const cfg = (over: Record<string, unknown> = {}) =>
-  ({
-    sessionId: `s_${Math.abs(Number(String(over.seed ?? 1)))}`,
-    projectId: "proj_1",
-    deploymentId: "dep_1",
-    stack: "node",
-    ...over,
-  }) as never;
-
-describe("CloudRuntime refuses host work unless explicitly allowed", () => {
-  it("defaults to DENY when no option is passed (fails closed)", async () => {
-    const rt = new CloudRuntime(client);
-    const result = await rt
-      .build(cfg({ buildStrategy: "local" }))
-      .then(() => null)
-      .catch((err: unknown) => err);
-
-    expect(result, "a local build was permitted with no allowHostBuild set").toBeInstanceOf(Error);
-    expect(isHostBuildForbiddenError(result)).toBe(true);
+describe("Cloud changes the execution destination, not the deployment runtime", () => {
+  it.each(["docker", "bare"] as const)("uses the shared %s runtime and a managed executor", async mode => {
+    const platform = await make({ runtime: mode });
+    expect(platform.runtime).toBeInstanceOf(mode === "docker" ? DockerRuntime : BareRuntime);
+    expect(platform.executor).toBeInstanceOf(CloudWorkspaceExecutor);
+    expect(platform.localHost).toBe(false);
+    expect(platform.system).toBeNull();
+    expect(fixture.client.workspaces.create).not.toHaveBeenCalled();
   });
-
-  it("still refuses when allowHostBuild is explicitly false", async () => {
-    const rt = new CloudRuntime(client, { allowHostBuild: false });
-    const err = await rt
-      .build(cfg({ buildStrategy: "local" }))
-      .then(() => null)
-      .catch((e: unknown) => e);
-
-    expect(isHostBuildForbiddenError(err)).toBe(true);
+  it("has no implicit host when a Cloud destination is absent", async () => {
+    const platform = await make({ cloudServer: undefined });
+    await expect(platform.runtime.build({ projectId: "project-a", buildStrategy: "local" } as never)).rejects.toMatchObject({ code: "DEPLOYMENT_SERVER_REQUIRED" });
+    expect(platform.executor).toBeNull();
+    expect(fixture.client.workspace).not.toHaveBeenCalled();
   });
-
-  it("names the remedy, not just the symptom", async () => {
-    const rt = new CloudRuntime(client, { allowHostBuild: false });
-    const err = await rt
-      .build(cfg({ buildStrategy: "local" }))
-      .then(() => null)
-      .catch((e: unknown) => e);
-
-    // An operator hitting this on a promoted project needs to know that redeploying
-    // re-resolves the stored setting. Without that the message is a dead end.
-    expect((err as Error).message).toMatch(/redeploy/i);
-    expect((err as Error).message).toMatch(/build locally|build settings/i);
+  it.each(["docker", "bare"] as const)("requires namespace-scoped credentials for %s", async runtime => {
+    await expect(make({ runtime, cloudToken: undefined })).rejects.toThrow("organization-scoped credentials");
+    await expect(make({ runtime, cloudNamespace: undefined })).rejects.toThrow("organization-scoped credentials");
   });
-
-  it("refuses BEFORE provisioning an Oblien workspace", async () => {
-    // `client` is an empty object: any Oblien call would throw a TypeError instead of
-    // HostBuildForbiddenError. Getting the typed error proves nothing was provisioned
-    // first — the refusal is not paid for with a workspace that then has to be cleaned
-    // up, and it does not depend on Oblien being reachable.
-    const rt = new CloudRuntime(client, { allowHostBuild: false });
-    const err = await rt
-      .build(cfg({ buildStrategy: "local" }))
-      .then(() => null)
-      .catch((e: unknown) => e);
-
-    expect(isHostBuildForbiddenError(err)).toBe(true);
-    expect((err as Error).name).toBe("HostBuildForbiddenError");
+  it.each(["docker", "bare"] as const)("refuses API-host source paths before %s executes them", async runtime => {
+    const platform = await make({ runtime });
+    const transfer = vi.spyOn(platform.executor!, "transferIn");
+    await expect(platform.runtime.build({ projectId: "project-a", localPath: "/etc", buildStrategy: "local" } as never)).rejects.toThrow(/control-plane|host/i);
+    expect(transfer).not.toHaveBeenCalled();
+    expect(fixture.client.workspaces.create).not.toHaveBeenCalled();
   });
-
-  it("does not refuse a server-strategy build (the gate is not a blanket block)", async () => {
-    const rt = new CloudRuntime(client, { allowHostBuild: false });
-    const err = await rt
-      .build(cfg({ buildStrategy: "server" }))
-      .then(() => null)
-      .catch((e: unknown) => e);
-
-    // It will fail — `client` is empty — but NOT with the host-build refusal. If this
-    // ever becomes HostBuildForbiddenError the gate has started blocking the normal
-    // cloud path, which is the failure mode a too-eager guard produces.
-    expect(isHostBuildForbiddenError(err)).toBe(false);
+  it("resolves bare process ports without opening Docker and rejects sibling ports", async () => {
+    const workloads = [
+      { id: "openship-release-a", labels: { "openship.project": "project-a", "openship.deployment": "release-a", "openship.ports": "[3000]" } },
+      { id: "openship-release-b", labels: { "openship.project": "project-b", "openship.deployment": "release-b", "openship.ports": "[4000]" } },
+    ];
+    fixture.client.workspace.mockReturnValue({ workloads: { list: async () => workloads } });
+    const connection = new CloudServerConnection(fixture.client, { workspaceId: server.workspaceId, namespace: config.cloudNamespace });
+    const containers = vi.fn(async () => ({ resolveUrl: async () => { throw new Error("unowned port"); }, resolveTarget: vi.fn() }));
+    const scope = managedProjectRoutingScope(connection, server, containers);
+    expect(await scope.resolveUrl("http://127.0.0.1:3000")).toBe(3000);
+    expect(containers).not.toHaveBeenCalled();
+    await expect(scope.resolveUrl("http://127.0.0.1:4000")).rejects.toThrow("unowned port");
+    await expect(scope.resolveUrl("http://user:secret@127.0.0.1:3000")).rejects.toThrow("Invalid");
+    await connection.dispose();
   });
-
-  /**
-   * A RATCHET over the host-touching calls in cloud.ts.
-   *
-   * The reason this exists: the first pass at this gate covered two arms and MISSED a
-   * third — `transferLocalDirectory(cfg.localPath, …)` in the build preflight, which
-   * lives in the buildStrategy:"server" path (the one the gate deliberately allows)
-   * and is keyed only on `localPath`. Reaching it in a unit test needs a provisioned
-   * Oblien workspace, so the behavioural tests above cannot cover it.
-   *
-   * Counting is what catches the FOURTH one. If a new call to any of these appears,
-   * this fails and whoever added it has to come here and say whether it needs the
-   * gate — instead of the gate silently not covering it.
-   */
-  it("ratchet: every host-touching call in cloud.ts is accounted for", () => {
-    // Not a `replace(/\/\*[\s\S]*?\*\//g, "")`: `cloud.ts:215` holds the regex literal
-    // `/^[A-Za-z0-9_@%+=:,./*?[\]-]+$/`, whose `./*?` reads as a comment opener to that
-    // pattern and blanked the next 61 lines — so a new host-touching call anywhere in
-    // 215-317 would have been invisible to the very ratchet that exists to catch it.
-    const src = blankComments(
-      readFileSync(fileURLToPath(new URL("./cloud.ts", import.meta.url)), "utf8"),
-    ).replace(/^\s*import\s[\s\S]*?;\s*$/gm, "");
-
-    const count = (re: RegExp) => [...src.matchAll(re)].length;
-
-    // Directly gated, one assert each.
-    expect(count(/this\.assertHostWorkAllowed\s*\(/g)).toBe(3);
-
-    // runLocalBuild: the "build here, upload the output" arm.
-    expect(count(/\brunLocalBuild\s*\(/g)).toBe(1);
-    // createDockerBuildContext: the local-source Dockerfile arm.
-    expect(count(/\bcreateDockerBuildContext\s*\(/g)).toBe(1);
-    // transferLocalDirectory: 3 inside the runLocalBuild output-upload callback
-    // (already behind that arm's gate), 1 in the build preflight (gated directly),
-    // and 1 in transferDockerfileContext — reachable only for a source whose `kind`
-    // is "local", which only the gated Dockerfile arm can produce, so it is covered
-    // transitively rather than directly.
-    expect(count(/\btransferLocalDirectory\s*\(/g)).toBe(5);
-  });
-
-  it("is detected by name across bundle boundaries", () => {
-    const impostor = new Error("nope");
-    impostor.name = "HostBuildForbiddenError";
-    // Two copies of this module can exist in one process (the API bundles adapters,
-    // and so do the CLI and desktop builds), so instanceof alone is not enough.
-    expect(isHostBuildForbiddenError(impostor)).toBe(true);
-    expect(isHostBuildForbiddenError(new Error("unrelated"))).toBe(false);
+  it("keeps managed container builds on the shared Docker builder", async () => {
+    const platform = await make({ runtime: "docker" });
+    const runtime = platform.runtime as CloudDockerRuntime;
+    vi.spyOn(runtime, "prepareComposeSource").mockResolvedValue();
+    const build = vi.spyOn(DockerRuntime.prototype, "build").mockResolvedValue({ status: "deploying", imageRef: "built" } as never);
+    const input = { projectId: "project-a", cloneOnServer: false } as never;
+    await runtime.build(input);
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ cloneOnServer: true, localPath: undefined }), undefined);
+    expect(runtime.connectionOptions?.executor).toBe(platform.executor);
   });
 });

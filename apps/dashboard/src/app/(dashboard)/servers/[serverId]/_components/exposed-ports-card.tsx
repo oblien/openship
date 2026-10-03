@@ -15,9 +15,19 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
  * the executor middleware and returns every listener classified exposed vs
  * loopback.
  */
-export function ExposedPortsCard({ serverId }: { serverId: string }) {
+export function ExposedPortsCard({ serverId, managedIngress = false }: { serverId: string; managedIngress?: boolean }) {
   const { t } = useI18n();
   const s = t.servers.security.ports;
+  const labels = managedIngress ? {
+    ...s,
+    title: s.managedTitle,
+    subtitle: s.managedSubtitle,
+    introHint: s.managedHint,
+    summary: s.managedSummary,
+    summaryZeroExposed: s.managedLoopbackSummary,
+    exposed: s.managedListener,
+    inconclusiveHint: s.managedInconclusiveHint,
+  } : s;
 
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,15 +47,15 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
   }, [serverId, s.scanFailed]);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
-        <div className="flex items-center gap-3">
+    <div className="bg-card rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="w-9 h-9 bg-info/10 rounded-xl flex items-center justify-center">
             <UiIcon name="network" className="size-[18px] text-info" />
           </div>
           <div>
-            <h2 className="font-semibold text-foreground text-[15px]">{s.title}</h2>
-            <p className="text-xs text-muted-foreground">{s.subtitle}</p>
+            <h2 className="font-semibold text-foreground text-[15px]">{labels.title}</h2>
+            <p className="text-xs text-muted-foreground">{labels.subtitle}</p>
           </div>
         </div>
         {result && !scanning && (
@@ -79,7 +89,7 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
           </div>
         ) : !result ? (
           <div className="flex flex-col items-start gap-4">
-            <p className="text-sm text-muted-foreground">{s.introHint}</p>
+            <p className="text-sm text-muted-foreground">{labels.introHint}</p>
             <button
               type="button"
               onClick={() => void scan()}
@@ -91,7 +101,10 @@ export function ExposedPortsCard({ serverId }: { serverId: string }) {
             </button>
           </div>
         ) : (
-          <ScanResult result={result} labels={s} />
+          <div className="space-y-4">
+            {managedIngress && <p className="text-sm text-muted-foreground">{s.managedHint}</p>}
+            <ScanResult result={result} labels={labels} />
+          </div>
         )}
       </div>
     </div>

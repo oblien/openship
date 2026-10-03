@@ -11,6 +11,8 @@ import type { NewProjectGroup } from "./project-group.repo";
 import type { NewService } from "./service.repo";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
 import { personalAccessToken } from "../schema/personal-access-token";
+import { assertCloudWorkspacePlacement } from "./cloud-workspace.repo";
+import { projectWorkspaceScope } from "./workspace-scope";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -163,11 +165,12 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
      * is reused while a differently-named install still creates a new instance
      * (multiple apps of the same type). Omit `slug` to match any draft of the type.
      */
-    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string) {
+    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string, workspaceId?: string | null) {
       return db.query.project.findFirst({
         where: and(
           eq(project.organizationId, organizationId),
           eq(project.appTemplateId, appTemplateId),
+          projectWorkspaceScope(workspaceId),
           isNull(project.activeDeploymentId),
           isNull(project.deletedAt),
           eq(project.environmentSlug, "production"),
@@ -368,27 +371,44 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("proj");
       const row = { id, ...rest };
-      if (access) {
+      let inserted: Project;
+      if (access || row.workspaceId || row.serverId) {
         // A create-only credential must acquire access in the same commit as
         // its new project. A revoked/missing token rolls back the project too.
         await db.transaction(async tx => {
+          await assertCloudWorkspacePlacement(tx, row);
+          if (access) {
           const [token] = await tx.select().from(personalAccessToken)
             .where(eq(personalAccessToken.id, access.tokenId)).for("update");
           if (!token || token.revokedAt || (token.expiresAt && token.expiresAt.getTime() <= Date.now()))
             throw new UnauthorizedError("Project creation credential is no longer valid");
           if (token.readOnly || (token.organizationId && token.organizationId !== row.organizationId))
             throw new ForbiddenError("Project creation credential cannot write to this organization");
-          await tx.insert(project).values(row);
+          }
+          [inserted] = await tx.insert(project).values(row).returning();
+          if (access) {
           await tx.insert(personalAccessTokenGrant).values({
             id: generateId("patgrant"), tokenId: access.tokenId,
             resourceType: "project", resourceId: id,
             permissionsJson: JSON.stringify(["read", "write", "admin"]),
           });
+          }
         });
       } else {
-        await db.insert(project).values(row);
+        [inserted] = await db.insert(project).values(row).returning();
       }
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
+      return inserted!;
+    },
+
+    async listByWorkspace(workspaceId: string, organizationId: string) {
+      return db.select().from(project).where(and(eq(project.workspaceId, workspaceId), eq(project.organizationId, organizationId), isNull(project.deletedAt))).orderBy(project.createdAt, project.id);
+    },
+
+    async countGroupsForOrganization(organizationId: string, workspaceId?: string | null) {
+      const [row] = await db.select({ count: sql<number>`count(distinct ${project.groupId})::int` }).from(project).where(and(
+        eq(project.organizationId, organizationId), isNull(project.deletedAt), projectWorkspaceScope(workspaceId),
+      ));
+      return row?.count ?? 0;
     },
 
     /**
@@ -430,10 +450,12 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       for (const svc of input.services) serviceIdBySourceId[svc.sourceId] = generateId("svc");
 
       const projectRow = { id: projectId, groupId, ...input.project };
+      let inserted: Project;
 
       await db.transaction(async (tx) => {
+        await assertCloudWorkspacePlacement(tx, projectRow);
         await tx.insert(projectGroup).values({ id: groupId, ...input.group });
-        await tx.insert(project).values(projectRow);
+        [inserted] = await tx.insert(project).values(projectRow).returning();
         if (input.services.length > 0) {
           await tx.insert(service).values(
             input.services.map((svc) => ({
@@ -476,12 +498,16 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       });
 
       return {
-        project: { ...projectRow, createdAt: new Date(), updatedAt: new Date() } as Project,
+        project: inserted!,
         serviceIdBySourceId,
       };
     },
 
     async update(id: string, data: Partial<NewProject>) {
+      if (data.workspaceId !== undefined) {
+        const current = await db.query.project.findFirst({ where: eq(project.id, id) });
+        if (current && data.workspaceId !== current.workspaceId) throw new Error("Changing a project's Cloud workspace requires an explicit migration");
+      }
       await db
         .update(project)
         .set({ ...data, updatedAt: new Date() })
@@ -702,41 +728,9 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
     },
 
     /**
-     * Bind a project to its Openship Cloud workspace. The unique
-     * partial index on `(cloud_workspace_id) WHERE NOT NULL` enforces
-     * one-project-per-workspace at the DB layer — a unique violation
-     * here means another project row already claims this workspace,
-     * which is a real drift bug the caller must surface.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test downstream; no separate deployTarget column.
-     */
-    async setCloudWorkspaceId(projectId: string, cloudWorkspaceId: string) {
-      await db
-        .update(project)
-        .set({
-          cloudWorkspaceId,
-          updatedAt: new Date(),
-        })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * Clear the cloud workspace binding (detach). Leaves deployTarget
-     * untouched — the caller decides whether to demote to self-hosted
-     * or keep the project as "cloud but unbound" pending a fresh deploy.
-     */
-    async clearCloudWorkspaceId(projectId: string) {
-      await db
-        .update(project)
-        .set({ cloudWorkspaceId: null, updatedAt: new Date() })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
      * List every cloud-bound project in an org. Used by the drift
      * endpoint to diff against Oblien's `workspaces.list`. A project
-     * is "cloud-bound" iff it has a non-null cloudWorkspaceId — that
+     * is "cloud-bound" iff it has a non-null workspaceId — that
      * column is the single source of truth, no separate deployTarget.
      *
      * Returns the minimal shape the diff needs — id, name, slug, and
@@ -749,13 +743,13 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
           id: project.id,
           name: project.name,
           slug: project.slug,
-          cloudWorkspaceId: project.cloudWorkspaceId,
+          workspaceId: project.workspaceId,
         })
         .from(project)
         .where(
           and(
             eq(project.organizationId, organizationId),
-            sql`${project.cloudWorkspaceId} IS NOT NULL`,
+            sql`${project.workspaceId} IS NOT NULL`,
             isNull(project.deletedAt),
           ),
         );

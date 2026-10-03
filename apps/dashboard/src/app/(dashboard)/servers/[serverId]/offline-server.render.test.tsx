@@ -24,13 +24,15 @@ import { ModalProvider } from "@/context/ModalContext";
 // contexts it sees in the app — a provider missing only here would show up as a
 // crash that no user can hit.
 import { DashboardProviders } from "../../providers";
+import ServerDetailPage from "./page";
 
 // React 19 requires this flag before act() will drive updates.
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let searchParams = new URLSearchParams();
+const router = { push: () => {}, replace: () => {}, back: () => {}, refresh: () => {} };
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {}, refresh: () => {} }),
+  useRouter: () => router,
   usePathname: () => "/servers/srv_1",
   useSearchParams: () => searchParams,
 }));
@@ -143,7 +145,9 @@ function stubFetch(checkFailure: { status: number; body: unknown }) {
 
     if (url.includes("system/check")) return json(checkFailure.body, checkFailure.status);
     if (/system\/servers\/srv_1(\?|$)/.test(url)) return json(OFFLINE_SERVER);
+    if (url.includes("system/servers/destinations")) return json({ servers: [OFFLINE_SERVER] });
     if (url.includes("system/servers")) return json([OFFLINE_SERVER]);
+    if (url.includes("auth/get-session")) return json(null);
     if (url.includes("system/install/session")) return json({ active: false });
     if (url.includes("migration")) return json({ runs: [] });
     // Every other call the mounted subtree makes: answer, don't hang.
@@ -171,8 +175,6 @@ afterEach(() => {
 
 async function mountOfflineServer(checkFailure: { status: number; body: unknown }) {
   vi.stubGlobal("fetch", stubFetch(checkFailure));
-  // Imported lazily so the vi.mock factories above are installed first.
-  const { default: ServerDetailPage } = await import("./page");
 
   await act(async () => {
     root = createRoot(container, {

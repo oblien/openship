@@ -46,7 +46,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   const { config, state, onTerminalReady, respondToPrompt, deploymentStatus } =
     useDeployment();
   const { showModal, hideModal } = useModal();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(config.workspaceId);
   const { showToast } = useToast();
   const { resolvedTheme } = useTheme();
   const { t } = useI18n();

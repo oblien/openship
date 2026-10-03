@@ -62,6 +62,7 @@ vi.mock("@repo/db", () => ({
 }));
 
 vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  disposeRuntime: (runtime: { dispose?: () => Promise<void> } | null) => { void runtime?.dispose?.(); },
   resolveDeploymentRuntimeForRead: vi.fn(async (dep: { meta?: { serverId?: string } }) => {
     h.resolveCalls += 1;
     const key = dep.meta?.serverId ?? "__local__";
@@ -80,6 +81,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
             }
           : undefined,
         getUsage: h.getUsage,
+        getContainerInfo: async (containerId: string) => ({ containerId, status: "running" }),
         dispose: async () => {
           h.activeServers -= 1;
           await h.dispose();
@@ -351,17 +353,17 @@ describe("failure handling", () => {
     expect(h.getUsage).not.toHaveBeenCalled();
   });
 
-  it("still samples cloud projects, which have no host to enumerate", async () => {
+  it("still samples a managed server when enumeration is unavailable", async () => {
     // The whole reason this isn't part of the health watch: gating on
     // hostContainerQuery would exclude Oblien entirely.
     project("p1", null, null);
-    h.caps = new Set(["usage"]); // CloudRuntime: getUsage yes, docker ps no
+    h.caps = new Set(["usage", "containerInfo"]);
     h.servicesByProject.set("p1", [{ id: "sv-web", name: "web" }]);
-    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "ws-123" }];
+    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "managed-web" }];
 
     const r = await runUsageSampleSweep();
 
-    expect(h.getUsage).toHaveBeenCalledWith("ws-123");
+    expect(h.getUsage).toHaveBeenCalledWith("managed-web");
     expect(r.samples).toBe(1);
   });
 

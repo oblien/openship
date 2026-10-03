@@ -74,9 +74,7 @@ export interface SecureRouterOptions {
    * Every route on this router is self-hosted-only. Prefer this over
    * `r.use("*", localOnly)`: `use` is Hono middleware, so it never reaches the
    * route REGISTRY, and anything reading the registry to decide what a route can
-   * do sees a route that looks universally available. That is how all 11 jobs
-   * tools came to be advertised over MCP on the hosted control plane, where the
-   * jobs router 404s everything.
+   * do would otherwise advertise a tool that cannot run in Cloud.
    *
    * Folded into each registered spec's `localOnly`, so the registry is the single
    * answer to "does this route exist in this mode".

@@ -194,7 +194,8 @@
     "targetPending": "デプロイ時に選択",
     "type": "種類",
     "typeApp": "アプリ",
-    "typeProject": "プロジェクト"
+    "typeProject": "プロジェクト",
+    "subtextNoSource": "ソースを接続して最初のデプロイを設定します。"
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: あなたの編集を保持しました",
     "failedResolveDrift": "ドリフトの解決に失敗しました",
     "failedCreateService": "サービスの作成に失敗しました",
-    "requestFailed": "リクエストに失敗しました"
+    "requestFailed": "リクエストに失敗しました",
+    "application": "アプリケーション",
+    "applicationHint": "このプロジェクトのデプロイを通じて管理されます。",
+    "companionsTitle": "別のアプリやサービスを追加"
   },
   "serviceStatus": {
     "checking": "確認中…",

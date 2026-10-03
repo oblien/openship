@@ -40,6 +40,7 @@
  *      namespace itself, set quotas, etc.).
  */
 
+import { repos } from "@repo/db";
 import { Oblien } from "@repo/adapters";
 import { issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
 
@@ -117,7 +118,9 @@ export async function proxyCloudAnalytics(
     params?: Record<string, unknown>;
   },
 ): Promise<unknown> {
-  const { token } = await issueNamespaceToken(organizationId);
+  const domain = await repos.domain.findByHostname(input.domain.trim().toLowerCase());
+  const project = domain?.projectId ? await repos.project.findByIdInOrganization(domain.projectId, organizationId) : null;
+  const { token } = await issueNamespaceToken(organizationId, project?.workspaceId ?? null);
   const client = new Oblien({ token });
 
   try {

@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} yedek kuralı · dağıtım öncesi: {preDeploy}",
     "backupManage": "Yedekleri yönet",
     "on": "açık",
-    "off": "kapalı"
+    "off": "kapalı",
+    "previewTitle": "Dağıtım önizlemesi",
+    "previewHint": "Uygulamanızı yapılandırmak için devam edin. Dağıtım sonraki sayfadan başlatılır.",
+    "back": "Geri"
   },
   "summary": {
     "buildAndDeploy": "Derle ve Dağıt:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} sürüm",
     "rollbackOther": "{count} sürüm",
     "rollbackAuto": "Geri alma: otomatik",
-    "rollbackSnapshotHint": "Her sürümün bir kopyası saklanır, böylece geri alma asla yeniden derlemez. Gelişmiş bölümünden değiştirin.",
-    "rollbackGitHint": "Kaç önceki sürümün geri yüklenebilir kaldığı. Gelişmiş bölümünden değiştirin."
+    "rollbackSnapshotHint": "Her sürümün kopyası tutulur; geri alma yeniden derleme gerektirmez. Dağıtım ayarlarından değiştirin.",
+    "rollbackGitHint": "Geri yüklenebilen eski sürüm sayısı. Dağıtım ayarlarından değiştirin."
   },
   "power": {
     "heading": "Performans Gücü",

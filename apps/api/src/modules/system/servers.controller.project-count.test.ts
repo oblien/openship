@@ -118,7 +118,7 @@ describe("GET /servers/:id carries projectCount", () => {
 
 // The application seams moved with the shared engine.
 vi.mock("@repo/platform/engine/lib/authorization", () => ({
-  authorization: { authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
+  authorization: { checkPermissionOnResource: vi.fn(async () => true), authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
 }));
 
 // Keep the controller unit focused on this real shared operation group.

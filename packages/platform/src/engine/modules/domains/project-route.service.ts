@@ -1,7 +1,7 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Domain, type Project } from "@repo/db";
 import { resolveWorkload, safeErrorMessage } from "@repo/core";
-import { edgeProxyFor, PAGE_CONTAINER_PREFIX, resolveServedStaticPath } from "@repo/adapters";
+import { edgeProxyFor, resolveServedStaticPath } from "@repo/adapters";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import {
   comparePublicRouteRows,
@@ -340,7 +340,7 @@ export async function reapplyProjectLiveRoutes(
     | "id"
     | "slug"
     | "port"
-    | "cloudWorkspaceId"
+    | "workspaceId"
     | "activeDeploymentId"
     | "organizationId"
     | "webhookDomain"
@@ -425,19 +425,7 @@ export async function reapplyProjectLiveRoutes(
   if (isCloud) {
     // Docker's following topology pass publishes each complete table once.
     // Writing root-only routes here would temporarily erase its path rules.
-    const cloudDocker = !!(deployment.meta as DeploymentMeta | null)?.cloudDockerWorkspace;
-    const page = deployment.containerId?.startsWith(PAGE_CONTAINER_PREFIX);
-    const registers: RouteRegister[] = cloudDocker ? [] : current
-      .filter(
-        (domain) => (!domain.targetPath || page) && !topologyHostnames.has(domain.hostname.toLowerCase()),
-      )
-      .map((domain) => ({
-        hostname: domain.hostname,
-        port: domain.targetPort ?? project.port ?? undefined,
-        // Infer from the hostname suffix (same signal the removes use) so a
-        // legacy null `domainType` row still resolves the right cloud primitive.
-        isCustomDomain: !managedHostnameToSlug(domain.hostname),
-      }));
+    const registers: RouteRegister[] = [];
     await reconcileProjectRoutes(project, {
       deployment,
       registers,

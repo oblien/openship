@@ -1,6 +1,9 @@
 import type { BuildConfig, ResourceConfig } from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
+import { env } from "../../config/env";
 import type { BuildStrategy } from "@repo/core";
+import { AppError } from "@repo/core";
+import { getFolderSession } from "../projects/folder/session-store";
 
 export interface BuildConfigSnapshotLike {
   repoUrl: string;
@@ -19,8 +22,7 @@ export interface BuildConfigSnapshotLike {
   hasServer: boolean;
   hasBuild: boolean;
   localPath?: string;
-  uploadWorkspaceId?: string;
-  sourceStaged?: boolean;
+  uploadSessionId?: string;
   buildStrategy?: BuildStrategy;
   /** ONE-TIME image handover (migration cutover): serviceName → an already-present
    *  image ref (a transferred / running container's image). A service listed here
@@ -74,10 +76,17 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     repoUrl: snapshot.repoUrl,
     branch: dep.branch,
     commitSha: dep.commitSha ?? undefined,
-    localPath: snapshot.localPath,
-    ...(snapshot.uploadWorkspaceId ? {
-      cloudWorkspaceId: snapshot.uploadWorkspaceId,
-      sourceStaged: snapshot.sourceStaged ?? true,
+    localPath: env.CLOUD_MODE ? undefined : snapshot.localPath,
+    ...(env.CLOUD_MODE && snapshot.localPath ? {
+      sourceTransfer: async (executor, directory, onLog) => {
+        const source = snapshot.uploadSessionId ? getFolderSession(snapshot.uploadSessionId) : undefined;
+        if (!source?.uploaded || source.uploading || source.orgId !== project.organizationId ||
+            source.projectId !== project.id || source.serverId !== project.serverId ||
+            source.managedWorkspaceId !== project.workspaceId || source.stagingDir !== snapshot.localPath) {
+          throw new AppError("This deployment's uploaded source is unavailable. Upload the folder again.", 409, "SOURCE_UPLOAD_UNAVAILABLE");
+        }
+        await executor.transferIn(source.stagingDir!, directory, onLog);
+      },
     } : {}),
     buildStrategy: snapshot.buildStrategy,
     stack: snapshot.framework,

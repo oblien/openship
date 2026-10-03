@@ -66,7 +66,7 @@ import {
   resolveServerExecutor,
   resolveDeploymentRuntimeForRead,
 } from "../../lib/deployment-runtime";
-import { cloudDockerResources, ensureCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
+import { ensureCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
 import {
   containerIdForService,
   liveContainerIdWithRuntime,
@@ -80,7 +80,8 @@ import {
 } from "./live-state";
 import { parseVolumeSpec, type VolumeKind } from "./volume-spec";
 import { sq } from "../migration/direct-transfer";
-import { bounded, duBytes, volumeBytes } from "../migration/migration-size";
+import { duBytes, volumeBytes } from "../migration/migration-size";
+import { mapWithLimit } from "../../lib/map-with-limit";
 import { deployComposeServices } from "../deployments/compose/deploy.service";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { ServiceConfigStaleError, resolveStaleEnvKeysForService } from "../deployments/env-drift";
@@ -104,7 +105,7 @@ import {
   publicEndpointHostname,
   resolveServicePublicEndpoints,
 } from "../../lib/public-endpoints";
-import { resolveBuildResources, resolveCloudServiceResources, resolveRuntimeResources } from "../../lib/resources";
+import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
 import { assertCloudDeploymentLimits, assertCloudRuntimeLimits, assertPlanAllowsServices, assertRunningServiceQuota, assertServiceDefinitionQuota } from "../../lib/plan-guard";
 import { env } from "../../config/env";
@@ -662,7 +663,7 @@ export async function createService(
   // Refuse the row too, not just its start: a static-only tier can never run
   // this container, and persisting a service the org will be blocked from
   // starting is a worse experience than refusing it here.
-  await assertPlanAllowsServices(ctx.organizationId);
+  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
 
   // Through mergeAdvanced even on CREATE: there is nothing to preserve, but it
   // strips the `null`-means-remove sentinels the update path accepts, so a
@@ -969,7 +970,7 @@ export async function updateService(
 
   if (env.CLOUD_MODE && patch.enabled === true) {
     await createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
-      await assertPlanAllowsServices(ctx.organizationId);
+      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
       await assertServiceDefinitionQuota(ctx.organizationId, projectId, 1, [serviceId]);
       await repos.service.update(serviceId, patch);
     });
@@ -1034,7 +1035,7 @@ export async function updateService(
       // the deployment's own routing (local box or remote server/sandbox).
       // Needed for route REMOVAL too, so it is not gated on having routes.
       const dep =
-        !project.cloudWorkspaceId && project.activeDeploymentId
+        !project.workspaceId && project.activeDeploymentId
           ? await findActiveDeployment(project)
           : null;
 
@@ -1054,7 +1055,7 @@ export async function updateService(
         containerId = row?.containerId ?? undefined;
         if (containerId) {
           try {
-            ({ runtime, hostPortTarget } = await resolveDeploymentRuntimeForRead(dep));
+            ({ runtime, hostPortTarget } = await resolveDeploymentRuntimeForRead({ ...dep, meta: { ...(dep.meta as Record<string, unknown>), runtimeMode: "docker" } }));
           } catch (err) {
             console.warn(
               `[SERVICE] ${svc.name}: could not resolve runtime for upstream, using stored row: ${safeErrorMessage(err)}`,
@@ -1285,7 +1286,7 @@ async function deleteLiveService(project: Project, svc: Service): Promise<void> 
         // → the deployment's OWN routing (never the local singleton, which would
         // leave a remote vhost proxying a now-dead upstream → 502).
         const dep =
-          !project.cloudWorkspaceId && project.activeDeploymentId
+          !project.workspaceId && project.activeDeploymentId
             ? await findActiveDeployment(project)
             : null;
         await reconcileProjectRoutes(project, {
@@ -1905,7 +1906,7 @@ export async function getServiceVolumeSizes(
   let liveContainerId: string | null = null;
   try {
     const resolved = await resolveDeploymentRuntimeForRead({
-      meta: dep.meta,
+      meta: { ...(dep.meta as Record<string, unknown>), runtimeMode: "docker" },
       organizationId: ctx.organizationId,
     });
     serverId = resolved.serverId;
@@ -1962,7 +1963,7 @@ export async function getServiceVolumeSizes(
     }
   }
 
-  const volumes = await bounded(
+  const volumes = await mapWithLimit(
     parsed,
     VOL_SIZE_CONCURRENCY,
     async (p): Promise<ServiceVolumeSize> => {
@@ -2051,7 +2052,7 @@ async function resolveServiceContainer(
   // here charged every one of them the OpenResty detect + Lua self-heal (under the
   // provision lock), which is the other half of "the action takes forever".
   const { runtime, serverId } = await resolveDeploymentRuntimeForRead({
-    meta: dep.meta,
+    meta: { ...(dep.meta as Record<string, unknown>), runtimeMode: "docker" },
     organizationId: ctx.organizationId,
     projectId,
   });
@@ -2103,10 +2104,9 @@ function containerStatusToServiceState(status: ContainerStatus): ServiceContaine
 }
 
 /**
- * Launch one image service without a build. Cloud Compose adds a container to
- * its recorded Docker workspace; native Cloud gives the service its own
- * workspace. The Compose executor is scoped to this service. Growing a shared
- * workspace's allocation can restart its other containers.
+ * Launch one image service without a build on the project's selected server.
+ * The shared service deployer owns the container; only subscription operations
+ * can resize a managed server.
  */
 async function provisionServiceContainer(
   ctx: RequestContext,
@@ -2121,7 +2121,7 @@ async function provisionServiceContainer(
   // never sees it. A provisioned service container IS a container, so a
   // static-only tier can't have one, and without this a free org could add a
   // Postgres service and start it with no gating at all.
-  await assertPlanAllowsServices(ctx.organizationId);
+  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
 
   if (!project.activeDeploymentId) {
     throw new Error("Deploy the project first, then start its services.");
@@ -2164,8 +2164,8 @@ async function provisionServiceContainer(
     else console.log(tag, line);
   });
   const snapshot = (dep.meta ?? {}) as DeploymentConfigSnapshot;
-  if (snapshot.cloudDockerWorkspace) {
-    if (snapshot.cloudDockerWorkspace.projectId !== projectId) {
+  if (snapshot.managedServer) {
+    if (snapshot.managedServer.projectId !== projectId) {
       throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
     }
     if (hasRelativeVolumeMounts(service.volumes)) {
@@ -2181,26 +2181,9 @@ async function provisionServiceContainer(
     await assertCloudDeploymentLimits(ctx.organizationId, {
       projectId, resources: project.resources as Record<string, unknown> | null, services: [{ ...service, enabled: true }],
     });
-    const rows = new Map((await repos.service.listByDeployment(dep.id)).map(row => [row.serviceId, row]));
-    const projectResources = resolveRuntimeResources(project.resources as Record<string, unknown> | null, { isCloud: true });
     await ensureCloudDockerWorkspace({
       projectId, organizationId: ctx.organizationId,
-      existingWorkspaceId: snapshot.cloudDockerWorkspace.workspaceId,
-      resources: cloudDockerResources({
-        resources: projectResources,
-        services: services.map(sibling => {
-          const row = rows.get(sibling.id);
-          const allocated = row?.allocatedResources?.containerId === row?.containerId ? row?.allocatedResources : null;
-          const desired = resolveCloudServiceResources(sibling.advanced?.resources, projectResources);
-          return {
-            // A disabled definition may still have a container consuming capacity.
-            enabled: sibling.id === serviceId || sibling.enabled || Boolean(row?.containerId),
-            // Starting this service does not apply a sibling's pending settings.
-            resources: sibling.id !== serviceId && allocated
-              ? { ...desired, cpuCores: allocated.cpuCores, memoryMb: allocated.memoryMb } : desired,
-          };
-        }),
-      }),
+      existingWorkspaceId: snapshot.managedServer.workspaceId,
       onProgress: message => logger.log(message),
     });
   }
@@ -2218,9 +2201,7 @@ async function provisionServiceContainer(
       // The project's own caps. Omitting this fell back to the cloud free tier
       // inside createServiceDeployConfig, so adding/starting a single service
       // always produced a 512 MB container no matter what the project was set to.
-      resources: resolveRuntimeResources(project.resources as Record<string, unknown> | null, {
-        isCloud: resolved.effectiveTarget === "cloud",
-      }),
+      resources: resolveRuntimeResources(project.resources as Record<string, unknown> | null),
       // Strictly scope to THIS service: carry live siblings forward as-is, but
       // never (re)deploy or reap a service we weren't asked to touch. Without
       // this, provisioning one service could re-deploy a freshly-added sibling
@@ -2276,14 +2257,14 @@ async function prepareServiceStart(ctx: RequestContext, projectId: string, servi
     const services = await repos.service.listByProject(projectId);
     const service = services.find(item => item.id === serviceId);
     if (!service) throw new Error("Service not found");
-    await assertPlanAllowsServices(ctx.organizationId);
-    await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
+    await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+    await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null);
     const existing = await resolve();
     try {
       if (existing) {
         await assertCloudRuntimeLimits(ctx.organizationId, existing.runtime, [{
           containerId: existing.containerId, allocatedResources: existing.row?.allocatedResources,
-        }]);
+        }], project.workspaceId ?? null);
       } else {
         await assertCloudDeploymentLimits(ctx.organizationId, {
           projectId, resources: project.resources as Record<string, unknown> | null,

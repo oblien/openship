@@ -13,6 +13,7 @@ import {
   getApiErrorMessage,
 } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { usePlatform } from "@/context/PlatformContext";
 
 type Kind = Exclude<BackupDestinationSummary["kind"], "http_upload" | "local">;
 
@@ -293,10 +294,11 @@ export function CreateDestinationModal({ isOpen, onClose, onSaved, destination }
 
 function KindPicker({ onPick }: { onPick: (kind: Kind) => void }) {
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const m = t.misc.backups;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {KIND_OPTIONS.map((opt) => {
+      {KIND_OPTIONS.filter(opt => selfHosted || opt.kind !== "openship_server").map((opt) => {
         const Icon = opt.icon;
         const meta = kindMeta(opt.kind, m);
         return (
@@ -666,6 +668,7 @@ function ConfigureForm({
         <div className="grid grid-cols-1 gap-4">
           <Field label={m.fieldServer} hint={m.hintServer}>
             <ServerSelector
+              requiredCapability="ssh"
               value={serverId || null}
               onSelect={(s) => setServerId(s?.id ?? "")}
               compact

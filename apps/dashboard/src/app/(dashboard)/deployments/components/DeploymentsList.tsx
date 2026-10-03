@@ -24,7 +24,7 @@ export const DeploymentsList: React.FC<DeploymentsListProps> = ({
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/50">
+    <div className="rounded-2xl bg-card divide-y divide-border/50">
       {deployments.map((deployment, index) => (
         <DeploymentCard
           key={deployment.id || index}

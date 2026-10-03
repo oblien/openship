@@ -5,10 +5,12 @@ const h = vi.hoisted(() => ({
   createRuntime: vi.fn(),
 }));
 
-vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>()),
-  createServerDockerRuntime: h.createRuntime,
+vi.mock("@repo/platform/engine/modules/migration/migration-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/migration/migration-runtime")>()),
+  createMigrationDockerRuntime: h.createRuntime,
 }));
+
+vi.mock("@repo/platform/engine/modules/migration/migration-access", () => ({ assertMigrationEndpoints: async () => ({ source: {}, target: {} }) }));
 
 import { migrationOrchestrator } from "@repo/platform/engine/modules/migration/migration.orchestrator";
 

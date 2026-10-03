@@ -1,15 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer as httpServer, request } from "node:http";
 import { connect, type Socket } from "node:net";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { Runtime } from "oblien";
+import type { ManagedCommandRef } from "@repo/core";
 import { createCloudDockerTransport, dockerWebSocketStream } from "./docker-transport";
-import { CLOUD_DOCKER_BRIDGE_SOURCE, CLOUD_DOCKER_BRIDGE_VERSION } from "./docker-bridge-source";
+import { CLOUD_DOCKER_BRIDGE_PORT, CLOUD_DOCKER_BRIDGE_SOURCE, CLOUD_DOCKER_BRIDGE_VERSION } from "./docker-bridge-source";
+import { withManagedCommandTracking } from "./command-tracking";
+import { openCloudDockerStream, recoverCloudDockerRequest } from "./docker-request";
 
 /** Real Python bridge + WebSocket + private Unix socket. The upstream is a fake
  * Docker HTTP server, so no customer/host Docker daemon is needed. */
@@ -20,10 +24,18 @@ describe("Oblien Docker byte transport", () => {
   let socketPath: string;
   let bridgeUrl: string;
   let receiveHalfClosedRequest: ((body: Buffer) => void) | undefined;
+  let mutationStarted: (() => void) | undefined;
+  let finishMutation: (() => void) | undefined;
   const sockets = new Set<Socket>();
   const upstream = httpServer((req, res) => {
     if (req.url === "/_ping") return void res.end("OK");
     if (req.url === "/broken") return void req.socket.destroy();
+    if (req.url === "/slow-mutation") {
+      req.resume();
+      finishMutation = () => res.end("done");
+      mutationStarted?.();
+      return;
+    }
     // Full-duplex echo exercises streamed archives, binary bytes, and bodies
     // larger than both a WebSocket frame and the stream high water mark.
     res.writeHead(200, { "content-type": "application/octet-stream" });
@@ -60,6 +72,8 @@ describe("Oblien Docker byte transport", () => {
     const script = join(directory, "bridge.py");
     await writeFile(script, CLOUD_DOCKER_BRIDGE_SOURCE
       .replace('"/var/run/docker.sock"', JSON.stringify(upstreamPath))
+      .replace('"/opt/openship/cloud-docker/requests"', JSON.stringify(join(directory, "requests")))
+      .replace("EPOCH = host_epoch()", 'EPOCH = "test-boot"')
       .replace('("127.0.0.1", 23750)', `("127.0.0.1", ${port})`));
     python = spawn("python3", [script], { stdio: ["ignore", "ignore", "pipe"] });
     let errors = "";
@@ -99,6 +113,84 @@ describe("Oblien Docker byte transport", () => {
       req.end(payload);
     });
   }
+  function guest(): Runtime {
+    const base = bridgeUrl.slice(0, -"/docker".length);
+    return { proxy: () => ({
+      ws: (path: string) => new WebSocket(base + path),
+      fetch: (path: string, init: RequestInit) => fetch(base.replace("ws:", "http:") + path, init),
+    }) } as unknown as Runtime;
+  }
+  const identity = (id = randomUUID()): ManagedCommandRef => ({
+    workspaceId: "test-vm", marker: "openship-exec-" + id + ":", kind: "docker",
+  });
+
+  it("waits for the guest's persisted acknowledgement before releasing a tracked request", async () => {
+    const pending = new Map<string, ManagedCommandRef>();
+    let completed = 0;
+    await withManagedCommandTracking({
+      record: async ref => { pending.set(ref.marker, ref); },
+      complete: async marker => { await new Promise(resolve => setTimeout(resolve, 20)); pending.delete(marker); completed++; },
+    }, async () => {
+      const stream = await openCloudDockerStream(guest(), "test-vm");
+      const ended = once(stream, "end");
+      stream.resume();
+      stream.end("POST /archive HTTP/1.1\r\nHost: docker\r\nContent-Length: 3\r\n\r\none");
+      await ended;
+      stream.destroy();
+    });
+    expect(completed).toBe(1);
+    expect(pending.size).toBe(0);
+  });
+
+  it("keeps a mutation reserved after a lost controller until Docker finishes it", async () => {
+    const pending = new Map<string, ManagedCommandRef>();
+    const started = new Promise<void>(resolve => { mutationStarted = resolve; });
+    let released = false;
+    const run = withManagedCommandTracking({
+      record: async ref => { pending.set(ref.marker, ref); },
+      complete: async marker => { pending.delete(marker); },
+    }, async () => {
+      const stream = await openCloudDockerStream(guest(), "test-vm");
+      stream.resume();
+      stream.write("POST /slow-mutation HTTP/1.1\r\nHost: docker\r\nContent-Length: 0\r\n\r\n");
+      await started;
+      stream.destroy();
+    }).then(() => { released = true; });
+    void run.catch(() => {});
+    try {
+      await started;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(pending.size).toBe(1);
+      expect(released).toBe(false);
+      finishMutation!();
+      await run;
+      expect(pending.size).toBe(0);
+    } finally {
+      finishMutation?.();
+      await run;
+      mutationStarted = undefined;
+      finishMutation = undefined;
+    }
+  });
+
+  it("tombstones an unacknowledged handshake so a delayed request cannot start", async () => {
+    const id = randomUUID();
+    await recoverCloudDockerRequest(guest(), identity(id));
+    const socket = guest().proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker/" + id);
+    await expect(dockerWebSocketStream(socket)).rejects.toThrow("connection failed");
+  });
+
+  it("retains an uncertain mutation across a bridge crash but recognizes a new server lifetime", async () => {
+    await mkdir(join(directory, "requests"), { recursive: true });
+    const interrupted = randomUUID();
+    await writeFile(join(directory, "requests", interrupted + ".pending"), "test-boot");
+    await expect(recoverCloudDockerRequest(guest(), identity(interrupted))).rejects.toMatchObject({
+      code: "CLOUD_COMMAND_EXIT_UNCONFIRMED",
+    });
+    const restarted = randomUUID();
+    await writeFile(join(directory, "requests", restarted + ".pending"), "older-boot");
+    await expect(recoverCloudDockerRequest(guest(), identity(restarted))).resolves.toBeUndefined();
+  });
   it("keeps concurrent Docker requests isolated", async () => {
     const results = await Promise.all(Array.from({ length: 12 }, () => roundtrip("/_ping")));
     expect(results.map(result => result.toString())).toEqual(Array(12).fill("OK"));

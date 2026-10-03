@@ -178,8 +178,8 @@ function MailConsoleInner() {
       const server = await systemApi.getServerById(id);
       return {
         id: server.id,
-        name: server.name || server.sshHost,
-        host: server.sshHost,
+        name: server.name || server.sshHost || server.id,
+        host: server.sshHost ?? "",
         user: server.sshUser || "root",
         port: server.sshPort ?? 22,
         raw: server,

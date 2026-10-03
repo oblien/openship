@@ -8,6 +8,7 @@ const h = vi.hoisted(() => {
     auditStarted: () => {},
     auditFails: false,
     nextId: 0,
+    workspaceId: null as string | null,
   };
   function repository(prefix: string) {
     const rows = new Map<string, { userId: string; ended: boolean }>();
@@ -35,14 +36,16 @@ const h = vi.hoisted(() => {
     state,
     server: repository("server"),
     service: repository("service"),
-    ssh: { retain: vi.fn(), release: vi.fn(), withExecutor: vi.fn() },
+    ssh: { acquire: vi.fn(), retain: vi.fn(), release: vi.fn(), withExecutor: vi.fn() },
     openShell: vi.fn(),
     dispose: vi.fn(),
     resolveRuntime: vi.fn(),
     liveContainer: vi.fn(),
+    releaseActivity: vi.fn(),
   };
 });
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
     terminalSession: h.server,
     serviceTerminalSession: h.service,
@@ -53,6 +56,7 @@ vi.mock("@repo/db", () => ({
         id: "p1",
         organizationId: "org_1",
         activeDeploymentId: "d1",
+        workspaceId: h.state.workspaceId,
       })),
     },
     deployment: {
@@ -63,6 +67,12 @@ vi.mock("@repo/db", () => ({
 vi.mock("../../../src/lib/ws", () => ({ upgradeWebSocket: (fn: unknown) => fn }));
 vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: { getSession: vi.fn() } } }));
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: h.ssh }));
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({
+  holdCloudWorkspaceActivity: async () => ({
+    run: (work: () => Promise<unknown>) => work(),
+    release: h.releaseActivity,
+  }),
+}));
 vi.mock("@repo/platform/engine/lib/authorization", () => ({
   checkPermission: vi.fn(async () => true),
 }));
@@ -145,11 +155,12 @@ async function start(
     onClose: vi.fn(),
   } as unknown as ShellSession;
   const pty = deferred<ShellSession>();
+  const atShell = deferred<void>();
   const audit = deferred<void>();
   const atAudit = deferred<void>();
   h.state.auditStarted = () => atAudit.resolve();
   h.state.auditGate = pause === "audit" ? audit.promise : Promise.resolve();
-  h.openShell.mockImplementation(() => (pause === "shell" ? pty.promise : Promise.resolve(shell)));
+  h.openShell.mockImplementation(() => { atShell.resolve(); return pause === "shell" ? pty.promise : Promise.resolve(shell); });
   const { token } = kind.mint(
     { userId, organizationId: "org_1" } as never,
     kind.name === "server" ? "srv_1" : "svc_1",
@@ -179,14 +190,17 @@ async function start(
     }),
   };
   const opening = handlers.onOpen({}, ws);
-  return { userId, handlers, shell, ws, frames, opening, pty, audit, atAudit: atAudit.promise };
+  return { userId, handlers, shell, ws, frames, opening, pty, audit, atAudit: atAudit.promise, atShell: atShell.promise };
 }
 beforeEach(() => {
   vi.clearAllMocks();
   h.server.rows.clear();
   h.service.rows.clear();
   h.state.auditFails = false;
+  h.state.workspaceId = null;
+  h.releaseActivity.mockResolvedValue(undefined);
   h.state.auditGate = Promise.resolve();
+  h.ssh.acquire.mockResolvedValue({ openShell: h.openShell });
   h.ssh.withExecutor.mockImplementation(async (_id: string, fn: (executor: unknown) => unknown) =>
     fn({ openShell: h.openShell }),
   );
@@ -210,20 +224,41 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("retains managed-server admission across a parked service terminal and releases it on final close", async () => {
+  h.state.workspaceId = "managed-workspace";
+  const kind = kinds[1];
+  const s = await start(kind);
+  await s.atShell;
+  expect(h.releaseActivity).not.toHaveBeenCalled();
+  s.pty.resolve(s.shell);
+  await s.opening;
+  const ready = s.frames.find(frame => frame.type === "ready")!;
+  expect(ready).toBeDefined();
+  s.handlers.onClose();
+  expect(h.releaseActivity).not.toHaveBeenCalled();
+  expect(kind.resume(ready.resumeToken!, s.userId)).not.toBeNull();
+  unregisterServiceSession(ready.sessionId);
+  await Promise.resolve();
+  expect(h.releaseActivity).toHaveBeenCalledOnce();
+  expect(h.dispose).toHaveBeenCalledOnce();
+});
+
 describe.each(kinds)("$name terminal session ownership", (kind) => {
   it.each(["shell", "audit"] as const)(
     "reclaims an abandoned session while %s is pending",
     async (pause) => {
       const s = await start(kind, pause);
       if (pause === "audit") await s.atAudit;
+      else await s.atShell;
       s.handlers.onClose();
       s.pty.resolve(s.shell);
       s.audit.resolve();
       await s.opening;
       expect(kind.count(s.userId)).toBe(0);
       expect(await kind.repo.countActiveByUser(s.userId)).toBe(0);
-      expect(s.shell.close).toHaveBeenCalledTimes(1);
-      expect(kind.release).toHaveBeenCalledTimes(1);
+      const opened = pause === "audit" && kind.name === "server" ? 0 : 1;
+      expect(s.shell.close).toHaveBeenCalledTimes(opened);
+      expect(kind.release).toHaveBeenCalledTimes(opened);
       expect(s.frames.some((frame) => frame.type === "ready")).toBe(false);
     },
   );
@@ -283,11 +318,13 @@ describe.each(kinds)("$name terminal session ownership", (kind) => {
   });
   it("releases the transport when shell opening rejects after a disconnect", async () => {
     const s = await start(kind);
+    await s.atShell;
     s.handlers.onClose();
     s.pty.reject(new Error("shell unavailable"));
     await s.opening;
     expect(kind.count(s.userId)).toBe(0);
-    expect(kind.repo.open).not.toHaveBeenCalled();
+    expect(kind.repo.open).toHaveBeenCalledTimes(kind.name === "server" ? 1 : 0);
+    expect(await kind.repo.countActiveByUser(s.userId)).toBe(0);
     expect(kind.release).toHaveBeenCalledTimes(1);
   });
   it("reclaims the transient session when the audit insert fails after disconnect", async () => {
@@ -298,10 +335,10 @@ describe.each(kinds)("$name terminal session ownership", (kind) => {
     s.audit.resolve();
     await s.opening;
     expect(kind.count(s.userId)).toBe(0);
-    expect(kind.release).toHaveBeenCalledTimes(1);
+    expect(kind.release).toHaveBeenCalledTimes(kind.name === "server" ? 0 : 1);
     expect(kind.repo.close).not.toHaveBeenCalled();
   });
-  it("keeps simultaneous unaudited sessions distinct", async () => {
+  it("requires durable audit admission for server shells; keeps service fallback sessions distinct", async () => {
     h.state.auditFails = true;
     vi.spyOn(Date, "now").mockReturnValue(1800000000000);
     const a = await start(kind);
@@ -310,6 +347,13 @@ describe.each(kinds)("$name terminal session ownership", (kind) => {
     const b = await start(kind);
     b.pty.resolve(b.shell);
     await b.opening;
+    if (kind.name === "server") {
+      expect(h.openShell).not.toHaveBeenCalled();
+      expect(a.frames).toContainEqual(expect.objectContaining({ type: "error", code: "server_error" }));
+      expect(b.frames).toContainEqual(expect.objectContaining({ type: "error", code: "server_error" }));
+      expect(kind.count(a.userId)).toBe(0);
+      return;
+    }
     const first = a.frames.find((f) => f.type === "ready")!;
     const second = b.frames.find((f) => f.type === "ready")!;
     expect(first.sessionId).not.toBe(second.sessionId);

@@ -27,7 +27,7 @@ describe("project runtime lock", () => {
     const queued = withLiveProjectRuntimeMutation("p1", mutate);
 
     await Promise.resolve();
-    expect(h.findProject).not.toHaveBeenCalled();
+    expect(mutate).not.toHaveBeenCalled();
     release();
 
     await expect(first).resolves.toBeUndefined();
@@ -43,6 +43,6 @@ describe("project runtime lock", () => {
     );
 
     expect(result).toBe("ok");
-    expect(h.findProject).toHaveBeenCalledTimes(2);
+    expect(h.findProject).toHaveBeenCalledTimes(3);
   });
 });

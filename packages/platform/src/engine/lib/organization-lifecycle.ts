@@ -180,6 +180,9 @@ export const organizationOptions = {
     },
 
     beforeDeleteOrganization: async ({ organization, user }) => {
+      if ((await repos.cloudWorkspace.listByOrganization(organization.id)).length) {
+        throw new APIError("CONFLICT", { message: "Delete the organization's Cloud workspaces and end their subscriptions before deleting the organization.", code: "ORG_DELETE_CLOUD_WORKSPACES_ACTIVE" });
+      }
       if (await repos.serverCluster.hasManagedNetworkState(organization.id)) {
         throw new APIError("CONFLICT", {
           message: "Remove managed cluster networks and complete network recovery before deleting this organization.",

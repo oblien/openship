@@ -10,6 +10,11 @@ const h = vi.hoisted(() => ({
   collect: vi.fn(),
   cleanup: vi.fn(),
   updateStatus: vi.fn(),
+  status: "queued",
+  workspaceId: undefined as string | undefined,
+  meta: {} as Record<string, unknown>,
+  hasLiveExecution: vi.fn(),
+  recover: vi.fn(),
 }));
 
 vi.mock("@repo/db", async (importOriginal) => ({
@@ -20,15 +25,17 @@ vi.mock("@repo/db", async (importOriginal) => ({
         id: "dep-1",
         projectId: "project-1",
         organizationId: "org-1",
-        status: "queued",
+        status: h.status,
+        meta: h.meta,
       }),
       // Return a snapshot, just as a database read does, rather than a shared
       // object the mocked racing kickoff could retroactively change.
       findBuildSessionByDeploymentId: async () => ({ ...h.session }),
       cancelInFlight: h.cancelInFlight,
       acknowledgeUnstartedBuildSession: h.acknowledgeUnstarted,
+      hasLiveBuildExecution: h.hasLiveExecution,
     },
-    project: { findById: async () => ({ id: "project-1", organizationId: "org-1" }) },
+    project: { findById: async () => ({ id: "project-1", organizationId: "org-1", workspaceId: h.workspaceId }) },
     service: { listByProject: async () => [] },
   },
 }));
@@ -49,10 +56,16 @@ vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", () => 
   collectDeploymentManifest: h.collect,
   executeCleanup: h.cleanup,
 }));
+vi.mock("@repo/platform/engine/modules/deployments/deployment-recovery", () => ({ recoverManagedDeploymentExecution: h.recover }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.session.startedAt = null;
+  h.status = "queued";
+  h.workspaceId = undefined;
+  h.meta = {};
+  h.hasLiveExecution.mockResolvedValue(true);
+  h.recover.mockResolvedValue(false);
   h.cancelInFlight.mockResolvedValue(true);
   h.quiescent.mockResolvedValue(false);
   h.collect.mockResolvedValue({ projectId: "project-1", resources: [{ id: "container-1" }] });
@@ -85,5 +98,26 @@ describe("cancel request and worker ownership", () => {
     expect(h.cancelWorker).not.toHaveBeenCalled();
     expect(h.collect).not.toHaveBeenCalled();
     expect(h.acknowledgeUnstarted).not.toHaveBeenCalled();
+  });
+
+  it("can finish an already-requested cancellation after the managed worker dies", async () => {
+    h.status = "cancelled";
+    h.session.startedAt = new Date();
+    h.workspaceId = "managed-server";
+    h.recover.mockResolvedValue(true);
+    await expect(cancelBuildSession("dep-1")).resolves.toMatchObject({ pending: false, success: true });
+    expect(h.cancelInFlight).not.toHaveBeenCalled();
+    expect(h.recover).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }), expect.objectContaining({ workspaceId: "managed-server" }));
+  });
+
+  it("keeps cancellation pending when remote recovery cannot confirm completion", async () => {
+    h.status = "cancelled";
+    h.session.startedAt = new Date();
+    h.workspaceId = "managed-server";
+    h.meta = { cancellation: { keepProvisioned: true } };
+    h.recover.mockRejectedValue(new Error("Remote command completion is unknown"));
+    await expect(cancelBuildSession("dep-1")).resolves.toMatchObject({ pending: true, success: false, message: "Remote command completion is unknown" });
+    expect(h.cancelWorker).toHaveBeenCalledWith("dep-1", { keepProvisioned: true });
+    expect(h.cleanup).not.toHaveBeenCalled();
   });
 });

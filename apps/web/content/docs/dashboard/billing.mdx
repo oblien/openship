@@ -4,7 +4,7 @@ description: The Billing area (Openship Cloud only) shows your plan, usage, and 
 ---
 
 <Callout title="Openship Cloud only">
-Billing manages **Openship Cloud** resources for the selected organization.
+Billing manages **Openship Cloud** resources for the selected managed server.
 Self-hosted resources are free; linked installations can manage Cloud billing.
 </Callout>
 
@@ -17,34 +17,50 @@ the Billing area simply doesn't appear. You only pay for your own infrastructure
 
 On Cloud, **Billing** is where you watch usage, change plan, and pull invoices.
 Plans, prices, and per-plan limits are published on the
-[pricing page](/pricing); the header strip on this screen shows how much of your
-plan's metered credits and provider-reported capacity. CPU, RAM and disk allocation are shared across the namespace, including stopped workspaces and pending changes; credits are not minutes.
+[pricing page](/pricing). Select the server to inspect its plan, metered
+credits and usage. Shared Docker servers show actual host measurements
+separately from provisioned capacity. A reserved disk size is not used storage;
+credits are not minutes.
 Cloud traffic is measured, but an unknown traffic ceiling is not displayed as
-unlimited. Openship owns plan pricing and limits; each organization's purchased
+unlimited. Openship owns plan pricing and limits; each server's purchased
 terms are kept for renewals.
 
 | Tab | What it does |
 | --- | --- |
 | **Overview** | Current plan, billing period, and credit balance. |
 | **Usage** | Metered usage over the period, charted. |
-| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
+| **Plans** | Compare plans. New subscriptions open a hosted checkout; existing plan changes require support. |
 | **Top-ups** | One-shot credits for an existing plan, without changing resource limits. |
 | **Payment Method** | Opens the Stripe portal to manage cards. |
 | **Invoices** | Opens the Stripe portal to download invoices. |
 
-Cancelling from **Plans** flips the subscription to end at the close of the
+Cancelling from **Overview** flips the subscription to end at the close of the
 period you've already paid for; new billable work is then blocked. You can resume
 renewal before that period ends. Cancellation does not delete resources.
 
-Plan replacement starts a new full-price cycle without automatic proration.
+Choose a server from the right-hand card to view its own plan, renewal date,
+usage and invoices. Existing servers keep their billing history when a plan ends.
+Self-service upgrades and scheduled downgrades require Oblien's plan-change API;
+Openship currently blocks full-price replacement of an existing subscription.
 The return page verifies the specific checkout and credit delivery. It shows
 pending, refunded, disputed or failed states instead of inferring success from
-the browser URL. Invoices and payment methods open the selected organization's
+the browser URL. Invoices and payment methods open the selected server's
 portal, isolated from other customers and the reseller account.
 
 For the endpoints behind this screen, see the [billing API](/docs/api/billing).
 
 ## Make room for another deployment
+
+For a **shared Docker server**, open the server to see live usage and its
+projects. Container sizes are limits within that host. A new project does not
+reserve another VM or disk. Source builds use available host capacity, and
+image-only installs do not create a source builder. Stop an idle service if
+memory is tight, or contact support to change the plan and choose **Apply plan capacity**
+once the new entitlement is confirmed.
+The resize preview lists every project that may restart and requires confirmation.
+See [Servers](/docs/dashboard/servers) for progress, logs and recovery.
+
+### Existing project-owned Cloud resources
 
 Choose **Manage Cloud capacity** in Billing, or open it when a deployment needs
 more available capacity. The pool shows reserved CPU, memory and storage.
@@ -79,7 +95,7 @@ production settings. A smaller build may be slower or run out of memory.
 
 ## Credit warnings and recovery
 
-When Cloud credits run low, a persistent dashboard banner links to the affected workspace's
+When Cloud credits run low, a persistent dashboard banner links to the affected server's
 billing page. The final warning level, grace credits, and exhaustion also show a dismissible
 dialog. Credit-pack purchases appear only when top-ups are available.
 

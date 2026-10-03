@@ -26,6 +26,7 @@ const ssh = vi.hoisted(() => ({
 
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
+    acquire: async () => ({}),
     retain: (id: string) => { ssh.state.retained.add(id); },
     release: (id: string) => { ssh.state.retained.delete(id); },
     withExecutor: async (
@@ -41,7 +42,7 @@ vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   },
 }));
 
-import { db, schema, repos, resetJobs, installFakeRunner } from "./_harness";
+import { db, schema, repos, resetJobs, seedOwner, installFakeRunner } from "./_harness";
 import { startCommandRun } from "@repo/platform/engine/modules/jobs/job-command";
 import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import type { Job } from "@repo/db";
@@ -49,6 +50,11 @@ import type { Job } from "@repo/db";
 installFakeRunner();
 beforeEach(async () => {
   await resetJobs();
+  const owner = await seedOwner();
+  for (const id of ["srv-1", "srv-a", "srv-b"]) {
+    await db.insert(schema.servers).values({ id, organizationId: owner.orgId, name: id, sshHost: "192.0.2.10" })
+      .onConflictDoUpdate({ target: schema.servers.id, set: { organizationId: owner.orgId } });
+  }
   ssh.state.handler = null;
   ssh.state.retained.clear();
 });

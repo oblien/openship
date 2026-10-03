@@ -30,7 +30,7 @@ export default function HomeAppsCard({
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <h3 id={headingId} className="text-sm font-semibold text-foreground">
-            {copy.title}
+            <Link href="/apps" className="hover:text-muted-foreground">{copy.title}</Link>
           </h3>
           {hasApps && (
             <span className="text-xs tabular-nums text-muted-foreground">{apps.length}</span>

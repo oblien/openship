@@ -1,11 +1,10 @@
 /** Job keys are instance-global; authority comes from the stored target servers. */
 import { AppError, NotFoundError } from "@repo/contracts";
 import { repos } from "@repo/db";
+import { env } from "../../config";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
 import { instanceAuthorization } from "../../lib/instance-authorization";
-import { isServerInOrg } from "../../lib/resource-access";
-import { assertSelfHosted } from "../system/server-access";
 import { systemJobAvailability } from "./job.service";
 import { resolveServerIds, type CommandConfig } from "./job.types";
 
@@ -15,13 +14,14 @@ const denied = (error: unknown) => error instanceof AppError && [401, 403, 404].
 export async function assertJobServersWritable(ctx: ExecutionContext, serverIds: string[]): Promise<void> {
   for (const serverId of new Set(serverIds)) {
     await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: serverId, action: "admin" });
-    if (!(await isServerInOrg(ctx, serverId))) throw new NotFoundError("Server", serverId);
+    const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
+    if (!server || (env.CLOUD_MODE && !server.workspaceId)) throw new NotFoundError("Server", serverId);
   }
 }
 
 async function canAccessServers(ctx: ExecutionContext, ids: string[], action: "read" | "write"): Promise<boolean> {
   // No target means no provable tenant ownership, including legacy/corrupt rows.
-  if (!ids.length) return instanceAuthorization.allows(ctx, action);
+  if (!ids.length) return !env.CLOUD_MODE && instanceAuthorization.allows(ctx, action);
   try { await assertJobServersWritable(ctx, ids); return true; }
   catch (error) { if (denied(error)) return false; throw error; }
 }
@@ -32,15 +32,18 @@ export async function assertJobWritable(
   patch?: { serverId?: string; serverIds?: string[] },
   options: { allowMissingRegisteredSystem?: boolean } = {},
 ): Promise<void> {
-  assertSelfHosted();
   const row = await repos.job.findByKey(key);
   if (!row) {
-    if (!options.allowMissingRegisteredSystem || systemJobAvailability(key) !== "available") throw missingJob();
+    if (env.CLOUD_MODE || !options.allowMissingRegisteredSystem || systemJobAvailability(key) !== "available") throw missingJob();
     await instanceAuthorization.assert(ctx);
     return;
   }
   if (systemJobAvailability(key) === "unavailable") throw missingJob();
-  if (row.actionType === "builtin") { await instanceAuthorization.assert(ctx); return; }
+  if (row.actionType !== "command") {
+    if (env.CLOUD_MODE) throw missingJob();
+    await instanceAuthorization.assert(ctx);
+    return;
+  }
   const stored = resolveServerIds((row.actionConfig ?? {}) as CommandConfig);
   if (!(await canAccessServers(ctx, stored, "write"))) throw missingJob();
   // An update merges config. Both the stored targets and any added targets matter.
@@ -60,18 +63,18 @@ export async function canRunJob(ctx: ExecutionContext, key: string): Promise<boo
 
 export async function canReadJob(ctx: ExecutionContext, row: { key: string; actionType: string; actionConfig: unknown }): Promise<boolean> {
   if (systemJobAvailability(row.key) === "unavailable") return false;
-  return row.actionType !== "command" || canAccessServers(ctx, resolveServerIds((row.actionConfig ?? {}) as CommandConfig), "read");
+  return row.actionType === "command"
+    ? canAccessServers(ctx, resolveServerIds((row.actionConfig ?? {}) as CommandConfig), "read")
+    : !env.CLOUD_MODE;
 }
 
 export async function requireReadableJob(ctx: ExecutionContext, key: string) {
-  assertSelfHosted();
   const row = await repos.job.findByKey(key);
   if (!row || !(await canReadJob(ctx, row))) throw missingJob();
   return row;
 }
 
 export async function requireReadableRun(ctx: ExecutionContext, id: string) {
-  assertSelfHosted();
   const run = await repos.jobRun.findById(id);
   if (!run || !(await canReadRun(ctx, run))) throw new NotFoundError("Run");
   return run;
@@ -84,7 +87,7 @@ export async function canReadRun(ctx: ExecutionContext, run: { kind: string; job
     const targets = run.serverIds ?? (run.serverId ? [run.serverId] : []);
     return canAccessServers(ctx, targets, "read");
   }
-  return true;
+  return !env.CLOUD_MODE;
 }
 
 export async function assertJobReferences(ctx: ExecutionContext, input: { dependsOn?: string[]; notifyConfig?: { channels: string[] } | null }) {

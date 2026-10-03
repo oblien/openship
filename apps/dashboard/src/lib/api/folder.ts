@@ -29,17 +29,18 @@ export interface UploadTarget {
 }
 
 export interface FolderSession {
+  workspaceId?: string;
   success: boolean;
   sessionId: string;
   expiresAt: number;
   upload: UploadTarget;
 }
 
-export type FolderScanResponse = ScanProjectResponse & { sessionId: string };
+export type FolderScanResponse = ScanProjectResponse & { sessionId: string; workspaceId?: string; serverId?: string };
 
 export const folderApi = {
   /** Open an upload session; server returns an opaque upload target. */
-  createSession: (body: { stack?: string; packageManager?: string; name?: string }) =>
+  createSession: (body: { serverId?: string; stack?: string; packageManager?: string; name?: string }) =>
     api.post<FolderSession>(endpoints.projects.folderSession, body),
 
   /** Authoritative framework detection on the uploaded source (fallback path;

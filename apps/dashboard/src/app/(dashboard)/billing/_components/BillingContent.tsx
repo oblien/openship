@@ -1,33 +1,31 @@
 "use client";
 
-import { useSelectedLayoutSegment } from "next/navigation";
+import { ServerBillingPicker, useBillingServerInventory } from "@/components/billing/ServerBillingPicker";
 
-/**
- * Body of the billing layout. Wraps the active tab's children and an
- * optional sidebar slot, hiding the sidebar on the "plans" tab (the
- * plans grid wants the full content width). Client-side because the
- * sidebar visibility depends on the active layout segment.
- */
 export function BillingContent({
   children,
   sidebar,
-  promotePlan = false,
 }: {
   children: React.ReactNode;
   sidebar: React.ReactNode | null;
-  promotePlan?: boolean;
 }) {
-  const segment = useSelectedLayoutSegment();
-  const showSidebar = sidebar !== null && segment !== "plans";
-
-  if (!showSidebar) {
+  const inventory = useBillingServerInventory();
+  // Unpurchased customers compare plans directly; existing servers remain
+  // visible beside every billing tab, including the plan comparison.
+  const showServers = Boolean(inventory && (inventory.error || inventory.servers.some(({ managed }) =>
+    managed && (managed.resources || managed.planTierId !== "free" || managed.state !== "needs_plan"),
+  )));
+  if (!sidebar && !showServers) {
     return <div className="min-w-0">{children}</div>;
   }
 
   return (
-    <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="min-w-0">{children}</div>
-      <aside className={`min-w-0 lg:sticky lg:top-6 ${promotePlan ? "order-first lg:order-last" : ""}`}>{sidebar}</aside>
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="order-2 min-w-0 lg:order-1">{children}</div>
+      <aside className="order-1 min-w-0 space-y-4 lg:sticky lg:top-6 lg:order-2">
+        {showServers && <ServerBillingPicker />}
+        {sidebar}
+      </aside>
     </div>
   );
 }

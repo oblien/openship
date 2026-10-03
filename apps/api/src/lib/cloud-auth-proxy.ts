@@ -12,7 +12,7 @@
 
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { db, schema, repos, eq } from "@repo/db";
-import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { storeCloudSession } from "@repo/platform/engine/lib/cloud/session";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 import { cloudRuntimeTarget, env } from "@repo/platform/engine/config/env";
 import { safeErrorMessage } from "@repo/core";
@@ -62,31 +62,6 @@ async function mirrorCloudUser(cloudUser: CloudUser): Promise<string> {
   });
 
   return id;
-}
-
-/**
- * Store the cloud session token (encrypted) for later cloud API calls.
- *
- * After storing, wipe every cache derived from the cloud session
- * (validated-connection, profile, namespace token, and GitHub caches).
- * A fresh connect must reflect atomically — a stale "disconnected"
- * cache or an old user's namespace token would otherwise linger up to
- * its TTL and make the just-connected user look disconnected / wrong.
- */
-async function storeCloudSession(userId: string, cloudSessionToken: string): Promise<void> {
-  const encrypted = encrypt(cloudSessionToken);
-  const settings = await repos.settings.findByUser(userId);
-  if (settings) {
-    await repos.settings.update(userId, { cloudSessionToken: encrypted });
-  } else {
-    await repos.settings.upsert({
-      id: randomUUID(),
-      userId,
-      cloudSessionToken: encrypted,
-    });
-  }
-  const { invalidateCloudCaches } = await import("@repo/platform/engine/lib/cloud/session");
-  await invalidateCloudCaches(userId);
 }
 
 /**

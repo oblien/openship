@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} règle(s) de sauvegarde · avant déploiement : {preDeploy}",
     "backupManage": "Gérer les sauvegardes",
     "on": "activé",
-    "off": "désactivé"
+    "off": "désactivé",
+    "previewTitle": "Aperçu du déploiement",
+    "previewHint": "Continuez pour configurer votre application. Le déploiement démarre depuis la page suivante.",
+    "back": "Retour"
   },
   "summary": {
     "buildAndDeploy": "Builder et déployer :",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} version",
     "rollbackOther": "{count} versions",
     "rollbackAuto": "Rollback : auto",
-    "rollbackSnapshotHint": "Une copie de chaque version est conservée, donc un rollback ne reconstruit jamais. Modifiable dans Avancé.",
-    "rollbackGitHint": "Combien de versions passées restent restaurables. Modifiable dans Avancé."
+    "rollbackSnapshotHint": "Une copie de chaque version est conservée pour éviter de reconstruire lors d’un retour arrière. À modifier dans les paramètres de déploiement.",
+    "rollbackGitHint": "Nombre de versions précédentes restaurables. À modifier dans les paramètres de déploiement."
   },
   "power": {
     "heading": "Puissance",

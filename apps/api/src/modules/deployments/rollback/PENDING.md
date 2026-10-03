@@ -11,104 +11,13 @@ uncommitted changes. Line numbers are from that check.
 
 ---
 
-## Cloud (Oblien)
+## Managed Cloud servers
 
-### Inline workspace model — one workspace per project, not per deployment
-
-We still run **one Oblien workspace per deployment**, so 5 retained deployments = 5
-workspaces (1 running + 4 stopped) plus their archives, each billing a slot.
-`CloudRuntime.deploy` takes the BUILD workspace as the unit (`cloud.ts:1626`,
-`workspaceId = config.imageRef`), promotes it with `ws.lifecycle.makePermanent()`
-(`cloud.ts:1651`), and returns `containerId: workspaceId` (`cloud.ts:1859`) — so a
-deployment's container id IS its own workspace id. The capability comment says it
-outright at `cloud.ts:451-454`.
-
-The proposed model: one workspace per project, releases as folders inside, with
-`working_dir` pointing at `/app/current`. Rollback = `ln -sfn … current` +
-`workload.restart`. Instant, one slot per project, the same Capistrano shape bare
-already uses (`bare.ts:207`, `bare.ts:256`).
-
-```
-/app/
-  releases/<depId-1>/  <depId-2>/  <depId-3>/
-  current  →  releases/<depId-3>/
-```
-
-Nothing of it has shipped. What it needs:
-
-- The provision-once refactor of `CloudRuntime.deploy` (`cloud.ts:1625-1860`). Today
-  staging is a one-shot in-place `mv /app/.staging /app/production`
-  (`cloud.ts:1737-1765`) and `workDir` is `/app/production` or `/app`
-  (`cloud.ts:1702-1705`, applied at `cloud.ts:1789-1795`) — never a release dir.
-- Symlink-swap `makeActive`, plus a slimmed `archive`/`purge` (`cloud.ts:2124-2216`).
-  All three are still workspace-lifecycle calls: `stop(from)` then `start(to)`,
-  `createArchive + stop`, `deleteAllArchives + destroy`.
-- Cloud consumption of `previousDeploymentId`. It IS on the shared `DeployConfig` and
-  set for every runtime (`build-pipeline.ts:1740`), but only bare reads it
-  (`bare.ts:642`, `bare.ts:688`); `adapters/src/types.ts:344-352` documents
-  "Docker/Cloud ignore the field".
-
-**The migration path in the old plan no longer works, and this is the trap.**
-`project.cloudWorkspaceId` now exists — but it is the cloud LINK marker, not an
-inline hook. It is stamped after every successful cloud deploy from the workspace
-that deploy just created (`deployment-lifecycle.ts:759-767`) and read only to derive
-the target (`build.service.ts:411`, `core/types.ts:65`). So it is **already non-null
-for every existing cloud project**, and "if set → inline path, if not → provision and
-stamp" would route every legacy per-deployment project into the inline path on its
-next deploy. A separate inline-vs-legacy marker is needed. Note also that the
-`BuildConfig.cloudWorkspaceId` consumed at `cloud.ts:663-672` is a DIFFERENT value —
-the browser folder-upload session workspace (`build-pipeline.ts:829-831` ←
-`build.service.ts:1224`).
-
-**Why the obvious alternative is not available.** "Kill the workspace and recreate it
-from an archive" is not buildable against the current Oblien API, verified against
-their docs: archive endpoints are workspace-scoped (`/workspace/{wsId}/archives/*`)
-with no account-level store; `workspaces.create` has no `restore_from`,
-`from_archive`, `archive_id`, `seed`, `hydrate`, `from`, `source`, `template` or
-`clone_from` — `image` (a read-only catalog id) is the only source identifier;
-`GET /workspace/images` is the only images endpoint, so there is no
-commit-workspace-to-custom-image flow; and `POST /workspace/{wsId}/restore` only
-restores to the last snapshot of THAT workspace. It would need a new Oblien endpoint
-(open question with their team) or external durable storage, which was explored and
-reverted as the wrong call for Openship Cloud. The inline model sidesteps the
-requirement entirely, which is why it is the path.
-
-**What it costs until then.** Retention archives the previous release
-(`rollback-orchestrator.ts:96-105`) whenever the runtime advertises `unitRestore`,
-which cloud does (`cloud.ts:454`); `archive` keeps the workspace claimed by design
-(`cloud.ts:2099-2117` — a stopped workspace is what makes rollback work), and only
-`purge` frees a slot, when the release falls out of the window. The restore side
-needs that survivor: `restore-plan.ts:188-190` only returns `unit-swap` when the
-target still has a container id and a retained artifact, and `cloud.ts:2131-2136`
-throws "workspace is gone" without it. So a cloud project's rollback window is a
-direct multiplier on Oblien workspace slots.
-
-### `cloud_archive_strategy: 'offload'` persists and then does nothing
-
-The column accepts `'inplace' | 'offload'` (`schema/project.ts:393`), the API takes it
-(`project.schema.ts:403-405`), and it is persisted and echoed back
-(`project-crud.service.ts:600`, `:1218-1219`, `:1746`). It has **zero readers** — no
-`=== "offload"` comparison anywhere, and the one consumer of the archive decision,
-`cloud.ts:2141-2179`, never receives the project row, so it cannot vary by strategy.
-
-Reserved for a future self-hosted-to-external-S3 path (shipping archives off-host).
-Not buildable for Openship Cloud, which would need the Oblien support the item above
-establishes we don't have. Either wire it or stop accepting the value.
-
-*(Correction to the old reference list: `0022_cloud_archive_offload.sql` does not
-exist — 0022 is `0022_version_on_success_backfill.sql`. The column ships in
-`0000_init.sql:362`.)*
-
-### A failed archive delete on purge is still only a warning
-
-`CloudRuntime.purge` now propagates the WORKSPACE deletion, so a slot we still pay for
-can no longer be recorded as reclaimed. `snapshots.deleteAllArchives` stays warn-only,
-because a workspace that never archived has nothing to delete and Oblien's response for
-that case is not one this code can tell apart from a real failure — making it fatal
-would break every cloud purge to report a leak that may not exist. Distinguishing the
-two needs a confirmed answer from Oblien (or an archive listing before the delete);
-until then a genuinely stuck archive blob keeps billing storage and only shows up in a
-log line.
+Application rollback reuses Docker images or bare release directories on the
+subscription-owned server. It does not create, archive, resize or delete a VM.
+The native Cloud engine and its unused archive strategy are removed. See
+[Managed Cloud servers](../../../../../../docs/managed-cloud-servers.md) for
+current ownership and verification boundaries.
 
 ---
 
@@ -144,7 +53,7 @@ get heavy.
 
 The main remaining latency win, and fully unbuilt. Every Docker restore recreates the
 container from the retained image (`rollback-orchestrator.ts:339-355`); the only
-in-place path is `restoreViaUnitSwap` (`:359-465`), which is bare/cloud `makeActive`
+in-place path is `restoreViaUnitSwap` (`:359-465`), which is bare `makeActive`
 plus a probe and a pointer flip, and it ends in a full route **re-sync**
 (`syncProjectManagedEdge`, `:455-462`) rather than an upstream flip. The route layer
 has no endpoint-swap primitive: `upstream-url.ts:1-80` is a pure resolver, one target

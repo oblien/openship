@@ -44,6 +44,7 @@ export function ViewToggle({
             type="button"
             onClick={() => onChange(id)}
             aria-pressed={active}
+            aria-label={label}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
               active
                 ? "bg-card text-foreground"

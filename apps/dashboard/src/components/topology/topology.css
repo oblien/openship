@@ -37,17 +37,30 @@
 .topology-workspace .react-flow {
   --xy-background-color: var(--th-card-on-page);
 }
+.topology-workspace .react-flow__node-resource {
+  /* Keep the canvas grid behind translucent selection surfaces. */
+  background: var(--th-card-on-page);
+  border-radius: 1rem;
+}
 .topology-notice {
   top: 16px;
 }
 .topology-node {
+  transition: background-color 160ms ease-out;
+}
+.topology-node:not([data-picked="true"]) {
   border: 0;
   background: color-mix(in oklab, var(--scale-node-color) 12%, var(--th-card-on-page));
   box-shadow: none;
-  transition: background-color 160ms ease-out;
 }
-.topology-node:hover {
+.topology-node:not([data-picked="true"]):hover {
   background: color-mix(in oklab, var(--scale-node-color) 18%, var(--th-card-on-page));
+}
+.topology-node[data-picked="true"] .topology-node-action {
+  color: var(--foreground);
+}
+.topology-node[data-unavailable="true"] .topology-node-action {
+  cursor: not-allowed;
 }
 .topology-node-icon {
   background: var(--scale-node-tint);

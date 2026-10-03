@@ -1,7 +1,7 @@
 import { api, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
 import type { PromptPayload } from "@repo/core";
-import type { MigrationServiceRoutes } from "@repo/contracts";
+import type { MigrationServiceRoutes, MigrationSourceInput, ServerDetail } from "@repo/contracts";
 
 // ─── Types (mirror apps/api docker-inspect.service.ts DiscoveredStack) ────────
 
@@ -239,6 +239,8 @@ export interface PendingItem {
 
 export interface MigrationRun {
   id: string;
+  /** Returned by the detail endpoint so a reopened run can confirm its own cutover. */
+  confirmationToken?: string | null;
   pendingPrompt?: PromptPayload | null;
   status: MigrationStatus;
   /**
@@ -315,6 +317,10 @@ export const isScanStreamStalled = (e: unknown): e is ScanStreamStalledError =>
  * team-instance/data migration.
  */
 export const dockerMigrationApi = {
+  listSources: () => api.get<{ sources: ServerDetail[] }>(endpoints.dockerMigration.sources),
+  createSource: (input: MigrationSourceInput) => api.post<{ server: ServerDetail }>(endpoints.dockerMigration.sources, input, { timeout: 45_000 }).then(result => result.server),
+  testSource: (input: MigrationSourceInput) => api.post<{ ok: boolean; message: string; fingerprint: string }>(endpoints.dockerMigration.testSource, input, { timeout: 45_000 }),
+  deleteSource: (id: string) => api.delete<{ success: boolean }>(endpoints.dockerMigration.source(id)),
   /** Read-only: inspect a server's Docker and return the adoptable stack.
    *  SSH connect + `docker inspect` across every container easily exceeds the
    *  client's 15s default (esp. through the same-origin proxy's extra hop under

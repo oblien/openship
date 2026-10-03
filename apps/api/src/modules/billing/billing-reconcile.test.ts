@@ -12,6 +12,10 @@ vi.mock("@repo/db", () => ({
   repos: { organization: {
     findById: async () => ({ ...h.org }),
     setBillingEntitlement: h.mirror,
+  }, cloudWorkspace: {
+    listByOrganization: async () => [{ ...h.org, id: "workspace_1", organizationId: "org_1", namespace: h.org.oblienNamespace }],
+    findByIdInOrganization: async (id: string, org: string) => id === "workspace_1" && org === "org_1" ? { ...h.org, id, organizationId: org, namespace: h.org.oblienNamespace } : undefined,
+    setBillingEntitlement: h.mirror,
   }, billingPlanGrant: { current: h.grant } },
   withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
 }));
@@ -64,7 +68,7 @@ describe("Oblien-managed entitlements", () => {
     h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });
     const result = await syncOblienEntitlement("org_1");
     expect(result).toMatchObject({ tier: "pro", subscription: null, grant: { id: "bpg-test" } });
-    expect(h.mirror).toHaveBeenCalledWith("org_1", "os-customer", {
+    expect(h.mirror).toHaveBeenCalledWith("workspace_1", "org_1", "os-customer", {
       planTierId: "pro", subscriptionStatus: "active", currentPeriodStart: period.start, currentPeriodEnd: period.end,
     });
     expect(complimentaryCloudPlan(result.grant!)).toMatchObject({ price: { monthly: 0 }, monthlyCredits: 3_500_000 });
@@ -177,7 +181,7 @@ describe("Oblien-managed entitlements", () => {
   it("mirrors the paid tier, billing status and exact provider period without writing quotas", async () => {
     const result = await syncOblienEntitlement("org_1");
     expect(result.tier).toBe("pro");
-    expect(h.mirror).toHaveBeenCalledWith("org_1", "os-customer", {
+    expect(h.mirror).toHaveBeenCalledWith("workspace_1", "org_1", "os-customer", {
       planTierId: "pro", subscriptionStatus: "active",
       currentPeriodStart: new Date("2026-09-01T00:00:00Z"), currentPeriodEnd: new Date("2026-10-01T00:00:00Z"),
     });

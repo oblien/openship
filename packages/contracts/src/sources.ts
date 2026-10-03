@@ -5,8 +5,10 @@ import { EnsureProjectBody } from "./project-inputs";
 import { EnvRevealKeysSchema, type SourceScanOptions } from "./env-reveal";
 
 export type CodeSource = { type: "directory"; path: string } | { type: "files"; files: Readonly<Record<string, string | Uint8Array>> };
-export interface StageSourceInput { source: CodeSource; projectId?: string; name?: string; stack?: string; packageManager?: string }
+export interface StageSourceInput { source: CodeSource; projectId?: string; serverId?: string; name?: string; stack?: string; packageManager?: string }
 export const StagedSourceSchema = Type.Object({
+  serverId: Type.Optional(Type.String()),
+  workspaceId: Type.Optional(Type.String()),
   sessionId: Type.String({ minLength: 1 }), expiresAt: Type.Integer({ minimum: 0 }),
 });
 export const FolderSessionResultSchema = Type.Object({
@@ -18,6 +20,8 @@ export const FolderSessionResultSchema = Type.Object({
   }),
 });
 export const SourceScanSchema = Type.Object({
+  serverId: Type.Optional(Type.String()),
+  workspaceId: Type.Optional(Type.String()),
   name: Type.String(), stack: Type.String(), projectType: Type.String(), packageManager: Type.String(),
   installCommand: Type.String(), buildCommand: Type.String(), startCommand: Type.String(), buildImage: Type.String(),
   outputDirectory: Type.String(), rootDirectory: Type.String(),
@@ -48,7 +52,7 @@ export const RevealSourceSchema = Type.Object({
 });
 export interface SourceOperations {
   stage(input: StageSourceInput, options?: { signal?: AbortSignal; onStep?: (message: string) => void }): Promise<StagedSource>;
-  open(input?: { projectId?: string; name?: string; stack?: string; packageManager?: string }): Promise<FolderSessionResult>;
+  open(input?: { projectId?: string; serverId?: string; name?: string; stack?: string; packageManager?: string }): Promise<FolderSessionResult>;
   scan(id: string, options?: SourceScanOptions): Promise<SourceScan>;
   reveal(id: string, input: Static<typeof RevealSourceSchema>): Promise<Record<string, string>>;
 }

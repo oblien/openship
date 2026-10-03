@@ -1,21 +1,18 @@
 /**
- * Resource tiers — the ONE table the cloud (Oblien) power picker and the
- * self-hosted project settings both read.
+ * Container resource tiers shared by managed and self-hosted servers.
  *
  * Two rules make this correct on both sides of the product:
  *
- *   1. `0` means NO LIMIT. Cloud never uses it (a metered workspace must be
- *      sized), but self-hosted defaults to it: the operator owns the box, so a
- *      container's real ceiling is the machine itself. Every consumer must
- *      therefore test `> 0` before applying a cap — see `hasCpuLimit` /
- *      `hasMemoryLimit`. Historically self-hosted silently inherited the cloud
- *      free tier (0.5 vCPU · 512 MB) and OOM-killed memory-hungry images.
+ *   1. `0` means NO LIMIT on the container: the server remains the ceiling.
+ *      Managed servers receive their allocation from the subscription; a
+ *      project's power choice never resizes that server. Every consumer must
+ *      test `> 0` before applying a cap — see `hasCpuLimit` / `hasMemoryLimit`.
  *   2. The ceiling for a custom value is the TARGET MACHINE's capacity, not a
  *      hardcoded constant. A 64 GB box should be able to give a container
  *      64 GB; the old fixed 8192 MB / 4-core cap made that impossible.
  */
 
-/** Cloud-metered tiers + the two self-hosted-only selections. */
+/** Preset limits, a custom limit, or the full available server capacity. */
 export type ResourceTier = "unlimited" | "micro" | "low" | "medium" | "high" | "xlarge" | "custom";
 
 /** Tiers that map to a fixed spec (i.e. everything the caller can't type into). */
@@ -30,10 +27,10 @@ export interface ResourceValues {
   diskMb: number;
 }
 
-/** No cap on anything — the self-hosted default. */
+/** No additional container cap — the server is the default ceiling. */
 export const UNLIMITED_RESOURCES: ResourceValues = { cpuCores: 0, memoryMb: 0, diskMb: 0 };
 
-/** The Oblien workspace tiers. Keep in sync with the cloud provisioner. */
+/** Container presets; managed server allocation is set separately by its plan. */
 export const RESOURCE_TIER_SPECS: Record<FixedResourceTier, ResourceValues> = {
   micro: { cpuCores: 0.25, memoryMb: 256, diskMb: 4096 },
   low: { cpuCores: 0.5, memoryMb: 512, diskMb: 8192 },
@@ -59,12 +56,8 @@ export const ALL_RESOURCE_TIERS: readonly ResourceTier[] = [
   "custom",
 ];
 
-/** The cloud-selectable subset — no `unlimited`, since a metered workspace must
- *  be provisioned at a concrete size. */
-export const CLOUD_RESOURCE_TIER_IDS: readonly (FixedResourceTier | "custom")[] = [
-  ...RESOURCE_TIER_ORDER,
-  "custom",
-];
+/** Managed containers use the same choices as containers on connected servers. */
+export const CLOUD_RESOURCE_TIER_IDS = ALL_RESOURCE_TIERS;
 
 /** Floors. A cap below these is a misconfiguration, not a small container:
  *  Docker itself rejects Memory < 6 MB, and a sub-0.01 vCPU quota starves the
@@ -94,7 +87,7 @@ export interface ProjectResources {
   tier: ResourceTier;
   /** Target-machine ceiling; `source: "unknown"` means the probe failed. */
   capacity?: HostCapacity;
-  /** Cloud targets require limits; self-hosted targets may use the whole machine. */
+  /** Whether this target requires a container cap rather than the whole machine. */
   requiresLimit: boolean;
 }
 

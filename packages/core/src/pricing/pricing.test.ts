@@ -250,8 +250,8 @@ describe("pricing catalog (pricing.json)", () => {
     expect([...rates].sort((a, b) => a - b)).toEqual(rates);
   });
 
-  it("declares finite VM and total capacity for retail tiers independently of the enterprise owner", () => {
-    expect(PLAN_IDS.map(id => PLANS[id].oblienLimits.max_workspaces)).toEqual([0, 1, 3, 6, 12, null]);
+  it("grants one managed server per retail subscription independently of the enterprise owner", () => {
+    expect(PLAN_IDS.map(id => PLANS[id].oblienLimits.max_workspaces)).toEqual([0, 1, 1, 1, 1, null]);
     expect(["hobby", "starter", "pro", "team"].map(id => PLANS[id as PlanTierId].oblienLimits.max_total_vcpus)).toEqual([1, 2, 4, 8]);
     for (const id of ["hobby", "starter", "pro", "team"] as const) {
       expect(Object.values(PLANS[id].oblienLimits).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
@@ -268,13 +268,15 @@ describe("pricing catalog (pricing.json)", () => {
   });
 
   it.each([
-    ["hobby", 1, 2048], ["starter", 2, 3072], ["pro", 4, 4096], ["team", 8, 8192],
-  ] as const)("allows one %s service the shared CPU pool and half the shared RAM", (id, cpuCores, memoryMb) => {
+    ["hobby", 1, 4096], ["starter", 2, 8192], ["pro", 4, 16384], ["team", 8, 32768],
+  ] as const)("allows one %s service the full workspace CPU and RAM pool", (id, cpuCores, memoryMb) => {
     const limits = planServiceResources(planLimits(id));
     expect(limits).toEqual({ cpuCores, memoryMb });
     expect(cpuCores).toBe(PLANS[id].oblienLimits.max_total_vcpus);
     expect(cpuCores).toBe(PLANS[id].oblienLimits.max_vcpus);
-    expect(memoryMb).toBe(PLANS[id].oblienLimits.max_total_ram_mb! / 2);
+    expect(memoryMb).toBe(PLANS[id].oblienLimits.max_total_ram_mb);
+    expect(memoryMb).toBe(PLANS[id].oblienLimits.max_ram_mb);
+    expect(PLANS[id].oblienLimits.max_disk_gb).toBe(PLANS[id].oblienLimits.max_total_disk_gb);
     expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
   });
 
@@ -299,7 +301,7 @@ describe("pricing catalog (pricing.json)", () => {
     expect(planLimitsSchema.safeParse({ ...planLimits("starter"), maxServiceResources }).success).toBe(false);
   });
 
-  it.each([null, undefined, { cpuCores: 3, memoryMb: 3072 }, { cpuCores: 1, memoryMb: 7168 }])(
+  it.each([null, undefined, { cpuCores: 3, memoryMb: 3072 }, { cpuCores: 1, memoryMb: 9216 }])(
     "rejects new retail ceilings that are missing or exceed provider capacity: %j", maxServiceResources => {
       const catalog = structuredClone(PRICING);
       catalog.plans.find(plan => plan.id === "starter")!.limits.maxServiceResources = maxServiceResources;

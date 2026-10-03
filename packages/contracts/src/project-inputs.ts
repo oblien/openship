@@ -9,7 +9,6 @@ import {
   STACK_IDS,
   ALL_PACKAGE_MANAGERS,
   ALL_RESOURCE_TIERS,
-  CLOUD_RESOURCE_TIER_IDS,
   PROXY_DIRECTIVES,
   proxyKindRegex,
   MAX_ROLLBACK_WINDOW,
@@ -43,15 +42,8 @@ export const ResourceTierEnum = (opts?: { description?: string }) =>
     opts,
   );
 
-/** Cloud-selectable subset — no "unlimited" (a metered workspace must be sized). */
-export const CloudResourceTierEnum = (opts?: { description?: string }) =>
-  Type.Union(
-    CLOUD_RESOURCE_TIER_IDS.map((t) => Type.Literal(t)) as [
-      TLiteral<Exclude<ResourceTier, "unlimited">>,
-      ...TLiteral<Exclude<ResourceTier, "unlimited">>[],
-    ],
-    opts,
-  );
+/** Managed and connected servers share the same container-limit contract. */
+export const CloudResourceTierEnum = ResourceTierEnum;
 
 /**
  * Reject any path whose segments include `..`, on either separator.
@@ -358,7 +350,7 @@ export const CreateProjectBody = Type.Object({
   serverId: Type.Optional(
     Type.String({
       minLength: 1,
-      description: "Registered server to bind this new project to.",
+      description: "Execution server for this project: a connected host or a Cloud workspace's managed server.",
     }),
   ),
   /** Override the auto-generated slug (used as free subdomain: slug.opsh.io) */
@@ -441,16 +433,6 @@ export const CreateProjectBody = Type.Object({
     Type.Integer({ minimum: 0, maximum: MAX_ROLLBACK_WINDOW }),
     Type.Null(),
   ])),
-  /**
-   * Cloud archive strategy. Today only "inplace" is implemented
-   * (Oblien-native `snapshots.createArchive` + `workspace.stop`).
-   * The "offload" branch is reserved for future self-hosted external
-   * storage. Bare/Docker runtimes ignore the setting.
-   */
-  cloudArchiveStrategy: Type.Optional(
-    Type.Union([Type.Literal("inplace"), Type.Literal("offload")]),
-  ),
-
   /** Project flavor - "monorepo" wires the request through the multi-app path below. */
   projectType: Type.Optional(
     Type.Union([
@@ -563,6 +545,7 @@ export const EnsureProjectBody = Type.Composite([
 /** POST /projects/folder/session — open a folder-upload deploy session. */
 export const FolderSessionBody = Type.Object(
   {
+    serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     projectId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
     stack: Type.Optional(
       Type.String({

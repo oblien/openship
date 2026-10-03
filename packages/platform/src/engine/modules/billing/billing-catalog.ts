@@ -15,6 +15,7 @@ import type { OblienOffer, OblienSubscription } from "../../lib/oblien-billing-a
 import { cloudNamespaceLimits } from "../../lib/cloud-resource-limits";
 import { fromOblienCredits, toOblienCredits } from "./billing-credit-units";
 import type { ResolvedPlanGrant } from "./billing-plan-grants";
+import { CUSTOM_OFFER_VERSION, validCustomOffer } from "./billing-custom-offer";
 
 // Read compatibility for subscriptions sold before Openship owned its offers.
 // New checkouts never use these platform catalog IDs.
@@ -34,21 +35,22 @@ export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>
 };
 
 // Version price/term changes so checkout retries cannot reuse an earlier quote.
-export const OFFER_VERSION = "6";
+export const OFFER_VERSION = "8";
 const TOPUP_OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === offerReference(tier) || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
+  return reference === offerReference(tier) || reference === `openship:${tier}:v7` || reference === `openship:${tier}:v6` || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
-/** Offers without a complete saved capacity policy retain their pre-v4 VM CPU
- * ceilings. New offers always read the current catalog. */
+/** Offers without a complete saved capacity policy retain their old ceilings.
+ * These contracts cannot inherit the larger v7 RAM/disk from the public catalog. */
 function inheritedResourceLimits(tier: PlanTierId): ReturnType<typeof cloudNamespaceLimits> {
   const limits = cloudNamespaceLimits(tier);
-  if (tier === "pro") limits.max_vcpus = 2;
-  if (tier === "team") limits.max_vcpus = 4;
+  if (tier === "starter") Object.assign(limits, { max_workspaces: 3, max_ram_mb: 6144, max_total_ram_mb: 6144 });
+  if (tier === "pro") Object.assign(limits, { max_workspaces: 6, max_vcpus: 2, max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 });
+  if (tier === "team") Object.assign(limits, { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_total_ram_mb: 16384, max_disk_gb: 64 });
   return limits;
 }
 
@@ -92,14 +94,20 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
   const { offer, metadata } = subscription;
   const tier = metadata?.openship_plan as PlanTierId;
   const version = metadata?.openship_offer_version;
-  if (!PLAN_IDS.includes(tier) || tier === "free" || !offer || !metadata || !supportedOfferReference(offer.reference, tier) ||
-      offer.reference !== `openship:${tier}:v${version}` || !metadata.openship_organization || !metadata.openship_namespace ||
+  const custom = version === CUSTOM_OFFER_VERSION;
+  if (!PLAN_IDS.includes(tier) || tier === "free" || !offer || !metadata ||
+      (!custom && (!supportedOfferReference(offer.reference, tier) || offer.reference !== `openship:${tier}:v${version}`)) ||
+      !metadata.openship_organization || !metadata.openship_namespace ||
       (organizationId !== undefined && metadata.openship_organization !== organizationId) ||
       (namespace !== undefined && metadata.openship_namespace !== namespace) || !offer.policy || !offer.resourceLimits) invalidContract();
   let decoded: unknown;
   try { decoded = JSON.parse(metadata.openship_limits ?? ""); } catch { invalidContract(); }
   const parsed = planLimitsSchema.strict().safeParse(decoded);
   if (!parsed.success) invalidContract();
+  if (custom) {
+    if (subscription.billingInterval !== "monthly" || !validCustomOffer(tier, parsed.data, offer)) invalidContract();
+    return { tier, limits: parsed.data, resourceLimits: offer.resourceLimits as ReturnType<typeof cloudNamespaceLimits> };
+  }
   if (Number(version) >= 4 && tier !== "enterprise" && !parsed.data.maxServiceResources) invalidContract();
   return { tier, limits: parsed.data, resourceLimits: savedResourceLimits(tier, offer) };
 }
@@ -127,13 +135,14 @@ export function subscriptionMetadata(
   tier: PlanTierId,
   organizationId: string,
   namespace: string,
+  customLimits?: PlanLimits,
 ): Record<string, string> {
   return {
     openship_plan: tier,
-    openship_offer_version: OFFER_VERSION,
+    openship_offer_version: customLimits ? CUSTOM_OFFER_VERSION : OFFER_VERSION,
     openship_organization: organizationId,
     openship_namespace: namespace,
-    openship_limits: JSON.stringify(planLimits(tier)),
+    openship_limits: JSON.stringify(customLimits ?? planLimits(tier)),
   };
 }
 
@@ -189,6 +198,7 @@ export function presentCloudPlans(requestedLocale?: string): BillingPlans {
     provider: "oblien",
     locale,
     annual: { enabled: PRICING.annual.enabled, monthsFree: PRICING.annual.monthsFree },
+    custom: { resources: PRICING.custom.resources, extraMonthlyCents: PRICING.custom.extraMonthlyCents },
     ui: pricingUi(locale),
     plans,
   };
@@ -204,6 +214,8 @@ export async function cloudPlan(tier: PlanTierId, subscription?: OblienSubscript
   const yearly = subscription.billingInterval === "yearly";
   return {
     ...plan,
+    configuration: subscription.metadata?.openship_offer_version === CUSTOM_OFFER_VERSION ? "custom" as const : "preset" as const,
+    offerReference: offer.reference,
     name: offer.name,
     description: offer.description ?? "",
     limits: { ...limits, workloads: [...limits.workloads] },

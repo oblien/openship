@@ -203,7 +203,8 @@ export async function listResources(ctx: ExecutionContext, input: { type: string
   }
 
   if (type === "server") {
-    const list = await permittedRows(ctx, "server", await repos.server.listByOrganization(organizationId));
+    const servers = await repos.server.listByOrganization(organizationId, true);
+    const list = await permittedRows(ctx, "server", servers.filter(server => env.CLOUD_MODE === !!server.workspaceId));
     return list.map((s) => ({
         id: s.id,
         label: s.name || s.sshHost || s.id,
@@ -235,6 +236,7 @@ export async function listResources(ctx: ExecutionContext, input: { type: string
         meta: { kind: d.kind },
       }));
   }
+
 
   if (type === "github_installation" || type === "github_repository") {
     assertOrgAdmin(ctx);

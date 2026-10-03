@@ -9,10 +9,32 @@
  * (`/api/cloud/account`) LIVE and trusts its verdict.
  */
 import { repos } from "@repo/db";
+import { AppError } from "@repo/core";
+import { cloudRuntimeTarget } from "../../config/env";
+import { encrypt, decrypt } from "../encryption";
 import { cacheStore } from "../cache-store/index";
 import { requestMemo } from "../request-store";
-import { cloudFetch, readCloudJson, resolveOrgCloudUserId } from "./transport";
-import type { CloudAccount, TokenCache } from "./types";
+import { cloudFetch, readCloudJson, resolveOrgCloudUserId, readCloudSession, cloudSessionCacheKey, sameCloudIdentity } from "./transport";
+import type { CloudAccount, TokenCache, StoredCloudSession } from "./types";
+
+/** Verify before replacing a connection; token and identity are sealed together. */
+export async function storeCloudSession(userId: string, token: string): Promise<void> {
+  const response = await fetch(`${cloudRuntimeTarget.api}/api/cloud/account`, {
+    headers: { Authorization: `Bearer ${token}` },
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const account = response.ok ? (await readCloudJson<{ user?: CloudAccount }>(response))?.user : null;
+  if (!account || typeof account.id !== "string" || !account.id ||
+    typeof account.organizationId !== "string" || !account.organizationId)
+    throw new AppError("Could not verify the Cloud account and organization. Reconnect to Openship Cloud.", 401, "CLOUD_IDENTITY_UNVERIFIED");
+  const session: StoredCloudSession = {
+    token, apiUrl: cloudRuntimeTarget.api,
+    userId: account.id, organizationId: account.organizationId,
+  };
+  await repos.settings.setCloudSession(userId, encrypt(JSON.stringify(session)));
+  await invalidateCloudCaches(userId);
+}
 
 // ─── Teardown ────────────────────────────────────────────────────────────────
 
@@ -29,7 +51,7 @@ import type { CloudAccount, TokenCache } from "./types";
  */
 export async function invalidateCloudCaches(userId: string): Promise<void> {
   const tokens = await cacheStore<TokenCache>("oblien-ns-tokens");
-  await tokens.delete(userId);
+  await tokens.invalidateByPrefix(`${userId}:`);
   try {
     const { invalidateUserGitHubCache } = await import(
       "../../modules/github/github.auth"
@@ -47,8 +69,17 @@ export async function invalidateCloudCaches(userId: string): Promise<void> {
  * (validateCloudSession's identity-endpoint 401) and from cloudClient().disconnect()
  * after the SaaS-side revoke.
  */
-export async function clearCloudSession(userId: string): Promise<void> {
-  await repos.settings.update(userId, { cloudSessionToken: null }).catch(() => {});
+export async function clearCloudSession(userId: string, expected?: StoredCloudSession): Promise<void> {
+  const settings = await repos.settings.findByUser(userId);
+  if (settings?.cloudSessionToken) {
+    if (expected) {
+      try {
+        const current = JSON.parse(decrypt(settings.cloudSessionToken)) as StoredCloudSession;
+        if (!sameCloudIdentity(current, expected) || current.token !== expected.token) return;
+      } catch { return; }
+    }
+    await repos.settings.clearCloudSession(userId, settings.cloudSessionToken);
+  }
   await invalidateCloudCaches(userId);
 }
 
@@ -74,7 +105,7 @@ const inflightValidate = new Map<
   Promise<{ connected: boolean; user?: CloudAccount }>
 >();
 
-function validateCloudSession(
+async function validateCloudSession(
   userId: string,
 ): Promise<{ connected: boolean; user?: CloudAccount }> {
   // Per-request memo FIRST: a single inbound request validates the session
@@ -82,39 +113,43 @@ function validateCloudSession(
   // next request gets a fresh store → still proxies live, never stale across
   // requests. The inflight single-flight below still collapses concurrent
   // calls when there's no request store (cron / boot / background jobs).
-  return requestMemo(`cloud-session:${userId}`, () => validateCloudSessionLive(userId));
+  const session = await readCloudSession(userId);
+  if (!session) return { connected: false };
+  const key = cloudSessionCacheKey(userId, session);
+  return requestMemo(`cloud-session:${key}`, () => validateCloudSessionLive(userId, session, key));
 }
 
 async function validateCloudSessionLive(
   userId: string,
+  session: StoredCloudSession,
+  key: string,
 ): Promise<{ connected: boolean; user?: CloudAccount }> {
-  const existing = inflightValidate.get(userId);
+  const existing = inflightValidate.get(key);
   if (existing) return existing;
 
   const work = (async (): Promise<{ connected: boolean; user?: CloudAccount }> => {
-    const settings = await repos.settings.findByUser(userId);
-    if (!settings?.cloudSessionToken) return { connected: false };
-
-    const res = await cloudFetch(userId, "/api/cloud/account", { method: "GET" });
+    const res = await cloudFetch(userId, "/api/cloud/account", { method: "GET" }, session);
     if (!res) return { connected: false }; // fetch threw → transient, don't clear
 
     if (res.status === 401) {
       // Identity-endpoint 401 = the session token is invalid. The ONE
       // place we treat a 401 as authoritative "disconnected".
-      await clearCloudSession(userId);
+      await clearCloudSession(userId, session);
       return { connected: false };
     }
     if (!res.ok) return { connected: false }; // transient (5xx etc.) — don't clear
 
     const user = (await readCloudJson<{ user?: CloudAccount }>(res))?.user;
-    return { connected: true, ...(user ? { user } : {}) };
+    if (!user || user.id !== session.userId || user.organizationId !== session.organizationId)
+      return { connected: false };
+    return { user, connected: true };
   })();
 
-  inflightValidate.set(userId, work);
+  inflightValidate.set(key, work);
   try {
     return await work;
   } finally {
-    inflightValidate.delete(userId);
+    inflightValidate.delete(key);
   }
 }
 

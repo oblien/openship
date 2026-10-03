@@ -121,11 +121,8 @@ function includeRoute(route: RegisteredRoute): boolean {
   if (isPublicSpec(spec)) return false;
   if (HARD_DENY.has(route.module)) return false;
   // A `localOnly` route 404s on the hosted control plane, so advertising it there
-  // hands the agent a tool that can only ever fail. Not hypothetical: the jobs
-  // router is localOnly while `app.ts` mounts it unconditionally, so all 11 jobs
-  // tools were listed on the SaaS. Reading it from the spec is why router-level
-  // `localOnly` had to become a `secureRouter` option — as middleware it never
-  // reached the registry.
+  // hands the agent a tool that can only ever fail. Read availability from the
+  // registry; Hono middleware alone cannot describe it to MCP.
   if (spec.localOnly && env.CLOUD_MODE) return false;
   return spec.mcp != null; // opt-in allowlist
 }

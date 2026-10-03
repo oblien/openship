@@ -32,6 +32,7 @@ import {
   useState,
 } from "react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
+import { Button } from "@/components/ui/button";
 import type { TerminalErrorCode } from "@/lib/api";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
 import "@xterm/xterm/css/xterm.css";
@@ -378,7 +379,7 @@ export const ServiceTerminal = forwardRef<
     if (pty.lastError) {
       return {
         tone: "error" as const,
-        message: humanizeError(pty.lastError),
+        message: pty.lastErrorMessage || humanizeError(pty.lastError),
         showReconnect:
           pty.lastError !== "max_sessions" &&
           pty.lastError !== "server_not_found" &&
@@ -401,7 +402,7 @@ export const ServiceTerminal = forwardRef<
       };
     }
     return null;
-  }, [pty.lastError, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
+  }, [pty.lastError, pty.lastErrorMessage, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
 
   const handleReconnect = useCallback(() => {
     setExitInfo(null);
@@ -415,14 +416,16 @@ export const ServiceTerminal = forwardRef<
       className={className}
       status={
         banner?.showReconnect ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={handleReconnect}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            disabled={pty.isConnecting}
           >
             <UiIcon name="refresh" className="size-3" />
             Reconnect
-          </button>
+          </Button>
         ) : undefined
       }
       overlay={

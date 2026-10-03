@@ -3,7 +3,7 @@ import type { PromptPayload } from "@repo/core";
 const state = vi.hoisted(() => ({ findRun: vi.fn() }));
 vi.mock("@repo/db", async (original) => ({
   ...(await original<Record<string, unknown>>()),
-  repos: { dockerMigrationRun: { findById: state.findRun } },
+  repos: { dockerMigrationRun: { findById: state.findRun, requestCancel: async () => true } },
 }));
 import { migrationOrchestrator } from "@repo/platform/engine/modules/migration/migration.orchestrator";
 
@@ -25,6 +25,7 @@ describe("migration takeover prompt lifecycle", () => {
 
   it("replays the pending prompt and accepts only its current action in the owning organization", async () => {
     const answer = internals.promptUser("prompt-run", prompt);
+    await vi.waitFor(() => expect(migrationOrchestrator.getPendingPrompt("prompt-run")).not.toBeNull());
     const pending = migrationOrchestrator.getPendingPrompt("prompt-run")!;
     expect(pending.expiresAt).toBeDefined();
     expect(
@@ -57,6 +58,7 @@ describe("migration takeover prompt lifecycle", () => {
   it("rejects a cancelled run's waiter immediately and removes the prompt", async () => {
     const answer = internals.promptUser("cancel-run", prompt);
     const rejection = expect(answer).rejects.toThrow("Migration cancelled");
+    await vi.waitFor(() => expect(migrationOrchestrator.getPendingPrompt("cancel-run")).not.toBeNull());
     await expect(migrationOrchestrator.cancel("cancel-run", "org")).resolves.toEqual({ ok: true });
     await rejection;
     expect(migrationOrchestrator.getPendingPrompt("cancel-run")).toBeNull();

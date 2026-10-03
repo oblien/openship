@@ -86,7 +86,7 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
     ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "bare" });
   });
 
-  it("static cloud target → no flip (CloudRuntime owns it)", () => {
+  it("static cloud target → uses its selected runtime mode", () => {
     expect(
       resolveBuildRuntimeModes({
         workload: "static",
@@ -135,7 +135,7 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
     }
   });
 
-  it("prebuilt single-app image → Docker locally/remotely, Cloud unchanged", () => {
+  it("prebuilt single-app images use Docker on every server transport", () => {
     for (const [baseTarget, effectiveTarget] of [
       ["desktop", "local"],
       ["desktop", "server"],
@@ -164,7 +164,7 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
           willRunServices: false,
           hasPrebuiltImage: true,
         }),
-      ).toEqual({ buildRuntimeMode: undefined, serveRuntimeMode: undefined });
+      ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
     }
   });
 });
@@ -185,12 +185,6 @@ describe("resolveDeployRouting (post-resolve, keyed off runtime.name)", () => {
         resolveDeployRouting({ workload: "worker", runtimeName, outputDirectory: "dist" }),
       ).toEqual({ buildMode: "normal", deployMode: "worker", staticServeOutputDir: "" });
     }
-  });
-
-  it("static + cloud runtime → static-edge (Oblien Pages), normal build", () => {
-    expect(
-      resolveDeployRouting({ workload: "static", runtimeName: "cloud", outputDirectory: "dist" }),
-    ).toEqual({ buildMode: "normal", deployMode: "static-edge", staticServeOutputDir: "" });
   });
 
   it("static + docker runtime → sandbox build, file-serve, doc-root already extracted", () => {
@@ -261,7 +255,6 @@ describe("reusedReleaseRouting (a release that already exists)", () => {
     for (const routing of [
       resolveDeployRouting({ workload: "web", runtimeName: "docker", outputDirectory: "dist" }),
       resolveDeployRouting({ workload: "worker", runtimeName: "docker", outputDirectory: "dist" }),
-      resolveDeployRouting({ workload: "static", runtimeName: "cloud", outputDirectory: "dist" }),
     ]) {
       expect(reusedReleaseRouting(routing, "dist")).toBe(routing);
     }

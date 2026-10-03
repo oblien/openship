@@ -1,21 +1,11 @@
 /**
- * Resource utilities.
- *
- * Tier table + `0 = no limit` semantics live in @repo/core (resources.ts);
- * the concrete cloud/build fallbacks live in @repo/adapters. This module is the
- * API-side glue: decode user input, and resolve what a given deploy target
- * should actually run with.
- *
- * THE rule that matters here: the 512 MB `DEFAULT_RESOURCE_CONFIG` is the CLOUD
- * free tier and must never be a self-hosted fallback. A self-hosted box is the
- * operator's own hardware, so its default is unlimited — the machine is the cap.
- * Use `resolveRuntimeResources`, not bare `withDefaults`, on any deploy path.
+ * Container resource decoding and inheritance. Managed and connected servers
+ * share `0 = no additional cap`; the host's allocation is the physical ceiling.
+ * Server provisioning and live build headroom are resolved separately.
  */
 
 import {
   cloudCpus,
-  DEFAULT_RESOURCE_CONFIG,
-  DEFAULT_BUILD_RESOURCE_CONFIG,
   type ResourceConfig,
 } from "@repo/adapters";
 import {
@@ -47,39 +37,34 @@ function extractCpuCores(raw: Record<string, unknown>): number | undefined {
 /**
  * Encode ResourceConfig → display format (for API responses).
  *
- * `production` null means "never configured". On self-hosted that resolves to
- * unlimited (the machine is the cap); on cloud it resolves to the free tier.
+ * Missing limits use the whole server. Its subscription/allocation is independent
+ * of the limits chosen for an individual project.
  */
 export function encodeResources(
   production?: ResourceConfig | null,
   build?: ResourceConfig | null,
   sleepMode = "auto_sleep",
   port = 3000,
-  opts?: { isCloud?: boolean; capacity?: HostCapacity; automaticBuild?: boolean },
+  opts?: { capacity?: HostCapacity; automaticBuild?: boolean },
 ): ProjectResources {
-  const isCloud = opts?.isCloud ?? false;
-  const prod = production ?? (isCloud ? { ...DEFAULT_RESOURCE_CONFIG } : { ...UNLIMITED_RESOURCES });
+  const prod = withDefaults(production, UNLIMITED_RESOURCES);
   return {
-    build: build ?? (opts?.automaticBuild
-      ? { cpuCores: 0, memoryMb: 0, diskMb: DEFAULT_BUILD_RESOURCE_CONFIG.diskMb }
-      : { ...(isCloud ? DEFAULT_BUILD_RESOURCE_CONFIG : UNLIMITED_RESOURCES) }),
+    build: withDefaults(build, UNLIMITED_RESOURCES),
     ...(opts?.automaticBuild ? { buildMode: build ? "custom" as const : "automatic" as const } : {}),
     production: prod,
     sleepMode,
     port,
     tier: detectTier(prod),
     ...(opts?.capacity && { capacity: opts.capacity }),
-    requiresLimit: isCloud,
+    requiresLimit: false,
   };
 }
 
 /**
  * Validate user resource input → ResourceConfig.
  *
- * `0` is accepted and means NO LIMIT (self-hosted only — pass
- * `requireLimit: true` for cloud, where an unsized workspace can't be
- * provisioned). Non-zero values are bounded by the TARGET MACHINE's capacity
- * rather than a hardcoded ceiling; an unknown capacity enforces no ceiling.
+ * `0` means no additional container cap. Non-zero values are bounded by the
+ * target machine's capacity; an unknown capacity enforces no ceiling.
  */
 export function decodeResources(
   input: {
@@ -87,20 +72,17 @@ export function decodeResources(
     memoryMb?: number;
     diskMb?: number;
   },
-  opts?: { capacity?: HostCapacity; requireLimit?: boolean },
+  opts?: { capacity?: HostCapacity },
 ): ResourceConfig {
   const capacity = opts?.capacity ?? UNKNOWN_CAPACITY;
-  const fallback = opts?.requireLimit ? DEFAULT_RESOURCE_CONFIG : UNLIMITED_RESOURCES;
+  const fallback = UNLIMITED_RESOURCES;
 
   const cores = input.cpuCores ?? fallback.cpuCores;
   const mem = input.memoryMb ?? fallback.memoryMb;
   const disk = input.diskMb ?? fallback.diskMb;
 
-  if (cores < 0 || mem < 0 || disk < 0) {
-    throw new Error("Resource values cannot be negative (use 0 for no limit).");
-  }
-  if (opts?.requireLimit && (cores <= 0 || mem <= 0)) {
-    throw new Error("This deploy target requires explicit CPU and memory limits.");
+  if (![cores, mem, disk].every(value => Number.isFinite(value) && value >= 0)) {
+    throw new Error("Resource values must be finite and non-negative (use 0 for no limit).");
   }
 
   const reason = validateAgainstCapacity({ cpuCores: cores, memoryMb: mem, diskMb: disk }, capacity);
@@ -124,7 +106,7 @@ export function decodeResources(
  */
 export function withDefaults(
   config?: ResourceConfig | Record<string, unknown> | null,
-  defaults = DEFAULT_RESOURCE_CONFIG,
+  defaults = UNLIMITED_RESOURCES,
 ): ResourceConfig {
   if (!config) return { ...defaults };
 
@@ -136,56 +118,23 @@ export function withDefaults(
   return { cpuCores, memoryMb, diskMb };
 }
 
-/**
- * THE resolver every deploy path must use to turn a snapshot's raw resource
- * blob into what the runtime should enforce.
- *
- * Cloud gets the metered free tier when unset (an Oblien workspace must be
- * provisioned at a concrete size). Self-hosted gets NO limits when unset — the
- * operator owns the box, and inheriting the cloud tier there is what capped
- * every container at 512 MB and OOM-killed memory-hungry images.
- */
+/** Normalize saved limits without adding a target-specific fallback. */
 export function resolveRuntimeResources(
   raw: ResourceConfig | Record<string, unknown> | null | undefined,
-  opts: { isCloud: boolean },
 ): ResourceConfig {
-  if (!opts.isCloud) return withDefaults(raw, UNLIMITED_RESOURCES);
-  // Cloud can't provision an unsized workspace, so a 0 ("no limit") has to
-  // become a concrete tier here. The API rejects saving 0 against a cloud
-  // target, but a project set to unlimited while self-hosted and LATER promoted
-  // to cloud still carries one — it would otherwise reach Oblien as `memory_mb: 0`.
-  const resolved = withDefaults(raw, DEFAULT_RESOURCE_CONFIG);
-  return {
-    cpuCores: resolved.cpuCores > 0 ? resolved.cpuCores : DEFAULT_RESOURCE_CONFIG.cpuCores,
-    memoryMb: resolved.memoryMb > 0 ? resolved.memoryMb : DEFAULT_RESOURCE_CONFIG.memoryMb,
-    diskMb: resolved.diskMb > 0 ? resolved.diskMb : DEFAULT_RESOURCE_CONFIG.diskMb,
-  };
+  return withDefaults(raw, UNLIMITED_RESOURCES);
 }
 
-/** Compose overrides inherit each omitted dimension from the project. Cloud
- * never passes a zero/unlimited container limit through to the shared VM. */
-export function resolveCloudServiceResources(
+/** Each omitted service dimension inherits the project; explicit zero stays uncapped. */
+export function resolveInheritedResources(
   own: ResourceConfig | Record<string, unknown> | null | undefined,
   project: ResourceConfig | Record<string, unknown> | null | undefined,
 ): ResourceConfig {
-  const base = resolveRuntimeResources(project, { isCloud: true });
-  return resolveRuntimeResources(withDefaults(own, base), { isCloud: true });
+  return withDefaults(own, resolveRuntimeResources(project));
 }
 
-/** Same split for build-time resources. Only cloud sizes a build workspace;
- *  a self-hosted build container should use the whole machine. */
-export function resolveBuildResources(
-  raw: ResourceConfig | Record<string, unknown> | null | undefined,
-  opts: { isCloud: boolean },
-): ResourceConfig {
-  if (!opts.isCloud) return withDefaults(raw, UNLIMITED_RESOURCES);
-  const resolved = withDefaults(raw, DEFAULT_BUILD_RESOURCE_CONFIG);
-  return {
-    cpuCores: resolved.cpuCores > 0 ? resolved.cpuCores : DEFAULT_BUILD_RESOURCE_CONFIG.cpuCores,
-    memoryMb: resolved.memoryMb > 0 ? resolved.memoryMb : DEFAULT_BUILD_RESOURCE_CONFIG.memoryMb,
-    diskMb: resolved.diskMb > 0 ? resolved.diskMb : DEFAULT_BUILD_RESOURCE_CONFIG.diskMb,
-  };
-}
+/** Build defaults share the host. Managed builds receive measured headroom at admission. */
+export const resolveBuildResources = resolveRuntimeResources;
 
 /** Shared by installation previews, plan checks, and VM provisioning. */
 export interface CloudServiceResourceInput {
@@ -228,14 +177,14 @@ export function cloudDockerResources(input: {
 }): ResourceConfig {
   const resources = input.services
     .filter((s) => s.enabled !== false)
-    .map((s) => resolveCloudServiceResources(s.resources, input.resources));
+    .map((s) => resolveInheritedResources(s.resources, input.resources));
   const build = input.reserveBuild
-    ? resolveBuildResources(input.buildResources, { isCloud: true })
+    ? resolveBuildResources(input.buildResources)
     : null;
   // Image pulls need no source-build reservation. Include bounded Docker/OS
   // overhead; a source build receives temporary resources released after deployment.
   // Oblien accepts fractional CPU, including on Docker hosts. Use the same
-  // normalization as native Cloud workspaces instead of reserving whole cores.
+  // normalization used by the provider instead of rounding up to whole cores.
   return {
     cpuCores: cloudCpus(
       Math.max(

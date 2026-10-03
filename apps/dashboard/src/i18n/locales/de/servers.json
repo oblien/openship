@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "Sicherheit",
       "ports": "Portweiterleitung",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "activity": "Aktivität"
     },
     "healthy": "Fehlerfrei",
     "issues": "Probleme",
@@ -436,12 +437,19 @@
       "sensitiveHint": "Sollte nicht aus dem Internet erreichbar sein",
       "sensitiveReachable": "Sensibler Dienst aus dem Internet erreichbar",
       "reachableLegend": "„Erreichbar“ wurde durch Verbinden mit dem Port von außerhalb des Servers bestätigt; „Durch Firewall blockiert“ ist gebunden, aber blockiert (z. B. durch eine Cloud-Firewall).",
-      "summaryReachable": "{total} lauschende Ports · {reachable} aus dem Internet erreichbar · {firewalled} durch Firewall blockiert"
+      "summaryReachable": "{total} lauschende Ports · {reachable} aus dem Internet erreichbar · {firewalled} durch Firewall blockiert",
+      "managedTitle": "Lauschende Ports",
+      "managedSubtitle": "Prozesse, die auf diesem Server Verbindungen annehmen",
+      "managedHint": "Diese Ports befinden sich auf deinem verwalteten Server. Öffentlicher Zugriff wird über Netzwerk und die Domains der Projekte gesteuert.",
+      "managedSummary": "{total} lauschende Ports · {exposed} an Netzwerkschnittstellen gebunden",
+      "managedLoopbackSummary": "{total} lauschende Ports · nur localhost",
+      "managedListener": "Netzwerk-Listener",
+      "managedInconclusiveHint": "Die Socket-Tabelle konnte nicht gelesen werden. Versuche es erneut oder prüfe die Serververbindung im Terminal."
     }
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Live-SSH-Shells über WebSocket. Bis zu 3 gleichzeitig – Kopieren bei Auswahl."
+    "description": "Live-Serverterminal. Sitzungslimit: {count} – Kopieren bei Auswahl."
   },
   "setup": {
     "editServer": "Server bearbeiten",
@@ -954,5 +962,18 @@
     "hostname": "Access-Hostname",
     "help": "Verwende deinen Cloudflare-Access-Hostnamen und die SSH-Zugangsdaten deines Servers. Melde dich auf dem Rechner mit OpenShip bei Cloudflare an. Die Windows-App enthält den erforderlichen Client; andere Installationen benötigen cloudflared.",
     "openAccess": "Cloudflare Access öffnen"
+  },
+  "acquire": {
+    "connected": {
+      "label": "Eigenen Server verbinden",
+      "description": "Nutze einen vorhandenen Server über SSH."
+    },
+    "managed": {
+      "label": "Verwalteten Server buchen",
+      "description": "Openship Cloud übernimmt Einrichtung, Routing und HTTPS."
+    },
+    "signInHint": "Verbinde dein Cloud-Konto, um einen vorhandenen verwalteten Server zu nutzen oder einen neuen zu buchen.",
+    "chooseExisting": "Vorhandenen Cloud-Server auswählen",
+    "useServer": "Diesen Server verwenden"
   }
 }

@@ -19,6 +19,8 @@ import {
   cloudFetchAsOrgOwner,
   readCloudJson,
   resolveOrgCloudUserId,
+  readCloudSession,
+  cloudSessionCacheKey,
 } from "./transport";
 import { clearCloudSession } from "./session";
 import { cloudRequestError } from "./request-error";
@@ -335,10 +337,12 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
       // them; this mirrors the org→owner pattern used elsewhere.
       const userId = await resolveUserId();
       if (!userId) return;
+      const session = await readCloudSession(userId);
+      if (!session) return;
       try {
         const res = await cloudFetch(userId, "/api/cloud/disconnect", {
           method: "POST",
-        });
+        }, session);
         if (res && !res.ok) {
           console.warn(
             `[cloud disconnect] SaaS returned ${res.status} on session revoke; clearing local anyway`,
@@ -350,7 +354,7 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
           safeErrorMessage(err),
         );
       }
-      await clearCloudSession(userId);
+      await clearCloudSession(userId, session);
     },
 
     async sendInvitation(input) {
@@ -392,21 +396,34 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
     async token() {
       const userId = await resolveUserId();
       if (!userId) return null;
+      const session = await readCloudSession(userId);
+      if (!session) return null;
+      const key = cloudSessionCacheKey(userId, session);
+      const stillConnected = async () => {
+        const current = await readCloudSession(userId);
+        return current && cloudSessionCacheKey(userId, current) === key;
+      };
       const store = await cacheStore<TokenCache>("oblien-ns-tokens");
-      const cached = await store.get(userId);
-      if (cached) return cached;
+      const cached = await store.get(key);
+      if (cached) return await stillConnected() ? cached : null;
 
-      const res = await cloudFetch(userId, "/api/cloud/token", { method: "POST" });
+      const res = await cloudFetch(userId, "/api/cloud/token", { method: "POST" }, session);
       if (!res || !res.ok) return null;
 
       const json = await readCloudJson<{
         data: { token: string; namespace: string; expiresAt: string };
       }>(res);
-      if (!json?.data) return null;
+      if (!json?.data || typeof json.data.token !== "string" || !json.data.token ||
+        typeof json.data.namespace !== "string" || !json.data.namespace ||
+        !Number.isFinite(Date.parse(json.data.expiresAt)) ||
+        Date.parse(json.data.expiresAt) <= Date.now() || !(await stillConnected())) return null;
 
       const entry: TokenCache = { token: json.data.token, namespace: json.data.namespace };
-      await store.set(userId, entry, TOKEN_TTL_S);
-      return entry;
+      const expiresAt = Date.parse(json.data.expiresAt);
+      const ttl = Math.min(TOKEN_TTL_S, Math.floor((expiresAt - Date.now()) / 1000));
+      if (ttl < 1) return null;
+      await store.set(key, entry, ttl);
+      return await stillConnected() && expiresAt > Date.now() ? entry : null;
     },
   };
 }

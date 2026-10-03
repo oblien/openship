@@ -2,6 +2,49 @@ import type { MigrationRouteSpec } from "@repo/contracts";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import type { DiscoveredService } from "@/lib/api/server-migration";
 
+export type RouteMode = "keep" | "free" | "custom" | "none";
+
+export const hasKeepableRoute = (service: Pick<DiscoveredService, "existingRoute">) =>
+  !!service.existingRoute?.some((route) => route.domains.length > 0);
+
+export function firstContainerPort(service: DiscoveredService): string {
+  const port = service.ports[0];
+  return port?.split("/")[0]?.split(":").pop() ?? "";
+}
+
+/** Switching presentations must not discard additional domains or detected paths. */
+export function editableServiceRoutes(
+  service: DiscoveredService,
+  routes: PublicEndpoint[] | undefined,
+  mode: "free" | "custom",
+): PublicEndpoint[] {
+  const kept = keptServiceRoutes(service, firstContainerPort(service));
+  const current = routes?.length
+    ? routes
+    : kept.length
+      ? kept
+      : [createPublicEndpoint({ port: firstContainerPort(service) })];
+  return current.map((route) => ({ ...route, domainType: mode }));
+}
+
+/** A deliberate public-route choice cannot silently become an internal service. */
+export function hasIncompleteServiceRoutes(
+  mode: RouteMode,
+  routes: PublicEndpoint[] | undefined,
+): boolean {
+  if (mode !== "free" && mode !== "custom") return false;
+  return (
+    !routes?.length ||
+    routes.some((route) => {
+      const domain = (route.domainType === "custom" ? route.customDomain : route.domain).trim();
+      const port = route.port.trim();
+      return (
+        !domain || (!!port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535))
+      );
+    })
+  );
+}
+
 /** Keep every detected hostname/path and the matched container listen port. */
 export function keptServiceRoutes(
   service: DiscoveredService,

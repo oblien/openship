@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { authMiddleware } from "../../middleware/auth";
 import { secureRouter } from "../../lib/secure-router";
 import { issueTicket, terminalWsHandler } from "./terminal.controller";
 import { repos } from "@repo/db";
+import { env } from "@repo/platform/engine/config/env";
 
 /**
- * Interactive terminal routes - self-hosted only (cloud mode 404s here).
+ * Interactive server terminals over the shared authorized connection boundary.
  *
  *   POST /api/terminal/ticket           one-shot WS auth ticket (cookie-authed)
  *   GET  /api/terminal/ws/:serverId    WebSocket upgrade
@@ -19,7 +19,6 @@ import { repos } from "@repo/db";
 const r = secureRouter(new Hono(), {
   module: "terminal",
   basePath: "/api/terminal",
-  localOnly: true,
 });
 
 // Ticket endpoint - normal HTTP auth.
@@ -44,7 +43,7 @@ r.public(
 // (process died), so the rows are accurate after this. Runs once at
 // module load - no top-level await in the route file itself, so we
 // chain it onto a fire-and-forget promise.
-void repos.terminalSession
+if (!env.CLOUD_MODE) void repos.terminalSession
   .closeAllActive("server_error")
   .then((n) => {
     if (n > 0) {

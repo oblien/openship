@@ -43,22 +43,12 @@ export const buildDependencies: BuildDependencies = {
   async access(ctx, input) {
     if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none" && input.publicEndpoints === undefined) input.publicEndpoints = [];
     const source = await resolveProjectAuthority(input.projectId, ctx.organizationId);
-    const promotion = !env.CLOUD_MODE && env.DEPLOY_MODE !== "cloud" && input.deployTarget === "cloud" && input.buildStrategy !== "local";
-    if (source === "cloud" || promotion) {
+    // A destination changes where commands run, never where a project is stored.
+    // Only projects explicitly owned by Cloud are forwarded to its control plane.
+    if (source === "cloud") {
       // A fixed scope cannot use an owner-account link that has no verified
       // organization mapping. Deny before transfer or resource creation.
       if (ctx.scopeMode === "fixed") throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
-      if (promotion && source !== "cloud") {
-        const { promoteProjectToCloud, TransferConflictError } = await import("../projects/transfer.service");
-        try { await promoteProjectToCloud(ctx, input.projectId); }
-        catch (error) {
-          if (error instanceof TransferConflictError) {
-            if (error.conflictKind === "slug") throw new AppError(`The name "${error.conflictValue}" is already taken on Openship Cloud. Rename this project and try again.`, 409, "CLOUD_SLUG_TAKEN");
-            throw new AppError("This project already has a copy on Openship Cloud (leftover from an earlier transfer). Clean it up and retry to promote this local copy.", 409, "CLOUD_PROMOTE_CONFLICT");
-          }
-          throw error;
-        }
-      }
       const response = await cloudFetchAsOrgOwner(ctx.organizationId, "/api/deployments/build/access", { method: "POST", body: JSON.stringify(input) });
       if (!response) throw new AppError("Openship Cloud is unreachable", 503, CLOUD_UNREACHABLE_CODE);
       const body = await response.json().catch(() => null) as Record<string, unknown> | null;

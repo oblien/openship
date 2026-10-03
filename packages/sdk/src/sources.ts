@@ -39,6 +39,7 @@ export async function stageRemoteSource(http: HttpClient, input: StageSourceInpu
       const result = await requestSourceSession(http, {
         name: input.name ?? (source.temporary ? "app" : basename(source.directory)),
         projectId: input.projectId,
+        serverId: input.serverId,
         packageManager: input.packageManager ?? detectPackageManager(source.directory), stack: input.stack ?? detectStack(source.directory),
       }, signal);
       const stream = createReadStream(archive.path);
@@ -46,7 +47,7 @@ export async function stageRemoteSource(http: HttpClient, input: StageSourceInpu
         onStep?.("Uploading source");
         await http.upload(result.upload, Readable.toWeb(stream) as ReadableStream<Uint8Array>, { signal, duplex: "half" });
       } finally { stream.destroy(); }
-      return { sessionId: result.sessionId, expiresAt: result.expiresAt };
+      return { sessionId: result.sessionId, serverId: result.serverId, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
     } finally { await archive.dispose(); }
   } finally { await source.dispose(); }
 }

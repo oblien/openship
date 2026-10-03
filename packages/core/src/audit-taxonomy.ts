@@ -444,6 +444,21 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "Server reachable again",
     tone: "success",
   },
+  "migration.source_connected": {
+    category: "servers",
+    action: "connected the migration source",
+    label: "Migration source connected",
+    tone: "info",
+    description:
+      "An external SSH server was connected for importing projects. It cannot be used as a deployment destination.",
+  },
+  "migration.source_disconnected": {
+    category: "servers",
+    action: "disconnected the migration source",
+    label: "Migration source disconnected",
+    description:
+      "The stored migration connection was removed. The source server and its data are unchanged.",
+  },
   "server:write": {
     category: "servers",
     action: "changed the server",

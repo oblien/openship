@@ -55,7 +55,7 @@ describe("project build-cache controller", () => {
     h.findProject.mockResolvedValue({
       id: "proj_1",
       organizationId: "org_1",
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: "srv_1",
       activeDeploymentId: null,
     });

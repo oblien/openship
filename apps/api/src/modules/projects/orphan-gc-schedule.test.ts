@@ -353,7 +353,7 @@ describe("runOrphanSweep route claim lifecycle", () => {
         targetKey: "local",
       }),
     ];
-    h.getServer.mockResolvedValueOnce({ id: "self-server-row", isLocal: true });
+    h.getServer.mockResolvedValueOnce({ id: "self-server-row", isLocal: true, sshHost: "127.0.0.1", workspaceId: null });
     h.destroy.mockRejectedValueOnce(new Error("container still owns the bind"));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
 

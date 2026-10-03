@@ -2,7 +2,10 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -51,7 +54,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const { t } = useI18n();
   const bs = t.importProject.buildSettings;
 
-  const [isEditing] = useState(mode === 'simple');
+  const fieldPrefix = useId();
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
@@ -74,14 +77,6 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     { value: "worker", label: bs.modeWorker },
     { value: "static", label: bs.modeStatic },
   ];
-  const workloadHint =
-    workload === "web"
-      ? (buildData?.productionPort
-          ? interpolate(bs.serverOnPort, { port: String(buildData.productionPort) })
-          : bs.serverPortNotSet)
-      : workload === "worker"
-        ? bs.workerModeDesc
-        : bs.staticFromEdge;
   // Only a host the config actually names. The old fallback labelled the port
   // field "Port for <projectName>.<baseDomain>" for a config with no chosen
   // route at all — a hostname nobody created.
@@ -258,24 +253,23 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     if (mode === 'simple') {
       return (
         <div key={field.key}>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          <label htmlFor={`${fieldPrefix}-${field.key}`} className="text-sm font-medium text-foreground mb-1.5 block">
             {field.label}
             {field.optional && (
-              <span className="text-muted-foreground/50 ms-1">{bs.optional}</span>
+              <span className="text-xs text-muted-foreground ms-1">{bs.optional}</span>
             )}
           </label>
-          <input
+          <Input
+            dir="ltr"
+            id={`${fieldPrefix}-${field.key}`}
+            variant="filled"
             type={field.type}
             min={field.min}
             max={field.max}
             value={displayValue || ''}
             onChange={(e) => handleChange(field, e.target.value)}
-            readOnly={!isEditing}
             placeholder={field.placeholder}
-            className={`w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground transition-all ${isEditing
-              ? 'bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-text'
-              : 'bg-muted/20 cursor-not-allowed text-muted-foreground'
-              }`}
+            className={field.type === 'text' ? "min-w-0 font-mono" : "min-w-0"}
           />
         </div>
       );
@@ -291,40 +285,44 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
         {isCurrentlyEditing ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl border border-border/50">
-              {field.icon}
-              <input
+            <div className="relative">
+              <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">{field.icon}</span>
+              <Input
+                dir="ltr"
+                variant="filled"
+                aria-label={typeof field.label === 'string' ? field.label : undefined}
                 type={field.type}
                 min={field.min}
                 max={field.max}
                 value={displayValue || ''}
                 onChange={(e) => setTempValues({ ...tempValues, [field.key]: e.target.value })}
                 placeholder={field.placeholder}
-                className="flex-1 text-sm bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground/50"
+                className="min-w-0 ps-10 font-mono"
                 autoFocus
               />
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
+                type="button"
                 onClick={() => handleSave(field.key)}
                 disabled={loading[field.key]}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {bs.save}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
                 onClick={() => handleCancel(field.key, value)}
-                className="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-sm font-medium transition-all"
               >
                 {bs.cancel}
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <div className="relative p-3 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-all">
+          <div className="relative p-3 bg-background rounded-xl group">
             <div className="flex items-center gap-3">
               {field.icon}
-              <p className="text-sm font-medium text-foreground flex-1">{displayValue || field.placeholder}</p>
+              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || field.placeholder}</p>
             </div>
             <button
               onClick={() => handleEdit(field.key, value)}
@@ -410,18 +408,20 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
         return (
           <div key={endpoint.id}>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+            <label htmlFor={`${fieldPrefix}-port-${endpoint.id}`} className="text-sm font-medium text-foreground mb-1.5 block">
               {bs.portForPrefix} <span className="text-foreground font-semibold">{hostname}</span>
-              <span className="text-muted-foreground/50 ms-1">{bs.optional}</span>
+              <span className="text-xs text-muted-foreground ms-1">{bs.optional}</span>
             </label>
-            <input
+            <Input
+              dir="ltr"
+              id={`${fieldPrefix}-port-${endpoint.id}`}
+              variant="filled"
               type="number"
               min={1}
               max={65535}
               value={endpoint.port || ''}
               onChange={(event) => handleAdditionalEndpointPortChange(endpoint.id, event.target.value)}
               placeholder={config?.options?.productionPort || bs.enterPort}
-              className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
         );
@@ -437,17 +437,20 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
       return (
         <div key={endpoint.id}>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          <label htmlFor={`${fieldPrefix}-path-${endpoint.id}`} className="text-sm font-medium text-foreground mb-1.5 block">
             {bs.pathForPrefix} <span className="text-foreground font-semibold">{hostname}</span>
           </label>
-          <input
+          <Input
+            dir="ltr"
+            id={`${fieldPrefix}-path-${endpoint.id}`}
+            variant="filled"
             type="text"
             value={endpoint.targetPath || '/'}
             onChange={(event) => handleEndpointTargetPathChange(endpoint.id, event.target.value)}
             placeholder="/"
-            className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="font-mono"
           />
-          <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
+          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
         </div>
       );
     });
@@ -455,18 +458,20 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   if (mode === 'simple') {
     return (
-      <div className="bg-card rounded-2xl border border-border/50">
+      <div className="@container/build-settings bg-card rounded-2xl">
         <button
+          type="button"
+          aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between px-5 py-4 text-start"
+          className="w-full flex items-center justify-between gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center">
-              <UiIcon name="sliders" className="size-[18px] text-orange-500" />
+            <div className="size-9 shrink-0 rounded-xl bg-warning-bg flex items-center justify-center">
+              <UiIcon name="sliders" className="size-[18px] text-warning" />
             </div>
             <div>
-              <p className="text-[15px] font-semibold text-foreground">{bs.deployConfig}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm font-semibold text-foreground">{bs.deployConfig}</p>
+              <p className="text-xs text-muted-foreground">
                 {config?.framework ? interpolate(bs.defaultsApplied, { framework: config.framework }) : bs.configureOptions}
               </p>
             </div>
@@ -479,130 +484,127 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         </button>
 
         {expanded && (
-          <div className="px-5 pb-5 border-t border-border/50 pt-4">
-            <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-5 px-5 pb-5 border-t border-border/50 pt-4">
+            <div className="grid @min-[40rem]/build-settings:grid-cols-2 gap-5">
               {/* ── Build column ──────────────────────────────── */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
-                  <div className="flex items-center gap-2">
-                    <UiIcon name="wrench" className="w-3.5 h-3.5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{bs.build}</p>
-                      <p className="text-sm text-muted-foreground leading-tight">
-                        {hasBuild
-                          ? (config?.buildImage ? interpolate(bs.installBuildIn, { image: config.buildImage }) : bs.installBuildCommands)
-                          : bs.deploySourceDirectly}
-                      </p>
-                    </div>
-                  </div>
-                  <Toggle checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+              <div className="flex min-h-12 min-w-0 items-center justify-between gap-3 rounded-xl bg-card px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <UiIcon name="wrench" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.build}</p>
                 </div>
+                <Toggle aria-label={bs.build} checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+              </div>
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-1 @min-[40rem]/build-settings:row-start-2">
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
+              </div>
 
-                {/* ── Advanced (collapsible) ──────────────────── */}
-                {advancedFields.length > 0 && (
-                  <div className="border border-border/30 rounded-lg overflow-hidden">
+              {/* ── Start column (Server / Worker / Static, #538) ── */}
+              <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-1">
+                <div className="flex shrink-0 items-center gap-2">
+                  <UiIcon name="play" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.start}</p>
+                </div>
+                <div role="group" aria-label={bs.start} className="grid grid-cols-3 gap-1">
+                  {workloadOptions.map((opt) => (
                     <button
+                      key={opt.value}
                       type="button"
-                      aria-expanded={advancedOpen}
-                      onClick={() => setAdvancedOpen(!advancedOpen)}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-start hover:bg-muted/30 transition-colors"
+                      onClick={() => setWorkload(opt.value)}
+                      aria-pressed={workload === opt.value}
+                      className={`px-2 py-1.5 text-sm font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                        workload === opt.value
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      }`}
                     >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <UiIcon name="shield-check" className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="shrink-0 text-xs font-medium text-muted-foreground">{bs.advanced}</span>
-                        {(config?.releaseCommands?.length ?? 0) > 0 && (
-                          <span className="truncate rounded-md bg-background px-2 py-0.5 text-xs text-foreground" title={bs.releaseTitle}>
-                            {bs.releaseTitle} · {config.releaseCommands.length}
-                          </span>
-                        )}
-                      </div>
-                      {advancedOpen ? (
-                        <UiIcon name="chevron-up" className="size-3 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground" />
-                      )}
+                      {opt.label}
                     </button>
-                    {advancedOpen && (
-                      <div className="px-3 pb-3 space-y-3">
-                        {advancedFields.map(renderInput)}
-                        {(workload !== "static" || config?.releaseCommands?.length > 0) && (
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-foreground">{bs.releaseTitle}</p>
-                            <p className="text-sm text-muted-foreground">{bs.releaseDescription}</p>
-                            {(config?.releaseCommands ?? []).map((command: string, index: number) => (
-                              <div key={index} className="flex items-start gap-2">
-                                <textarea
-                                  aria-label={interpolate(bs.releaseCommand, { number: String(index + 1) })}
-                                  rows={1}
-                                  maxLength={1000}
-                                  value={command}
-                                  spellCheck={false}
-                                  onChange={(event) => updateConfig({
-                                    releaseCommands: config.releaseCommands.map((value: string, at: number) =>
-                                      at === index ? event.target.value : value),
-                                  })}
-                                  className="min-w-0 flex-1 resize-y rounded-lg bg-muted/50 px-3 py-2 font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                                />
-                                <button
-                                  type="button"
-                                  aria-label={interpolate(bs.removeReleaseCommand, { number: String(index + 1) })}
-                                  onClick={() => updateConfig({
-                                    releaseCommands: config.releaseCommands.filter((_: string, at: number) => at !== index),
-                                  })}
-                                  className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                >
-                                  <UiIcon name="close" className="size-4" />
-                                </button>
-                              </div>
-                            ))}
-                            <button
+                  ))}
+                </div>
+              </div>
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-2">
+                {visibleStartFields.map(renderInput)}
+                {renderEndpointTargetInputs()}
+              </div>
+            </div>
+
+            {/* ── Advanced (collapsible) ──────────────────── */}
+            {advancedFields.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  onClick={() => setAdvancedOpen(!advancedOpen)}
+                  className="w-full flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-3 text-start hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <UiIcon name="shield-check" className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="shrink-0 text-sm font-medium text-foreground">{bs.advanced}</span>
+                    {(config?.releaseCommands?.length ?? 0) > 0 && (
+                      <span className="truncate rounded-md bg-background px-2 py-0.5 text-xs text-foreground" title={bs.releaseTitle}>
+                        {bs.releaseTitle} · {config.releaseCommands.length}
+                      </span>
+                    )}
+                  </div>
+                  {advancedOpen ? (
+                    <UiIcon name="chevron-up" className="size-3 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground" />
+                  )}
+                </button>
+                {advancedOpen && (
+                  <div className="grid gap-5 pt-4 @min-[40rem]/build-settings:grid-cols-2">
+                    {advancedFields.map(renderInput)}
+                    {(workload !== "static" || config?.releaseCommands?.length > 0) && (
+                      <div className="space-y-2 @min-[40rem]/build-settings:col-span-2">
+                        <p className="text-sm font-medium text-foreground">{bs.releaseTitle}</p>
+                        <p className="text-xs text-muted-foreground">{bs.releaseDescription}</p>
+                        {(config?.releaseCommands ?? []).map((command: string, index: number) => (
+                          <div key={index} className="flex items-start gap-2">
+                            <Textarea
+                              dir="ltr"
+                              variant="filled"
+                              aria-label={interpolate(bs.releaseCommand, { number: String(index + 1) })}
+                              rows={1}
+                              maxLength={1000}
+                              value={command}
+                              spellCheck={false}
+                              onChange={(event) => updateConfig({
+                                releaseCommands: config.releaseCommands.map((value: string, at: number) =>
+                                  at === index ? event.target.value : value),
+                              })}
+                              className="min-w-0 flex-1 font-mono"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               type="button"
-                              disabled={(config?.releaseCommands?.length ?? 0) >= 20}
-                              onClick={() => updateConfig({ releaseCommands: [...(config?.releaseCommands ?? []), ""] })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                              aria-label={interpolate(bs.removeReleaseCommand, { number: String(index + 1) })}
+                              onClick={() => updateConfig({
+                                releaseCommands: config.releaseCommands.filter((_: string, at: number) => at !== index),
+                              })}
+                              className="shrink-0"
                             >
-                              <UiIcon name="plus" className="size-3.5" />
-                              {bs.addReleaseCommand}
-                            </button>
+                              <UiIcon name="close" className="size-4" />
+                            </Button>
                           </div>
-                        )}
+                        ))}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={(config?.releaseCommands?.length ?? 0) >= 20}
+                          onClick={() => updateConfig({ releaseCommands: [...(config?.releaseCommands ?? []), ""] })}
+                        >
+                          <UiIcon name="plus" className="size-3.5" />
+                          {bs.addReleaseCommand}
+                        </Button>
                       </div>
                     )}
                   </div>
                 )}
               </div>
-
-              {/* ── Start column (Server / Worker / Static, #538) ── */}
-              <div className="space-y-3">
-                <div className="p-2.5 bg-muted/30 rounded-lg border border-border/50 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <UiIcon name="play" className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">{bs.start}</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 bg-muted/40 rounded-lg">
-                    {workloadOptions.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setWorkload(opt.value)}
-                        className={`px-2 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          workload === opt.value
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-tight">{workloadHint}</p>
-                </div>
-                {visibleStartFields.map(renderInput)}
-                {renderEndpointTargetInputs()}
-              </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -612,7 +614,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   // Advanced mode
   const allVisibleFields = [...visibleBuildFields, ...visibleStartFields, ...generalFields];
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-6">
+    <div className="bg-card rounded-2xl p-5">
       <h2 className="text-lg font-semibold text-foreground mb-6">
         {bs.buildSettingsTitle}
       </h2>

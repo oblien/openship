@@ -33,6 +33,7 @@ import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
 import { disposeRuntime, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
+import { holdCloudWorkspaceActivity } from "@repo/platform/engine/lib/cloud-workspace-lock";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
@@ -117,8 +118,10 @@ async function resolveServiceForOrg(
   serviceId: string,
   organizationId: string,
   userId: string,
+  forShell = false,
 ): Promise<
-  | { ok: true; containerId: string; runtime: import("@repo/adapters").RuntimeAdapter }
+  | { ok: true; containerId: string; runtime: import("@repo/adapters").RuntimeAdapter;
+      openShell?: () => Promise<ShellSession>; release?: () => Promise<void> }
   | { ok: false; code: ErrorCode; message: string }
 > {
   const service = await repos.service.findById(serviceId);
@@ -169,8 +172,11 @@ async function resolveServiceForOrg(
   // The current caller's userId is forwarded for any cloud-side audit;
   // the deployment's org context determines cloud tenancy.
   let runtime: import("@repo/adapters").RuntimeAdapter;
+  let activity: Awaited<ReturnType<typeof holdCloudWorkspaceActivity>> | undefined;
   try {
-    const resolved = await resolveDeploymentRuntime({
+    if (forShell && project.workspaceId)
+      activity = await holdCloudWorkspaceActivity(project.workspaceId, "service-terminal:" + serviceId);
+    const resolve = () => resolveDeploymentRuntime({
       // A service is a CONTAINER, never the app's bare host process — pin the
       // docker runtime so the terminal targets the real service runtime (as
       // every other service action does via resolveServicePlatform), even when
@@ -178,8 +184,10 @@ async function resolveServiceForOrg(
       meta: { ...(dep.meta as Record<string, unknown> | null), runtimeMode: "docker" },
       organizationId: dep.organizationId,
     });
+    const resolved = await (activity ? activity.run(resolve) : resolve());
     runtime = resolved.runtime;
   } catch (err) {
+    await activity?.release().catch(() => {});
     return {
       ok: false,
       code: "server_error",
@@ -219,9 +227,23 @@ async function resolveServiceForOrg(
     // session (which disposes it when the session ends), and `issueTicket` — which
     // only wants the validation — releases it straight away.
     handedOff = true;
-    return { ok: true, containerId, runtime };
+    if (!activity) return { ok: true, containerId, runtime };
+    let releasing: Promise<void> | undefined;
+    return {
+      ok: true, containerId, runtime,
+      openShell: () => activity!.run(() => runtime.openServiceShell!(containerId, {
+        cols: 80, rows: 24, term: "xterm-256color",
+      })),
+      release: () => releasing ??= (async () => {
+        disposeRuntime(runtime);
+        await activity!.release();
+      })(),
+    };
   } finally {
-    if (!handedOff) disposeRuntime(runtime);
+    if (!handedOff) {
+      disposeRuntime(runtime);
+      await activity?.release();
+    }
   }
 
 }
@@ -323,7 +345,7 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
   // — refuses if the parent project doesn't belong to the caller's active
   // organization, OR if the caller lacks admin permission on the project
   // (opening a service shell is admin-tier).
-  const resolved = await resolveServiceForOrg(pathServiceId, activeOrgId, userId);
+  const resolved = await resolveServiceForOrg(pathServiceId, activeOrgId, userId, !resumeToken);
   if (!resolved.ok) {
     const closeCode =
       resolved.code === "server_not_found"
@@ -358,6 +380,8 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
       serviceId: pathServiceId,
       containerId: resolved.containerId,
       runtime: resolved.runtime,
+      openShell: resolved.openShell,
+      release: resolved.release,
       clientIp,
       userAgent,
       subprotocol: tokenProto,
@@ -368,7 +392,10 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
     handedOff = true;
     return handlers;
   } finally {
-    if (!handedOff) disposeRuntime(resolved.runtime);
+    if (!handedOff) {
+      if (resolved.release) await resolved.release();
+      else disposeRuntime(resolved.runtime);
+    }
   }
 
 });
@@ -380,6 +407,8 @@ interface HandshakeCtx {
   serviceId: string;
   containerId: string;
   runtime: import("@repo/adapters").RuntimeAdapter;
+  openShell?: () => Promise<ShellSession>;
+  release?: () => Promise<void>;
   clientIp: string | null;
   userAgent: string | null;
   subprotocol: string | undefined;
@@ -490,11 +519,11 @@ function buildHandlers(ctx: HandshakeCtx) {
         if (!ctx.runtime.openServiceShell) {
           throw new Error("Runtime does not implement openServiceShell");
         }
-        shell = await ctx.runtime.openServiceShell(ctx.containerId, {
+        shell = await (ctx.openShell?.() ?? ctx.runtime.openServiceShell(ctx.containerId, {
           cols: 80,
           rows: 24,
           term: "xterm-256color",
-        });
+        }));
       } catch (err) {
         const code: ErrorCode = "ssh_connect";
         sendControl(ws, {
@@ -506,7 +535,8 @@ function buildHandlers(ctx: HandshakeCtx) {
         // The shell never opened, so no session takes ownership of the runtime
         // below — release it here or a terminal that fails to attach leaks its
         // transport (the likeliest case being an unreachable host).
-        disposeRuntime(ctx.runtime);
+        if (ctx.release) await ctx.release().catch(() => {});
+        else disposeRuntime(ctx.runtime);
         return;
       }
 
@@ -534,6 +564,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         // Handed over: the session outlives this connection (park/resume), so it
         // is the only thing that knows when this transport is finished with.
         runtime: ctx.runtime,
+        release: ctx.release,
         onTimeout: (_sid, reason) => {
           sendControl(ws, {
             type: "error",

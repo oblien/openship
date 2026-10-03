@@ -51,6 +51,8 @@ export interface StaticProbeOptions {
   requestPath?: string;
   /** Port the edge serves plain HTTP on. Defaults to 80. */
   edgePort?: number;
+  /** Provider-owned edge origin; omitted for the server's loopback proxy. */
+  edgeOrigin?: string;
   /** curl's --max-time, in seconds. Defaults to 3 — it has to fit inside the
    *  on-demand check's overall budget. */
   timeoutSeconds?: number;
@@ -89,6 +91,10 @@ function buildCommand(servedPath: string, opts?: StaticProbeOptions): string {
   if (host && SAFE_HOST.test(host) && safeRequestPath(path)) {
     const port = opts?.edgePort ?? 80;
     const maxTime = opts?.timeoutSeconds ?? 3;
+    const origin = opts?.edgeOrigin ?? `http://127.0.0.1:${port}`;
+    // Only an HTTP origin, never credentials, shell syntax or a different path.
+    if (!/^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(origin) ||
+        !Number.isFinite(maxTime) || maxTime <= 0) return [...parts, "true"].join("; ");
     // `%{num_connects}` is the TCP verdict and curl's exit code is NOT: curl exits
     // 28 for a timeout both before AND after connecting, so a dropped SYN and a
     // slow-but-answering edge are indistinguishable by status alone. 0 connects
@@ -108,7 +114,7 @@ function buildCommand(servedPath: string, opts?: StaticProbeOptions): string {
       `if command -v curl >/dev/null 2>&1; then ` +
         `echo "HTTP $(curl -sS -o /dev/null -w '%{http_code} %{num_connects}' ` +
         `--max-time ${maxTime} -H 'Host: ${host}' -H 'X-Forwarded-Proto: https' ` +
-        `'http://127.0.0.1:${port}${path}' 2>/dev/null)"; fi`,
+        `'${origin}${path}' 2>/dev/null)"; fi`,
     );
   }
 

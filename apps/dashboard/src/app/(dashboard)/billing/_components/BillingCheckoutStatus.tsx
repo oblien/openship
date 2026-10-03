@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { CloudSubscriptionWelcome } from "@/components/billing/CloudSubscriptionWelcome";
+import { useBillingWorkspace } from "@/components/billing/BillingWorkspaceContext";
 import { useSession } from "@/lib/auth-client";
 
 interface CheckoutReturn {
@@ -12,18 +13,22 @@ interface CheckoutReturn {
   checkoutId?: string;
   expectedTier?: string;
   expectedInterval?: "monthly" | "annual";
+  expectedOffer?: string;
 }
 
 /** A different return URL must never reuse the previous checkout's confirmation. */
 export function BillingCheckoutStatus(props: CheckoutReturn) {
+  const workspaceId = useBillingWorkspace();
   const { data: session } = useSession();
   const key = JSON.stringify([
     session?.user.id,
     session?.session.activeOrganizationId,
+    workspaceId,
     props.kind,
     props.checkoutId,
     props.expectedTier,
     props.expectedInterval,
+    props.expectedOffer,
   ]);
   return <CheckoutConfirmation key={key} {...props} />;
 }
@@ -34,8 +39,10 @@ function CheckoutConfirmation({
   checkoutId,
   expectedTier,
   expectedInterval,
+  expectedOffer,
 }: CheckoutReturn) {
   const router = useRouter();
+  const workspaceId = useBillingWorkspace();
   const { t } = useI18n();
   const [status, setStatus] = useState<"checking" | "active" | "pending" | "failed" | "reversed">(
     "checking",
@@ -53,8 +60,8 @@ function CheckoutConfirmation({
     async function refresh() {
       try {
         const [state, checkout] = await Promise.all([
-          billingApi.getBillingState(),
-          checkoutId ? billingApi.getCheckoutStatus(checkoutId) : null,
+          billingApi.getBillingState(workspaceId),
+          checkoutId ? billingApi.getCheckoutStatus(checkoutId, workspaceId) : null,
         ]);
         if (disposed) return;
         setError(null);
@@ -89,6 +96,7 @@ function CheckoutConfirmation({
             (expectedTier &&
               state.tier === expectedTier &&
               state.status === "active" &&
+              (!expectedOffer || state.subscription?.offerReference === expectedOffer) &&
               (!expectedInterval || state.subscription?.interval === expectedInterval)))
         ) {
           setConfirmed(state);
@@ -111,18 +119,14 @@ function CheckoutConfirmation({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [kind, checkoutId, expectedTier, expectedInterval, router]);
+  }, [workspaceId, kind, checkoutId, expectedTier, expectedInterval, expectedOffer, router]);
 
   return (
     <>
       {kind === "subscription" && status === "active" && confirmed && checkoutId && (
         <CloudSubscriptionWelcome state={confirmed} checkoutId={checkoutId} />
       )}
-      <div
-        role="status"
-        aria-live="polite"
-        className="mb-6 rounded-lg border border-border bg-muted/30 p-4 text-sm"
-      >
+      <div role="status" aria-live="polite" className="mb-5 rounded-xl bg-muted/40 p-4 text-sm">
         <p>
           {status === "active" && kind === "topup"
             ? t.billing.checkout.topupComplete

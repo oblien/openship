@@ -13,7 +13,7 @@ import { assertNativeJobs } from "../../native/execution-policy";
 import { assertSelfHosted } from "../system/server-access";
 import { runJobNow, systemJobAvailability } from "../jobs/job.service";
 import { getCurrentHealthScan, listWorkloadHealthSnapshots, runCurrentHealthScan } from "../monitoring/health-watch";
-import { assertContainerHealthSupported, containerHealthSupported, continuousHealthAvailable, containerHealthEventsAvailable, HEALTH_WATCH_JOB, healthWatchActive } from "../monitoring/health-watch-policy";
+import { continuousHealthAvailable, containerHealthEventsAvailable, HEALTH_WATCH_JOB, healthWatchActive } from "../monitoring/health-watch-policy";
 import { listOrganizationIssues } from "./issues.service";
 
 const RESCAN_JOBS = [HEALTH_WATCH_JOB, "infra:scan", "domains:verify-pending", "updates:scan"] as const;
@@ -28,7 +28,6 @@ export const issuesDependencies: IssueDependencies = {
     async list(ctx, input = {}) { const status = input.status ?? "open"; return { ...await listOrganizationIssues(ctx, { status }), status }; },
     async summary(ctx) { return (await listOrganizationIssues(ctx)).counts; },
     async health(ctx) {
-      assertContainerHealthSupported();
       const available = continuousHealthAvailable();
       const [rows, job, servers, all, instanceAdmin, jobWrite] = await Promise.all([
         Promise.resolve(listWorkloadHealthSnapshots(ctx.organizationId)), repos.job.findByKey(HEALTH_WATCH_JOB),
@@ -44,7 +43,7 @@ export const issuesDependencies: IssueDependencies = {
       }
       return {
         workloads: visible, watching: healthWatchActive(job),
-        capabilities: { current: containerHealthSupported() && all, continuous: available },
+        capabilities: { current: all, continuous: available },
         currentScan: all ? getCurrentHealthScan(ctx.organizationId) : null,
         watcher: {
           key: HEALTH_WATCH_JOB, schedule: job?.cronExpression ?? null, available,
@@ -55,7 +54,6 @@ export const issuesDependencies: IssueDependencies = {
       };
     },
     async scanHealth(ctx) {
-      assertContainerHealthSupported();
       // This existing scanner covers the whole organization and returns aggregate counts.
       await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "project", resourceId: "*", action: "read", scope: "all" });
       return runCurrentHealthScan(ctx.organizationId);

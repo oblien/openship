@@ -14,11 +14,11 @@ const meta = (m: Partial<DeploymentMeta>): DeploymentMeta => m as DeploymentMeta
 describe("resolveEffectiveTarget", () => {
   it.each(["desktop", "selfhosted", "cloud"] as const)("keeps a bound Cloud Docker build on Oblien from %s", base => {
     expect(resolveEffectiveTarget(base, meta({ deployTarget: "cloud", buildStrategy: "server",
-      runtimeMode: "docker", cloudDockerWorkspace: { projectId: "project-a", workspaceId: "vm-a" } }))).toBe("cloud");
+      runtimeMode: "docker", managedServer: { projectId: "project-a", workspaceId: "vm-a" } }))).toBe("cloud");
   });
   it.each([{ deployTarget: "local" }, { serverId: "server-a" }] as const)("refuses conflicting Cloud Docker placement %j", conflict => {
     expect(() => resolveEffectiveTarget("selfhosted", meta({ ...conflict,
-      cloudDockerWorkspace: { projectId: "project-a", workspaceId: "vm-a" } }))).toThrow("conflicts");
+      managedServer: { projectId: "project-a", workspaceId: "vm-a" } }))).toThrow("conflicts");
   });
   it("keeps an existing provider workspace on Cloud during self-hosted cleanup", () => {
     expect(resolveEffectiveTarget("selfhosted", meta({ deployTarget: "cloud", workspaceId: "existing-vm" }))).toBe("cloud");

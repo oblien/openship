@@ -48,6 +48,7 @@ import {
   AppDestinationPicker,
   type AppDestination,
 } from "@/components/deploy/AppDestinationPicker";
+import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
@@ -220,7 +221,6 @@ export default function AppInstallPage() {
   // is the same for Cloud, self-hosted, and local targets.
   const { connected: cloudConnected, loading: cloudLoading, requireCloud } = useCloud();
   const { showModal, hideModal } = useModal();
-  const showCloudPricing = useCloudDeployPricing();
   // Desktop mode: apps can't run on this machine yet — see useLocalDeployGate.
   const localDeployGate = useLocalDeployGate();
 
@@ -364,6 +364,8 @@ export default function AppInstallPage() {
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
   const [destination, setDestination] = useState<AppDestination | null>(null);
+  const [destinationReady, setDestinationReady] = useState(false);
+  const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
   const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
     domain: { label: w.routeDomainLabel, description: w.routeDomainDesc },
@@ -471,7 +473,7 @@ export default function AppInstallPage() {
   const capacityProjectId = adoptedProjectId ?? projectId ?? targetDraftId;
   useEffect(() => {
     const templateId = template?.id;
-    if (!templateId || (selfHosted && (!declaresResources || !destination))) {
+    if (!templateId || !destinationReady || (!cloudDestination && !declaresResources)) {
       setHostFit(null);
       setCapacityLoading(false);
       return;
@@ -482,7 +484,7 @@ export default function AppInstallPage() {
     void appsApi
       .hostFit(templateId, {
         deployTarget: cloudDestination ? "cloud" : destination?.deployTarget,
-        serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+        serverId: destination?.serverId,
         projectId: capacityProjectId ?? undefined,
       })
       .then((res) => {
@@ -502,6 +504,7 @@ export default function AppInstallPage() {
     declaresResources,
     template?.id,
     destination,
+    destinationReady,
     cloudDestination,
     selfHosted,
     capacityProjectId,
@@ -516,8 +519,8 @@ export default function AppInstallPage() {
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, [selfHosted]);
-  const needsCloudUpgrade = !selfHosted && hostFit?.cloud?.status === "upgrade";
-  const checkingCloudCapacity = !selfHosted && capacityLoading;
+  const needsCloudUpgrade = cloudDestination && hostFit?.cloud?.status === "upgrade";
+  const checkingCloudCapacity = cloudDestination && capacityLoading;
 
   const [draftRouting, setDraftRouting] = useState<
     | { projectId: string; status: "ready"; slug: string | null }
@@ -556,14 +559,19 @@ export default function AppInstallPage() {
       setDraftRouting(null);
       return;
     }
-    if (appEndpoints.length === 0 || draftRouting?.projectId === targetDraftId) return;
+    if (draftRouting?.projectId === targetDraftId) return;
     let cancelled = false;
     void Promise.all([projectsApi.getInfo(targetDraftId), servicesApi.list(targetDraftId)])
       .then(([info, svcRes]) => {
         if (cancelled) return;
-        const project = info?.data?.project as { slug?: string; name?: string } | undefined;
+        const project = info?.data?.project as { slug?: string; name?: string; workspaceId?: string; serverId?: string; serverName?: string; deployTarget?: string } | undefined;
         if (!project || !Array.isArray(svcRes?.services))
           throw new Error("Incomplete draft response");
+        if (!selfHosted || project.deployTarget === "cloud" || project.workspaceId) {
+          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.serverId ?? undefined, serverName: project.serverName });
+        } else if (project.serverId) {
+          setDestination({ deployTarget: "server", serverId: project.serverId, serverName: project.serverName });
+        }
         // A catalog update can cancel the pending read. Only mark the draft
         // restored after its routes are applied, including an empty service list.
         setExpo((prev) => ({
@@ -582,7 +590,7 @@ export default function AppInstallPage() {
     return () => {
       cancelled = true;
     };
-  }, [targetDraftId, appEndpoints, draftRouting, cloudConnected]);
+  }, [targetDraftId, appEndpoints, draftRouting, cloudConnected, selfHosted]);
 
   /**
    * The URL an endpoint is ACTUALLY reachable at, read back from the service rows
@@ -1156,6 +1164,7 @@ export default function AppInstallPage() {
   };
 
   const install = withSubmission(async () => {
+    if (!destinationReady) return;
     // Business-field validity gate (required + per-field rules). The form reports
     // this; block with a clear message rather than shipping an invalid install.
     if (formValidity && !formValidity.valid) {
@@ -1201,7 +1210,7 @@ export default function AppInstallPage() {
               setDestination({
                 deployTarget: "server",
                 serverId: server.id,
-                serverHost: server.sshHost,
+                serverHost: server.sshHost ?? undefined,
                 serverName: server.name ?? undefined,
               })
             }
@@ -1225,6 +1234,7 @@ export default function AppInstallPage() {
       if (!pid) {
         const res = await appsApi.install({
           templateId: appId,
+          serverId: destination?.serverId,
           name: appName.trim() || undefined,
           routes,
         });
@@ -1271,7 +1281,7 @@ export default function AppInstallPage() {
             // Where to install — reuses the deploy wizard's target selection.
             // Undefined falls back to the project/meta default server-side.
             deployTarget: destination?.deployTarget,
-            serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+            serverId: destination?.serverId,
           });
           attachDeployment(dep, targetPid);
           started = true;
@@ -1305,7 +1315,7 @@ export default function AppInstallPage() {
             (confirm, cancel) => (
               <DnsRecordsModal
                 targets={dnsTargets}
-                serverId={destination?.deployTarget === "server" ? destination.serverId : undefined}
+                serverId={destination?.serverId}
                 confirmLabel={w.install}
                 onConfirm={confirm}
                 onCancel={cancel}
@@ -1341,6 +1351,7 @@ export default function AppInstallPage() {
    *  picked so far travels with the create write — the /deploy wizard then edits
    *  real stored routes instead of ones the server guessed. */
   const goAdvanced = withSubmission(async () => {
+    if (!destinationReady) return;
     const routes = await validatedRouteChoices();
     if (!routes) return;
     try {
@@ -1352,6 +1363,7 @@ export default function AppInstallPage() {
       }
       const res = await appsApi.install({
         templateId: appId,
+        serverId: destination?.serverId,
         name: appName.trim() || undefined,
         routes,
       });
@@ -1412,10 +1424,10 @@ export default function AppInstallPage() {
     // destination after a mid-install refresh — only the routing pickers
     // rehydrate) is left out rather than guessed.
     const summary: DeploySummaryRow[] = [];
-    const destinationValue =
+    const destinationValue = destination?.serverName || (
       destination?.deployTarget === "cloud"
         ? t.deploy.targetStep.options.cloud
-        : (destination?.serverName || destination?.serverHost || "");
+        : (destination?.serverHost || ""));
     if (destinationValue) {
       summary.push({
         id: "destination",
@@ -1823,7 +1835,7 @@ export default function AppInstallPage() {
           {/* RIGHT — destination + deploy action (sticky) */}
           <div className="min-w-0 space-y-4 @5xl/app-install:sticky @5xl/app-install:top-6">
             {/* Destination — where to install (reuses the deploy target picker) */}
-            <div className="rounded-2xl border border-border/50 bg-card p-5">
+            <div className="rounded-2xl bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
               {selfHosted && (
                 <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
@@ -1853,7 +1865,14 @@ export default function AppInstallPage() {
               )}
 
               <div className="mt-4">
-                <AppDestinationPicker value={destination} onChange={setDestination} />
+                <AppDestinationPicker
+                  value={destination}
+                  onChange={setDestination}
+                  onReadyChange={setDestinationReady}
+                  readOnly={!!targetDraftId || !!projectId}
+                  disabled={busy || !!targetDraftId || !!projectId}
+                  disabledReason={targetDraftId || projectId ? t.billing.workspaces.savedDestinationHint : undefined}
+                />
               </div>
 
               {/* Declared minimum vs. the destination's measured capacity. Shown
@@ -1918,7 +1937,7 @@ export default function AppInstallPage() {
               {configurationNotice}
               {needsCloudUpgrade ? (
                 <a
-                  href="/billing/plans"
+                  href={workspaceBillingHref("/billing/plans", destination?.workspaceId)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-primary"
@@ -1932,6 +1951,7 @@ export default function AppInstallPage() {
                   onClick={install}
                   disabled={
                     busy ||
+                    !destinationReady ||
                     checkingCloudCapacity ||
                     !exposureReady ||
                     (formValidity ? !formValidity.valid : false)
@@ -1949,7 +1969,7 @@ export default function AppInstallPage() {
               <button
                 type="button"
                 onClick={goAdvanced}
-                disabled={busy || !exposureReady}
+                disabled={busy || !exposureReady || !destinationReady}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
               >
                 <UiIcon name="sliders" className="size-4" /> {w.advanced}

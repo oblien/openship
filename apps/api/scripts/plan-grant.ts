@@ -15,7 +15,8 @@ const usage = `Complimentary Openship Cloud plans (no customer charge).
   bun run --cwd apps/api billing:grant revoke --email user@example.com
 
 Options:
-  --organization <id>   Select an owned workspace; defaults to the personal workspace.
+  --organization <id>   Select an owned organization; defaults to the personal organization.
+  --workspace <id>      Select its subscribed Cloud workspace (required when ambiguous).
   --plan <tier>         Grant a catalog plan with a finite monthly allowance (default: pro).
   --reason <text>       Required when granting, saved with the operator identity.
   --operator <name>     Audit identity (default: current OS user).
@@ -29,7 +30,7 @@ the schema and never creates a checkout, charges a card, or replaces a paid plan
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     help: { type: "boolean", short: "h" }, email: { type: "string" }, plan: { type: "string" },
-    organization: { type: "string" }, reason: { type: "string" }, operator: { type: "string" },
+    organization: { type: "string" }, workspace: { type: "string" }, reason: { type: "string" }, operator: { type: "string" },
     expires: { type: "string" }, "dry-run": { type: "boolean" },
   } });
   if (values.help || !positionals.length) { console.log(usage); return; }
@@ -55,7 +56,7 @@ async function main() {
   try {
     const locks = createAdvisoryLocks({ getDriver: () => "pg", getPgPool: () => connection.pool!, poolMax: 3 });
     const result = await runPlanGrantCommand({
-      command, email, organizationId: values.organization, plan, expiresAt,
+      command, email, organizationId: values.organization, workspaceId: values.workspace, plan, expiresAt,
       operator: values.operator?.trim() || userInfo().username,
       reason: values.reason ?? "", dryRun: values["dry-run"] ?? false,
     }, { grants: createBillingPlanGrantRepo(connection.db), billing: getOblienBillingApi(), lock: locks.withAdvisoryLock });

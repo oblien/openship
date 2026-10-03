@@ -23,8 +23,7 @@ At the very top you get the **Openship** logo and name, plus two small buttons:
 
 ### Navigation links
 
-The links are grouped into labelled sections — **Main**, **Settings**, and (on self-hosted instances)
-**Infrastructure**.
+The links are grouped into labelled sections — **Main**, **Settings**, and **Infrastructure**.
 
 | Section | Item | Route | What's there |
 |---|---|---|---|
@@ -34,13 +33,13 @@ The links are grouped into labelled sections — **Main**, **Settings**, and (on
 | Main | **Backups** | `/backups` | Register the storage targets your backups write to. See [Backups](/docs/dashboard/backups). |
 | Settings | **Settings** | `/settings` | Account, team, GitHub connection, tokens, and MCP. See [Settings](/docs/dashboard/settings). |
 | Settings | **Billing** | `/billing` | Plan and usage — shown on Openship Cloud (or a cloud-connected instance). See [Billing](/docs/dashboard/billing). |
-| Infrastructure | **Servers** | `/servers` | Your own connected machines to deploy onto. See [Servers](/docs/dashboard/servers). |
+| Infrastructure | **Servers** | `/servers` | Managed Cloud servers or your own connected machines. See [Servers](/docs/dashboard/servers). |
 | Infrastructure | **Emails** | `/emails` | The self-hosted mail stack and Zero webmail. See [Emails](/docs/dashboard/emails). |
 
 <Callout title="Some links only appear in certain setups" type="info">
 The sidebar adapts to your instance. **Billing** shows only on Openship Cloud or a self-hosted instance
-that's connected to Cloud. **Servers** and **Emails** show only on a self-hosted instance. So a plain cloud
-account and a self-hosted box won't see exactly the same list — that's expected.
+that's connected to Cloud. **Servers** is available in both, with controls suited to each server.
+**Emails** appears only on a self-hosted instance.
 </Callout>
 
 ### New Project
@@ -113,7 +112,7 @@ Each area has its own page or guide with the details. Here's where to go next:
   <Card title="Library" href="/docs/dashboard/library" description="Start a deployment from a repo, a local folder, a URL, or a template." />
   <Card title="Deployments & rollback" href="/docs/guides/rollback-redeploy" description="Redeploy, roll back, and read what happened on the build screen." />
   <Card title="Backups" href="/docs/dashboard/backups" description="Register S3, SFTP, an existing server, or local disk as backup destinations." />
-  <Card title="Servers" href="/docs/dashboard/servers" description="Connect your own machines to deploy onto (self-hosted only)." />
+  <Card title="Servers" href="/docs/dashboard/servers" description="Inspect managed Cloud servers or connect your own machines." />
   <Card title="Email & webmail" href="/docs/dashboard/emails" description="The self-hosted mail stack and Zero webmail (self-hosted only)." />
   <Card title="Settings" href="/docs/dashboard/settings" description="Account, team, GitHub connection, tokens, and MCP." />
   <Card title="Billing" href="/docs/dashboard/billing" description="Plan and usage on Openship Cloud." />

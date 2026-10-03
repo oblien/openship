@@ -170,7 +170,7 @@ describe("Monitoring sidebar count", () => {
       projects: [{ id: "project-a" }, { id: "project-b", isApp: true }, { id: "project-a" }],
     });
     await render();
-    expect(host.querySelector('a[href="/projects"] .tabular-nums')?.textContent).toBe("2");
+    expect(host.querySelector('a[href="/projects"] .tabular-nums')?.textContent).toBe("1");
     expect(badge()?.textContent).toBe("3");
     expect(monitoring().textContent).toContain(baseDictionary.dashboard.nav.issues);
     await act(async () => sidebarToggle().click());

@@ -1,5 +1,6 @@
 import type { WorkspaceData, WorkspaceHandle } from "oblien";
 import { cloudCpus, type ResourceConfig } from "../../types";
+import { cloudWorkspaceStatus } from "./workspace-ready";
 
 type WorkspaceResources = Pick<ResourceConfig, "cpuCores" | "memoryMb"> &
   Partial<Pick<ResourceConfig, "diskMb">>;
@@ -38,7 +39,7 @@ export async function updateCloudWorkspaceResources(
   });
   if (
     result?.success !== true ||
-    result.relaunched === false ||
+    (result.relaunched === false && !["stopped", "paused", "suspended"].includes(cloudWorkspaceStatus(before))) ||
     result.pending_capacity_verification
   ) {
     throw new Error(

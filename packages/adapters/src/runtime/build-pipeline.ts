@@ -124,7 +124,7 @@ export interface BuildEnvironment {
    * transfers source files into the build environment:
    *   - BareRuntime (local):  cp -a (same filesystem)
    *   - BareRuntime (SSH):    tar + pipe over SSH
-   *   - CloudRuntime:         tar.gz → Oblien transfer.upload API
+   *   - Managed Cloud:        tar.gz → the provider command/file transport
    *
    * Receives the logger so output streams to the terminal in real-time.
    * Throw to abort the build with a descriptive error.

@@ -90,7 +90,7 @@ export default function ProjectTopology({
   const router = useRouter();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const clusterTarget = project.deployTarget === "cluster" || !!project.clusterId;
   const resourcePicker = selfHosted && project.deployTarget !== "cloud";
   const databases = useClusterDatabases(id, resourcePicker);

@@ -37,7 +37,7 @@ vi.mock("@repo/db", async (original) => ({
   tryAcquireAdvisoryLock: async () => ({ release: async () => {} }),
 }));
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({
-  platform: () => ({ target: h.target, runtime: { name: "docker", verifyDomain: h.cloudVerify } }),
+  platform: () => ({ target: h.target, runtime: { name: "docker" }, routing: { verifyDomain: h.cloudVerify } }),
 }));
 vi.mock("@repo/platform/engine/lib/dns-resolver", () => ({
   resolveRecords: h.resolveRecords,

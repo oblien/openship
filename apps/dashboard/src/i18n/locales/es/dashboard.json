@@ -83,7 +83,8 @@
       "account": "Cuenta"
     },
     "apps": "Apps",
-    "jobs": "Trabajos"
+    "jobs": "Trabajos",
+    "workspaces": "Espacios de trabajo"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",

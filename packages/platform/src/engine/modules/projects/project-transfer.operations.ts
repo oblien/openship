@@ -51,7 +51,7 @@ export function createProjectTransferOperations(recordAudit: ProjectDependencies
       assertTransferScope(ctx);
       try {
         const result = await (await import("./transfer.service")).transferProjectToSelfHosted({ projectId: id, organizationId: ctx.organizationId });
-        const data = { ok: true, projectId: result.projectId, cloudWorkspaceId: null, imported: result.imported };
+        const data = { ok: true, projectId: result.projectId, workspaceId: null, imported: result.imported };
         record(ctx, id, "self-hosted", data);
         return data;
       } catch (error) { return transferFailure(error, "Project transfer to self-hosted failed"); }

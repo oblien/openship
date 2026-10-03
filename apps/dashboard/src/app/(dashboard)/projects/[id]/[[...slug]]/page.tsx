@@ -949,21 +949,7 @@ const ProjectSettingsContent = () => {
   // Other draft tabs keep the focused setup screen, including stale runtime links.
   if (isNeverDeployed && activeTab !== "topology") {
     return (
-      <PageContainer>
-        <div className="mb-6">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse text-sm text-muted-foreground mb-2">
-            <Link href="/" className="hover:text-foreground transition-colors font-medium">
-              {t.projects.detail.breadcrumbDashboard}
-            </Link>
-            <span>/</span>
-            <span className="text-foreground font-medium">{projectData.name || t.projects.detail.projectFallback}</span>
-          </div>
-          {/* Logo intentionally omitted here — it lives in the DraftProjectView
-              hero card below; showing it in both duplicates it. */}
-          <h1 className="text-2xl font-semibold text-foreground truncate">
-            {projectData.name || t.projects.detail.projectFallback}
-          </h1>
-        </div>
+      <PageContainer className="@container/project-draft">
         <DraftProjectView onDeleteProject={() => handleDeleteProject()} />
       </PageContainer>
     );

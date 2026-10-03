@@ -10,6 +10,7 @@ import { reconcileOblienEntitlement } from "./billing-oblien-quota";
 
 const RECONCILE_BATCH = 200;
 let cursor: string | undefined;
+let workspaceCursor: string | undefined;
 
 export interface ReconcileStats {
   scanned: number;
@@ -31,7 +32,7 @@ export async function runEntitlementReconcile(): Promise<ReconcileStats> {
     .limit(RECONCILE_BATCH);
   for (const org of orgs) {
     stats.scanned += 1;
-    const drift = await reconcileOblienEntitlement(org.id);
+    const drift = await reconcileOblienEntitlement(org.id, null);
     if (!drift) { stats.errors += 1; continue; }
     if (drift.quotaMissing) stats.uncapped += 1;
     if (drift.statusNow !== drift.statusWas) stats.statusFixed += 1;
@@ -39,6 +40,22 @@ export async function runEntitlementReconcile(): Promise<ReconcileStats> {
   }
   // Keyset pagination reaches every customer, unlike repeatedly reading LIMIT 200.
   cursor = orgs.length === RECONCILE_BATCH ? orgs[orgs.length - 1]!.id : undefined;
+  const workspaces = await db.select().from(schema.cloudWorkspace).where(and(
+    isNotNull(schema.cloudWorkspace.namespace),
+    workspaceCursor ? gt(schema.cloudWorkspace.id, workspaceCursor) : undefined,
+  )).orderBy(asc(schema.cloudWorkspace.id)).limit(RECONCILE_BATCH);
+  for (const workspace of workspaces) {
+    stats.scanned += 1;
+    const drift = await reconcileOblienEntitlement(workspace.organizationId, workspace.id);
+    if (!drift) { stats.errors += 1; continue; }
+    if (drift.changed) stats.corrected += 1;
+    if (drift.statusNow !== drift.statusWas) stats.statusFixed += 1;
+    try {
+      const { requestPaidWorkspaceProvisioning } = await import("../cloud-workspaces/cloud-workspace.service");
+      await requestPaidWorkspaceProvisioning(workspace.organizationId, workspace.id);
+    } catch { stats.errors += 1; }
+  }
+  workspaceCursor = workspaces.length === RECONCILE_BATCH ? workspaces[workspaces.length - 1]!.id : undefined;
   return stats;
 }
 

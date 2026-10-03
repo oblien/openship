@@ -1,10 +1,8 @@
 import { cp, rm } from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import { basename, join } from "node:path";
-import { Readable } from "node:stream";
 import { AppError, NotFoundError } from "@repo/core";
 import type { SourceDependencies } from "../../../../sources";
-import { prepareSourceDirectory, archiveSourceDirectory, validateSourceDirectory, SOURCE_EXCLUSIONS } from "../../../../source-files";
+import { prepareSourceDirectory, validateSourceDirectory, SOURCE_EXCLUSIONS } from "../../../../source-files";
 import { assertNativeSourcePath } from "../../../native/source-policy";
 import { getFolderSession, deleteFolderSession } from "./session-store";
 import { audit } from "../../../lib/audit-emitter";
@@ -18,34 +16,23 @@ function sessionFor(id: string, organizationId: string) {
 
 export const sourceDependencies: SourceDependencies = {
   projectForSession: (ctx, id) => sessionFor(id, ctx.organizationId).projectId,
-  open: async (ctx, input, apiBaseUrl) => (await import("./folder.service")).createFolderSession({ ...input, orgId: ctx.organizationId, userId: ctx.userId, apiBaseUrl }),
+  open: async (ctx, input, apiBaseUrl) => (await import("./folder.service")).createFolderSession({ ...input, orgId: ctx.organizationId, userId: ctx.userId, apiBaseUrl }, ctx),
   async stage(ctx, input) {
     const { createFolderSession } = await import("./folder.service");
     const root = process.env.OPENSHIP_DATA_DIR ? join(process.env.OPENSHIP_DATA_DIR, "sources") : undefined;
     const source = await prepareSourceDirectory(input.source, { temporaryRoot: root, validatePath: assertNativeSourcePath });
     let id: string | undefined;
     try {
-      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager });
+      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, serverId: input.serverId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager }, ctx);
       id = result.sessionId;
       const session = sessionFor(id, ctx.organizationId);
-      if (session.mode === "api-relay") {
-        await cp(source.directory, session.stagingDir!, {
-          recursive: true, dereference: true,
-          filter: path => !SOURCE_EXCLUSIONS.has(basename(path)),
-        });
-        await validateSourceDirectory(session.stagingDir!);
-        session.uploaded = true;
-      } else {
-        const archive = await archiveSourceDirectory(source.directory, { temporaryRoot: root });
-        const stream = createReadStream(archive.path);
-        try {
-          const response = await fetch(result.upload.url, { method: "POST", headers: result.upload.headers, body: Readable.toWeb(stream) as ReadableStream<Uint8Array>, duplex: "half", signal: AbortSignal.timeout(120_000) } as RequestInit);
-          if (!response.ok) throw new AppError(`Provider source upload failed (${response.status})`, 502, "SOURCE_UPLOAD_FAILED");
-          await response.body?.cancel();
-          session.uploaded = true;
-        } finally { stream.destroy(); await archive.dispose(); }
-      }
-      return { sessionId: id, expiresAt: result.expiresAt };
+      await cp(source.directory, session.stagingDir!, {
+        recursive: true, dereference: true,
+        filter: path => !SOURCE_EXCLUSIONS.has(basename(path)),
+      });
+      await validateSourceDirectory(session.stagingDir!);
+      session.uploaded = true;
+      return { sessionId: id, serverId: result.serverId, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
     } catch (error) {
       if (id) {
         const session = deleteFolderSession(id);
@@ -56,7 +43,8 @@ export const sourceDependencies: SourceDependencies = {
   },
   async scan(ctx, id, options) {
     const [{ projectInfoToScanResponse }, { scanFolderSession }] = await Promise.all([import("../../deployments/prepare.service"), import("./folder.service")]);
-    return projectInfoToScanResponse(await scanFolderSession(sessionFor(id, ctx.organizationId)), options);
+    const session = sessionFor(id, ctx.organizationId);
+    return { ...projectInfoToScanResponse(await scanFolderSession(session), options), serverId: session.serverId, workspaceId: session.managedWorkspaceId ?? undefined };
   },
   async upload(ctx, id, ticket, body) {
     const session = sessionFor(id, ctx.organizationId);

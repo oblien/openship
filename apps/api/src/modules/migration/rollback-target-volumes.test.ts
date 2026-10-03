@@ -1,220 +1,280 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { repos } from "@repo/db";
 
-/**
- * A rolled-back migration must leave the TARGET as if it was never there.
- *
- * The loop this closes: a move streamed its volumes to the target, failed later (deploy, verify),
- * and rolled back — restoring the source but leaving the volumes it had written. The conflict
- * guard then refused every retry with "Target server already has data in volume(s): … Remove or
- * rename them on the target", so the only way forward was `docker volume rm` on the box by hand.
- * Restoring the source while leaving debris on the target is not a rollback.
- *
- * Pinned in source: the alternative is two live Docker daemons and a deliberately failed
- * transfer, and the properties that matter here are all structural — WHEN the record is written,
- * WHO removes it, and that the source is never in scope.
- */
-const src = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts", import.meta.url), "utf8");
+const h = vi.hoisted(() => ({
+  runtime: vi.fn(), activity: vi.fn(), tryLock: vi.fn(), plan: vi.fn(),
+  prepare: vi.fn(), transfer: vi.fn(), cancelBuild: vi.fn(),
+}));
+vi.mock("@repo/platform/engine/modules/migration/migration-runtime", async load => ({
+  ...await load<typeof import("@repo/platform/engine/modules/migration/migration-runtime")>(),
+  createMigrationDockerRuntime: h.runtime, withMigrationActivity: h.activity,
+}));
+vi.mock("@repo/platform/engine/modules/migration/migration-access", () => ({
+  assertMigrationEndpoints: async () => ({ source: {}, target: {} }),
+}));
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({
+  withCloudWorkspaceActivity: (_id: unknown, work: () => Promise<unknown>) => work(),
+}));
+vi.mock("@repo/platform/engine/lib/provision-lock", async load => ({
+  ...await load<typeof import("@repo/platform/engine/lib/provision-lock")>(),
+  createProvisionLock: () => ({ run: (work: () => Promise<unknown>) => work() }),
+  tryWithProvisionLock: h.tryLock,
+}));
+vi.mock("@repo/platform/engine/modules/migration/migration-data", async load => ({
+  ...await load<typeof import("@repo/platform/engine/modules/migration/migration-data")>(),
+  planMigrationData: h.plan, prepareMigrationVolumes: h.prepare, transferMigrationItem: h.transfer,
+}));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", async load => ({
+  ...await load<typeof import("@repo/platform/engine/modules/deployments/build.service")>(),
+  cancelBuildSession: h.cancelBuild,
+}));
 
-/** The rollback method body, bounded so a match cannot drift in from a neighbour. */
-const rollbackBody = (() => {
-  const from = src.indexOf("  private async rollback(");
-  return src.slice(from, src.indexOf("\n  private async ", from + 10));
-})();
+import { migrationOrchestrator } from "@repo/platform/engine/modules/migration/migration.orchestrator";
+type Run = NonNullable<Awaited<ReturnType<typeof repos.dockerMigrationRun.findById>>>;
+const engine = migrationOrchestrator as unknown as {
+  moveData: (...args: unknown[]) => Promise<unknown>;
+  rollback: (...args: unknown[]) => Promise<void>;
+  restartSourceOriginals: (...args: unknown[]) => Promise<void>;
+  restoreTargetContainers: (...args: unknown[]) => Promise<void>;
+  undoTargetSideEffects: (...args: unknown[]) => Promise<void>;
+  cutover: (...args: unknown[]) => Promise<{ failed: unknown[] }>;
+  retireSourceRoutes: (...args: unknown[]) => Promise<void>;
+};
+let run: Run, events: string[], removed: string[];
+let source: ReturnType<typeof fakeRuntime>, target: ReturnType<typeof fakeRuntime>;
+let volumes: Map<string, { Labels: Record<string, string> }>;
 
-/** The shared undo, which both rollback and boot recovery must go through. */
-const undoBody = (() => {
-  const from = src.indexOf("  private async undoTargetSideEffects(");
-  return src.slice(from, src.indexOf("\n  private async ", from + 10));
-})();
+function fakeRuntime() {
+  return {
+    assertReachable: vi.fn(async () => {}),
+    inspectContainer: vi.fn(async (id: string) => ({ id, state: id === "asleep" ? "exited" : "running" })),
+    listDeploymentContainers: vi.fn(async () => [{ containerId: "new-container" }]),
+    listAllContainers: vi.fn(async () => []),
+    start: vi.fn(async (id: string) => { events.push("start:" + id); }),
+    stop: vi.fn(async (id: string) => { events.push("stop:" + id); }),
+    destroy: vi.fn(async (id: string) => { events.push("destroy:" + id); }),
+    dispose: vi.fn(async () => {}),
+    docker: {
+      listContainers: vi.fn(async () => []),
+      getVolume: vi.fn((name: string) => ({
+        inspect: vi.fn(async () => {
+          if (!volumes.has(name)) throw Object.assign(new Error("missing"), { statusCode: 404 });
+          return volumes.get(name)!;
+        }),
+        remove: vi.fn(async (options: { force: boolean }) => {
+          expect(options).toEqual({ force: false });
+          removed.push(name); volumes.delete(name);
+        }),
+      })),
+    },
+  };
+}
 
-/** Boot recovery's per-run block. */
-const recoveryBody = (() => {
-  const from = src.indexOf('if (run.status !== "queued" && run.sourceServerId) {');
-  return src.slice(from, from + 1400);
-})();
-
-describe("rollback removes what the run wrote on the target", () => {
-  it("goes through the shared undo", () => {
-    expect(rollbackBody).toContain("this.undoTargetSideEffects(");
+beforeEach(() => {
+  vi.clearAllMocks();
+  events = []; removed = []; volumes = new Map();
+  source = fakeRuntime(); target = fakeRuntime();
+  run = {
+    id: "run", organizationId: "org", sourceServerId: "source", targetServerId: "target",
+    projectId: "project", projectName: "imported", mode: "cross_server", status: "rolled_back",
+    confirmationToken: "token", scannedContainerIds: { web: "old-container" },
+    targetVolumes: [], pendingItems: [], recovery: {}, inputSnapshot: {},
+    lastEventAt: new Date(Date.now() - 60_000), executionStartedAt: new Date(0),
+    executionFinishedAt: new Date(1), deploymentId: null,
+  } as unknown as Run;
+  vi.spyOn(repos.dockerMigrationRun, "findById").mockImplementation(async id => id === run.id ? run : undefined);
+  vi.spyOn(repos.dockerMigrationRun, "listInFlight").mockImplementation(async () => [run]);
+  vi.spyOn(repos.dockerMigrationRun, "updateTargetVolumes").mockImplementation(async (_id, names) => {
+    events.push("record-volumes"); run = { ...run, targetVolumes: names };
   });
-
-  it("the undo removes on the TARGET server, never the source", () => {
-    // The source holds production data and is explicitly never destroyed. Passing the wrong
-    // server id here would delete the user's live volumes during a failure recovery — the worst
-    // available outcome, and a one-character mistake.
-    expect(undoBody).toContain("servers.targetServerId,");
-    expect(undoBody).toContain("this.removeTargetVolumes(");
+  vi.spyOn(repos.dockerMigrationRun, "updateRecovery").mockImplementation(async (_id, patch) => {
+    events.push("checkpoint"); run = { ...run, recovery: { ...run.recovery, ...patch } };
   });
-
-  it("takes the list from the RUN's record, not from a local variable", () => {
-    // A local would be empty on exactly the paths that need it — the undo is reached from the
-    // live rollback AND from boot recovery, where no in-memory transfer result exists at all.
-    expect(undoBody).toContain("run.targetVolumes ?? []");
+  vi.spyOn(repos.dockerMigrationRun, "transition").mockImplementation(async (_id, status, patch) => {
+    events.push("status:" + status); run = { ...run, status, ...patch } as Run;
   });
-
-  it("clears the record afterwards, so manual cleanup doesn't re-offer gone volumes", () => {
-    expect(undoBody).toContain("updateTargetVolumes(run.id, [])");
+  vi.spyOn(repos.dockerMigrationRun, "acknowledgeExecutionFinished").mockImplementation(async () => {
+    events.push("ack"); run = { ...run, executionFinishedAt: new Date() };
   });
-
-  it("restores the server binding for a MOVE, and only for a move", () => {
-    // A duplicate's project genuinely lives on the target; there is nothing to put back.
-    expect(undoBody).toContain('run.mode === "project_move"');
-    expect(undoBody).toContain("serverId: servers.sourceServerId");
+  vi.spyOn(repos.dockerMigrationRun, "claimExecution").mockImplementation(async input => {
+    run = { ...run, status: input.to, executionFinishedAt: null }; return run;
   });
+  vi.spyOn(repos.dockerMigrationRun, "updateLogs").mockResolvedValue();
+  vi.spyOn(repos.dockerMigrationRun, "restoreProject").mockResolvedValue();
+  vi.spyOn(repos.server, "getInOrganization").mockImplementation(async id => ({ id }) as never);
+  vi.spyOn(repos.deployment, "findById").mockResolvedValue(undefined);
+  vi.spyOn(repos.deployment, "hasLiveBuildExecution").mockResolvedValue(false);
+  h.runtime.mockImplementation(async (id, org) => { expect(org).toBe("org"); return id === "source" ? source : target; });
+  h.activity.mockImplementation(async (_org, _a, _b, _run, work) => work());
+  h.tryLock.mockImplementation(async (_key, work) => work());
+  h.prepare.mockImplementation(async () => { events.push("create-volumes"); });
+  h.plan.mockResolvedValue({ items: [], createdVolumes: ["copy"], managedPaths: [] });
+  h.transfer.mockResolvedValue(undefined);
+  h.cancelBuild.mockResolvedValue({ pending: false });
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(() => vi.restoreAllMocks());
+const move = () => engine.moveData("project", "source", "target", "org",
+  { web: "old-container", worker: "asleep" }, false, {}, [], [], { mode: "stream" }, {}, () => {}, undefined, "run");
 
-  it("never lets a cleanup failure mask the error that caused the rollback", () => {
-    expect(undoBody).toContain("catch");
-    expect(undoBody).toContain("remove them there before retrying");
+describe("migration rollback and cleanup", () => {
+  it("records prospective writes and running containers before stopping production", async () => {
+    h.plan.mockResolvedValue({ items: [{ key: "data" }], createdVolumes: ["copy"], managedPaths: [] });
+    h.transfer.mockImplementation(async () => { events.push("copy-data"); });
+    await move();
+    expect(events.indexOf("record-volumes")).toBeLessThan(events.indexOf("create-volumes"));
+    expect(events.indexOf("checkpoint")).toBeLessThan(events.indexOf("stop:old-container"));
+    expect(events.indexOf("stop:old-container")).toBeLessThan(events.indexOf("copy-data"));
+    expect(source.stop).toHaveBeenCalledExactlyOnceWith("old-container");
+    expect(run.recovery.sourceRunningContainerIds).toEqual({ web: "old-container" });
+    expect(source.dispose).toHaveBeenCalledOnce();
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+  it("fails before stopping a source when volume reservation fails", async () => {
+    h.prepare.mockRejectedValueOnce(new Error("reservation conflict"));
+    await expect(move()).rejects.toThrow("reservation conflict");
+    expect(run.targetVolumes).toEqual(["copy"]);
+    expect(source.stop).not.toHaveBeenCalled();
+  });
+  it("waits for all transfer writers before returning a cancellation", async () => {
+    h.plan.mockResolvedValue({ items: [{ key: "one" }, { key: "two" }], createdVolumes: [], managedPaths: [] });
+    let finish!: () => void;
+    h.transfer.mockImplementationOnce(async () => { run.recovery.cancelRequested = true; throw new Error("cancel"); })
+      .mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const result = expect(move()).rejects.toThrow("Cancelled by user");
+    await vi.waitFor(() => expect(h.transfer).toHaveBeenCalledTimes(2));
+    expect(target.dispose).not.toHaveBeenCalled();
+    finish(); await result;
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+  it("removes only exact run-owned volumes on the target", async () => {
+    run.targetVolumes = ["owned", "sibling", "older", "gone"];
+    volumes.set("owned", { Labels: { "openship.project": "project", "openship.migration": "run" } });
+    volumes.set("sibling", { Labels: { "openship.project": "another", "openship.migration": "run" } });
+    volumes.set("older", { Labels: { "openship.project": "project", "openship.migration": "old-run" } });
+    expect(await migrationOrchestrator.cleanupTargetData("run", "org")).toEqual({ ok: true, removed: 1 });
+    expect(removed).toEqual(["owned"]);
+    expect([...volumes.keys()]).toEqual(["sibling", "older"]);
+    expect(h.runtime).toHaveBeenCalledExactlyOnceWith("target", "org");
+    expect(run.targetVolumes).toEqual([]);
+  });
+  it("uses the recorded draft identity after its project row has been deleted", async () => {
+    run.projectId = null; run.recovery.createdProjectId = "project"; run.targetVolumes = ["copy"];
+    volumes.set("copy", { Labels: { "openship.project": "project", "openship.migration": "run" } });
+    expect(await migrationOrchestrator.cleanupTargetData("run", "org")).toEqual({ ok: true, removed: 1 });
+  });
+  it.each(["succeeded", "partial", "awaiting_cutover", "moving_data"])("refuses manual cleanup of %s", async status => {
+    run.status = status;
+    expect(await migrationOrchestrator.cleanupTargetData("run", "org")).toMatchObject({ ok: false, status: 409 });
+    expect(h.runtime).not.toHaveBeenCalled();
+  });
+  it("refuses cleanup while a terminal-looking worker still owns its lease", async () => {
+    run.executionFinishedAt = null;
+    expect(await migrationOrchestrator.cleanupTargetData("run", "org")).toMatchObject({ ok: false, status: 409 });
+    expect(h.runtime).not.toHaveBeenCalled();
+  });
+  it("restores only the source containers recorded as running", async () => {
+    run.recovery.sourceRunningContainerIds = { web: "old-container" };
+    await engine.restartSourceOriginals("source", "org", { web: "old-container", worker: "asleep" }, "run");
+    expect(source.start).toHaveBeenCalledExactlyOnceWith("old-container");
+    expect(target.start).not.toHaveBeenCalled();
+  });
+  it.each(["cross_server", "project_copy", "project_move"])("restores the placement only when %s is a move", async mode => {
+    run.mode = mode;
+    await engine.undoTargetSideEffects(run, { sourceServerId: "source", targetServerId: "target" }, "org", vi.fn());
+    expect(repos.dockerMigrationRun.restoreProject).toHaveBeenCalledTimes(mode === "project_move" ? 1 : 0);
+  });
+  it("does not claim rollback succeeded while the source is unreachable", async () => {
+    run.status = "verifying"; run.recovery.sourceRunningContainerIds = { web: "old-container" };
+    source.start.mockRejectedValueOnce(new Error("SSH disconnected"));
+    await expect(engine.rollback({ organizationId: "org" }, "run", { sourceServerId: "source", targetServerId: "target" },
+      run.scannedContainerIds, undefined, undefined, "build failed")).rejects.toThrow("Could not restart");
+    expect(run.status).toBe("verifying");
+    expect(repos.dockerMigrationRun.restoreProject).not.toHaveBeenCalled();
+  });
+  it("waits for an active target build to confirm cancellation before restoring the source", async () => {
+    run.status = "deploying"; run.deploymentId = "deployment";
+    vi.mocked(repos.deployment.findById).mockResolvedValue({ id: "deployment", projectId: "project", status: "building" } as never);
+    h.cancelBuild.mockResolvedValue({ pending: true });
+    await expect(engine.rollback({ organizationId: "org" }, "run", { sourceServerId: "source", targetServerId: "target" },
+      run.scannedContainerIds, "deployment", undefined, "cancelled")).rejects.toThrow("Waiting for the target deployment");
+    expect(h.runtime).not.toHaveBeenCalled();
+    expect(run.status).toBe("deploying");
   });
 });
 
-/**
- * Boot recovery is the path where this matters most and where it was missing.
- *
- * It tore the target down and restarted the source, then stopped — leaving `project.serverId`
- * naming the box it had just emptied, and the transferred volumes still on it. A crash is exactly
- * when nobody is watching, so an un-restored binding would sit there silently routing every read,
- * the Access URL and the next deploy to a server with nothing on it.
- */
-describe("boot recovery undoes the same things a live rollback does", () => {
-  it("calls the shared undo after restoring the source", () => {
-    expect(recoveryBody).toContain("this.undoTargetSideEffects(");
-    expect(recoveryBody.indexOf("teardownTargetAndRestoreSource")).toBeLessThan(
-      recoveryBody.indexOf("undoTargetSideEffects"),
-    );
+describe("replica and restart recovery", () => {
+  it("skips another replica's active execution instead of queuing behind it", async () => {
+    h.tryLock.mockResolvedValue(undefined);
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(repos.dockerMigrationRun.findById).not.toHaveBeenCalled();
+    expect(h.runtime).not.toHaveBeenCalled();
   });
-
-  it("leaves a PARKED run alone — the target is up and waiting on a human", () => {
-    // awaiting_cutover / partial must survive a restart untouched; undoing them would tear down
-    // a verified target the operator was about to confirm.
-    expect(src).toContain('if (run.status === "awaiting_cutover" || run.status === "partial") {');
-    expect(src).toContain("acknowledgeExecutionFinished(run.id)");
+  it("gives a newly claimed worker time to start", async () => {
+    run.lastEventAt = new Date();
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(h.tryLock).not.toHaveBeenCalled();
   });
-
-  it("does not undo a crashed CUTOVER, which is a succeeded migration", () => {
-    // Mid-cutover the source is already being destroyed on purpose; restoring anything there
-    // would invert a successful move.
-    expect(src).toContain('if (run.status === "cutover") {');
+  it("re-reads state after acquiring its lock instead of undoing a completed run", async () => {
+    run.status = "moving_data";
+    h.tryLock.mockImplementation(async (_key, work) => { run = { ...run, status: "succeeded" }; return work(); });
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(h.runtime).not.toHaveBeenCalled();
+    expect(run.status).toBe("succeeded");
   });
-});
-
-describe("the record is written BEFORE the transfer, not after it", () => {
-  it("the direct path records its intended writes up front", () => {
-    // Collected-on-success meant an aborted transfer (cancel, link failure) recorded nothing,
-    // so volumes already on the target became orphans with nothing pointing at them.
-    const direct = src.slice(src.indexOf("const targetVolumes = [...volumeNames]"));
-    expect(direct.slice(0, 600)).toContain("updateTargetVolumes(runId, targetVolumes)");
+  it("removes a failed target before restarting the source and restoring project placement", async () => {
+    run.status = "verifying"; run.mode = "project_move"; run.deploymentId = "deployment";
+    run.recovery.sourceRunningContainerIds = { web: "old-container" };
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(events.indexOf("destroy:new-container")).toBeLessThan(events.indexOf("start:old-container"));
+    expect(repos.dockerMigrationRun.restoreProject).toHaveBeenCalledWith("run", "org");
+    expect(run.status).toBe("rolled_back");
   });
-
-  it("the relay path does the same", () => {
-    const relay = src.slice(src.indexOf("const plannedTargetVolumes = rtB"));
-    expect(relay.slice(0, 600)).toContain("updateTargetVolumes(runId, plannedTargetVolumes)");
+  it("parks an interrupted resume without destroying its existing deployment", async () => {
+    run.status = "moving_data"; run.recovery.worker = "resume";
+    run.recovery.targetRunningContainerIds = ["new-container"]; run.executionFinishedAt = null;
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(target.start).toHaveBeenCalledExactlyOnceWith("new-container");
+    expect(target.destroy).not.toHaveBeenCalled();
+    expect(run.status).toBe("partial");
+    expect(run.recovery.targetRunningContainerIds).toEqual([]);
+    expect(run.executionFinishedAt).toBeInstanceOf(Date);
   });
-
-  it("excludes a `keep` volume, which is the target's OWN pre-existing data", () => {
-    // The one case where a target volume is not ours to delete: the operator chose to keep what
-    // was already there, so nothing was transferred and nothing may be removed.
-    expect(src).toContain('.filter((ref) => resolution[ref] !== "keep")');
+  it("retains failed target restarts for the next recovery attempt", async () => {
+    target.start.mockImplementation(async id => { if (id === "unreachable") throw new Error("host down"); });
+    await expect(engine.restoreTargetContainers("run", target, ["healthy", "unreachable"])).rejects.toThrow("could not restart");
+    expect(run.recovery.targetRunningContainerIds).toEqual(["unreachable"]);
   });
-
-  it("records the CLONE name when that resolution renames the target volume", () => {
-    // Otherwise cleanup would chase the bare name and leave the scoped copy behind.
-    expect(src).toContain('resolution[ref] === "clone" ? scopedVolumeName(projectSlug, ref) : ref');
+  it("keeps a failed cutover retryable and never rolls it back", async () => {
+    run.status = "cutover"; run.mode = "project_move"; run.executionFinishedAt = null;
+    const cutover = vi.spyOn(engine, "cutover").mockResolvedValue({ failed: [{ name: "web", containerId: "old-container", reason: "host down" }] });
+    const retire = vi.spyOn(engine, "retireSourceRoutes").mockResolvedValue();
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(cutover).toHaveBeenCalledWith("source", "org", { web: "old-container" });
+    expect(retire).not.toHaveBeenCalled();
+    expect(source.start).not.toHaveBeenCalled();
+    expect(target.destroy).not.toHaveBeenCalled();
+    expect(run.status).toBe("cutover");
+    expect(run.errorMessage).toContain("host down");
   });
-
-  it("no longer accumulates the list as transfers succeed", () => {
-    expect(src).not.toContain("targetVolumes.push(");
+  it("retries source routing after complete cutover using the original run identity", async () => {
+    run.status = "cutover"; run.mode = "project_move";
+    vi.spyOn(engine, "cutover").mockResolvedValue({ failed: [] });
+    const retire = vi.spyOn(engine, "retireSourceRoutes").mockResolvedValue();
+    await migrationOrchestrator.recoverInterruptedMigrations();
+    expect(retire).toHaveBeenCalledExactlyOnceWith("project", "source", "org", true, "run");
+    expect(run.status).toBe("succeeded");
   });
-});
-
-describe("the manual cleanup action and rollback share one implementation", () => {
-  it("cleanupTargetData delegates to the same helper", () => {
-    const manual = src.slice(src.indexOf("  async cleanupTargetData("));
-    expect(manual.slice(0, 900)).toContain("this.removeTargetVolumes(");
-  });
-
-  it("the helper force-removes and tolerates a stubborn volume", () => {
-    const helper = src.slice(src.indexOf("  private async removeTargetVolumes("));
-    expect(helper.slice(0, 900)).toContain("docker volume rm -f");
-    expect(helper.slice(0, 900)).toContain("|| true");
-  });
-});
-
-/**
- * The self-healing half: OUR OWN debris on the target is not a conflict.
- *
- * Rollback cleaning up after itself only helps runs that recorded what they wrote. Anything
- * stranded by an earlier version, or by a crash between writing and recording, is invisible to
- * it — and the conflict guard then refuses forever, with `docker volume rm` on the box as the
- * only way out. `openship-<slug>-<vol>` is the name OUR deploy gives THIS project's volumes, so
- * finding one on a server the project doesn't live on identifies debris precisely.
- *
- * The dangerous mistake here is a loose prefix test, which is why that is pinned hardest: this
- * rule decides when it is acceptable to overwrite data on someone else's server.
- */
-describe("an unused volume carrying this project's own namespace is reused, not refused", () => {
-  it("builds the prefix from scopedVolumeName rather than re-spelling it", () => {
-    // One place forms `openship-<slug>-…`; a hand-written "openship-" + slug here would drift
-    // from it silently.
-    expect(src).toContain('scopedVolumeName(ourSlug, "")');
-  });
-
-  it("requires the FULL project-slug prefix, not a bare openship- match", () => {
-    // A loose test would match `openship-clincai-staging-pgdata` while moving `clincai` — a
-    // different project's data, on a server we do not own, overwritten without asking.
-    expect(src).toContain("name.startsWith(ourVolumePrefix!)");
-    expect(src).toContain("name.length > ourVolumePrefix!.length");
-    expect(src).not.toContain('name.startsWith("openship-")');
-  });
-
-  it("claims nothing when the project could not be read", () => {
-    // Empty slug ⇒ prefix null ⇒ never matches. A project we can't identify is not one whose
-    // volumes we may claim.
-    expect(src).toContain('const ourVolumePrefix = ourSlug ? scopedVolumeName(ourSlug, "") : null');
-  });
-
-  it("keys off the SOURCE project's slug, which a duplicate's run project is not", () => {
-    // The gap this closes: for a copy, `projectId` is the new project (`clincai-copy`) while the
-    // volumes crossing are the source's (`openship-clincai-*`). Keyed off the run's project, the
-    // rule silently stopped applying to the flow that needs it most — a failed duplicate stayed
-    // stuck in the loop the rule exists to break.
-    expect(src).toContain("const ourSlug = sourceProjectSlug || projectSlug");
-    expect(src).toContain("const relayOurSlug = sourceProjectSlug || projectSlug");
-    // And the run supplies it from the project the move is FROM.
-    expect(src).toContain("input.projectMove.projectId).catch(() => null))?.slug");
-  });
-
-  it("still refuses when a container is running on that volume", () => {
-    // The actual safety line: a name we recognise is ours to overwrite; a volume something is
-    // running on is not, whoever named it.
-    const rule = src.slice(src.indexOf("if (isOurNamespacedVolume(name)) {"));
-    expect(rule.slice(0, 900)).toContain("docker ps --filter volume=");
-    expect(rule.slice(0, 900)).toContain("if (running.length === 0)");
-    expect(rule.slice(0, 900)).toContain("in use by");
-  });
-
-  it("overwrites by resolution rather than by deleting the volume first", () => {
-    // `override` runs the transfer with clearTarget, so the reuse goes through the same path a
-    // user-chosen override does — no second way to wipe a volume.
-    const rule = src.slice(src.indexOf("if (isOurNamespacedVolume(name)) {"));
-    expect(rule.slice(0, 900)).toContain('resolution[name] = "override"');
-  });
-
-  it("says in the log that it reused an earlier attempt's volume", () => {
-    expect(src).toContain("left on the target by an earlier attempt at this move");
-  });
-
-  it("applies on the relay path too, so transfer mode can't decide whether you get stuck", () => {
-    // Bounded by the loop's own END, not by a character count — a window sized in
-    // characters silently stops covering the block the moment anything is added to it,
-    // which is exactly what a contract test must not do.
-    const from = src.indexOf("const relayOurPrefix");
-    const to = src.indexOf("conflicts.push(", from);
-    expect(from, "relay conflict block not found").toBeGreaterThan(-1);
-    expect(to, "relay conflict block end not found").toBeGreaterThan(from);
-    const relay = src.slice(from, to);
-    expect(relay).toContain("name.startsWith(relayOurPrefix)");
-    expect(relay).toContain("name.length > relayOurPrefix.length");
+  it("requires the original destructive choice after a failed cutover claim", async () => {
+    run.status = "awaiting_cutover";
+    vi.spyOn(engine, "cutover").mockRejectedValueOnce(new Error("host lost")).mockResolvedValueOnce({ failed: [] });
+    await expect(migrationOrchestrator.resolveCutover("run", "org", "token", true)).rejects.toThrow("host lost");
+    expect(run.status).toBe("cutover");
+    expect(run.executionFinishedAt).toBeInstanceOf(Date);
+    expect(await migrationOrchestrator.resolveCutover("run", "org", "token", false)).toMatchObject({ ok: false, status: 409 });
+    expect(await migrationOrchestrator.resolveCutover("run", "org", "wrong", true)).toMatchObject({ ok: false, status: 403 });
+    expect(await migrationOrchestrator.resolveCutover("run", "org", "token", true)).toEqual({ ok: true, leftBehind: [] });
+    expect(run.status).toBe("succeeded");
   });
 });

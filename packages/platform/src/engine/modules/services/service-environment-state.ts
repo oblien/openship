@@ -170,7 +170,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       "SERVICE_NOT_DEPLOYED",
     );
   }
-  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(saved.deployment);
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead({ ...saved.deployment, meta: { ...(saved.deployment.meta as Record<string, unknown>), runtimeMode: "docker" } });
   try {
     if (!(runtime instanceof DockerRuntime)) {
       throw new AppError(
@@ -218,7 +218,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       // Use migration's provenance rules; image defaults are not recovered as overrides.
       recoverable: toDiscoveredService(detail, undefined, imageEnv).env,
       serverId,
-      cloudRuntime: runtime.name === "cloud",
+      cloudRuntime: !!saved.project.workspaceId,
     };
   } finally {
     disposeRuntime(runtime);

@@ -4,6 +4,8 @@ import { AppError } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { ensureNamespace } from "@repo/platform/engine/lib/openship-cloud";
 import { createTenantCloudAdmin } from "@repo/platform/engine/lib/cloud-tenant-admin";
+import { workspaceForServer } from "@repo/platform/engine/lib/cloud-workspace-scope";
+import { authorization } from "@repo/platform/engine/lib/authorization";
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const path = z.string().min(1).max(2048);
@@ -31,8 +33,16 @@ export const cloudResourceInput = z.discriminatedUnion("operation", [
 ]);
 
 async function tenant(c: Context) {
-  const { organizationId } = getRequestContext(c);
-  return createTenantCloudAdmin(organizationId, await ensureNamespace(organizationId));
+  const ctx = getRequestContext(c);
+  const serverId = c.req.query("serverId");
+  let workspaceId: string | null = null;
+  if (serverId) {
+    const { workspace } = await workspaceForServer(ctx.organizationId, serverId);
+    if (!workspace || workspace.remote) throw new AppError("Managed server not found", 404, "SERVER_NOT_FOUND");
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
+    workspaceId = workspace.id;
+  }
+  return createTenantCloudAdmin(ctx.organizationId, await ensureNamespace(ctx.organizationId, workspaceId), workspaceId);
 }
 
 /** Each operation validates ownership through the same SaaS tenant delegate. */

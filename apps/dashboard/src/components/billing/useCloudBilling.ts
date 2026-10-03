@@ -1,15 +1,18 @@
 "use client";
 
+import { useBillingWorkspace } from "./BillingWorkspaceContext";
 import { useEffect, useRef, useState } from "react";
 import type { PlanTierId } from "@repo/core";
+import type { BillingPlans, CustomSubscriptionSelection } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
-import { api, getApiErrorMessage } from "@/lib/api/client";
+import { api, ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/endpoints";
 import { randomUUID } from "@/lib/random-uuid";
 import { trackCloudEvent } from "@/lib/cloud-analytics";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
 interface PlansPayload {
+  custom: BillingPlans["custom"];
   locale: string;
   annual: { enabled: boolean; monthsFree: number };
   ui: ApiPricingUi;
@@ -37,33 +40,37 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId }: {
   enabled: boolean;
+  workspaceId?: string;
   preserveProject?: boolean;
   onCheckoutStarted?: () => void;
 }) {
   const { t } = useI18n();
-  const [subscribing, setSubscribing] = useState<PlanTierId | null>(null);
+  const billingWorkspaceId = useBillingWorkspace();
+  const workspaceId = selectedWorkspaceId ?? billingWorkspaceId;
+  const [subscribing, setSubscribing] = useState<PlanTierId | "custom" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const attempts = useRef(new Map<string, string>());
   const busy = useRef(false);
 
-  async function startCheckout(planTierId: PlanTierId, interval: "monthly" | "annual") {
+  async function startCheckout(planTierId: PlanTierId, interval: "monthly" | "annual", custom?: CustomSubscriptionSelection) {
     if (!enabled || busy.current || planTierId === "free" || planTierId === "enterprise") return;
     busy.current = true;
     trackCloudEvent({ event: "cloud_checkout_clicked", properties: { kind: "subscription", surface: preserveProject ? "onboarding" : "billing" } });
     // Open within the user's click, preserving unfinished project configuration.
     const checkoutTab = preserveProject ? window.open("about:blank", "_blank") : null;
     if (checkoutTab) checkoutTab.opener = null;
-    setSubscribing(planTierId);
+    setSubscribing(custom ? "custom" : planTierId);
     setError(null);
     setCheckoutUrl(null);
     try {
-      const attempt = `${planTierId}:${interval}`;
+      const attempt = `${workspaceId ?? "dedicated"}:${custom?.quoteReference ?? planTierId}:${interval}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt, randomUUID());
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
-        planTierId, interval, idempotencyKey: attempts.current.get(attempt),
+        planTierId, interval, workspaceId, custom, idempotencyKey: attempts.current.get(attempt),
       });
       const url = new URL(res.data.checkoutUrl);
       if (url.protocol !== "https:") throw new Error(t.billing.plansRoute.checkoutError);
@@ -77,10 +84,13 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     } catch (err) {
       checkoutTab?.close();
       setError(getApiErrorMessage(err, t.billing.plansRoute.checkoutError));
+      if (err instanceof ApiError && (err.body as { code?: string } | undefined)?.code === "BILLING_QUOTE_CHANGED") {
+        setQuoteRevision(value => value + 1);
+      }
     } finally {
       busy.current = false;
       setSubscribing(null);
     }
   }
-  return { startCheckout, subscribing, error, checkoutUrl };
+  return { startCheckout, subscribing, error, checkoutUrl, quoteRevision };
 }

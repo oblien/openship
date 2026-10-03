@@ -61,8 +61,8 @@ export const settingsApi = {
 
   /**
    * Update (or clear) the default deploy target.
-   * Pass `defaultDeployTarget: null` to clear. When target='server',
-   * `defaultServerId` is required.
+   * Pass `defaultDeployTarget: null` to clear. Otherwise `defaultServerId`
+   * identifies the connected or managed destination.
    */
   updateDeployDefaults: (data: {
     defaultDeployTarget: DefaultDeployTarget | null;

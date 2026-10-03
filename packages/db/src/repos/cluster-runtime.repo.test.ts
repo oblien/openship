@@ -30,6 +30,9 @@ beforeEach(async () => {
   await db.delete(schema.clusterRuntime);
   await db.delete(schema.computeCluster);
   await db.delete(schema.serverCluster);
+  await db.delete(schema.project);
+  await db.delete(schema.servers);
+  await db.delete(schema.cloudWorkspace);
   await db.delete(schema.organization);
   await db.insert(schema.organization).values([
     { id: "org", name: "Org" },
@@ -185,9 +188,11 @@ describe("project cluster binding", () => {
         project.updatedAt.toISOString(),
       ),
     ).rejects.toThrow("between 1 and 100");
+    await db.insert(schema.cloudWorkspace).values({ id: "cloud-workspace", name: "Managed", organizationId: "org" });
+    await db.insert(schema.servers).values({ id: "cloud-server", name: "Managed", organizationId: "org", workspaceId: "cloud-workspace" });
     await db
       .update(schema.project)
-      .set({ cloudWorkspaceId: "cloud-workspace" })
+      .set({ serverId: "cloud-server" })
       .where(eq(schema.project.id, project.id));
     await expect(
       runtimes.bindProject(

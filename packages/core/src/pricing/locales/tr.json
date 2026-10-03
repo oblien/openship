@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "Cloud'a bağlandığınızda {freeSubdomains} ücretsiz {freeDomainSuffix} alt alan adı",
     "usageCredits": "Ayda {credits} kullanım kredisi",
     "namespaceCapacity": "Toplam: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB disk",
-    "finiteUsage": "Kesintisiz barındırma ek kredi yüklemesi gerektirebilir.",
-    "oneRunningService": "1 çalışan uygulama, veritabanı veya worker"
+    "finiteUsage": "Kesintisiz barındırma ek kredi yüklemesi gerektirebilir."
   },
   "selfHosted": {
     "name": "Kendi sunucunuzda",

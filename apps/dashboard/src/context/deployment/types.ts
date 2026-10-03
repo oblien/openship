@@ -343,12 +343,10 @@ export interface DeploymentModeSnapshots {
 
 /**
  * Resource tier IDs for Openship Cloud deploys — DERIVED from the one tier union
- * in @repo/core, which the backend provisioner reads too. `unlimited` is excluded
- * because a metered cloud workspace must be provisioned at a concrete size.
- * The picker's display specs come from the same core table (see
- * `CLOUD_RESOURCE_TIERS` in `DeployTargetStep.tsx`).
+ * in @repo/core. A managed server already has its purchased allocation, so
+ * `unlimited` lets a container use the host's available capacity, as on self-hosted.
  */
-export type CloudResourceTier = Exclude<CoreResourceTier, "unlimited">;
+export type CloudResourceTier = CoreResourceTier;
 
 /**
  * User-supplied resource values when `cloudResourceTier === "custom"`.
@@ -401,6 +399,8 @@ export interface DeploymentConfig {
    */
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
+  /** Subscription-owned Cloud execution target. Immutable after project creation. */
+  workspaceId?: string;
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
   /**
@@ -471,14 +471,10 @@ export interface DeploymentConfig {
    */
   configDiagnostics?: { errors: string[]; warnings: string[]; wholeFile?: true };
   /**
-   * Resource tier picked for Openship Cloud deploys. Self-hosted servers
-   * inherit the host's capacity, so this field is meaningless for them
-   * — kept on the config (not nested under cloud) because operators
-   * sometimes preview the cost before picking the target. The backend
-   * is responsible for translating the tier into a real ResourceConfig
-   * (cpuCores/memoryMb/diskMb) and the corresponding billing line. See
-   * `CLOUD_RESOURCE_TIERS` in the deploy-target step for placeholder
-   * values; real numbers come from the pricing service later.
+   * Container resource tier for Cloud deployments. Presets come from
+   * @repo/core; custom values use cloudResourceCustom. The selection is
+   * independent of the managed server's subscription and is bounded by
+   * that server's capacity.
    */
   cloudResourceTier?: CloudResourceTier;
   /** Custom CPU/RAM/disk values, used only when cloudResourceTier === "custom". */
@@ -521,7 +517,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
-  cloudResourceTier: "low",
+  cloudResourceTier: "unlimited",
   productionPortTouched: false,
   lastAutoDetectedEnvPort: null,
   options: {

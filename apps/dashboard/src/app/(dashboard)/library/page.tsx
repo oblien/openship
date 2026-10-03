@@ -129,9 +129,7 @@ export default function LibraryPage() {
       label: selfHosted ? t.library.page.tabs.folder : t.library.page.tabs.templates,
       icon: selfHosted ? "folder-out" : "layers",
     },
-    // Adopting a running Docker deployment needs SSH into the user's own box —
-    // self-hosted / desktop only (cloud mode has no server inventory).
-    ...(selfHosted ? [{ key: "server" as const, label: t.migration.entry.tab, icon: "migration" as const }] : []),
+    { key: "server", label: t.migration.entry.tab, icon: "migration" },
   ];
 
   return (
@@ -256,7 +254,7 @@ export default function LibraryPage() {
         />
       </div>
 
-      {selfHosted && showMigrate && (
+      {showMigrate && (
         <div className={activeTab === "server" ? undefined : "hidden"}>
           <ServerMigrationWizard
             variant="tab"

@@ -116,7 +116,7 @@ beforeEach(() => {
     slug: "app",
     framework: "nextjs",
     appTemplateId: null,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     webhookId: null,
     gitOwner: null,
     gitRepo: null,

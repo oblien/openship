@@ -1,12 +1,88 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "{proxy} detectado no servidor de origem",
+      "detected": "{proxy} detectado",
       "handoff": "Confira os domínios associados abaixo. A migração configura o proxy de entrada do servidor de destino e pede confirmação caso seja necessário substituir um proxy existente.",
       "warnings": "Revisar {count} avisos de descoberta"
+    },
+    "steps": {
+      "mapNoRepo": "Vincule um repositório para associar os contêineres detectados aos seus serviços (opcional).",
+      "linkRepoDesc": "Use o Git para futuras compilações e implantações automáticas.",
+      "repoOnSourceHint": "Vincule um repositório na próxima etapa.",
+      "mapHint": "Associe os contêineres aos serviços no repositório."
     }
   },
   "entry": {
     "tab": "Importar projeto existente"
+  },
+  "sources": {
+    "title": "Conectar uma origem de migração",
+    "connect": "Conectar origem",
+    "disconnect": "Desconectar origem",
+    "empty": "Conecte o servidor de onde deseja importar.",
+    "hint": "Apenas para migrações. Remova a conexão quando terminar.",
+    "importHint": "Copie aplicativos e dados para um servidor gerenciado do Openship. A origem é mantida até você confirmar a transferência."
+  },
+  "tab": {
+    "safetyTitle": "Os dados de origem são mantidos.",
+    "safetyBody": "Os dados são copiados. Os containers de origem selecionados param durante a transferência; seus dados permanecem na origem. Remover os containers originais exige sua aprovação."
+  },
+  "run": {
+    "downtimeNote": "Os containers de origem selecionados param enquanto os dados são copiados e o destino inicia. Planeje um período de indisponibilidade.",
+    "routeHint": "Seus serviços ficam privados até que as rotas sejam configuradas. Adicione ou revise os domínios na aba Domínios do projeto."
+  },
+  "cutover": {
+    "warning": "O destino está ativo. Você pode remover os containers originais ou mantê-los parados. Os volumes de origem são mantidos.",
+    "warningRestart": "O destino está ativo. Manter originais reinicia os containers de origem que estavam ativos como cópias independentes. Remover originais os exclui. Os volumes de origem são mantidos."
+  },
+  "discover": {
+    "chooseProject": "Escolha o que importar",
+    "chooseHint": "Selecione um projeto Compose ou serviços individuais.",
+    "topology": "Topologia",
+    "cards": "Cartões",
+    "viewLabel": "Visualização dos resultados",
+    "topologyHint": "As linhas mostram as dependências de inicialização detectadas.",
+    "unavailable": "Indisponível",
+    "selected": "Selecionado",
+    "selectService": "Selecionar serviço",
+    "selectNamedService": "Selecionar {name}",
+    "selectProject": "Selecionar todos os serviços de {name}",
+    "clearSelection": "Limpar seleção",
+    "selectionKeyboard": "Pressione Enter ou Espaço para selecionar um serviço.",
+    "expandProject": "Serviços de {name}"
+  },
+  "review": {
+    "progress": "Progresso da importação",
+    "title": "Revisar serviços",
+    "hint": "Revise o acesso e os dados antes da migração.",
+    "expandAll": "Expandir tudo",
+    "collapseAll": "Recolher tudo",
+    "configureService": "Configurar {name}",
+    "internal": "Apenas interno",
+    "detected": "Detectado",
+    "finishRoute": "Concluir rota",
+    "finishRouteHint": "Preencha o domínio e a porta ou escolha Apenas interno.",
+    "routingTitle": "Domínios e rotas",
+    "scanOptions": "Opções de análise",
+    "destination": "Destino",
+    "summary": "Resumo da importação",
+    "publicServices": "Serviços públicos",
+    "internalServices": "Serviços internos",
+    "dataMounts": "Montagens de dados",
+    "destinationNext": "Escolha onde executar estes serviços na próxima etapa.",
+    "importDetails": "Detalhes da importação",
+    "detectProjects": "Detectar projetos",
+    "includeManaged": "Incluir contêineres gerenciados"
+  },
+  "reimport": {
+    "review": "Recuperar projeto",
+    "reviewNamed": "Recuperar {name}",
+    "groupLabel": "Projeto Openship",
+    "recoverHint": "Restaure as configurações e reconecte os contêineres em execução.",
+    "configuration": "Configuração",
+    "snapshot": "Snapshot salvo",
+    "containerMetadata": "Dos contêineres",
+    "checkSettings": "As configurações de compilação podem precisar de revisão após a recuperação.",
+    "chooseHint": "Selecione um projeto para recuperar suas configurações e serviços ativos."
   }
 }

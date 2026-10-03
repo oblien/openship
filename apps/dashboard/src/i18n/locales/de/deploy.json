@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} Backup-Regel(n) · vor Deploy: {preDeploy}",
     "backupManage": "Backups verwalten",
     "on": "ein",
-    "off": "aus"
+    "off": "aus",
+    "previewTitle": "Bereitstellungsvorschau",
+    "previewHint": "Weiter zur App-Konfiguration. Die Bereitstellung startet auf der nächsten Seite.",
+    "back": "Zurück"
   },
   "summary": {
     "buildAndDeploy": "Bauen & deployen:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} Version",
     "rollbackOther": "{count} Versionen",
     "rollbackAuto": "Rollback: automatisch",
-    "rollbackSnapshotHint": "Von jeder Version wird eine Kopie behalten, sodass ein Rollback nie neu baut. Änderbar unter „Erweitert“.",
-    "rollbackGitHint": "Wie viele frühere Versionen wiederherstellbar bleiben. Änderbar unter „Erweitert“."
+    "rollbackSnapshotHint": "Jede Version wird gespeichert, damit ein Rollback keinen Neubau benötigt. In den Bereitstellungseinstellungen ändern.",
+    "rollbackGitHint": "Anzahl wiederherstellbarer Versionen. In den Bereitstellungseinstellungen ändern."
   },
   "power": {
     "heading": "Leistung",

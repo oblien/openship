@@ -1,24 +1,19 @@
 ---
 title: Scheduled jobs
-description: Run maintenance on a schedule — the built-in system jobs Openship manages for you, plus your own scheduled commands.
+description: Run commands on connected or managed servers, with schedules, retries, logs and notifications.
 ---
 
-Jobs are tasks that run on a **schedule** on your instance: the maintenance
-Openship does for you automatically, and any commands you want to run yourself.
-Find them in the dashboard under **Jobs**.
-
-<Callout title="Self-hosted only" type="info">
-Jobs live on a self-hosted instance. On Openship Cloud the platform handles this
-maintenance for you, so there's no Jobs tab.
-</Callout>
+Jobs run commands on your servers, on a **schedule**, once, on demand, or after
+an event. Find them under **Jobs** in self-hosted Openship and Openship Cloud.
 
 Every run is recorded — when it last ran, whether it succeeded, how long it took,
 and its output.
 
 ## Built-in jobs
 
-Openship ships a set of system jobs and keeps them running for you — nothing to
-set up:
+Self-hosted installations also show the system jobs Openship runs for you.
+Cloud maintenance is managed privately by the platform; Cloud customers see
+their own command jobs and authorized backup schedules.
 
 | Job | What it does | Default schedule |
 |---|---|---|
@@ -28,7 +23,7 @@ set up:
 | Audit log prune | Trims old audit entries per your retention setting | daily |
 | Deployment reconcile | Settles deploys interrupted by a connection blip | every 10 min |
 
-For any of them you can **change the schedule**, **enable/disable** it,
+An instance administrator can **change the schedule**, **enable/disable** it,
 **Run now**, and see its **run history**. You can't delete a built-in job (it's
 part of Openship) — disable it instead.
 
@@ -44,6 +39,24 @@ job:
 
 While a job runs you can watch its **live output**, and every run is kept in
 history with its result.
+
+### Choosing a Cloud server
+
+Select an existing managed server to share its resources with your projects,
+or click **Add a dedicated server** to create a server with its own subscription.
+The same job form supports both. You can also select several servers to run the
+command on each one.
+
+Jobs use the selected server's capacity and usage allowance. The server must be
+running and its subscription and balance must allow new work. A job does not
+provision or resume a server automatically. **Run now** opens the server's plan
+options if billing prevents execution; scheduled attempts record the failure
+in run history. Provision or resume a paid server from **Servers** when needed.
+
+Commands execute on the server itself. To run a temporary container task, use
+`docker run --rm <image> <command>` on a server with Docker available. Jobs have
+the server's command privileges, so configuring or reading a job requires
+administration access to all its targets as well as Jobs permissions.
 
 ## Schedules (cron), in plain terms
 
@@ -75,7 +88,7 @@ scheduled run, marked as manual — so you always have a full record.
 
 ## CLI
 
-Use `openship job` (alias `jobs`) with your self-hosted connection context:
+Use `openship job` (alias `jobs`) with your Cloud or self-hosted connection context:
 
 ```bash
 openship job list

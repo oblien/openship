@@ -16,7 +16,7 @@
  * given scope, well under the pool ceiling even under heavy deploy fan-out.
  */
 
-import { withAdvisoryLock } from "@repo/db";
+import { withAdvisoryLock, tryAcquireAdvisoryLock } from "@repo/db";
 import type { ProvisionLock } from "@repo/adapters";
 
 /** Tail of the in-flight chain per scopeKey. Each tail always resolves. */
@@ -92,4 +92,16 @@ export function createProvisionLock(scopeKey: string): ProvisionLock {
     run: <T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> =>
       withKeyedMutex(scopeKey, () => withAdvisoryLock(scopeKey, fn), signal),
   };
+}
+
+/** Recovery must not queue behind a live worker and mistake its eventual exit
+ * for a crashed owner. Try both lock layers, leaving active work untouched. */
+export async function tryWithProvisionLock<T>(scopeKey: string, work: () => Promise<T>): Promise<T | undefined> {
+  if (tails.has(scopeKey)) return undefined;
+  return withKeyedMutex(scopeKey, async () => {
+    const lock = await tryAcquireAdvisoryLock(scopeKey);
+    if (!lock) return undefined;
+    try { return await work(); }
+    finally { await lock.release(); }
+  });
 }

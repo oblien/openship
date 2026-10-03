@@ -187,9 +187,7 @@ export async function updateBuildMode(ctx: ExecutionContext, body: Static<typeof
  *   { defaultDeployTarget: "server" | "cloud" | null,
  *     defaultServerId?: string | null }
  *
- * Pass nulls to clear. When target="server", defaultServerId is required;
- * for other targets the server id is forced to null on the server side so
- * the row doesn't carry a stale association.
+ * Both connected and managed defaults identify a server. Pass null to clear.
  */
 export async function updateDeployDefaults(ctx: ExecutionContext, body: Static<typeof UserSettingsSchemas.setDeployDefaults.input>) {
 
@@ -203,11 +201,14 @@ export async function updateDeployDefaults(ctx: ExecutionContext, body: Static<t
   }
 
   let serverId: string | null = null;
-  if (target === "server") {
+  if (target) {
     const rawServerId = body?.defaultServerId;
     if (typeof rawServerId !== "string" || !rawServerId) {
-      throw new ValidationError("defaultServerId is required when defaultDeployTarget='server'");
+      throw new ValidationError("Choose a server for the deployment default");
     }
+    const server = await repos.server.getInOrganization(rawServerId, ctx.organizationId);
+    if (!server || (server.workspaceId ? "cloud" : "server") !== target)
+      throw new ValidationError("The deployment default does not match the selected server");
     serverId = rawServerId;
   }
 

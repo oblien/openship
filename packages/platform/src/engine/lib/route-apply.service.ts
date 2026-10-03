@@ -43,7 +43,6 @@ import {
   type ResolvedDeploymentPlatform,
 } from "./deployment-runtime";
 import {
-  reapplyCloudProjectRoute,
   removeCloudProjectRoute,
   type CloudRouteProject,
 } from "./cloud-route.service";
@@ -169,13 +168,12 @@ export async function reconcileProjectRoutes(
   // it does not apply here (cloud webhook delivery uses a different path).
   if (target.deployTarget === "cloud") {
     for (const r of removes) await removeCloudProjectRoute(project, r);
-    for (const r of registers) {
-      await reapplyCloudProjectRoute(project, {
-        hostname: r.hostname,
-        port: r.port,
-        isCustomDomain: r.isCustomDomain,
-      }, deployment);
-      opts.onLog?.(`Applied route ${r.hostname}.`);
+    if (registers.length) {
+      // Recompile the desired project table once. A per-domain root-only write
+      // would erase rewrites, headers and composite service routes during retry.
+      const { applyProjectRouting } = await import("../modules/domains/routing-apply.service");
+      await applyProjectRouting(project.id, { onWarning: opts.onWarning, onLog: opts.onLog });
+      for (const route of registers) opts.onLog?.(`Applied route ${route.hostname}.`);
     }
     return;
   }

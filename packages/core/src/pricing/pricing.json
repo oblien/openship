@@ -14,6 +14,19 @@
     }
   },
   "campaigns": [],
+  "custom": {
+    "resources": {
+      "cpuCores": { "min": 1, "max": 32, "step": 1 },
+      "memoryMb": { "min": 4096, "max": 131072, "step": 1024 },
+      "diskGb": { "min": 25, "max": 2048, "step": 1 }
+    },
+    "extraMonthlyCents": {
+      "cpuCore": 500,
+      "memoryGb": 250,
+      "diskGb": 10
+    },
+    "extraCreditPercent": 80
+  },
   "plans": [
     {
       "id": "free",
@@ -87,12 +100,12 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 1,
-        "maxProjects": 3,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "low",
         "maxServiceResources": {
           "cpuCores": 1,
-          "memoryMb": 2048
+          "memoryMb": 4096
         },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
@@ -106,9 +119,9 @@
         "namespaceCapacity",
         "meteredBuilds",
         "anyWorkload",
-        "oneRunningService",
+        "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "finiteUsage",
         "communitySupport"
       ],
@@ -150,12 +163,12 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 3,
-        "maxProjects": 10,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "medium",
         "maxServiceResources": {
           "cpuCores": 2,
-          "memoryMb": 3072
+          "memoryMb": 8192
         },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
@@ -170,7 +183,7 @@
         "meteredBuilds",
         "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "emailSupport"
       ],
       "billing": {
@@ -180,12 +193,12 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 3,
+          "max_workspaces": 1,
           "max_vcpus": 2,
-          "max_ram_mb": 6144,
+          "max_ram_mb": 8192,
           "max_disk_gb": 32,
           "max_total_vcpus": 2,
-          "max_total_ram_mb": 6144,
+          "max_total_ram_mb": 8192,
           "max_total_disk_gb": 32
         }
       }
@@ -211,12 +224,12 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 10,
-        "maxProjects": 50,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "high",
         "maxServiceResources": {
           "cpuCores": 4,
-          "memoryMb": 4096
+          "memoryMb": 16384
         },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
@@ -231,7 +244,7 @@
         "meteredBuilds",
         "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "prioritySupport"
       ],
       "billing": {
@@ -241,12 +254,12 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 6,
+          "max_workspaces": 1,
           "max_vcpus": 4,
-          "max_ram_mb": 8192,
-          "max_disk_gb": 32,
+          "max_ram_mb": 16384,
+          "max_disk_gb": 128,
           "max_total_vcpus": 4,
-          "max_total_ram_mb": 8192,
+          "max_total_ram_mb": 16384,
           "max_total_disk_gb": 128
         }
       }
@@ -272,12 +285,12 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 50,
+        "runningServices": null,
         "maxProjects": null,
         "maxResourceTier": "xlarge",
         "maxServiceResources": {
           "cpuCores": 8,
-          "memoryMb": 8192
+          "memoryMb": 32768
         },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
@@ -303,12 +316,12 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 12,
+          "max_workspaces": 1,
           "max_vcpus": 8,
-          "max_ram_mb": 12288,
-          "max_disk_gb": 64,
+          "max_ram_mb": 32768,
+          "max_disk_gb": 256,
           "max_total_vcpus": 8,
-          "max_total_ram_mb": 16384,
+          "max_total_ram_mb": 32768,
           "max_total_disk_gb": 256
         }
       }

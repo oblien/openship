@@ -1,7 +1,7 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "{proxy} détecté sur le serveur source",
+      "detected": "{proxy} détecté",
       "handoff": "Vérifiez les domaines associés ci-dessous. La migration configure le routage du serveur cible et demande confirmation avant de remplacer un proxy existant.",
       "warnings": "Consulter les {count} remarques de détection"
     },
@@ -74,7 +74,7 @@
       "back": "Retour",
       "sourceHint": "Liez éventuellement un dépôt et mappez vos conteneurs à ses services compose — l'image en cours d'exécution est toujours réutilisée.",
       "linkRepo": "Lier un dépôt",
-      "linkRepoDesc": "Liez le dépôt pour qu'Openship connaisse la source de chaque service (auto-déploiement + reconstruction plus tard). Cette migration réutilise toujours l'image en cours — aucune reconstruction maintenant.",
+      "linkRepoDesc": "Utilisez Git pour les prochaines compilations et les déploiements automatiques.",
       "repoOptional": "facultatif",
       "connectGithub": "Connecter GitHub",
       "selectRepo": "Choisir un dépôt",
@@ -84,24 +84,22 @@
       "branch": "Branche",
       "unlinkRepo": "Retirer",
       "mapTitle": "Mapper les conteneurs aux services compose",
-      "mapHint": "Associez chaque conteneur découvert à son service dans le compose du dépôt. Le chemin de build du service correspondant devient sa source.",
+      "mapHint": "Associez les conteneurs à leurs services dans le dépôt.",
       "mapToService": "Choisir un service",
       "notInRepo": "Absent du dépôt",
       "composeServicesTitle": "Services du dépôt",
       "noComposeFound": "Aucun docker-compose trouvé dans ce dépôt — le dépôt est lié au niveau du projet.",
-      "mapNoRepo": "Liez un dépôt à l'étape Sélection pour mapper vos conteneurs à ses services compose (facultatif).",
+      "mapNoRepo": "Liez un dépôt pour associer les conteneurs détectés à ses services (facultatif).",
       "mapSkipHint": "Lier un dépôt est facultatif — passez pour continuer (l'image en cours d'exécution est réutilisée telle quelle).",
       "mapField": "Service du dépôt",
       "repoConnectHint": "Connectez GitHub dans le panneau pour parcourir vos dépôts — ou collez une URL de dépôt.",
       "repoPasteHint": "Ou collez une URL de dépôt.",
-      "repoOnSourceHint": "Liez un dépôt Git à l'étape suivante (Source) — facultatif.",
+      "repoOnSourceHint": "Associez un dépôt à l’étape suivante.",
       "parsingCompose": "Analyse du compose…",
       "envTitle": "Variables d'environnement",
       "publishDomains": "Publier les domaines",
       "routeTitle": "Route",
       "routeKeep": "Conserver",
-      "routeFree": "Sous-domaine",
-      "routeCustom": "Personnalisé",
       "routeNone": "Aucun",
       "sslOn": "SSL",
       "sslOff": "Sans SSL",
@@ -123,17 +121,19 @@
     "failed": "Échec de la migration",
     "rolled_back": "Annulé — vos conteneurs d'origine ont été redémarrés",
     "openProject": "Ouvrir le projet",
-    "downtimeNote": "Les conteneurs d'origine sont arrêtés pendant le transfert ; attendez-vous à une brève interruption jusqu'à ce que le nouveau déploiement soit en ligne.",
+    "downtimeNote": "Les conteneurs source sélectionnés sont arrêtés pendant la copie des données et le démarrage de la destination. Prévoyez une interruption.",
     "movingImage": "image",
     "movingVolume": "volume",
-    "partial": "Partielle — certains chemins n'ont pas été déplacés"
+    "partial": "Partielle — certains chemins n'ont pas été déplacés",
+    "routeHint": "Vos services restent privés tant que les routes ne sont pas configurées. Ajoutez ou vérifiez leurs domaines dans l’onglet Domaines du projet."
   },
   "cutover": {
     "title": "Finaliser la migration",
-    "warning": "Le nouveau déploiement est en ligne sur le serveur cible. Vous pouvez arrêter et supprimer les conteneurs d'origine maintenant, ou les conserver (arrêtés) comme filet de sécurité et les supprimer plus tard.",
+    "warning": "La destination est en ligne. Vous pouvez supprimer les conteneurs d’origine ou les conserver arrêtés. Les volumes source sont conservés.",
     "stopRemove": "Arrêter et supprimer les originaux",
     "keep": "Conserver les originaux",
-    "working": "Traitement…"
+    "working": "Traitement…",
+    "warningRestart": "La destination est en ligne. Conserver les originaux redémarre les conteneurs source précédemment actifs comme copies indépendantes. Supprimer les originaux les retire. Les volumes source sont conservés."
   },
   "discover": {
     "buildBlocked": "Construit depuis les sources — migration impossible pour l'instant (publiez d'abord une image)",
@@ -170,7 +170,21 @@
     "envFromImage": "{n} variables viennent de l'image",
     "envFromImageHint": "Non importées comme configuration — l'image les fournit à l'exécution. Importez-les pour figer les valeurs avant de reconstruire depuis les sources.",
     "envFromImageImport": "Importer quand même",
-    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés."
+    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés.",
+    "chooseProject": "Choisir les éléments à importer",
+    "chooseHint": "Sélectionnez un projet Compose ou des services individuels.",
+    "topology": "Topologie",
+    "cards": "Cartes",
+    "viewLabel": "Vue des résultats",
+    "topologyHint": "Les lignes indiquent les dépendances de démarrage détectées.",
+    "unavailable": "Indisponible",
+    "selected": "Sélectionné",
+    "selectService": "Sélectionner le service",
+    "selectNamedService": "Sélectionner {name}",
+    "selectProject": "Sélectionner tous les services de {name}",
+    "clearSelection": "Effacer la sélection",
+    "selectionKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner un service.",
+    "expandProject": "Services de {name}"
   },
   "reimport": {
     "title": "Projets Openship détectés",
@@ -185,7 +199,16 @@
     "openProject": "Ouvrir le projet",
     "alreadyManaged": "{n} conteneur(s) déjà géré(s) par cette instance.",
     "finalizeNote": "La ré-importation restaure le projet et rattache les conteneurs en cours d'exécution en direct — aucun redéploiement nécessaire. Redéployez uniquement pour changer le build.",
-    "failed": "Échec de la ré-importation"
+    "failed": "Échec de la ré-importation",
+    "review": "Récupérer le projet",
+    "reviewNamed": "Récupérer {name}",
+    "groupLabel": "Projet Openship",
+    "recoverHint": "Restaurez ses paramètres et rattachez les conteneurs en cours d’exécution.",
+    "configuration": "Configuration",
+    "snapshot": "Instantané enregistré",
+    "containerMetadata": "Depuis les conteneurs",
+    "checkSettings": "Les paramètres de compilation peuvent nécessiter une vérification après récupération.",
+    "chooseHint": "Sélectionnez un projet pour récupérer ses paramètres et ses services actifs."
   },
   "scanFailed": "Échec de l'inspection Docker",
   "adoptFailed": "Impossible de créer le projet",
@@ -244,13 +267,44 @@
     "resume": "Reprendre la migration",
     "resuming": "Reprise…",
     "editRetry": "Modifier et réessayer",
-    "safetyTitle": "Non destructif et réversible.",
-    "safetyBody": "Votre source continue de fonctionner tout du long — les données sont copiées, jamais déplacées. Rien n'est supprimé, même après une migration réussie : vos conteneurs d'origine restent (arrêtés, comme filet de sécurité) jusqu'à ce que vous les supprimiez explicitement lors de la bascule.",
+    "safetyTitle": "Les données source sont conservées.",
+    "safetyBody": "Les données sont copiées. Les conteneurs source sélectionnés sont arrêtés pendant le transfert ; leurs données restent sur la source. La suppression des conteneurs d’origine nécessite votre accord.",
     "cleanupTarget": "Supprimer les données copiées sur la cible",
     "retryRun": "Réessayer",
     "changeTarget": "Changer de cible"
   },
   "plan": {
     "missing": "introuvable"
+  },
+  "sources": {
+    "title": "Connecter une source de migration",
+    "connect": "Connecter la source",
+    "disconnect": "Déconnecter la source",
+    "empty": "Connectez le serveur depuis lequel vous souhaitez importer.",
+    "hint": "Uniquement pour les migrations. Supprimez la connexion une fois terminé.",
+    "importHint": "Copiez les applications et les données vers un serveur Openship géré. La source est conservée jusqu’à la confirmation du basculement."
+  },
+  "review": {
+    "progress": "Progression de l’import",
+    "title": "Vérifier les services",
+    "hint": "Vérifiez les accès et les données avant la migration.",
+    "expandAll": "Tout développer",
+    "collapseAll": "Tout réduire",
+    "configureService": "Configurer {name}",
+    "internal": "Interne uniquement",
+    "detected": "Détecté",
+    "finishRoute": "Compléter la route",
+    "finishRouteHint": "Renseignez le domaine et le port, ou choisissez Interne uniquement.",
+    "routingTitle": "Domaines et routage",
+    "scanOptions": "Options d’analyse",
+    "destination": "Destination",
+    "summary": "Résumé de l’import",
+    "publicServices": "Services publics",
+    "internalServices": "Services internes",
+    "dataMounts": "Montages de données",
+    "destinationNext": "Choisissez ensuite où exécuter ces services.",
+    "importDetails": "Détails de l’import",
+    "detectProjects": "Détecter les projets",
+    "includeManaged": "Inclure les conteneurs gérés"
   }
 }

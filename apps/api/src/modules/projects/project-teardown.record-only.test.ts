@@ -155,7 +155,7 @@ const projectFixture = (over: Record<string, unknown> = {}) => ({
   slug: "app",
   framework: "nextjs",
   appTemplateId: null,
-  cloudWorkspaceId: null,
+  workspaceId: null,
   webhookId: null,
   gitOwner: null,
   gitRepo: null,
@@ -518,7 +518,7 @@ describe("teardownProject — record-only delete touches nothing on the server",
   });
 
   it("ignores recordOnly for a cloud project — Oblien resources must be reclaimed", async () => {
-    h.project = projectFixture({ cloudWorkspaceId: "ws1" });
+    h.project = projectFixture({ workspaceId: "ws1" });
 
     await teardownProject(ctx, "p1", { force: false, recordOnly: true });
 

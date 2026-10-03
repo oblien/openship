@@ -13,12 +13,12 @@ import { transferProjectToSelfHosted } from "@repo/platform/engine/modules/proje
 
 beforeEach(() => {
   vi.resetAllMocks();
-  h.read.mockResolvedValue([{ id: "project", slug: "app", organizationId: "org", cloudWorkspaceId: "shared-vm" }]);
-  h.export.mockResolvedValue({ ok: true, dump: { tables: { cloud_docker_workspace: [{ projectId: "project", workspaceId: "shared-vm" }] } } });
+  h.read.mockResolvedValue([{ id: "project", slug: "app", organizationId: "org", workspaceId: "shared-vm" }]);
+  h.export.mockResolvedValue({ ok: true, dump: { tables: { deployment: [{ id: "deployment-a", projectId: "project" }] } } });
 });
 describe("Cloud Docker transfer boundary", () => {
   it("refuses a record-only transfer before erasing local ownership or the Cloud disk", async () => {
-    await expect(transferProjectToSelfHosted({ projectId: "project", organizationId: "org" })).rejects.toThrow("Migrate that data");
+    await expect(transferProjectToSelfHosted({ projectId: "project", organizationId: "org" })).rejects.toMatchObject({ code: "PROJECT_DATA_TRANSFER_REQUIRED" });
     expect(h.remove).not.toHaveBeenCalled();
     expect(h.restore).not.toHaveBeenCalled();
     expect(h.teardown).not.toHaveBeenCalled();

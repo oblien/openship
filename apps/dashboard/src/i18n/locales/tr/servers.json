@@ -212,7 +212,8 @@
       "github": "Git Doğrulama",
       "security": "Güvenlik",
       "ports": "Port yönlendirme",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "activity": "Etkinlik"
     },
     "healthy": "Sağlıklı",
     "issues": "Sorunlar var",
@@ -428,11 +429,20 @@
     "toastRemoved": "İstek sınırlaması kaldırıldı",
     "toastFailedRemove": "İstek sınırlaması kaldırılamadı",
     "toastInvalidIp": "Geçersiz IP/CIDR biçimi",
-    "toastAlreadyWhitelisted": "Zaten güvenli listede"
+    "toastAlreadyWhitelisted": "Zaten güvenli listede",
+    "ports": {
+      "managedTitle": "Dinleyen portlar",
+      "managedSubtitle": "Bu sunucuda bağlantı dinleyen süreçler",
+      "managedHint": "Bu portlar yönetilen sunucunun içindedir. Genel erişim, Ağ ayarları ve her projenin alan adları üzerinden yönetilir.",
+      "managedSummary": "{total} dinleyen port · {exposed} ağ arayüzlerine bağlı",
+      "managedLoopbackSummary": "{total} dinleyen port · yalnızca localhost",
+      "managedListener": "Ağ dinleyicisi",
+      "managedInconclusiveHint": "Soket tablosu okunamadı. Yeniden dene veya Terminal’den sunucu bağlantısını kontrol et."
+    }
   },
   "terminal": {
     "title": "Terminal",
-    "description": "WebSocket üzerinden canlı SSH kabukları. Aynı anda en fazla 3 oturum açılabilir; seçilen metin panoya kopyalanır."
+    "description": "Canlı sunucu terminali. Oturum sınırı: {count}; seçilen metin panoya kopyalanır."
   },
   "setup": {
     "editServer": "Sunucuyu Düzenle",
@@ -933,5 +943,18 @@
     "hostname": "Access ana makine adı",
     "help": "Cloudflare Access ana makine adını ve sunucunuzun SSH kimlik bilgilerini kullanın. OpenShip’i çalıştıran makinede Cloudflare oturumunu açın. Windows uygulaması gerekli istemciyi içerir; diğer kurulumlar cloudflared gerektirir.",
     "openAccess": "Cloudflare Access’i aç"
+  },
+  "acquire": {
+    "connected": {
+      "label": "Sunucunu bağla",
+      "description": "Sahip olduğun bir sunucuyu SSH üzerinden kullan."
+    },
+    "managed": {
+      "label": "Yönetilen sunucu al",
+      "description": "Kurulumu, yönlendirmeyi ve HTTPS’i Openship Cloud yönetir."
+    },
+    "signInHint": "Mevcut bir yönetilen sunucuyu kullanmak veya yeni bir sunucu almak için Cloud hesabını bağla.",
+    "chooseExisting": "Mevcut bir Cloud sunucusu seç",
+    "useServer": "Bu sunucuyu kullan"
   }
 }

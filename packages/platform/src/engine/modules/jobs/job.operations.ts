@@ -3,7 +3,7 @@ import type { ExecutionContext } from "../../../context";
 import { repos } from "@repo/db";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { runEvents } from "../../lib/run-events";
-import { assertSelfHosted } from "../system/server-access";
+import { authorization } from "../../lib/authorization";
 import { assertJobWritable, assertJobRunnable, assertJobServersWritable, assertJobReferences, canReadJob, canReadRun, requireReadableJob, requireReadableRun } from "./job-access";
 import { jobRunBus, type JobRunEvent } from "./job-run.sse";
 import { JOB_TRIGGER_EVENTS } from "./job-events";
@@ -24,21 +24,28 @@ async function present(ctx: ExecutionContext, view: service.JobView) {
 export const jobDependencies: JobDependencies = {
   collection: {
     async list(ctx) {
-      assertSelfHosted();
       const visible = [];
-      for (const row of await service.listJobs()) if (await canReadJob(ctx, row)) visible.push(await present(ctx, row));
+      for (const row of await service.listJobs(row => canReadJob(ctx, row))) visible.push(await present(ctx, row));
       return visible;
     },
     async create(ctx, input) {
-      assertSelfHosted();
       await assertJobServersWritable(ctx, resolveServerIds(input));
       await assertJobReferences(ctx, input);
       const job = await service.createCustomJob({ ...input, createdBy: ctx.userId });
       record(ctx, job.key, "create");
       return present(ctx, await service.getJob(job.key));
     },
-    async triggerEvents() { assertSelfHosted(); return JOB_TRIGGER_EVENTS; },
-    async backupSchedules(ctx) { assertSelfHosted(); return service.listBackupSchedules(ctx.organizationId); },
+    async triggerEvents() { return JOB_TRIGGER_EVENTS; },
+    async backupSchedules(ctx) {
+      const visible = [];
+      for (const row of await service.listBackupSchedules(ctx.organizationId)) {
+        const source = row.projectId
+          ? { resourceType: "project" as const, resourceId: row.projectId }
+          : row.mailServerId ? { resourceType: "server" as const, resourceId: row.mailServerId } : null;
+        if (source && await authorization.checkPermissionOnResource(ctx, { ...source, action: "read" })) visible.push(row);
+      }
+      return visible;
+    },
   },
   resources: {
     async get(ctx, key) { await requireReadableJob(ctx, key); return present(ctx, await service.getJob(key)); },

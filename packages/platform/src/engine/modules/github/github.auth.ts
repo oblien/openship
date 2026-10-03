@@ -244,7 +244,7 @@ export async function getInstallationId(
   // local snapshot must never shadow it.
   const mode = await resolveGitHubFallbackAuthMode(ctx).catch(() => "none" as const);
   if (mode === "cloud-app") {
-    assertCloudTenantScope(ctx);
+    await assertCloudTenantScope(ctx);
     // ctx.organizationId is the canonical answer — permission.assert
     // has already rebound it to the resource-scoped org when this is a
     // resource-bound route, so we never need to guess memberships[0].
@@ -408,7 +408,7 @@ export async function getInstallationToken(
     : "";
 
   if (mode === "cloud-app") {
-    assertCloudTenantScope(ctx);
+    await assertCloudTenantScope(ctx);
     // Proxy through cloud. ctx.organizationId is the only source of
     // truth — no more memberships[0] fallback that could leak tokens
     // across the cache between users whose synthesized ids collide
@@ -746,7 +746,7 @@ export async function getUserStatus(userId: string, ctx?: RequestContext) {
 
   // ── Cloud-app: status comes from openship.io ────────────────────────────
   if (mode === "cloud-app") {
-    if (ctx) assertCloudTenantScope(ctx);
+    if (ctx) await assertCloudTenantScope(ctx);
     const { cloudClient } = await import("../../lib/cloud/client");
     const status = await cloudClient({ userId }).github.userStatus();
     if (!status?.connected) {
@@ -1009,7 +1009,7 @@ export async function getUserInstallations(
     : await resolveGitHubAuthMode(ctx);
 
   if (mode === "cloud-app") {
-    assertCloudTenantScope(ctx);
+    await assertCloudTenantScope(ctx);
     // SaaS is the canonical source of truth — the GitHub App's webhook
     // fires to api.openship.io, not to us, so api.openship.io is the
     // only place that reliably knows about installations. We do NOT
@@ -1334,7 +1334,7 @@ export async function resolveInstallUrl(
 
   const mode = await resolveGitHubAuthMode(ctx);
   if (mode === "cloud-app") {
-    assertCloudTenantScope(ctx);
+    await assertCloudTenantScope(ctx);
     // Bind the install to the active org so the resulting installation
     // belongs to the team, not the clicking member. ctx.organizationId
     // is the canonical answer.

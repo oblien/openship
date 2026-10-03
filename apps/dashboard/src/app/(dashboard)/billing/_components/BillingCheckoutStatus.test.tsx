@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { BillingCheckoutStatus } from "./BillingCheckoutStatus";
+import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 
 const mocks = vi.hoisted(() => ({
   state: vi.fn(),
@@ -50,11 +51,11 @@ const state = {
 };
 let container: HTMLDivElement;
 let root: Root;
-async function render(props: Parameters<typeof BillingCheckoutStatus>[0]) {
+async function render(props: Parameters<typeof BillingCheckoutStatus>[0], workspaceId?: string) {
   await act(async () =>
     root.render(
       <I18nProvider>
-        <BillingCheckoutStatus {...props} />
+        <BillingWorkspaceProvider workspaceId={workspaceId}><BillingCheckoutStatus {...props} /></BillingWorkspaceProvider>
       </I18nProvider>,
     ),
   );
@@ -90,7 +91,21 @@ describe("checkout return confirmation", () => {
   it("confirms the selected paid subscription only after its credits are delivered", async () => {
     await render(subscription);
     expect(container.textContent).toContain(copy.active);
-    expect(mocks.checkout).toHaveBeenCalledExactlyOnceWith("cs_selected");
+    expect(mocks.checkout).toHaveBeenCalledExactlyOnceWith("cs_selected", undefined);
+  });
+  it("scopes checkout verification to the selected subscription and discards a previous workspace's success", async () => {
+    await render(subscription, "cws_production");
+    expect(mocks.state).toHaveBeenLastCalledWith("cws_production");
+    expect(mocks.checkout).toHaveBeenLastCalledWith("cs_selected", "cws_production");
+    expect(container.textContent).toContain(copy.active);
+
+    mocks.checkout.mockResolvedValue({ ...paid, paymentStatus: "unpaid", fulfilled: false });
+    await render(subscription, "cws_staging");
+    expect(mocks.state).toHaveBeenLastCalledWith("cws_staging");
+    expect(mocks.checkout).toHaveBeenLastCalledWith("cs_selected", "cws_staging");
+    expect(container.textContent).toContain(copy.checking);
+    expect(container.textContent).not.toContain(copy.active);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
   it.each([undefined, "cs_selected"])(
     "does not reuse an existing active subscription to confirm unpaid checkout %s",

@@ -20,6 +20,8 @@ import { AddServiceModal } from "./services/AddServiceModal";
 import { LinkedAppsCard } from "./services/LinkedAppsCard";
 import { ServiceListItem } from "./services/ServiceListItem";
 import { ResourceSettings } from "./ResourceSettings";
+import { hasSeparateApplication } from "@/lib/project-application";
+import { ProjectApplicationCard } from "./services/ProjectApplicationCard";
 
 /** Render a drift diff value (arrays → csv, objects → keys, scalars → string). */
 const fmtDriftVal = (v: unknown): string => {
@@ -169,9 +171,8 @@ export const ServicesTab = () => {
       return;
     }
 
-    // Start just this service. Cloud Compose reuses its project workspace;
-    // native Cloud services get independent workspaces. Keep the saved service
-    // on failure: a lost response may mean the provider already started it.
+    // Start this service on the project's selected server. Keep its saved
+    // configuration on failure so the user can inspect and retry the operation.
     showToast(interpolate(t.projects.services.toastAddedDeploying, { name: data.name }), "success", t.projects.services.toastServiceTitle);
     const showStartFailure = async (message: string) => {
       await fetchData();
@@ -222,6 +223,7 @@ export const ServicesTab = () => {
   );
 
   const driftedServices = services.filter((s) => s.drift && s.drift.changes.length > 0);
+  const hasApplication = !servicesData.error && hasSeparateApplication(projectData, services);
 
   /* ── Loading state ─────────────────────────────────────────────── */
   if (loading) {
@@ -274,12 +276,13 @@ export const ServicesTab = () => {
   if (services.length === 0) {
     return (
       <div className="space-y-5">
-        <div className="bg-card rounded-2xl border border-border/50 px-6 pb-10 text-center">
+        {hasApplication && <ProjectApplicationCard />}
+        <div className={`bg-card rounded-2xl text-center ${hasApplication ? "p-5" : "px-6 pb-10"}`}>
           {/* SVG illustration - central app card linked to three service
               nodes (database, cache, queue). Uses the same `th-*` token
               palette as the deployments empty state so the visual language
               stays consistent across the app. */}
-          <div className="relative mx-auto w-72 h-44">
+          {!hasApplication && <div className="relative mx-auto w-72 h-44">
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 288 180" fill="none">
               {/* Decorative dots scattered behind */}
               <circle cx="22" cy="46" r="4" fill="var(--th-on-10)" />
@@ -362,10 +365,10 @@ export const ServicesTab = () => {
                 <rect x="12" y="12.5" width="14" height="2.5" rx="1.25" fill="var(--th-on-08)" />
               </g>
             </svg>
-          </div>
+          </div>}
 
           <h3 className="text-lg font-medium text-foreground/80 mb-2">
-            {t.projects.services.emptyTitle}
+            {hasApplication ? t.projects.services.companionsTitle : t.projects.services.emptyTitle}
           </h3>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
             {t.projects.services.emptyDescription}
@@ -427,6 +430,7 @@ export const ServicesTab = () => {
           container={containerFor(selectedService.id)}
           containerChecking={containersLoading}
           projectId={id}
+          workspaceId={projectData.workspaceId}
           projectSlugBase={projectSlugBase}
           initialTab={slug?.[2]}
           onRefresh={fetchData}
@@ -444,6 +448,7 @@ export const ServicesTab = () => {
 
   return (
     <div className="space-y-5">
+      {hasApplication && <ProjectApplicationCard />}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-foreground">
           {interpolate(

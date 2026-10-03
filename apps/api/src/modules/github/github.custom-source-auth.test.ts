@@ -51,6 +51,7 @@ vi.mock("@repo/platform/engine/lib/cloud/session", () => ({
   isCloudConnectedForOrg: h.cloudConnected,
   isCloudConnected: h.cloudConnected,
 }));
+vi.mock("@repo/platform/engine/lib/cloud/scope", () => ({ assertCloudTenantScope: vi.fn() }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({
   cloudClient: vi.fn(() => ({
     github: {

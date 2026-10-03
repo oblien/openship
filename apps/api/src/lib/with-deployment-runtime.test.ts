@@ -44,7 +44,7 @@ vi.mock("@repo/adapters", async () => {
 
 // Self-hosted base + a snapshot with no serverId → effective target "local",
 // which resolves through DockerRuntime.create above with no SSH anywhere.
-vi.mock("./controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
+vi.mock("./controller-helpers", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));
 
 vi.mock("@repo/db", () => ({ repos: { service: { listByDeployment: async () => [] } } }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
@@ -145,6 +145,6 @@ describe("deploymentContainerIds", () => {
 });
 
 // The application seams moved with the shared engine.
-vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));
 
-vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: () => ({ target: "selfhosted" }) }));
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));

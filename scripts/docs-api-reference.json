@@ -1119,7 +1119,7 @@
     "servers.list": {
       "page": "servers",
       "section": "Server lifecycle",
-      "description": "List registered servers.",
+      "description": "List accessible connected or managed servers with their supported capabilities.",
       "route": "GET /api/system/servers"
     },
     "servers.create": {
@@ -1503,7 +1503,7 @@
     "servers.get": {
       "page": "servers",
       "section": "Server lifecycle",
-      "description": "Read a server’s configuration and state.",
+      "description": "Read server details, managed plan, live provider state and durable operation progress.",
       "route": "GET /api/system/servers/:id"
     },
     "servers.reachability": {
@@ -1854,6 +1854,12 @@
       "description": "Read current billing state.",
       "route": "GET /api/billing/state"
     },
+    "billing.getCreditAlerts": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read provider credit alerts across the organization's managed servers, with unavailable subscriptions identified separately.",
+      "route": "GET /api/billing/credit-alerts"
+    },
     "billing.getCheckout": {
       "page": "billing",
       "section": "Operations",
@@ -1866,29 +1872,17 @@
       "description": "Read compute usage, edge traffic, and bandwidth limits.",
       "route": "GET /api/billing/resources"
     },
-    "billing.getCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Read verified Cloud pool and authorized project allocations.",
-      "route": "GET /api/billing/capacity"
-    },
-    "billing.previewCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Preview resource changes and affected restarts without applying them.",
-      "route": "POST /api/billing/capacity/preview"
-    },
-    "billing.applyCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Apply a confirmed resource adjustment through the deployment queue.",
-      "route": "POST /api/billing/capacity/apply"
-    },
     "billing.getSubscription": {
       "page": "billing",
       "section": "Operations",
       "description": "Read subscription and renewal state.",
       "route": "GET /api/billing/subscription"
+    },
+    "billing.quoteCustomPlan": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Quote a Custom server's monthly price and usage allowance without purchasing it.",
+      "route": "GET /api/billing/subscription/quote"
     },
     "billing.createSubscription": {
       "page": "billing",
@@ -2705,9 +2699,106 @@
       "section": "Operations",
       "description": "Read a recorded run, result, and captured output.",
       "route": "GET /api/jobs/runs/:runId"
+    },
+    "servers.createManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Create a server identity without purchasing or provisioning resources.",
+      "route": "POST /api/system/servers/managed"
+    },
+    "servers.availableManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "List servers available through the connected Cloud account without creating resources or copying projects.",
+      "route": "GET /api/system/servers/managed/available"
+    },
+    "servers.connectManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Link an existing Cloud server to this organization after verifying its administrator and account identity; return the local serverId for deployments.",
+      "route": "POST /api/system/servers/managed/connect"
+    },
+    "servers.usage": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Measure host usage and accessible project disk data separately from provisioned capacity.",
+      "route": "GET /api/system/servers/:id/usage"
+    },
+    "servers.ensure": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Queue idempotent provisioning or resume of the subscribed Docker host.",
+      "route": "POST /api/system/servers/:id/ensure"
+    },
+    "servers.retry": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Retry a failed server operation using its saved provider identity and recovery checkpoint.",
+      "route": "POST /api/system/servers/:id/retry"
+    },
+    "servers.previewResize": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Preview purchased capacity and projects that may restart, without changing the host.",
+      "route": "GET /api/system/servers/:id/resize"
+    },
+    "servers.resize": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Queue a reviewed resize with a revision, request key and explicit restart confirmation.",
+      "route": "POST /api/system/servers/:id/resize"
+    },
+    "servers.removeManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Remove an empty server after its subscription ends and provider cleanup is confirmed.",
+      "route": "DELETE /api/system/servers/:id/managed"
+    },
+    "servers.destinations": {
+      "page": "servers",
+      "section": "Observe",
+      "description": "Read accessible deployment servers, including linked managed servers, with their capabilities and readiness.",
+      "route": "GET /api/system/servers/destinations"
+    },
+    "servers.getNetworkSettings": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Read provider outbound internet settings and route-managed ingress ports without starting the server.",
+      "route": "GET /api/system/servers/:id/network-settings"
+    },
+    "servers.updateNetworkSettings": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity.",
+      "route": "PATCH /api/system/servers/:id/network-settings"
     }
   },
   "http": {
+    "POST /api/cloud/servers/:id/authorize": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Verify the connected Cloud user's administration of a server in the exact requested organization before linking an installation."
+    },
+    "POST /api/cloud/servers/:id/connection": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Issue namespace-scoped server credentials after ownership checks; work admission also verifies the subscription. Credentials stay on the installation's server and must not be exposed to a browser."
+    },
+    "POST /api/cloud/servers/:id/activity": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Claim durable server activity for a linked installation and synchronize its project registry before execution; a disconnected claim does not expire."
+    },
+    "POST /api/cloud/servers/:id/activity/release": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Release the same user's exact controller and activity claim after work finishes, and update its registered projects."
+    },
+    "GET /api/cloud/server-deletions/:id": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Read a durable deletion receipt using billing administration, the original organization and exact operationId after the server row has been removed."
+    },
     "POST /api/cloud/support": {
       "page": "support",
       "description": "Save a Cloud support ticket and queue acknowledgement and team email. Public intake returns only a receipt and deduplicates retries."
@@ -2959,10 +3050,6 @@
     "POST /api/cloud/token": {
       "page": "cloud",
       "description": "Mint a namespace-scoped Oblien token for the caller's org."
-    },
-    "GET /api/cloud/workspaces": {
-      "page": "cloud",
-      "description": "List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local)."
     },
     "GET /api/github/connect/redirect": {
       "page": "github",
@@ -3219,6 +3306,22 @@
     "GET /api/migration/active": {
       "page": "migration",
       "description": "List active server migration sessions."
+    },
+    "GET /api/migration/sources": {
+      "page": "migration",
+      "description": "List the active organization's migration-only SSH connections."
+    },
+    "POST /api/migration/sources": {
+      "page": "migration",
+      "description": "Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations."
+    },
+    "POST /api/migration/sources/test": {
+      "page": "migration",
+      "description": "Test a public SSH source without saving it and return its host fingerprint."
+    },
+    "DELETE /api/migration/sources/:serverId": {
+      "page": "migration",
+      "description": "Disconnect an idle migration source without deleting its external server or workloads."
     },
     "POST /api/migration/adopt": {
       "page": "migration",

@@ -19,6 +19,7 @@ export interface ImageTransferOptions {
   /** Running total of bytes streamed out of the source (pre-load). */
   onProgress?: (bytesMoved: number) => void;
   log?: (message: string) => void;
+  signal?: AbortSignal;
 }
 
 export interface ImageTransferResult {
@@ -38,8 +39,10 @@ export async function transferImage(
   image: { id: string; tag: string },
   opts?: ImageTransferOptions,
 ): Promise<ImageTransferResult> {
+  opts?.signal?.throwIfAborted();
   opts?.log?.(`saving ${image.tag} (${image.id.slice(0, 19)})`);
   const { stdout, awaitExit } = await src.saveImage(image.id);
+  void awaitExit.catch(() => {});
 
   let bytesMoved = 0;
   const counter = new Transform({
@@ -59,11 +62,18 @@ export async function transferImage(
   // instead of hanging on a stream that will never complete.
   stdout.on("error", (err) => counter.destroy(err));
   stdout.pipe(counter);
+  const abort = () => {
+    counter.destroy(new Error("Image transfer cancelled"));
+    stdout.destroy();
+  };
+  opts?.signal?.addEventListener("abort", abort, { once: true });
+  if (opts?.signal?.aborted) abort();
 
   // load consumes the counted stream; it resolves when the save stream EOFs.
   // It returns the ref the load actually restored under (the config id for a
   // save-by-id tar) — retag from THAT, not `image.id` (often a RepoDigest that
   // doesn't resolve on the target → "No such image").
+  try {
   const loadedRef = await dst.loadImage(counter);
 
   const exit = await awaitExit;
@@ -76,4 +86,9 @@ export async function transferImage(
   await dst.tagImage(loadedRef ?? image.id, image.tag);
   opts?.log?.(`loaded ${image.tag} — ${bytesMoved} bytes`);
   return { bytesMoved };
+  } finally {
+    opts?.signal?.removeEventListener("abort", abort);
+    counter.destroy();
+    stdout.destroy();
+  }
 }

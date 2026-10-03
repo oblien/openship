@@ -2,11 +2,9 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
-import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -14,12 +12,7 @@ export default function NewJobPage() {
   const { t } = useI18n();
   const j = t.jobs;
   const router = useRouter();
-  const { selfHosted } = usePlatform();
   const { showToast } = useToast();
-
-  useEffect(() => {
-    if (!selfHosted) router.replace("/jobs");
-  }, [selfHosted, router]);
 
   return (
     <PageContainer>

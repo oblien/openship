@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/db", () => ({
-  repos: {},
+  repos: { project: { findById: async (id: string) => ({ id, workspaceId: null }) } },
   withAdvisoryLock: async (_key: string, run: () => Promise<unknown>) => run(),
 }));
 import { withProjectRuntimeLock } from "@repo/platform/engine/lib/project-runtime-lock";

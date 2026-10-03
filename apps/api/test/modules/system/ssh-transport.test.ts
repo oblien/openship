@@ -8,11 +8,12 @@ import { seedOwner } from "../jobs/_harness";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { buildSshConfig, sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import * as connectivity from "@repo/platform/engine/lib/connectivity";
+import { serverResourceRoutes } from "../../../src/modules/system/server-resource.routes";
 import { serverManagementRoutes } from "../../../src/modules/system/server-management.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 
-const app = new Hono().onError(handleApiError).route("/api/health", healthRoutes).route("/api/system", serverManagementRoutes);
+const app = new Hono().onError(handleApiError).route("/api/health", healthRoutes).route("/api/system", serverResourceRoutes).route("/api/system", serverManagementRoutes);
 
 async function clients() {
   const owner = await seedOwner();

@@ -141,14 +141,15 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   }
 }
 
-export type OblienCheckout = {
-  namespace: string;
-  successUrl: string;
-  cancelUrl: string;
-  idempotencyKey: string;
-  offer: OblienOffer;
-  metadata: Record<string, string>;
-} & ({ kind: "subscription"; billingInterval: "monthly" | "yearly" } | { kind: "topup" });
+const checkoutInput = z.object({
+  namespace: z.string().min(1), successUrl: z.url(), cancelUrl: z.url(),
+  idempotencyKey: z.string().min(1), offer: oblienOfferSchema, metadata: z.record(z.string(), z.string()),
+});
+export const oblienCheckoutInputSchema = z.discriminatedUnion("kind", [
+  checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]) }),
+  checkoutInput.extend({ kind: z.literal("topup") }),
+]);
+export type OblienCheckout = z.infer<typeof oblienCheckoutInputSchema>;
 
 /** Log only a bounded error identifier, never provider messages or payment data. */
 function providerErrorCode(payload: unknown): string {

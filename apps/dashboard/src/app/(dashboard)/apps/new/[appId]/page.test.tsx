@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, type ComponentProps } from "react";
+import { act, useEffect, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getAppTemplate, type AppTemplate } from "@repo/core";
@@ -76,11 +76,13 @@ vi.mock("@/hooks/useLocalDeployGate", () => ({
   useLocalDeployGate: () => ({ blocks: () => false }),
 }));
 vi.mock("@/components/deploy/AppDestinationPicker", () => ({
-  AppDestinationPicker: ({ onChange }: { onChange: (target: object) => void }) => (
-    <button onClick={() => onChange({ deployTarget: "server", serverId: "small-server" })}>
-      Select small server
-    </button>
-  ),
+  AppDestinationPicker: ({ value, onChange, onReadyChange, readOnly }: ComponentProps<typeof import("@/components/deploy/AppDestinationPicker").AppDestinationPicker>) => {
+    useEffect(() => {
+      if (!value && !readOnly) onChange({ deployTarget: h.cloud ? "cloud" : "server", serverId: h.cloud ? "managed-server" : "small-server" });
+      onReadyChange?.(!!value?.serverId);
+    }, [value, onChange, onReadyChange, readOnly]);
+    return <button onClick={() => onChange({ deployTarget: "server", serverId: "small-server" })}>Select small server</button>;
+  },
 }));
 vi.mock("@/components/routing/RoutingSettingsCard", () => ({
   RoutingSettingsCard: (props: RoutingSettingsCardProps) => (
@@ -164,7 +166,7 @@ beforeEach(() => {
     },
   });
   h.services.mockReset();
-  h.info.mockResolvedValue({ data: { project: { slug: "saved-convex" } } });
+  h.info.mockResolvedValue({ data: { project: { slug: "saved-convex", serverId: "small-server", deployTarget: "server" } } });
   h.install.mockResolvedValue({ data: { kind: "template", projectId: "installed-app" } });
   h.updateSettings.mockResolvedValue(undefined);
   h.updateService.mockResolvedValue(undefined);
@@ -381,7 +383,7 @@ it("does not substitute template routing when a draft's project details fail to 
   await click("Install");
   expect(h.updateService).not.toHaveBeenCalled();
   expect(h.build).not.toHaveBeenCalled();
-  h.info.mockResolvedValue({ data: { project: { slug: "saved-mongodb" } } });
+  h.info.mockResolvedValue({ data: { project: { slug: "saved-mongodb", serverId: "managed-server", workspaceId: "managed-workspace" } } });
   await click("Try again");
   expect(button("Install").disabled).toBe(false);
 });
@@ -566,6 +568,20 @@ it("applies the confirmed port-only choice to an adopted draft without recreatin
     }),
   );
   expect(h.build).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ projectId: "draft" }));
+});
+
+it.each([
+  { cloud: true, deployTarget: "cloud", serverId: "managed-host", workspaceId: "paid-workspace" },
+  { cloud: false, deployTarget: "server", serverId: "saved-host", workspaceId: undefined },
+])("restores the saved $deployTarget host when installing a draft", async ({ cloud, ...placement }) => {
+  h.info.mockResolvedValue({ data: { project: { slug: "saved-app", ...placement } } });
+  await renderApp({ cloud, draft: true });
+  await click("Install");
+  await click("Continue without domains");
+  expect(h.install).not.toHaveBeenCalled();
+  expect(h.build).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    projectId: "draft", serverId: placement.serverId, deployTarget: placement.deployTarget,
+  }));
 });
 
 it("offers an upgrade before Cloud installation, then refreshes after returning from billing", async () => {

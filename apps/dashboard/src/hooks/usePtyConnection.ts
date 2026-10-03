@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import {
   buildTerminalWsUrl,
   buildServiceTerminalWsUrl,
@@ -36,7 +37,7 @@ import {
 
 /**
  * What we're opening a shell against. The wire protocol is identical
- * for both kinds — server flavor uses the host's SSH PTY, service
+ * for both kinds — server flavor uses the host's execution provider, service
  * flavor uses Docker exec or Oblien shell depending on the runtime.
  * The hook dispatches to the right ticket endpoint and WS URL based
  * on this kind.
@@ -93,6 +94,8 @@ export interface PtyConnection {
   reconnectAttempts: number;
   /** Last error code surfaced from the server (or "transport" on abnormal close). */
   lastError: string | null;
+  /** Server-provided detail, when available; falls back to the code's label. */
+  lastErrorMessage: string | null;
   /** Write raw input bytes to the remote shell. No-op if not connected. */
   sendInput: (data: string | Uint8Array) => void;
   /** Notify the server the local terminal dimensions changed. */
@@ -126,7 +129,7 @@ export function usePtyConnection({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string; message?: string } | null>(null);
 
   // Refs hold "latest" so the long-lived effect closure doesn't capture
   // stale callbacks. Callers can swap onBytes / onExit / onError freely.
@@ -201,7 +204,7 @@ export function usePtyConnection({
     if (manualStopRef.current || terminalRef.current) return;
     const attempt = attemptsRef.current + 1;
     if (attempt > MAX_RECONNECT_ATTEMPTS) {
-      setLastError("max_reconnects");
+      setError({ code: "max_reconnects" });
       return;
     }
     attemptsRef.current = attempt;
@@ -222,7 +225,7 @@ export function usePtyConnection({
     const isCurrent = () => generationRef.current === generation && !manualStopRef.current;
 
     setIsConnecting(true);
-    setLastError(null);
+    setError(null);
 
     const transport = pickTransport(target);
 
@@ -232,24 +235,26 @@ export function usePtyConnection({
       if (!isCurrent()) return;
       terminalRef.current = true;
       teardownSocket();
-      setLastError("ssh_connect");
-      onErrorRef.current?.(
-        "ssh_connect",
-        "Opening the terminal timed out. Check the server connection and try again.",
-      );
+      const message = "Opening the terminal timed out. Check the server connection and try again.";
+      setError({ code: "ssh_connect", message });
+      onErrorRef.current?.("ssh_connect", message);
     }, CONNECT_TIMEOUT_MS);
 
     let token: string;
     try {
       const t = await transport.requestTicket();
       token = t.token;
-    } catch (err: any) {
+    } catch (err) {
       if (!isCurrent()) return;
       clearHandshakeTimer();
       setIsConnecting(false);
-      const code: TerminalErrorCode = err?.status === 404 ? "server_not_found" : "ssh_auth";
-      setLastError(code);
-      onErrorRef.current?.(code, err?.message || "Failed to request session ticket");
+      const status = err instanceof ApiError ? err.status : undefined;
+      const code: TerminalErrorCode = status === 404
+        ? "server_not_found"
+        : status === 401 || status === 403 ? "ssh_auth" : "server_error";
+      const message = getApiErrorMessage(err, "Failed to request a terminal session. Try again.");
+      setError({ code, message });
+      onErrorRef.current?.(code, message);
       // Ticket failures are terminal — don't reconnect blindly against
       // an endpoint that just rejected us.
       return;
@@ -267,7 +272,7 @@ export function usePtyConnection({
     } catch (err: any) {
       clearHandshakeTimer();
       setIsConnecting(false);
-      setLastError("transport");
+      setError({ code: "transport" });
       scheduleReconnect();
       return;
     }
@@ -311,7 +316,7 @@ export function usePtyConnection({
           setIsConnected(true);
           attemptsRef.current = 0;
           setReconnectAttempts(0);
-          setLastError(null);
+          setError(null);
           onReadyRef.current?.({
             sessionId: msg.sessionId,
             resumeToken: msg.resumeToken,
@@ -331,13 +336,13 @@ export function usePtyConnection({
             // synchronously (so the imminent reconnect goes fresh),
             // notify the parent to drop the stored token, and reset
             // attempts so the next try doesn't backoff against
-            // unrelated prior failures. We do NOT setLastError here —
+            // unrelated prior failures. We do NOT surface an error here —
             // the user shouldn't see a banner for a behavior they
             // can't act on.
             resumeTokenRef.current = null;
             attemptsRef.current = 0;
             setReconnectAttempts(0);
-            setLastError(null);
+            setError(null);
             onErrorRef.current?.(msg.code, msg.message);
             // terminalRef stays false → onclose will scheduleReconnect.
             return;
@@ -345,7 +350,7 @@ export function usePtyConnection({
           // All other errors are terminal — surface to user, stop
           // reconnect.
           terminalRef.current = true;
-          setLastError(msg.code);
+          setError({ code: msg.code, message: msg.message === msg.code ? undefined : msg.message });
           onErrorRef.current?.(msg.code, msg.message);
           return;
         }
@@ -362,7 +367,7 @@ export function usePtyConnection({
       if (manualStopRef.current || terminalRef.current) return;
       // Terminal application-level close codes — don't reconnect.
       if (TERMINAL_CLOSE_CODES.has(evt.code)) {
-        setLastError(String(evt.code));
+        setError({ code: String(evt.code) });
         return;
       }
       // Transient transport close → reconnect with backoff.
@@ -370,10 +375,10 @@ export function usePtyConnection({
     };
 
     ws.onerror = () => {
-      if (!ownsSocket()) return;
+      if (!ownsSocket() || terminalRef.current) return;
       // onclose will follow with a close code; defer logic to there so
       // we don't double-count attempts. Just record the symptom.
-      setLastError("transport");
+      setError({ code: "transport" });
     };
   }, [
     target?.kind,
@@ -396,7 +401,7 @@ export function usePtyConnection({
     terminalRef.current = false;
     attemptsRef.current = 0;
     setReconnectAttempts(0);
-    setLastError(null);
+    setError(null);
     void connect();
     return () => {
       manualStopRef.current = true;
@@ -459,7 +464,7 @@ export function usePtyConnection({
     terminalRef.current = false;
     attemptsRef.current = 0;
     setReconnectAttempts(0);
-    setLastError(null);
+    setError(null);
     teardownSocket();
     void connect();
   }, [connect, teardownSocket]);
@@ -468,7 +473,8 @@ export function usePtyConnection({
     isConnecting,
     isConnected,
     reconnectAttempts,
-    lastError,
+    lastError: error?.code ?? null,
+    lastErrorMessage: error?.message || null,
     sendInput,
     sendResize,
     disconnect,

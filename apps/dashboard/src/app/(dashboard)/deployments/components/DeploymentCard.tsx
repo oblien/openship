@@ -146,7 +146,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     deployment.commit?.message && deployment.commit.message !== "Manual deployment";
 
   return (
-    <div className="group relative grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-4 transition-colors hover:bg-muted/25 sm:flex sm:items-center sm:gap-4">
+    <div className="group relative grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-4 transition-colors first:rounded-t-2xl last:rounded-b-2xl hover:bg-muted/25 sm:flex sm:items-center sm:gap-4">
       <Link
         href={`/build/${deployment.id}`}
         aria-label={deployment.projectName || t.deployments.card.unknownProject}
@@ -167,7 +167,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         ) : frameworkConfig.icon ? (
           frameworkConfig.icon("var(--foreground)")
         ) : (
-          <span className="text-xs font-mono font-bold text-muted-foreground">
+          <span className="text-xs font-mono font-medium text-muted-foreground">
             {(deployment.framework || "?").slice(0, 2).toUpperCase()}
           </span>
         )}
@@ -176,12 +176,12 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <p className="min-w-0 text-sm font-semibold text-foreground truncate">
+          <p className="min-w-0 text-sm font-medium text-foreground truncate">
             {deployment.projectName || t.deployments.card.unknownProject}
           </p>
           {deployment.version != null && (
             <span
-              className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+              className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
               title={interpolate(t.deployments.card.versionTitle, {
                 version: String(deployment.version),
               })}
@@ -190,7 +190,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             </span>
           )}
           <span
-            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusConfig.bgColor}`}
+            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.bgColor}`}
             style={{ color: statusConfig.color }}
           >
             {statusLabel}
@@ -200,7 +200,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               the highest-signal one sits closest to the title. */}
           {deployment.isActive && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-success"
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-success"
               title={t.deployments.card.activeTitle}
             >
               <UiIcon name="activity" className="size-2.5" />
@@ -209,7 +209,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           )}
           {deployment.pinned && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning"
               title={t.deployments.card.pinnedTitle}
             >
               <UiIcon name="pin" className="size-2.5" />
@@ -219,7 +219,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           {!deployment.pinned && deployment.artifactRetainedAt && !deployment.isActive &&
             (deployment.status === "success" || deployment.status === "partial_failure") && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground"
               title={t.deployments.card.snapshottedTitle}
             >
               <UiIcon name="archive" className="size-2.5" />
@@ -238,7 +238,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               return (
                 <span
                   key={sd.id}
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${cfg.bgClass} ${cfg.textClass}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.bgClass} ${cfg.textClass}`}
                   title={
                     sd.reason
                       ? interpolate(t.deployments.card.serviceTitleReason, {

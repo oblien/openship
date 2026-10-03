@@ -753,7 +753,7 @@
   },
   "resources": {
     "title": "Makine gücü",
-    "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
+    "description": "Projeler bu sunucuyu paylaşır. Yalnızca gerekirse CPU veya bellek sınırı ekleyin.",
     "loading": "Hedef makine okunuyor…",
     "unavailable": "Makine gücü kullanılamıyor",
     "loadFailed": "Makine gücü yüklenemedi",
@@ -763,9 +763,9 @@
     "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
     "tiers": {
       "unlimited": {
-        "name": "Sınır yok",
-        "description": "Makinenin tamamını kullan (varsayılan)",
-        "spec": "Makine kapasitesi"
+        "name": "Tam kapasite",
+        "description": "Sunucunun kullanılabilir CPU ve RAM kapasitesini kullan (varsayılan)",
+        "spec": "Diğer projelerle paylaşılır"
       },
       "micro": {
         "name": "Micro",
@@ -807,6 +807,10 @@
       "updated": "Makine gücü güncellendi",
       "updateFailed": "Makine gücü güncellenemedi",
       "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
+    },
+    "customized": {
+      "name": "Özelleştirilmiş",
+      "description": "Hazır ayar seçin veya kendi sınırlarınızı belirleyin"
     }
   },
   "sleep": {

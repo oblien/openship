@@ -1,36 +1,6 @@
-/**
- * Resource usage sampler — the `resources:sample` system job.
- *
- * Probes every running container on the estate and files a CPU/memory sample into
- * `resource_usage`, so the Monitoring tab can show usage OVER TIME rather than only
- * the live 5-second stream (which discards everything the moment the tab closes).
- *
- * ── Why a separate job rather than extending services:health-watch ──────────
- *
- * The health watch is superficially the obvious host: it already runs every minute,
- * resolves one runtime per (server × org), holds the SSH bridge open, and has each
- * container's project/service identity resolved live. Three things rule it out:
- *
- *   1. It documents "no DB writes at all on a tick where nothing is wrong" — that is
- *      its central cost promise. A sampler writes every tick by definition.
- *   2. `container-events.ts` re-invokes it out of band via `onlyServerKeys` when a
- *      container transitions, so a redeploy fires several runs in a second. Samples
- *      would arrive in bursts at irregular intervals, which is precisely what a time
- *      series must not do.
- *   3. It is gated to `selfhosted` because Oblien exposes no stability probe — but
- *      `CloudRuntime` DOES implement `getUsage`, so riding that gate would deny cloud
- *      projects any history at all.
- *
- * Keeping them apart also means a slow stats sweep can't delay incident detection.
- *
- * ── Cost, which shapes everything below ─────────────────────────────────────
- *
- * `DockerRuntime.getUsage` is `container.stats({stream: false})`, and the daemon must
- * collect two CPU samples to compute a delta — roughly a SECOND per container,
- * against ~2ms for a `docker inspect`. Hence: one runtime and one container listing
- * per server (not per project), serial across servers, bounded fan-out within a
- * server, non-running containers skipped for free, and a hard per-server budget.
- */
+/** Historical resource samples run at fixed intervals, independently of health
+ * events. Reuse one read runtime per server/runtime/project scope, with a shared
+ * sampling budget for all projects on the same physical server. */
 
 import { activeDeploymentForProject } from "@repo/platform/engine/lib/active-deployment";
 import {
@@ -41,11 +11,22 @@ import {
 } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { resolveDeploymentRuntimeForRead } from "@repo/platform/engine/lib/deployment-runtime";
+import {
+  resolveDeploymentRuntimeForRead,
+  disposeRuntime,
+  type DeploymentMeta,
+} from "@repo/platform/engine/lib/deployment-runtime";
 import { mapWithLimit } from "@repo/platform/engine/lib/map-with-limit";
 import { systemDebug, formatDuration } from "@repo/platform/engine/lib/system-debug";
-import { resolveLiveServiceState } from "@repo/platform/engine/modules/services/live-state";
-import { watchGroupKey, parseWatchGroupKey } from "@repo/platform/engine/modules/monitoring/health-watch";
+import {
+  loadUsageServiceConfig,
+  resolveUsageTargets,
+  usageRuntimeParts,
+  type UsagePart,
+  type UsageServiceConfig,
+} from "./usage-targets";
+import { isManagedServerIdle } from "./health-watch-policy";
+import { watchGroupKey } from "@repo/platform/engine/modules/monitoring/health-watch";
 
 function debug(msg: string): void {
   systemDebug("usage-sampler", msg);
@@ -80,11 +61,14 @@ export interface UsageSampleSummary {
 interface Candidate {
   projectId: string;
   slug: string;
+  name: string;
   organizationId: string;
   serverId: string | null;
   deploymentId: string;
   deploymentContainerId: string | null;
-  meta: unknown;
+  meta: DeploymentMeta;
+  part: UsagePart;
+  config: UsageServiceConfig;
 }
 
 /**
@@ -105,86 +89,34 @@ interface SampleTarget {
   containerId: string;
 }
 
-/**
- * Every container in this group worth sampling, with its project/service identity.
- *
- * Two identity paths, and the asymmetry is real rather than defensive — it is the
- * same precedence `project-usage.ts` and `liveContainerIdWithRuntime` already encode:
- *
- *   host can be enumerated (`hostContainerQuery`, i.e. Docker) → resolve LIVE. The
- *     recorded id goes stale on every redeploy and an adopted container never carried
- *     our labels, so trusting the record would sample the wrong thing or nothing.
- *   cannot (Oblien: services are workspaces, there is no `docker ps`) → the recorded
- *     `service_deployment.containerId` IS the workspace id, and is the only identity
- *     available.
- *
- * Gating the whole sweep on `hostContainerQuery` would have silently excluded every
- * cloud project — which is the exact reason this job doesn't ride the health watch.
- */
 async function targetsForGroup(
   runtime: RuntimeAdapter,
   candidates: Candidate[],
 ): Promise<SampleTarget[]> {
-  const canEnumerate = runtime.supports("hostContainerQuery") && !!runtime.listAllContainers;
-  const live = canEnumerate ? await runtime.listAllContainers!() : null;
-  const byId = live ? new Map(live.map((c) => [c.id, c])) : null;
-
-  const serviceMap = await repos.service.listByProjects(candidates.map((c) => c.projectId));
-  const out: SampleTarget[] = [];
-
+  const live =
+    runtime.supports("hostContainerQuery") && runtime.listAllContainers
+      ? await runtime.listAllContainers().catch(() => null)
+      : null;
+  const targets: SampleTarget[] = [];
   for (const candidate of candidates) {
-    const services = serviceMap.get(candidate.projectId) ?? [];
-
-    // Single-container project: no service rows, so the deployment's own container is
-    // the whole workload, filed under the shared sentinel key.
-    if (services.length === 0) {
-      const id = candidate.deploymentContainerId;
-      // When we can see the host, require RUNNING. When we can't (cloud), a recorded
-      // id is all there is — a stopped workspace surfaces as a failed stats call,
-      // which costs one skipped sample rather than a wrong one.
-      if (id && (!byId || byId.get(id)?.state === "running")) {
-        out.push({
-          projectId: candidate.projectId,
-          serviceKey: SINGLE_APP_SERVICE_KEY,
-          containerId: id,
-        });
-      }
-      continue;
-    }
-
-    const sdRows = await repos.service.listByDeployment(candidate.deploymentId);
-    const trackedIds: Record<string, string | null> = {};
-    for (const s of services) {
-      trackedIds[s.id] = sdRows.find((r) => r.serviceId === s.id)?.containerId ?? null;
-    }
-
-    if (!live) {
-      for (const s of services) {
-        const id = trackedIds[s.id];
-        if (id) out.push({ projectId: candidate.projectId, serviceKey: s.id, containerId: id });
-      }
-      continue;
-    }
-
-    const matches = resolveLiveServiceState({
-      services: services.map((s) => ({ id: s.id, name: s.name })),
+    const resolved = await resolveUsageTargets(
+      runtime,
+      { id: candidate.projectId, slug: candidate.slug, name: candidate.name },
+      { containerId: candidate.deploymentContainerId, meta: candidate.meta },
+      candidate.config,
+      candidate.part,
       live,
-      projectId: candidate.projectId,
-      slug: candidate.slug,
-      trackedIds,
-    });
-
-    for (const s of services) {
-      const m = matches.get(s.id);
-      // Only RUNNING containers. Free (the state came with the listing) and it avoids
-      // paying a full second for a container that has no stats to give.
-      if (m?.containerId && m.status === "running") {
-        out.push({ projectId: candidate.projectId, serviceKey: s.id, containerId: m.containerId });
-      }
+    );
+    for (const target of resolved) {
+      if (target.status === "running" && target.containerId)
+        targets.push({
+          projectId: candidate.projectId,
+          serviceKey: target.serviceId ?? SINGLE_APP_SERVICE_KEY,
+          containerId: target.containerId,
+        });
     }
   }
-
-  return out;
+  return targets;
 }
 
 /**
@@ -207,46 +139,63 @@ export async function runUsageSampleSweep(): Promise<UsageSampleSummary> {
   const active = projects.filter((p) => p.activeDeploymentId && !p.disabledAt);
   if (active.length === 0) return summary;
 
-  const deployments = await repos.deployment.findManyById(
-    active.map((p) => p.activeDeploymentId!),
-  );
+  const deployments = await repos.deployment.findManyById(active.map((p) => p.activeDeploymentId!));
 
-  // Group by (server, org) — the same key the health watch groups on. This is what
-  // makes one runtime and one container listing serve every project on a box, rather
-  // than one SSH bridge per project.
+  const serviceMap = await repos.service.listByProjects(active.map((project) => project.id));
   const groups = new Map<string, Candidate[]>();
   for (const p of active) {
     const candidate = deployments.get(p.activeDeploymentId!);
     const dep = activeDeploymentForProject(p, candidate);
     if (!dep) {
       summary.skipped++;
-      if (candidate) console.warn(`[usage-sampler] Ignoring invalid active-deployment binding for project ${p.id}`);
+      if (candidate)
+        console.warn(
+          `[usage-sampler] Ignoring invalid active-deployment binding for project ${p.id}`,
+        );
       continue;
     }
-    const meta = (dep.meta ?? {}) as { serverId?: string };
-    const key = watchGroupKey(meta.serverId ?? null, dep.organizationId);
-    const list = groups.get(key) ?? [];
-    list.push({
-      projectId: p.id,
-      slug: p.slug,
-      organizationId: dep.organizationId,
-      serverId: meta.serverId ?? null,
-      deploymentId: dep.id,
-      deploymentContainerId: dep.containerId,
-      meta: dep.meta,
-    });
-    groups.set(key, list);
+    const config = await loadUsageServiceConfig(p.id, dep.id, serviceMap.get(p.id) ?? []);
+    for (const { part, meta } of usageRuntimeParts(
+      (dep.meta ?? {}) as DeploymentMeta,
+      config.services.length,
+    )) {
+      const key = JSON.stringify([
+        watchGroupKey(meta.serverId ?? null, dep.organizationId),
+        meta.runtimeMode ?? "docker",
+        meta.managedServer?.projectId ?? null,
+      ]);
+      const list = groups.get(key) ?? [];
+      list.push({
+        projectId: p.id,
+        slug: p.slug,
+        name: p.name,
+        organizationId: dep.organizationId,
+        serverId: meta.serverId ?? null,
+        deploymentId: dep.id,
+        deploymentContainerId: dep.containerId,
+        meta,
+        part,
+        config,
+      });
+      groups.set(key, list);
+    }
   }
 
   const minute = bucketMinuteFor(Date.now());
   const rows: NewResourceUsage[] = [];
+  const sampledByServer = new Map<string, number>();
+  const seenServers = new Set<string>();
+  const sampledProjects = new Set<string>();
+  const unreachableServers = new Set<string>();
 
   // SERIAL across servers, deliberately. Each group means an SSH connect plus up to
   // ~15s of daemon-occupying stats calls; starting every box at once on a 50-server
   // control plane is how a metrics sweep becomes an outage. Nothing waits on this.
   for (const [key, candidates] of groups) {
-    summary.servers += 1;
-    const { organizationId } = parseWatchGroupKey(key);
+    const { organizationId, serverId } = candidates[0];
+    const serverKey = watchGroupKey(serverId, organizationId);
+    seenServers.add(serverKey);
+    summary.servers = seenServers.size;
     let runtime: RuntimeAdapter | null = null;
 
     try {
@@ -256,16 +205,15 @@ export async function runUsageSampleSweep(): Promise<UsageSampleSummary> {
       });
       runtime = resolved.runtime;
 
-      // The ONLY capability gate: a runtime that can't measure has nothing to give.
-      // Notably NOT gated on `hostContainerQuery` — that would exclude every cloud
-      // project, since Oblien workspaces have no host to enumerate. targetsForGroup
-      // handles both identity paths.
       if (!runtime.supports("usage")) continue;
 
       const targets = await targetsForGroup(runtime, candidates);
-      summary.projects += new Set(targets.map((t) => t.projectId)).size;
+      for (const target of targets) sampledProjects.add(target.projectId);
+      summary.projects = sampledProjects.size;
 
-      const budgeted = targets.slice(0, MAX_SAMPLES_PER_SERVER);
+      const spent = sampledByServer.get(serverKey) ?? 0;
+      const budgeted = targets.slice(0, Math.max(0, MAX_SAMPLES_PER_SERVER - spent));
+      sampledByServer.set(serverKey, spent + budgeted.length);
       const overflow = targets.length - budgeted.length;
       if (overflow > 0) {
         summary.skipped += overflow;
@@ -292,12 +240,14 @@ export async function runUsageSampleSweep(): Promise<UsageSampleSummary> {
         }
       });
     } catch (err) {
+      if (isManagedServerIdle(err)) continue;
       // Anything above the per-container loop means the daemon is unreachable, not
       // that something on it is broken.
-      summary.unreachable += 1;
+      unreachableServers.add(serverKey);
+      summary.unreachable = unreachableServers.size;
       debug(`sweep:unreachable server=${key} ${safeErrorMessage(err)}`);
     } finally {
-      await Promise.resolve(runtime?.dispose?.()).catch(() => {});
+      disposeRuntime(runtime);
     }
   }
 

@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 /**
  * Interactive terminal surface for a single server.
  *
- *   xterm.js (with stdin enabled)  ←→  usePtyConnection (WebSocket)  ←→  /api/terminal/ws/:serverId  ←→  ssh2 PTY shell
+ *   xterm.js (with stdin enabled)  ←→  usePtyConnection (WebSocket)  ←→  /api/terminal/ws/:serverId  ←→  server shell
  *
  * Side-by-side with the existing read-only TerminalSurface (which has
  * disableStdin:true and no keystroke path back to the server). We do
@@ -32,6 +32,7 @@ import {
   useState,
 } from "react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
+import { Button } from "@/components/ui/button";
 import type { TerminalErrorCode } from "@/lib/api";
 import "@xterm/xterm/css/xterm.css";
 
@@ -131,8 +132,8 @@ function themeFor(mode: TerminalTheme) {
 
 function humanizeError(code: TerminalErrorCode | string): string {
   switch (code) {
-    case "ssh_auth": return "SSH authentication failed. Check the server's stored credentials.";
-    case "ssh_connect": return "Could not reach the server over SSH.";
+    case "ssh_auth": return "Authentication failed for this server terminal.";
+    case "ssh_connect": return "Could not connect to this server.";
     case "server_not_found": return "Server not found.";
     case "max_sessions": return "Too many active terminal sessions. Close one and try again.";
     case "idle_timeout": return "Session ended due to inactivity.";
@@ -407,7 +408,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
     if (pty.lastError) {
       return {
         tone: "error" as const,
-        message: humanizeError(pty.lastError),
+        message: pty.lastErrorMessage || humanizeError(pty.lastError),
         showReconnect: pty.lastError !== "max_sessions" && pty.lastError !== "server_not_found",
       };
     }
@@ -426,7 +427,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
       };
     }
     return null;
-  }, [pty.lastError, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
+  }, [pty.lastError, pty.lastErrorMessage, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
 
   const handleReconnect = useCallback(() => {
     setExitInfo(null);
@@ -439,28 +440,30 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
       {/* Status banner overlay */}
       {banner && (
         <div
+          role={banner.tone === "error" ? "alert" : "status"}
           className={
             "flex items-center justify-between gap-3 border-b px-4 py-2 text-xs " +
             (banner.tone === "error"
               ? "border-danger-border bg-danger-bg text-danger"
-              : banner.tone === "info"
-                ? "border-border/60 bg-zinc-900/80 text-zinc-300"
-                : "border-border/60 bg-zinc-900/80 text-zinc-400")
+              : "border-border/50 bg-muted text-muted-foreground")
           }
         >
-          <div className="flex items-center gap-2">
-            <UiIcon name="terminal" className="size-3.5" />
-            <span>{banner.message}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <UiIcon name="terminal" className="size-3.5 shrink-0" />
+            <span className="min-w-0 break-words">{banner.message}</span>
           </div>
           {banner.showReconnect && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={handleReconnect}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-background/60"
+              disabled={pty.isConnecting}
+              className="shrink-0"
             >
               <UiIcon name="refresh" className="size-3" />
               Reconnect
-            </button>
+            </Button>
           )}
         </div>
       )}

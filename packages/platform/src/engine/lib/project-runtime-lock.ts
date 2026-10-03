@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { repos, type Project } from "@repo/db";
 import { createProvisionLock } from "./provision-lock";
+import { withCloudWorkspaceActivity } from "./cloud-workspace-lock";
 
 /** Locks already owned by the current async call tree (nested helpers are safe). */
 const heldProjectRuntimeLocks = new AsyncLocalStorage<ReadonlyMap<string, { active: boolean }>>();
@@ -20,11 +21,12 @@ export function projectRuntimeLockKey(projectId: string): string {
   return `project-runtime:${projectId}`;
 }
 
-export function withProjectRuntimeLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+export async function withProjectRuntimeLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
   const held = heldProjectRuntimeLocks.getStore();
   if (held?.get(projectId)?.active) return fn();
 
-  return createProvisionLock(projectRuntimeLockKey(projectId)).run(async () => {
+  const project = await repos.project.findById(projectId);
+  return withCloudWorkspaceActivity(project?.workspaceId, () => createProvisionLock(projectRuntimeLockKey(projectId)).run(async () => {
     const scope = { active: true };
     const next = new Map(held);
     next.set(projectId, scope);
@@ -35,7 +37,7 @@ export function withProjectRuntimeLock<T>(projectId: string, fn: () => Promise<T
       // lock that its request has already released. It must reacquire normally.
       scope.active = false;
     }
-  });
+  }), undefined, { scope: `project:${projectId}` });
 }
 
 /**

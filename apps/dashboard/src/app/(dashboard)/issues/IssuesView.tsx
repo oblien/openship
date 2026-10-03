@@ -105,14 +105,6 @@ export function IssuesView() {
     return () => { mounted.current = false; };
   }, []);
 
-  // Container health is a self-hosted capability: the watcher reads Docker
-  // daemons owned by this installation. Cloud workloads are observed by the
-  // cloud platform, not by this local health endpoint, so do not expose a tab
-  // that can only answer with the route's intentional local-only 404.
-  useEffect(() => {
-    if (!selfHosted && tab === "health") setTab("open");
-  }, [selfHosted, tab]);
-
   const load = useCallback(
     (opts: { silent?: boolean; fresh?: boolean } = {}): Promise<void> => {
       // The Health tab has its own cached snapshot reader. Open-feed counts

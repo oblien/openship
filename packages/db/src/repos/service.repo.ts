@@ -672,6 +672,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       excludingServiceIds: readonly string[] = [],
       excludingNativeProjectId?: string,
       prospective?: { projectId: string; serviceNames: readonly string[] },
+      workspaceId?: string | null,
     ): Promise<number> {
       // Read one snapshot: deployment completion can otherwise land between
       // reading definitions and queued reservations, briefly losing both.
@@ -696,7 +697,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
             .from(service)
             .innerJoin(project, eq(service.projectId, project.id))
             .where(
-              and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`),
+              and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`, projectWorkspaceScope(workspaceId)),
             );
           const excluded = new Set(excludingServiceIds);
           const slots = new Set(
@@ -736,6 +737,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
                 sql`${project.deletedAt} IS NULL`,
                 pending,
                 sql`${deployment.meta}->'cloudServiceSlots' IS NOT NULL`,
+                projectWorkspaceScope(workspaceId),
               ),
             );
           for (const row of queued) {
@@ -762,6 +764,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
                 excludingNativeProjectId
                   ? sql`${project.id} <> ${excludingNativeProjectId}`
                   : undefined,
+                projectWorkspaceScope(workspaceId),
                 sql`(
                   (${pending}
                     AND ${deployment.meta}->>'cloudApplicationSlot' = 'true')
@@ -1476,3 +1479,4 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     },
   };
 }
+import { projectWorkspaceScope } from "./workspace-scope";

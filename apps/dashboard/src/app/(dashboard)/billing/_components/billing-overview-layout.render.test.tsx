@@ -25,6 +25,9 @@ function text(html: string) {
 const state = (tier: BillingState["tier"]): BillingState =>
   ({
     tier, status: "active", monthlyCreditLimit: 1_200_000,
+    subscription: tier === "free" ? null : { tier, status: "active", interval: "monthly", currentPeriod: { start: null, end: null }, cancelAtPeriodEnd: false, canceledAt: null },
+    balance: { total: 0, quotaLimit: 0, quotaUsed: 0, quotaRemaining: 0, unlimited: false },
+    billing: { enabled: true },
     plan: tier === "free" ? null : {
       ...PLANS[tier], monthlyCredits: 1_200_000,
       name: "Live Cloud plan", price: { monthly: 1700, annual: 17000 },
@@ -33,13 +36,13 @@ const state = (tier: BillingState["tier"]): BillingState =>
   }) as unknown as BillingState;
 
 describe("billing sidebar", () => {
-  it("shows the paid plan's live price, credits and features", () => {
-    const out = text(render(<BillingSidebar state={state("starter")} />));
-    expect(out).toContain("What's included");
+  it("shows the paid plan's live price with access to the full comparison", () => {
+    const html = render(<BillingSidebar state={state("starter")} />);
+    const out = text(html);
+    expect(out).toContain("Current plan");
     expect(out).toContain("Live Cloud plan");
     expect(out).toContain("$17");
-    expect(out).toContain("Live Cloud plan : 1,200");
-    expect(out).toContain("Support from the live catalog");
+    expect(html).toContain('href="/billing/plans"');
     expect(out).not.toContain("$10");
   });
 
@@ -52,7 +55,7 @@ describe("billing sidebar", () => {
 
   it("does not invent a price when the paid plan is absent from the response", () => {
     const out = text(render(<BillingSidebar state={{ ...state("pro"), plan: null }} />));
-    expect(out).toContain("Compare all plans");
+    expect(out).toContain("Change plan");
     expect(out).not.toContain("$39");
     expect(out).not.toContain("credits / billing cycle");
   });
@@ -115,7 +118,7 @@ describe("plan comparison", () => {
       expect(card).toContain(copy.buildIncluded);
       expect(card).not.toMatch(/credits|Shared across|More features/i);
     }
-    expect(out).not.toContain("<details");
+    expect(out.match(/<details/g)).toHaveLength(1);
     expect(text(out)).toContain("Priority support");
     expect(text(out).split(copy.poolNote)).toHaveLength(2);
     expect(out.indexOf('role="note"')).toBeGreaterThan(out.lastIndexOf("</article>"));

@@ -149,7 +149,7 @@ export function createClusterDatabaseRepo(db: Database) {
           !p ||
           p.deletionInProgress ||
           (p.clusterId && p.clusterId !== input.clusterId) ||
-          p.cloudWorkspaceId
+          p.workspaceId
         )
           throw conflict("The project's cluster changed. Reload before adding a database.");
         const [otherCluster] = await tx

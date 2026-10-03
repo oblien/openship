@@ -1,4 +1,4 @@
-import { DockerRuntime } from "@repo/adapters";
+import { CloudDockerRuntime, DockerRuntime } from "@repo/adapters";
 import { AppError } from "@repo/core";
 import { parseOptionalEnvironmentScope } from "@repo/contracts";
 import { repos } from "@repo/db";
@@ -70,10 +70,11 @@ export async function applyServiceEnvironment(
       );
 
     if (env.CLOUD_MODE) {
-      await assertPlanAllowsServices(ctx.organizationId);
-      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
+      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null);
     }
-    const { runtime, serverId } = await resolveDeploymentRuntimeForRead(deployment);
+    const { runtime, serverId } = await resolveDeploymentRuntimeForRead({ ...deployment, meta: { ...(deployment.meta as Record<string, unknown>), runtimeMode: "docker" } });
+    const cloudRuntime = runtime instanceof CloudDockerRuntime;
     try {
       if (!(runtime instanceof DockerRuntime)) {
         throw new AppError(
@@ -97,7 +98,7 @@ export async function applyServiceEnvironment(
       if (env.CLOUD_MODE) {
         await assertCloudRuntimeLimits(ctx.organizationId, runtime, [
           { containerId, allocatedResources: row.allocatedResources },
-        ]);
+        ], project.workspaceId ?? null);
       }
 
       // Capture BEFORE reading: a concurrent Save must remain pending if it
@@ -111,7 +112,7 @@ export async function applyServiceEnvironment(
       );
       const environment = await resolveServiceRuntimeEnvironment(ctx, saved, {
         serverId,
-        cloudRuntime: runtime.name === "cloud",
+        cloudRuntime,
       });
       let routingChanged = false;
       const refreshRoutes = async (identity: { containerId: string; ip?: string }) => {
@@ -144,7 +145,7 @@ export async function applyServiceEnvironment(
         onReplaced: async (result) => {
           // Cloud Docker routes address stable workspace host ports. Its bridge
           // IP is private to that workspace and requires no cloud edge update.
-          if (runtime.name !== "cloud" && result.ip && result.ip !== row.ip) {
+          if (!cloudRuntime && result.ip && result.ip !== row.ip) {
             routingChanged = true;
             await refreshRoutes(result);
           }
@@ -161,7 +162,7 @@ export async function applyServiceEnvironment(
           });
         },
         onRestored: async (result) => {
-          if (runtime.name !== "cloud" && (routingChanged || (result.ip && result.ip !== row.ip))) {
+          if (!cloudRuntime && (routingChanged || (result.ip && result.ip !== row.ip))) {
             await refreshRoutes(result);
           }
           // A rollback can also receive a new dynamic address. Refresh only the

@@ -87,7 +87,7 @@ describe("Cloud build caps in project settings", () => {
 
   it("rejects invalid Cloud caps without changing saved settings", async () => {
     await expect(
-      updateResources("project", { build: { ...cap, cpuCores: 0 } }, "customer"),
+      updateResources("project", { build: { ...cap, cpuCores: -1 } }, "customer"),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(h.update).not.toHaveBeenCalled();
   });

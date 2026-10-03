@@ -83,7 +83,8 @@
       "account": "الحساب"
     },
     "apps": "التطبيقات",
-    "jobs": "المهام"
+    "jobs": "المهام",
+    "workspaces": "مساحات العمل"
   },
   "sidebar": {
     "expand": "توسيع الشريط الجانبي",
@@ -102,10 +103,10 @@
       "description": "خدمات مُدارة بنقرة واحدة — ثبّت وشغّل Convex وWordPress والبريد وغيرها.",
       "createButton": "تثبيت تطبيق",
       "loading": "جارٍ تحميل التطبيقات…",
-      "countOne": "تم تثبيت تطبيق واحد ({count})",
-      "countOther": "تم تثبيت {count} تطبيقات",
+      "countOne": "تطبيق واحد ({count})",
+      "countOther": "{count} تطبيقات",
       "emptyTitle": "ثبّت أول تطبيق لك",
-      "emptyDescription": "شغّل Convex وn8n وGhost وغيرها — بنقرة واحدة وباستضافة ذاتية كاملة. اختر واحدًا للبدء.",
+      "emptyDescription": "انشر قواعد البيانات والأدوات والخدمات من كتالوج التطبيقات.",
       "popular": "التطبيقات الشائعة",
       "alsoDeploy": "يمكنك أيضًا نشر",
       "browseAll": "استعراض كل التطبيقات",

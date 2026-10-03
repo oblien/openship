@@ -4,10 +4,18 @@ description: Create command jobs, run them, and inspect schedules and results.
 ---
 
 A job runs a command on one or more authorized servers. Jobs can run manually, on a cron schedule, once
-at a specified time, or in response to configured events. This surface requires a self-hosted installation.
+at a specified time, or in response to configured events. Self-hosted jobs target connected servers;
+Cloud jobs target the organization's managed servers, using the same operations and scheduler.
 
 Job methods take the job's **`key`**. Run methods take a **run ID**. Writing a command job also requires
-administration access to every target server.
+administration access to every target server. The same target permission protects configuration,
+run history and output. Cloud does not expose internal system jobs, even to customer administrators.
+
+Cloud users can share a managed server with projects or create a dedicated server with its own
+subscription. Commands use that server's capacity and usage allowance. An active subscription,
+available balance and a running server are required; executing a job never provisions a server.
+Manual billing refusals return `CLOUD_BILLING_BLOCKED` with the target `workspaceId` and `serverId`.
+Scheduled attempts record failures in their run history.
 
 ## Create a command job
 
@@ -112,16 +120,16 @@ scheduling are separate actions. See [background work limits](/docs/api/sdk/comp
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Stream live output from a job run. | `jobs.streamRun(id, options?)` | `GET /api/jobs/runs/:runId/stream`<br />`job:read` · Self-hosted |
-| List available system and custom jobs. | `jobs.list()` | `GET /api/jobs`<br />`job:read` · Self-hosted |
-| Create a custom command job with schedule and target configuration. | `jobs.create(input)` | `POST /api/jobs`<br />`job:write` · Self-hosted |
-| List events that can trigger custom jobs. | `jobs.triggerEvents()` | `GET /api/jobs/trigger-events`<br />`job:read` · Self-hosted |
-| Read scheduled backup policies alongside jobs. | `jobs.backupSchedules()` | `GET /api/jobs/backup-schedules`<br />`job:read` · Self-hosted |
-| Read a job’s configuration and recent runs. | `jobs.get(id)` | `GET /api/jobs/:key`<br />`job:read` · Self-hosted |
-| Change a schedule or custom job configuration. | `jobs.update(id, input)` | `PATCH /api/jobs/:key`<br />`job:write` · Self-hosted |
-| Delete a custom job; system jobs can be disabled instead. | `jobs.remove(id)` | `DELETE /api/jobs/:key`<br />`job:write` · Self-hosted |
-| Trigger a job immediately. | `jobs.run(id)` | `POST /api/jobs/:key/run`<br />`job:write` · Self-hosted |
-| Read a job’s run history. | `jobs.listRuns(id, input?)` | `GET /api/jobs/:key/runs`<br />`job:read` · Self-hosted |
-| Read a recorded run, result, and captured output. | `jobs.getRun(id)` | `GET /api/jobs/runs/:runId`<br />`job:read` · Self-hosted |
+| Stream live output from a job run. | `jobs.streamRun(id, options?)` | `GET /api/jobs/runs/:runId/stream`<br />`job:read` |
+| List available system and custom jobs. | `jobs.list()` | `GET /api/jobs`<br />`job:read` |
+| Create a custom command job with schedule and target configuration. | `jobs.create(input)` | `POST /api/jobs`<br />`job:write` |
+| List events that can trigger custom jobs. | `jobs.triggerEvents()` | `GET /api/jobs/trigger-events`<br />`job:read` |
+| Read scheduled backup policies alongside jobs. | `jobs.backupSchedules()` | `GET /api/jobs/backup-schedules`<br />`job:read` |
+| Read a job’s configuration and recent runs. | `jobs.get(id)` | `GET /api/jobs/:key`<br />`job:read` |
+| Change a schedule or custom job configuration. | `jobs.update(id, input)` | `PATCH /api/jobs/:key`<br />`job:write` |
+| Delete a custom job; system jobs can be disabled instead. | `jobs.remove(id)` | `DELETE /api/jobs/:key`<br />`job:write` |
+| Trigger a job immediately. | `jobs.run(id)` | `POST /api/jobs/:key/run`<br />`job:write` |
+| Read a job’s run history. | `jobs.listRuns(id, input?)` | `GET /api/jobs/:key/runs`<br />`job:read` |
+| Read a recorded run, result, and captured output. | `jobs.getRun(id)` | `GET /api/jobs/runs/:runId`<br />`job:read` |
 
 {/* api-operations:end */}

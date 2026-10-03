@@ -7,7 +7,7 @@ import { Duplex, PassThrough } from "node:stream";
 import type { DockerTransport } from "../docker-transport";
 
 /** Binary, bounded, half-close-aware stream over the provider's authenticated proxy. */
-export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> {
+export async function dockerWebSocketStream(socket: WebSocket, onComplete?: () => void): Promise<Duplex> {
   socket.binaryType = "arraybuffer";
   let ended = false;
   let pendingWrite: ReturnType<typeof setTimeout> | undefined;
@@ -82,7 +82,9 @@ export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> 
   // Connection failures are reported without the WebSocket URL (which carries auth).
   stream.on("error", () => {});
   socket.addEventListener("message", ({ data }) => {
-    if (data === "eof") {
+    if (data === "complete") {
+      onComplete?.();
+    } else if (data === "eof") {
       ended = true;
       stream.push(null);
     } else if (typeof data === "string" && data.startsWith("ack:")) {
@@ -143,7 +145,15 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
     unreachableHint: "Check that the project's Oblien Docker workspace is running and reachable.",
     async establish() {
       if (closed) throw new Error("Cloud Docker transport is closed");
-      directory = await mkdtemp(join(tmpdir(), "openship-cloud-docker-"));
+      const prefix = "openship-cloud-docker-";
+      // Unix socket addresses have a byte limit (103 on macOS). A caller's
+      // nested TMPDIR can exceed it even though ordinary files work there.
+      // Keep the fallback private with mkdtemp, rather than using public TCP.
+      const temporaryRoot = process.platform !== "win32" &&
+        Buffer.byteLength(join(tmpdir(), `${prefix}XXXXXX`, "docker.sock")) > 103
+        ? "/tmp"
+        : tmpdir();
+      directory = await mkdtemp(join(temporaryRoot, prefix));
       const socketPath = process.platform === "win32"
         ? `\\\\.\\pipe\\openship-cloud-docker-${randomUUID()}`
         : join(directory, "docker.sock");

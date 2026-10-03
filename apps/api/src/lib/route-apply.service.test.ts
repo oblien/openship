@@ -35,7 +35,7 @@ const project = {
   slug: "app",
   organizationId: "org_1",
   activeDeploymentId: "dep_1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   webhookDomain: null,
   routingConfig: null,
 };

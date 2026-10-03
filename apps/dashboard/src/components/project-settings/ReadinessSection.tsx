@@ -15,7 +15,9 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * means off, so a project that never opens this section sends nothing.
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useI18n } from "@/components/i18n-provider";
 import type { OpenshipReadiness } from "@repo/core";
@@ -46,6 +48,7 @@ const ReadinessSection: React.FC<Props> = ({
   embedded = false,
 }) => {
   const [open, setOpen] = useState(defaultOpen);
+  const fieldPrefix = useId();
   const { t } = useI18n();
   const hc = t.importProject.buildSettings.healthCheck;
 
@@ -68,14 +71,18 @@ const ReadinessSection: React.FC<Props> = ({
   };
 
   const numberField = (
+    key: string,
     label: string,
     current: number | undefined,
     fallback: number,
     onCommit: (n: number | undefined) => void,
   ) => (
     <div>
-      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{label}</label>
-      <input
+      <label htmlFor={`${fieldPrefix}-${key}`} className="text-sm font-medium text-foreground mb-1.5 block">{label}</label>
+      <Input
+        dir="ltr"
+        id={`${fieldPrefix}-${key}`}
+        variant="filled"
         type="number"
         min={1}
         max={600}
@@ -88,7 +95,6 @@ const ReadinessSection: React.FC<Props> = ({
           const n = Number(raw);
           onCommit(Number.isFinite(n) && n > 0 ? Math.min(600, Math.round(n)) : undefined);
         }}
-        className="w-full px-3.5 py-2.5 bg-muted/30 border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
       />
     </div>
   );
@@ -101,14 +107,14 @@ const ReadinessSection: React.FC<Props> = ({
               : "px-5 pb-5 border-t border-border/50 pt-4 space-y-4"
           }
         >
-          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{hc.description}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">{hc.description}</p>
 
           {/* ── Readiness probe ─────────────────────────────── */}
-          <div className="space-y-3 rounded-xl border border-border/50 bg-muted/30 p-4">
+          <div className="space-y-3 rounded-xl bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{hc.probeLabel}</p>
-                <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{hc.probeDesc}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{hc.probeDesc}</p>
               </div>
               <Toggle
                 checked={probeOn}
@@ -120,20 +126,24 @@ const ReadinessSection: React.FC<Props> = ({
             {probeOn && (
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{hc.pathLabel}</label>
-                  <input
+                  <label htmlFor={`${fieldPrefix}-path`} className="text-sm font-medium text-foreground mb-1.5 block">{hc.pathLabel}</label>
+                  <Input
+                    dir="ltr"
+                    id={`${fieldPrefix}-path`}
+                    variant="filled"
                     type="text"
                     disabled={disabled}
                     value={value?.path ?? ""}
                     placeholder={hc.pathPlaceholder}
                     onChange={(e) => patch({ path: e.target.value.trim() || undefined })}
-                    className="w-full px-3.5 py-2.5 bg-background border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                    className="font-mono"
                   />
-                  <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
                     {hc.pathDesc}
                   </p>
                 </div>
                 {numberField(
+                  "timeout",
                   hc.timeoutLabel,
                   value?.timeoutSeconds,
                   DEFAULT_TIMEOUT_SECONDS,
@@ -144,11 +154,11 @@ const ReadinessSection: React.FC<Props> = ({
           </div>
 
           {/* ── Stabilization watch ─────────────────────────── */}
-          <div className="space-y-3 rounded-xl border border-border/50 bg-muted/30 p-4">
+          <div className="space-y-3 rounded-xl bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{hc.stabilizationLabel}</p>
-                <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {hc.stabilizationDesc}
                 </p>
               </div>
@@ -162,6 +172,7 @@ const ReadinessSection: React.FC<Props> = ({
             {stabilizationOn && (
               <div className="grid sm:grid-cols-2 gap-3">
                 {numberField(
+                  "stabilization",
                   hc.stabilizationWindowLabel,
                   value?.stabilizationSeconds,
                   DEFAULT_STABILIZATION_SECONDS,
@@ -174,18 +185,22 @@ const ReadinessSection: React.FC<Props> = ({
           {/* Only meaningful once something can fail. */}
           {anyOn && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+              <label htmlFor={`${fieldPrefix}-on-failure`} className="text-sm font-medium text-foreground mb-1.5 block">
                 {hc.onFailureLabel}
               </label>
-              <select
+              <CustomSelect<"warn" | "fail">
+                id={`${fieldPrefix}-on-failure`}
+                aria-label={hc.onFailureLabel}
+                variant="filled"
+                triggerClassName="bg-muted/60 hover:bg-muted"
                 disabled={disabled}
                 value={value?.onFailure ?? "warn"}
-                onChange={(e) => patch({ onFailure: e.target.value === "fail" ? "fail" : "warn" })}
-                className="w-full px-3.5 py-2.5 bg-muted/30 border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-              >
-                <option value="warn">{hc.onFailureWarn}</option>
-                <option value="fail">{hc.onFailureFail}</option>
-              </select>
+                onChange={(onFailure) => patch({ onFailure })}
+                options={[
+                  { value: "warn", label: hc.onFailureWarn },
+                  { value: "fail", label: hc.onFailureFail },
+                ]}
+              />
             </div>
           )}
         </div>
@@ -193,17 +208,15 @@ const ReadinessSection: React.FC<Props> = ({
 
   if (embedded) return body;
 
-  // Same card as ComposePathField, including its two-state treatment: prominent
-  // (bg-card, tinted icon chip, semibold title) once a gate is configured,
-  // demoted (bg-muted/20, grey chip, medium title) while it's off. Off IS the
-  // default here, so the demoted state is the honest one — this is an opt-in
-  // affordance, not a detected fact, exactly like an unpinned compose path.
+  // Match ComposePathField: the icon and title distinguish configured checks
+  // from the default, opt-in state while keeping the same section surface.
   return (
-    <div className={`rounded-2xl border border-border/50 ${anyOn ? "bg-card" : "bg-muted/20"}`}>
+    <div className="rounded-2xl bg-card">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-start"
+        className="w-full flex items-center justify-between gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <div className="flex items-center gap-3 min-w-0">
           <div
@@ -219,13 +232,13 @@ const ReadinessSection: React.FC<Props> = ({
             <p
               className={
                 anyOn
-                  ? "text-[15px] font-semibold text-foreground"
+                  ? "text-sm font-semibold text-foreground"
                   : "text-sm font-medium text-muted-foreground"
               }
             >
               {hc.title}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {anyOn ? hc.subtitleOn : hc.subtitle}
             </p>
           </div>

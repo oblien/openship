@@ -194,7 +194,8 @@
     "targetPending": "Escolhido no deploy",
     "type": "Tipo",
     "typeApp": "App",
-    "typeProject": "Projeto"
+    "typeProject": "Projeto",
+    "subtextNoSource": "Conecte uma fonte para configurar seu primeiro deploy."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: as suas edições foram mantidas",
     "failedResolveDrift": "Falha ao resolver a divergência",
     "failedCreateService": "Falha ao criar o serviço",
-    "requestFailed": "O pedido falhou"
+    "requestFailed": "O pedido falhou",
+    "application": "Aplicação",
+    "applicationHint": "Gerenciada pelos deploys deste projeto.",
+    "companionsTitle": "Adicionar outra aplicação ou serviço"
   },
   "serviceStatus": {
     "checking": "A verificar…",

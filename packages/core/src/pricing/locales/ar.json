@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "{freeSubdomains} نطاق فرعي مجاني على {freeDomainSuffix} عند الربط مع Openship Cloud",
     "usageCredits": "{credits} رصيد استخدام شهريًا",
     "namespaceCapacity": "الإجمالي: {namespaceCpu} vCPU، و{namespaceRamGb} GB ذاكرة، و{namespaceDiskGb} GB تخزين",
-    "finiteUsage": "قد تحتاج الاستضافة المستمرة إلى شحن رصيد إضافي.",
-    "oneRunningService": "تطبيق أو قاعدة بيانات أو عامل واحد قيد التشغيل"
+    "finiteUsage": "قد تحتاج الاستضافة المستمرة إلى شحن رصيد إضافي."
   },
   "selfHosted": {
     "name": "استضافة ذاتية",

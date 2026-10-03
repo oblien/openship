@@ -9,7 +9,7 @@ export function TransferRequirements({ manifest }: { manifest?: TransferManifest
   const servers = manifest?.servers ?? [];
   const accounts = manifest?.cloudAccounts ?? [];
   const localProjects = (manifest?.projects ?? []).filter(
-    (project) => !project.serverId && !project.cloudWorkspaceId,
+    (project) => !project.serverId && !project.workspaceId,
   );
 
   return (
@@ -62,8 +62,8 @@ export function TransferRequirements({ manifest }: { manifest?: TransferManifest
                 {!account.email && (
                   <p className="mt-1 break-all text-xs text-muted-foreground">
                     Workspaces: {(manifest?.projects ?? [])
-                      .filter((project) => project.organizationId === account.organizationId && project.cloudWorkspaceId)
-                      .map((project) => project.cloudWorkspaceId).filter((id, index, ids) => ids.indexOf(id) === index).join(", ")}
+                      .filter((project) => project.organizationId === account.organizationId && project.workspaceId)
+                      .map((project) => project.workspaceId).filter((id, index, ids) => ids.indexOf(id) === index).join(", ")}
                   </p>
                 )}
               </div>

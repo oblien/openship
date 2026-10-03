@@ -111,19 +111,10 @@ export interface BuildConfig {
   inlineSourceFiles?: Array<{ path: string; content: string }>;
   /** Where the build runs: "server" (clone/copy to workspace) or "local" (build on host, transfer dist) */
   buildStrategy?: BuildStrategy;
-  /**
-   * Cloud folder-upload flow: adopt this ALREADY-PROVISIONED cloud workspace
-   * instead of creating a fresh one. The browser uploaded the source straight
-   * into it, so the build attaches to it and (with `sourceStaged`) skips clone
-   * and source transfer. Ignored by non-cloud runtimes.
-   */
-  cloudWorkspaceId?: string;
-  /**
-   * Source is ALREADY present at the runtime's project dir (uploaded out of
-   * band — the folder-upload flow). Skips both the git clone and the local
-   * source transfer; install/build run against what's already there.
-   */
+  /** Trusted uploaded/release bytes supplied by the control plane. Never executes source locally. */
+  /** Source hook already populated the target directory; skip cloning. */
   sourceStaged?: boolean;
+  sourceTransfer?: (executor: CommandExecutor, directory: string, onLog: LogCallback) => Promise<void>;
   /** Detected framework / stack */
   stack: string;
   /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */

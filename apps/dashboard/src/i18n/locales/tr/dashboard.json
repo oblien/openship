@@ -83,7 +83,8 @@
       "delivery": "Teslimat",
       "system": "Sistem",
       "account": "Hesap"
-    }
+    },
+    "workspaces": "Çalışma alanları"
   },
   "sidebar": {
     "expand": "Kenar çubuğunu genişlet",

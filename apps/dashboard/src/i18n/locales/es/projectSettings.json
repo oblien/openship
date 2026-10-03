@@ -615,7 +615,7 @@
   },
   "resources": {
     "title": "Potencia de la máquina",
-    "description": "Límites de CPU y memoria para los contenedores de este proyecto.",
+    "description": "Los proyectos comparten este servidor. Añade límites de CPU o memoria solo si los necesitas.",
     "loading": "Leyendo la máquina de destino…",
     "unavailable": "Potencia de la máquina no disponible",
     "loadFailed": "No se pudo cargar la potencia de la máquina",
@@ -625,9 +625,9 @@
     "appliesOnNextDeploy": "Los límites se aplican al recrear el contenedor: vuelve a desplegar para que el cambio surta efecto.",
     "tiers": {
       "unlimited": {
-        "name": "Sin límites",
-        "description": "Usar toda la máquina (predeterminado)",
-        "spec": "Capacidad de la máquina"
+        "name": "Capacidad completa",
+        "description": "Usar la CPU y RAM disponibles del servidor (predeterminado)",
+        "spec": "Compartida con otros proyectos"
       },
       "micro": {
         "name": "Micro",
@@ -669,6 +669,10 @@
       "updated": "Potencia de la máquina actualizada",
       "updateFailed": "No se pudo actualizar la potencia de la máquina",
       "invalidValues": "La CPU y la memoria deben ser 0 o un número positivo"
+    },
+    "customized": {
+      "name": "Personalizada",
+      "description": "Elige un perfil o define tus propios límites"
     }
   },
   "sleep": {

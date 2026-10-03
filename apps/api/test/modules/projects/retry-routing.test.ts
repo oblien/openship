@@ -35,6 +35,12 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   return { ...actual, edgeProxy, checkEdge };
 });
 
+// Activity ownership and cross-controller exclusion have their own integration
+// suite. These cases exercise the routing writer and warning transitions.
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({
+  withCloudWorkspaceActivity: async (_id: unknown, work: () => Promise<unknown>) => work(),
+}));
+
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { withExecutor } }));
 
 vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
@@ -97,7 +103,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
       organizationId: "org_1",
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: "srv_1",
       activeDeploymentId: "dep_1",
     });
@@ -298,7 +304,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
       organizationId: "org_1",
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: null,
       activeDeploymentId: "dep_1",
     });
@@ -381,12 +387,13 @@ describe("retryProjectRouting — safe self-heal", () => {
     expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: true });
   });
 
-  it.each([null, "ws_1"])("repairs native Cloud routing with workspace binding %s and never configures a server edge", async (cloudWorkspaceId) => {
+  it("repairs managed Cloud routing without configuring a server edge", async () => {
+    const workspaceId = "owner_1";
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
       organizationId: "org_1",
-      cloudWorkspaceId,
-      serverId: null,
+      workspaceId,
+      serverId: "managed-server",
       activeDeploymentId: "dep_1",
     });
     deploymentRepo.findById.mockResolvedValue({
@@ -407,8 +414,8 @@ describe("retryProjectRouting — safe self-heal", () => {
     expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", { meta: { deployTarget: "cloud" } });
   });
 
-  it("preserves a failed native Cloud port update instead of clearing its warning", async () => {
-    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", cloudWorkspaceId: null, activeDeploymentId: "dep_1" });
+  it("preserves a failed managed Cloud port update instead of clearing its warning", async () => {
+    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", workspaceId: null, activeDeploymentId: "dep_1" });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready",
       meta: { deployTarget: "cloud" },
@@ -439,25 +446,25 @@ describe("retryProjectRouting — safe self-heal", () => {
   });
 
   it("repairs Cloud Docker routes and clears the warning only after a successful apply", async () => {
-    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", cloudWorkspaceId: "ws_1", activeDeploymentId: "dep_1" });
+    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", workspaceId: "owner_1", serverId: "managed-server", activeDeploymentId: "dep_1" });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready",
-      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" }, edgeUnsynced: true, deployWarning: "Previous route failure" },
+      meta: { deployTarget: "cloud", managedServer: { projectId: "proj_1", workspaceId: "ws_1", ownerWorkspaceId: "owner_1" }, edgeUnsynced: true, deployWarning: "Previous route failure" },
     });
 
     expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: true });
     expect(applyProjectRouting).toHaveBeenCalledWith("proj_1", expect.objectContaining({ onWarning: expect.any(Function) }));
     expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", {
-      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" } },
+      meta: { deployTarget: "cloud", managedServer: { projectId: "proj_1", workspaceId: "ws_1", ownerWorkspaceId: "owner_1" } },
     });
     expect(withExecutor).not.toHaveBeenCalled();
   });
 
   it("keeps Cloud Docker routing failures visible for another retry", async () => {
-    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", cloudWorkspaceId: "ws_1", activeDeploymentId: "dep_1" });
+    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", workspaceId: "owner_1", serverId: "managed-server", activeDeploymentId: "dep_1" });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready",
-      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" } },
+      meta: { deployTarget: "cloud", managedServer: { projectId: "proj_1", workspaceId: "ws_1", ownerWorkspaceId: "owner_1" } },
     });
     applyProjectRouting.mockImplementationOnce(async (_id, options) => options.onWarning("Cloud route could not be applied"));
 

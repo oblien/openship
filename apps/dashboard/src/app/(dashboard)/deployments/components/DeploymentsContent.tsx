@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { deployApi, projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
 import { DeploymentsFilters } from "./DeploymentsFilters";
 import { DeploymentsList } from "./DeploymentsList";
 import { LoadingSkeleton } from "./LoadingSkeleton";
@@ -168,19 +169,17 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
                 })}
               </span>
               <div className="flex items-center gap-3">
-                <button type="button" disabled={isLoading || page <= 1}
+                <Button type="button" variant="secondary" size="icon" disabled={isLoading || page <= 1}
                   aria-label={t.deployments.pagination.previous}
-                  onClick={() => setQuery((previous) => ({ ...previous, page: previous.page - 1 }))}
-                  className="rounded-lg border border-border/60 p-2 enabled:hover:bg-muted disabled:opacity-40">
+                  onClick={() => setQuery((previous) => ({ ...previous, page: previous.page - 1 }))}>
                   <UiIcon name="chevron-left" className="size-4 rtl:rotate-180" />
-                </button>
+                </Button>
                 <span>{interpolate(t.deployments.pagination.pageOf, { page: String(page), total: String(pageCount) })}</span>
-                <button type="button" disabled={isLoading || page >= pageCount}
+                <Button type="button" variant="secondary" size="icon" disabled={isLoading || page >= pageCount}
                   aria-label={t.deployments.pagination.next}
-                  onClick={() => setQuery((previous) => ({ ...previous, page: previous.page + 1 }))}
-                  className="rounded-lg border border-border/60 p-2 enabled:hover:bg-muted disabled:opacity-40">
+                  onClick={() => setQuery((previous) => ({ ...previous, page: previous.page + 1 }))}>
                   <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />
-                </button>
+                </Button>
               </div>
             </nav>
           )}

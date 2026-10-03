@@ -1081,49 +1081,76 @@ describe("project control-plane export and import", () => {
     },
   );
 
-  it.each([true, false])("checks the Cloud account and allows an independent subset (password protected: %s)", async (passwordProtected) => {
+  it.each([true, false])("imports managed project configuration only onto an explicitly selected server (password protected: %s)", async (passwordProtected) => {
     await source();
-    await db
-      .update(schema.project)
-      .set({ serverId: null, cloudWorkspaceId: "cloud-workspace" })
+    const sourceWorkspace = await repos.cloudWorkspace.create({ organizationId: "org_source", name: "Source Cloud" });
+    const sourceServer = (await repos.server.findByWorkspace(sourceWorkspace.id, "org_source"))!;
+    await db.update(schema.project).set({ serverId: sourceServer.id })
       .where(eq(schema.project.id, "web"));
-    vi.mocked(getCloudConnectionStatusForOrg).mockResolvedValue({
-      connected: true,
-      user: { name: "Source", email: "source@example.test" },
-    });
+    vi.mocked(getCloudConnectionStatusForOrg).mockResolvedValue({ connected: true,
+      user: { name: "Source", email: "source@example.test" } });
     const file = await exportFile({}, passwordProtected);
     const passphrase = passwordProtected ? password : undefined;
-    expect(file.manifest?.cloudAccounts).toContainEqual({
-      organizationId: "org_source", email: "source@example.test",
-    });
+    expect(file.manifest?.cloudAccounts).toContainEqual({ organizationId: "org_source", email: "source@example.test" });
+    expect(file.dump.tables.cloud_workspace).toBeUndefined();
+    expect(file.dump.tables.cloud_docker_workspace).toBeUndefined();
     await destination();
-    vi.mocked(getCloudConnectionStatusForOrg).mockResolvedValue({
-      connected: true,
-      user: { name: "Other", email: "other@example.test" },
-    });
-    expect((await previewInstanceImport({ file, context })).blockers.join(" ")).toContain(
-      "Cloud account mismatch",
-    );
-    await expect(
-      importInstance({ file, passphrase, mode: "merge", context }),
-    ).rejects.toThrow("Cloud account mismatch");
+    const targetWorkspace = await repos.cloudWorkspace.create({ organizationId: "org_target", name: "Destination Cloud" });
+    const targetServer = (await repos.server.findByWorkspace(targetWorkspace.id, "org_target"))!;
+    const preview = await previewInstanceImport({ file, context });
+    expect(preview.blockers.join(" ")).toContain("Choose an existing destination server");
+    await expect(importInstance({ file, passphrase, mode: "merge", context })).rejects.toThrow("Choose an existing destination server");
     expect(await db.select().from(schema.project)).toHaveLength(0);
-    await importInstance({
-      file,
-      passphrase,
-      mode: "merge",
-      context,
-      selection: { scope: "projects", projectIds: ["staging"] },
-    });
-    expect((await db.select().from(schema.project)).map((row) => row.id)).toEqual(["staging"]);
-    vi.mocked(getCloudConnectionStatusForOrg).mockResolvedValue({
-      connected: true,
-      user: { name: "Source", email: "source@example.test" },
-    });
-    const result = await importInstance({ file, passphrase, mode: "merge", context });
+    // An unrelated environment is importable without adopting the Cloud host.
+    await importInstance({ file, passphrase, mode: "merge", context,
+      selection: { scope: "projects", projectIds: ["staging"] } });
+    expect((await db.select().from(schema.project)).map(row => row.id)).toEqual(["staging"]);
+    const result = await importInstance({ file, passphrase, mode: "merge", context,
+      selection: { scope: "projects", serverMappings: { [sourceServer.id]: targetServer.id } } });
     expect(result.projectsCreated).toBe(2);
-    expect((await db.select().from(schema.project).where(eq(schema.project.id, "web")))[0]!.cloudWorkspaceId)
-      .toBe("cloud-workspace");
+    expect((await db.select().from(schema.project).where(eq(schema.project.id, "web")))[0]).toMatchObject({
+      serverId: targetServer.id, workspaceId: targetWorkspace.id, activeDeploymentId: null, autoDeploy: false,
+      disabledAt: expect.any(Date),
+    });
+    expect((await db.select().from(schema.deployment).where(eq(schema.deployment.id, "deploy_web")))[0]).toMatchObject({
+      containerId: null, imageRef: null, meta: null, status: "cancelled",
+    });
+    expect(await repos.cloudWorkspace.listByOrganization("org_target")).toHaveLength(1);
+  });
+
+  it("imports separate projects sharing one managed server without merging their identities", async () => {
+    await source();
+    const sourceWorkspace = await repos.cloudWorkspace.create({ organizationId: "org_source", name: "Shared source" });
+    const sourceServer = (await repos.server.findByWorkspace(sourceWorkspace.id, "org_source"))!;
+    for (const id of ["web", "database"])
+      await db.update(schema.project).set({ serverId: sourceServer.id }).where(eq(schema.project.id, id));
+    const file = await exportFile();
+    await destination();
+    const targetWorkspace = await repos.cloudWorkspace.create({ organizationId: "org_target", name: "Shared destination" });
+    const targetServer = (await repos.server.findByWorkspace(targetWorkspace.id, "org_target"))!;
+    await importInstance({ file, passphrase: password, mode: "merge", context, selection: {
+      scope: "projects", projectIds: ["web", "database"], serverMappings: { [sourceServer.id]: targetServer.id },
+    } });
+    const projects = await repos.project.listByWorkspace(targetWorkspace.id, "org_target");
+    expect(projects.map(project => project.id).sort()).toEqual(["database", "web"]);
+    expect(new Set(projects.map(project => project.groupId)).size).toBe(2);
+    expect(projects.every(project => project.serverId === targetServer.id && project.activeDeploymentId === null)).toBe(true);
+  });
+
+  it("rejects a managed-server mapping outside the destination organization before importing anything", async () => {
+    await source();
+    const file = await exportFile();
+    await destination();
+    await identity("foreign-org", "foreign-user");
+    const foreignWorkspace = await repos.cloudWorkspace.create({ organizationId: "foreign-org", name: "Private host" });
+    const foreignServer = (await repos.server.findByWorkspace(foreignWorkspace.id, "foreign-org"))!;
+    await expect(importInstance({ file, passphrase: password, mode: "merge", context, selection: {
+      scope: "projects", serverMappings: { source_server: foreignServer.id },
+    } })).rejects.toThrow(/server/i);
+    expect(await db.select().from(schema.project)).toHaveLength(0);
+    expect(await db.select().from(schema.service)).toHaveLength(0);
+    expect(await db.select().from(schema.deployment)).toHaveLength(0);
+    expect(await repos.server.findByWorkspace(foreignWorkspace.id, "foreign-org")).toMatchObject({ id: foreignServer.id });
   });
 
   it.each([true, false])("keeps import atomic and cannot apply secrets to unselected rows (password protected: %s)", async (passwordProtected) => {

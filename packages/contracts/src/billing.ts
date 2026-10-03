@@ -1,8 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
-import { CreateSubscriptionBody, CreateTopupBody } from "./billing-inputs";
+import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema } from "./billing-inputs";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
-import { ApplyCloudCapacitySchema, CloudCapacityEditSchema, CloudCapacityOverviewSchema, CloudCapacityPreviewSchema } from "./cloud-capacity";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
 const stringOrNull = Type.Union([Type.String(), Type.Null()]);
@@ -38,12 +37,28 @@ const namespaceResourceLimits = Type.Object({
   max_workspaces: capacityLimit, max_vcpus: capacityLimit, max_ram_mb: capacityLimit, max_disk_gb: capacityLimit,
   max_total_vcpus: capacityLimit, max_total_ram_mb: capacityLimit, max_total_disk_gb: capacityLimit,
 });
+const resourceRange = Type.Object({ min: Type.Integer(), max: Type.Integer(), step: Type.Integer() });
+const planConfiguration = Type.Optional(Type.Union([Type.Literal("preset"), Type.Literal("custom")]));
+export const BillingCustomQuoteSchema = Type.Object({
+  basePlanTierId: tier,
+  resources: CustomServerResourcesSchema,
+  reference: Type.String(),
+  priceCents: Type.Integer(), currency: Type.Literal("usd"),
+  monthlyCredits: Type.Integer(),
+  breakdown: Type.Object({ basePriceCents: Type.Integer(), cpuCents: Type.Integer(), memoryCents: Type.Integer(), diskCents: Type.Integer() }),
+});
 export const BillingPlansSchema = Type.Object({
   provider: Type.Optional(Type.Literal("oblien")),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
   ui: Type.Record(Type.String(), Type.String()),
+  custom: Type.Optional(Type.Object({
+    resources: Type.Object({ cpuCores: resourceRange, memoryMb: resourceRange, diskGb: resourceRange }),
+    extraMonthlyCents: Type.Object({ cpuCore: Type.Integer(), memoryGb: Type.Integer(), diskGb: Type.Integer() }),
+  })),
   plans: Type.Array(Type.Object({
     id: tier, name: Type.String(), description: Type.String(), popular: Type.Boolean(),
+    configuration: planConfiguration,
+    offerReference: Type.Optional(Type.String()),
     price: Type.Object({ monthly: numberOrNull, annual: numberOrNull }),
     effectivePrice: Type.Object({ monthly: numberOrNull }), listPrice: Type.Object({ monthly: numberOrNull }),
     campaign: Type.Union([Type.Object({ id: Type.String(), percentOff: Type.Number(), durationMonths: numberOrNull, endsAt: Type.String() }), Type.Null()]),
@@ -56,6 +71,8 @@ export const BillingPlansSchema = Type.Object({
 });
 export const BillingSubscriptionSchema = Type.Object({
   tier,
+  configuration: planConfiguration,
+  offerReference: Type.Optional(Type.String()),
   status: Type.Union(["active", "trialing", "past_due", "unpaid", "paused", "canceled"].map(value => Type.Literal(value))),
   interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual")]),
   currentPeriod,
@@ -82,6 +99,10 @@ export const BillingCreditAlertSchema = Type.Object({
   remaining: numberOrNull, balance: numberOrNull, limit: numberOrNull,
 });
 export const BillingStateSchema = Type.Object({
+  workspace: Type.Optional(Type.Union([Type.Object({
+    id: Type.String(), serverId: Type.Optional(Type.String()), name: Type.String(),
+    provisioned: Type.Optional(Type.Boolean({ description: "A provider server is allocated. This is presentation state, not a billing entitlement." })),
+  }), Type.Null()])),
   creditAlert: Type.Optional(Type.Union([BillingCreditAlertSchema, Type.Null()])),
   tier, status: Type.String(), currentPeriod,
   balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),
@@ -89,7 +110,7 @@ export const BillingStateSchema = Type.Object({
   subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])),
   complimentary: Type.Optional(Type.Union([Type.Object({ id: Type.String(), expiresAt: stringOrNull }), Type.Null()])),
   capabilities: Type.Optional(Type.Object({ portal: Type.Boolean(), cancellation: Type.Boolean(), resumption: Type.Optional(Type.Boolean()), subscriptionChange: Type.Boolean() })),
-  monthlyCreditLimit: numberOrNull, overQuota: Type.Boolean(), buildTimeMinutes: Type.Number(),
+  monthlyCreditLimit: numberOrNull, overQuota: Type.Boolean(), buildTimeMinutes: numberOrNull,
   capacity: Type.Optional(Type.Partial(Type.Object({ routes: meter, workspaces: meter, vcpus: meter, ramMb: meter, diskGb: meter, bandwidthGb: meter, buildMinutes: meter, services: meter, projects: meter }))),
   maxServiceMachine: Type.Union([Type.Object({ tier: Type.String(), cpuCores: Type.Number(), memoryMb: Type.Number() }), Type.Null()]),
   buildMinutesResetAt: Type.String(),
@@ -100,7 +121,15 @@ export const BillingCreditPackSchema = Type.Object({
   id: Type.String(), name: Type.String(), credits_milli: Type.Number(), price_cents: Type.Number(),
   sortOrder: Type.Number(), explains: stringOrNull,
 });
+export const BillingCreditStateSchema = Type.Pick(BillingStateSchema, [
+  "workspace", "creditAlert", "tier", "currentPeriod", "balance", "billing", "topups",
+]);
+export const BillingCreditAlertsSchema = Type.Object({
+  items: Type.Array(BillingCreditStateSchema),
+  unavailableWorkspaceIds: Type.Array(Type.String()),
+});
 export const BillingUsageInputSchema = Type.Object({
+  ...BillingScopeSchema.properties,
   from: Type.Optional(Type.String({ maxLength: 64 })), to: Type.Optional(Type.String({ maxLength: 64 })),
   groupBy: Type.Optional(Type.Union([Type.Literal("hour"), Type.Literal("day")])),
 });
@@ -108,44 +137,45 @@ export const BillingPublicSchemas = {
   listPlans: { action: "read", input: Type.Object({ locale: Type.Optional(Type.String({ maxLength: 512 })) }), optionalInput: true, output: BillingPlansSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
+  quoteCustomPlan: { action: "read", input: CustomServerResourcesSchema, output: BillingCustomQuoteSchema },
   getCheckout: {
     action: "read",
     input: Type.Object(
-      { checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
+      { ...BillingScopeSchema.properties, checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
       { additionalProperties: false },
     ),
     output: BillingCheckoutStatusSchema,
   },
-  getState: { action: "read", output: BillingStateSchema },
-  getResources: { action: "read", output: BillingResourcesSchema },
-  getCapacity: { action: "read", output: CloudCapacityOverviewSchema },
-  previewCapacity: { action: "read", input: CloudCapacityEditSchema, output: CloudCapacityPreviewSchema },
-  applyCapacity: { action: "write", input: ApplyCloudCapacitySchema,
-    output: Type.Object({ deploymentId: Type.String(), projectId: Type.String() }) },
-  getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
+  getState: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingStateSchema },
+  getCreditAlerts: { action: "read", output: BillingCreditAlertsSchema },
+  getResources: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingResourcesSchema },
+  getSubscription: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
-  cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
-  resumeSubscription: { action: "admin", output: Type.Object({ subscription: BillingSubscriptionSchema }) },
+  cancelSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
+  resumeSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ subscription: BillingSubscriptionSchema }) },
   createTopup: { action: "write", input: CreateTopupBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   listTopupPacks: { action: "read", output: Type.Array(BillingCreditPackSchema) },
   // The hosted portal can cancel renewal, so it requires the same grant as cancel.
-  createPortal: { action: "admin", output: Type.Object({ portalUrl: Type.String() }) },
+  createPortal: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ portalUrl: Type.String() }) },
   getUsage: { action: "read", input: BillingUsageInputSchema, optionalInput: true, output: Type.Object({
     from: Type.String(), to: Type.String(), groupBy: Type.Union([Type.Literal("hour"), Type.Literal("day")]),
     // Oblien's metering payload is forwarded without renaming its provider fields.
     usage: Type.Union([Type.Record(Type.String(), Type.Unknown()), Type.Null()]),
   }) },
-  listAllowanceDetail: { action: "read", output: Type.Object({ freeSubdomains: Type.Object({
+  listAllowanceDetail: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ freeSubdomains: Type.Object({
     used: Type.Number(), limit: numberOrNull, remaining: numberOrNull, suffix: Type.String(),
     items: Type.Array(Type.Object({ domainId: Type.String(), hostname: Type.String(), projectId: stringOrNull, projectName: Type.String(), projectSlug: stringOrNull, serviceId: stringOrNull, createdAt: Type.String() })),
   }) }) },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type BillingState = Static<typeof BillingStateSchema>;
+export type BillingCreditState = Static<typeof BillingCreditStateSchema>;
+export type BillingCreditAlerts = Static<typeof BillingCreditAlertsSchema>;
 export type BillingResources = Static<typeof BillingResourcesSchema>;
 export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
 export type BillingCheckoutStatus = Static<typeof BillingCheckoutStatusSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;
+export type BillingCustomQuote = Static<typeof BillingCustomQuoteSchema>;
 export interface BillingOperations extends ScopedOperations<typeof BillingPublicSchemas>, ScopedOperations<typeof BillingOperationSchemas> {}
 
 /** Older HTTP servers returned DB camelCase fields after catalog sync, and

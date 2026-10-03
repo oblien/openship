@@ -1,0 +1,9 @@
+{
+  "cloudSubtitle": "在托管服务器上按计划或按需执行命令。",
+  "create": {
+    "commandHint": "在每台选定的服务器上运行。使用 docker run --rm 执行容器任务。",
+    "cloudServersHint": "使用现有服务器，或添加拥有独立订阅的专用服务器。",
+    "cloudUsageHint": "任务共享所选服务器的资源和使用额度。运行任务需要有效的套餐。",
+    "addDedicatedServer": "添加专用服务器"
+  }
+}

@@ -67,7 +67,7 @@ describe("the scan honours the scope where it is cheap to honour", () => {
   });
 
   it("skips the whole-box manifest prune when scoped", () => {
-    expect(inspect).toContain("if (!scoped) {");
+    expect(inspect).toContain('if (!scoped && sourceServer.purpose !== "migration_source") {');
   });
 });
 

@@ -13,6 +13,7 @@ import {
 } from "@repo/db";
 import {
   slugify,
+  AppError,
   NotFoundError,
   ConflictError,
   ForbiddenError,
@@ -94,6 +95,7 @@ import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
+import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
@@ -302,10 +304,7 @@ export async function enrichProject(p: Project) {
     activeMigration,
     ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
-    // isCloud decides the fallback when nothing is configured: the metered free
-    // tier on cloud, NO limits self-hosted (the machine is the cap).
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-      isCloud: deployTarget === "cloud",
       automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
     }),
   };
@@ -376,10 +375,7 @@ export async function enrichProjectsBatch(
       activeMigration: readActiveMigration(activeMigrations.get(p.id)),
       ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
-      // isCloud decides the fallback when nothing is configured: the metered
-      // free tier on cloud, NO limits self-hosted (the machine is the cap).
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-        isCloud: deployTarget === "cloud",
         automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
       }),
     };
@@ -595,11 +591,13 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
+type ResolvedCreateProjectBody = TCreateProjectBody & { workspaceId?: string };
+
+async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, organizationId: string) {
   return withProjectCreationLock(organizationId, async () => {
     let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
     if (app) return { app, created: false };
-    await assertProjectQuota(organizationId);
+    await assertProjectQuota(organizationId, data.workspaceId ?? null);
 
     const source = resolveProjectSource(data);
 
@@ -670,7 +668,7 @@ function resolveWorkloadColumns(intent: {
 
 function buildProductionProjectInput(
   groupId: string,
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   routing: ProjectRouteState,
   organizationId: string,
@@ -693,6 +691,7 @@ function buildProductionProjectInput(
     organizationId,
     groupId,
     serverId: data.serverId ?? null,
+    workspaceId: data.workspaceId ?? null,
     name: data.name,
     slug,
     environmentName: "Production",
@@ -737,7 +736,6 @@ function buildProductionProjectInput(
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow != null ? normalizeRollbackWindow(data.rollbackWindow) : null,
-    cloudArchiveStrategy: data.cloudArchiveStrategy ?? undefined,
     defaultRollbackStrategy: data.defaultRollbackStrategy ?? undefined,
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
     // port). The wizard seeds this from the user's route-strategy default.
@@ -884,10 +882,11 @@ async function persistComposeServices(
 }
 
 async function createProductionProject(
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   organizationId: string,
   access?: { tokenId: string },
+  ctx?: RequestContext,
 ) {
   // The project type is derived from persisted service rows. Accepting an
   // explicit monorepo without app metadata creates a different project from
@@ -901,8 +900,24 @@ async function createProductionProject(
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
-  if (data.serverId) {
-    await requireOrgServer(data.serverId, organizationId);
+  const selectedServer = data.serverId ? await requireOrgServer(data.serverId, organizationId) : null;
+  if (selectedServer && !env.CLOUD_MODE) {
+    if (selectedServer.workspaceId) {
+      const { requireLinkedCloudServer } = await import("../../lib/cloud/server-link");
+      await requireLinkedCloudServer(organizationId, selectedServer.workspaceId);
+    }
+  }
+  // Workspace ownership is always derived from the selected server.
+  data = { ...data, workspaceId: undefined };
+  if (env.CLOUD_MODE || selectedServer?.workspaceId) {
+    const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
+    if (workspace) {
+      if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
+      const { authorization } = await import("../../lib/authorization");
+      await authorization.authorize(ctx, { resourceType: "server", resourceId: server!.id, action: "write" });
+      if (workspace.deletionInProgress) throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+      data = { ...data, workspaceId: workspace.id, serverId: server!.id };
+    }
   }
 
   // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the
@@ -1405,7 +1420,7 @@ async function findProjectByAppSlug(
  * Exported for the project CLONE: a duplicate is a new project and must count like one, or
  * "duplicate" becomes the way around the cap.
  */
-export async function assertProjectQuota(organizationId: string): Promise<void> {
+export async function assertProjectQuota(organizationId: string, workspaceId?: string | null): Promise<void> {
   if (!env.CLOUD_MODE) {
     const { total } = await repos.projectGroup.listByOrganization(organizationId, {
       page: 1,
@@ -1417,19 +1432,16 @@ export async function assertProjectQuota(organizationId: string): Promise<void> 
     return;
   }
 
-  const planCap = await planProjectLimit(organizationId);
+  const planCap = await planProjectLimit(organizationId, workspaceId);
   if (planCap === null) return; // Team/Enterprise publish an unlimited project allowance.
   const cap = planCap;
-  const { total } = await repos.projectGroup.listByOrganization(organizationId, {
-    page: 1,
-    perPage: 1,
-  });
+  const total = await repos.project.countGroupsForOrganization(organizationId, workspaceId);
   if (total >= cap) {
     throw new PlanUpgradeRequiredError(
       cap === 0 ? "Choose a Cloud plan to create projects."
         : `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
       "project-limit",
-      await currentPlanTier(organizationId),
+      await currentPlanTier(organizationId, workspaceId),
     );
   }
 }
@@ -1442,7 +1454,7 @@ export async function withProjectCreationLock<T>(organizationId: string, create:
   return createProvisionLock(`cloud:project-quota:${organizationId}`).run(create);
 }
 
-export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
+export async function ensureProject(data: EnsureProjectBody, organizationId: string, ctx?: RequestContext, options?: { mustCreate: true }) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1461,6 +1473,10 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (project && project.organizationId !== organizationId) {
     throw new NotFoundError("Project", data.projectId ?? desiredSlug);
   }
+  if (project && options?.mustCreate)
+    throw new ConflictError("A project with this name already exists. Choose another name for the import.");
+  if (project?.workspaceId && data.serverId && data.serverId !== project.serverId) throw new AppError(
+    "This project belongs to another execution target. Move its data explicitly before changing workspaces.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
   if (data.deploymentEnvironment !== undefined) {
     // Source deployments ensure config before asking for build access. Reject a
     // preview aimed at production here too, before overwriting services/config
@@ -1475,7 +1491,7 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (!project) {
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
-    project = await createProductionProject(data, desiredSlug, organizationId);
+    project = await createProductionProject(data, desiredSlug, organizationId, ctx?.tokenScope ?? undefined, ctx);
     created = true;
   } else {
     const update: Record<string, unknown> = {};
@@ -1539,9 +1555,6 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.rollbackWindow !== undefined) {
       update.rollbackWindow =
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
-    }
-    if (data.cloudArchiveStrategy !== undefined) {
-      update.cloudArchiveStrategy = data.cloudArchiveStrategy;
     }
 
     if (Object.keys(update).length > 0) {
@@ -1641,7 +1654,7 @@ export async function getProject(projectId: string, organizationId: string) {
 // ─── Create project ──────────────────────────────────────────────────────────
 
 /** @scope org — only reads organizationId as a DB key. */
-export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }) {
+export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }, ctx?: RequestContext) {
   const slug = slugify(data.name);
 
   const existing = await findProjectByAppSlug(organizationId, slug);
@@ -1649,7 +1662,7 @@ export async function createProject(data: EnsureProjectBody, organizationId: str
 
   // installationId is resolved server-side inside createProductionProject, which
   // both creating entry points share — see the comment there.
-  const p = await createProductionProject(data, slug, organizationId, access);
+  const p = await createProductionProject(data, slug, organizationId, access, ctx);
   // Keep create and ensure on the same compose persistence helper. Most create
   // callers carry no services and this is a no-op; scanner-backed local imports
   // carry the canonical unmasked rows and must materialize them immediately.
@@ -1987,6 +2000,12 @@ export async function createProjectEnvironment(
   const { userId, organizationId } = ctx;
   const base = await repos.project.findById(projectId);
   assertResourceInOrg(base, "Project", organizationId, projectId);
+  if (base.workspaceId) {
+    const { authorization } = await import("../../lib/authorization");
+    const { requireWorkspaceServer } = await import("../../lib/cloud-workspace-scope");
+    const server = await requireWorkspaceServer(organizationId, base.workspaceId);
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
+  }
 
   const environmentSlug = normalizeEnvironmentSlug(
     data.environmentSlug ?? data.environmentName,
@@ -2032,6 +2051,9 @@ export async function createProjectEnvironment(
   const created = await repos.project.create({
     organizationId,
     groupId: base.groupId,
+    workspaceId: base.workspaceId,
+    serverId: base.serverId,
+    clusterId: base.clusterId,
     // The catalog-app marker is a property of the whole cluster, not one
     // environment — carry it to every sibling so a new env of a catalog app
     // (e.g. a "staging" Convex) stays an app, and the cluster never drops off
@@ -2076,7 +2098,6 @@ export async function createProjectEnvironment(
     buildResources: base.buildResources,
     sleepMode: base.sleepMode,
     rollbackWindow: base.rollbackWindow,
-    cloudArchiveStrategy: base.cloudArchiveStrategy,
     defaultRollbackStrategy: base.defaultRollbackStrategy,
     webhookId: null,
     webhookDomain: null,

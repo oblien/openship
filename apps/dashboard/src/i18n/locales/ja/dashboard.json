@@ -83,7 +83,8 @@
       "account": "アカウント"
     },
     "apps": "アプリ",
-    "jobs": "ジョブ"
+    "jobs": "ジョブ",
+    "workspaces": "ワークスペース"
   },
   "sidebar": {
     "expand": "サイドバーを展開",

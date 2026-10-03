@@ -28,6 +28,7 @@ vi.mock("@repo/db", () => ({
       findEnvVarById: vi.fn(async () => null),
     },
     server: { get: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })) },
+    cloudWorkspace: { findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })) },
     backupDestination: {
       findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })),
     },

@@ -11,8 +11,9 @@
 import type { DockerContainerDetail } from "@repo/adapters";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
-import { createServerDockerRuntime } from "../../lib/deployment-runtime";
-import { sshManager } from "../../lib/ssh-manager";
+import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
+import { withMigrationExecution } from "./migration-runtime";
+import { requireMigrationServer } from "./migration-access";
 import { pruneOrphanManifestArtifacts } from "../../lib/openship-manifest-sync";
 import { parseComposeFile, type ComposeService } from "../../lib/compose-parser";
 import { readManifest, projectSnapshotExists, type ManifestProjectEntry } from "../../lib/openship-manifest";
@@ -59,6 +60,7 @@ const DISCOVERY_TIMEOUT_MS = 90_000;
  */
 async function readComposeDeclarations(
   serverId: string,
+  organizationId: string,
   groups: Map<string, DockerContainerDetail[]>,
 ): Promise<Map<string, ComposeService>> {
   // Resolve absolute compose paths (relative ones join the project working dir),
@@ -80,7 +82,7 @@ async function readComposeDeclarations(
   }
   if (paths.size === 0) return new Map();
 
-  const contents = await sshManager.withExecutor(serverId, async (executor) => {
+  const contents = await withMigrationExecution(serverId, organizationId, async (executor) => {
     return Promise.all(
       [...paths].map(async ([p, project]) => {
         try {
@@ -139,8 +141,9 @@ export async function discoverServerStack(
     onlyContainerIds?: string[];
   },
 ): Promise<DiscoveredStack> {
+  const sourceServer = await requireMigrationServer(organizationId, serverId);
   const step = (m: string) => onProgress?.(m);
-  const flatDocker = opts?.flatDocker === true;
+  const flatDocker = sourceServer.purpose === "migration_source" || opts?.flatDocker === true;
   // `undefined` = unscoped (scan the box). `[]` = an EMPTY scope, and therefore no candidates —
   // not "everything", which is the tempting `length > 0` reading and would turn a caller's
   // "these zero containers" into a full-host scan.
@@ -263,13 +266,13 @@ export async function discoverServerStack(
         }
 
         step("Reading compose files…");
-        const declared = await readComposeDeclarations(serverId, groups);
+        const declared = await readComposeDeclarations(serverId, organizationId, groups);
 
         // Retain private upstream addresses as well as host ports, so Traefik
         // services with no published port can keep their domains too. Failures
         // are review notices and do not prevent inspecting the workload.
         step("Scanning existing reverse proxy…");
-        const proxyScan = await scanProxyRoutes(serverId);
+        const proxyScan = await scanProxyRoutes(serverId, organizationId);
 
         // Fetch each distinct image's baked-in env + CMD once (candidates AND
         // openship containers), so discovery can tell which env the OPERATOR set
@@ -318,7 +321,7 @@ export async function discoverServerStack(
         // this costs a 1000-row project read plus its own SSH session. Pruning a whole box's
         // manifest from a scan that deliberately looked at five containers would also be
         // deciding "orphan" from an incomplete picture.
-        if (!scoped) {
+        if (!scoped && sourceServer.purpose !== "migration_source") {
           try {
             const liveDb = await repos.project.listByOrganization(organizationId, {
               page: 1,
@@ -328,8 +331,7 @@ export async function discoverServerStack(
               ...liveDb.rows.map((p) => p.id),
               ...projectIds,
             ]);
-            await sshManager
-              .withExecutor(serverId, (exec) =>
+            await withMigrationExecution(serverId, organizationId, (exec) =>
                 pruneOrphanManifestArtifacts(exec, { organizationId, liveProjectIds }),
               )
               .catch(() => {});
@@ -343,8 +345,7 @@ export async function discoverServerStack(
           // One SSH session: read the manifest AND check which projects have a full
           // recovery snapshot (cheap `test -f`, no read — the dump is read only at
           // re-import time, for one project).
-          const { manifestById, snapshotIds } = await sshManager
-            .withExecutor(serverId, async (exec) => {
+          const { manifestById, snapshotIds } = await withMigrationExecution(serverId, organizationId, async (exec) => {
               const manifest = await readManifest(exec).catch(() => null);
               const snap = new Set<string>();
               await Promise.all(
@@ -444,7 +445,7 @@ export async function revealContainerEnv(
           [detail.composeProject ?? "", [detail]],
         ]);
         const [declared, imageEnv] = await Promise.all([
-          readComposeDeclarations(serverId, groups),
+          readComposeDeclarations(serverId, organizationId, groups),
           ref ? rt.inspectImageEnv(ref) : Promise.resolve([]),
         ]);
         const declaredSvc = detail.composeService

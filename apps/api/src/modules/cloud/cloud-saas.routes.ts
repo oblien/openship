@@ -5,6 +5,9 @@ import { secureRouter } from "../../lib/secure-router";
 import { cloudSessionAuth } from "./cloud-session-auth";
 import * as saas from "./cloud-saas.controller";
 import { cloudResourceProxy, cloudRouteRegistry } from "./cloud-resource.controller";
+import { Type } from "@sinclair/typebox";
+import { ManagedServerActivityInputSchema } from "@repo/contracts";
+import { authorizeCloudServer, cloudServerConnection, claimCloudServerActivity, releaseCloudServerActivity, cloudServerDeletion } from "./cloud-server.controller";
 
 /** SaaS-only cloud routes. */
 const r = secureRouter(new Hono(), {
@@ -33,6 +36,21 @@ r.public("get", "/connect-poll", { reason: "Device-flow poll - CLI retrieves its
 
 r.use("/token", cloudSessionAuth);
 r.post("/token", { tag: "cloud:write" }, saas.getToken);
+
+r.use("/servers/*", cloudSessionAuth);
+r.post("/servers/:id/authorize", { tag: "server:admin", readOnly: true }, authorizeCloudServer);
+r.post("/servers/:id/connection", {
+  tag: "server:admin",
+  rateLimit: "write-authed",
+  body: Type.Object({ work: Type.Boolean() }, { additionalProperties: false }),
+}, cloudServerConnection);
+r.post("/servers/:id/activity", { tag: "server:admin", body: ManagedServerActivityInputSchema }, claimCloudServerActivity);
+r.post("/servers/:id/activity/release", { tag: "server:admin", body: ManagedServerActivityInputSchema }, releaseCloudServerActivity);
+r.use("/server-deletions/*", cloudSessionAuth);
+r.get("/server-deletions/:id", {
+  tag: "billing:admin",
+  query: Type.Object({ operationId: Type.String({ minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }) }),
+}, cloudServerDeletion);
 
 r.use("/account", cloudSessionAuth);
 r.get("/account", { tag: "cloud:read" }, saas.account);

@@ -160,7 +160,7 @@ export function snapshotNeedsProjectSource(
   // A Dockerfile app still needs its source even with hasBuild=false (no
   // buildpack commands). Uploads/local folders need staging instead of a clone.
   return (
-    (classNeedsGitSource(snapshotToClass(snapshot)) || !!snapshot.localPath || !!snapshot.uploadWorkspaceId) &&
+    (classNeedsGitSource(snapshotToClass(snapshot)) || !!snapshot.localPath) &&
     !pinnedAppImage(snapshot) &&
     !refreshAppDeploymentId(snapshot)
   );
@@ -171,7 +171,7 @@ export function snapshotNeedsGitSource(
   snapshot: PinnedArtifactSnapshot,
   services?: PinnedArtifactSnapshot["composeServices"],
 ): boolean {
-  if (snapshot.localPath || snapshot.uploadWorkspaceId) return false;
+  if (snapshot.localPath) return false;
   return snapshotNeedsProjectSource(snapshot, services);
 }
 

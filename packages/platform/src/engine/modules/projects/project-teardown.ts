@@ -354,7 +354,7 @@ async function teardownProjectLocked(
     // the Openship record. NEVER honored for a cloud project — its resources
     // live on Oblien and must be reclaimed; this is the security boundary, not
     // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
-    const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
+    const recordOnly = !!opts.recordOnly && !project.workspaceId && !env.CLOUD_MODE;
 
     // ── Step 1: Cancel in-flight work (force=true or forceOrphan). ───────
     // Cancellation only requests/records the stop here. Runtime cleanup happens
@@ -862,13 +862,13 @@ async function stepRuntimeCleanup(
   // else goes through the normal destroy path.
   const unreachable = manifest.resources.filter((r) => r.type === "unreachable");
   const destroyable = manifest.resources.filter((r) => r.type !== "unreachable");
-  if (forceOrphan && manifest.runtimes?.some((runtime) => runtime.name === "kubernetes")) {
+  if (forceOrphan && (project.workspaceId || manifest.runtimes?.some((runtime) => runtime.name === "kubernetes"))) {
     disposeManifestRuntimes(manifest);
     push({
       step: "runtime_cleanup",
       status: "failed",
       error:
-        "Cluster workloads require confirmed cleanup. Retry deletion with the cluster reachable instead of orphaning its resources.",
+        "Managed workloads require confirmed cleanup. Retry deletion with the workspace or cluster reachable instead of orphaning its resources.",
     });
     return { orphans, forceOrphanEligible: false };
   }
@@ -878,7 +878,7 @@ async function stepRuntimeCleanup(
       serverId: r.serverId ?? null,
       targetKey: r.targetKey ?? null,
       resourceType:
-        r.deferredResourceType ?? (r.runtimeMode === "cloud" ? "cloud_workspace" : "container"),
+        r.deferredResourceType ?? "container",
       ref: r.ref,
       label: r.label,
       runtimeMode: r.runtimeMode ?? null,
@@ -999,13 +999,11 @@ async function stepRuntimeCleanup(
         label: r.label,
         runtimeMode:
           r.runtimeMode ??
-          (r.runtime?.name === "cloud"
-            ? "cloud"
-            : r.runtime?.name === "bare"
-              ? "bare"
-              : r.runtime?.name === "docker"
-                ? "docker"
-                : (legacyTarget?.runtimeMode ?? null)),
+          (r.runtime?.name === "bare"
+            ? "bare"
+            : r.runtime?.name === "docker"
+              ? "docker"
+              : (legacyTarget?.runtimeMode ?? null)),
         payload: r.payload ?? null,
       });
     }

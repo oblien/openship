@@ -42,7 +42,7 @@ import { resolveProjectServer } from "./ensure-edge.controller";
 const project = {
   id: "project-1",
   organizationId: "org-1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   activeDeploymentId: "deployment-1",
   // This is the destination selected for a future deploy, not where the active
   // release and its edge currently live.
@@ -71,7 +71,7 @@ describe("resolveProjectServer", () => {
   it("keeps targeting an active server after the project's next target changes to cloud", async () => {
     h.findProject.mockResolvedValue({
       ...project,
-      cloudWorkspaceId: "workspace-next",
+      workspaceId: "workspace-next",
     });
     h.findDeployment.mockResolvedValue({
       id: "deployment-1", projectId: "project-1", organizationId: "org-1",

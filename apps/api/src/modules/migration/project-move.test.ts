@@ -43,10 +43,13 @@ describe("planProjectMove refusals", () => {
     expect(() => plan({ isControlPlane: true })).toThrow(ProjectMoveRefused);
   });
 
-  it("refuses a cloud project, naming Cloud", () => {
-    expect(() =>
-      plan({ project: { ...project, cloudWorkspaceId: "ws_1", serverId: null } }),
-    ).toThrow(/Openship Cloud/);
+  it("moves managed Docker projects through the same server flow", () => {
+    expect(() => plan({ project: { ...project, workspaceId: "ws_1", runtimeMode: "docker" } })).not.toThrow();
+  });
+
+  it("requires a server binding and does not migrate bare processes as Docker containers", () => {
+    expect(() => plan({ project: { ...project, workspaceId: "ws_1", serverId: null } })).toThrow(/isn't bound to a server/);
+    expect(() => plan({ project: { ...project, runtimeMode: "bare" } })).toThrow(/Docker/i);
   });
 
   it("refuses a project bound to no server", () => {

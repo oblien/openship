@@ -33,7 +33,7 @@ const h = {
     favicon: "https://clincai.example/favicon.ico",
     faviconCheckedAt: new Date(),
     compositeRoutes: [{ host: "clincai.example" }],
-    cloudWorkspaceId: null,
+    workspaceId: null,
     gitProvider: "github",
     gitOwner: "acme",
     gitRepo: "clincai",
@@ -82,6 +82,12 @@ const h = {
     // Scoped to a service that is NOT part of a narrowed copy.
     { id: "e3", projectId: "p_src", serviceId: "svc_web", key: "WEB_ONLY", value: "w", environment: "production", isSecret: false },
   ] as Array<Record<string, unknown>>,
+  servers: [] as Array<{
+    id: string;
+    organizationId: string;
+    workspaceId: string | null;
+    purpose: "deployment" | "migration_source";
+  }>,
   slugsTaken: new Set<string>(),
   created: null as null | Record<string, unknown>,
 };
@@ -106,6 +112,10 @@ vi.mock("@repo/db", async (importOriginal) => ({
       createProjectWithRecords,
     },
     service: { listByProject: async () => h.services.map((s) => ({ ...s })) },
+    server: {
+      getInOrganization: async (id: string, organizationId: string) =>
+        h.servers.find((server) => server.id === id && server.organizationId === organizationId) ?? null,
+    },
     projectGroup: { listByOrganization: async () => ({ total: 0 }) },
   },
 }));
@@ -150,6 +160,9 @@ const clonedEnv = () => h.created!.envVars as Array<Record<string, unknown>>;
 beforeEach(() => {
   h.created = null;
   h.slugsTaken = new Set();
+  h.project.workspaceId = null;
+  delete h.project.clusterId;
+  h.servers = [{ id: "srv_b", organizationId: "org1", workspaceId: null, purpose: "deployment" }];
   createProjectWithRecords.mockReset();
   // Stands in for the transactional repo write: records what it was asked to create and mints
   // the ids the real one would.
@@ -198,15 +211,25 @@ describe("what it deliberately does NOT copy", () => {
   it("points at the target server and starts with no deployment", async () => {
     await clone();
     expect(clonedProject().serverId).toBe("srv_b");
+    expect(clonedProject().workspaceId).toBeNull();
     expect(clonedProject().activeDeploymentId).toBeNull();
+  });
+
+  it("binds the copy to the destination workspace instead of inheriting source placement", async () => {
+    h.project.workspaceId = "source-workspace";
+    h.project.clusterId = "source-cluster";
+    h.servers[0]!.workspaceId = "target-workspace";
+    await clone();
+    expect(clonedProject().workspaceId).toBe("target-workspace");
+    expect(clonedProject()).not.toHaveProperty("clusterId");
   });
 
   it("omits every excluded project field, so the insert cannot inherit one", async () => {
     await clone();
     const p = clonedProject();
-    // `id`/`groupId` are the insert's, and name/slug/serverId/activeDeploymentId are set
+    // `id`/`groupId` are the insert's, and name/slug/serverId/workspaceId/activeDeploymentId are set
     // explicitly above — the rest must simply be absent.
-    for (const field of ["deletedAt", "deletionInProgress", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudWorkspaceId", "id", "groupId", "createdAt", "updatedAt"]) {
+    for (const field of ["deletedAt", "deletionInProgress", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "id", "groupId", "createdAt", "updatedAt"]) {
       expect(p, field).not.toHaveProperty(field);
     }
   });
@@ -226,6 +249,24 @@ describe("what it deliberately does NOT copy", () => {
     await clone();
     expect(clonedProject()).not.toHaveProperty("groupId");
     expect((h.created!.group as Record<string, unknown>).slug).toBe("clincai-copy");
+  });
+});
+
+describe("destination access before copying records", () => {
+  it.each(["missing", "foreign"])("refuses a %s destination", async (kind) => {
+    if (kind === "foreign") {
+      h.servers.push({ id: "unavailable", organizationId: "another-org", workspaceId: null, purpose: "deployment" });
+    }
+    await expect(clone({ targetServerId: "unavailable" })).rejects.toMatchObject({
+      code: "SERVER_TARGET_UNAVAILABLE",
+    });
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
+  });
+
+  it("cannot turn a migration source into a deployment destination", async () => {
+    h.servers[0]!.purpose = "migration_source";
+    await expect(clone()).rejects.toMatchObject({ code: "MIGRATION_SOURCE_ONLY" });
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
   });
 });
 

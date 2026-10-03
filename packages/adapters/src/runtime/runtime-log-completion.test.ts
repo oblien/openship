@@ -1,5 +1,4 @@
 import { expect, it, vi } from "vitest";
-import { CloudRuntime } from "./cloud";
 import { NohupSupervisor } from "./supervisor/nohup";
 import { SystemdSupervisor } from "./supervisor/systemd";
 
@@ -38,24 +37,3 @@ for (const Supervisor of [NohupSupervisor, SystemdSupervisor]) {
     expect(onEnd).not.toHaveBeenCalled();
   });
 }
-
-it("reports a Cloud transport error when both log sources fail", async () => {
-  const client = { workspace: () => ({
-    workloads: { logsStream: async function* () { throw new Error("workload stream unavailable"); } },
-    logs: { streamCmd: async function* () { throw new Error("workspace stream unavailable"); } },
-  }) };
-  const ended = deferred<Error | undefined>();
-  await new CloudRuntime(client as never).streamRuntimeLogs("workspace", vi.fn(), { tail: 0, onEnd: ended.resolve });
-  expect((await ended.promise)?.message).toBe("workspace stream unavailable");
-});
-
-it("reports Cloud completion after all lines from a healthy stream", async () => {
-  const client = { workspace: () => ({
-    workloads: { logsStream: async function* () { yield { message: "ready", stream: "stdout" }; } },
-  }) };
-  const ended = deferred<Error | undefined>();
-  const onLog = vi.fn();
-  await new CloudRuntime(client as never).streamRuntimeLogs("workspace", onLog, { tail: 0, onEnd: ended.resolve });
-  expect(await ended.promise).toBeUndefined();
-  expect(onLog).toHaveBeenCalledWith(expect.objectContaining({ message: "ready" }));
-});

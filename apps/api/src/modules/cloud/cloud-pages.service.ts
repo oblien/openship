@@ -6,8 +6,8 @@ export async function createCloudPage(
   ctx: RequestContext,
   input: { workspace_id: string; path: string; name: string; slug: string; domain?: string },
 ): Promise<unknown> {
-  const namespace = await ensureNamespace(ctx.organizationId);
-  return createTenantCloudAdmin(ctx.organizationId, namespace).createPage(input);
+  const namespace = await ensureNamespace(ctx.organizationId, null);
+  return createTenantCloudAdmin(ctx.organizationId, namespace, null).pages!.create(input);
 }
 
 export type CloudPageAction = "disable" | "enable" | "delete";
@@ -15,8 +15,8 @@ export type CloudPageAction = "disable" | "enable" | "delete";
 export async function dispatchCloudPageAction(
   ctx: RequestContext, slug: string, action: CloudPageAction,
 ): Promise<{ ok: true } | { ok: false; status: 403; error: string }> {
-  const namespace = await ensureNamespace(ctx.organizationId);
-  const pages = createTenantCloudAdmin(ctx.organizationId, namespace).pages!;
+  const namespace = await ensureNamespace(ctx.organizationId, null);
+  const pages = createTenantCloudAdmin(ctx.organizationId, namespace, null).pages!;
   try {
     await pages[action](slug);
     return { ok: true };

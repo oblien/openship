@@ -5,6 +5,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useEffect, useRef, useState } from "react";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useI18n } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * "My compose file isn't at the repo root" — point the scan at it.
@@ -65,14 +67,13 @@ export const ComposePathField: React.FC = () => {
 
   return (
     <div
-      className={`rounded-2xl border border-border/50 ${
-        composeActive ? "bg-card" : "bg-muted/20"
-      }`}
+      className="rounded-2xl bg-card"
     >
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-start"
+        className="w-full flex items-center justify-between gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <div className="flex items-center gap-3">
           <div
@@ -88,13 +89,13 @@ export const ComposePathField: React.FC = () => {
             <p
               className={
                 composeActive
-                  ? "text-[15px] font-semibold text-foreground"
+                  ? "text-sm font-semibold text-foreground"
                   : "text-sm font-medium text-muted-foreground"
               }
             >
               {cp.title}
             </p>
-            <p className="text-sm text-muted-foreground">{subtitle}</p>
+            <p className="text-xs text-muted-foreground break-all">{subtitle}</p>
           </div>
         </div>
         {open ? (
@@ -106,14 +107,17 @@ export const ComposePathField: React.FC = () => {
 
       {open && (
         <div className="px-5 pb-5 border-t border-border/50 pt-4">
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          <label htmlFor="deploy-compose-path" className="text-sm font-medium text-foreground mb-1.5 block">
             {cp.label}
-            <span className="text-muted-foreground/50 ms-1">
+            <span className="text-xs text-muted-foreground ms-1">
               {t.importProject.buildSettings.optional}
             </span>
           </label>
           <div className="flex items-center gap-2">
-            <input
+            <Input
+              dir="ltr"
+              id="deploy-compose-path"
+              variant="filled"
               type="text"
               value={value}
               onChange={(event) => {
@@ -128,13 +132,16 @@ export const ComposePathField: React.FC = () => {
               }}
               disabled={pending || deployment?.isRescanning}
               placeholder="deploy/docker-compose/docker-compose.yml"
-              className="flex-1 min-w-0 px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+              aria-invalid={!!error}
+              aria-describedby={error ? "deploy-compose-path-error" : "deploy-compose-path-hint"}
+              className="flex-1 min-w-0 font-mono"
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => void apply()}
               disabled={pending || deployment?.isRescanning || !isDirty}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-medium border border-border/50 text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              className="h-11 shrink-0"
             >
               {pending ? (
                 <UiIcon name="spinner" className="size-3.5 animate-spin" />
@@ -142,12 +149,12 @@ export const ComposePathField: React.FC = () => {
                 <UiIcon name="layers" className="size-3.5" />
               )}
               {pending ? cp.scanning : cp.apply}
-            </button>
+            </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">
+          <p id="deploy-compose-path-hint" className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
             {cp.description}
           </p>
-          {error && <p className="text-[11px] text-danger mt-1.5 leading-relaxed">{error}</p>}
+          {error && <p id="deploy-compose-path-error" role="alert" className="text-xs text-danger mt-1.5 leading-relaxed">{error}</p>}
         </div>
       )}
     </div>

@@ -99,7 +99,7 @@ describe("health monitoring capabilities at the HTTP boundary", () => {
     expect(runner.recurring.has("services:health-watch")).toBe(false);
   });
 
-  it("rejects local health reads, scans and activation on the cloud runtime", async () => {
+  it("supports shared managed-server health reads, scans and watcher activation", async () => {
     const admin = await seedOwner({ instanceAdmin: true });
     await repos.job.upsertSystem({
       key: "services:health-watch",
@@ -113,7 +113,7 @@ describe("health monitoring capabilities at the HTTP boundary", () => {
       ["/api/issues/health/scan", "POST"],
     ]) {
       const response = await app.request(path, { method, headers: admin.auth });
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
     }
     expect(
       (
@@ -122,7 +122,7 @@ describe("health monitoring capabilities at the HTTP boundary", () => {
           body: { enabled: true },
         })
       ).status,
-    ).toBe(404);
-    expect(runner.recurring.has("services:health-watch")).toBe(false);
+    ).toBe(200);
+    expect(runner.recurring.has("services:health-watch")).toBe(true);
   });
 });

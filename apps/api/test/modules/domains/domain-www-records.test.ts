@@ -31,7 +31,8 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
     ...actual,
     platform: () => ({
       target: platformTarget,
-      runtime: { verifyDomain: cloudVerifyDomain },
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
     }),
   };
 });
@@ -132,7 +133,8 @@ vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
     ...actual,
     platform: () => ({
       target: platformTarget,
-      runtime: { verifyDomain: cloudVerifyDomain },
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
     }),
   };
 });
@@ -143,7 +145,8 @@ vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
     ...actual,
     platform: () => ({
       target: platformTarget,
-      runtime: { verifyDomain: cloudVerifyDomain },
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
     }),
   };
 });

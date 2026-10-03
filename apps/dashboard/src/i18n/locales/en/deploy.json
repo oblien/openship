@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} backup policy(ies) · pre-deploy: {preDeploy}",
     "backupManage": "Manage backups",
     "on": "on",
-    "off": "off"
+    "off": "off",
+    "previewTitle": "Deployment preview",
+    "previewHint": "Continue to configure your app. Deployment starts from the next page.",
+    "back": "Back"
   },
   "summary": {
     "buildAndDeploy": "Build & deploy:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} version",
     "rollbackOther": "{count} versions",
     "rollbackAuto": "Rollback: auto",
-    "rollbackSnapshotHint": "A copy of each version is kept, so a rollback never rebuilds. Change under Advanced.",
-    "rollbackGitHint": "How many past versions stay restorable. Change under Advanced."
+    "rollbackSnapshotHint": "A copy of each version is kept, so a rollback never rebuilds. Change in deployment settings.",
+    "rollbackGitHint": "How many past versions stay restorable. Change in deployment settings."
   },
   "power": {
     "heading": "Power",

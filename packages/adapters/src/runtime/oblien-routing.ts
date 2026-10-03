@@ -15,7 +15,7 @@
 
 import type { RoutesInput, RouteRule, RouteProxyAction } from "oblien";
 import type { RoutingConfig } from "@repo/core";
-import { compileVercelRouting } from "../infra/vercel-routing";
+import { compileVercelRouting, type CompiledRouting } from "../infra/vercel-routing";
 
 /** Sentinel so reused `compileVercelRouting` marks which proxy targets are the
  *  owned backend (→ Oblien `workspace`+`port`) vs. a literal external URL. */
@@ -37,6 +37,8 @@ export interface OblienRoutingContext {
   root?: OblienWorkspaceTarget;
   /** Backend workspace that path rewrites (e.g. `/api/*`) proxy to. */
   backend?: OblienWorkspaceTarget;
+  /** Resolved internal URLs, shared by the generic route-registration path. */
+  proxyTargets?: ReadonlyMap<string, OblienWorkspaceTarget>;
 }
 
 /** Oblien only accepts 301/302/307/308; coerce anything else to a safe default
@@ -54,6 +56,14 @@ export function compileRoutingToOblien(
     backendTargetUrl: ctx.backend ? BACKEND_SENTINEL : undefined,
   });
 
+  return compileResolvedRoutingToOblien(compiled, ctx);
+}
+
+/** Emit the same table from routes already compiled by the shared pipeline. */
+export function compileResolvedRoutingToOblien(
+  compiled: Pick<CompiledRouting, "redirects" | "proxyLocations" | "headerRules" | "cleanUrls" | "trailingSlash">,
+  ctx: OblienRoutingContext = {},
+): RoutesInput {
   const routes: RouteRule[] = [];
 
   // Terminal rules are first-match-wins, evaluated before static files; order
@@ -76,10 +86,10 @@ export function compileRoutingToOblien(
   // rewrites → proxy. A sentinel target means "the owned backend" → workspace+port
   // (Oblien resolves its internal IP); any other target is a literal external URL.
   for (const loc of compiled.proxyLocations) {
-    const action: RouteProxyAction =
-      loc.targetUrl === BACKEND_SENTINEL && ctx.backend
-        ? { kind: "proxy", workspace: ctx.backend.workspace, port: ctx.backend.port }
-        : { kind: "proxy", origin: loc.targetUrl };
+    const owned = loc.targetUrl === BACKEND_SENTINEL ? ctx.backend : ctx.proxyTargets?.get(loc.targetUrl);
+    const action: RouteProxyAction = owned
+      ? { kind: "proxy", workspace: owned.workspace, port: owned.port }
+      : { kind: "proxy", origin: loc.targetUrl };
     // A capture-bearing rewrite carries its upstream path as a `$1..$9` template —
     // exactly what `RouteProxyAction.path` takes, against a `wildcard` match.
     if (loc.pattern && loc.upstreamPath) {
@@ -89,7 +99,7 @@ export function compileRoutingToOblien(
       });
       continue;
     }
-    routes.push({ match: { path: loc.pathPrefix, type: "prefix" }, action });
+    routes.push({ match: { path: loc.pathPrefix, type: loc.exact ? "exact" : "prefix" }, action });
   }
 
   // A root workspace backs `/` as the last terminal rule (a Page backs it via

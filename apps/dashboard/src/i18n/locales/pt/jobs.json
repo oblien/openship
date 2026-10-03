@@ -1,0 +1,9 @@
+{
+  "cloudSubtitle": "Comandos agendados e sob demanda nos seus servidores gerenciados.",
+  "create": {
+    "commandHint": "Executa em cada servidor selecionado. Use docker run --rm para uma tarefa em um contêiner.",
+    "cloudServersHint": "Use um servidor existente ou adicione um servidor dedicado com sua própria assinatura.",
+    "cloudUsageHint": "As tarefas compartilham a capacidade e a cota de uso do servidor selecionado. O plano deve estar ativo para executá-las.",
+    "addDedicatedServer": "Adicionar servidor dedicado"
+  }
+}

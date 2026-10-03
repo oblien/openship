@@ -117,24 +117,28 @@ its Docker is accessible, then retry.
 
 | Operation | REST API |
 | --- | --- |
-| List active server migration sessions. | `GET /api/migration/active`<br />`server:read` · Self-hosted |
+| List active server migration sessions. | `GET /api/migration/active`<br />`server:read` |
+| List the active organization's migration-only SSH connections. | `GET /api/migration/sources`<br />`server:read` |
+| Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations. | `POST /api/migration/sources`<br />`server:write` |
+| Test a public SSH source without saving it and return its host fingerprint. | `POST /api/migration/sources/test`<br />`server:write` |
+| Disconnect an idle migration source without deleting its external server or workloads. | `DELETE /api/migration/sources/:serverId`<br />`server:write` |
 | Create an Openship project from the selected discovered services. | `POST /api/migration/adopt`<br />`server:write` · Self-hosted |
-| Start a server migration from the reviewed plan. | `POST /api/migration/migrate`<br />`server:write` · Self-hosted |
-| Delete an eligible migration record. | `DELETE /api/migration/migrations/:id`<br />`server:write` · Self-hosted |
-| Read migration progress and state. | `GET /api/migration/migrations/:id`<br />`server:read` · Self-hosted |
-| Request cancellation of a migration. | `POST /api/migration/migrations/:id/cancel`<br />`server:write` · Self-hosted |
-| Clean up resources created on the migration target. | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` · Self-hosted |
-| Switch traffic to the prepared migration target. | `POST /api/migration/migrations/:id/cutover`<br />`server:write` · Self-hosted |
-| Resume an interrupted migration. | `POST /api/migration/migrations/:id/resume`<br />`server:write` · Self-hosted |
-| Answer a pending migration prompt, including edge takeover consent. | `POST /api/migration/migrations/:id/respond`<br />`server:write` · Self-hosted |
-| Stream migration progress. | `GET /api/migration/migrations/:id/stream`<br />`server:read` · Self-hosted |
-| Preview a migration plan. | `POST /api/migration/preview`<br />`server:write` · Self-hosted |
-| Import a discovered project. | `POST /api/migration/project`<br />`server:write` · Self-hosted |
+| Start a server migration from the reviewed plan. | `POST /api/migration/migrate`<br />`server:write` |
+| Delete an eligible migration record. | `DELETE /api/migration/migrations/:id`<br />`server:write` |
+| Read migration progress and state. | `GET /api/migration/migrations/:id`<br />`server:read` |
+| Request cancellation of a migration. | `POST /api/migration/migrations/:id/cancel`<br />`server:write` |
+| Clean up resources created on the migration target. | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` |
+| Switch traffic to the prepared migration target. | `POST /api/migration/migrations/:id/cutover`<br />`server:write` |
+| Resume an interrupted migration. | `POST /api/migration/migrations/:id/resume`<br />`server:write` |
+| Answer a pending migration prompt, including edge takeover consent. | `POST /api/migration/migrations/:id/respond`<br />`server:write` |
+| Stream migration progress. | `GET /api/migration/migrations/:id/stream`<br />`server:read` |
+| Preview a migration plan. | `POST /api/migration/preview`<br />`server:write` |
+| Import a discovered project. | `POST /api/migration/project`<br />`server:write` |
 | Refresh an imported project from its source. | `POST /api/migration/reimport`<br />`server:write` · Self-hosted |
-| Read Compose configuration from a repository for import. | `POST /api/migration/repo-compose`<br />`server:read` · Self-hosted |
-| Reveal explicitly requested environment values for an authorized import. | `POST /api/migration/reveal-env`<br />`server:write` · Self-hosted |
-| List migration history. | `GET /api/migration/runs`<br />`server:read` · Self-hosted |
-| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `POST /api/migration/scan`<br />`server:write` · Self-hosted |
-| Stream server-discovery progress. | `GET /api/migration/scan/stream`<br />`server:write` · Self-hosted |
+| Read Compose configuration from a repository for import. | `POST /api/migration/repo-compose`<br />`server:read` |
+| Reveal explicitly requested environment values for an authorized import. | `POST /api/migration/reveal-env`<br />`server:write` |
+| List migration history. | `GET /api/migration/runs`<br />`server:read` |
+| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `POST /api/migration/scan`<br />`server:write` |
+| Stream server-discovery progress. | `GET /api/migration/scan/stream`<br />`server:write` |
 
 {/* api-operations:end */}

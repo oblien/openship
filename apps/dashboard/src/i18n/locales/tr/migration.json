@@ -1,7 +1,7 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "Kaynak sunucuda {proxy} algılandı",
+      "detected": "{proxy} algılandı",
       "handoff": "Aşağıda eşleştirilen alan adlarını inceleyin. Taşıma, hedef sunucunun yönlendirmesini kurar ve mevcut bir proxy değiştirilecekse onayınızı ister.",
       "warnings": "{count} keşif bildirimini inceleyin"
     },
@@ -62,6 +62,12 @@
       "conflictKeep": "Koru",
       "conflictKeepHint": "Mevcut veriyi kullan",
       "measuring": "Aktarım boyutu ölçülüyor…"
+    },
+    "steps": {
+      "mapNoRepo": "Algılanan kapsayıcıları hizmetleriyle eşlemek için bir depo bağlayın (isteğe bağlı).",
+      "linkRepoDesc": "Sonraki derlemeler ve otomatik dağıtımlar için Git kullanın.",
+      "repoOnSourceHint": "Sonraki adımda bir depo bağlayın.",
+      "mapHint": "Kapsayıcıları depodaki hizmetleriyle eşleştirin."
     }
   },
   "run": {
@@ -82,18 +88,19 @@
     "addDomains": "Alan adları ekle",
     "viewDeployLogs": "Dağıtım günlüklerini görüntüle",
     "deployDetail": "Dağıtım günlükleri",
-    "routeHint": "Servisleriniz içe aktarıldı ancak henüz herkese açık değil. Alan Adları sekmesinde her servis için bir alan adı ekleyin — Openship edge servisini (OpenResty) kurmak üzere otomatik dağıtım yapar; eski proxy'niz hâlâ 80/443 portlarını kullanıyorsa devralmayı teklif eder.",
-    "downtimeNote": "Orijinal konteynerler taşıma sırasında durdurulur; yeni dağıtım canlıya geçene kadar kısa bir kesinti beklenir.",
+    "routeHint": "Rotalar yapılandırılana kadar hizmetleriniz özel kalır. Projenin Alan Adları sekmesinden alan adlarını ekleyin veya inceleyin.",
+    "downtimeNote": "Veriler kopyalanırken ve hedef başlatılırken seçilen kaynak konteynerler durur. Kesinti süresini planlayın.",
     "movingImage": "imaj",
     "movingVolume": "disk birimi",
     "partial": "Kısmi — bazı yollar taşınmadı"
   },
   "cutover": {
     "title": "Taşımayı tamamla",
-    "warning": "Yeni dağıtım hedef sunucuda yayında. Kaynak konteynerleri şimdi durdurup kaldırabilir veya güvenlik önlemi olarak durdurulmuş hâlde tutup daha sonra kaldırabilirsiniz.",
+    "warning": "Hedef yayında. Orijinal konteynerleri kaldırabilir veya durdurulmuş olarak tutabilirsiniz. Kaynak birimler korunur.",
     "stopRemove": "Kaynak konteynerleri durdur ve kaldır",
     "keep": "Kaynak konteynerleri tut",
-    "working": "İşleniyor…"
+    "working": "İşleniyor…",
+    "warningRestart": "Hedef yayında. Orijinalleri tut, önceden çalışan kaynak konteynerleri bağımsız kopyalar olarak yeniden başlatır. Orijinalleri kaldır, bunları siler. Kaynak birimler korunur."
   },
   "discover": {
     "buildBlocked": "Kaynaktan derlenmiş — henüz taşınamıyor (önce bir imaj yayınlayın)",
@@ -132,7 +139,21 @@
     "envFromImage": "{n} değişken imajdan geliyor",
     "envFromImageHint": "Yapılandırma olarak içe aktarılmadı — imaj bunları çalışma zamanında sağlıyor. Kaynaktan yeniden derlemeden önce değerleri sabitlemek için içe aktarın.",
     "envFromImageImport": "Yine de içe aktar",
-    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı."
+    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı.",
+    "chooseProject": "İçe aktarılacakları seçin",
+    "chooseHint": "Bir Compose projesi veya ayrı hizmetler seçin.",
+    "topology": "Topoloji",
+    "cards": "Kartlar",
+    "viewLabel": "Sonuç görünümü",
+    "topologyHint": "Çizgiler algılanan başlatma bağımlılıklarını gösterir.",
+    "unavailable": "Kullanılamıyor",
+    "selected": "Seçildi",
+    "selectService": "Hizmeti seç",
+    "selectNamedService": "{name} seç",
+    "selectProject": "{name} içindeki tüm hizmetleri seç",
+    "clearSelection": "Seçimi temizle",
+    "selectionKeyboard": "Bir hizmet seçmek için Enter veya Boşluk tuşuna basın.",
+    "expandProject": "{name} hizmetleri"
   },
   "reimport": {
     "title": "Openship projeleri bulundu",
@@ -144,7 +165,16 @@
     "openProject": "Projeyi aç",
     "alreadyManaged": "{n} konteyner zaten bu kurulum tarafından yönetiliyor.",
     "finalizeNote": "Tekrar içe aktarma proje kayıtlarını geri yükler; çalışan konteynerleri tamamen yönetim altına almak için projeden yeniden dağıtın.",
-    "failed": "Tekrar içe aktarma başarısız oldu"
+    "failed": "Tekrar içe aktarma başarısız oldu",
+    "review": "Projeyi kurtar",
+    "reviewNamed": "{name} projesini kurtar",
+    "groupLabel": "Openship projesi",
+    "recoverHint": "Ayarları geri yükleyin ve çalışan kapsayıcıları yeniden bağlayın.",
+    "configuration": "Yapılandırma",
+    "snapshot": "Kayıtlı anlık görüntü",
+    "containerMetadata": "Kapsayıcılardan",
+    "checkSettings": "Kurtarma sonrasında derleme ayarlarını gözden geçirmeniz gerekebilir.",
+    "chooseHint": "Ayarlarını ve çalışan hizmetlerini kurtarmak için bir proje seçin."
   },
   "scanFailed": "Docker incelemesi başarısız oldu",
   "adoptFailed": "Proje oluşturulamadı",
@@ -195,13 +225,44 @@
     "resume": "Geçişi sürdür",
     "resuming": "Sürdürülüyor…",
     "editRetry": "Düzenle ve yeniden dene",
-    "safetyTitle": "Yıkıcı değil, geri alınabilir.",
-    "safetyBody": "Kaynağınız tüm süreç boyunca çalışmaya devam eder — veriler kopyalanır, taşınmaz. Başarılı bir geçişten sonra bile hiçbir şey silinmez: orijinal kapsayıcılarınız, geçiş anında açıkça kaldırana kadar (güvenlik ağı olarak durdurulmuş halde) kalır.",
+    "safetyTitle": "Kaynak veriler korunur.",
+    "safetyBody": "Veriler kopyalanır. Seçilen kaynak konteynerler aktarım sırasında durur; verileri kaynakta kalır. Orijinal konteynerlerin kaldırılması onayınızı gerektirir.",
     "cleanupTarget": "Hedefe kopyalanan veriyi kaldır",
     "retryRun": "Yeniden dene",
     "changeTarget": "Hedefi değiştir"
   },
   "plan": {
     "missing": "bulunamadı"
+  },
+  "sources": {
+    "title": "Taşıma kaynağı bağla",
+    "connect": "Kaynağı bağla",
+    "disconnect": "Kaynak bağlantısını kes",
+    "empty": "İçe aktarmak istediğiniz sunucuyu bağlayın.",
+    "hint": "Yalnızca taşıma için. İşiniz bittiğinde bağlantıyı kaldırabilirsiniz.",
+    "importHint": "Uygulamaları ve verileri yönetilen bir Openship sunucusuna kopyalayın. Geçişi onaylayana kadar kaynak korunur."
+  },
+  "review": {
+    "progress": "İçe aktarma ilerlemesi",
+    "title": "Hizmetleri inceleyin",
+    "hint": "Taşımadan önce erişimi ve verileri inceleyin.",
+    "expandAll": "Tümünü genişlet",
+    "collapseAll": "Tümünü daralt",
+    "configureService": "{name} yapılandır",
+    "internal": "Yalnızca dahili",
+    "detected": "Algılandı",
+    "finishRoute": "Yönlendirmeyi tamamlayın",
+    "finishRouteHint": "Alan adını ve bağlantı noktasını tamamlayın veya Yalnızca dahili seçin.",
+    "routingTitle": "Alan adları ve yönlendirme",
+    "scanOptions": "Tarama seçenekleri",
+    "destination": "Hedef",
+    "summary": "İçe aktarma özeti",
+    "publicServices": "Dışa açık hizmetler",
+    "internalServices": "Dahili hizmetler",
+    "dataMounts": "Veri bağlamaları",
+    "destinationNext": "Sonraki adımda bu hizmetlerin nerede çalışacağını seçin.",
+    "importDetails": "İçe aktarma ayrıntıları",
+    "detectProjects": "Projeleri algıla",
+    "includeManaged": "Yönetilen kapsayıcıları dahil et"
   }
 }

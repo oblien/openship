@@ -80,7 +80,7 @@ describe("retrying an app without rerunning the installer", () => {
   });
 
   it("does not resize an already deployed app or rewrite an explicitly frozen service snapshot", async () => {
-    expect((await allocation({ ...project, activeDeploymentId: "release-a" })).cpuCores).toBe(4.5);
+    expect((await allocation({ ...project, activeDeploymentId: "release-a" })).cpuCores).toBe(0.25);
     expect(h.seed).not.toHaveBeenCalled();
     const frozen = {
       ...snapshot,

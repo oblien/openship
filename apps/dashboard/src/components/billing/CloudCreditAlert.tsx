@@ -1,18 +1,30 @@
 "use client";
 
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/Modal";
-import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { billingApi, type BillingState } from "@/lib/api/billing";
+import { Icon } from "@repo/ui/icons";
+import { billingApi, type BillingState, type BillingCreditAlerts } from "@/lib/api/billing";
 import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
 import { formatMilliCredits } from "@/lib/billing-usage";
+import { scopedBillingHref } from "@/lib/billing-links";
 
-type Snapshot = { scope: string; value: BillingState };
+type CreditState = Pick<BillingState, "workspace" | "creditAlert" | "tier" | "currentPeriod" | "balance" | "billing" | "topups">;
+type Snapshot = { scope: string; value: BillingCreditAlerts };
+
+function alertPriority(state: CreditState): number {
+  const alert = state.creditAlert;
+  const funded = state.tier !== "free" || (alert?.limit ?? 0) > 0 || state.balance.quotaUsed > 0;
+  if (!funded || !alert) return 0;
+  if (alert.state === "depleted") return 4;
+  if (alert.state === "grace") return 3;
+  if (alert.state !== "low") return 0;
+  return alert.threshold != null && alert.threshold === alert.thresholds.at(-1) ? 2 : 1;
+}
 
 /** Read-only warnings. Oblien alone computes the alert and enforces the balance. */
 export function CloudCreditAlert() {
@@ -37,7 +49,7 @@ export function CloudCreditAlert() {
       if (pending || document.visibilityState === "hidden") return;
       pending = true;
       try {
-        const value = await billingApi.getBillingState();
+        const value = await billingApi.getCreditAlerts();
         if (!disposed && organizationId === getActiveOrganizationId())
           setSnapshot({ scope, value });
       } catch {
@@ -63,174 +75,120 @@ export function CloudCreditAlert() {
   }, [enabled, scope, organizationId]);
 
   if (!enabled || snapshot?.scope !== scope || !organizationId || !user) return null;
-  return (
-    <CreditAlertNotice
-      key={scope}
-      state={snapshot.value}
-      organizationId={organizationId}
-      userId={user.id}
-    />
-  );
+  return <CreditAlertTray key={scope} states={snapshot.value.items} organizationId={organizationId} userId={user.id} />;
 }
 
-export function CreditAlertNotice({
-  state,
-  organizationId,
-  userId,
-}: {
-  state: BillingState;
+function alertKey(state: CreditState, organizationId: string, userId: string): string {
+  return JSON.stringify([
+    userId, organizationId, state.workspace?.id, state.creditAlert?.namespace,
+    state.currentPeriod.end, state.creditAlert?.limit, state.creditAlert?.state, state.creditAlert?.threshold,
+  ]);
+}
+
+function wasAcknowledged(key: string): boolean {
+  try { return sessionStorage.getItem(`openship.creditAlert:${key}`) === "1"; }
+  catch { return false; }
+}
+
+/** One floating disclosure for all affected subscriptions; it never takes page space or focus. */
+export function CreditAlertTray({ states, organizationId, userId }: {
+  states: CreditState[];
   organizationId: string;
   userId: string;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const copy = t.billing.creditAlert;
-  const alert = state.creditAlert;
-  // Explicit allowances and purchased credits can exist without a hosted plan.
-  // Only a fresh, unfunded setup namespace should suppress the zero-credit prompt.
-  const hasCreditHistory =
-    state.tier !== "free" || (alert?.limit ?? 0) > 0 || (state.balance.quotaUsed ?? 0) > 0;
-  const visible = hasCreditHistory && alert && ["low", "grace", "depleted"].includes(alert.state);
-  const attention =
-    alert?.state === "depleted" ||
-    alert?.state === "grace" ||
-    (alert?.state === "low" &&
-      alert.threshold != null &&
-      alert.threshold === alert.thresholds.at(-1));
-  const key = visible
-    ? JSON.stringify([
-        userId,
-        organizationId,
-        alert.namespace,
-        state.currentPeriod.end,
-        alert.limit,
-        alert.state,
-        alert.threshold,
-      ])
-    : null;
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const contentId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const acknowledged = useRef(new Set<string>());
+  const [expanded, setExpanded] = useState(false);
+  const alerts = useMemo(() => states
+    .filter(state => alertPriority(state) > 0)
+    .sort((a, b) => alertPriority(b) - alertPriority(a))
+    .map(state => ({ state, key: alertKey(state, organizationId, userId) })),
+  [states, organizationId, userId]);
+
   useEffect(() => {
-    if (!key || !attention) {
-      setOpenKey(null);
-      return;
-    }
-    let dismissed = dismissedKey === key;
-    try {
-      dismissed ||= sessionStorage.getItem(`openship.creditAlert:${key}`) === "1";
-    } catch {
-      /* memory fallback */
-    }
-    if (!dismissed) setOpenKey(key);
-  }, [key, attention, dismissedKey]);
-  if (!visible || !alert || !key) return null;
-  const close = () => {
-    setOpenKey(null);
-    setDismissedKey(key);
-    try {
-      sessionStorage.setItem(`openship.creditAlert:${key}`, "1");
-    } catch {
-      /* memory fallback */
+    // A renewed allowance or more severe warning is a new notice. Polling the
+    // same warning must not undo an explicit dismissal, including after reload.
+    if (alerts.some(({ state, key }) => alertPriority(state) >= 2 &&
+      !acknowledged.current.has(key) && !wasAcknowledged(key))) setExpanded(true);
+  }, [alerts]);
+
+  const collapse = () => {
+    setExpanded(false);
+    for (const { key } of alerts) {
+      acknowledged.current.add(key);
+      try { sessionStorage.setItem(`openship.creditAlert:${key}`, "1"); }
+      catch { /* In-memory dismissal still works when storage is unavailable. */ }
     }
   };
-  const title =
-    alert.state === "depleted"
-      ? copy.exhaustedTitle
-      : alert.state === "grace"
-        ? copy.graceTitle
-        : copy.lowTitle;
-  const description =
-    alert.state === "depleted"
-      ? copy.exhaustedDescription
-      : interpolate(alert.state === "grace" ? copy.graceDescription : copy.lowDescription, {
-          percent: String(alert.percent ?? ""),
-          credits: formatMilliCredits(
-            Math.max(0, (alert.state === "grace" ? alert.balance : alert.remaining) ?? 0),
-            locale,
-          ),
-        });
-  const canTopUp = state.billing?.enabled && state.topups?.available;
-  const href = `/cloud-billing?organizationId=${encodeURIComponent(organizationId)}&tab=${canTopUp ? "topups" : "overview"}`;
-  const action = canTopUp ? copy.buyCredits : copy.openBilling;
-  return (
-    <>
-      <div
-        role="status"
-        className={`flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 text-sm sm:px-6 ${alert.state === "depleted" ? "border-danger-border bg-danger-bg" : "border-warning-border bg-warning-bg"}`}
-      >
-        <div className="min-w-0">
-          <p className="font-semibold">{title}</p>
-          <p className="mt-1 break-words">{description}</p>
-        </div>
-        <Button asChild variant="secondary" className="shrink-0">
-          <a href={href}>{action}</a>
-        </Button>
-      </div>
-      {openKey === key && (
-        <AlertDialog
-          title={title}
-          description={description}
-          href={href}
-          action={action}
-          closeLabel={copy.close}
-          onClose={close}
-        />
-      )}
-    </>
-  );
-}
+  if (alerts.length === 0) return null;
+  const depleted = alerts[0]!.state.creditAlert?.state === "depleted";
 
-interface AlertDialogProps {
-  title: string;
-  description: string;
-  href: string;
-  action: string;
-  closeLabel: string;
-  onClose: () => void;
-}
-
-function AlertDialog(props: AlertDialogProps) {
   return (
-    <Modal isOpen onClose={props.onClose} width="100%" maxWidth="448px" showCloseButton={false}>
-      <AlertDialogContent {...props} />
-    </Modal>
-  );
-}
-
-function AlertDialogContent({
-  title,
-  description,
-  href,
-  action,
-  closeLabel,
-  onClose,
-}: AlertDialogProps) {
-  const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const id = useId();
-  return (
-    <div
-      ref={dialog}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={`${id}-title`}
-      aria-describedby={`${id}-description`}
-      tabIndex={-1}
-      onKeyDown={onKeyDown}
-      className="p-5 outline-none"
+    <section
+      aria-label={copy.title}
+      className={`fixed end-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 max-w-[calc(100vw-2rem)] ${expanded ? "w-96" : "w-auto"}`}
+      onKeyDown={event => {
+        if (event.key === "Escape" && expanded) {
+          event.preventDefault();
+          collapse();
+          trigger.current?.focus();
+        }
+      }}
     >
-      <h2 id={`${id}-title`} className="text-lg font-semibold">
-        {title}
-      </h2>
-      <p id={`${id}-description`} className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        {description}
-      </p>
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onClose}>
-          {closeLabel}
-        </Button>
-        <Button asChild>
-          <a href={href}>{action}</a>
-        </Button>
+      <div className="overflow-hidden rounded-2xl bg-popover shadow-[var(--th-dropdown-shadow)]">
+        <button
+          ref={trigger}
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          aria-label={expanded ? copy.hideWarnings : copy.showWarnings}
+          title={expanded ? copy.hideWarnings : copy.showWarnings}
+          onClick={() => expanded ? collapse() : setExpanded(true)}
+          className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start text-sm font-medium text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        >
+          <Icon name="alert-circle" className={`size-5 shrink-0 ${depleted ? "text-danger" : "text-warning"}`} aria-hidden="true" />
+          <span className="flex-1">{copy.title}</span>
+          {alerts.length > 1 && <span className="text-xs tabular-nums text-muted-foreground">{alerts.length}</span>}
+          <Icon name={expanded ? "chevron-down" : "chevron-up"} className="size-4 text-muted-foreground" aria-hidden="true" />
+        </button>
+        {expanded && (
+          <div id={contentId} className="max-h-[min(60dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain px-4 pb-4">
+            {alerts.map(({ key, state }) => <CreditAlertNotice key={key} state={state} organizationId={organizationId} />)}
+          </div>
+        )}
       </div>
-    </div>
+    </section>
+  );
+}
+
+function CreditAlertNotice({ state, organizationId }: { state: CreditState; organizationId: string }) {
+  const { t, locale } = useI18n();
+  const copy = t.billing.creditAlert;
+  const alert = state.creditAlert!;
+  const title = alert.state === "depleted" ? copy.exhaustedTitle
+    : alert.state === "grace" ? copy.graceTitle : copy.lowTitle;
+  const description = alert.state === "depleted" ? copy.exhaustedDescription
+    : interpolate(alert.state === "grace" ? copy.graceDescription : copy.lowDescription, {
+      percent: String(alert.percent ?? ""),
+      credits: formatMilliCredits(Math.max(0, (alert.state === "grace" ? alert.balance : alert.remaining) ?? 0), locale),
+    });
+  const canTopUp = state.billing?.enabled && state.topups?.available;
+  const href = scopedBillingHref(canTopUp ? "/billing/topups" : "/billing/overview", {
+    organizationId,
+    workspaceId: state.workspace?.id,
+  });
+
+  return (
+    <article className="rounded-xl bg-muted/40 p-3">
+      {state.workspace?.name && <h2 className="break-words text-sm font-medium text-foreground">{state.workspace.name}</h2>}
+      <p role="status" className={`mt-1 text-sm font-medium ${alert.state === "depleted" ? "text-danger" : "text-warning"}`}>{title}</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      <Button asChild variant="secondary" size="sm" className="mt-3">
+        <Link href={href}>{canTopUp ? copy.buyCredits : copy.openBilling}</Link>
+      </Button>
+    </article>
   );
 }

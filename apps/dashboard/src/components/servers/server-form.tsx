@@ -9,13 +9,18 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { SshTransportField } from "./ssh-transport-field";
+import { Input, inputVariants } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { dockerMigrationApi } from "@/lib/api/server-migration";
+import type { MigrationSourceInput } from "@repo/contracts";
 
-const INPUT =
-  "w-full px-3.5 py-2.5 rounded-xl border border-border/50 bg-muted/30 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:ring-2 focus:ring-primary/20";
+const INPUT = inputVariants({ variant: "filled" });
 
 const LABEL = "block text-sm font-medium text-muted-foreground mb-1.5";
 
 interface ServerFormProps {
+  /** Same credentials form, with only the capabilities accepted by Cloud import. */
+  migrationSource?: boolean;
   /** Truthy => edit mode (prefill + PATCH); otherwise create mode (POST). */
   server?: ServerInfo | null;
   /** Called after a successful save with the saved server and the mode used. */
@@ -37,12 +42,43 @@ interface ServerFormProps {
 // validation and the test/save calls live here exactly once - only the chrome
 // differs (see `variant`). The surrounding page header and sidebars stay in the
 // pages.
-export function ServerForm({
+export function ServerForm(props: ServerFormProps) {
+  if (props.server && (props.server.managed || props.server.isLocal)) {
+    return <ServerNameForm {...props} server={props.server} />;
+  }
+  return <ConnectedServerForm {...props} />;
+}
+
+/** Managed connections and the current host only allow a display-name edit. */
+function ServerNameForm({ server, onSaved, onCancel, submitLabel }: ServerFormProps & { server: ServerInfo }) {
+  const { t } = useI18n();
+  const [name, setName] = useState(server.name ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = useRef(false);
+  return <form className="space-y-4 rounded-2xl bg-card p-5" onSubmit={async event => {
+    event.preventDefault();
+    if (busy.current || !name.trim()) return;
+    busy.current = true; setSaving(true); setError(null);
+    try {
+      const updated = await systemApi.updateServerEntry(server.id, { name: name.trim() });
+      onSaved({ server: updated, isEditing: true });
+    } catch (error) { setError(getApiErrorMessage(error, t.servers.form.toastSaveFailed)); }
+    finally { busy.current = false; setSaving(false); }
+  }}>
+    <label className="block space-y-2 text-sm font-medium"><span>{t.servers.form.serverName}</span><Input variant="filled" value={name} onChange={event => setName(event.target.value)} maxLength={80} required disabled={saving} /></label>
+    {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+    <div className="flex justify-end gap-2">{onCancel && <Button type="button" variant="secondary" disabled={saving} onClick={onCancel}>{t.servers.detail.cancel}</Button>}<Button type="submit" disabled={saving || !name.trim()}>{saving && <UiIcon name="spinner" className="size-4 animate-spin" />}{submitLabel ?? t.servers.form.saveChanges}</Button></div>
+  </form>;
+}
+
+function ConnectedServerForm({
   server,
   onSaved,
   submitLabel,
   variant = "page",
   onCancel,
+  migrationSource = false,
 }: ServerFormProps) {
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -95,7 +131,7 @@ export function ServerForm({
    * `sshKeyPath: null` with no material to replace it — a rename would silently
    * strip the only credential the server has.
    */
-  const pathModeOffered = deployMode === "desktop" || !!server?.sshKeyPath;
+  const pathModeOffered = !migrationSource && (deployMode === "desktop" || !!server?.sshKeyPath);
   /** The mode actually in force — `sshKeyMode` is only meaningful when offered. */
   const keyMode: "paste" | "path" = pathModeOffered ? sshKeyMode : "paste";
   // Whether the server already has an encrypted pasted key stored. Lets edit mode
@@ -109,6 +145,18 @@ export function ServerForm({
   );
   const [jumpHost, setJumpHost] = useState(server?.sshJumpHost ?? "");
   const [extraArgs, setExtraArgs] = useState(server?.sshArgs ?? "");
+
+  const sourceCredentials = (): MigrationSourceInput => ({
+    name: serverName.trim() || null,
+    sshHost: sshHost.trim(),
+    sshPort: Number(sshPort) || 22,
+    sshUser: sshUser.trim() || "root",
+    sshAuthMethod: sshAuthMethod === "key" ? "key" : "password",
+    ...(sshAuthMethod === "key" ? {
+      sshPrivateKey,
+      ...(sshKeyPassphrase ? { sshKeyPassphrase } : {}),
+    } : { sshPassword }),
+  });
 
   // A key file is only pickable where the API reads it from — this machine, i.e.
   // the desktop shell. On a remote instance the key lives on that host, so the
@@ -211,7 +259,7 @@ export function ServerForm({
         if (sshKeyPassphrase) data.sshKeyPassphrase = sshKeyPassphrase;
       }
 
-      const saved = isEditing
+      const saved = migrationSource ? await dockerMigrationApi.createSource(sourceCredentials()) : isEditing
         ? await systemApi.updateServerEntry(server!.id, data)
         : await systemApi.createServerEntry(data);
 
@@ -280,7 +328,7 @@ export function ServerForm({
       if (jumpHost.trim()) payload.sshJumpHost = jumpHost.trim();
       if (extraArgs.trim()) payload.sshArgs = extraArgs.trim();
 
-      const result = await systemApi.testConnection(payload);
+      const result = migrationSource ? await dockerMigrationApi.testSource(sourceCredentials()) : await systemApi.testConnection(payload);
       setTestResult(result);
       if (result.ok) {
         showToast(t.servers.form.toastConnectionSuccess, "success", t.servers.toastTitles.server);
@@ -300,7 +348,7 @@ export function ServerForm({
 
   // "Save & Continue to Setup" only fits /servers/new, which really does
   // continue to the install step; the modal saves and hands the row back.
-  const defaultSubmit = isEditing
+  const defaultSubmit = migrationSource ? t.migration.sources.connect : isEditing
     ? t.servers.form.saveChanges
     : isModal
       ? t.servers.form.saveServer
@@ -364,10 +412,10 @@ export function ServerForm({
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-foreground text-[15px] truncate">
-              {isModal ? t.servers.form.modalTitle : t.servers.form.sshConnection}
+              {migrationSource ? t.migration.sources.title : isModal ? t.servers.form.modalTitle : t.servers.form.sshConnection}
             </h2>
             <p className="text-xs text-muted-foreground truncate">
-              {isModal ? t.servers.form.modalSubtitle : t.servers.form.sshConnectionDesc}
+              {migrationSource ? t.migration.sources.hint : isModal ? t.servers.form.modalSubtitle : t.servers.form.sshConnectionDesc}
             </p>
           </div>
         </div>
@@ -400,11 +448,11 @@ export function ServerForm({
           </p>
         </div>
 
-        <SshTransportField value={sshTransport} disabled={saving || testing} onChange={(value) => {
+        {!migrationSource && <SshTransportField value={sshTransport} disabled={saving || testing} onChange={(value) => {
           setSshTransport(value);
           if (value === "cloudflare") setJumpHost("");
           setTestResult(null);
-        }} />
+        }} />}
 
         <div className={`grid grid-cols-1 gap-3 ${sshTransport === "direct" ? "sm:grid-cols-[1fr_120px]" : ""}`}>
           <div>
@@ -471,7 +519,7 @@ export function ServerForm({
               <UiIcon name="key" className="size-3.5" />
               {t.servers.form.sshKey}
             </button>
-            <button
+            {!migrationSource && <button
               type="button"
               onClick={() => setSshAuthMethod("agent")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-[13px] font-medium rounded-lg transition-all ${
@@ -482,7 +530,7 @@ export function ServerForm({
             >
               <UiIcon name="network" className="size-3.5" />
               {t.servers.form.agent}
-            </button>
+            </button>}
           </div>
 
           {sshAuthMethod === "password" ? (
@@ -654,7 +702,7 @@ export function ServerForm({
           )}
         </div>
 
-        <button
+        {!migrationSource && <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
           className="text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
@@ -663,9 +711,9 @@ export function ServerForm({
             className={`size-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
           />
           {t.servers.form.advanced}
-        </button>
+        </button>}
 
-        {showAdvanced && (
+        {!migrationSource && showAdvanced && (
           <div className="space-y-[18px]">
             <div className={`grid grid-cols-1 gap-3 ${sshTransport === "direct" ? "sm:grid-cols-2" : ""}`}>
               {sshTransport === "direct" && <div>

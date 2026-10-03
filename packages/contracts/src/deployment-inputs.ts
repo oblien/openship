@@ -166,7 +166,9 @@ export const BuildAccessBody = Type.Object({
       description: "Subset of serviceIds to recreate WITHOUT rebuilding (env-only refresh).",
     }),
   ),
-  cloudResourceTier: Type.Optional(CloudResourceTierEnum()),
+  cloudResourceTier: Type.Optional(CloudResourceTierEnum({
+    description: "Container limits inside the selected managed server. Unlimited uses its available capacity; it does not resize the server.",
+  })),
   cloudResourceCustom: Type.Optional(
     Type.Object(
       { cpuCores: Type.Number(), memoryMb: Type.Number(), diskMb: Type.Number() },

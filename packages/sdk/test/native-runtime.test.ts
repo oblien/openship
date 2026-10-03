@@ -107,7 +107,7 @@ describe("owned native platform on Node", () => {
       expect(Object.keys(scope.notices)).toEqual(["list"]);
       expect((await scope.notices.list()).advisories.map(row => row.id)).toEqual([notice.id]);
       expect((await scope.billing.listPlans({ locale: "ar" })).locale).toBe("ar");
-      await expect(scope.billing.getState()).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+      await expect(scope.billing.getState()).rejects.toMatchObject({ code: "CLOUD_NOT_CONNECTED" });
       await ship.close();
       ship = await createShip(options);
       expect(await ship.operator!.notices.listAll()).toEqual([notice]);
@@ -146,12 +146,15 @@ describe("owned native platform on Node", () => {
       await expect(scope.github.getLocalStatus()).rejects.toMatchObject({ statusCode: 403 });
       const server = await scope.servers.create({ name: "Git target", sshHost: "192.0.2.10", sshUser: "ship" });
       await scope.servers.useGitHubDeployKeys(server.id);
-      await expect(scope.servers.generateGitHubKey(server.id)).rejects.toMatchObject({ code: "HOST_EXECUTION_DISABLED" });
+      const generated = await scope.servers.generateGitHubKey(server.id);
+      expect(generated.publicKey).toMatch(/^ssh-ed25519 /);
+      expect(Object.keys(generated)).toEqual(["publicKey"]);
       await ship.close();
       ship = await createShip(options);
       await ship.start();
       scope = await ship.scope({ identity: "verified", organizationId: alice.personalOrganizationId });
-      expect(await scope.servers.githubStatus(server.id)).toMatchObject({ mode: "ssh-deploy-key", connected: false });
+      expect(await scope.servers.githubStatus(server.id)).toMatchObject({ mode: "ssh-server-key", connected: true });
+      expect(await scope.servers.generateGitHubKey(server.id)).toEqual(generated);
       await scope.servers.disconnectGitHub(server.id);
       expect(await scope.servers.githubStatus(server.id)).toEqual({ mode: null, connected: false, deployKeyCount: 0 });
     } finally { await ship?.close(); await rm(directory, { recursive: true, force: true }); }

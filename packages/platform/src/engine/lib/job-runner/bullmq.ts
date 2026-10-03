@@ -12,13 +12,14 @@
  *
  * The recurring-job callback is in-memory (a Map<jobId, onTick>).
  * BullMQ has the cron schedule + fires at each tick; the worker
- * receives only the jobId and looks up the callback.
+ * receives only the jobId and looks up the callback. Persisted command/system
+ * jobs can also be resolved by a consumer that has not registered them locally.
  */
 
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
 import { env } from "../../config/env";
-import type { JobRunner } from "./types";
+import type { JobRunner, JobRunnerStartOptions } from "./types";
 
 const Q_RUN = "backup-run";
 const Q_RECURRING = "backup-recurring";
@@ -54,7 +55,7 @@ export class BullMQJobRunner implements JobRunner {
     return this.getConnection() as unknown as ConnectionOptions;
   }
 
-  async start(opts: { processRun: (runId: string) => Promise<void> }): Promise<void> {
+  async start(opts: JobRunnerStartOptions): Promise<void> {
     if (this.started) return;
     this.started = true;
 
@@ -99,10 +100,9 @@ export class BullMQJobRunner implements JobRunner {
         const { jobId } = job.data;
         const cb = this.recurringCallbacks.get(jobId);
         if (!cb) {
-          // Stale schedule — onTick was unregistered before the tick.
-          // Removing the BullMQ repeatable would be ideal but the
-          // worker only sees the job; the caller's removeRecurring
-          // handles it on the next sync.
+          // The job may have been created on another API replica. The shared
+          // resolver checks the current row; deleted/disabled schedules no-op.
+          await opts.processRecurring?.(jobId);
           return;
         }
         await cb();

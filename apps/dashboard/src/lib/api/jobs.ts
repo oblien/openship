@@ -89,28 +89,11 @@ export interface BackupScheduleView {
   lastRun: { id: string; status: string; startedAt: string; finishedAt: string | null } | null;
 }
 
-/** Create/update payload — mirrors the API's Create/UpdateJobBody. */
-export interface JobInput {
-  label?: string;
-  serverId?: string;
-  serverIds?: string[];
-  command?: string;
-  scheduleType?: "recurring" | "once" | "manual";
-  cronExpression?: string;
-  runAt?: string;
-  enabled?: boolean;
-  timeoutMs?: number;
-  retry?: JobRetryConfig;
-  env?: Record<string, string>;
-  /** Plaintext secret env vars — full replacement map; encrypted server-side. */
-  secrets?: Record<string, string>;
-  dependsOn?: string[];
-  triggerEvents?: string[];
-  notifyConfig?: JobNotifyConfig | null;
-}
+/** Update payload from the shared job contract. */
+export type JobInput = import("@repo/contracts").UpdateJobInput;
 
 export const jobsApi = {
-  /** List all jobs (self-hosted). */
+  /** List jobs visible to the current organization and server permissions. */
   list: () => api.get<{ data: JobView[] }>(endpoints.jobs.list),
 
   /** One job with next run + recent run history. */
@@ -129,7 +112,7 @@ export const jobsApi = {
     api.get<{ data: BackupScheduleView[] }>(endpoints.jobs.backupSchedules),
 
   /** Create a custom command job. */
-  create: (body: JobInput) => api.post<{ data: JobView }>(endpoints.jobs.list, body),
+  create: (body: import("@repo/contracts").CreateJobInput) => api.post<{ data: JobView }>(endpoints.jobs.list, body),
 
   /** Update a job (cron/enabled for any; full config for custom jobs). */
   update: (key: string, body: JobInput) =>

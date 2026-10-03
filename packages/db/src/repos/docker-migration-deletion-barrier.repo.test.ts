@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -9,9 +9,12 @@ import * as schema from "../schema";
 import { createDockerMigrationRunRepo } from "./docker-migration.repo";
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
+const clients: PGlite[] = [];
+afterEach(async () => { for (const client of clients.splice(0)) await client.close(); });
 
 async function freshContext(deletionInProgress: boolean) {
   const client = new PGlite("memory://");
+  clients.push(client);
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   await client.exec("SET session_replication_role = replica;");

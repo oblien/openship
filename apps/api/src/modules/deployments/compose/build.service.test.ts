@@ -259,10 +259,10 @@ describe("Cloud Docker uses the shared Compose source planner", () => {
 
   it("preserves the uploaded source identity and Compose directory for the shared builder", async () => {
     const { prepareSource, captured } = await runCloud([repoService({ build: "../api" })], {
-      uploadWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "deploy",
+      localPath: "/uploads/upload-a", rootDirectory: "deploy",
     });
-    expect(prepareSource.mock.calls[0]![0]).toMatchObject({ cloudWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "deploy" });
-    expect(captured[0]!.config).toMatchObject({ cloudWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "api", buildContextDirectory: "api" });
+    expect(prepareSource.mock.calls[0]![0]).toMatchObject({ localPath: "/uploads/upload-a", rootDirectory: "deploy" });
+    expect(captured[0]!.config).toMatchObject({ localPath: "/uploads/upload-a", rootDirectory: "api", buildContextDirectory: "api" });
   });
 
   it("can restore inline configuration mounts without rebuilding the retained image", async () => {

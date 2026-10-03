@@ -21,8 +21,8 @@ describe("Oblien-owned namespace capacity", () => {
       effective_resource_limits: cloudNamespaceLimits("pro"),
       allocated_resource_usage: { workspaces: 3, vcpus: 2.5, ram_mb: 4096, disk_gb: 48.5, pending_updates: 1 },
     } });
-    expect(await readCloudCapacity("tenant-a")).toEqual({ workspaces: { used: 3, max: 6 }, vcpus: { used: 2.5, max: 4 },
-      ramMb: { used: 4096, max: 8192 }, diskGb: { used: 48.5, max: 128 } });
+    expect(await readCloudCapacity("tenant-a")).toEqual({ workspaces: { used: 3, max: 1 }, vcpus: { used: 2.5, max: 4 },
+      ramMb: { used: 4096, max: 16384 }, diskGb: { used: 48.5, max: 128 } });
     expect(h.quota).not.toHaveBeenCalled(); expect(h.update).not.toHaveBeenCalled();
   });
   it("does not return another namespace's capacity", async () => {
@@ -49,7 +49,7 @@ describe("Oblien-owned namespace capacity", () => {
     await expect(readCloudCapacityPool("tenant-a")).rejects.toMatchObject({ statusCode: 503, code: "CLOUD_CAPACITY_UNAVAILABLE" });
   });
   it("declares finite retail VM and aggregate caps without reading enterprise owner capacity", async () => {
-    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 });
     await expect(initialCloudNamespaceLimits()).resolves.toEqual({ max_workspaces: 0, max_vcpus: 1, max_ram_mb: 1024, max_disk_gb: 8, max_total_vcpus: 0, max_total_ram_mb: 0, max_total_disk_gb: 0 });
     await syncCloudResourceLimits("tenant-a", "team");
     expect(h.update).toHaveBeenCalledWith("ns-a", { resource_limits: cloudNamespaceLimits("team") });

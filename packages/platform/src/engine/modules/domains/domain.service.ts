@@ -72,7 +72,7 @@ import {
 } from "../../lib/domain-redirect";
 import type { TAddDomainBody } from "@repo/contracts";
 import { certbotLineageDirs, edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
-import type { AdoptedCert, CloudRuntime, ManualCert } from "@repo/adapters";
+import type { AdoptedCert, CloudInfraProvider, ManualCert } from "@repo/adapters";
 // Concrete modules, not the `../dns` barrel: importing a barrel that reaches a
 // routes file mounts the HTTP route table as a side effect of importing a service.
 import {
@@ -205,7 +205,7 @@ export async function addDomain(
   // already owns — never off-site, never at itself, never round a loop.
   const redirect = normalizeRedirect(data);
   if (redirect.redirectTo) {
-    assertRedirectSupported({ isCloudProject: !!project?.cloudWorkspaceId, hostname });
+    assertRedirectSupported({ isCloudProject: !!(project?.workspaceId), hostname });
     const peers = await repos.domain.listByProject(data.projectId).catch(() => []);
     assertRedirectTargets([
       ...peers
@@ -734,7 +734,7 @@ export async function reuseServerCertForDomain(
     const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
     if (domain.verified) return true; // already good — nothing to reuse
     // Cloud domains verify via Oblien (CNAME); reuse is a self-hosted concept.
-    if (platform().target === "cloud" || project.cloudWorkspaceId) return false;
+    if (platform().target === "cloud" || project.workspaceId) return false;
     // Can't reach the host from inside the container → nothing to reuse here; the
     // manual Verify surfaces the actionable host-channel hint.
     if (await edgeHostUnreachable(ctx, project)) {
@@ -1201,7 +1201,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
     });
   } catch (err) {
     console.error(`[DOMAIN] Failed to remove route for ${domain.hostname}:`, err);
-    if (project.cloudWorkspaceId) {
+    if (project.workspaceId) {
       throw new AppError("Could not remove the cloud route. The domain was kept so you can retry.", 502, "CLOUD_ROUTE_REMOVAL_FAILED");
     }
   }
@@ -1241,7 +1241,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   // here would orphan the slug with nothing left to retry against — the one
   // outcome that is unrecoverable for the user. Idempotent upstream (an unknown
   // slug reports removed:false), so a retry after a partial failure is safe.
-  const { failures: edgeFailures } = project.cloudWorkspaceId
+  const { failures: edgeFailures } = project.workspaceId
     ? { failures: [] }
     : await releaseManagedHostnames([domain.hostname], { organizationId: ctx.organizationId });
   if (edgeFailures.length > 0) {
@@ -1637,7 +1637,7 @@ async function getDomainWithAuth(
 async function verifyCname(hostname: string): Promise<boolean> {
   const { runtime } = platform();
   try {
-    const cloud = runtime as CloudRuntime;
+    const cloud = platform().routing as CloudInfraProvider;
     const result = await cloud.verifyDomain(hostname);
     return result.cname;
   } catch {
@@ -1737,7 +1737,7 @@ async function buildRecords(
     }
     let cnameTarget: string | null = null;
     try {
-      const cloud = runtime as CloudRuntime;
+      const cloud = platform().routing as CloudInfraProvider;
       const result = await cloud.verifyDomain(hostname);
       cnameTarget = result.requiredRecords.cname.target;
     } catch {

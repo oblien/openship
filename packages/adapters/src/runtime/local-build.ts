@@ -1,7 +1,7 @@
 /**
  * Shared local build - build on the API host, then hand off output.
  *
- * When buildStrategy="local", both BareRuntime and CloudRuntime need
+ * When buildStrategy="local", connected BareRuntime and DockerRuntime need
  * the same sequence:
  *   1. Create a temporary build directory on the API host
  *   2. Set up a BuildEnvironment backed by a LocalExecutor

@@ -1,20 +1,32 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { once } from "node:events";
 import { posix } from "node:path";
 import type { Runtime } from "oblien";
-import type { CommandExecutor, LogCallback } from "../../types";
+import { AppError, type ManagedCommandRef } from "@repo/core";
+import type { CommandExecutor, LogCallback, ShellOptions, ShellSession } from "../../types";
 import { BuildLogger, sq } from "../build-pipeline";
 import { transferLocalDirectory } from "../transfer";
+import { openCloudShell } from "./shell";
+import { CLOUD_EXEC_FRAMING } from "./exec-framing";
+import { releaseTask, stopCommand, recoverManagedCommand } from "./command-recovery";
+import { currentManagedCommandTracking } from "./command-tracking";
 
 /** Files, builds, and streams execute only inside the bound customer workspace. */
 export class CloudWorkspaceExecutor implements CommandExecutor {
   private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
-  private readonly tasks = new Set<() => void>();
+  private readonly tasks = new Map<() => void, Promise<unknown>>();
+  private readonly shells = new Set<ShellSession>();
   private disposed = false;
 
-  constructor(private readonly runtime: () => Promise<Runtime>) {}
+  constructor(private readonly runtime: () => Promise<Runtime>, private readonly workspaceId?: string) {}
+
+  async recoverCommand(command: ManagedCommandRef) {
+    if (command.workspaceId !== this.workspaceId) throw new Error("Command belongs to another server");
+    await recoverManagedCommand(await this.rt(), command);
+  }
 
   runWithAbortSignal<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
     return this.abortScope.run(signal, fn);
@@ -52,24 +64,35 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     stderr.on("error", () => {});
     let taskId: string | undefined;
     let killed = false;
-    let killSent = false;
+    let stopping: Promise<void> | undefined;
+    const markerName = `openship-exec-${randomUUID()}:`;
+    const tracking = currentManagedCommandTracking();
+    if (tracking && !this.workspaceId) throw new Error("Managed command is missing its server identity");
+    const identity = () => ({ workspaceId: this.workspaceId!, marker: markerName, ...(taskId ? { taskId } : {}) });
+    await tracking?.record(identity());
+    let verifiedExit: number | undefined;
     const cancellation = new AbortController();
     let rejectCancellation!: (reason: Error) => void;
     const cancelled = new Promise<never>((_, reject) => { rejectCancellation = reject; });
-    const stopTask = () => {
-      if (taskId && !killSent) {
-        killSent = true;
-        return runtime.exec.kill(taskId).catch(() => {});
-      }
+    const stopTask = (): Promise<void> => {
+      return stopping ??= (async () => {
+        if (verifiedExit === undefined) {
+          await stopCommand(runtime, markerName, taskId);
+        } else {
+          // A verified exit may still leave a retained provider task slot.
+          if (taskId) await releaseTask(runtime, taskId);
+        }
+        await tracking?.complete(markerName);
+      })();
     };
     const kill = () => {
       killed = true;
-      void stopTask();
       const error = new Error("Cloud command cancelled");
       cancellation.abort(error);
-      rejectCancellation(error);
+      // Keep the caller's operation lock until the provider acknowledges the
+      // stop. An ID arriving after cancellation must be stopped as well.
+      void stopTask().then(() => rejectCancellation(error), rejectCancellation);
     };
-    this.tasks.add(kill);
     const signal = this.abortScope.getStore();
     signal?.addEventListener("abort", kill, { once: true });
     const write = async (target: PassThrough, bytes: Buffer | string) => {
@@ -77,49 +100,50 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
       if (target.destroyed) throw new Error("Cloud command output stream closed");
       if (!target.write(bytes)) await once(target, "drain", { signal: cancellation.signal });
     };
-    const markerName = `openship-exit-${randomUUID()}:`;
     const marker = Buffer.from(`\x1e${markerName}`);
     let pending = Buffer.alloc(0);
-    let verifiedExit: number | undefined;
     const output = async (bytes: Buffer) => {
       pending = Buffer.concat([pending, bytes]);
-      const at = pending.indexOf(marker);
-      if (at >= 0) {
-        if (at) await write(stdout, pending.subarray(0, at));
-        pending = pending.subarray(at);
-        const end = pending.indexOf(0x1f, marker.length);
-        if (end < 0) {
-          if (pending.length > marker.length + 3) throw new Error("Invalid cloud command exit frame");
+      while (pending.length) {
+        if (pending.length < marker.length) return;
+        if (!pending.subarray(0, marker.length).equals(marker))
+          throw new Error("Managed command framing is unavailable. Check Python on the server.");
+        const separator = pending.indexOf(0x1f, marker.length);
+        if (separator < 0) {
+          if (pending.length > marker.length + 8) throw new Error("Invalid cloud command frame");
           return;
         }
-        const value = pending.subarray(marker.length, end).toString("ascii");
-        if (!/^\d{1,3}$/.test(value) || Number(value) > 255 || verifiedExit !== undefined) throw new Error("Invalid cloud command exit frame");
-        verifiedExit = Number(value);
-        pending = pending.subarray(end + 1);
-      }
-      // Retain only a possible split marker. Everything else streams normally,
-      // including arbitrary binary bytes; the marker never reaches consumers.
-      const available = verifiedExit === undefined ? pending.length - marker.length + 1 : pending.length;
-      if (available > 0) {
-        await write(stdout, pending.subarray(0, available));
-        pending = pending.subarray(available);
+        const header = /^([oex]):(\d{1,5})$/.exec(pending.subarray(marker.length, separator).toString("ascii"));
+        if (!header || Number(header[2]) > 32768 || verifiedExit !== undefined)
+          throw new Error("Invalid cloud command frame");
+        const length = Number(header[2]);
+        if (pending.length < separator + 1 + length) return;
+        const payload = pending.subarray(separator + 1, separator + 1 + length);
+        pending = pending.subarray(separator + 1 + length);
+        if (header[1] === "x") {
+          const value = payload.toString("ascii");
+          if (!/^\d{1,3}$/.test(value) || Number(value) > 255) throw new Error("Invalid cloud command exit frame");
+          verifiedExit = Number(value);
+        } else await write(header[1] === "o" ? stdout : stderr, payload);
       }
     };
     const consume = (async () => {
       let code: number | undefined;
       try {
-        // Some Oblien Linux runtimes allocate a PTY even in direct mode. Turn
-        // off its output processing before executing anything: ONLCR otherwise
-        // silently inserts CR bytes into docker save / archive streams.
-        // The PTY-backed runtime can report exit 1 after a successful command.
-        // Carry the shell's real status in a private frame, independently of
-        // the provider's process/PTY close status.
-        const script = `if [ -t 1 ]; then stty -opost -echo <&1 || exit $?; fi\nsh -c ${sq(command)}\nopenship_exec_status=$?\nprintf '\\036${markerName}%s\\037' "$openship_exec_status"\nexit "$openship_exec_status"`;
+        // Disable PTY byte rewriting, then carry separate pipe output and the
+        // actual command status independently of the provider's PTY close code.
+        const script = `if [ -t 1 ]; then stty -opost -echo <&1 || exit $?; fi\nexec python3 -u -c ${sq(CLOUD_EXEC_FRAMING)} ${sq(command)} ${sq(markerName)}`;
         for await (const event of runtime.exec.stream(["sh", "-c", script], {
           execMode: "direct", timeoutSeconds: opts?.timeoutSeconds ?? 3600, keepLogs: false,
         })) {
           if (event.event === "task_id") {
             taskId = event.task_id;
+            if (killed) {
+              await stopTask();
+              await releaseTask(runtime, taskId);
+              throw new Error("Cloud command cancelled");
+            }
+            await tracking?.record(identity());
             if (killed || signal?.aborted) kill();
           } else if (event.event === "stdout" || event.event === "stderr") {
             const bytes = Buffer.from(event.data, "base64");
@@ -133,7 +157,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
           }
         }
         if (code === undefined) throw new Error("Cloud command ended without an exit status");
-        if (pending.length) await write(stdout, pending);
+        if (pending.length) throw new Error("Cloud command ended with an incomplete output frame");
         if (verifiedExit === undefined && code === 0) throw new Error("Cloud command ended without a verified exit status");
         // Streamed tasks retain their result slot even with keepLogs:false.
         // Release this task before the next setup command starts; Supabase's
@@ -142,8 +166,8 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
         return code;
       } catch (error) {
         killed = true;
-        void stopTask();
         cancellation.abort(error);
+        await stopTask();
         throw error;
       }
     })();
@@ -153,6 +177,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
         stdout.end();
         stderr.end();
     });
+    this.tasks.set(kill, onClose);
     if (signal?.aborted) kill();
     // Consumers attach their close listener after this async method returns.
     void onClose.catch(() => {});
@@ -163,11 +188,22 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     opts?.signal?.throwIfAborted();
     const child = await this.rawExec(command);
     let output = "";
-    const collect = (data: Buffer, level: "info" | "error") => {
-      const message = data.toString("utf8");
+    const decoders = { info: new StringDecoder("utf8"), error: new StringDecoder("utf8") };
+    const emit = (message: string, level: "info" | "error", rawData: string) => {
       // Preserve a bounded tail for failures; large builds stream to their log sink.
       output = (output + message).slice(-2 * 1024 * 1024);
-      onLog({ timestamp: new Date().toISOString(), message, level });
+      onLog({ timestamp: new Date().toISOString(), message, level, rawData });
+    };
+    const collect = (data: Buffer, level: "info" | "error") =>
+      emit(decoders[level].write(data), level, data.toString("base64"));
+    let flushed = false;
+    const flush = () => {
+      if (flushed) return;
+      flushed = true;
+      for (const level of ["info", "error"] as const) {
+        const remaining = decoders[level].end();
+        if (remaining) emit(remaining, level, "");
+      }
     };
     child.stdout.on("data", data => collect(data, "info"));
     child.stderr.on("data", data => collect(data, "error"));
@@ -176,8 +212,10 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     try {
       const code = await child.onClose;
       opts?.signal?.throwIfAborted();
+      flush();
       return { code, output };
     } finally {
+      flush();
       opts?.signal?.removeEventListener("abort", child.kill);
     }
   }
@@ -214,8 +252,20 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     const logger = new BuildLogger(onLog);
     await transferLocalDirectory(localPath, { kind: "cloud-runtime", runtime: await this.rt(), path: remotePath }, logger, options);
   }
+  async openShell(options?: ShellOptions): Promise<ShellSession> {
+    const shell = await openCloudShell(await this.rt(), options, this.workspaceId);
+    if (this.disposed) { await shell.close(); throw new Error("Cloud workspace connection is closed"); }
+    this.shells.add(shell);
+    shell.onClose(() => this.shells.delete(shell));
+    return shell;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
-    for (const kill of this.tasks) kill();
+    const shells = [...this.shells];
+    this.shells.clear();
+    const tasks = [...this.tasks.entries()];
+    for (const [kill] of tasks) kill();
+    await Promise.allSettled([...tasks.map(([, completion]) => completion), ...shells.map(shell => shell.close())]);
   }
 }

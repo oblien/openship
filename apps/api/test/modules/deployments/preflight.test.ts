@@ -66,12 +66,13 @@ describe("runPreflightChecks", () => {
     );
   });
 
-  it.each(["services", "single"] as const)("checks Cloud volume support for %s projects before deployment", async mode => {
+  it.each(["services", "single"] as const)("uses shared Docker volume support for %s managed-server projects", async mode => {
     const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
       buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
     { multiService: true, composeServices: [{ name: "db", image: "postgres:17", ports: ["5432"], exposed: false,
       enabled: true, volumes: ["data:/var/lib/postgresql/data"], dependsOn: [] }] as any });
-    expect(result.checks.find(check => check.id === "cloud-storage")).toMatchObject({ status: mode === "services" ? "pass" : "fail" });
+    expect(result.checks.some(check => check.id === "cloud-storage")).toBe(false);
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({ status: "pass" });
   });
 
   it("checks free-domain availability for every public endpoint", async () => {
@@ -205,7 +206,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         buildImage: "ubuntu:22.04",
         installCommand: "",
@@ -229,6 +230,40 @@ describe("runPreflightChecks", () => {
     );
     expect(result.checks.some((check) => check.message?.includes("install command"))).toBe(false);
     expect(result.checks.some((check) => check.message?.includes("start command"))).toBe(false);
+  });
+
+  it.each(["cloud", "server", "local"])("does not require a Docker image for an explicit bare build on %s", async deployTarget => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "python",
+      runtimeMode: "bare", buildImage: "", installCommand: "", buildCommand: "",
+      startCommand: "python3 app.py", port: 8080, hasBuild: false, hasServer: true,
+      deployTarget, organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({ status: "pass" });
+  });
+
+  it("still requires the build image when a static bare release is built in Docker", async () => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "vite",
+      runtimeMode: "bare", buildImage: "", installCommand: "npm ci", buildCommand: "npm run build",
+      startCommand: "", hasBuild: true, hasServer: false, workload: "static", outputDirectory: "dist",
+      serverId: "server-a", deployTarget: "server", organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({
+      status: "fail", message: expect.stringContaining("build image"),
+    });
+  });
+
+  it("still requires a Docker image for a container build", async () => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "python",
+      runtimeMode: "docker", buildImage: "", installCommand: "", buildCommand: "",
+      startCommand: "python3 app.py", port: 8080, hasBuild: false, hasServer: true,
+      deployTarget: "cloud", organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({
+      status: "fail", message: expect.stringContaining("build image"),
+    });
   });
 
   it("accepts a source-less single-app release image and its image-owned command", async () => {
@@ -302,7 +337,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         installCommand: "",
         buildCommand: "",

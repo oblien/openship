@@ -24,7 +24,7 @@ export function AppSettingsTab() {
   const { t } = useI18n();
   const ps = t.projectSettings.appSettings;
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
 
   const s = useAppSettings(id);
   const [showAdvanced, setShowAdvanced] = useState(false);

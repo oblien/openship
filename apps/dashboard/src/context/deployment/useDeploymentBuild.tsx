@@ -230,7 +230,7 @@ export function useDeploymentBuild(
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
 ) {
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(config.workspaceId);
   // `connected` is read, not just `requireCloud`: the catch below has to tell
   // "connecting is the missing step" from "we already think we're connected and the
   // server still said no" — the two cases requireCloud's return value conflates.
@@ -523,7 +523,7 @@ export function useDeploymentBuild(
         handleSuccessMessage(data);
         // A worker runs a container and streams logs like a web app; only a
         // static (edge-served files) deploy has no container to stream (#538).
-        if (workloadOf(config.options) !== "static") {
+        if ((workloadOf(config.options) !== "static" || !!config.workspaceId)) {
           canStreamContainer.current = true;
         }
         buildStream.disconnect();
@@ -786,6 +786,7 @@ export function useDeploymentBuild(
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
         projectId: ensuredProjectId || undefined,
+        serverId: config.deployTarget === "server" || config.deployTarget === "cloud" ? config.serverId : undefined,
         name: config.projectName || config.repo || config.localPath?.split("/").pop() || "project",
         gitOwner: isSourceless ? undefined : config.owner || undefined,
         gitRepo: isSourceless ? undefined : config.repo || undefined,
@@ -920,9 +921,8 @@ export function useDeploymentBuild(
             ? "server"
             : (overrides?.buildStrategy ?? config.buildStrategy),
         deployTarget: config.deployTarget,
-        // Only a server target uses serverId — never let a stale id ride along
-        // with a cloud/local deploy (backend gates it too, but be explicit).
-        serverId: config.deployTarget === "server" ? config.serverId : undefined,
+        // Managed Cloud workspaces and SSH hosts share the execution reference.
+        serverId: config.deployTarget === "server" || config.deployTarget === "cloud" ? config.serverId : undefined,
         // Git-credential forwarding is no longer a per-deploy choice — it's a
         // generic per-operator setting (Settings → GitHub) the API reads directly.
         // Clone location — only meaningful for a server target. Clone-on-server
@@ -949,12 +949,12 @@ export function useDeploymentBuild(
         // so gate on the workload, not the legacy hasServer boolean (a worker
         // shares hasServer=false with a static site).
         cloudResourceTier:
-          config.deployTarget === "cloud" && workloadOf(config.options) !== "static"
+          config.deployTarget === "cloud" && (workloadOf(config.options) !== "static" || !!config.workspaceId)
             ? config.cloudResourceTier
             : undefined,
         cloudResourceCustom:
           config.deployTarget === "cloud" &&
-          workloadOf(config.options) !== "static" &&
+          (workloadOf(config.options) !== "static" || !!config.workspaceId) &&
           config.cloudResourceTier === "custom"
             ? config.cloudResourceCustom
             : undefined,
@@ -1272,6 +1272,7 @@ export function useDeploymentBuild(
             // than the "bare" default.
             runtimeMode: apiConfig.runtimeMode || prev.runtimeMode,
             serverId: apiConfig.serverId ?? prev.serverId,
+            workspaceId: apiConfig.managedWorkspaceId ?? prev.workspaceId,
             serverName: apiConfig.serverName ?? prev.serverName,
             envVars: apiConfig.envVars || prev.envVars,
             projectType: data.projectType || prev.projectType,

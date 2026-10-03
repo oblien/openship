@@ -12,7 +12,7 @@ const project = (overrides: Record<string, unknown> = {}) =>
   ({
     id: "proj_1",
     organizationId: "org_1",
-    cloudWorkspaceId: null,
+    workspaceId: null,
     serverId: "srv_1",
     activeDeploymentId: null,
     ...overrides,
@@ -108,7 +108,7 @@ describe("clearProjectBuildCache", () => {
     const createRuntime = vi.fn();
     await expect(
       clearProjectBuildCache(
-        project({ cloudWorkspaceId: "ws_1", serverId: null }),
+        project({ workspaceId: "ws_1", serverId: null }),
         dependencies({
           resolveProjectTarget: async () => ({ deployTarget: "cloud", serverId: null }),
           createRuntime,

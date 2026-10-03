@@ -62,6 +62,7 @@ interface ServiceDetailPanelProps {
   /** An outstanding runtime read, distinct from a confirmed stopped service. */
   containerChecking?: boolean;
   projectId: string;
+  workspaceId?: string | null;
   projectSlugBase: string;
   /** Tab to open on mount (from the URL: /services/[id]/[tab]). */
   initialTab?: string;
@@ -93,6 +94,7 @@ export function ServiceDetailPanel({
   container,
   containerChecking,
   projectId,
+  workspaceId,
   projectSlugBase,
   initialTab,
   onRefresh,
@@ -108,8 +110,8 @@ export function ServiceDetailPanel({
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
-  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh);
+  const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh, workspaceId);
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -399,9 +401,8 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start provisions this service in its existing runtime layout. Compose
-      // reuses the project Docker workspace, which may need a larger allocation;
-      // native Cloud uses a separate service workspace. No build page is needed.
+      // Start provisions this image service on the project's selected server
+      // through the shared Docker deployer. No source build is needed.
       const res = await servicesApi.start(projectId, service.id);
       if ((res as any)?.success === false) {
         setDeploying(false);

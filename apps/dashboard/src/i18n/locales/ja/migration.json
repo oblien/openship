@@ -1,12 +1,88 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "移行元サーバーで {proxy} を検出しました",
+      "detected": "{proxy} を検出",
       "handoff": "以下の関連付けられたドメインを確認してください。移行時に移行先サーバーのエッジプロキシを設定します。既存のプロキシを置き換える必要がある場合は、確認を求めます。",
       "warnings": "検出時の通知を {count} 件確認"
+    },
+    "steps": {
+      "mapNoRepo": "リポジトリをリンクして、検出されたコンテナをサービスに対応付けます（任意）。",
+      "linkRepoDesc": "今後のビルドと自動デプロイに Git を使用します。",
+      "repoOnSourceHint": "次のステップでリポジトリを連携します。",
+      "mapHint": "コンテナをリポジトリ内のサービスに対応付けます。"
     }
   },
   "entry": {
     "tab": "既存のプロジェクトをインポート"
+  },
+  "sources": {
+    "title": "移行元サーバーを接続",
+    "connect": "移行元を接続",
+    "disconnect": "移行元を切断",
+    "empty": "インポート元のサーバーを接続してください。",
+    "hint": "移行専用です。完了後に接続を削除できます。",
+    "importHint": "アプリとデータを Openship のマネージドサーバーにコピーします。切り替えを確認するまで移行元は保持されます。"
+  },
+  "tab": {
+    "safetyTitle": "移行元のデータは保持されます。",
+    "safetyBody": "データはコピーされます。転送中は選択した移行元コンテナが停止し、データは移行元に残ります。元のコンテナの削除には承認が必要です。"
+  },
+  "run": {
+    "downtimeNote": "データのコピーと移行先の起動中は、選択した移行元コンテナが停止します。停止時間を見込んでください。",
+    "routeHint": "ルートを設定するまでサービスは非公開です。プロジェクトの「ドメイン」タブでドメインを追加または確認してください。"
+  },
+  "cutover": {
+    "warning": "移行先は稼働中です。元のコンテナを削除するか、停止したまま保持できます。移行元のボリュームは保持されます。",
+    "warningRestart": "移行先は稼働中です。「元を保持」は、以前稼働していた移行元コンテナを独立したコピーとして再起動します。「元を削除」はそれらを削除します。移行元のボリュームは保持されます。"
+  },
+  "discover": {
+    "chooseProject": "インポートする項目を選択",
+    "chooseHint": "Composeプロジェクトまたは個別のサービスを選択します。",
+    "topology": "トポロジー",
+    "cards": "カード",
+    "viewLabel": "検出結果の表示",
+    "topologyHint": "線は検出された起動依存関係を示します。",
+    "unavailable": "選択不可",
+    "selected": "選択済み",
+    "selectService": "サービスを選択",
+    "selectNamedService": "{name}を選択",
+    "selectProject": "{name}の全サービスを選択",
+    "clearSelection": "選択を解除",
+    "selectionKeyboard": "Enterキーまたはスペースキーでサービスを選択します。",
+    "expandProject": "{name} のサービス"
+  },
+  "review": {
+    "progress": "インポートの進行状況",
+    "title": "サービスを確認",
+    "hint": "移行前にアクセスとデータを確認します。",
+    "expandAll": "すべて展開",
+    "collapseAll": "すべて折りたたむ",
+    "configureService": "{name}を設定",
+    "internal": "内部のみ",
+    "detected": "検出済み",
+    "finishRoute": "ルート設定を完了",
+    "finishRouteHint": "ドメインとポートを入力するか、内部のみを選択してください。",
+    "routingTitle": "ドメインとルーティング",
+    "scanOptions": "スキャン設定",
+    "destination": "移行先",
+    "summary": "インポートの概要",
+    "publicServices": "公開サービス",
+    "internalServices": "内部サービス",
+    "dataMounts": "データマウント",
+    "destinationNext": "次のステップでサービスの実行先を選択します。",
+    "importDetails": "インポートの詳細",
+    "detectProjects": "プロジェクトを検出",
+    "includeManaged": "管理対象コンテナを含める"
+  },
+  "reimport": {
+    "review": "プロジェクトを復元",
+    "reviewNamed": "{name} を復元",
+    "groupLabel": "Openship プロジェクト",
+    "recoverHint": "設定を復元し、実行中のコンテナを再接続します。",
+    "configuration": "設定",
+    "snapshot": "保存済みスナップショット",
+    "containerMetadata": "コンテナから取得",
+    "checkSettings": "復元後にビルド設定の確認が必要な場合があります。",
+    "chooseHint": "設定と実行中のサービスを復元するプロジェクトを選択します。"
   }
 }

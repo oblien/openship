@@ -49,7 +49,6 @@ r.get(
   "/health",
   {
     tag: "project:list",
-    localOnly: true,
     mcp: {
       description:
         "Latest health-watch snapshot for every expected workload in the organization. Cached only: this read performs no Docker polling. Includes healthy, unhealthy, crash-looping, down and unknown states plus watcher enabled status.",
@@ -64,10 +63,9 @@ r.post(
     tag: "project:list",
     readOnly: true,
     collection: true,
-    localOnly: true,
     mcp: {
       description:
-        "Check the current container state of every deployed workload in the caller's organization. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions. Available on desktop and self-hosted runtimes while Openship is running.",
+        "Check the current container state of every deployed workload in the caller's organization, including managed Cloud servers. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions.",
     },
   },
   ctrl.scanCurrentHealth,

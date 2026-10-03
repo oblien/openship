@@ -1,8 +1,6 @@
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureCommandOutput } from "../src/backup/common/command-stream";
-import { CloudBackupExecutor } from "../src/backup/executors/cloud";
-import type { CloudRuntime } from "../src/runtime/cloud";
 import type { ServiceHandle } from "../src/backup/types";
 import { BareBackupExecutor } from "../src/backup/executors/bare";
 import type { BareRuntime } from "../src/runtime/bare";
@@ -101,92 +99,6 @@ const service: ServiceHandle = {
   namespaceVolumes: false,
 };
 
-function cloud(stream: ReturnType<typeof vi.fn>, kill = vi.fn().mockResolvedValue(undefined)) {
-  const executor = new CloudBackupExecutor({
-    client: { workspace: () => ({ runtime: async () => ({ exec: { stream, kill } }) }) },
-  } as unknown as CloudRuntime);
-  return { executor, kill };
-}
-
-describe("cloud backups use the workspace's shared binary transport", () => {
-  it("forwards the path capture time budget and idle watchdog", async () => {
-    const { executor, kill } = cloud(
-      vi.fn(async function* () {
-        yield { event: "task_id", task_id: "silent-capture" };
-        await new Promise(() => {});
-      }),
-    );
-    const capture = await executor.streamPath(service, "/app", {
-      idleTimeoutMs: 30,
-      timeoutMs: 1_000,
-    });
-    await expect(capture.awaitExit).rejects.toThrow("no data");
-    expect(kill).toHaveBeenCalledExactlyOnceWith("silent-capture");
-  });
-  it("preserves bytes, checks the command exit, and uses the backup time budget", async () => {
-    const bytes = Buffer.from([0, 255, 13, 10, 7]);
-    const stream = vi.fn(async function* (command: string[]) {
-      yield { event: "task_id", task_id: "backup-task" };
-      yield { event: "stdout", data: bytes.toString("base64") };
-      const marker = command.at(-1)!.match(/openship-exit-[a-f0-9-]+:/)![0];
-      yield { event: "stdout", data: Buffer.from(`\x1e${marker}0\x1f`).toString("base64") };
-      expect(kill).not.toHaveBeenCalled();
-      yield { event: "exit", exit_code: 1 };
-      throw new Error("must finish at the command exit");
-    });
-    const { executor, kill } = cloud(stream);
-    const capture = await executor.execStream(service, ["pg_dump", "-Fc"]);
-    expect(await collect(capture.stdout)).toEqual(bytes);
-    expect((await capture.awaitExit).code).toBe(0);
-    expect(stream).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({
-        execMode: "direct",
-        keepLogs: false,
-        timeoutSeconds: 21_600,
-      }),
-    );
-    // The SDK's kill endpoint also releases an already completed task record.
-    expect(kill).toHaveBeenCalledExactlyOnceWith("backup-task");
-  });
-
-  it("rejects an unverified success instead of keeping a truncated dump", async () => {
-    const { executor } = cloud(
-      vi.fn(async function* () {
-        yield { event: "exit", exit_code: 0 };
-      }),
-    );
-    const capture = await executor.execStream(service, ["pg_dump"]);
-    const read = collect(capture.stdout).catch(() => {});
-    await expect(capture.awaitExit).rejects.toThrow(/verified exit status/);
-    await read;
-  });
-
-  it("kills only its own task and closes a blocked event pump when upload fails", async () => {
-    let closed = false;
-    let emitted = 0;
-    const stream = vi.fn(async function* () {
-      try {
-        yield { event: "task_id", task_id: "backup-task" };
-        while (true) {
-          emitted++;
-          yield { event: "stdout", data: Buffer.alloc(1024 * 1024).toString("base64") };
-        }
-      } finally {
-        closed = true;
-      }
-    });
-    const { executor, kill } = cloud(stream);
-    const capture = await executor.execStream(service, ["pg_dump"]);
-    await expect.poll(() => emitted).toBeGreaterThan(1);
-    capture.stdout.destroy();
-    await expect(capture.awaitExit).rejects.toThrow(/closed before capture completed/);
-    await expect.poll(() => closed).toBe(true);
-    expect(kill).toHaveBeenCalledExactlyOnceWith("backup-task");
-    expect(emitted).toBeLessThan(10);
-  });
-});
-
 describe("bare capture and restore keep the source bytes and status", () => {
   it("reports a real tar failure even when the compressor succeeds", async () => {
     const bin = await mkdtemp(join(tmpdir(), "openship-backup-pipeline-"));
@@ -212,7 +124,7 @@ describe("bare capture and restore keep the source bytes and status", () => {
           },
         },
       } as unknown as BareRuntime);
-      const capture = await executor.streamPath(service, join(bin, "missing-source"), {
+      const capture = await executor.streamPath({ ...service, volumes: [join(bin, "missing-source")] }, join(bin, "missing-source"), {
         compression: "zstd",
       });
       await collect(capture.stdout);
@@ -243,7 +155,7 @@ describe("bare capture and restore keep the source bytes and status", () => {
       },
     } as unknown as BareRuntime);
     expect(
-      await executor.receiveStream(service, "/var/data", Readable.from([bytes]), {
+      await executor.receiveStream({ ...service, volumes: ["/var/data"] }, "/var/data", Readable.from([bytes]), {
         compression: "none",
       }),
     ).toEqual({ bytesWritten: bytes.length });

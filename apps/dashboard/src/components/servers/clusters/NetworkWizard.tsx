@@ -667,7 +667,7 @@ export function NetworkWizard({
                           checked={selected}
                           disabled={unavailable}
                           onCheckedChange={() => selectServer(server.id)}
-                          aria-label={server.name || server.sshHost}
+                          aria-label={server.name || server.sshHost || server.id}
                         />
                         <UiIcon name="server" className="size-4 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 text-sm">
@@ -711,7 +711,7 @@ export function NetworkWizard({
                     "",
                   endpoint:
                     managedPeers[member.serverId]?.endpoint ||
-                    servers.find((server) => server.id === member.serverId)?.sshHost,
+                    servers.find((server) => server.id === member.serverId)?.sshHost || undefined,
                   listenPort: managedPeers[member.serverId]?.listenPort ?? 51820,
                 }))}
               />

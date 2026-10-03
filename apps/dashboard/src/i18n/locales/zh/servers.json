@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "安全",
       "ports": "端口转发",
-      "terminal": "终端"
+      "terminal": "终端",
+      "activity": "活动"
     },
     "healthy": "健康",
     "issues": "问题",
@@ -436,12 +437,19 @@
       "sensitiveHint": "不应暴露到互联网",
       "sensitiveReachable": "敏感服务可从互联网访问",
       "reachableLegend": "“可访问”通过从服务器外部连接该端口确认；“被防火墙拦截”表示已绑定但被拦截（例如云防火墙）。",
-      "summaryReachable": "{total} 个监听端口 · {reachable} 个可从互联网访问 · {firewalled} 个被防火墙拦截"
+      "summaryReachable": "{total} 个监听端口 · {reachable} 个可从互联网访问 · {firewalled} 个被防火墙拦截",
+      "managedTitle": "监听端口",
+      "managedSubtitle": "此服务器内监听连接的进程",
+      "managedHint": "这些监听端口位于托管服务器内部。公开访问由网络设置和各项目的域名控制。",
+      "managedSummary": "{total} 个监听端口 · {exposed} 个绑定到网络接口",
+      "managedLoopbackSummary": "{total} 个监听端口 · 仅限 localhost",
+      "managedListener": "网络监听器",
+      "managedInconclusiveHint": "无法读取套接字表。请重试，或在终端中检查服务器连接。"
     }
   },
   "terminal": {
     "title": "终端",
-    "description": "基于 WebSocket 的实时 SSH 会话。最多 3 个并发——选中即复制。"
+    "description": "服务器实时终端。并发会话上限：{count}——选中即复制。"
   },
   "setup": {
     "editServer": "编辑服务器",
@@ -954,5 +962,18 @@
     "hostname": "Access 主机名",
     "help": "使用 Cloudflare Access 主机名和服务器的 SSH 凭据。在运行 OpenShip 的机器上登录 Cloudflare。Windows 桌面应用已包含所需客户端；其他安装环境需要 cloudflared。",
     "openAccess": "打开 Cloudflare Access"
+  },
+  "acquire": {
+    "connected": {
+      "label": "连接自己的服务器",
+      "description": "通过 SSH 使用你已有的服务器。"
+    },
+    "managed": {
+      "label": "获取托管服务器",
+      "description": "Openship Cloud 负责配置、路由和 HTTPS。"
+    },
+    "signInHint": "连接 Cloud 账户，即可使用已有的托管服务器或获取新服务器。",
+    "chooseExisting": "选择已有的 Cloud 服务器",
+    "useServer": "使用此服务器"
   }
 }

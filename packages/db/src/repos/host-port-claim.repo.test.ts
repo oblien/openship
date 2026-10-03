@@ -22,6 +22,8 @@ async function freshDb() {
   const client = new PGlite("memory://");
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  // These fixtures replay migration 0111 against its historical column shape.
+  await client.exec('ALTER TABLE project ADD COLUMN cloud_workspace_id text');
   return { client, db, repo: createHostPortClaimRepo(db) };
 }
 
@@ -348,9 +350,10 @@ describe("host-port claims", () => {
         port: options.port ?? 3_000,
         runtimeMode: options.runtimeMode ?? "docker",
         hasServer: options.hasServer ?? true,
-        cloudWorkspaceId: options.cloudWorkspaceId ?? null,
         activeDeploymentId: options.active === false ? null : deploymentId,
       });
+      if (options.cloudWorkspaceId)
+        await fixture.client.query("UPDATE project SET cloud_workspace_id = $1 WHERE id = $2", [options.cloudWorkspaceId, id]);
       return deploymentId;
     };
 

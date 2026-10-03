@@ -1,159 +1,47 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DomainRoute, Oblien } from "oblien";
-import { CloudInfraProvider } from "./cloud";
+import { beforeEach, describe, expect, it } from "vitest";
+import { managedRoutingFixture } from "../../test/managed-routing-fixture";
+let h: ReturnType<typeof managedRoutingFixture>;
+beforeEach(() => { h = managedRoutingFixture(); });
+const route = { domain: "app.opsh.io", targetUrl: "http://127.0.0.1:3000", tls: true };
 
-const hostname = "app.opsh.io";
-const namespace = "tenant-one";
-const workspaceId = "workspace-one";
-const targetUrl = "http://10.103.0.9:3000";
-let owner: DomainRoute;
-let workspace: Record<string, unknown>;
-let inventory: ReturnType<typeof vi.fn>;
-let getWorkspace: ReturnType<typeof vi.fn>;
-let setRoutes: ReturnType<typeof vi.fn>;
-let listPorts: ReturnType<typeof vi.fn>;
-let revokePort: ReturnType<typeof vi.fn>;
-let provider: CloudInfraProvider;
-
-beforeEach(() => {
-  owner = {
-    id: 1,
-    hostname,
-    slug: "app",
-    domain: "opsh.io",
-    namespace,
-    owner_type: "port",
-    owner_id: workspaceId,
-    route_type: "host",
-    target: targetUrl,
-    is_custom: false,
-    status: "active",
-  };
-  workspace = { id: workspaceId, namespace, ip: "10.103.0.9" };
-  inventory = vi.fn(async () => ({ data: [owner] }));
-  getWorkspace = vi.fn(async () => workspace);
-  setRoutes = vi.fn(async (_hostname: string, input: unknown) => {
-    // The real provider replaces the raw URL with a compiled JSON table.
-    owner = { ...owner, route_type: "routes", target: JSON.stringify(input) };
+describe("project routes on a managed server", () => {
+  it("updates one project-owned Page repeatedly without a new workspace", async () => {
+    await h.infra.registerRoute(route);
+    await h.infra.registerRoute(route);
+    expect(h.pages.create).toHaveBeenCalledOnce();
+    expect(h.routes.set).toHaveBeenCalledTimes(2);
+    expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }] });
+    expect(h.workspace.network.update).toHaveBeenCalledWith({ ingress_ports: [443, 3000] });
   });
-  listPorts = vi.fn(async () => [
-    { port: 3000, hash: "app", domain: "opsh.io", url: `https://${hostname}` },
-  ]);
-  revokePort = vi.fn();
-  const client = {
-    domain: { routes: inventory },
-    routes: { set: setRoutes },
-    workspace: vi.fn(() => ({
-      get: getWorkspace,
-      publicAccess: { list: listPorts, revoke: revokePort },
-    })),
-  } as unknown as Oblien;
-  provider = new CloudInfraProvider(client, { namespace });
-});
-
-describe("Cloud workspace port routes", () => {
-  it.each(["port", "workspace"])(
-    "updates a %s owner using the workspace identity and remains retryable",
-    async (ownerType) => {
-      owner.owner_type = ownerType as DomainRoute["owner_type"];
-      for (let attempt = 0; attempt < 2; attempt++) {
-        await provider.registerRoute({ domain: hostname, targetUrl, tls: true });
-      }
-      expect(setRoutes).toHaveBeenCalledTimes(2);
-      expect(setRoutes).toHaveBeenLastCalledWith(hostname, {
-        routes: [
-          {
-            match: { path: "/", type: "prefix" },
-            action: { kind: "proxy", workspace: workspaceId, port: 3000 },
-          },
-        ],
-      });
-      expect(inventory).toHaveBeenCalledWith({ namespace });
-    },
-  );
-
-  it("uses the owning workspace's current IP after a restart", async () => {
-    workspace.ip = "10.103.0.10";
-    await provider.registerRoute({
-      domain: hostname,
-      targetUrl: "http://10.103.0.10:3000",
-      tls: true,
-    });
-    expect(setRoutes).toHaveBeenCalledOnce();
+  it.each(["namespace", "source_workspace_id", "exported_path"])("refuses a changed %s before mutating the route", async field => {
+    await h.infra.registerRoute(route);
+    h.records.get("app")![field] = "another-owner";
+    h.routes.set.mockClear(); h.pages.enable.mockClear();
+    await expect(h.infra.registerRoute(route)).rejects.toThrow("not owned");
+    expect(h.routes.set).not.toHaveBeenCalled();
+    expect(h.pages.enable).not.toHaveBeenCalled();
   });
-
-  it("does not publish a route listed under a different namespace", async () => {
-    owner.namespace = "tenant-two";
-    await expect(
-      provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-    ).rejects.toThrow();
-    expect(getWorkspace).not.toHaveBeenCalled();
-    expect(setRoutes).not.toHaveBeenCalled();
+  it.each(["http://127.0.0.1:4000", "http://attacker.example:3000", "http://user:secret@127.0.0.1:3000", "ftp://127.0.0.1:3000"])("rejects an unowned upstream %s", async targetUrl => {
+    await expect(h.infra.registerRoute({ ...route, targetUrl })).rejects.toThrow();
+    expect(h.pages.create).not.toHaveBeenCalled();
+    expect(h.routes.set).not.toHaveBeenCalled();
   });
-
-  it.each(["tenant-two", null, undefined])(
-    "rejects a workspace whose namespace changed to %s",
-    async (value) => {
-      workspace.namespace = value;
-      await expect(
-        provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-      ).rejects.toThrow();
-      expect(setRoutes).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([
-    "http://10.103.0.10:3000",
-    "http://127.0.0.1:3000",
-    "http://attacker.example:3000",
-    "http://user:password@10.103.0.9:3000",
-    "ftp://10.103.0.9:3000",
-  ])("rejects an unowned or invalid upstream %s", async (targetUrl) => {
-    await expect(
-      provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-    ).rejects.toThrow();
-    expect(setRoutes).not.toHaveBeenCalled();
+  it("preserves provider failure and remains retryable", async () => {
+    h.routes.set.mockRejectedValueOnce(new Error("edge unavailable"));
+    await expect(h.infra.registerRoute(route)).rejects.toThrow("edge unavailable");
+    await h.infra.registerRoute(route);
+    expect(h.pages.create).toHaveBeenCalledOnce();
   });
-
-  it("does not trust a stale route's IP if the workspace has no current IP", async () => {
-    workspace.ip = null;
-    await expect(
-      provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-    ).rejects.toThrow();
-    expect(setRoutes).not.toHaveBeenCalled();
+  it("validates every composite backend, not only the root", async () => {
+    await h.infra.registerRoute(route);
+    h.routes.set.mockClear();
+    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", workspace: "another-vm", port: 3000 } }] })).rejects.toThrow("does not belong");
+    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 4000 } }] })).rejects.toThrow("unowned");
+    expect(h.routes.set).not.toHaveBeenCalled();
   });
-
-  it("propagates an unavailable workspace instead of falling back to the stored target", async () => {
-    getWorkspace.mockRejectedValue(new Error("provider unavailable"));
-    await expect(
-      provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-    ).rejects.toThrow("provider unavailable");
-    expect(setRoutes).not.toHaveBeenCalled();
-  });
-
-  it.each(["page", "edge_proxy"])(
-    "does not reinterpret a %s owner as a workspace",
-    async (ownerType) => {
-      owner.owner_type = ownerType as DomainRoute["owner_type"];
-      await expect(
-        provider.registerRoute({ domain: hostname, targetUrl, tls: true }),
-      ).rejects.toThrow();
-      expect(setRoutes).not.toHaveBeenCalled();
-    },
-  );
-
-  it("revokes only the port bound to the requested managed hostname", async () => {
-    listPorts.mockResolvedValue([
-      { port: 8080, url: "https://sibling.opsh.io" },
-      { port: 3000, url: `https://${hostname}` },
-    ]);
-    await provider.removeRoute(hostname);
-    expect(revokePort).toHaveBeenCalledExactlyOnceWith(3000);
-  });
-
-  it("does not revoke a port after its hostname binding changed", async () => {
-    listPorts.mockResolvedValue([{ port: 3000, url: "https://replacement.opsh.io" }]);
-    await expect(provider.removeRoute(hostname)).rejects.toThrow();
-    expect(revokePort).not.toHaveBeenCalled();
+  it("keeps unrelated ingress ports when adding an application", async () => {
+    h.workspace.network.get.mockResolvedValue({ ingress_ports: [22, 443, 8080] });
+    await h.infra.registerRoute(route);
+    expect(h.workspace.network.update).toHaveBeenCalledWith({ ingress_ports: [22, 443, 8080, 3000] });
   });
 });

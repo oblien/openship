@@ -1,12 +1,88 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "Auf dem Quellserver erkannt: {proxy}",
+      "detected": "{proxy} erkannt",
       "handoff": "Prüfe die zugeordneten Domains unten. Bei der Migration wird der Edge-Proxy des Zielservers eingerichtet. Falls ein vorhandener Proxy ersetzt werden muss, wirst du um Bestätigung gebeten.",
       "warnings": "{count} Hinweise zur Erkennung prüfen"
+    },
+    "steps": {
+      "mapNoRepo": "Verknüpfe optional ein Repository, um erkannte Container seinen Diensten zuzuordnen.",
+      "linkRepoDesc": "Git für spätere Builds und automatische Deployments verwenden.",
+      "repoOnSourceHint": "Verknüpfe im nächsten Schritt ein Repository.",
+      "mapHint": "Ordne Container ihren Diensten im Repository zu."
     }
   },
   "entry": {
     "tab": "Bestehendes Projekt importieren"
+  },
+  "sources": {
+    "title": "Migrationsquelle verbinden",
+    "connect": "Quelle verbinden",
+    "disconnect": "Quelle trennen",
+    "empty": "Verbinde den Server, von dem du importieren möchtest.",
+    "hint": "Nur für Migrationen. Entferne die Verbindung, wenn du fertig bist.",
+    "importHint": "Kopiere Apps und Daten auf einen verwalteten Openship-Server. Die Quelle bleibt bis zur bestätigten Umstellung erhalten."
+  },
+  "tab": {
+    "safetyTitle": "Die Quelldaten bleiben erhalten.",
+    "safetyBody": "Daten werden kopiert. Die ausgewählten Quellcontainer werden während der Übertragung gestoppt; ihre Daten bleiben auf der Quelle. Das Entfernen der Originalcontainer erfordert deine Zustimmung."
+  },
+  "run": {
+    "downtimeNote": "Die ausgewählten Quellcontainer werden während der Datenübertragung und des Starts am Ziel gestoppt. Plane Ausfallzeit ein.",
+    "routeHint": "Deine Dienste bleiben privat, bis Routen eingerichtet sind. Füge ihre Domains im Tab Domains des Projekts hinzu oder prüfe sie dort."
+  },
+  "cutover": {
+    "warning": "Das Ziel ist live. Du kannst die Originalcontainer entfernen oder gestoppt behalten. Die Quellvolumes bleiben erhalten.",
+    "warningRestart": "Das Ziel ist live. Originale behalten startet zuvor laufende Quellcontainer als unabhängige Kopien neu. Originale entfernen löscht diese Container. Die Quellvolumes bleiben erhalten."
+  },
+  "discover": {
+    "chooseProject": "Import auswählen",
+    "chooseHint": "Wähle ein Compose-Projekt oder einzelne Dienste.",
+    "topology": "Topologie",
+    "cards": "Karten",
+    "viewLabel": "Ergebnisansicht",
+    "topologyHint": "Linien zeigen erkannte Startabhängigkeiten.",
+    "unavailable": "Nicht verfügbar",
+    "selected": "Ausgewählt",
+    "selectService": "Dienst auswählen",
+    "selectNamedService": "{name} auswählen",
+    "selectProject": "Alle Dienste in {name} auswählen",
+    "clearSelection": "Auswahl aufheben",
+    "selectionKeyboard": "Drücke Eingabe oder die Leertaste, um einen Dienst auszuwählen.",
+    "expandProject": "Dienste in {name}"
+  },
+  "review": {
+    "progress": "Importfortschritt",
+    "title": "Dienste prüfen",
+    "hint": "Prüfe Zugriff und Daten vor der Migration.",
+    "expandAll": "Alle aufklappen",
+    "collapseAll": "Alle zuklappen",
+    "configureService": "{name} konfigurieren",
+    "internal": "Nur intern",
+    "detected": "Erkannt",
+    "finishRoute": "Route vervollständigen",
+    "finishRouteHint": "Vervollständige Domain und Port oder wähle Nur intern.",
+    "routingTitle": "Domains & Routing",
+    "scanOptions": "Scan-Optionen",
+    "destination": "Ziel",
+    "summary": "Importübersicht",
+    "publicServices": "Öffentliche Dienste",
+    "internalServices": "Interne Dienste",
+    "dataMounts": "Daten-Mounts",
+    "destinationNext": "Wähle als Nächstes, wo diese Dienste laufen sollen.",
+    "importDetails": "Importdetails",
+    "detectProjects": "Projekte erkennen",
+    "includeManaged": "Verwaltete Container einbeziehen"
+  },
+  "reimport": {
+    "review": "Projekt wiederherstellen",
+    "reviewNamed": "{name} wiederherstellen",
+    "groupLabel": "Openship-Projekt",
+    "recoverHint": "Einstellungen wiederherstellen und laufende Container erneut zuordnen.",
+    "configuration": "Konfiguration",
+    "snapshot": "Gespeicherter Snapshot",
+    "containerMetadata": "Aus Containern",
+    "checkSettings": "Build-Einstellungen müssen nach der Wiederherstellung eventuell geprüft werden.",
+    "chooseHint": "Wähle ein Projekt, um seine Einstellungen und laufenden Dienste wiederherzustellen."
   }
 }

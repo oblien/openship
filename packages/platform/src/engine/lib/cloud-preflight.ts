@@ -1,9 +1,10 @@
-import { createPlatform, type CloudRuntime } from "@repo/adapters";
+import { createPlatform, type CloudInfraProvider } from "@repo/adapters";
 import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
 import { env } from "../config/env";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { safeErrorMessage } from "@repo/core";
+import type { CloudWorkspaceScope } from "./cloud-workspace-scope";
 
 /** Normalize a slug the SAME way `syncCloudEdgeProxy` does, so an ownership
  *  look-up matches the value Oblien actually stored. */
@@ -19,11 +20,11 @@ function normalizeSlug(raw: string): string {
  * Check all route types, including Pages and workspace public access. The
  * registry requires admin scope, so filter by the trusted namespace twice.
  */
-async function ownsManagedSlug(organizationId: string, rawSlug: string): Promise<boolean> {
+async function ownsManagedSlug(organizationId: string, rawSlug: string, workspaceId?: CloudWorkspaceScope): Promise<boolean> {
   try {
     const slug = normalizeSlug(rawSlug);
     if (!slug) return false;
-    const namespace = await ensureNamespace(organizationId);
+    const namespace = await ensureNamespace(organizationId, workspaceId);
     const { data } = await getOblienClient().domain.routes({ namespace });
     const hostname = `${slug}.${getRoutingBaseDomain()}`;
     return data.some((route) => route.namespace === namespace && route.hostname.toLowerCase() === hostname);
@@ -82,21 +83,21 @@ export interface CloudPreflightData {
  */
 export async function runCloudPreflight(
   organizationId: string,
-  opts: { slug?: string; customDomain?: string },
+  opts: { slug?: string; customDomain?: string; workspaceId?: CloudWorkspaceScope },
 ): Promise<CloudPreflightData> {
   const baseDomain = getRoutingBaseDomain();
 
   // ── Namespace-scoped checks: quota + custom domain DNS ──
-  let cloud: CloudRuntime | null = null;
+  let cloud: CloudInfraProvider | null = null;
   let runtimeError: string | null = null;
   try {
-    const token = await issueNamespaceToken(organizationId);
-    await assertCloudCanSpend(organizationId);
+    const token = await issueNamespaceToken(organizationId, opts.workspaceId);
+    await assertCloudCanSpend(organizationId, opts.workspaceId);
     const cloudPlatform = await createPlatform({
       target: "cloud", cloudToken: token.token, cloudNamespace: token.namespace,
       cloudApiUrl: env.OBLIEN_API_URL,
     });
-    cloud = cloudPlatform.runtime as CloudRuntime;
+    cloud = cloudPlatform.routing as CloudInfraProvider;
   } catch (err) {
     runtimeError = safeErrorMessage(err);
   }
@@ -116,7 +117,7 @@ export async function runCloudPreflight(
       // this org ALREADY owns reads as "taken". Before failing, confirm it isn't
       // ours — a redeploy / re-add of your own slug must NOT be blocked.
       result.slug =
-        slug.available || (await ownsManagedSlug(organizationId, opts.slug))
+        slug.available || (await ownsManagedSlug(organizationId, opts.slug, opts.workspaceId))
           ? { available: true }
           : {
               available: false,

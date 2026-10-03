@@ -1,17 +1,70 @@
 ---
 title: Servers
-description: Add your own servers over SSH, let Openship install what a deployment needs, and manage each server's health, rate limiting, port forwarding, and a live terminal.
+description: Manage your deployment servers, with automatic setup on Openship Cloud and SSH connections for your own machines.
 ---
 
-The **Servers** section is where you connect the machines Openship deploys to. You give Openship SSH access to a
-box you already own — a VPS, a bare-metal server, a VM — and it installs and checks everything a deployment
-needs (Docker, OpenResty, Git). Once a server is connected, you can pick it as a deploy target from the
-[deploy flow](/docs/guides/deploy-from-github) and manage it from its own detail screen.
+The **Servers** section shows where your projects run. On **Openship Cloud**, choose a plan and deploy:
+Openship prepares a managed server automatically. You can open Servers later to inspect usage or change
+supported settings. On **self-hosted Openship**, connect a machine you own over SSH and Openship installs
+and checks the software your deployments need.
 
 <Callout title="Where this lives">
 The list is at **`/servers`**, adding a server is **`/servers/new`**, and each server's detail screen is
-**`/servers/<serverId>`**. For the conceptual walkthrough, see [Deploy to your own server](/docs/guides/custom-servers).
+**`/servers/<serverId>`**. Every project uses the same server destination, whether Openship manages the
+host or you connect it yourself.
 </Callout>
+
+## Managed servers on Openship Cloud
+
+Your first subscription prepares a **Production** server. Repository deployments, uploaded source, and
+catalog apps automatically use that server when it is the only compatible destination. You do not need
+SSH credentials or a separate setup step. **Add Server** creates an additional, separately billed target.
+
+The list shows each server's state, placement, and project count. Open one for:
+
+- **Overview** — measured CPU, memory, and disk use, purchased capacity, and the projects sharing it.
+  Project storage represents measured application data; shared images, cache, and system files are counted
+  once. Reserved disk capacity is shown separately from used storage.
+- **Activity** — the latest server operation, its status and logs. Queued work shows its next retry;
+  failed work offers **Try again**. Completed logs stay here without covering the other tabs.
+- **Components** — inspect Docker and Git health and run a fresh check. Software on managed servers
+  is maintained by the platform; the page does not offer host package installation or removal.
+- **Security** — scan listening ports through the server's existing execution connection. A listener
+  inside the server does not establish public reachability; provider networking and project routes
+  control external access.
+- **Networking** — inspect provider ingress ports and control outbound internet access when supported.
+  Applying a change explains that it affects every project on this server. Domains and HTTPS stay in each
+  project's **Domains & routing** tab; Oblien manages the edge proxy and certificates.
+- **Terminal** — an interactive shell on a running managed server. The provider supports one server shell
+  at a time; an existing session is preserved if another connection is attempted.
+
+Only supported tabs appear. These are the shared server overview, health, listener and terminal
+components, with provider networking and the plan card for managed servers. SSH setup, host component
+installation, and OpenResty maintenance belong to connected servers.
+
+### Plan changes and recovery
+
+**Billing** opens this server's subscription, usage, top-ups, and invoices. Projects on a shared Docker
+server use its existing capacity; creating a project does not reserve another VM or disk.
+
+**Resume server** checks the current entitlement before starting a stopped host. **Apply plan capacity**
+previews the purchased size and all projects that may restart. Disk shrinking is unavailable. Operations
+show their progress and logs in **Activity**; action confirmations remain visible on the current tab.
+Refreshing or reopening the page observes the same operation without starting another one.
+
+Renaming a server preserves its placement and subscription. Deleting a project preserves the shared
+server and its other projects. Deleting the server requires no remaining projects and an ended
+subscription, followed by explicit confirmation.
+
+See the [managed Cloud server guide](/docs/guides/cloud-workspaces) for lifecycle details and the
+[Servers API and SDK](/docs/api/servers) for automation.
+
+## Connected servers on self-hosted Openship
+
+The remaining setup and infrastructure controls apply to machines you connect yourself. Give Openship
+SSH access to a VPS, bare-metal server, or VM, then select it in the
+[deploy flow](/docs/guides/deploy-from-github). See [Deploy to your own server](/docs/guides/custom-servers)
+for a walkthrough.
 
 ## The Servers list
 
@@ -190,8 +243,10 @@ your own machine.
 
 ### Terminal tab
 
-A live SSH shell to the server, right in the browser, running over WebSocket. You can open **up to 3
-concurrent** shells in tabs, and text is copied on select. The shell only stays open while this tab is active.
+A live shell to the server, right in the browser. The header shows the configured session limit
+(3 by default for connected servers; 1 for managed Cloud Docker servers). Text is copied on select.
+Leaving the tab disconnects the browser and briefly parks the shell for reconnection; closing a shell
+explicitly terminates it.
 
 ## Editing and removing a server
 

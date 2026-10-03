@@ -185,7 +185,7 @@ function baseProject(overrides: Record<string, unknown> = {}) {
     hasBuild: true,
     resources: null,
     buildResources: null,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     runtimeMode: "docker",
     defaultRollbackStrategy: "git",
     ...overrides,
@@ -491,7 +491,7 @@ describe("resolveSnapshotTarget", () => {
       id: "project-1",
       organizationId: "org-1",
       activeDeploymentId: null,
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: null,
       runtimeMode: null,
       ...overrides,
@@ -518,10 +518,10 @@ describe("resolveSnapshotTarget", () => {
     expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_1" });
   });
 
-  it("lets cloud win over a stray serverId and drops the serverId", async () => {
-    const t = await resolveSnapshotTarget(project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }));
+  it("keeps the managed server identity on a Cloud target", async () => {
+    const t = await resolveSnapshotTarget(project({ workspaceId: "ws_1", serverId: "srv_1" }));
     expect(t.deployTarget).toBe("cloud");
-    expect(t.serverId).toBeUndefined();
+    expect(t.serverId).toBe("srv_1");
   });
 
   it("lets an explicit override win over the durable binding", async () => {
@@ -1775,7 +1775,7 @@ describe("triggerDeployment", () => {
       baseProject({
         framework: "nextjs",
         activeDeploymentId: "dep-live",
-        cloudWorkspaceId: "ws-live",
+        workspaceId: "ws-live",
       }),
     );
     repos.deployment.findById.mockResolvedValue({

@@ -83,7 +83,8 @@
       "account": "账户"
     },
     "apps": "应用",
-    "jobs": "任务"
+    "jobs": "任务",
+    "workspaces": "工作区"
   },
   "sidebar": {
     "expand": "展开侧边栏",

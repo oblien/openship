@@ -13,6 +13,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import React, { useCallback } from "react";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/components/i18n-provider";
 import type { RoutingConfig } from "@repo/core";
 import type { EdgeConfigReport } from "@/lib/api/projects";
@@ -53,9 +54,6 @@ function compact(cfg: RoutingConfig): RoutingConfig | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-const inputCls =
-  "w-full px-2.5 py-1.5 bg-muted/30 border border-border/50 rounded-lg text-sm text-foreground font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20";
-
 const RowShell: React.FC<{ onRemove: () => void; children: React.ReactNode; disabled?: boolean }> = ({
   onRemove,
   children,
@@ -88,8 +86,8 @@ const SectionHeader: React.FC<{ title: string; hint: string; onAdd: () => void; 
   return (
     <div className="flex items-center justify-between">
       <div>
-        <h4 className="text-[13px] font-semibold text-foreground">{title}</h4>
-        <p className="text-[11px] text-muted-foreground">{hint}</p>
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       <button
         type="button"
@@ -158,8 +156,10 @@ export const RoutingConfigEditor: React.FC<{
             disabled={disabled}
             onRemove={() => patch({ rewrites: rewrites.filter((_, j) => j !== i) })}
           >
-            <input
-              className={inputCls}
+            <Input
+              dir="ltr"
+              variant="filled"
+              className="min-w-0 font-mono"
               placeholder="/api/(.*)"
               value={rw.source}
               disabled={disabled}
@@ -168,8 +168,10 @@ export const RoutingConfigEditor: React.FC<{
               }
             />
             <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
-            <input
-              className={inputCls}
+            <Input
+              dir="ltr"
+              variant="filled"
+              className="min-w-0 font-mono"
               placeholder="/index.html or https://backend"
               value={rw.destination}
               disabled={disabled}
@@ -197,8 +199,10 @@ export const RoutingConfigEditor: React.FC<{
             disabled={disabled}
             onRemove={() => patch({ redirects: redirects.filter((_, j) => j !== i) })}
           >
-            <input
-              className={inputCls}
+            <Input
+              dir="ltr"
+              variant="filled"
+              className="min-w-0 font-mono"
               placeholder="/old"
               value={rd.source}
               disabled={disabled}
@@ -207,8 +211,10 @@ export const RoutingConfigEditor: React.FC<{
               }
             />
             <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
-            <input
-              className={inputCls}
+            <Input
+              dir="ltr"
+              variant="filled"
+              className="min-w-0 font-mono"
               placeholder="/new"
               value={rd.destination}
               disabled={disabled}
@@ -218,7 +224,7 @@ export const RoutingConfigEditor: React.FC<{
                 })
               }
             />
-            <label className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
+            <label className="flex items-center gap-1 text-xs text-muted-foreground shrink-0 whitespace-nowrap">
               <input
                 type="checkbox"
                 // `permanent` defaults to TRUE, as vercel.json documents and the compiler
@@ -248,13 +254,15 @@ export const RoutingConfigEditor: React.FC<{
           onAdd={() => patch({ headers: [...headers, { source: "/(.*)", headers: [{ key: "", value: "" }] }] })}
         />
         {headers.map((hr, i) => (
-          <div key={i} className="rounded-lg border border-border/50 p-2.5 space-y-2">
+          <div key={i} className="rounded-xl bg-card p-4 space-y-3">
             <RowShell
               disabled={disabled}
               onRemove={() => patch({ headers: headers.filter((_, j) => j !== i) })}
             >
-              <input
-                className={inputCls}
+              <Input
+                dir="ltr"
+                variant="filled"
+                className="min-w-0 font-mono"
                 placeholder="/(.*)"
                 value={hr.source}
                 disabled={disabled}
@@ -266,8 +274,10 @@ export const RoutingConfigEditor: React.FC<{
             <div className="ps-2 space-y-1.5">
               {hr.headers.map((h, k) => (
                 <div key={k} className="flex items-center gap-2">
-                  <input
-                    className={inputCls}
+                  <Input
+                    dir="ltr"
+                    variant="filled"
+                    className="min-w-0 font-mono"
                     placeholder="X-Frame-Options"
                     value={h.key}
                     disabled={disabled}
@@ -281,8 +291,10 @@ export const RoutingConfigEditor: React.FC<{
                       })
                     }
                   />
-                  <input
-                    className={inputCls}
+                  <Input
+                    dir="ltr"
+                    variant="filled"
+                    className="min-w-0 font-mono"
                     placeholder="DENY"
                     value={h.value}
                     disabled={disabled}
@@ -323,7 +335,7 @@ export const RoutingConfigEditor: React.FC<{
                     ),
                   })
                 }
-                className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-40"
+                className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-40"
               >
                 <UiIcon name="plus" className="size-3" /> {w.addHeader}
               </button>

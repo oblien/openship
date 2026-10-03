@@ -53,8 +53,8 @@ export interface DumpOptions {
    * `servers` and `mail_servers` are declared instance-scope only, so they never
    * travel in an organization or project dump — but their CHILDREN do, carrying a
    * dangling reference. On a receiver where those tables are permanently empty (the
-   * SaaS never registers a server row) the FKs are not DEFERRABLE, so the insert
-   * takes a raw FK violation and promote-to-cloud / migrate-to-cloud fails outright.
+   * destination has its own server ownership) the FKs cannot be reused. A
+   * project selects a destination server after the configuration is imported.
    *
    * Scrubbing rather than rejecting, because a local project legitimately HAS a
    * serverId — it just means nothing on the destination. Once scrubbed, any non-null
@@ -76,7 +76,7 @@ export interface DumpOptions {
  * two cannot drift.
  */
 export const INSTANCE_SCOPED_REFS: Record<string, readonly string[]> = {
-  project: ["serverId", "clusterId"],
+  project: ["serverId", "clusterId", "workspaceId"],
   backup_destination: ["serverId"],
   backup_policy: ["mailServerId"],
   backup_run: ["mailServerId"],
@@ -402,6 +402,12 @@ const TABLES: ReadonlyArray<TableSpec> = [
     hasOrganizationId: true,
   },
   {
+    sqlName: "cloud_workspace",
+    table: schema.cloudWorkspace,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
+  {
     sqlName: "env_var",
     table: schema.envVar,
     scopes: [
@@ -414,11 +420,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
   {
     sqlName: "cloud_docker_workspace",
     table: schema.cloudDockerWorkspace,
-    scopes: [
-      { in: "instance", via: "all-rows" },
-      { in: "organization", via: "fk", column: "projectId" },
-      { in: "project", via: "fk", column: "projectId" },
-    ],
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
   {
@@ -756,6 +758,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  cloud_server_deletion: "Provider deletion receipts belong to the installation that confirmed cleanup",
   cloud_support_ticket: "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
   cloud_analytics_event: "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
@@ -1170,10 +1173,8 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
 /**
  * Null every instance-scope FK reference across a dump's tables, in-place.
  *
- * Every column in INSTANCE_SCOPED_REFS is nullable in the schema (all five are
- * declared `.references(..., { onDelete: "set null" })`), so nulling is exactly what
- * the schema already says happens when the parent goes away — which, from the
- * destination instance's point of view, it has.
+ * Instance execution targets cannot be adopted by importing a project. These
+ * nullable references must be selected again on the destination instance.
  *
  * Exported for testing and so a caller assembling a dump by other means can apply
  * the same rule.
@@ -1187,6 +1188,51 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
         if (row[col] != null) row[col] = null;
       }
     }
+  }
+  // Execution ownership never moves with a configuration export, for connected
+  // or managed servers. Keep environment/build snapshots, but discard runtime
+  // handles and source paths that are meaningful only on the original instance.
+  for (const row of tables.project ?? []) {
+    row.activeDeploymentId = null;
+    row.hostPort = null;
+    row.localPath = null;
+  }
+  for (const row of tables.deployment ?? []) {
+    const meta = row.meta as Record<string, unknown> | null;
+    const next = { ...meta };
+    for (const key of [
+      "managedWorkspaceId",
+      "managedServer",
+      "serverId",
+      "deployTarget",
+      "clusterId",
+      "localPath",
+      "uploadSessionId",
+      "hostPort",
+      "hostPortByContainerPort",
+      "staticRoot",
+      "handoverImages",
+      "handoverAppImage",
+      "handoverStaticDir",
+      "adopt",
+    ])
+      delete next[key];
+    row.meta = next;
+    row.containerId = null;
+    row.imageRef = null;
+    row.artifactRetainedAt = null;
+    row.pinned = false;
+  }
+  for (const row of tables.service_deployment ?? []) {
+    for (const field of [
+      "containerId",
+      "imageRef",
+      "allocatedResources",
+      "hostPort",
+      "hostPorts",
+      "ip",
+    ])
+      row[field] = null;
   }
 }
 
@@ -1438,10 +1484,6 @@ export async function restoreSubgraphInTransaction(
   // Remap path (cloud ingest / project transfer) is the only place an untrusted
   // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
   if (opts.remapOrgId) assertDumpSelfContained(dump);
-  if (opts.remapOrgId && (dump.tables.cloud_docker_workspace?.length ?? 0) > 0 &&
-      dump.tables.project?.some(row => row.organizationId !== opts.remapOrgId)) {
-    throw new Error("Cloud Docker workspaces are bound to their billing organization. Migrate the volume data to a new workspace before transferring ownership.");
-  }
 
   // Kept for the day the schema declares its FKs DEFERRABLE — but DO NOT rely on
   // it. Postgres applies this only to constraints declared DEFERRABLE, and none of

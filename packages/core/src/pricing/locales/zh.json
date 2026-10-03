@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "连接 Cloud 后可获得 {freeSubdomains} 个免费 {freeDomainSuffix} 子域名",
     "usageCredits": "每月 {credits} 使用积分",
     "namespaceCapacity": "总计：{namespaceCpu} vCPU、{namespaceRamGb} GB 内存、{namespaceDiskGb} GB 磁盘",
-    "finiteUsage": "持续运行可能需要额外充值。",
-    "oneRunningService": "可运行 1 个应用、数据库或工作进程"
+    "finiteUsage": "持续运行可能需要额外充值。"
   },
   "selfHosted": {
     "name": "自托管",

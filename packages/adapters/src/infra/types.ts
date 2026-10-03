@@ -26,6 +26,9 @@ export interface RoutingProvider {
    * removal must not recreate it after the caller has abandoned the attempt. */
   removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void>;
 
+  /** Pause a file-served site while retaining its hostname and certificate. */
+  suspendRoute?(domain: string): Promise<void>;
+
   /**
    * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches
    * a box that isn't redeploying. Converged boxes do nothing; see

@@ -119,7 +119,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
   const activeKey = projectFilterKey(active);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
+    <div className="bg-card rounded-2xl">
       <div className="px-5 py-4 border-b border-border/50">
         <h2 className="font-semibold text-foreground text-[15px]">{t.projects.filters.title}</h2>
         <p className="text-xs text-muted-foreground">{t.projects.filters.subtitle}</p>
@@ -132,6 +132,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
               key={opt.key}
               type="button"
               onClick={() => onChange(opt.filter)}
+              aria-pressed={isActive}
               className={
                 "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors " +
                 (isActive

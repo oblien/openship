@@ -615,7 +615,7 @@
   },
   "resources": {
     "title": "机器性能",
-    "description": "此项目容器的 CPU 与内存上限。",
+    "description": "项目共享此服务器。仅在需要时设置 CPU 或内存限制。",
     "loading": "正在读取目标机器…",
     "unavailable": "机器性能不可用",
     "loadFailed": "无法加载机器性能",
@@ -625,9 +625,9 @@
     "appliesOnNextDeploy": "上限在容器重建时生效——请重新部署以应用更改。",
     "tiers": {
       "unlimited": {
-        "name": "无上限",
-        "description": "使用整台机器（默认）",
-        "spec": "机器容量"
+        "name": "全部容量",
+        "description": "使用服务器可用的 CPU 和内存（默认）",
+        "spec": "与其他项目共享"
       },
       "micro": {
         "name": "Micro",
@@ -669,6 +669,10 @@
       "updated": "机器性能已更新",
       "updateFailed": "更新机器性能失败",
       "invalidValues": "CPU 与内存必须为 0 或正数"
+    },
+    "customized": {
+      "name": "自定义",
+      "description": "选择预设或设置资源上限"
     }
   },
   "sleep": {

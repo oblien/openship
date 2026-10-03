@@ -36,13 +36,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it.each(["grid", "list"])("keeps custom apps, catalog apps, updates and draft links in the %s view", async (view) => {
+it.each(["grid", "list"])("keeps catalog apps out of the project %s view", async (view) => {
   localStorage.setItem("openship-projects-view", view);
   await act(async () => root.render(<I18nProvider><ModalProvider><ProjectsPage /></ModalProvider></I18nProvider>));
   expect(container.textContent).toContain("Custom website");
-  expect(container.textContent).toContain("Catalog automation");
-  expect(container.textContent).toContain("Draft catalog app");
-  expect(container.textContent).toContain(baseDictionary.projects.card.updateAvailable);
-  expect(container.querySelector('a[href="/apps/new/convex?projectId=draft"]')).not.toBeNull();
-  expect(container.querySelector('a[href="/projects/catalog"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("Catalog automation");
+  expect(container.textContent).not.toContain("Draft catalog app");
+  expect(container.querySelector('a[href="/projects/custom"]')).not.toBeNull();
+  expect(container.querySelector('a[href="/projects/catalog"]')).toBeNull();
 });

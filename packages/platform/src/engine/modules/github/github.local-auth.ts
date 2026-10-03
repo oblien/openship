@@ -27,7 +27,7 @@
  * and bailing on null.
  */
 
-import { execFile } from "child_process";
+import { probeLocalGitHubToken } from "@repo/adapters";
 import { readFile } from "fs/promises";
 import { homedir } from "os";
 import { join, win32 } from "path";
@@ -348,27 +348,6 @@ const GH_FALLBACK_PATHS = [
   "/snap/bin/gh", // Snap-installed gh on Linux
 ];
 
-/** One-shot exec attempt — resolves to the trimmed stdout on success,
- *  or an error object the caller can log. Used to walk fallback paths
- *  without burying the actual ENOENT/EPERM under a silent null. */
-function tryGhExec(
-  bin: string,
-): Promise<{ token: string } | { error: NodeJS.ErrnoException; stderr?: string }> {
-  return new Promise((resolve) => {
-    execFile(bin, ["auth", "token"], { timeout: 10_000 }, (err, stdout, stderr) => {
-      if (err) return resolve({ error: err as NodeJS.ErrnoException, stderr: stderr?.toString() });
-      const t = stdout.trim();
-      if (!t) {
-        return resolve({
-          error: Object.assign(new Error("gh auth token returned empty"), { code: "EMPTY" }),
-          stderr: stderr?.toString(),
-        });
-      }
-      resolve({ token: t });
-    });
-  });
-}
-
 /**
  * Try `gh auth token`. First attempt uses PATH lookup (`execFile("gh", …)`);
  * on ENOENT we walk a small list of known-install locations so the API
@@ -383,7 +362,7 @@ async function ghAuthTokenViaCli(): Promise<string | null> {
   const order = explicit ? [explicit] : ["gh", ...GH_FALLBACK_PATHS];
 
   for (const bin of order) {
-    const r = await tryGhExec(bin);
+    const r = await probeLocalGitHubToken(bin);
     if ("token" in r) {
       if (bin !== "gh") {
         systemDebug("gh-cli", `resolved via absolute path: ${bin} (PATH lookup failed)`);

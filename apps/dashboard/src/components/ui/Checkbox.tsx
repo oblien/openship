@@ -19,7 +19,7 @@ export interface CheckboxProps {
   "aria-label"?: string;
   /** Optional className for the outer wrapper. */
   className?: string;
-  /** Click-anywhere hit target - when wrapped in a <label> outside, leave this false. */
+  /** Set false for a decorative indicator inside a row that owns interaction. */
   asButton?: boolean;
   /** ID for label htmlFor association. */
   id?: string;
@@ -72,6 +72,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
       id,
       autoFocus,
       onClick,
+      asButton = true,
       ...rest
     },
     ref,
@@ -84,6 +85,25 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
       onCheckedChange?.(!(checked === true));
     };
 
+    const classes =
+      `relative inline-flex shrink-0 items-center justify-center rounded-[5px] border transition-all duration-150 ` +
+      `outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ` +
+      `disabled:cursor-not-allowed disabled:opacity-50 ` +
+      SIZE_CLASSES[size] + " " +
+      (isOn
+        ? TONE_ON[tone]
+        : "border-border/70 bg-transparent hover:border-foreground/40 hover:bg-foreground/[0.03]") +
+      " " + (className ?? "");
+    const indicator = checked === "indeterminate" ? (
+      <UiIcon name="minus" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
+    ) : checked === true ? (
+      <UiIcon name="check" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
+    ) : null;
+
+    // Compound rows are already keyboard-accessible buttons. A second button
+    // inside them is invalid HTML and creates a duplicate focus target.
+    if (!asButton) return <span aria-hidden="true" className={classes}>{indicator}</span>;
+
     return (
       <button
         ref={ref}
@@ -95,28 +115,10 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
         disabled={disabled}
         autoFocus={autoFocus}
         onClick={handleClick}
-        className={
-          // Box (always renders): rounded square, animated borders + fill.
-          // Off state: subtle muted border on transparent background, hover
-          // lifts to a slight inset. On state: solid tone-fill + tone-border.
-          // Focus: 2px ring in tone color. Disabled: 50% opacity, no hover.
-          `relative inline-flex shrink-0 items-center justify-center rounded-[5px] border transition-all duration-150 ` +
-          `outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ` +
-          `disabled:cursor-not-allowed disabled:opacity-50 ` +
-          SIZE_CLASSES[size] + " " +
-          (isOn
-            ? TONE_ON[tone]
-            : "border-border/70 bg-transparent hover:border-foreground/40 hover:bg-foreground/[0.03]") +
-          " " +
-          (className ?? "")
-        }
+        className={classes}
         {...rest}
       >
-        {checked === "indeterminate" ? (
-          <UiIcon name="minus" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
-        ) : checked === true ? (
-          <UiIcon name="check" className={`${ICON_SIZE[size]} stroke-[3]`} aria-hidden="true" />
-        ) : null}
+        {indicator}
       </button>
     );
   },

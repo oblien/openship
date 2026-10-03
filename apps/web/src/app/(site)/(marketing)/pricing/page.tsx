@@ -48,7 +48,7 @@ function PlanResources({ plan }: { plan: PricedPlan }) {
   return (
     <dl className="pp-plan-resources">
       <div className="pp-plan-resource">
-        <dt>Shared capacity</dt>
+        <dt>Managed server capacity</dt>
         <dd>
           {hasPool ? (
             <>
@@ -129,7 +129,7 @@ export default async function PricingPage() {
         <section className="pp-plans-section" aria-labelledby="cloud-plans-title">
           <div className="pp-container">
             <header className="pp-plans-head">
-              <h2 id="cloud-plans-title">One plan. Your whole team.</h2>
+              <h2 id="cloud-plans-title">Pick a plan. Start deploying.</h2>
               <p>Monthly billing · Cancel anytime</p>
             </header>
 

@@ -16,9 +16,9 @@ beforeEach(() => {
   pages = {
     list: vi.fn(async () => ({ pages: [page] })), get: vi.fn(async () => ({ page })),
     getDomain: vi.fn(async () => ({ domain: { customDomain: hostname, sslStatus: "active", sslExpiry: expiry } })),
-    renewSSL: vi.fn(), disconnectDomain: vi.fn(), delete: vi.fn(),
+    renewSSL: vi.fn(), disconnectDomain: vi.fn(), delete: vi.fn(async () => ({ success: true })),
   };
-  provider = new CloudInfraProvider({ domain: { routes }, pages } as unknown as Oblien, { namespace: "ns-one" });
+  provider = new CloudInfraProvider({ domain: { routes }, pages } as unknown as Oblien, { namespace: "ns-one", workspaceId: "ws-one", routeRoot: "/opt/openship/cloud-docker/routes", lock: { run: work => work() } });
 });
 
 describe("Cloud custom-domain certificates", () => {
@@ -78,53 +78,22 @@ describe("Cloud custom-domain certificates", () => {
     expect(pages.renewSSL).not.toHaveBeenCalled();
   });
 
-  it("disconnects the flat domain response only after checking its current binding", async () => {
+  it("deletes the owned Page only after checking its current custom-domain binding", async () => {
     await provider.removeRoute(hostname);
-    expect(pages.disconnectDomain).toHaveBeenCalledWith("route-one");
+    expect(pages.delete).toHaveBeenCalledWith("route-one");
   });
 
   it("never disconnects a replacement binding", async () => {
     pages.getDomain.mockResolvedValue({ domain: { customDomain: "other.example.com" } });
     await expect(provider.removeRoute(hostname)).rejects.toThrow(/changed/i);
-    expect(pages.disconnectDomain).not.toHaveBeenCalled();
+    expect(pages.delete).not.toHaveBeenCalled();
   });
 
   it("does not use another project's Docker Page for TLS", async () => {
     provider = new CloudInfraProvider({ domain: { routes }, pages } as unknown as Oblien, {
-      namespace: "ns-one", dockerWorkspaceId: "ws-other",
+      namespace: "ns-one", workspaceId: "ws-other", routeRoot: "/opt/openship/cloud-docker/routes",
     });
     await expect(provider.renewCert(hostname)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_NOT_CONNECTED" });
     expect(pages.renewSSL).not.toHaveBeenCalled();
-  });
-});
-
-describe("Cloud workspace certificate bindings", () => {
-  let domains: { get: ReturnType<typeof vi.fn>; renewSSL: ReturnType<typeof vi.fn> };
-  let client: Oblien;
-  beforeEach(() => {
-    domains = {
-      get: vi.fn(async () => ({ customDomain: hostname, sslStatus: "active", sslExpiry: expiry })),
-      renewSSL: vi.fn(),
-    };
-    routes.mockResolvedValue({ data: [{ hostname, namespace: "ns-one", owner_type: "workspace", owner_id: "ws-one", is_custom: 1 }] });
-    client = { domain: { routes }, pages, workspace: vi.fn(() => ({ domains })) } as unknown as Oblien;
-    provider = new CloudInfraProvider(client, { namespace: "ns-one" });
-  });
-
-  it("verifies the certificate bound to the requested workspace hostname", async () => {
-    await expect(provider.verifyCert(hostname)).resolves.toMatchObject({ verified: true, expiresAt: expiry });
-    expect(domains.renewSSL).not.toHaveBeenCalled();
-  });
-
-  it.each(["verifyCert", "renewCert"] as const)("%s rejects a replacement hostname before reading or renewing its certificate", async (operation) => {
-    domains.get.mockResolvedValue({ customDomain: "replacement.example.com", sslStatus: "active", sslExpiry: expiry });
-    await expect(provider[operation](hostname)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_CHANGED", statusCode: 409 });
-    expect(domains.renewSSL).not.toHaveBeenCalled();
-  });
-
-  it("does not accept a certificate for a different Docker workspace in the same namespace", async () => {
-    provider = new CloudInfraProvider(client, { namespace: "ns-one", dockerWorkspaceId: "ws-other" });
-    await expect(provider.renewCert(hostname)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_NOT_CONNECTED" });
-    expect(domains.renewSSL).not.toHaveBeenCalled();
   });
 });

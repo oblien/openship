@@ -45,9 +45,9 @@ export function EnvVarsEditor({
   onClose: () => void;
 }) {
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
   const { t } = useI18n();
   const { projectData } = useProjectSettings();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const hasActiveDeployment = Boolean(projectData?.activeDeploymentId);
   const [rows, setRows] = useState<Row[]>([]);
   const [baseline, setBaseline] = useState<PersistedProjectEnv[] | null>(null);

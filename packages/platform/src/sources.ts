@@ -5,7 +5,7 @@ import type { ExecutionContext } from "./context";
 import type { OperationResult } from "./deployments";
 
 export interface SourceDependencies {
-  open(ctx: ExecutionContext, input: { projectId?: string; name?: string; stack?: string; packageManager?: string }, apiBaseUrl?: string): Promise<FolderSessionResult>;
+  open(ctx: ExecutionContext, input: { projectId?: string; serverId?: string; name?: string; stack?: string; packageManager?: string }, apiBaseUrl?: string): Promise<FolderSessionResult>;
   projectForSession(ctx: ExecutionContext, id: string): string | undefined;
   stage(ctx: ExecutionContext, input: StageSourceInput): Promise<StagedSource>;
   scan(ctx: ExecutionContext, id: string, options: SourceScanOptions): Promise<SourceScan>;
@@ -14,7 +14,7 @@ export interface SourceDependencies {
   recordAudit(ctx: ExecutionContext, operation: string, id: string, after?: unknown): void;
 }
 export interface PlatformSourceOperations {
-  open(ctx: ExecutionContext, input?: { projectId?: string; name?: string; stack?: string; packageManager?: string }, options?: { apiBaseUrl?: string }): Promise<OperationResult<FolderSessionResult>>;
+  open(ctx: ExecutionContext, input?: { projectId?: string; serverId?: string; name?: string; stack?: string; packageManager?: string }, options?: { apiBaseUrl?: string }): Promise<OperationResult<FolderSessionResult>>;
   stage(ctx: ExecutionContext, input: StageSourceInput): Promise<OperationResult<StagedSource>>;
   scan(ctx: ExecutionContext, id: string, options?: SourceScanOptions): Promise<OperationResult<SourceScan>>;
   reveal(ctx: ExecutionContext, id: string, input: Parameters<SourceOperations["reveal"]>[1]): Promise<OperationResult<Record<string, string>>>;

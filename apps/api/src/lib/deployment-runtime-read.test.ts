@@ -80,6 +80,7 @@ vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getO
 vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/db", () => ({
   repos: {
+    cloudDockerWorkspace: { find: async () => ({ projectId: "p1", workspaceId: "vm1", namespace: "ns1" }) },
     server: {
       getInOrganization: async (id: string) => {
         h.serverGets.push(id);
@@ -119,14 +120,14 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
-  it("never falls back to this host when a bound Cloud Docker project is disconnected", async () => {
-    await expect(read({ deployTarget: "cloud", buildStrategy: "server", cloudDockerWorkspace: { projectId: "p1", workspaceId: "vm1" } })).rejects.toThrow("linked Openship Cloud");
+  it("never falls back to this host when a Cloud deployment has an incomplete binding", async () => {
+    await expect(read({ deployTarget: "cloud", buildStrategy: "server", managedServer: { projectId: "p1", workspaceId: "vm1" } })).rejects.toThrow("no managed server binding");
     expect(socketCalls()).toBe(0);
     expect(sshHosts()).toEqual([]);
   });
   it("rejects a deployment that names a different project's Cloud Docker host", async () => {
     const dep = { projectId: "own-project", organizationId: "org1", meta: { deployTarget: "cloud",
-      cloudDockerWorkspace: { projectId: "other-project", workspaceId: "vm1" } } };
+      managedServer: { projectId: "other-project", workspaceId: "vm1" } } };
     await expect(mod.resolveDeploymentRuntime(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
     await expect(mod.resolveDeploymentRuntimeForRead(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
     expect(socketCalls()).toBe(0);

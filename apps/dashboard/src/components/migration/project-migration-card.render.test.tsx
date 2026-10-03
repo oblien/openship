@@ -15,7 +15,9 @@ import { ProjectMigrationCard } from "./ProjectMigrationCard";
 // proving the card USES it) — so its two host dependencies are stubbed instead: the server
 // list, and the add-server modal, whose `useModal` needs a provider this static render has
 // no reason to stand up.
-vi.mock("@/lib/api/system", () => ({ systemApi: { listServers: () => new Promise(() => {}) } }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: () => new Promise(() => {}) } }));
+vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: true, deployMode: "docker" }) }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => () => {} }));
 vi.mock("@/lib/api/services", () => ({ servicesApi: { list: () => new Promise(() => {}) } }));
 // Deliberately EMPTY: the card must reach first paint, and open its confirm, without
@@ -72,7 +74,7 @@ describe("ProjectMigrationCard first paint", () => {
     // Its loading copy is the tell — `listServers` never resolves here, so the shared
     // component's own pending state is what renders. A private select would show none of
     // this, and would also lose the masked host line and the inline add-server row.
-    expect(text(render())).toContain("Loading servers");
+    expect(render()).toContain('aria-label="Loading servers');
   });
 
   it("disables Migrate before a target is chosen", () => {

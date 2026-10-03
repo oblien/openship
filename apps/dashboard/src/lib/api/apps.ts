@@ -169,6 +169,7 @@ export const appsApi = {
    *  install wizard's per-endpoint routing choice — it is the ONLY way an app
    *  install gets a public hostname. */
   install: (body: {
+    serverId?: string;
     templateId: string;
     name?: string;
     config?: Record<string, string>;

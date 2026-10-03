@@ -45,7 +45,7 @@ describe("desktop-to-SaaS Cloud resource delegation", () => {
     expect(await proxy.pages!.get("site-a")).toMatchObject({ page: { namespace: "ns-a" } });
     await proxy.pages!.deploy("site-a", { workspace_id: "ws-a", path: "/app/dist" });
     expect(h.pageDeploy).toHaveBeenCalledWith("site-a", { workspace_id: "ws-a", path: "/app/dist" });
-    expect(h.spend).toHaveBeenCalledWith("org-a");
+    expect(h.spend).toHaveBeenCalledWith("org-a", null);
   });
   it("ignores the client's namespace and pins a create to its server identity", async () => {
     await createRemoteCloudAdmin("org-a").pages!.create({ workspace_id: "ws-a", path: "/app/dist", name: "Site", slug: "site-a", namespace: "ns-b" });

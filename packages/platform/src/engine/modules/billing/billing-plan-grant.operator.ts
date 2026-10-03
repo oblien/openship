@@ -9,6 +9,7 @@ export interface PlanGrantCommand {
   command: "grant" | "show" | "revoke";
   email: string;
   organizationId?: string;
+  workspaceId?: string;
   plan: PlanTierId;
   expiresAt: Date | null;
   operator: string;
@@ -36,19 +37,23 @@ export async function runPlanGrantCommand(args: PlanGrantCommand, deps: {
       ? `Choose an owned workspace with --organization. Available: ${matches.map(row => `${row.organizationId} (${row.name})`).join(", ")}`
       : "No owned workspace was found for this email on this instance", 400, "BILLING_GRANT_WORKSPACE_REQUIRED");
   }
-  if (!target.namespace) throw new AppError("Open this workspace's Cloud billing once to provision its namespace", 409, "CLOUD_NAMESPACE_REQUIRED");
-  const namespace = target.namespace;
+  const workspaces = args.workspaceId || !target.namespace ? await grants.workspaces(target.organizationId) : [];
+  const managed = args.workspaceId ? workspaces.find(row => row.id === args.workspaceId) : workspaces.length === 1 ? workspaces[0] : undefined;
+  if ((args.workspaceId && !managed) || (!target.namespace && !managed)) throw new AppError("Select a Cloud workspace with --workspace", 400, "CLOUD_WORKSPACE_REQUIRED");
+  const namespace = managed ? managed.namespace : target.namespace;
+  if (!namespace) throw new AppError("Open this workspace's Cloud billing once to provision its namespace", 409, "CLOUD_NAMESPACE_REQUIRED");
 
-  return deps.lock(cloudBillingLockKey(target.organizationId), async () => {
+  return deps.lock(cloudBillingLockKey(target.organizationId, managed?.id), async () => {
     const lockedTarget = (await grants.ownedOrganizations(args.email.trim())).find(row =>
       row.userId === target.userId && row.organizationId === target.organizationId);
-    if (lockedTarget?.namespace !== namespace) {
+    const lockedWorkspace = managed ? (await grants.workspaces(target.organizationId)).find(row => row.id === managed.id) : undefined;
+    if (!lockedTarget || (managed ? !lockedWorkspace || lockedWorkspace.namespace !== namespace || lockedWorkspace.deletionInProgress : lockedTarget.namespace !== namespace)) {
       throw new AppError("Workspace ownership or namespace changed; retry the command", 409, "BILLING_GRANT_WORKSPACE_CHANGED");
     }
     const now = deps.now ?? new Date();
     const state = await readProviderBilling(billing, namespace);
-    let row = await grants.current(target.organizationId);
-    const base = { email: target.email, organizationId: target.organizationId, workspace: target.name, namespace };
+    let row = await grants.current(target.organizationId, namespace);
+    const base = { email: target.email, organizationId: target.organizationId, workspace: managed?.name ?? target.name, workspaceId: managed?.id, namespace };
 
     if (args.command === "grant") {
       if (!args.reason.trim() || !args.operator.trim()) throw new AppError("A reason and operator are required", 400, "BILLING_GRANT_REASON_REQUIRED");
@@ -57,7 +62,7 @@ export async function runPlanGrantCommand(args: PlanGrantCommand, deps: {
       }
       // Also validates that this tier has a finite monthly allowance in the catalog.
       const offer = subscriptionOffer(args.plan, "monthly");
-      if (state.subscription || await grants.hasLegacySubscription(target.organizationId)) {
+      if (state.subscription || (!managed && await grants.hasLegacySubscription(target.organizationId))) {
         throw new AppError("This workspace already has a subscription. Complimentary grants do not replace paid billing.", 409, "BILLING_GRANT_SUBSCRIPTION_EXISTS");
       }
       if (row && (row.planTierId !== args.plan || row.revokedAt || (row.expiresAt?.getTime() ?? null) !== (args.expiresAt?.getTime() ?? null))) {
@@ -76,7 +81,7 @@ export async function runPlanGrantCommand(args: PlanGrantCommand, deps: {
         });
       }
     } else if (args.command === "show" || args.dryRun) {
-      const latest = row ?? await grants.latest(target.organizationId);
+      const latest = row ?? await grants.latest(target.organizationId, namespace);
       return {
         ...base, dryRun: args.dryRun, action: args.command,
         provider: { tier: state.entitlement.tierId, status: state.entitlement.status, quota: state.entitlement.quota, hasSubscription: Boolean(state.subscription) },

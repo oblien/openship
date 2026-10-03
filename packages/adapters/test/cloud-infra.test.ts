@@ -1,68 +1,38 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { CloudInfraProvider } from "../src/infra/cloud";
+import { managedRoutingFixture } from "./managed-routing-fixture";
+let h: ReturnType<typeof managedRoutingFixture>;
+beforeEach(async () => { h = managedRoutingFixture(); await h.infra.registerRoute({ domain: "app.opsh.io", targetUrl: "http://127.0.0.1:3000", tls: true }); });
 
-const baseRoute = { hostname: "app.opsh.io", namespace: "ns-a", owner_type: "workspace", owner_id: "ws-a", is_custom: false, target: "10.0.0.1:3000" };
-function setup(route = baseRoute) {
-  const registry = vi.fn(async () => ({ data: [route] }));
-  const revoke = vi.fn(async () => ({}));
-  const disconnect = vi.fn(async () => ({}));
-  const getDomain = vi.fn(async () => ({ customDomain: "app.example.com", sslStatus: "active", sslExpiry: "2099-01-01T00:00:00Z" }));
-  const ws = { publicAccess: { list: vi.fn(async () => [{ port: 3000, url: "https://app.opsh.io" }, { port: 4000, url: "https://other.opsh.io" }]), revoke }, domains: { get: getDomain, disconnect, renewSSL: vi.fn(async () => ({})) } };
-  const workspace = vi.fn(() => ws);
-  const pages = { disable: vi.fn(async () => ({})), disconnectDomain: vi.fn(async () => ({})), getDomain: vi.fn(async () => ({ domain: { domain: "app.example.com", ssl: { status: "pending", expiresAt: null } } })), renewSSL: vi.fn(async () => ({})) };
-  const page = { slug: "site-a", namespace: "ns-a", domain: "opsh.io", url: "https://app.opsh.io", custom_domain: "app.example.com" };
-  Object.assign(pages, { list: vi.fn(async () => ({ pages: [page] })), get: vi.fn(async () => ({ page })) });
-  const setRoutes = vi.fn(async () => ({}));
-  const client = { domain: { routes: registry }, workspace, pages, routes: { set: setRoutes } };
-  return { infra: new CloudInfraProvider(client as never, { namespace: "ns-a" }), client, registry, revoke, disconnect, getDomain, ws, workspace, pages, setRoutes };
-}
-describe("Oblien routing and certificates", () => {
-  it("revokes only the matching workspace port", async () => {
-    const h = setup();
+describe("managed route cleanup", () => {
+  it("deletes only the owned Page and remains idempotent", async () => {
+    h.records.set("sibling", { ...h.records.get("app"), slug: "sibling", url: "https://sibling.opsh.io", exported_path: "/another-project/sibling" });
     await h.infra.removeRoute("app.opsh.io");
-    expect(h.revoke).toHaveBeenCalledExactlyOnceWith(3000);
-    expect(h.disconnect).not.toHaveBeenCalled();
-  });
-  it("recognizes public-access entries that return the full domain without a URL", async () => {
-    const h = setup();
-    h.ws.publicAccess.list.mockResolvedValue([{ port: 3000, domain: "app.opsh.io" }] as never);
     await h.infra.removeRoute("app.opsh.io");
-    expect(h.revoke).toHaveBeenCalledExactlyOnceWith(3000);
+    expect(h.pages.delete).toHaveBeenCalledExactlyOnceWith("app");
+    expect(h.records.has("sibling")).toBe(true);
   });
-  it("does not report deletion when registry and port state disagree", async () => {
-    const h = setup();
-    h.ws.publicAccess.list.mockResolvedValue([]);
-    await expect(h.infra.removeRoute("app.opsh.io")).rejects.toThrow("no matching exposed port");
-  });
-  it("uses the owning workspace for a custom domain and propagates provider failures", async () => {
-    const h = setup({ ...baseRoute, hostname: "app.example.com", is_custom: true });
-    h.disconnect.mockRejectedValue(new Error("provider unavailable"));
-    await expect(h.infra.removeRoute("app.example.com")).rejects.toThrow("provider unavailable");
-    expect(h.workspace).toHaveBeenCalledWith("ws-a");
-  });
-  it("does not mutate a route returned for another namespace", async () => {
-    const h = setup({ ...baseRoute, namespace: "ns-b" });
+  it("uses the Page slug when the registry owner has a numeric id", async () => {
+    expect(h.records.get("app")!.id).toBe(1);
     await h.infra.removeRoute("app.opsh.io");
-    expect(h.workspace).not.toHaveBeenCalled();
-    expect(h.revoke).not.toHaveBeenCalled();
+    expect(h.pages.delete).toHaveBeenCalledWith("app");
   });
-  it("disables a page's managed route and disconnects a page's custom domain", async () => {
-    const h = setup({ ...baseRoute, owner_type: "page", owner_id: "220" });
+  it("can clean up a disabled Page absent from the active route registry", async () => {
+    h.records.get("app")!.status = "disabled";
+    h.domain.routes.mockResolvedValue({ data: [] });
     await h.infra.removeRoute("app.opsh.io");
-    expect(h.pages.disable).toHaveBeenCalledWith("site-a");
-    h.registry.mockResolvedValue({ data: [{ ...baseRoute, hostname: "app.example.com", owner_type: "page", owner_id: "220", is_custom: true }] });
-    await h.infra.removeRoute("app.example.com");
-    expect(h.pages.disconnectDomain).toHaveBeenCalledWith("site-a");
+    expect(h.pages.delete).toHaveBeenCalledWith("app");
   });
-  it("reports certificate status from the provider without inventing an expiry", async () => {
-    const h = setup({ ...baseRoute, hostname: "app.example.com", is_custom: true });
-    expect(await h.infra.verifyCert("app.example.com")).toMatchObject({ verified: true, expiresAt: "2099-01-01T00:00:00.000Z" });
-    h.getDomain.mockResolvedValue({ customDomain: "app.example.com", sslStatus: "pending", sslExpiry: "" });
-    expect(await h.infra.verifyCert("app.example.com")).toMatchObject({ verified: false, expiresAt: "", reason: "missing" });
+  it.each(["source_workspace_id", "exported_path"])("refuses cleanup after %s changes", async field => {
+    h.records.get("app")![field] = "another-owner";
+    await expect(h.infra.removeRoute("app.opsh.io")).rejects.toThrow("not owned");
+    expect(h.pages.delete).not.toHaveBeenCalled();
   });
-  it("requires customer scope before reading infrastructure", async () => {
-    const h = setup();
-    await expect(new CloudInfraProvider(h.client as never).removeRoute("app.opsh.io")).rejects.toThrow("organization-scoped");
-    expect(h.registry).not.toHaveBeenCalled();
+  it("does not treat a provider refusal as a deleted route", async () => {
+    h.pages.delete.mockResolvedValue({ success: false });
+    await expect(h.infra.removeRoute("app.opsh.io")).rejects.toThrow("Could not remove");
+  });
+  it("requires an owned server before permitting route cleanup", async () => {
+    await expect(new CloudInfraProvider(h.client, { namespace: h.namespace }).removeRoute("app.opsh.io")).rejects.toThrow("owning managed server");
   });
 });

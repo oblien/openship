@@ -26,6 +26,7 @@ import ProjectSettings from "./ProjectSettings";
 import BuildSettings from "./BuildSettings";
 import EnvironmentVariables from "./EnvironmentVariables";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Input } from "@/components/ui/input";
 import { useDefaultDomainType } from "@/context/CloudContext";
 
 // Tiny class-joining helper to avoid pulling in a util just for the toggle.
@@ -68,7 +69,7 @@ const WorkspaceCard: React.FC = () => {
   };
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
+    <div className="bg-card rounded-2xl">
       <div className="px-5 py-5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -84,24 +85,30 @@ const WorkspaceCard: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{w.packageManager}</label>
-            <input
+            <label htmlFor="monorepo-package-manager" className="text-sm font-medium text-foreground mb-1.5 block">{w.packageManager}</label>
+            <Input
+              dir="ltr"
+              variant="filled"
               type="text"
+              id="monorepo-package-manager"
               value={workspace.packageManager}
               onChange={(e) => setWorkspace({ packageManager: e.target.value })}
-              className="w-full px-3 py-2 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="font-mono"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{w.prepareCommand}</label>
-            <input
+            <label htmlFor="monorepo-prepare-command" className="text-sm font-medium text-foreground mb-1.5 block">{w.prepareCommand}</label>
+            <Input
+              dir="ltr"
+              variant="filled"
               type="text"
+              id="monorepo-prepare-command"
               value={workspace.prepareCommand}
               onChange={(e) => setWorkspace({ prepareCommand: e.target.value })}
               placeholder="pnpm install -w"
-              className="w-full px-3 py-2 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="font-mono"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground/80">
+            <p className="mt-1 text-xs text-muted-foreground">
               {w.chainPrefix} <code>&amp;&amp;</code> {w.chainSuffix}
             </p>
           </div>
@@ -281,7 +288,7 @@ const MonorepoApps: React.FC = () => {
   return (
     <div className="space-y-5">
       {/* Header banner */}
-      <div className="bg-card rounded-2xl border border-border/50 px-5 py-4">
+      <div className="bg-card rounded-2xl px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <UiIcon name="grid" className="w-4 h-4 text-primary" />
@@ -334,7 +341,7 @@ const MonorepoApps: React.FC = () => {
           the bottom of the monorepo card so the per-app list is the
           first thing the operator sees, with the "switch shape" option
           below as an advanced flip. */}
-      <div className="bg-card rounded-2xl border border-border/50 px-5 py-4">
+      <div className="bg-card rounded-2xl px-5 py-4">
         <button
           type="button"
           onClick={() => setModeOptionsOpen((open) => !open)}

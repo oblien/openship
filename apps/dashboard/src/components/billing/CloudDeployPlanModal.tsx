@@ -4,26 +4,33 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 import { cloudDeployRecovery, type CloudDeployRestriction } from "@/lib/cloud-deploy-pricing";
+import { workspaceBillingHref } from "./BillingWorkspaceContext";
 import { CloudPlanPicker } from "./CloudPlanPicker";
 
 export function CloudDeployPlanModal({
-  restriction,
+  restriction = { code: "CLOUD_BILLING_BLOCKED" },
   onClose,
+  workspaceId,
+  serverName,
 }: {
-  restriction: CloudDeployRestriction;
+  restriction?: CloudDeployRestriction;
+  workspaceId?: string;
+  /** Explicit server setup reuses checkout without presenting a deployment failure. */
+  serverName?: string;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const copy = t.billing.deployGate;
+  const closeLabel = serverName !== undefined ? t.billing.workspaces.returnToSetup : copy.close;
   const titleId = useId();
   const descriptionId = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const initialTier = useRef<BillingState["tier"] | null>(null);
+  const initialOffer = useRef<string | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   const [state, setState] = useState<BillingState | null>(null);
@@ -38,9 +45,9 @@ export function CloudDeployPlanModal({
     setLoading(true);
     setError(null);
     try {
-      const next = await billingApi.getBillingState();
+      const next = await billingApi.getBillingState(workspaceId);
       if (!mounted.current) return;
-      initialTier.current ??= next.tier;
+      initialOffer.current ??= next.subscription?.offerReference ?? next.tier;
       setState(next);
     } catch (err) {
       if (mounted.current) {
@@ -51,7 +58,7 @@ export function CloudDeployPlanModal({
       busy.current = false;
       if (mounted.current) setLoading(false);
     }
-  }, []);
+  }, [workspaceId]);
 
   useEffect(() => {
     mounted.current = true;
@@ -63,11 +70,14 @@ export function CloudDeployPlanModal({
 
   const recovery = state ? cloudDeployRecovery(state, restriction) : "subscribe";
   const planChanged =
-    recovery === "upgrade" && state && !state.overQuota && state.tier !== initialTier.current;
+    recovery === "upgrade" && state && !state.overQuota &&
+    (state.subscription?.offerReference ?? state.tier) !== initialOffer.current;
   const ready = recovery === "ready" || planChanged;
+  const readyTitle = serverName !== undefined ? t.billing.workspaces.serverPlanReadyTitle : copy.readyTitle;
   const showPlans = !ready && (recovery === "subscribe" || recovery === "upgrade");
-  const title =
-    recovery === "credits"
+  const title = serverName !== undefined
+    ? interpolate(t.billing.workspaces.serverPlanTitle, { name: serverName })
+    : recovery === "credits"
       ? copy.creditsTitle
       : recovery === "upgrade"
         ? copy.upgradeTitle
@@ -79,16 +89,18 @@ export function CloudDeployPlanModal({
       ? copy.reasons[restriction.reason as keyof typeof copy.reasons]
       : undefined;
   const description = ready
-    ? copy.ready
-    : recovery === "credits"
-      ? copy.creditsDescription
-      : recovery === "payment"
-        ? copy.paymentDescription
-        : recovery === "paused"
-          ? copy.pausedDescription
-          : recovery === "upgrade"
-            ? (reason ?? copy.upgradeDescription)
-            : copy.description;
+    ? (serverName !== undefined ? t.billing.workspaces.serverPlanReady : copy.ready)
+    : serverName !== undefined && recovery === "subscribe"
+      ? t.billing.workspaces.serverPlanDescription
+      : recovery === "credits"
+        ? copy.creditsDescription
+        : recovery === "payment"
+          ? copy.paymentDescription
+          : recovery === "paused"
+            ? copy.pausedDescription
+            : recovery === "upgrade"
+              ? (reason ?? copy.upgradeDescription)
+              : copy.description;
 
   return (
     <div
@@ -106,14 +118,14 @@ export function CloudDeployPlanModal({
           id={titleId}
           className="min-w-0 text-lg font-semibold leading-6 tracking-tight text-foreground"
         >
-          {ready ? copy.readyTitle : title}
+          {ready ? readyTitle : title}
         </h2>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={onClose}
-          aria-label={copy.close}
+          aria-label={closeLabel}
           className="shrink-0"
         >
           <UiIcon name="close" className="size-4" aria-hidden="true" />
@@ -141,7 +153,10 @@ export function CloudDeployPlanModal({
             <div className="space-y-5">
               {showPlans && (
                 <CloudPlanPicker
+                  workspaceId={state.workspace?.id ?? workspaceId}
                   currentPlan={state.tier}
+                  currentOffer={state.plan}
+                  allocatedDiskGb={state.capacity?.diskGb?.used}
                   subscription={state.subscription}
                   complimentary={state.complimentary}
                   billingEnabled={state.billing?.enabled === true}
@@ -157,7 +172,7 @@ export function CloudDeployPlanModal({
                 <div className="flex flex-wrap gap-3">
                   {recovery === "credits" && state.billing?.enabled && state.topups?.available && (
                     <Button asChild>
-                      <a href="/billing/topups" target="_blank" rel="noopener noreferrer">
+                      <a href={workspaceBillingHref("/billing/topups", state.workspace?.id ?? workspaceId)} target="_blank" rel="noopener noreferrer">
                         {copy.topups}
                         <UiIcon name="arrow-up-right" className="size-4" aria-hidden="true" />
                       </a>
@@ -165,7 +180,7 @@ export function CloudDeployPlanModal({
                   )}
                   <Button asChild variant="secondary">
                     <a
-                      href={recovery === "credits" ? "/billing/plans" : "/billing/overview"}
+                      href={workspaceBillingHref(recovery === "credits" ? "/billing/plans" : "/billing/overview", state.workspace?.id ?? workspaceId)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -220,7 +235,7 @@ export function CloudDeployPlanModal({
           onClick={onClose}
           className="h-auto min-h-10 min-w-0 flex-1 whitespace-normal px-3 sm:flex-none"
         >
-          {copy.close}
+          {closeLabel}
         </Button>
       </footer>
     </div>

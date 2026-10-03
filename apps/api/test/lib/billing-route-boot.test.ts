@@ -13,7 +13,7 @@ it.each([
   const app = new Hono().route("/api/billing", billingPlansRoutes).route("/api/billing", routes);
   expect(
     app.routes.some(
-      (route) => route.method === "POST" && route.path === "/api/billing/capacity/preview",
+      (route) => route.method === "GET" && route.path === "/api/billing/subscription/quote",
     ),
   ).toBe(true);
 

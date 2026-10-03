@@ -14,9 +14,9 @@ const joinServiceGroupContainers = vi.hoisted(() => vi.fn());
 const dispose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const createServerDockerRuntime = vi.hoisted(() => vi.fn());
 
-vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>();
-  return { ...actual, createServerDockerRuntime };
+vi.mock("@repo/platform/engine/modules/migration/migration-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/modules/migration/migration-runtime")>();
+  return { ...actual, createMigrationDockerRuntime: createServerDockerRuntime };
 });
 
 const { joinReusedContainersToGroup } = await import("@repo/platform/engine/modules/migration/migrate.service");

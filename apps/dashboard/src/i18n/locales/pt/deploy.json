@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} política(s) de backup · pré-deploy: {preDeploy}",
     "backupManage": "Gerenciar backups",
     "on": "ativo",
-    "off": "inativo"
+    "off": "inativo",
+    "previewTitle": "Prévia da implantação",
+    "previewHint": "Continue para configurar seu app. A implantação começa na próxima página.",
+    "back": "Voltar"
   },
   "summary": {
     "buildAndDeploy": "Compilar e implantar:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} versão",
     "rollbackOther": "{count} versões",
     "rollbackAuto": "Rollback: automático",
-    "rollbackSnapshotHint": "Uma cópia de cada versão é mantida, então um rollback nunca reconstrói. Altere em Avançado.",
-    "rollbackGitHint": "Quantas versões anteriores continuam restauráveis. Altere em Avançado."
+    "rollbackSnapshotHint": "Uma cópia de cada versão é mantida, sem reconstrução ao reverter. Altere nas configurações de implantação.",
+    "rollbackGitHint": "Quantas versões anteriores podem ser restauradas. Altere nas configurações de implantação."
   },
   "power": {
     "heading": "Potência",

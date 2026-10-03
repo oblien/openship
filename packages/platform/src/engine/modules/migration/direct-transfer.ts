@@ -27,8 +27,8 @@
  * peer host key is pinned (StrictHostKeyChecking=yes + a scanned known_hosts).
  */
 
-import type { CommandExecutor, LogEntry } from "@repo/adapters";
-import { shellQuote } from "@repo/core";
+import { installRsync, privilegedExecutor, envOps, opScript, type CommandExecutor, type LogEntry } from "@repo/adapters";
+import { answered, shellQuote } from "@repo/core";
 
 /**
  * POSIX single-quote escape.
@@ -47,6 +47,8 @@ export interface ServerConn {
   host: string;
   port: number;
   user: string;
+  /** Base64 SSH public key authenticated by the control connection. */
+  hostKey?: string;
 }
 
 export interface DirectProgress {
@@ -61,27 +63,28 @@ export interface DirectLink {
   /** Stream the image source→target (docker save <id> | ssh peer docker load),
    *  then re-apply the tag on the target (save-by-id loads untagged). */
   transferImage(image: { id: string; tag: string }, onProgress?: DirectProgress): Promise<void>;
-  /** rsync a volume's data source→target. Creates the target volume, resolves
-   *  both mountpoints, then moves bytes. `dstName` (clone) lands the source
+  /** rsync a volume's data source→target. The shared planner reserves the target
+   *  volume first. `dstName` (clone) lands the source
    *  volume's data in a DIFFERENTLY-named target volume; defaults to `volumeName`. */
   transferVolume(volumeName: string, onProgress?: DirectProgress, dstName?: string): Promise<void>;
   /** rsync a bind-mount host path source→target (same absolute path). */
   transferBind(hostPath: string, onProgress?: DirectProgress): Promise<void>;
   /** rsync an arbitrary source path → a (possibly different) destination path. */
   transferPath(sourcePath: string, destPath: string, onProgress?: DirectProgress): Promise<void>;
-  /** Remove the ephemeral trust on both sides. Idempotent; never throws. */
+  /** Remove the ephemeral trust on both sides. Failure remains recoverable. */
   cleanup(): Promise<void>;
 }
 
 interface LinkContext {
   sourceExec: CommandExecutor;
   targetExec: CommandExecutor;
-  sourceConn: ServerConn;
-  targetConn: ServerConn;
+  sourceConn: ServerConn | null;
+  targetConn: ServerConn | null;
   runId: string;
   /** rsync `-z` on the wire (opt-in — helps WAN, wasteful on a fast LAN). */
   compress?: boolean;
   log: (message: string) => void;
+  signal?: AbortSignal;
 }
 
 const PROBE_TIMEOUT_MS = 15_000;
@@ -99,7 +102,55 @@ async function hasCommand(exec: CommandExecutor, cmd: string): Promise<boolean> 
 /** Marker written as the key's `-C` comment — unique per run, so removal targets
  *  exactly our authorized_keys line and nothing else. */
 function trustMarker(runId: string, tag: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(runId) || !/^(push|pull)$/.test(tag)) throw new Error("Invalid transfer identity");
   return `openship-migration-${runId}-${tag}`;
+}
+
+/** Kernel-owned lock: a disconnected/crashed writer cannot strand it or
+ * remove a later writer's lock. Both append and removal use the same lock. */
+function editAuthorizedKeys(script: string): string {
+  return `umask 077; mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" && (` +
+    `attempt=0; until flock -x -n 9; do attempt=$((attempt + 1)); ` +
+    `[ "$attempt" -lt 100 ] || exit 1; sleep 0.1; done; ${script}` +
+    `) 9> "$HOME/.ssh/.openship-migration.lock"`;
+}
+
+function removeAuthorizedKey(marker: string): string {
+  // A failed utility install may have created no trust at all. Do not require
+  // flock (or create ~/.ssh) merely to confirm there is nothing to remove.
+  return `[ -e "$HOME/.ssh/authorized_keys" ] || exit 0; ` +
+    `found=$(awk -v marker=${sq(marker)} '$NF == marker {found=1} END {print found ? "yes" : "no"}' "$HOME/.ssh/authorized_keys") || exit 1; ` +
+    `[ "$found" = yes ] || exit 0; ` +
+    editAuthorizedKeys(`ak="$HOME/.ssh/authorized_keys"; if [ -f "$ak" ]; then ` +
+    `tmp=$(mktemp "$HOME/.ssh/.openship-keys.XXXXXX") || exit 1; ` +
+    `trap 'rm -f -- "$tmp"' EXIT; trap 'exit 1' HUP INT TERM; ` +
+    `awk -v marker=${sq(marker)} '$NF != marker' "$ak" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$ak"; fi`);
+}
+
+/** A durable run marker also lets recovery remove trust after a worker crash. */
+export async function stopDirectTransfer(executor: CommandExecutor, runId: string): Promise<void> {
+  trustMarker(runId, "push"); // Validate the durable marker before using it.
+  // The bracket prevents pgrep/pkill from matching their own shell command.
+  const pattern = sq(`[o]penship-migration-${runId}-(push|pull)/id`);
+  await executor.exec(`[ -d ${sq(`/tmp/openship-migration-${runId}-push`)} ] || [ -d ${sq(`/tmp/openship-migration-${runId}-pull`)} ] || exit 0; ` +
+    `command -v pgrep >/dev/null && command -v pkill >/dev/null || exit 1; ` +
+    `pkill -TERM -f ${pattern} 2>/dev/null || true; ` +
+    `attempt=0; while pgrep -f ${pattern} >/dev/null; do ` +
+    `attempt=$((attempt + 1)); [ "$attempt" -le 20 ] || exit 1; ` +
+    `[ "$attempt" -lt 10 ] || pkill -KILL -f ${pattern} 2>/dev/null || true; sleep 0.1; done`, { timeout: 10_000 });
+}
+
+export async function cleanupDirectTrust(source: CommandExecutor, target: CommandExecutor, runId: string): Promise<void> {
+  const results = await Promise.allSettled([source, target].map(async executor => {
+    await stopDirectTransfer(executor, runId);
+    for (const tag of ["push", "pull"] as const) {
+      const marker = trustMarker(runId, tag);
+      try { await executor.exec(removeAuthorizedKey(marker)); }
+      finally { await executor.exec(`rm -rf -- ${sq(`/tmp/${marker}`)}`); }
+    }
+  }));
+  const failed = results.find(result => result.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
 }
 
 /**
@@ -122,21 +173,13 @@ async function bootstrapTrust(
   const knownHosts = `${tmp}/known_hosts`;
 
   const cleanupInitiator = async () => {
-    await initiatorExec.exec(`rm -rf ${sq(tmp)}`).catch(() => {});
+    await initiatorExec.exec(`rm -rf -- ${sq(tmp)}`);
   };
   const cleanupPeer = async () => {
-    // Strip our marker line from the peer's authorized_keys (rewrite in place).
-    const ak = "$HOME/.ssh/authorized_keys";
-    await peerExec
-      .exec(
-        `if [ -f ${ak} ]; then grep -v ${sq(marker)} ${ak} > ${ak}.openship.tmp 2>/dev/null || true; ` +
-          `mv ${ak}.openship.tmp ${ak} 2>/dev/null || true; fi`,
-      )
-      .catch(() => {});
+    await peerExec.exec(removeAuthorizedKey(marker));
   };
   const cleanup = async () => {
-    await cleanupInitiator();
-    await cleanupPeer();
+    try { await cleanupPeer(); } finally { await cleanupInitiator(); }
   };
 
   try {
@@ -146,25 +189,34 @@ async function bootstrapTrust(
         `ssh-keygen -t ed25519 -N '' -f ${sq(keyFile)} -C ${sq(marker)} >/dev/null`,
     );
     const pubKey = (await initiatorExec.exec(`cat ${sq(`${keyFile}.pub`)}`)).trim();
-    if (!pubKey.includes("ssh-ed25519")) {
+    if (!new RegExp(`^ssh-ed25519 [A-Za-z0-9+/]+={0,3} ${marker}$`).test(pubKey)) {
       throw new Error("ephemeral key generation produced no public key");
     }
 
     // 2. Install the pubkey on the peer's authorized_keys (600, dir 700).
-    await peerExec.exec(
-      `mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" && ` +
-        `printf '%s\\n' ${sq(pubKey)} >> "$HOME/.ssh/authorized_keys" && ` +
-        `chmod 600 "$HOME/.ssh/authorized_keys"`,
-    );
+    await peerExec.exec(editAuthorizedKeys(
+      `touch "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys" && ` +
+      `printf '\\n%s\\n' ${sq(`no-agent-forwarding,no-port-forwarding,no-pty ${pubKey}`)} >> "$HOME/.ssh/authorized_keys"`,
+    ));
 
     // 3. Pin the peer's host key (scan from the initiator → known_hosts).
-    const scan = await initiatorExec.exec(
-      `ssh-keyscan -T 8 -p ${peerConn.port} ${sq(peerConn.host)} 2>/dev/null > ${sq(knownHosts)}; ` +
-        `wc -c < ${sq(knownHosts)}`,
-      { timeout: KEYSCAN_TIMEOUT_MS },
-    );
-    if (Number(scan.trim()) <= 0) {
-      throw new Error(`could not scan host key of ${peerConn.host}:${peerConn.port}`);
+    if (peerConn.hostKey) {
+      // Use the key from the authenticated source connection, not a second
+      // unauthenticated keyscan that could trust a different host during transfer.
+      const raw = Buffer.from(peerConn.hostKey, "base64");
+      const length = raw.length >= 4 ? raw.readUInt32BE(0) : 0;
+      const type = raw.subarray(4, 4 + length).toString("ascii");
+      if (length < 1 || length > 128 || raw.length < 4 + length || !/^[a-z0-9@._+-]+$/i.test(type))
+        throw new Error("Invalid pinned SSH host key");
+      const host = peerConn.port === 22 ? peerConn.host : `[${peerConn.host}]:${peerConn.port}`;
+      await initiatorExec.writeFile(knownHosts, `${host} ${type} ${peerConn.hostKey}\n`);
+    } else {
+      const scan = await initiatorExec.exec(
+        `ssh-keyscan -T 8 -p ${peerConn.port} ${sq(peerConn.host)} 2>/dev/null > ${sq(knownHosts)}; ` +
+          `wc -c < ${sq(knownHosts)}`,
+        { timeout: KEYSCAN_TIMEOUT_MS },
+      );
+      if (Number(scan.trim()) <= 0) throw new Error(`could not scan host key of ${peerConn.host}:${peerConn.port}`);
     }
 
     // Bare (unquoted) paths on purpose: this string is used BOTH inside a shell
@@ -234,9 +286,9 @@ export async function statPath(
   const out = (
     await exec
       .exec(`[ -d ${sq(path)} ] && echo dir || { [ -e ${sq(path)} ] && echo file || echo missing; }`)
-      .catch(() => "missing")
   ).trim();
-  return out === "dir" ? "dir" : out === "file" ? "file" : "missing";
+  if (out !== "dir" && out !== "file" && out !== "missing") throw new Error(`Could not inspect source path ${path}`);
+  return out;
 }
 
 /** Thrown when a bind/custom source path doesn't exist on the source. The
@@ -274,15 +326,19 @@ export function rsyncCommand(
   // --partial + --partial-dir keep a dropped transfer's bytes so a re-invoke
   // RESUMES instead of restarting (see runRsync's retry loop). --timeout aborts
   // a stalled link so the retry can kick in.
-  const flags = `-a --partial --partial-dir=.openship-partial --info=progress2 --timeout=60${compress ? " -z" : ""}`;
+  // The reviewed destination is an empty/owned copy (or an explicitly
+  // approved overwrite). Remove stale destination files after a successful
+  // directory copy, matching the streamed transport's replacement semantics.
+  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
   const dash_e = `-e ${sq(sshCommand)}`;
   const slash = dir ? "/" : "";
   const local = `${sq(localPath)}${slash}`;
-  const remote = `${sq(`${peer.user}@${peer.host}:${peerPath}`)}${slash}`;
+  const host = peer.host.includes(":") ? `[${peer.host}]` : peer.host;
+  const remote = `${sq(`${peer.user}@${host}:${peerPath}`)}${slash}`;
   // rsync source-spec then dest-spec.
   return pushToPeer
-    ? `rsync ${flags} ${dash_e} ${local} ${remote}`
-    : `rsync ${flags} ${dash_e} ${remote} ${local}`;
+    ? `rsync ${flags} ${dash_e} -- ${local} ${remote}`
+    : `rsync ${flags} ${dash_e} -- ${remote} ${local}`;
 }
 
 /** Parent directory of an absolute path (for `mkdir -p` before an rsync). */
@@ -307,14 +363,16 @@ export async function runRsync(
   command: string,
   onProgress?: DirectProgress,
   log?: (m: string) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   let lastTail = "";
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
+    signal?.throwIfAborted();
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
       if (!onProgress) return;
       const bytes = parseRsyncProgress(entry.message);
       if (bytes != null) onProgress(bytes);
-    });
+    }, { signal });
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");
@@ -344,6 +402,42 @@ export async function runRsync(
 export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink | null> {
   const { sourceExec, targetExec, sourceConn, targetConn, runId, log } = ctx;
   const compress = ctx.compress ?? false;
+  if (!sourceConn && !targetConn) return null;
+  // Prepare client utilities while the source is still running. These shared
+  // installers never restart Docker or install an SSH daemon on a managed VM.
+  for (const executor of [sourceExec, targetExec]) {
+    if (!(await hasCommand(executor, "rsync"))) {
+      const result = await installRsync(executor, entry => log(entry.message));
+      if (!result.success) throw new Error(result.error || "Install rsync on both servers before migrating");
+    }
+    if (!await hasCommand(executor, "pgrep") || !await hasCommand(executor, "pkill") || !await hasCommand(executor, "flock")) {
+      const grant = await privilegedExecutor(executor, "Installing transfer recovery tools");
+      if (!grant.supported) throw new Error(grant.reason);
+      const plan = envOps(grant.value.profile).pkgInstallVariants({
+        apt: answered(["procps", "util-linux"]), dnf: answered(["procps-ng", "util-linux"]),
+        yum: answered(["procps-ng", "util-linux"]), apk: answered(["procps", "util-linux"]),
+        brew: answered(["flock"]),
+      }, { installRecommends: false });
+      if (!plan.supported) throw new Error(plan.reason);
+      const result = await grant.value.executor.streamExec(opScript(plan.value), entry => log(entry.message));
+      if (result.code !== 0 || !await hasCommand(executor, "pgrep") || !await hasCommand(executor, "pkill") || !await hasCommand(executor, "flock"))
+        throw new Error("Install pgrep, pkill and flock on both servers before migrating");
+    }
+  }
+  const initiators = [targetConn ? sourceExec : null, sourceConn ? targetExec : null].filter((exec): exec is CommandExecutor => !!exec);
+  for (const executor of initiators) {
+    if (await hasCommand(executor, "ssh") && await hasCommand(executor, "ssh-keygen")) continue;
+    const grant = await privilegedExecutor(executor, "Installing SSH transfer tools");
+    if (!grant.supported) throw new Error(grant.reason);
+    const plan = envOps(grant.value.profile).pkgInstallVariants({
+      apt: answered(["openssh-client"]), dnf: answered(["openssh-clients"]), yum: answered(["openssh-clients"]),
+      apk: answered(["openssh-client-default"]), brew: answered(["openssh"]),
+    }, { installRecommends: false });
+    if (!plan.supported) throw new Error(plan.reason);
+    log("Installing SSH client tools for the transfer…");
+    const result = await grant.value.executor.streamExec(opScript(plan.value), entry => log(entry.message));
+    if (result.code !== 0) throw new Error("Could not install SSH transfer tools. Check the server's package manager and retry.");
+  }
 
   const makeLink = (
     direction: "push" | "pull",
@@ -351,9 +445,10 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
     trustCleanup: () => Promise<void>,
   ): DirectLink => {
     const initiatorExec = direction === "push" ? sourceExec : targetExec;
-    const peerConn = direction === "push" ? targetConn : sourceConn;
+    const peerConn = (direction === "push" ? targetConn : sourceConn)!;
     // push: data flows initiator(source)→peer(target). pull: peer(source)→initiator(target).
     const pushToPeer = direction === "push";
+    let imageSequence = 0;
 
     return {
       direction,
@@ -365,9 +460,15 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         // pull: save on source (peer over ssh) → load on target (initiator).
         const save = `docker save ${sq(image.id)}`;
         const load = `docker load`;
-        const command = pushToPeer
-          ? `${save} | ${sshTo(sshCommand, peerConn, sq(load))}`
-          : `${sshTo(sshCommand, peerConn, sq(save))} | ${load}`;
+        // POSIX sh does not guarantee pipefail. Preserve the producer's exit
+        // status as well as the loader's, including a remote SSH disconnect.
+        // The status file stays in this run's private, recoverable directory.
+        const statusFile = sq(`/tmp/${trustMarker(runId, direction)}/image-${++imageSequence}.status`);
+        const producer = pushToPeer ? save : sshTo(sshCommand, peerConn, sq(save));
+        const consumer = pushToPeer ? sshTo(sshCommand, peerConn, sq(load)) : load;
+        const command = `{ ${producer}; printf '%s\\n' "$?" > ${statusFile}; } | ${consumer}; ` +
+          `migration_load_status=$?; migration_save_status=$(cat ${statusFile}) || exit 1; ` +
+          `rm -f -- ${statusFile}; [ "$migration_save_status" = 0 ] && [ "$migration_load_status" = 0 ]`;
         // Coarse size hint for the bar (docker save has no native progress).
         // The image always lives on the source; inspect by id (always resolves).
         const sizeOut = await sourceExec
@@ -376,7 +477,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         const total = Number(sizeOut.trim()) || undefined;
         log(`image ${image.tag}: streaming ${direction}${total ? ` (~${Math.round(total / 1048576)} MB)` : ""}`);
         onProgress?.(0, total);
-        const { code, output } = await initiatorExec.streamExec(command, () => {});
+        const { code, output } = await initiatorExec.streamExec(command, () => {}, { signal: ctx.signal });
         if (code !== 0) {
           const tail = output.split("\n").filter(Boolean).slice(-4).join(" ");
           throw new Error(`image transfer failed (exit ${code}): ${tail || "no output"}`);
@@ -391,26 +492,20 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         const from = loaded && loaded !== image.tag ? loaded : loaded ? null : image.id;
         if (from) {
           const tagCmd = `docker tag ${sq(from)} ${sq(image.tag)}`;
-          const retag = await (pushToPeer
+          await (pushToPeer
             ? initiatorExec.exec(sshTo(sshCommand, peerConn, sq(`${tagCmd} 2>&1`)))
             : targetExec.exec(`${tagCmd} 2>&1`)
-          ).catch((e) => (e instanceof Error ? e.message : String(e)));
-          if (retag && /error|no such/i.test(retag)) {
-            // An untagged image = the target can't resolve it = the deploy would
-            // fall back to a registry pull. Surface loudly, don't swallow.
-            throw new Error(`image ${image.tag}: retag failed — ${retag.trim()}`);
-          }
+          );
           log(`image ${image.tag}: tagged on target (from ${from})`);
         }
         if (total) onProgress?.(total, total);
       },
       async transferVolume(volumeName, onProgress, dstName) {
-        // Ensure the (possibly differently-named, for clone) volume exists on the
-        // TARGET, resolve both mountpoints.
+        // The shared transfer plan reserves and labels the target volume.
+        // Inspect only: never silently create an unowned replacement mid-copy.
         const targetExecLocal = targetExec;
         const sourceExecLocal = sourceExec;
         const targetName = dstName ?? volumeName;
-        await targetExecLocal.exec(`docker volume create ${sq(targetName)} >/dev/null`);
         const [srcMount, dstMount] = await Promise.all([
           volumeMountpoint(sourceExecLocal, volumeName),
           volumeMountpoint(targetExecLocal, targetName),
@@ -424,6 +519,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
           rsyncCommand(sshCommand, peerConn, localPath, peerPath, pushToPeer, compress),
           onProgress,
           log,
+          ctx.signal,
         );
       },
       async transferBind(hostPath, onProgress) {
@@ -433,13 +529,14 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         if (kind === "missing") throw new PathMissingError(hostPath);
         const isDir = kind === "dir";
         // Dir → the path itself; file → its parent (the file lands inside it).
-        await runOnTarget(`mkdir -p ${sq(isDir ? hostPath : parentDir(hostPath))}`).catch(() => {});
+        await runOnTarget(`mkdir -p ${sq(isDir ? hostPath : parentDir(hostPath))}`);
         log(`bind ${hostPath}: rsync ${direction}${compress ? " (z)" : ""} (${isDir ? "dir" : "file"})`);
         await runRsync(
           initiatorExec,
           rsyncCommand(sshCommand, peerConn, hostPath, hostPath, pushToPeer, compress, isDir),
           onProgress,
           log,
+          ctx.signal,
         );
       },
       async transferPath(sourcePath, destPath, onProgress) {
@@ -447,7 +544,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         const kind = await statPath(sourceExec, sourcePath);
         if (kind === "missing") throw new PathMissingError(sourcePath);
         const isDir = kind === "dir";
-        await runOnTarget(`mkdir -p ${sq(isDir ? destPath : parentDir(destPath))}`).catch(() => {});
+        await runOnTarget(`mkdir -p ${sq(isDir ? destPath : parentDir(destPath))}`);
         // On the initiator, "local" is the initiator's side; source→dest always.
         const localPath = pushToPeer ? sourcePath : destPath;
         const peerPath = pushToPeer ? destPath : sourcePath;
@@ -457,6 +554,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
           rsyncCommand(sshCommand, peerConn, localPath, peerPath, pushToPeer, compress, isDir),
           onProgress,
           log,
+          ctx.signal,
         );
       },
       cleanup: trustCleanup,
@@ -471,7 +569,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
   };
 
   // ── Try push: source is the initiator, reaches the target ──
-  try {
+  if (targetConn) try {
     const push = await bootstrapTrust(sourceExec, targetExec, targetConn, runId, "push", log);
     if (await probeDirectLink(sourceExec, push.sshCommand, targetConn)) {
       return makeLink("push", push.sshCommand, push.cleanup);
@@ -483,7 +581,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
   }
 
   // ── Try pull: target is the initiator, reaches the source ──
-  try {
+  if (sourceConn) try {
     const pull = await bootstrapTrust(targetExec, sourceExec, sourceConn, runId, "pull", log);
     if (await probeDirectLink(targetExec, pull.sshCommand, sourceConn)) {
       return makeLink("pull", pull.sshCommand, pull.cleanup);

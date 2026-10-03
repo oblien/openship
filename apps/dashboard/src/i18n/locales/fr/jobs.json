@@ -93,7 +93,10 @@
     "noServers": "Aucun serveur connecté — ajoutez-en un d'abord.",
     "command": "Commande",
     "commandPlaceholder": "pg_dump ... > /backups/db.sql",
-    "commandHint": "S'exécute via SSH sur le(s) serveur(s) sélectionné(s). Un `docker run --rm image cmd` fonctionne aussi.",
+    "commandHint": "S'exécute sur chaque serveur sélectionné. Utilisez docker run --rm pour une tâche en conteneur.",
+    "cloudServersHint": "Utilisez un serveur existant ou ajoutez un serveur dédié avec son propre abonnement.",
+    "cloudUsageHint": "Les tâches partagent la capacité et le quota d'utilisation du serveur sélectionné. Son abonnement doit être actif.",
+    "addDedicatedServer": "Ajouter un serveur dédié",
     "scheduleType": "Quand exécuter",
     "scheduleTypes": {
       "recurring": "Selon une planification",
@@ -182,5 +185,6 @@
     "empty": "Aucune sortie pour le moment.",
     "close": "Fermer",
     "exit": "Code de sortie {code}"
-  }
+  },
+  "cloudSubtitle": "Commandes planifiées et à la demande sur vos serveurs gérés."
 }

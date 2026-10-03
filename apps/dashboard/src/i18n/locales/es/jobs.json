@@ -1,0 +1,9 @@
+{
+  "cloudSubtitle": "Comandos programados y bajo demanda en tus servidores gestionados.",
+  "create": {
+    "commandHint": "Se ejecuta en cada servidor seleccionado. Usa docker run --rm para una tarea en un contenedor.",
+    "cloudServersHint": "Usa un servidor existente o añade un servidor dedicado con su propia suscripción.",
+    "cloudUsageHint": "Las tareas comparten la capacidad y la cuota de uso del servidor seleccionado. Su plan debe estar activo para ejecutarlas.",
+    "addDedicatedServer": "Añadir un servidor dedicado"
+  }
+}

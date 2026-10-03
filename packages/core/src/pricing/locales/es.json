@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "{freeSubdomains} subdominios {freeDomainSuffix} gratis al conectarte a Cloud",
     "usageCredits": "{credits} créditos de uso al mes",
     "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB de disco",
-    "finiteUsage": "El alojamiento continuo puede requerir recargas de crédito.",
-    "oneRunningService": "1 aplicación, base de datos o proceso en ejecución"
+    "finiteUsage": "El alojamiento continuo puede requerir recargas de crédito."
   },
   "selfHosted": {
     "name": "Autoalojado",

@@ -57,7 +57,7 @@ function HealthRow({
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium text-foreground">
             {roleName}
           </p>
@@ -89,7 +89,7 @@ function HealthRow({
             : "bg-warning-bg text-warning"
         }`}
       >
-        {component.healthy ? "Healthy" : "Unhealthy"}
+        {component.healthy ? t.servers.overview.healthy : t.servers.overview.unhealthy}
       </div>
       {(canRunAction || (component.removable && component.installed)) && (
         <div className="flex items-center gap-2 shrink-0">
@@ -179,6 +179,7 @@ export function ComponentsTab({
   const unhealthyInstallableCount = components.filter(
     (c) => !c.healthy && c.installable,
   ).length;
+  const canInstall = components.some((component) => component.installable);
   const completedCount = streamComponents.filter(
     (c) => c.status === "installed" || c.status === "removed" || c.status === "failed",
   ).length;
@@ -204,12 +205,12 @@ export function ComponentsTab({
   return (
     <div className="space-y-6">
       {/* Health checks card */}
-      <div className="bg-card rounded-2xl border border-border/50">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
+      <div className="bg-card rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-border/50">
           <div className="w-9 h-9 bg-success-bg rounded-xl flex items-center justify-center">
             <UiIcon name="shield" className="size-[18px] text-success" />
           </div>
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h2 className="font-semibold text-foreground text-[15px]">
               {t.servers.components.systemHealth}
             </h2>
@@ -218,7 +219,7 @@ export function ComponentsTab({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            {(canInstall || busy) && <button
               onClick={onInstallMissing}
               disabled={checking || busy || unhealthyInstallableCount === 0}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
@@ -233,7 +234,7 @@ export function ComponentsTab({
                 : unhealthyInstallableCount > 0
                   ? interpolate(t.servers.components.installMissing, { count: String(unhealthyInstallableCount) })
                   : t.servers.components.allInstalled}
-            </button>
+            </button>}
             <button
               onClick={onRecheck}
               disabled={checking || busy}

@@ -117,7 +117,7 @@ describe("usesHostLoopbackUpstream", () => {
     expect(usesHostLoopbackUpstream("container-ip", topologyRuntime("host-only", false))).toBe(
       true,
     );
-    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("cloud", true))).toBe(false);
+    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("managed-docker", true))).toBe(true);
   });
 });
 

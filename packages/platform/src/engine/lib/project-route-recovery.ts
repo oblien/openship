@@ -54,7 +54,7 @@ export async function recoverProjectRouteCleanup(input: {
           resolved.serverId,
           current.organizationId,
         );
-        if (server) targetKeys.add(server.isLocal ? "local" : connectionHostPortTargetKey(server));
+        if (server?.sshHost && !server.workspaceId) targetKeys.add(server.isLocal ? "local" : connectionHostPortTargetKey({ ...server, sshHost: server.sshHost }));
       }
       // A mutable server id (or an absent identity) cannot authorize a handoff.
       // Include only the current target's immutable machine/connection identities.

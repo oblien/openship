@@ -269,7 +269,7 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
   // connected, otherwise falls back to the static mode. Every branch
   // below sees the actual mode this user should use.
   let mode = await githubAuth.resolveGitHubAuthMode(ctx);
-  if (mode === "cloud-app") assertCloudTenantScope(ctx);
+  if (mode === "cloud-app") await assertCloudTenantScope(ctx);
 
   // Optional `source` discriminator from the dashboard's dual-source
   // (Openship App vs gh CLI) settings panel. When the user explicitly

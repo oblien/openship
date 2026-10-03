@@ -217,6 +217,8 @@ export function buildProjectRouteDomains(opts: {
     redirectStatus?: number | null;
   }>;
   runtimeName: string;
+  /** Cloud certificates belong to the provider, independently of the runtime. */
+  certificateManagement?: SslProvider["certificateManagement"];
   usesManagedRouting: boolean;
   /**
    * #345: a static (file-served) deploy has NO port to proxy to — it serves the
@@ -274,6 +276,7 @@ export function buildProjectRouteDomains(opts: {
     const manualSsl = !!domainRow?.manualSsl;
 
     const requiresSslTooling =
+      opts.certificateManagement !== "provider" &&
       usesCertbotSsl(runtimeName) &&
       !managed.isManaged &&
       !route.skipSsl &&
@@ -286,7 +289,7 @@ export function buildProjectRouteDomains(opts: {
       requiresSslTooling,
       // Ours to terminate unless an upstream ingress owns it (externalIngress) or
       // it's a managed *.opsh.io host fronted by Openship Cloud's edge.
-      terminatesTlsLocally: !external && !managed.isManaged,
+      terminatesTlsLocally: opts.certificateManagement !== "provider" && !external && !managed.isManaged,
       // Attempt issuance on the FIRST deploy of an unverified custom domain —
       // issuing IS the verification on self-hosted, so the domain is Live at
       // end-of-deploy instead of waiting on the 13-min cron or a manual Verify.
@@ -455,6 +458,8 @@ export function buildServiceRouteDomains(opts: {
   project: Project;
   service: Service;
   runtimeName: string;
+  /** Cloud certificates belong to the provider, independently of the runtime. */
+  certificateManagement?: SslProvider["certificateManagement"];
   usesManagedRouting: boolean;
   /** The project's domain rows keyed by hostname. Drives per-host SSL gating —
    *  same as the single-app path in add(): an external-ingress row serves plain
@@ -503,6 +508,7 @@ export function buildServiceRouteDomains(opts: {
     // provision SSL), this stays false and no cert work is attempted.
     const isVerified = managed.isManaged ? true : (domainRow?.verified ?? false);
     const requiresSslTooling =
+      opts.certificateManagement !== "provider" &&
       usesCertbotSsl(runtimeName) &&
       endpoint.domainType === "custom" &&
       !external &&
@@ -514,7 +520,7 @@ export function buildServiceRouteDomains(opts: {
       requiresSslTooling,
       // Same rule as the single-app path: a custom host on this box is ours to
       // terminate; a managed free host is Cloud's.
-      terminatesTlsLocally: endpoint.domainType === "custom" && !external,
+      terminatesTlsLocally: opts.certificateManagement !== "provider" && endpoint.domainType === "custom" && !external,
       // First-deploy issuance for an unverified custom service route — the SAME
       // shared rule the single-app planner uses. Only `requiresSslTooling` above
       // diverges between the two paths, and that divergence is deliberate.
@@ -615,6 +621,8 @@ export function buildServiceRouteDomain(opts: {
   project: Project;
   service: Service;
   runtimeName: string;
+  /** Cloud certificates belong to the provider, independently of the runtime. */
+  certificateManagement?: SslProvider["certificateManagement"];
   usesManagedRouting: boolean;
   domainByHostname?: Map<string, Domain>;
 }): PlannedRouteDomain | null {

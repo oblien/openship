@@ -188,7 +188,7 @@ export function presentCluster(row: ServerClusterRecord): ServerCluster {
     },
     members: row.members.map((m) => ({
       serverId: m.serverId,
-      name: m.name,
+      name: m.name ?? m.serverId,
       providerId: m.providerId,
       privateIp: m.privateIp,
       ...(m.interfaceName ? { interfaceName: m.interfaceName } : {}),

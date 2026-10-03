@@ -28,6 +28,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    server: {
+      getMany: async (ids: string[]) => new Map(ids.filter(id => ["srv1", "srvA", "srvB"].includes(id))
+        .map(id => [id, { id, organizationId: "org_1", workspaceId: null, sshHost: "192.0.2.10" }])),
+      getInOrganization: async (id: string, organizationId: string) =>
+        organizationId === "org_1" && ["srv1", "srvA", "srvB"].includes(id)
+          ? { id, organizationId, workspaceId: null, sshHost: "192.0.2.10" } : null,
+    },
     job: {
       findByKey: async (k: string) => h.jobRows[k] ?? null,
       listAll: async () => Object.values(h.jobRows),
@@ -58,8 +65,11 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: { emit: () => {} } }));
+
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
+    acquire: async () => ({}),
     retain: () => {},
     release: () => {},
     withExecutor: async (_id: string, fn: (ex: unknown) => Promise<unknown>) =>
@@ -72,6 +82,7 @@ import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/
 
 const cmdJob = (key: string, cfg: Record<string, unknown>) => ({
   key,
+  scheduleType: "recurring",
   actionType: "command",
   actionConfig: cfg,
   dependsOn: null,

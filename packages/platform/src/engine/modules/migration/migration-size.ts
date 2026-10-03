@@ -14,6 +14,7 @@
 
 import type { CommandExecutor } from "@repo/adapters";
 import { sq, statPath } from "./direct-transfer";
+import { mapWithLimit } from "../../lib/map-with-limit";
 
 export interface MoveSet {
   /** Named volumes (bare names — resolved to mountpoints here). */
@@ -51,27 +52,13 @@ const PROBE_TIMEOUT_MS = 20_000;
 const INSPECT_TIMEOUT_MS = 10_000;
 const SIZE_CONCURRENCY = 4;
 
-/** Minimal bounded-concurrency map (no dep), order-preserving. */
-export async function bounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]!);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
 export async function duBytes(exec: CommandExecutor, path: string): Promise<number | null> {
   // -s summarize, -b apparent bytes (matches rsync's transferred bytes).
   const out = await exec
     .exec(`du -sb ${sq(path)} 2>/dev/null | cut -f1`, { timeout: PROBE_TIMEOUT_MS })
     .catch(() => "");
   const n = Number(out.trim());
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return out.trim() && Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 export async function volumeBytes(exec: CommandExecutor, name: string): Promise<number | null> {
@@ -106,7 +93,7 @@ export async function sizeOfMoveSet(exec: CommandExecutor, set: MoveSet): Promis
     ...set.images.map((img) => ({ ref: img.tag, probe: img.id, kind: "image" as const })),
     ...(set.customPaths ?? []).map((ref) => ({ ref, probe: ref, kind: "path" as const })),
   ];
-  const perItem = await bounded(tasks, SIZE_CONCURRENCY, async (t): Promise<SizedItem> => {
+  const perItem = await mapWithLimit(tasks, SIZE_CONCURRENCY, async (t): Promise<SizedItem> => {
     const bytes =
       t.kind === "volume"
         ? await volumeBytes(exec, t.probe)
@@ -116,13 +103,13 @@ export async function sizeOfMoveSet(exec: CommandExecutor, set: MoveSet): Promis
     // Up-front existence/type for a path the user can act on (bind/custom) so
     // the plan warns before the move — a missing path is the resolvable case.
     if (t.kind === "bind" || t.kind === "path") {
-      const st = await statPath(exec, t.probe);
+      const st = await statPath(exec, t.probe).catch(() => null);
       return {
         ref: t.ref,
         kind: t.kind,
         bytes,
-        exists: st !== "missing",
-        type: st === "missing" ? undefined : st,
+        exists: st === null ? undefined : st !== "missing",
+        type: st === "missing" || st === null ? undefined : st,
       };
     }
     return { ref: t.ref, kind: t.kind, bytes };

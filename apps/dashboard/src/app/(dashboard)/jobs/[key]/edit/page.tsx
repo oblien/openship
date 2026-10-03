@@ -7,7 +7,6 @@ import { useParams, useRouter } from "next/navigation";
 import { jobsApi, getApiErrorMessage, type JobView } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
-import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -17,7 +16,6 @@ export default function EditJobPage() {
   const router = useRouter();
   const params = useParams();
   const key = decodeURIComponent(String(params.key));
-  const { selfHosted } = usePlatform();
   const { showToast } = useToast();
 
   const [job, setJob] = useState<JobView | null>(null);
@@ -36,9 +34,8 @@ export default function EditJobPage() {
   }, [key, j.loadFailed, j.toast.title, showToast]);
 
   useEffect(() => {
-    if (selfHosted) void load();
-    else router.replace("/jobs");
-  }, [selfHosted, load, router]);
+    void load();
+  }, [load]);
 
   const backToDetail = () => router.push(`/jobs/${encodeURIComponent(key)}`);
 
@@ -53,8 +50,10 @@ export default function EditJobPage() {
         </h1>
       </div>
 
-      {loading || !job ? (
+      {loading ? (
         <div className="flex items-center justify-center py-20"><UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : !job ? (
+        <p role="alert" className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p>
       ) : (
         <JobForm
           job={job}

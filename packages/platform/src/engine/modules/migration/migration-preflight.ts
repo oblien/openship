@@ -10,13 +10,14 @@
  */
 
 import { edgeProxy } from "@repo/adapters";
+import { posix } from "node:path";
 import { discoverServerStack } from "./docker-inspect.service";
 import { classifyManagedContainers } from "./managed-containers";
 import { selectDiscoveredServices } from "./select-services";
-import { createServerCommandExecutor } from "../../lib/deployment-runtime";
-import { sshManager } from "../../lib/ssh-manager";
+import { withMigrationExecution } from "./migration-runtime";
 import { sizeOfMoveSet, type SizedItem } from "./migration-size";
 import { probeTargetVolumeConflicts } from "./volume-conflict";
+import { assertMigrationEndpoints } from "./migration-access";
 
 /**
  * Which bind-mount host paths are worth (and safe to) copy across servers.
@@ -25,7 +26,8 @@ import { probeTargetVolumeConflicts } from "./volume-conflict";
  * harmful. Shared by the orchestrator's move step and the preview.
  */
 export function isMovableBind(hostPath: string | undefined): boolean {
-  const p = (hostPath ?? "").trim();
+  if (!hostPath || /[\x00-\x1f:]/.test(hostPath)) return false;
+  const p = posix.normalize(hostPath.trim());
   if (!p || p === "/" || !p.startsWith("/")) return false;
   if (p.endsWith(".sock")) return false;
   const denyPrefixes = ["/proc", "/sys", "/dev", "/run", "/var/run"];
@@ -112,6 +114,7 @@ export interface MigrationPreview {
  */
 async function previewSslByDomain(
   sourceServerId: string,
+  organizationId: string,
   chosen: Array<{ proxyKind?: unknown; existingRoute?: Array<{ ssl: { enabled: boolean }; domains: string[] }> }>,
 ): Promise<Array<{ domain: string; hasCert: boolean }> | undefined> {
   const tlsDomains = new Set<string>();
@@ -127,7 +130,7 @@ async function previewSslByDomain(
 
   const carried = new Set<string>();
   try {
-    await sshManager.withExecutor(sourceServerId, async (exec) => {
+    await withMigrationExecution(sourceServerId, organizationId, async (exec) => {
       const proxy = await edgeProxy(exec);
       if (!proxy) return;
       for (const domain of tlsDomains) {
@@ -156,6 +159,7 @@ export async function buildMigrationPreview(opts: {
 }): Promise<MigrationPreview> {
   const { sourceServerId, targetServerId, serviceNames, organizationId } = opts;
   const customPaths = opts.customPaths ?? [];
+  const { target } = await assertMigrationEndpoints(organizationId, sourceServerId, targetServerId);
 
   const stack = await discoverServerStack(sourceServerId, organizationId, undefined, {
     flatDocker: opts.flatDocker,
@@ -194,13 +198,16 @@ export async function buildMigrationPreview(opts: {
     const bindAll = s.volumes
       .filter((v) => v.type === "bind" && v.source)
       .map((v) => v.source as string);
+    const unsupportedBinds = target.workspaceId ? bindAll.filter(path => !isMovableBind(path)) : [];
     return {
       name: s.name,
       source: s.source,
       image: s.image,
       classification: isBuild ? "build" : "registry",
-      blocked: isBuild || Boolean(managedBy),
-      reason: managedBy
+      blocked: isBuild || Boolean(managedBy) || unsupportedBinds.length > 0,
+      reason: unsupportedBinds.length
+        ? `Remove these host-specific mounts before importing into a managed server: ${unsupportedBinds.join(", ")}`
+        : managedBy
         ? `Already managed here by project "${managedBy.projectName}" — redeploy or edit that project instead of re-importing.`
         : isBuild
         ? "Built-from-source services can't be migrated yet — publish an image or link a repo first."
@@ -231,7 +238,7 @@ export async function buildMigrationPreview(opts: {
   // the carry then rejects, and "will issue" for every caddy and traefik box —
   // those keep certs in their own stores with no path to declare, so the wizard
   // promised an ACME issuance for domains whose certs are sitting right there.
-  const sslByDomain = sameServer ? undefined : await previewSslByDomain(sourceServerId, chosen);
+  const sslByDomain = sameServer || target.workspaceId ? undefined : await previewSslByDomain(sourceServerId, organizationId, chosen);
 
   // Cross-server: measure the payload on the source (volumes + movable binds +
   // built images by ID + custom paths) so the wizard can show total GB and a
@@ -252,13 +259,12 @@ export async function buildMigrationPreview(opts: {
       ).values(),
     ];
     try {
-      const { executor } = await createServerCommandExecutor(sourceServerId, organizationId);
-      const sized = await sizeOfMoveSet(executor, {
+      const sized = await withMigrationExecution(sourceServerId, organizationId, executor => sizeOfMoveSet(executor, {
         volumeNames: volumesToMove,
         bindPaths,
         images: builtImages,
         customPaths: customPaths.map((c) => c.source),
-      });
+      }));
       plan = { totalBytes: sized.totalBytes, partial: sized.partial, items: sized.perItem };
     } catch {
       /* sizing is best-effort — leave `plan` undefined */
@@ -272,7 +278,10 @@ export async function buildMigrationPreview(opts: {
   let conflicts: MigrationPreview["conflicts"];
   /** Extra preview warnings this function raises (merged into `stack.warnings` below). */
   const extraWarnings: string[] = [];
-  if (!sameServer && volumesToMove.length > 0) {
+  if (target.workspaceId) extraWarnings.push("Data is copied into this project's own storage. HTTPS is managed by the Cloud edge; review DNS after the target is ready.");
+  // A new managed import gets a new project namespace; a sibling's bare volume
+  // is never its destination. Ownership is checked again against the real names.
+  if (!sameServer && !target.workspaceId && volumesToMove.length > 0) {
     try {
       // Through the ADAPTER, which mounts the volume in a helper container and reports
       // "not empty" for anything it cannot read. The shell probe this replaces ended in

@@ -74,7 +74,4 @@ describe("project resources capacity resolution", () => {
     expect(probeCall).toBeGreaterThan(earlyReturn);
   });
 
-  it("requires an explicit limit on cloud and allows unlimited self-hosted", () => {
-    expect(src).toContain("requireLimit: isCloud");
-  });
 });

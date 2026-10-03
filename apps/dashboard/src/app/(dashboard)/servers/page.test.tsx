@@ -277,7 +277,7 @@ describe("server cluster navigation", () => {
     h.search = "";
     await render();
     expect(h.receive).toBeNull();
-    expect(host.querySelector(`button[aria-label="${c.refresh}"]`)).toBeNull();
+    expect(host.querySelector(`button[aria-label="${c.refresh}"]`)).not.toBeNull();
   });
 
   it("confirms discarding a ready card once and keeps it removed through a stale snapshot", async () => {

@@ -10,16 +10,18 @@
  *
  * A tiny in-memory `armed` set (rebuilt from the job table on boot + on every
  * create/update/delete) makes the per-emit check O(1): if no job listens for an
- * eventType we return immediately without touching the DB, so hooking the hot
- * emit path stays free.
+ * eventType we return immediately without touching the DB on a single instance.
+ * Cloud replicas resolve supported events from storage so another replica's
+ * new job does not depend on this process refreshing its local set.
  */
 
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import { startCommandRun } from "./job-command";
-import { resolveServerIds, type CommandConfig } from "./job.types";
+import { jobTargetsOrganization, resolveServerIds, type CommandConfig } from "./job.types";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { nativeJobsEnabled } from "../../native/execution-policy";
+import { env } from "../../config";
 
 export interface JobTriggerEvent {
   id: string;
@@ -72,7 +74,7 @@ export async function refreshTriggerArm(): Promise<void> {
  *  one workspace must never dispatch a command on another workspace's server. */
 export function fireJobTriggers(eventType: string, organizationId: string): void {
   if (!nativeJobsEnabled()) return;
-  if (!armed.has(eventType)) return;
+  if (!JOB_TRIGGER_EVENT_IDS.has(eventType) || (!env.CLOUD_MODE && !armed.has(eventType))) return;
   void trackBackgroundWork((async () => {
     try {
       const jobs = await repos.job.listAll();
@@ -91,13 +93,12 @@ export function fireJobTriggers(eventType: string, organizationId: string): void
       const servers = await repos.server.getMany(targetIds);
 
       for (const { job, serverIds } of candidates) {
-        if (
-          serverIds.length === 0 ||
-          serverIds.some((id) => servers.get(id)?.organizationId !== organizationId)
-        ) {
-          continue;
+        if (jobTargetsOrganization(serverIds, servers) !== organizationId) continue;
+        try {
+          await startCommandRun(job, "event");
+        } catch (err) {
+          console.warn(`[job-events] ${job.key} dispatch failed: ${safeErrorMessage(err)}`);
         }
-        await startCommandRun(job, "event");
       }
     } catch (err) {
       console.warn(`[job-events] trigger dispatch failed for ${eventType}: ${safeErrorMessage(err)}`);

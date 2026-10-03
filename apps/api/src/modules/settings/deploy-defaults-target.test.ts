@@ -20,6 +20,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    server: { getInOrganization: async (id: string, organizationId: string) =>
+      organizationId === "org1" && ["srv-1", "srv-managed"].includes(id)
+        ? { id, organizationId, workspaceId: id === "srv-managed" ? "ws-1" : null } : null },
     settings: {
       findByUser: async () => h.row,
       upsert: async (values: Record<string, unknown>) => {
@@ -68,14 +71,14 @@ describe("deploy defaults application service", () => {
     await expect(updateDeployDefaults(ctx, { defaultDeployTarget: null }))
       .resolves.toEqual({ defaultDeployTarget: null, defaultServerId: null });
     expect(h.upserts[0]?.defaultDeployTarget).toBeNull();
-    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "cloud" }))
-      .resolves.toEqual({ defaultDeployTarget: "cloud", defaultServerId: null });
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "cloud", defaultServerId: "srv-managed" }))
+      .resolves.toEqual({ defaultDeployTarget: "cloud", defaultServerId: "srv-managed" });
     await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "server", defaultServerId: "srv-1" }))
       .resolves.toEqual({ defaultDeployTarget: "server", defaultServerId: "srv-1" });
   });
   it("requires a server binding when selecting a server target", async () => {
     await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "server" }))
-      .rejects.toMatchObject({ statusCode: 400, message: "defaultServerId is required when defaultDeployTarget='server'" });
+      .rejects.toMatchObject({ statusCode: 400, message: "Choose a server for the deployment default" });
   });
 });
 

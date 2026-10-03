@@ -34,7 +34,7 @@ const h = vi.hoisted(() => ({
     // A server project by default; the static cases flip `hasServer` off, which is
     // the same signal resolveDeployRouting reads to pick "static-file-serve".
     hasServer: true,
-    cloudWorkspaceId: null as string | null,
+    workspaceId: null as string | null,
     outputDirectory: "dist",
   },
   containerId: "app-container" as string | null,
@@ -108,7 +108,8 @@ const dockerPathIdError = () =>
  * file is about what pause/resume ORCHESTRATE: what gets stopped, in what order
  * relative to the `disabled_at` write, and what happens when the host says no.
  */
-vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
+  ...await original<typeof import("@repo/platform/engine/lib/deployment-runtime")>(),
   deploymentContainerIds: async (dep: { containerId: string | null }) => {
     const fromServices = h.serviceRows.map((r) => r.containerId).filter((id): id is string => !!id);
     if (fromServices.length > 0) return fromServices;
@@ -218,7 +219,7 @@ describe("project pause / resume", () => {
     h.project.disabledAt = null;
     h.project.appTemplateId = null;
     h.project.hasServer = true;
-    h.project.cloudWorkspaceId = null;
+    h.project.workspaceId = null;
     h.containerId = "app-container";
     h.serviceRows = [];
     h.domainRows = [];

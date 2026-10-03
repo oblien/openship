@@ -125,9 +125,10 @@ it("masks an active migration's saved environment without mutating its recovery 
   expect(detail.run.inputSnapshot).toEqual(active.run.inputSnapshot);
   expect((await repos.dockerMigrationRun.findById(run!.id))?.inputSnapshot).toEqual(snapshot);
   const stranger = client(await seedOwner());
-  expect(
-    (await stranger.call<{ run: unknown }>("get_migration_active", { query: { serverId } })).run,
-  ).toBeNull();
+  const hidden = await stranger.result<{ code: string }>("get_migration_active", { query: { serverId } });
+  expect(hidden.isError).toBe(true);
+  expect(hidden.data.code).toBe("NOT_FOUND");
+  expect(JSON.stringify(hidden.data)).not.toContain(run!.id);
   expect((await stranger.result("get_migration_migrations_by_id", { id: run!.id })).isError).toBe(
     true,
   );

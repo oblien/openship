@@ -1,5 +1,4 @@
 import {
-  isServicesFramework,
   resolveWorkload,
   type ClusterWorkloadStatus,
   type ClusterWorkloadConfig,
@@ -8,6 +7,8 @@ import {
 import type { Service, ServiceContainer } from "@/lib/api/services";
 import type { ProjectConnection } from "@/lib/api/connections";
 import type { ClusterDatabase } from "@repo/contracts";
+import { hasSeparateApplication } from "@/lib/project-application";
+export { hasSeparateApplication } from "@/lib/project-application";
 
 /** A projection of saved project data. Canvas positions never define infrastructure. */
 export interface TopologyProject {
@@ -289,21 +290,6 @@ export function buildClusterReplicaTopology(
     });
   }
   return { nodes, edges };
-}
-
-export function hasSeparateApplication(
-  project: TopologyProject,
-  services: readonly Service[],
-): boolean {
-  if (isServicesFramework(project.framework)) return false;
-  // Adding a companion to a source-built app materializes its main application
-  // as a monorepo service. The project header must not mint another copy of it.
-  if (services.some((service) => service.kind === "monorepo")) return false;
-  // Adopted/cloned stacks deliberately keep framework="unknown"; their stack
-  // and runtime identity live on the service rows returned by the same API.
-  if (project.framework === "unknown" && project.projectType === "services") return false;
-  if (project.isApp && services.length > 0) return false;
-  return true;
 }
 
 /** Presentation only: recognizing a logo never grants replication capabilities. */

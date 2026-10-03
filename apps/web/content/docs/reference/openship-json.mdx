@@ -259,26 +259,24 @@ automatically; a value saved in the dashboard or CLI for the same key overrides 
 CPU/memory limits for the project's containers — a named tier, **or** explicit values (which become
 the `custom` tier). See [Sleep mode & resources](/docs/guides/sleep-mode-resources).
 
-<Callout title="Self-hosted defaults to no limits">
-On a self-hosted instance the default is **`unlimited`** — the machine is the ceiling, because it's
-your hardware. Set a tier or explicit values only when you deliberately want to cap a container.
-A non-zero value is validated against the **target machine's real capacity**, so a 64 GB box can
-hand a container 64 GB.
+<Callout title="Full server capacity by default">
+The default is **`unlimited`** on both connected and managed Cloud servers. A container
+can use the host's available CPU and memory, shared with the other applications on that
+server. Select a tier or explicit values only when you want an additional container cap.
 
-On Openship Cloud a workspace is metered and must be sized, so `unlimited` isn't available there and
-an omitted value falls back to the `low` tier.
-
+The Cloud subscription sets the server's allocation separately. Changing a project's
+resource tier never creates or resizes a server.
 </Callout>
 
 <TypeTable
   type={{
     tier: {
-      type: '"unlimited" | "micro" | "low" | "medium" | "high"',
-      description: 'Named sizing tier. "unlimited" = no caps (self-hosted only).',
+      type: '"unlimited" | "micro" | "low" | "medium" | "high" | "xlarge"',
+      description: 'Named container limit. "unlimited" uses the server’s available capacity.',
     },
     cpuCores: { type: "number", description: "Fractional vCPU cores. 0 = no limit." },
     memoryMb: { type: "integer", description: "RAM in MB. 0 = no limit." },
-    diskMb: { type: "integer", description: "Disk in MB (cloud workspaces only). 0 = no limit." },
+    diskMb: { type: "integer", description: "Resource metadata in MB. Managed server disk allocation is set by its subscription, not by this project field." },
   }}
 />
 
@@ -440,7 +438,7 @@ the required roots and start commands.
 | `env`                                                                                                          | Environment variables (seeded as editable rows)   |
 | `domains`                                                                                                      | Public endpoints / custom domains                 |
 | `routes`                                                                                                       | Reverse-proxy routing (`routingConfig`)           |
-| `resources`                                                                                                    | Cloud resource tier / custom sizing               |
+| `resources`                                                                                                    | Optional container resource limits               |
 | `services`                                                                                                     | Compose services                                  |
 | `monorepo`                                                                                                     | Monorepo sub-apps + workspace                     |
 

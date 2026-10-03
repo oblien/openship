@@ -168,7 +168,7 @@ export async function runClusterDatabase(
       "Checking the saved cluster identity and private API connection.",
       async () => {
         const p = await project(ctx, row.projectId);
-        if ((p.clusterId && p.clusterId !== row.clusterId) || p.cloudWorkspaceId)
+        if ((p.clusterId && p.clusterId !== row.clusterId) || p.workspaceId)
           throw new Error("The project no longer targets this database's cluster.");
         connection = await openClusterApi(ctx.organizationId, row.clusterId, row.runtimeId);
         for (const host of connection.runtime.plan.hosts) await authorizeMember(ctx, host.serverId);
@@ -449,7 +449,7 @@ export function createClusterDatabaseOperations(
           if (
             !clusterId ||
             (p.clusterId && p.clusterId !== clusterId) ||
-            p.cloudWorkspaceId ||
+            p.workspaceId ||
             p.appTemplateId === "openship"
           )
             throw new AppError(

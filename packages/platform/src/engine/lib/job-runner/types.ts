@@ -21,13 +21,19 @@
  * which backend is live.
  */
 
+export interface JobRunnerStartOptions {
+  processRun: (runId: string) => Promise<void>;
+  /** Resolve persisted schedules not yet registered on this queue consumer. */
+  processRecurring?: (jobId: string) => Promise<void>;
+}
+
 export interface JobRunner {
   readonly name: "bullmq" | "in-process";
 
   /** Start the runner. Wires the job processor that runs when a
    *  `enqueueRun` job is picked up. Idempotent — calling twice is a
    *  no-op on the second call. */
-  start(opts: { processRun: (runId: string) => Promise<void> }): Promise<void>;
+  start(opts: JobRunnerStartOptions): Promise<void>;
 
   /** Stop the runner gracefully. Waits up to `deadlineMs` for in-flight
    *  jobs to finish. SIGTERM handler calls this. */

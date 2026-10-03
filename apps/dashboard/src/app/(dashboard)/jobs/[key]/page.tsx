@@ -8,7 +8,7 @@ import { jobsApi, getApiErrorMessage, type JobView, type JobRunSummary } from "@
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobRunLogsModal } from "@/components/jobs/JobRunLogs";
 import { formatTime as fmtTime, formatDuration as fmtDur, statusTone, statusIcon } from "@/components/jobs/jobFormat";
-import { usePlatform } from "@/context/PlatformContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -21,7 +21,7 @@ export default function JobDetailPage() {
   const router = useRouter();
   const params = useParams();
   const key = decodeURIComponent(String(params.key));
-  const { selfHosted } = usePlatform();
+  const showCloudPricing = useCloudDeployPricing();
   const { showToast } = useToast();
 
   const [job, setJob] = useState<JobView | null>(null);
@@ -45,9 +45,8 @@ export default function JobDetailPage() {
   }, [key, j.loadFailed, j.toast.title, showToast]);
 
   useEffect(() => {
-    if (selfHosted) void load();
-    else setLoading(false);
-  }, [selfHosted, load]);
+    void load();
+  }, [load]);
 
   const isCustom = job?.kind === "custom";
 
@@ -60,6 +59,7 @@ export default function JobDetailPage() {
       if (res?.data?.runId) setLogRunId(res.data.runId);
       await load();
     } catch (err) {
+      if (showCloudPricing(err)) return;
       showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: job.label })), "error", j.toast.title);
     } finally {
       setBusy(false);

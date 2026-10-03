@@ -1,6 +1,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import type { ComponentStatus, ServerStats } from "@/lib/api/system";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -56,7 +57,7 @@ function StatCard({
   pct?: number;
 }) {
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-5">
+    <div className="min-w-0 bg-card rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-3">
         <UiIcon name={Icon}
           className="size-4 text-muted-foreground"
@@ -80,6 +81,10 @@ export function OverviewTab({
   stats,
   components,
   checking,
+  monitorConnected,
+  monitorError,
+  onReconnectMonitor,
+  showComponents = true,
 }: {
   stats: ServerStats | null;
   components: ComponentStatus[];
@@ -87,6 +92,7 @@ export function OverviewTab({
   monitorConnected: boolean;
   monitorError: string | null;
   onReconnectMonitor: () => void;
+  showComponents?: boolean;
 }) {
   const { t } = useI18n();
   const healthyCount = components.filter((c) => c.healthy).length;
@@ -104,11 +110,12 @@ export function OverviewTab({
       : null;
 
   return (
-    <div className="space-y-6">
+    <div className="@container/server-overview space-y-6">
+      {(monitorError || (!monitorConnected && stats)) && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/40 p-4 text-sm"><p className="min-w-0 break-words text-muted-foreground">{monitorError ?? t.billing.resourceOverview.unavailable}</p><Button size="sm" variant="secondary" onClick={onReconnectMonitor}>{t.billing.plansRoute.tryAgain}</Button></div>}
       {/* Stat cards - neutral icons; the bar tone is the only thing that
           changes with the data, so resting state is calm and high usage
           stands out. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 @min-[44rem]/server-overview:grid-cols-4 gap-4">
         <StatCard
           icon={"cpu"}
           label={t.servers.overview.cpu}
@@ -163,7 +170,7 @@ export function OverviewTab({
       {/* Components - inline-header card pattern matching the rest of
           the dashboard. No icon-in-emerald-circle; just a small muted
           icon next to the heading. */}
-      <div className="bg-card rounded-2xl border border-border/50 p-5">
+      {showComponents && <div className="bg-card rounded-2xl p-5">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2 min-w-0">
             <UiIcon name="activity"
@@ -211,7 +218,7 @@ export function OverviewTab({
                   {comp.label || comp.name}
                 </span>
                 {comp.version && (
-                  <span className="text-[11px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                  <span className="text-xs font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
                     v{comp.version}
                   </span>
                 )}
@@ -232,7 +239,7 @@ export function OverviewTab({
             {t.servers.overview.noHealthData}
           </p>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

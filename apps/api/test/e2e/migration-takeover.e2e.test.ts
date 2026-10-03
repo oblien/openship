@@ -10,12 +10,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect, createServer, type AddressInfo } from "node:net";
 import { repos } from "@repo/db";
 import type { ExecutionContext } from "@repo/platform";
 import { initPlatform, type CommandExecutor } from "@repo/adapters";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg } from "../helpers/seed";
+import { availablePort, sshReady } from "../helpers/migration-host";
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { discoverServerStack } from "@repo/platform/engine/modules/migration/docker-inspect.service";
 import {
@@ -38,18 +38,6 @@ const names = [
 ];
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Pick on the test runner: a VM's ephemeral port may already be occupied here. */
-function availablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const port = (server.address() as AddressInfo).port;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-}
-
 async function waitFor<T>(
   read: () => Promise<T | null | undefined>,
   timeout = 180_000,
@@ -61,21 +49,6 @@ async function waitFor<T>(
     await delay(300);
   }
   throw new Error("Timed out waiting for the migration target");
-}
-
-/** A VM may publish Docker's port before its host forward carries SSH traffic. */
-function sshReady(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = connect({ host: "127.0.0.1", port });
-    const finish = (ready: boolean) => {
-      socket.destroy();
-      resolve(ready);
-    };
-    socket.setTimeout(1_000, () => finish(false));
-    socket.once("error", () => finish(false));
-    socket.once("end", () => finish(false));
-    socket.once("data", (data) => finish(data.toString().startsWith("SSH-")));
-  });
 }
 
 describeDockerE2E("Compose migration through a remote SSH server", () => {

@@ -1,0 +1,131 @@
+---
+title: Managed Cloud servers
+description: Share one subscribed Docker host across projects, with measured usage and independent billing.
+---
+
+Choose a plan and deploy. Openship Cloud creates and manages a server for your
+projects automatically, including Docker and routing through Oblien. You do not
+need to connect SSH credentials or install an edge proxy.
+
+## Deploy to your managed server
+
+New Cloud accounts start with **Production**, a shared Docker server. Complete
+checkout in Billing and setup starts after the provider confirms payment. The
+server is selected automatically when it is your only destination. Install a
+catalog app, deploy a repository or upload source files using the normal flow.
+
+Cloud uses the same Docker engine as self-hosted deployments. Services,
+environments, logs, volumes, backups and rollback artifacts belong to their
+projects. Execution runs inside your managed server; edge routing uses Oblien.
+
+Open **Servers** when you want usage, component health, listening ports, terminal access,
+network settings or operation logs. This is optional administration, not a setup checklist. Cloud
+shows supported capabilities, without SSH setup, edge installation or host
+component maintenance.
+
+You can add another managed server with an independent subscription. Projects
+select it through the same `serverId` used for connected servers. Changing a
+server name does not move its workloads; moving projects requires an explicit
+migration. Provider workspace IDs remain internal provisioning and billing
+identities.
+
+Choose **Docker** for isolated services, catalog apps and Compose stacks.
+Compatible source applications can choose **Direct** to run as a supervised
+process on the same server. Sidecars still use Docker. Both choices share the
+subscription's capacity; an additional server has its own subscription.
+
+Self-hosted SSH servers keep their existing setup and management controls.
+
+## Use Cloud from self-hosted Openship
+
+In **Servers → Add server**, choose a managed Cloud server and connect your
+Openship Cloud account. You can purchase a new server or link one you already
+administer. It then appears in the same destination picker as your SSH servers.
+Deployments, jobs, logs, terminals and backups use the existing application flow.
+
+Project settings stay on the installation that created them. Cloud manages the
+server's subscription and records its linked projects so a host cannot be deleted
+while another installation still uses it. The connection is pinned to your Cloud
+account and organization; switching accounts requires reconnecting the original
+account before managing its existing servers.
+
+## Understand capacity and usage
+
+The server page separates **provisioned capacity** from **live usage**. A
+100 GB disk is a capacity ceiling, not a claim that your application stores
+100 GB. The disk breakdown measures project containers, named volumes and
+managed bind data, with a separate shared total for images, build cache and
+system files. Measurements can be temporarily unavailable; the UI shows an
+unknown value instead of substituting reserved capacity.
+
+CPU and memory settings limit individual containers. They do not reserve
+another machine. New offers let one service use the full purchased CPU and
+memory pool, while all services still compete for the actual host resources.
+The operating system and Docker also use some memory and disk. New managed-server
+offers do not cap project or service counts; their workloads share the server's
+resources. Saved subscription terms remain unchanged. See current offers on the [pricing page](/pricing).
+
+Source builds run on the server using measured available CPU and memory.
+An optional build size is an upper limit; automatic sizing uses current
+headroom. Host activity is coordinated so simultaneous builds or a resize do
+not each assume the same free resources. If too little memory is available,
+stop an idle service or upgrade the server and retry. Image-only installs
+do not create a source builder.
+
+Capacity and metered credits are separate. Running apps and builds consume the
+server's usage allowance under the provider's rate card. A capacity limit
+does not promise unlimited runtime hours. See [Cloud billing](/docs/guides/billing).
+
+## Upgrade and recover
+
+1. Open Billing for the server and purchase the desired plan.
+2. Open the server and choose **Apply plan capacity**.
+3. Review the current and purchased sizes and the affected projects.
+4. Confirm the restart. The operation waits for active work, records the
+   running applications, resizes the host and restores them.
+
+Allow for downtime during a host resize. Intentionally stopped services stay
+stopped. A failed operation retains its logs, reason and recovery checkpoint;
+retry it from the server page. Disk capacity cannot be shrunk in place.
+Moving to a smaller disk requires a separate data migration.
+
+Provisioning and resize operations survive an API restart. Transient failures
+have a displayed retry time; a settled failure requires an explicit retry.
+A billing connectivity error alone does not cancel an active subscription.
+
+Interrupted commands must finish or be confirmed stopped before another operation
+changes the server. Retry the original operation to recover it. If the server's
+Docker bridge itself crashes during a change and cannot confirm the result,
+Openship keeps the server locked for that operation. The error directs you to
+restart the managed server through the provider console and retry. This recovery
+can interrupt all applications on the server; Openship does not restart it
+automatically to clear the lock.
+
+## Terminal and networking
+
+Docker servers expose a host terminal through the same authenticated terminal
+interface as connected servers. Oblien allows one host terminal socket per
+server; a second session is refused until the existing session closes. Service
+terminals use Docker and remain independent. Terminal activity has idle and
+maximum-lifetime limits.
+
+The **Networking** tab controls outbound internet access through Oblien. The
+confirmation explains that disabling it affects downloads, builds and external
+integrations for all projects. Published ports and domains stay in each project's
+routing settings, so a server setting cannot overwrite their rules. Provider
+private-link and edge configuration is managed automatically.
+
+## Delete safely
+
+Deleting a project in a shared server removes that project's resources and
+preserves the server and its other projects. The normal project deletion
+choice still controls whether persistent volumes are removed. An application
+rollback reuses project artifacts; it never restores or deletes the whole host.
+
+To delete a server, first remove or migrate its projects and end its
+subscription. Deletion is blocked while a paid period or unresolved checkout
+remains. Provider removal must be confirmed before Openship removes workspace
+ownership. Billing records remain with the payment provider. Cancellation by
+itself does not delete project data.
+
+The [server API](/docs/api/servers) exposes the same lifecycle to the SDK and MCP.

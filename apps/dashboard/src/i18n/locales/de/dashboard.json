@@ -83,7 +83,8 @@
       "account": "Konto"
     },
     "apps": "Apps",
-    "jobs": "Jobs"
+    "jobs": "Jobs",
+    "workspaces": "Arbeitsbereiche"
   },
   "sidebar": {
     "expand": "Seitenleiste ausklappen",

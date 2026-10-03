@@ -21,7 +21,7 @@ vi.mock("@/components/ui/Modal", () => ({ Modal: ({ isOpen, children }: { isOpen
 
 const project = {
   id: "web", groupId: "group-web", organizationId: "org-source", name: "Web", slug: "web",
-  environmentName: "Production", serverId: "server-a", cloudWorkspaceId: null, localPath: null,
+  environmentName: "Production", serverId: "server-a", workspaceId: null, cloudWorkspaceId: null, localPath: null,
 };
 const manifest: TransferManifest = {
   projects: [project],

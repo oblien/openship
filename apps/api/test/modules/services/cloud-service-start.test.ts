@@ -35,13 +35,13 @@ import type { ExecutionContext } from "@repo/platform";
 import { startServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 
 let sequence = 0;
-let organizationId: string, projectId: string, deploymentId: string, workspaceId: string;
+let organizationId: string, projectId: string, deploymentId: string, workspaceId: string, managedWorkspaceId: string, serverId: string;
 let webId: string, databaseId: string, addedId: string;
 let docker: boolean;
 const resources = { cpuCores: 1, memoryMb: 1024, diskMb: 4096 };
 const buildResources = { cpuCores: 1, memoryMb: 512, diskMb: 4096 };
 const runtime = {
-  name: "cloud",
+  name: "docker",
   supports: (cap: string) => cap === "multiServiceDeploy" || (docker && ["hostContainerQuery", "dockerHost"].includes(cap)),
   listAllContainers: h.containers,
   start: h.start,
@@ -65,12 +65,15 @@ beforeEach(async () => {
   webId = `web-${suffix}`; databaseId = `db-${suffix}`; addedId = `added-${suffix}`;
   docker = true;
   await db.insert(schema.organization).values({ id: organizationId, name: suffix, slug: suffix, createdAt: new Date() });
+  const managed = await repos.cloudWorkspace.create({ organizationId, name: "Test server" });
+  managedWorkspaceId = managed.id;
+  serverId = (await repos.server.findByWorkspace(managed.id, organizationId))!.id;
   await db.insert(schema.projectGroup).values({ id: `group-${suffix}`, organizationId, name: suffix, slug: suffix });
   await db.insert(schema.project).values({ id: projectId, groupId: `group-${suffix}`, organizationId,
-    name: suffix, slug: suffix, resources, buildResources, cloudWorkspaceId: workspaceId });
+    name: suffix, slug: suffix, resources, buildResources, serverId });
   await db.insert(schema.deployment).values({ id: deploymentId, projectId, organizationId, branch: "main", status: "ready",
-    meta: { deployTarget: "cloud", runtimeMode: "docker", serviceDeploymentMode: "services", resources, buildResources,
-      cloudDockerWorkspace: { projectId, workspaceId } } });
+    meta: { deployTarget: "cloud", serverId, managedWorkspaceId, runtimeMode: "docker", serviceDeploymentMode: "services", resources, buildResources,
+      managedServer: { projectId, workspaceId } } });
   await repos.project.update(projectId, { activeDeploymentId: deploymentId });
   await db.insert(schema.service).values([
     { id: webId, projectId, name: "web", image: "nginx:alpine", advanced: { resources: { ...resources, memoryMb: 128 } } },
@@ -92,16 +95,15 @@ beforeEach(async () => {
 });
 
 describe("Cloud service Start placement and recovery", () => {
-  it("adds to the Compose workspace, sizing for live siblings and keeping the deployment identity", async () => {
+  it("adds a service to the same managed server without resizing it or changing the active release", async () => {
     const before = await repos.deployment.findById(deploymentId);
     await expect(startServiceContainer(ctx(), projectId, addedId)).resolves.toMatchObject({ containerId: "cache-container" });
     expect(h.ensureWorkspace).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       projectId, organizationId, existingWorkspaceId: workspaceId,
-      resources: { cpuCores: 3, memoryMb: 5632, diskMb: 8192 },
     }));
-    // The web's unapplied 128 MB edit and the disabled-but-live database must
-    // not erase their existing 2 GB + 1 GB allocations from the shared host.
-    expect(h.resolvePlatform).toHaveBeenCalledWith(expect.objectContaining({ cloudDockerWorkspace: { projectId, workspaceId } }), { organizationId });
+    expect(h.ensureWorkspace.mock.calls[0]![0]).not.toHaveProperty("resources");
+    // Existing containers keep their resources; service Start cannot resize the server.
+    expect(h.resolvePlatform).toHaveBeenCalledWith(expect.objectContaining({ managedServer: { projectId, workspaceId } }), { organizationId });
     expect(h.deploy).toHaveBeenCalledWith(expect.anything(), expect.anything(), runtime, expect.anything(), expect.objectContaining({
       targetServiceIds: new Set([addedId]), strictScope: true,
     }));
@@ -112,19 +114,18 @@ describe("Cloud service Start placement and recovery", () => {
       .toEqual(["database-container", "web-container"]);
   });
 
-  it("keeps services added to native single-app projects on independent workspaces", async () => {
-    docker = false;
+  it("runs services beside a bare application using Docker on that same server", async () => {
+    docker = true;
     await repos.deployment.updateStatus(deploymentId, "ready", {
-      meta: { deployTarget: "cloud", serviceDeploymentMode: "single", workspaceId, resources },
+      meta: { deployTarget: "cloud", serverId, managedWorkspaceId, runtimeMode: "bare", serviceDeploymentMode: "single", resources, managedServer: { projectId, workspaceId } },
     });
     await repos.service.update(addedId, { volumes: [] });
-    h.deploy.mockResolvedValue({ status: "ready", services: [{ serviceId: addedId, status: "running", containerId: "new-native-service-workspace" }] });
+    h.deploy.mockResolvedValue({ status: "ready", services: [{ serviceId: addedId, status: "running", containerId: "new-docker-service" }] });
     await expect(startServiceContainer(ctx(), projectId, addedId))
-      .resolves.toMatchObject({ containerId: "new-native-service-workspace" });
-    expect(h.ensureWorkspace).not.toHaveBeenCalled();
-    expect(h.resolvePlatform.mock.calls[0]![0]).toMatchObject({ serviceDeploymentMode: "single", workspaceId });
-    expect(h.resolvePlatform.mock.calls[0]![0]).not.toHaveProperty("cloudDockerWorkspace");
-    expect((await repos.project.findById(projectId))?.cloudWorkspaceId).toBe(workspaceId);
+      .resolves.toMatchObject({ containerId: "new-docker-service" });
+    expect(h.ensureWorkspace).toHaveBeenCalledOnce();
+    expect(h.resolvePlatform.mock.calls[0]![0]).toMatchObject({ serviceDeploymentMode: "single", runtimeMode: "docker", serverId, managedWorkspaceId });
+    expect((await repos.project.findById(projectId))?.workspaceId).toBe(managedWorkspaceId);
   });
 
   it("starts an existing container without resizing the workspace or provisioning", async () => {
@@ -152,15 +153,15 @@ describe("Cloud service Start placement and recovery", () => {
     expect(h.ensureWorkspace).toHaveBeenCalledWith(expect.objectContaining({ existingWorkspaceId: workspaceId }));
   });
 
-  it("leaves the saved service intact when workspace growth fails", async () => {
-    h.ensureWorkspace.mockRejectedValue(new Error("Resize refused"));
-    await expect(startServiceContainer(ctx(), projectId, addedId)).rejects.toThrow("Resize refused");
+  it("leaves the saved service intact when server connection fails", async () => {
+    h.ensureWorkspace.mockRejectedValue(new Error("Server unavailable"));
+    await expect(startServiceContainer(ctx(), projectId, addedId)).rejects.toThrow("Server unavailable");
     expect(h.resolvePlatform).not.toHaveBeenCalled();
     expect(h.deploy).not.toHaveBeenCalled();
     expect(await repos.service.findById(addedId)).toMatchObject({ id: addedId, volumes: ["cache-data:/data"] });
   });
 
-  it("does not resize or add to a Compose workspace during an active build", async () => {
+  it("does not add a service during an active build", async () => {
     await db.insert(schema.deployment).values({ id: `${deploymentId}-building`, projectId, organizationId,
       branch: "main", status: "building", meta: {} });
     await expect(startServiceContainer(ctx(), projectId, addedId)).rejects.toMatchObject({ code: "DEPLOYMENT_IN_PROGRESS" });
@@ -177,9 +178,9 @@ describe("Cloud service Start placement and recovery", () => {
     expect((await repos.service.findById(addedId))?.enabled).toBe(false);
   });
 
-  it("refuses a workspace belonging to another project", async () => {
+  it("refuses a frozen server binding belonging to another project", async () => {
     await repos.deployment.updateStatus(deploymentId, "ready", {
-      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "different-project", workspaceId } },
+      meta: { deployTarget: "cloud", managedServer: { projectId: "different-project", workspaceId } },
     });
     await expect(startServiceContainer(ctx(), projectId, addedId)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
     expect(h.ensureWorkspace).not.toHaveBeenCalled();

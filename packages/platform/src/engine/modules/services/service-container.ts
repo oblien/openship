@@ -43,17 +43,14 @@ export async function containerIdForService(
   );
 }
 
-/** A service is a Docker container (including Cloud Compose) or an independent
- *  native Cloud workspace — never the app's bare host process. Resolve the platform
- *  with the runtime pinned to Docker so service start/stop/logs target the real
- *  service runtime even when the project's app deploys "bare". The persisted
- *  Cloud Docker binding selects the shared workspace; native Cloud keeps its runtime. */
+/** Image services use Docker even when the main application runs bare. Resolve
+ * the shared Docker engine on the deployment's connected or managed server. */
 export async function resolveServicePlatform(
   project: { id?: string; organizationId: string },
   dep: { meta: unknown },
 ) {
   const snapshot = { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" as const };
-  if (snapshot.cloudDockerWorkspace && project.id && snapshot.cloudDockerWorkspace.projectId !== project.id) {
+  if (snapshot.managedServer && project.id && snapshot.managedServer.projectId !== project.id) {
     throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   }
   return resolveDeploymentPlatform(snapshot, { organizationId: project.organizationId });
@@ -70,7 +67,7 @@ export async function resolveServiceRuntimeForRead(
   dep: { meta: unknown },
 ): Promise<RuntimeAdapter | null> {
   return resolveDeploymentRuntimeForRead({
-    meta: dep.meta,
+    meta: { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" },
     organizationId: project.organizationId,
     projectId: project.id,
   })

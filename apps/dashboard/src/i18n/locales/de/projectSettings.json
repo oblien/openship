@@ -621,7 +621,7 @@
   },
   "resources": {
     "title": "Maschinenleistung",
-    "description": "CPU- und Speichergrenzen für die Container dieses Projekts.",
+    "description": "Projekte teilen diesen Server. CPU- oder RAM-Limits nur bei Bedarf setzen.",
     "loading": "Zielmaschine wird gelesen …",
     "unavailable": "Maschinenleistung nicht verfügbar",
     "loadFailed": "Maschinenleistung konnte nicht geladen werden",
@@ -631,9 +631,9 @@
     "appliesOnNextDeploy": "Grenzen werden beim Neuerstellen des Containers angewendet – für eine Änderung neu deployen.",
     "tiers": {
       "unlimited": {
-        "name": "Keine Grenzen",
-        "description": "Die ganze Maschine nutzen (Standard)",
-        "spec": "Maschinenkapazität"
+        "name": "Volle Kapazität",
+        "description": "Verfügbare CPU und RAM des Servers nutzen (Standard)",
+        "spec": "Mit anderen Projekten geteilt"
       },
       "micro": {
         "name": "Micro",
@@ -675,6 +675,10 @@
       "updated": "Maschinenleistung aktualisiert",
       "updateFailed": "Maschinenleistung konnte nicht aktualisiert werden",
       "invalidValues": "CPU und Speicher müssen 0 oder eine positive Zahl sein"
+    },
+    "customized": {
+      "name": "Angepasst",
+      "description": "Voreinstellung wählen oder eigene Limits festlegen"
     }
   },
   "sleep": {

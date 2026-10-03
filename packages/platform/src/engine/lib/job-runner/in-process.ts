@@ -24,7 +24,7 @@
 import cronParser from "cron-parser";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import type { JobRunner } from "./types";
+import type { JobRunner, JobRunnerStartOptions } from "./types";
 
 const POLL_INTERVAL_MS = 30_000;
 const DEFAULT_CONCURRENCY = 2;
@@ -51,7 +51,7 @@ export class InProcessJobRunner implements JobRunner {
   private started = false;
   private closed = false;
 
-  async start(opts: { processRun: (runId: string) => Promise<void> }): Promise<void> {
+  async start(opts: JobRunnerStartOptions): Promise<void> {
     if (this.started) return;
     this.shuttingDown = false;
     this.closed = false;

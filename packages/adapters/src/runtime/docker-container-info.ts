@@ -1,6 +1,21 @@
 import type { ContainerInfo } from "../types";
 import type { DockerContainerSummary, DockerPortBinding } from "./types";
 
+/** Docker keeps Running=true while paused or restarting. Those flags, and an
+ * unhealthy verdict, take precedence in both inventory and individual reads. */
+export function dockerContainerStatus(
+  rawState: string,
+  details: { running?: boolean; paused?: boolean; restarting?: boolean; health?: string; statusLine?: string } = {},
+): ContainerInfo["status"] {
+  const state = rawState.toLowerCase().trim();
+  if (details.paused || state === "paused") return "stopped";
+  if (details.restarting || state === "restarting" || state === "starting") return "deploying";
+  if (state === "dead" || state === "unhealthy" || details.health?.toLowerCase() === "unhealthy" ||
+      /\(unhealthy\)/i.test(details.statusLine ?? "")) return "failed";
+  if (details.running || state === "running" || state === "healthy") return "running";
+  return "stopped";
+}
+
 function bindingPriority(ip: string | undefined): number {
   const normalized = ip?.trim().replace(/^\[|\]$/g, "") ?? "";
   if (normalized === "127.0.0.1" || normalized === "::1") return 3;
@@ -57,16 +72,9 @@ export function dockerPublishedPortInfo(
 
 /** Convert a one-shot `docker ps -a` row into the standard runtime view. */
 export function containerInfoFromDockerSummary(container: DockerContainerSummary): ContainerInfo {
-  const state = container.state.toLowerCase().trim();
-  const status: ContainerInfo["status"] =
-    state === "running" || state === "restarting"
-      ? "running"
-      : state === "dead"
-        ? "failed"
-        : "stopped";
   return {
     containerId: container.id,
-    status,
+    status: dockerContainerStatus(container.state, { statusLine: container.status }),
     ...(container.ip ? { ip: container.ip } : {}),
     ...dockerPublishedPortInfo(container.ports),
   };

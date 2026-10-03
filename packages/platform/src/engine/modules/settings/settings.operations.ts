@@ -15,7 +15,7 @@ export const settingsDependencies: UserSettingsDependencies = {
     setBuildMode: service.updateBuildMode,
     setRouteStrategy: service.updateRouteStrategy,
     async setDeployDefaults(ctx, input) {
-      if (input.defaultDeployTarget === "server" && input.defaultServerId) await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: input.defaultServerId, action: "read" });
+      if (input.defaultDeployTarget && input.defaultServerId) await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: input.defaultServerId, action: "read" });
       return service.updateDeployDefaults(ctx, input);
     },
     setCloneCredentials: service.updateCloneCredentials,

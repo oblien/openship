@@ -85,6 +85,8 @@ function BranchSelect({
   return (
     <div className="space-y-1.5">
       <CustomSelect
+        variant="filled"
+        triggerClassName="bg-muted/60 hover:bg-muted"
         value={value}
         onChange={onChange}
         disabled={disabled}

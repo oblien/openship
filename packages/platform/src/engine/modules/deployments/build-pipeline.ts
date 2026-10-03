@@ -28,7 +28,6 @@ import type {
 import {
   BareRuntime,
   BuildLogger,
-  CloudRuntime,
   DockerRuntime,
   STATIC_RELEASE_BASE,
   sharedMountExecutor,
@@ -41,7 +40,7 @@ import {
   edgeProxyFor,
 } from "@repo/adapters";
 import { platform } from "../../lib/platform-config";
-import { cloudDockerNeedsBuild, reconcileCloudDockerWorkspace, cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
+import { cloudDockerNeedsBuild, ensureCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
 import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
 import { cloudCapacityFailure } from "../../lib/cloud-capacity";
 import {
@@ -57,6 +56,7 @@ import {
   resolveDeploymentPlatform,
   resolveEffectiveTarget,
   hostChannelDeployNotice,
+  type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { isRealContainerRef } from "../../lib/container-ref";
 import { ensureRoutingReady } from "../../lib/edge-reconcile";
@@ -141,7 +141,6 @@ import {
   strictRefreshImages,
 } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
-import { prepareCloudBuildResources } from "./cloud-build-resources";
 import { shouldRetainArtifact } from "./rollback/restore-plan";
 import { resolveClonePlan } from "./clone-plan";
 import { collapseTerminalLogs } from "./terminal-logs";
@@ -209,11 +208,6 @@ export async function resolveServicePipelineMode(
   const targetsSpecificServices = (snapshot.targetServiceIds?.length ?? 0) > 0;
 
   if (snapshot.serviceDeploymentMode === "single" && !targetsSpecificServices) {
-    if (snapshot.cloudDockerWorkspace || (project.cloudWorkspaceId &&
-        await repos.cloudDockerWorkspace.find(project.id, project.organizationId))) {
-      throw new AppError("This project uses a shared Docker workspace. Deploy its services to keep the existing containers and data.",
-        409, "CLOUD_DOCKER_SERVICE_MODE_REQUIRED");
-    }
     return { useSingleAppPipeline: true, useServicePipeline: false, servicePreflightServices: [] };
   }
 
@@ -303,7 +297,16 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       // Session admission can fail at capacity. It belongs inside the worker's
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       sessionManager.createSession(dep.id, project.id);
-      await executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal);
+      const { withCloudWorkspaceActivity } = await import("../../lib/cloud-workspace-lock");
+      await withCloudWorkspaceActivity(project.workspaceId, async () => {
+        // Cancellation/recovery can win while this worker waits for the server.
+        // Re-read after admission so a recovered lease cannot start late work.
+        if (project.workspaceId) {
+          const current = await repos.deployment.findById(dep.id);
+          if (!current || !["building", "deploying"].includes(current.status)) return;
+        }
+        await executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal);
+      }, cancellationSignal, { scope: `project:${project.id}` });
     } catch (err) {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
       // executeBuildAndDeploy's inner try/catch only arms onFailure() after
@@ -356,7 +359,7 @@ async function markDeploymentFailedFromOutside(
       // `updateStatus(id, "failed")` below would erase that distinction.
       return;
     }
-    const capacityError = cloudCapacityFailure(error, dep.projectId);
+    const capacityError = cloudCapacityFailure(error, dep.projectId, undefined, (dep.meta as DeploymentMeta | null)?.managedWorkspaceId);
     await repos.deployment.updateStatus(deploymentId, "failed", {
       errorMessage: capacityError?.message ?? message,
       ...(capacityError ? { errorCode: capacityError.code, errorDetails: capacityError.details } : {}),
@@ -671,7 +674,6 @@ async function executeBuildAndDeploy(
     provisioned,
   };
 
-  let settledDockerResources: ResourceConfig | undefined;
   let buildResourcesForRecovery: ResourceConfig | null | undefined;
   try {
     // Decide the runtime modes as DATA (no mutate-then-undo). Two historical
@@ -682,54 +684,27 @@ async function executeBuildAndDeploy(
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
     const serviceMode = await resolveServicePipelineMode(project, snapshot);
     const willRunServices = serviceMode.useServicePipeline;
-    const dockerWorkspace =
-      willRunServices &&
-      resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
-      (await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode));
+    const managedTarget = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
     await assertCloudDeploymentLimits(dep.organizationId, {
       projectId: project.id,
       resources: snapshot.resources, buildResources: snapshot.buildResources,
       runsApplication: snapshotToClass(snapshot).workload !== "static",
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
-      dockerWorkspace,
       retainedImages: strictRefreshImages(snapshot),
     });
-    const cloudBuild = await prepareCloudBuildResources({ project, snapshot,
-      services: willRunServices ? serviceMode.servicePreflightServices : undefined, dockerWorkspace });
-    buildResourcesForRecovery = cloudBuild?.build ?? null;
-    if (cloudBuild) {
-      for (const [name, allocation] of Object.entries(cloudBuild.services ?? { build: cloudBuild.build })) {
-        logger.log(`→ Cloud ${name} build: ${allocation.cpuCores} vCPU · ${allocation.memoryMb} MB, selected from the pool's available capacity.\n`);
-      }
-    }
-    if (dockerWorkspace) {
-      settledDockerResources = cloudDockerResources({
-        resources: snapshot.resources,
-        services: serviceMode.servicePreflightServices.map((service) => ({
-          enabled: service.enabled,
-          resources: service.advanced?.resources,
-        })),
-      });
-      logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
-      snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
+    if (managedTarget) {
+      if (!project.workspaceId || !project.serverId) throw new Error("Select a managed server before deploying this project");
+      logger.log("→ Connecting to the project's managed server.\n");
+      snapshot.managedServer = await ensureCloudDockerWorkspace({
         projectId: project.id, organizationId: dep.organizationId,
-        resources: cloudBuild?.workspace ?? cloudDockerResources({
-          resources: snapshot.resources, buildResources: snapshot.buildResources,
-          reserveBuild: !env.CLOUD_MODE && cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)),
-          services: serviceMode.servicePreflightServices.map(service => ({
-            enabled: service.enabled,
-            resources: service.advanced?.resources,
-          })),
-        }),
-        signal: cancellationSignal,
-        onProgress: message => logger.log(message),
+        signal: cancellationSignal, onProgress: message => logger.log(message),
       });
-      snapshot.workspaceId = snapshot.cloudDockerWorkspace.workspaceId;
-      snapshot.runtimeMode = "docker";
+      snapshot.managedWorkspaceId = project.workspaceId;
+      snapshot.serverId = project.serverId;
+      snapshot.runtimeMode = willRunServices || snapshot.handoverAppImage ? "docker" : snapshot.runtimeMode ?? (project.runtimeMode === "bare" ? "bare" : "docker");
       snapshot.buildStrategy = "server";
-      // Every subsequent service action/recovery uses the frozen host identity.
       if (!await repos.deployment.updateStatus(dep.id, "building", { meta: snapshot })) {
-        throw new Error("Deployment was cancelled while preparing its Docker workspace");
+        throw new Error("Deployment was cancelled while connecting to its server");
       }
     }
     // The runtime/workload axis, resolved from the frozen snapshot triple
@@ -743,6 +718,7 @@ async function executeBuildAndDeploy(
       effectiveTarget: resolveEffectiveTarget(plat.target, snapshot),
       willRunServices,
       hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
+      runtimeMode: snapshot.runtimeMode,
     });
     if (runtimeModes.buildRuntimeMode === "docker" && snapshot.deployTarget !== "cluster") {
       logger.log(
@@ -750,6 +726,8 @@ async function executeBuildAndDeploy(
           ? "→ Services require the Docker runtime — running this service deploy on Docker.\n"
           : snapshot.releaseImageRef
             ? "→ Prebuilt release image requires Docker — pulling and running it without a source build.\n"
+            : workload === "worker"
+              ? "→ Running the worker in Docker.\n"
             : "→ Static build runs in a Docker sandbox; files are served by the edge.\n",
       );
     }
@@ -782,6 +760,7 @@ async function executeBuildAndDeploy(
     const deployRouting = resolveDeployRouting({
       workload,
       runtimeName: runtime.name,
+      managedServer: resolved.effectiveTarget === "cloud",
       outputDirectory: snapshot.outputDirectory,
     });
 
@@ -844,14 +823,21 @@ async function executeBuildAndDeploy(
 
     await emitInitialServiceChecks(serviceFanOut, project, dep);
 
-    // Target-aware: cloud falls back to the metered free tier, self-hosted falls
-    // back to NO limits (the operator's box is the cap). Using the cloud default
-    // on both is what pinned every self-hosted container to 512 MB.
-    const isCloudDeploy = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
-    const prodResources = resolveRuntimeResources(snapshot.resources, { isCloud: isCloudDeploy });
-    const buildResources = cloudBuild?.build ?? resolveBuildResources(snapshot.buildResources, {
-      isCloud: isCloudDeploy,
-    });
+    // Both server types use the host's available capacity unless the project
+    // sets a limit. Managed builds get measured headroom below.
+    const prodResources = resolveRuntimeResources(snapshot.resources);
+    let buildResources = resolveBuildResources(snapshot.buildResources);
+    const needsBuild = !snapshot.releaseImageRef && !snapshot.refreshAppDeploymentId &&
+      (willRunServices ? cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)) : !snapshot.handoverAppImage);
+    if (snapshot.managedServer?.ownerWorkspaceId && needsBuild) {
+      const { sampleCloudWorkspaceResources, workspaceBuildResources } = await import("../../lib/cloud-workspace-host");
+      const id = snapshot.managedServer.ownerWorkspaceId;
+      const { usage, capacity } = await sampleCloudWorkspaceResources(dep.organizationId, id);
+      buildResources = workspaceBuildResources(capacity, usage, snapshot.buildResources ?? undefined);
+      buildResourcesForRecovery = buildResources;
+      snapshot.buildResources = buildResources;
+      logger.log(`→ Building inside the workspace using available capacity: ${buildResources.cpuCores} vCPU · ${buildResources.memoryMb} MB.\n`);
+    }
 
     // Decrypt env vars from deployment (self-contained). decryptEnvMap
     // drops keys that fail decryption rather than leaking ciphertext into
@@ -1188,7 +1174,7 @@ async function executeBuildAndDeploy(
           composeInterpolationEnv: envMap,
           buildEnvVars: buildEnv.envVars,
           buildResources,
-          serviceBuildResources: cloudBuild?.services ?? (env.CLOUD_MODE ? {} : undefined),
+          serviceBuildResources: (env.CLOUD_MODE ? {} : undefined),
           runtimeResources: prodResources,
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,
@@ -1337,7 +1323,7 @@ async function executeBuildAndDeploy(
     }
 
     if (buildResult.status === "failed") {
-      const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery);
+      const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery, project.workspaceId);
       if (capacityError) throw capacityError;
       await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs);
       return;
@@ -1392,26 +1378,15 @@ async function executeBuildAndDeploy(
       cancellationSignal,
     };
 
-    // deployMode is derived from runtime.name === "cloud", so the cast is sound.
-    if (deployRouting.deployMode === "static-edge") {
-      await executeStaticEdgeDeploy(phase, runtime as CloudRuntime);
-    } else {
-      if (hostPortTargetLockHeld && !phase.hostPortTarget) {
-        throw new Error("Cannot allocate a routed host port without a physical target identity");
-      }
-      const deployConfig = createServerDeployConfig(phase);
-      // Release work can take minutes; it must not hold the server-wide port lock.
-      // The project execution lease still excludes another deployment or teardown.
-      await executeReleasePhase(phase, deployConfig);
-      throwIfDeploymentCancelled(cancellationSignal);
-      await (hostPortTargetLockHeld
-        ? withHostPortTargetLock(
-            phase.hostPortTarget!,
-            () => executeServerDeploy(phase, deployConfig),
-            cancellationSignal,
-          )
-        : executeServerDeploy(phase, deployConfig));
+    if (hostPortTargetLockHeld && !phase.hostPortTarget) {
+      throw new Error("Cannot allocate a routed host port without a physical target identity");
     }
+    const deployConfig = createServerDeployConfig(phase);
+    await executeReleasePhase(phase, deployConfig);
+    throwIfDeploymentCancelled(cancellationSignal);
+    await (hostPortTargetLockHeld
+      ? withHostPortTargetLock(phase.hostPortTarget!, () => executeServerDeploy(phase, deployConfig), cancellationSignal)
+      : executeServerDeploy(phase, deployConfig));
   } catch (err) {
     // Cancellation is a normal terminal outcome, not a pipeline failure. This
     // catches cancellation during setup/compose orchestration as well as the
@@ -1431,7 +1406,7 @@ async function executeBuildAndDeploy(
     // Only an UNSETTLED error is a deploy failure. An error thrown after the
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
-    const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery);
+    const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery, project.workspaceId);
     await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
       ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
   } finally {
@@ -1440,20 +1415,7 @@ async function executeBuildAndDeploy(
     // the pipeline's healthCheck hook, so nothing still needs a transport once
     // this function settles.
     for (const rt of transports) disposeRuntime(rt);
-    if (settledDockerResources) {
-      try {
-        // ensure may resize/create successfully and then lose its response.
-        // Its durable binding still identifies the host whose build allocation
-        // must be released, even before the snapshot was updated.
-        const workspaceId = snapshot.cloudDockerWorkspace?.workspaceId ??
-          (await repos.cloudDockerWorkspace.find(project.id, dep.organizationId))?.workspaceId;
-        if (workspaceId) await reconcileCloudDockerWorkspace({ projectId: project.id, organizationId: dep.organizationId,
-          workspaceId, deploymentId: dep.id, resources: settledDockerResources,
-          onProgress: message => logger.log(message) });
-      } catch (error) {
-        logger.log(`Cloud capacity reconciliation is pending: ${error instanceof Error ? error.message : "provider unavailable"}\n`, "warn");
-      }
-    }
+
   }
 }
 
@@ -1502,78 +1464,6 @@ interface DeployPhaseInputs {
    * here and released in that function's `finally`.
    */
   transports: Set<RuntimeAdapter>;
-}
-
-/** Static edge deploy via CloudRuntime (Oblien Pages). */
-async function executeStaticEdgeDeploy(
-  phase: DeployPhaseInputs,
-  runtime: CloudRuntime,
-): Promise<void> {
-  const {
-    ctx,
-    project,
-    dep,
-    snapshot,
-    buildSessionId,
-    routeState,
-    buildResult,
-    envMap,
-    prodResources,
-    logger,
-  } = phase;
-
-  // Pages is a file upload, not a workload — there is nothing to run a command
-  // in. Declared commands are named in the log rather than silently dropped.
-  await runReleasePhase({
-    commands: resolveReleaseCommands(snapshot.releaseCommands),
-    deliberateSkipReason: releasePhaseSkipReason(dep.trigger, snapshot.targetServiceIds),
-    signal: phase.cancellationSignal,
-    unsupportedReason: "Static edge deployments cannot run release commands",
-    log: (message, level) => logger.log(`${message}\n`, level),
-  });
-
-  logger.step("deploy", "running", "Deploying to edge (static)...");
-
-  const staticResult = await runtime.deployStatic({
-    deploymentId: dep.id,
-    projectId: project.id,
-    buildSessionId,
-    imageRef: buildResult.imageRef!,
-    environment: dep.environment,
-    port: snapshot.port,
-    startCommand: snapshot.startCommand,
-    stack: snapshot.framework,
-    envVars: envMap,
-    resources: prodResources,
-    restartPolicy: "no",
-    runtimeName: project.slug ?? project.id,
-    publicEndpoints: routeState.publicEndpoints,
-    outputDirectory: resolveStaticOutputDirectory(
-      snapshot.outputDirectory,
-      routeState.publicEndpoints[0]?.targetPath,
-    ),
-    projectName: project.name,
-  });
-
-  if (staticResult.status === "failed" || !staticResult.containerId) {
-    logger.step("deploy", "failed", "Static deploy failed");
-    await onFailure(ctx, "Failed to deploy static site to edge", buildResult.durationMs);
-    return;
-  }
-
-  logger.step("deploy", "completed", "Deployed to edge successfully");
-
-  await onSuccess(ctx, {
-    containerId: staticResult.containerId,
-    url: staticResult.url,
-    durationMs: buildResult.durationMs ?? 0,
-  });
-
-  // Archive the previous-active deployment for rollback — same helper the
-  // server + compose paths use. (Previously hand-copied here WITHOUT the
-  // helper's best-effort try/catch, so an archive failure threw and failed the
-  // deploy; the shared helper keeps it best-effort per its contract.)
-  await archivePreviousDeployment(dep, project, logger);
 }
 
 /**
@@ -1859,12 +1749,17 @@ function buildDeployEnvironment(
         containerPort: port,
         hostPort,
       });
-      await reserveResolvedLoopbackRoutes({
-        target: phase.hostPortTarget,
-        projectId: project.id,
-        runtime,
-        routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
-      });
+      // Managed routes validate the upstream against the project's processes
+      // and containers in CloudInfraProvider. A bare process uses the VM's
+      // loopback, but does not participate in self-hosted OpenResty claims.
+      if (phase.effectiveTarget !== "cloud") {
+        await reserveResolvedLoopbackRoutes({
+          target: phase.hostPortTarget,
+          projectId: project.id,
+          runtime,
+          routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
+        });
+      }
       return targetUrl;
     },
   };
@@ -1980,7 +1875,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // port/route/readiness seams stubbed out below.
   const isWorker = phase.deployRouting.deployMode === "worker";
   const staticServeRuntime = isStaticFileServe
-    ? new BareRuntime({
+    ? phase.effectiveTarget === "cloud" && runtime instanceof BareRuntime ? runtime : new BareRuntime({
         workDir: process.env.OPENSHIP_NATIVE === "true" && phase.effectiveTarget === "local"
           ? `${process.env.OPENSHIP_DATA_DIR}/workloads/static`
           : STATIC_RELEASE_BASE,
@@ -2000,7 +1895,8 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // allocates a host port on the orchestrator (cloud routes via Oblien, not a
   // loopback port) — defense-in-depth against a cloud→host-exec slip.
   const routeStrategy = resolveRouteStrategy(project.routeStrategy);
-  const usesHostLoopback = usesHostLoopbackUpstream(routeStrategy, runtime);
+  const usesHostLoopback = phase.effectiveTarget !== "cloud" || runtime.name === "bare"
+    ? usesHostLoopbackUpstream(routeStrategy, runtime) : false;
 
   // The project's OPT-IN readiness gate. Inactive unless the project configured
   // one, and inactive is the default — so by default nothing waits on the app
@@ -2070,7 +1966,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           );
         },
         ensurePorts: async (cfg, promptUser) => {
-          if (runtime.name === "kubernetes") return;
+          if (runtime.name === "kubernetes" || phase.effectiveTarget === "cloud") return;
           const executor = phase.targetExecutor;
           if (!executor) return;
           // A published container binds exactly ONE host port — the loopback pin.
@@ -2298,6 +2194,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     managedSlug: routeState.publicEndpoints.length > 0 ? routeState.primarySlug : undefined,
     publicEndpoints: routeState.publicEndpoints,
     runtimeName: runtime.name,
+    certificateManagement: ssl.certificateManagement,
     usesManagedRouting,
     isStatic: isStaticFileServe,
   });

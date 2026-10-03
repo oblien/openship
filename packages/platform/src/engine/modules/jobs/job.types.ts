@@ -42,3 +42,13 @@ export function resolveServerIds(cfg: {
   }
   return out;
 }
+
+/** The complete stored target set owns a job, never its creator's first org. */
+export function jobTargetsOrganization(
+  ids: readonly string[],
+  servers: ReadonlyMap<string, { organizationId: string | null }>,
+): string | null {
+  const organizationId = ids.length ? servers.get(ids[0]!)?.organizationId : undefined;
+  return organizationId && ids.every(id => servers.get(id)?.organizationId === organizationId)
+    ? organizationId : null;
+}

@@ -107,7 +107,12 @@ describe("effective service environment through HTTP, SDK and real storage", () 
   it.each(["docker", "cloud"])(
     "resolves port-only public URLs on the %s deployment target",
     async (target) => {
+      const managed = target === "cloud"
+        ? await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Managed server" })
+        : null;
+      const server = managed ? await repos.server.findByWorkspace(managed.id, owner.orgId) : null;
       const stack = await seedProject(owner.orgId, {
+        serverId: server?.id,
         framework: "docker-compose",
         runtimeMode: "docker",
       });
@@ -116,13 +121,15 @@ describe("effective service environment through HTTP, SDK and real storage", () 
         environment: { BACKEND_ORIGIN: "{{publicUrl:backend:8080}}" },
       });
       await seedService(stack.id, { name: "backend", exposed: false, ports: ["8080:8080"] });
-      const deployment = await seedDeployment(stack);
+      const deployment = await seedDeployment(stack, {
+        meta: server ? { deployTarget: "cloud", serverId: server.id, managedWorkspaceId: managed!.id,
+          managedServer: { projectId: stack.id, workspaceId: "provider-vm", ownerWorkspaceId: managed!.id } } : {},
+      });
       await setActive(stack.id, deployment.id);
       await seedServiceDeployment(deployment.id, api, { containerId: "current-api" });
       const runtime = await DockerRuntime.create({
         dockerSocketPath: "/tmp/openship-test-absent.sock",
       });
-      Object.defineProperty(runtime, "name", { value: target });
       vi.spyOn(runtime, "supports").mockReturnValue(false);
       vi.spyOn(runtime, "dispose").mockResolvedValue(undefined);
       vi.spyOn(runtime, "inspectContainer").mockResolvedValue({
@@ -140,7 +147,7 @@ describe("effective service environment through HTTP, SDK and real storage", () 
       vi.spyOn(runtime, "inspectImageEnv").mockResolvedValue([]);
       vi.mocked(deploymentRuntime.resolveDeploymentRuntimeForRead).mockResolvedValue({
         runtime,
-        serverId: null,
+        serverId: server?.id ?? null,
         hostPortTarget: null,
       });
       vi.spyOn(serverTarget, "resolveServerHost").mockResolvedValue(null);

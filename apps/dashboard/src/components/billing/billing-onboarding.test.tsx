@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLANS, pricingUi } from "@repo/core";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ModalProvider } from "@/context/ModalContext";
+import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
 import type { BillingState } from "@/lib/api/billing";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
@@ -22,7 +23,8 @@ import { CloudPlanPicker } from "./CloudPlanPicker";
 import { CloudHomePlanCard } from "./CloudHomePlanCard";
 import type { ApiPlan } from "./PricingCards";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), usage: vi.fn() }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { serverUsage: mocks.usage } }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -67,7 +69,7 @@ const complimentary: BillingState = {
 };
 let root: Root;
 let container: HTMLDivElement;
-const render = async (node: React.ReactNode) => { await act(async () => root.render(<I18nProvider><ModalProvider>{node}</ModalProvider></I18nProvider>)); };
+const render = async (node: React.ReactNode) => { await act(async () => root.render(<I18nProvider><PlatformProvider selfHosted={false}><ModalProvider>{node}</ModalProvider></PlatformProvider></I18nProvider>)); };
 function visibleText() {
   const visible = container.cloneNode(true) as HTMLElement;
   for (const details of visible.querySelectorAll("details:not([open])")) details.replaceChildren(details.querySelector("summary")!.cloneNode(true));
@@ -97,22 +99,15 @@ describe("Cloud billing before the first subscription", () => {
   it.each([0, null])("shows no included compute and a live subscription offer for quota %s", async quota => {
     const state = { ...free, balance: { ...free.balance, quotaLimit: quota, total: quota, quotaRemaining: quota } };
     await render(<><BillingOverview state={state} /><BillingSidebar state={state} /></>);
-    expect(container.textContent).toContain(copy.resourcesGuide.noPlan);
-    for (const label of [copy.resourcesGuide.projects, copy.resourcesGuide.apps, copy.resourcesGuide.buildTime]) {
-      const card = container.querySelector(`div[aria-label="${label}"]`);
-      expect(card?.querySelector("[data-resource-value]")?.textContent).toMatch(/^0/);
-      expect(card?.textContent).toContain(copy.onboarding.planRequired);
-    }
-    expect(container.querySelector("dl")?.textContent).not.toMatch(/credits|0 of 3|500/i);
-    expect(container.textContent).not.toMatch(/Unlimited|No set limit|∞/);
+    expect(container.textContent).toContain(copy.onboarding.workspaceDescription);
+    expect(container.querySelector('[role="meter"]')).toBeNull();
+    expect(visibleText()).not.toMatch(/0 of 3|500 credits/i);
     expect(container.textContent).toContain("$15");
-    expect(container.querySelector('[role="note"]')?.textContent).toContain("Hobby: 1,234");
-    expect(container.querySelector("dl")?.textContent).not.toMatch(/credits/i);
+    expect(container.querySelector('a[href="/billing/plans"]')).not.toBeNull();
     expect(button("Subscribe to Hobby").disabled).toBe(false);
     expect(mocks.get).toHaveBeenCalledOnce();
     expect(mocks.get.mock.calls[0]![0]).toContain("billing/plans");
     expect(mocks.post).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="note"] details')).toBeNull();
   });
 
   it("keeps a usable pricing link during catalog failures and recovers on retry", async () => {
@@ -159,8 +154,7 @@ describe("Cloud billing before the first subscription", () => {
     const state = { ...free, balance: { total: 150_000, quotaLimit: 200_000, quotaUsed: 50_000, quotaRemaining: 150_000 } };
     expect(isNewCloudCustomer(state)).toBe(false);
     await render(<BillingCapacity state={state} />);
-    expect(container.textContent).toContain(copy.resourcesGuide.noPlan);
-    expect(container.textContent).toContain("150 credits left");
+    expect(container.textContent).toContain(`${copy.onboarding.savedCredits}: 150`);
     expect(container.textContent).toContain(copy.onboarding.savedCreditsHint);
     expect(visibleText()).not.toContain("150 credits");
   });
@@ -175,7 +169,62 @@ describe("Cloud billing before the first subscription", () => {
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, cancelAtPeriodEnd: true } }} />);
     expect(container.textContent).toContain(copy.pricing.currentPlan);
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, status: "canceled" } }} />);
-    expect(button("Subscribe to Hobby").disabled).toBe(false);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).not.toContain("Subscribe to Hobby");
+  });
+});
+
+describe("existing server billing", () => {
+  it("keeps an allocated server out of onboarding even with no remaining allowance or usage", async () => {
+    const state = { ...free, capacity: { ...free.capacity, workspaces: { used: 1, max: 1 } } };
+    expect(isNewCloudCustomer(state)).toBe(false);
+    await render(<BillingSidebar state={state} />);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).toContain(copy.sidebar.inactiveServer);
+    expect(container.textContent).not.toContain("Start with Hobby");
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("does not turn an allocated server into a newcomer when provider capacity is unavailable", async () => {
+    const state = { ...free, workspace: { id: "workspace", name: "Production", provisioned: true } };
+    expect(isNewCloudCustomer(state)).toBe(false);
+    await render(<BillingSidebar state={state} />);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("preserves a live paid subscription when the entitlement tier is free", async () => {
+    await render(<BillingSidebar state={{ ...paid, tier: "free", status: "past_due", plan: null }} />);
+    expect(container.textContent).toContain(PLANS.starter.name);
+    expect(container.textContent).not.toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).not.toContain("Start with");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("shows the renewal date and preserves access through a scheduled cancellation", async () => {
+    await render(<BillingSidebar state={paid} />);
+    expect(container.textContent).toContain("Renews on Oct 1, 2026");
+    await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, cancelAtPeriodEnd: true } }} />);
+    expect(container.textContent).toContain("Access until Oct 1, 2026");
+    expect(container.textContent).not.toContain("Renews on");
+    expect(container.textContent).not.toContain("Start with");
+  });
+
+  it("does not describe an exhausted balance as prepaid credit", async () => {
+    await render(<BillingCapacity state={{ ...free, balance: { ...free.balance, quotaUsed: 150_000, quotaRemaining: -150_000 } }} />);
+    expect(container.textContent).toContain("Balance: -150");
+    expect(container.textContent).not.toContain(copy.onboarding.savedCredits);
+    expect(container.textContent).not.toContain(copy.onboarding.stepsTitle);
+  });
+
+  it.each(["active", "trialing", "past_due", "unpaid", "paused"] as const)("does not start a full-price checkout to replace a %s subscription", async status => {
+    await render(<CloudPlanPicker currentPlan="starter" currentOffer={hobby} subscription={{ ...paid.subscription!, status }} billingEnabled canChangeSubscription />);
+    const choices = [...container.querySelectorAll<HTMLButtonElement>("article button")];
+    expect(choices.length).toBeGreaterThan(0);
+    expect(choices.every(choice => choice.disabled)).toBe(true);
+    expect(container.textContent).toContain(copy.plansRoute.changeViaSupport);
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 });
 
@@ -232,7 +281,6 @@ describe("complimentary Cloud plans", () => {
     expect(visibleText()).toContain(copy.complimentary.label);
     expect(visibleText()).toContain(copy.complimentary.untilRevoked);
     expect(visibleText()).toContain("Credits renew on Oct 27, 2026");
-    expect(container.querySelector('[role="note"]')?.textContent).toContain("Scale: 15,000");
     expect(container.textContent).not.toContain(copy.subscription.billedMonthly);
     expect(container.textContent).not.toContain(copy.onboarding.offerDescription);
     expect(container.querySelector("button")).toBeNull();
@@ -297,7 +345,7 @@ describe("customer credit limits", () => {
     mocks.get.mockResolvedValue({ data: [{ id: "extra", name: "Extra", credits_milli: 617_000, price_cents: 1000, sortOrder: 0 }] });
     await render(<BillingTopups state={{ ...paid, subscription: { ...paid.subscription!, interval }, topups: { available: true, status: "available" } }} />);
     expect(visibleText()).toContain(percent);
-    expect(visibleText()).toContain("$10.00");
+    expect(visibleText()).toContain("$10");
     expect(visibleText()).toContain(copy.topups.allowanceEquivalent);
     expect(visibleText()).not.toMatch(/credits/i);
     expect(container.textContent).toContain("617 credits");
@@ -307,7 +355,7 @@ describe("customer credit limits", () => {
   it("leads with resource meters and shows credit accounting only on request", async () => {
     await render(<BillingCapacity state={paid} />);
     expect(visibleText()).toContain(copy.resourcesGuide.includedTitle);
-    expect(visibleText()).toContain("25% used");
+    expect(container.querySelector('[role="meter"][aria-label="Cloud usage"]')?.getAttribute("aria-valuenow")).toBe("25");
     expect(visibleText()).toContain("75% remaining");
     expect(visibleText()).toContain("9 remaining");
     expect(container.querySelector('[role="meter"][aria-label="Projects"]')?.getAttribute("aria-valuenow")).toBe("1");
@@ -317,18 +365,19 @@ describe("customer credit limits", () => {
     await act(async () => { details.open = true; });
     expect(visibleText()).toContain("900 credits left");
   });
-  it("shows the provider's shared pool independently from service counts and credit balance", async () => {
-    await render(<BillingCapacity state={{ ...paid, capacity: { ...paid.capacity,
+  it("shows measured server disk use instead of counting reserved project capacity as stored data", async () => {
+    mocks.usage.mockResolvedValue({ available: true, measuredAt: "2026-10-01T00:00:00Z", reason: null,
+      cpuPercent: 10, memoryUsedMb: 512, memoryAvailableMb: 3584,
+      diskUsedMb: 2048, diskAvailableMb: 23552, diskTotalMb: 25600, projects: [], sharedDiskMb: null });
+    await render(<BillingCapacity state={{ ...paid, workspace: { id: "workspace", name: "Production", serverId: "managed-server" }, capacity: { ...paid.capacity,
       vcpus: { used: 3, max: 4 }, ramMb: { used: 3072, max: 8192 }, diskGb: { used: 96, max: 128 },
       workspaces: { used: 3, max: 6 }, buildMinutes: { used: 14, max: null },
     } }} />);
-    for (const [label, used, max] of [[copy.header.vcpus, "3", "4"], [copy.header.ram, "3", "8"], [copy.header.diskCap, "96", "128"]]) {
-      const meter = container.querySelector(`[role="meter"][aria-label="${label}"]`);
-      expect(meter?.getAttribute("aria-valuenow")).toBe(used);
-      expect(meter?.getAttribute("aria-valuemax")).toBe(max);
-    }
+    expect(mocks.usage).toHaveBeenCalledExactlyOnceWith("managed-server");
+    expect(visibleText()).toContain("2 GB / 25 GB");
+    expect(visibleText()).not.toContain("96 GB");
     expect(visibleText()).toContain(copy.resourceOverview.measuredUsage);
-    expect(visibleText()).not.toMatch(/No set limit|3,000 min/);
+    expect(visibleText()).not.toContain("3,000 min");
   });
   it("displays the supplied offer's total capacity without claiming unlimited build time", async () => {
     await render(<PlanResources plan={{ ...hobby, resourceLimits: { ...PLANS.pro.oblienLimits,
@@ -339,20 +388,22 @@ describe("customer credit limits", () => {
     expect(valueFor(copy.resourcesGuide.storage)).toBe("192 GB");
     expect(valueFor(copy.resourcesGuide.buildTime)).toBe(copy.resourcesGuide.buildIncluded);
     expect(container.textContent).not.toContain(copy.resourcesGuide.poolHint);
-    expect(container.textContent).not.toMatch(/No set limit|3,000 min/);
+    expect(container.textContent).not.toContain("3,000 min");
     expect(visibleText()).not.toMatch(/credits/i);
-    expect(visibleText()).toContain("2 vCPU · 3 GB");
+    expect(visibleText()).toContain("2 vCPU · 8 GB");
   });
   it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
     await render(<PlanResources plan={{ ...hobby, limits: { ...hobby.limits,
       maxServiceResources: undefined, buildMinutesPerMonth: 3000 } }} />);
     expect(visibleText()).toContain("1 vCPU · 1 GB");
-    expect(visibleText()).not.toContain("2 vCPU · 3 GB");
+    expect(visibleText()).not.toContain("2 vCPU · 8 GB");
     expect(visibleText()).toContain("3,000 min / month");
     expect(visibleText()).not.toContain(copy.resourcesGuide.buildIncluded);
   });
   it("shows annual credits from the paid offer and leaves missing credit amounts unknown", async () => {
     await render(<PlanUsageNote plans={[hobby]} interval="annual" />);
+    expect(container.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
+    await act(async () => { container.querySelector<HTMLDetailsElement>("details")!.open = true; });
     expect(visibleText()).toContain("Hobby: 14,555");
     expect(visibleText()).not.toContain("1,234");
     await render(<PlanUsageNote plans={[{ ...hobby, annualCredits: null }]} interval="annual" />);
@@ -393,7 +444,7 @@ describe("resource usage overview", () => {
   it("renders real usage, traffic remaining and request counts without inventing CPU-hour allowances", async () => {
     mocks.get.mockResolvedValue({ data: usage });
     await render(<BillingResourceUsage state={paid} />);
-    expect(mocks.get).toHaveBeenCalledWith("billing/resources");
+    expect(mocks.get).toHaveBeenCalledWith("billing/resources", { params: { workspaceId: undefined } });
     expect(visibleText()).toContain("2vCPU-h");
     expect(visibleText()).toContain("46.5 GB remaining");
     expect(visibleText()).toContain("130");

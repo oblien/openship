@@ -3,9 +3,8 @@
  *
  * The ceiling for a limit is the TARGET MACHINE's real capacity (probed via
  * host-capacity.ts), not a hardcoded constant — a 64 GB box must be able to
- * hand a container 64 GB. And `0` means NO LIMIT, which is the self-hosted
- * default: the operator owns the hardware, so the machine is the cap. Cloud
- * still requires a concrete size (a metered workspace can't be unsized).
+ * hand a container 64 GB. `0` adds no container cap on either connected or
+ * managed servers; the purchased server allocation is independent of this setting.
  */
 
 import { repos } from "@repo/db";
@@ -41,10 +40,10 @@ async function resolveTargetCapacity(
     deployTarget: undefined,
     serverId: undefined,
   }));
-  const isCloud = target.deployTarget === "cloud" || !!project.cloudWorkspaceId;
+  const isCloud = target.deployTarget === "cloud" || !!project.workspaceId;
 
-  // Cloud sizes an Oblien workspace from the tier table, not from host hardware,
-  // so there is nothing to probe (and no SSH target to probe it on).
+  // Managed host allocation is verified by the deployment's plan gate. This
+  // settings read must not probe the Cloud control-plane host.
   if (isCloud) return { isCloud: true, capacity: { ...UNKNOWN_CAPACITY } };
   if (project.clusterId) return { isCloud: false, capacity: { ...UNKNOWN_CAPACITY } };
 
@@ -64,7 +63,6 @@ export async function getResources(projectId: string, organizationId: string) {
   const build = p.buildResources as ResourceConfig | null;
   const { isCloud, capacity } = await resolveTargetCapacity(p);
   return encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-    isCloud,
     capacity,
     automaticBuild: isCloud && env.CLOUD_MODE,
   });
@@ -102,9 +100,8 @@ export async function updateResources(
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
   const update: Record<string, unknown> = {};
-  const { isCloud, capacity } = await resolveTargetCapacity(p);
-  // Cloud must be sized; self-hosted may legitimately be unlimited.
-  const decodeOpts = { capacity, requireLimit: isCloud };
+  const { capacity } = await resolveTargetCapacity(p);
+  const decodeOpts = { capacity };
 
   try {
     const production = data.production ? resolveIncoming(data.production) : null;

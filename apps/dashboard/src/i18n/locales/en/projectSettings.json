@@ -782,7 +782,7 @@
   },
   "resources": {
     "title": "Machine Power",
-    "description": "CPU and memory limits for this project's containers.",
+    "description": "Projects share this server. Add CPU or memory limits only if needed.",
     "loading": "Reading the target machine…",
     "unavailable": "Machine power unavailable",
     "loadFailed": "Failed to load machine power",
@@ -792,9 +792,9 @@
     "appliesOnNextDeploy": "Limits are applied when the container is recreated — redeploy for a change to take effect.",
     "tiers": {
       "unlimited": {
-        "name": "No limits",
-        "description": "Use the whole machine (default)",
-        "spec": "Machine capacity"
+        "name": "Full capacity",
+        "description": "Use the server’s available CPU and RAM (default)",
+        "spec": "Shared with other projects"
       },
       "micro": {
         "name": "Micro",
@@ -836,6 +836,10 @@
       "updated": "Machine power updated",
       "updateFailed": "Failed to update machine power",
       "invalidValues": "CPU and memory must be 0 or a positive number"
+    },
+    "customized": {
+      "name": "Customized",
+      "description": "Choose a preset or set your own limits"
     }
   },
   "sleep": {

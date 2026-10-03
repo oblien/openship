@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "セキュリティ",
       "ports": "ポート転送",
-      "terminal": "ターミナル"
+      "terminal": "ターミナル",
+      "activity": "アクティビティ"
     },
     "healthy": "正常",
     "issues": "問題あり",
@@ -436,12 +437,19 @@
       "sensitiveHint": "インターネットに公開すべきではありません",
       "sensitiveReachable": "機微なサービスがインターネットから到達可能",
       "reachableLegend": "「到達可能」はサーバー外からポートに接続して確認済み。「ファイアウォールでブロック」はバインドされているがブロックされています（例：クラウドファイアウォール）。",
-      "summaryReachable": "{total} 個の待ち受けポート · {reachable} 個がインターネットから到達可能 · {firewalled} 個がファイアウォールでブロック"
+      "summaryReachable": "{total} 個の待ち受けポート · {reachable} 個がインターネットから到達可能 · {firewalled} 個がファイアウォールでブロック",
+      "managedTitle": "待ち受けポート",
+      "managedSubtitle": "このサーバー内で接続を待ち受けているプロセス",
+      "managedHint": "これらはマネージドサーバー内部のポートです。外部からのアクセスはネットワーク設定と各プロジェクトのドメインで管理します。",
+      "managedSummary": "待ち受けポート {total} 件 · ネットワークインターフェースにバインド {exposed} 件",
+      "managedLoopbackSummary": "待ち受けポート {total} 件 · localhost のみ",
+      "managedListener": "ネットワークリスナー",
+      "managedInconclusiveHint": "ソケット情報を取得できませんでした。再試行するか、ターミナルでサーバーへの接続を確認してください。"
     }
   },
   "terminal": {
     "title": "ターミナル",
-    "description": "WebSocket 経由のライブ SSH シェル。最大 3 つまで同時利用可能 — 選択でコピーできます。"
+    "description": "サーバーのライブターミナル。同時セッション数の上限: {count} — 選択でコピーできます。"
   },
   "setup": {
     "editServer": "サーバーを編集",
@@ -954,5 +962,18 @@
     "hostname": "Access ホスト名",
     "help": "Cloudflare Access のホスト名とサーバーの SSH 認証情報を使用します。OpenShip を実行するマシンで Cloudflare にログインしてください。Windows アプリには必要なクライアントが含まれています。他の環境には cloudflared が必要です。",
     "openAccess": "Cloudflare Access を開く"
+  },
+  "acquire": {
+    "connected": {
+      "label": "自分のサーバーを接続",
+      "description": "所有するサーバーを SSH 経由で使用します。"
+    },
+    "managed": {
+      "label": "マネージドサーバーを追加",
+      "description": "Openship Cloud がセットアップ、ルーティング、HTTPS を管理します。"
+    },
+    "signInHint": "Cloud アカウントを接続すると、既存のマネージドサーバーを使用するか、新しいサーバーを追加できます。",
+    "chooseExisting": "既存の Cloud サーバーを選択",
+    "useServer": "このサーバーを使用"
   }
 }

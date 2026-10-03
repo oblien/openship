@@ -35,7 +35,7 @@ export const Deployments = () => {
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 

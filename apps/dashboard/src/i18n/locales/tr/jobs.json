@@ -93,7 +93,10 @@
     "noServers": "Henüz sunucu bağlanmadı — önce bir tane ekleyin.",
     "command": "Komut",
     "commandPlaceholder": "pg_dump ... > /backups/db.sql",
-    "commandHint": "Seçilen sunucu(lar) üzerinde SSH ile çalışır. `docker run --rm image cmd` komutu da çalışır.",
+    "commandHint": "Seçilen her sunucuda çalışır. Konteyner görevleri için docker run --rm kullanın.",
+    "cloudServersHint": "Mevcut bir sunucuyu kullanın veya kendi aboneliği olan ayrı bir sunucu ekleyin.",
+    "cloudUsageHint": "Görevler, seçilen sunucunun kapasitesini ve kullanım kotasını paylaşır. Çalışması için aboneliği etkin olmalıdır.",
+    "addDedicatedServer": "Ayrı bir sunucu ekle",
     "scheduleType": "Ne zaman çalışacak",
     "scheduleTypes": {
       "recurring": "Bir zamanlamaya göre",
@@ -182,5 +185,6 @@
     "empty": "Henüz çıktı yok.",
     "close": "Kapat",
     "exit": "Çıkış kodu {code}"
-  }
+  },
+  "cloudSubtitle": "Yönetilen sunucularınızda zamanlanmış ve isteğe bağlı komutlar."
 }

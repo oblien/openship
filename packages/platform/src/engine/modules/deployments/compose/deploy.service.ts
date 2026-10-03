@@ -12,7 +12,7 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
-import { resolveCloudServiceResources, resolveRuntimeResources } from "../../../lib/resources";
+import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
 import {
   SYSTEM,
@@ -48,6 +48,7 @@ import {
   BuildLogger,
   DockerRuntime,
   CloudDockerRuntime,
+  CloudInfraProvider,
   containerInfoFromDockerSummary,
   ensureEdge,
   STATIC_RELEASE_BASE,
@@ -603,19 +604,8 @@ function appRowVolumes(project: Project, service: Service): string[] {
 function resolveServiceResources(
   service: Service,
   projectResources: ResourceConfig | undefined,
-  isCloud = false,
-): ResourceConfig | undefined {
-  const own = (service.advanced as ComposeAdvanced | null)?.resources;
-  if (isCloud) return resolveCloudServiceResources(own, projectResources);
-  if (!own || (own.cpuCores === undefined && own.memoryMb === undefined)) {
-    return projectResources;
-  }
-  const base = projectResources ?? UNLIMITED_RESOURCES;
-  return {
-    cpuCores: own.cpuCores ?? base.cpuCores,
-    memoryMb: own.memoryMb ?? base.memoryMb,
-    diskMb: base.diskMb,
-  };
+): ResourceConfig {
+  return resolveInheritedResources((service.advanced as ComposeAdvanced | null)?.resources, projectResources);
 }
 
 /** @internal Exported so the image-refresh contract can be tested without a Docker host. */
@@ -693,14 +683,13 @@ export function createServiceRuntimeConfig(opts: {
   /** Docker-ready shared namespaces (`container:<id>` / `none`), pre-resolved. */
   namespaces?: { network?: string; pid?: string };
   /** Previous deployment's workspace id (cloud) — reuse to keep the disk. */
-  previousWorkspaceId?: string;
   /** Re-pull registry-backed mutable tags even when already cached. */
   forcePullImages?: boolean;
   /** The orchestrator already force-pulled this image before any service
    * cutover, so activation must not contact the registry a second time. */
   imageAlreadyPrepared?: boolean;
 }): MultiServiceDeployConfig {
-  const { project, dep, service, image, environment, resources, namespaces, previousWorkspaceId } =
+  const { project, dep, service, image, environment, resources, namespaces } =
     opts;
   // Monorepo sub-apps store their long-running process in `startCommand`;
   // compose services in `command`. The DB invariant is that compose rows
@@ -743,7 +732,6 @@ export function createServiceRuntimeConfig(opts: {
     publicPort: resolveServicePublicPort(service),
     publicSlug: resolveServicePublicSlug(project, service),
     customDomain: resolveServiceCustomDomain(service),
-    previousWorkspaceId,
     dependsOn: (service.dependsOn as string[]) ?? undefined,
   };
 }
@@ -794,6 +782,7 @@ function createServiceDeployConfig(opts: {
 interface ServiceRouteContext {
   routing: RoutingProvider;
   trackedSsl: SslProvider;
+  certificateManagement?: SslProvider["certificateManagement"];
   usesManagedRouting: boolean;
   organizationId: string;
   serverId?: string;
@@ -825,7 +814,11 @@ async function prepareServiceRoutes(opts: {
     project,
     service,
     runtimeName,
-    usesManagedRouting: runtimeName === "cloud" || routeContext.usesManagedRouting,
+    // Provider ingress supports the same free hostnames as a connected server.
+    // Keep the external OpenResty forwarding flag separate: Cloud does not need
+    // that second sync, but its Docker services still need their public ports.
+    usesManagedRouting: routeContext.usesManagedRouting || routeContext.routing instanceof CloudInfraProvider,
+    certificateManagement: routeContext.certificateManagement,
     domainByHostname: routeContext.domainByHostname,
   });
 
@@ -952,10 +945,11 @@ export async function deployComposeServices(
       ? opts.executor.runWithAbortSignal(opts.signal, run)
       : run();
   };
-  const needsHostPortLock = usesHostLoopbackUpstream(
-    resolveRouteStrategy(project.routeStrategy),
-    runtime,
-  );
+  // Provider ingress owns Cloud port allocation. Keep this boundary consistent
+  // with the topology below; a shared Docker runtime does not imply a local edge.
+  const needsHostPortLock =
+    !(opts?.routing instanceof CloudInfraProvider) &&
+    usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime);
   if (!needsHostPortLock) {
     return runUnlocked();
   }
@@ -1052,8 +1046,9 @@ async function deployComposeServicesUnlocked(
   const hostNotice = hostChannelDeployNotice(opts?.executor);
   if (hostNotice) logger.log(`${hostNotice}\n`, "warn");
 
+  const cloudHosted = opts?.routing instanceof CloudInfraProvider;
   const routeStrategy = resolveRouteStrategy(project.routeStrategy);
-  const usesHostLoopback = usesHostLoopbackUpstream(routeStrategy, runtime);
+  const usesHostLoopback = !cloudHosted && usesHostLoopbackUpstream(routeStrategy, runtime);
   // All route writers use the same effective topology that drove the pre-bind
   // lock, inventory, and allocation. The stored preference can say
   // `container-ip` while a bare/no-containerIp runtime still requires loopback.
@@ -1106,6 +1101,7 @@ async function deployComposeServicesUnlocked(
           project,
           service: svc,
           runtimeName: runtime.name,
+          certificateManagement: opts?.ssl?.certificateManagement,
           usesManagedRouting: opts.usesManagedRouting ?? false,
           domainByHostname,
         }),
@@ -1119,6 +1115,7 @@ async function deployComposeServicesUnlocked(
         project,
         projectDomains: [...domainByHostname.values()],
         runtimeName: runtime.name,
+          certificateManagement: opts?.ssl?.certificateManagement,
         usesManagedRouting: opts.usesManagedRouting ?? false,
       }),
     ];
@@ -1442,7 +1439,6 @@ async function deployComposeServicesUnlocked(
   const carryAnchor = carryAnchorDep?.createdAt ?? null;
   const carryProjectResources = resolveRuntimeResources(
     (carryAnchorDep?.meta as { resources?: ResourceConfig | null } | null)?.resources,
-    { isCloud: runtime.name === "cloud" },
   );
   const carryEnvMeta = carryAnchor
     ? await repos.project.listEnvVarChangeMeta(project.id, dep.environment).catch(() => [])
@@ -1471,9 +1467,9 @@ async function deployComposeServicesUnlocked(
     // same resolver used for activation so inherited changes apply, while a
     // service's explicit overrides do not cause an unnecessary restart.
     const previousResources =
-      resolveServiceResources(svc, carryProjectResources, runtime.name === "cloud") ?? UNLIMITED_RESOURCES;
+      resolveServiceResources(svc, carryProjectResources);
     const nextResources =
-      resolveServiceResources(svc, opts?.resources, runtime.name === "cloud") ?? UNLIMITED_RESOURCES;
+      resolveServiceResources(svc, opts?.resources);
     if (
       previousResources.cpuCores !== nextResources.cpuCores ||
       previousResources.memoryMb !== nextResources.memoryMb ||
@@ -1540,6 +1536,7 @@ async function deployComposeServicesUnlocked(
       // object into the pipeline.
       ...(Object.keys(serviceRouteOptions).length ? { routeOptions: serviceRouteOptions } : {}),
       domainByHostname,
+      certificateManagement: opts?.ssl?.certificateManagement,
       ...(proxySettings ? { proxy: proxySettings } : {}),
     };
   }
@@ -1550,14 +1547,14 @@ async function deployComposeServicesUnlocked(
   // are registered after the service loop, which is too late to add a publish or
   // reserve it safely; their ports must enter the same allocation path now.
   const hostLoopbackRoutePortDemands =
-    routeContext && (usesHostLoopback || (runtime.name === "cloud" && runtime.supports("dockerHost")))
+    routeContext && (usesHostLoopback || cloudHosted)
       ? collectComposeRoutePortDemands({
           project,
           services: enabled,
           domainRows: [...domainByHostname.values()],
           previousRows: previousServiceDeps,
           runtimeName: runtime.name,
-          usesManagedRouting: runtime.name === "cloud" || routeContext.usesManagedRouting,
+          usesManagedRouting: cloudHosted || routeContext.usesManagedRouting,
         })
       : new Map<string, Set<number>>();
 
@@ -1652,7 +1649,7 @@ async function deployComposeServicesUnlocked(
   // resolves its other ports.
   const { host: serverHost, reason: serverHostReason } = await resolvePortOnlyEnvHost(
     dep.organizationId,
-    { serverId: opts?.serverId, cloudRuntime: runtime.name === "cloud" },
+    { serverId: opts?.serverId, cloudRuntime: cloudHosted },
   );
   const publicUrlByService = buildServicePublicUrlMap(project, ordered, serverHost);
   const urlForPublicUrlToken = (name: string, port?: number) =>
@@ -1921,7 +1918,7 @@ async function deployComposeServicesUnlocked(
     }
     const withHostPaths = resolvedFiles.map((file) => ({
       ...file,
-      hostPath: appConfigHostPath(project.id, service.name, file.containerPath),
+      hostPath: appConfigHostPath(project.id, service.name, file.containerPath, project.workspaceId),
     }));
     resolvedGeneratedConfigByServiceId.set(service.id, withHostPaths);
     return withHostPaths;
@@ -1936,7 +1933,7 @@ async function deployComposeServicesUnlocked(
       {
         executor: opts?.executor,
         localHost: opts?.localHost,
-        isCloud: runtime.name === "cloud" && !runtime.supports("dockerHost"),
+        isCloud: false,
       },
       async (host) => {
         const writer = await resolveHostConfigWriter(host);
@@ -2041,7 +2038,7 @@ async function deployComposeServicesUnlocked(
             file.containerPath,
             {
               mode: 0o600,
-              privateDirectory: appConfigHostServiceRoot(project.id, service.name),
+              privateDirectory: appConfigHostServiceRoot(project.id, service.name, project.workspaceId),
             },
           );
         } catch (err) {
@@ -2948,7 +2945,7 @@ async function deployComposeServicesUnlocked(
       // routable (see ownsNetworkEndpoint).
       const hasNoRoutableAddress = !ownsNetworkEndpoint(resolvedNamespaces.namespaces?.network);
 
-      const serviceResources = resolveServiceResources(svc, opts?.resources, runtime.name === "cloud");
+      const serviceResources = resolveServiceResources(svc, opts?.resources);
       const serviceRuntimeConfig = createServiceRuntimeConfig({
         project,
         dep,
@@ -2957,13 +2954,6 @@ async function deployComposeServicesUnlocked(
         environment: mergedEnv,
         resources: serviceResources,
         namespaces: resolvedNamespaces.namespaces,
-        // Cloud stores the workspace id as the service's containerId. Reuse the
-        // previous deployment's workspace so its disk (volume data) survives the
-        // redeploy. Only meaningful on cloud; docker recreates containers.
-        previousWorkspaceId:
-          runtime.name === "cloud" && !runtime.supports("dockerHost")
-            ? (previousByServiceId.get(svc.id)?.containerId ?? undefined)
-            : undefined,
         forcePullImages: opts?.forcePullImages,
         imageAlreadyPrepared:
           prePulledImageRefs.has(image) ||
@@ -2986,7 +2976,7 @@ async function deployComposeServicesUnlocked(
               file.content,
               svc.name,
               file.containerPath,
-              { privateDirectory: appConfigHostServiceRoot(project.id, svc.name) },
+              { privateDirectory: appConfigHostServiceRoot(project.id, svc.name, project.workspaceId) },
             );
             binds.push(`${file.hostPath}:${file.containerPath}:ro`);
           }
@@ -3056,15 +3046,15 @@ async function deployComposeServicesUnlocked(
       // Self-hosted proxy routes need a container port (cloud handles exposure via
       // the runtime config). The pipeline fans out one upstream per distinct port.
       const proxyRoutes =
-        runtime.name !== "cloud" ? routes.filter((route) => route.targetPort !== undefined) : [];
-      if (runtime.name === "cloud" && runtime.supports("dockerHost")) {
+        !cloudHosted ? routes.filter((route) => route.targetPort !== undefined) : [];
+      if (cloudHosted) {
         serviceRuntimeConfig.cloudEndpoints = routes
           .filter((route) => route.targetPort !== undefined)
           .map((route) => ({ hostname: route.hostname, port: route.targetPort!, custom: !route.isCloud }));
         serviceRuntimeConfig.cloudProxyPorts = hasNoRoutableAddress
           ? [] : [...(hostLoopbackRoutePortDemands.get(svc.id) ?? [])];
       }
-      if (runtime.name !== "cloud" && routes.length > 0 && proxyRoutes.length === 0) {
+      if (!cloudHosted && routes.length > 0 && proxyRoutes.length === 0) {
         logger.log(
           `Skipping routes for service "${svc.name}" - no routable port configured.\n`,
           "warn",
@@ -3397,7 +3387,7 @@ async function deployComposeServicesUnlocked(
         const openableRoute = proxyRoutes.find((route) => !isWildcardHostname(route.hostname));
         firstPublicUrl ??= openableRoute
           ? `https://${openableRoute.hostname}`
-          : runtime.name === "cloud"
+          : cloudHosted
             ? resolveServicePublicUrl(project, svc)
             : undefined;
       } catch (err) {
@@ -3985,16 +3975,16 @@ async function deployComposeServicesUnlocked(
   // at the prefix. It previously required the static frontend to be exposed on a
   // routable port, which meant containerizing an nginx image purely to satisfy the
   // "every target is a URL" assumption.
-  if (runtime instanceof CloudDockerRuntime) {
+  if (opts?.routing instanceof CloudInfraProvider) {
     try {
       const { applyCloudRouting } = await import("../../domains/routing-apply.service");
-      await applyCloudRouting({ project, runtime, defs: services,
-        liveRows: await repos.service.listByDeployment(dep.id), usesManaged: false });
+      await applyCloudRouting({ project, routing: opts.routing, defs: services,
+        liveRows: await repos.service.listByDeployment(dep.id) });
     } catch (error) {
       composeRouteWarnings.push(`Cloud routing: ${safeErrorMessage(error)}`);
     }
   }
-  if (routeContext?.routing && runtime.name !== "cloud") {
+  if (routeContext?.routing && !cloudHosted) {
     // Its OWN try: the composite's catch below reports "Single-domain composition
     // skipped", which would be a wrong account of a project-level failure.
     try {
@@ -4019,6 +4009,7 @@ async function deployComposeServicesUnlocked(
         project,
         projectDomains: projectDomainRows,
         runtimeName: runtime.name,
+          certificateManagement: opts?.ssl?.certificateManagement,
         usesManagedRouting: routeContext.usesManagedRouting,
       });
       const projectUpstreamRows = new Map(
@@ -4214,6 +4205,7 @@ async function deployComposeServicesUnlocked(
                 project,
                 service: svc,
                 runtimeName: runtime.name,
+          certificateManagement: opts?.ssl?.certificateManagement,
                 usesManagedRouting: routeContext.usesManagedRouting,
               })[0] ?? null)
             : null;

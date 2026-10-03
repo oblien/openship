@@ -1,116 +1,122 @@
 ---
 title: Server-to-server migration
-description: Move a running project and its data from one of your connected servers to another — no rebuild, volumes streamed host-to-host, with a DNS trick to keep downtime to seconds.
+description: Import Docker applications into Openship Cloud or move them between connected and managed servers, with data transfer, progress and explicit cutover.
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Outgrew a VPS, or consolidating boxes? Openship moves a **running** project — its containers *and* its
-volume data — from one connected server to another. It reuses the image that's already live (no rebuild) and
-streams the data directly between hosts. Both servers just need to be connected to Openship over SSH.
+Openship migrates Docker applications, their images and their data through one workflow. You can import
+an external server into **Openship Cloud**, move an existing project between managed servers, or move
+between your own connected servers and managed servers from a self-hosted installation.
 
-<Callout title="This is the same engine as the platform import">
-Moving between your own servers and [importing from Coolify / Dokploy / Dokku](/docs/guides/migrate-from-coolify-dokploy-dokku)
-run through the same migration flow — you just pick a **different target server**. That page has the deeper
-architecture notes; this one is the focused server-to-server path.
+<Callout title="One migration engine">
+[Platform imports](/docs/guides/migrate-from-coolify-dokploy-dokku) and project moves use the same
+transfer, deployment, verification and recovery steps. Managed destinations use the existing Docker
+runtime; their connection and public routing are supplied by Openship Cloud.
 </Callout>
 
 ## Before you start
 
-- **Both servers connected** to Openship (Servers → Add server), and you need `server:write` on **both** the
-  source and the target.
-- **Locally-built images can't cross hosts.** A service whose image was built on the source (no registry to
-  pull from on the target) is blocked — take those over *in place on their current server* instead. Services
-  running a published image (`postgres`, your app's pushed image, catalog apps) move fine.
-- **Cross-server is never zero-downtime.** Unlike a same-server takeover, moving to another host stops the
-  originals to copy the data consistently, then verifies a fresh deploy on the target — a real (usually
-  short) downtime window. The DNS step below is what keeps it to seconds rather than minutes.
+- The source must run **Docker**. This flow does not move bare applications or Kubernetes workloads.
+- You need write access to both servers and, for an existing project, the project itself.
+- An external Cloud source needs a public SSH address and a password or uploaded private key. Openship
+  verifies SSH, pins the host key and encrypts the saved credentials. Private network addresses, SSH
+  agents, local key paths and jump hosts are unavailable for Cloud migration sources.
+- The managed destination needs an active subscription and enough free disk for the images and data.
+  Openship checks and prepares it before stopping the source workloads.
+- Plan a maintenance window and take an application backup. Source containers stop while data is copied
+  and the target is deployed. Downtime depends on data size, transfer speed and application startup.
 
-<Callout type="warn" title="Lower your DNS TTL first — do this a day ahead">
-The migration re-points your app to a **new server IP**. For a **custom domain**, that means updating its
-`A` record — and the old record is cached for however long its **TTL** says. **Set the domain's TTL to 60
-seconds (1 minute) at your DNS provider a few hours (ideally a day) before you migrate.** Then, when you
-flip the `A` record to the new server after cutover, it propagates in about a minute instead of hours —
-that's the difference between seconds of downtime and a long tail. Raise the TTL back up once you've
-confirmed the move. (Free `.opsh.io` domains are routed for you — no `A` record to touch.)
+<Callout type="warn" title="Check domain routing before starting">
+Review the destination's DNS instructions. If your custom domain's DNS target changes, lower its TTL
+in advance and allow existing caches to expire. A low TTL reduces the DNS delay; it does not eliminate
+the data-transfer downtime or guarantee when every resolver updates. Managed domains use Cloud routing.
 </Callout>
 
-## Move a project (step by step)
+## Import into Openship Cloud
 
 <Steps>
-
 <Step>
-### Start the migration and pick the source
+### Connect the source
 
-Open the migration wizard and choose the **source server** (server A). Openship scans it read-only and lists
-what's running — each project/service with its ports and volumes.
-
+Open **New project → Import existing project** and connect the external server. This is a
+**migration-only connection**: it appears in the import picker, not in deployment destinations,
+terminals or general server management. You can reuse it for another import and disconnect it afterward.
+Disconnecting removes Openship's saved connection; it does not delete your external server or its data.
 </Step>
 
 <Step>
-### Select the workloads to move
+### Scan and review the application
 
-Pick the project(s) or services you want on the new box. A reverse proxy on the source is excluded
-automatically — you're moving your apps, not the edge.
+Scan the source and select its Docker services. Review the discovered environment, images, volumes,
+bind mounts and routes. Environment values are masked in the scan response. Source-side reverse proxies
+are excluded from the application selection.
 </Step>
 
 <Step>
-### Choose the target server
+### Choose a managed destination
 
-Set the **target server** (server B) — a *different* connected server. This is what makes it a server-to-server
-move rather than an in-place adopt. Named volumes and movable app-data mounts are streamed **A → B** directly
-(same Docker daemon: a `tar → tar` copy; across daemons: a gzip stream); system paths (`/proc`, `/sys`,
-`/var/lib/docker`, sockets) are never copied.
+Use the same server picker as a normal deployment. Choose an existing managed server or create another
+server with its own subscription. Cloud imports always land on a managed server; connecting a migration
+source does not make external hosting a Cloud deployment option.
 
-<Callout type="info" title="Your data is safe on the source">
-Openship **refuses to overwrite a non-empty same-named volume** on the target, so a re-run can't clobber
-data, and it never deletes the source volumes during the move.
-</Callout>
+Review the storage preview and any conflicts. Existing target data is never overwritten silently.
+Managed imports place data in storage owned by the imported project, including anonymous volumes and
+file bind mounts.
 </Step>
 
 <Step>
-### Migrate
+### Transfer and deploy
 
-Openship stops the originals on A for a consistent copy, streams the volumes to B, brings the workload up
-there on the same image, and polls it to **ready** (up to ~20 minutes for a large first move). Watch the
-progress live.
+Openship prepares the destination, records the source's running state, stops the selected workloads,
+transfers their data and starts the normal deployment flow. Locally built Docker images can move too;
+the image is saved on the source and loaded on the destination without a registry push or rebuild.
 
+For external SSH → managed Cloud, the managed server can **pull directly from the source over SSH**.
+Temporary SSH trust is scoped to the run and removed afterward. If no direct connection is available,
+the workflow asks for an explicit relay choice; it does not silently proxy the transfer through your
+control plane. Between endpoints without reachable SSH, the selected relay streams through the control
+plane's existing adapters.
 </Step>
 
 <Step>
-### Re-point DNS, verify, then cut over
+### Verify and finish
 
-The workload is now live on server B and Openship has re-registered its routing + certificate there. For a
-**custom domain**, update its `A` record to **server B's IP** at your DNS provider (this is where the low TTL
-pays off — it goes live in about a minute). Confirm the app serves through B, then run **cutover** to stop and
-remove the leftover containers on A. Your **source volumes are never touched** by cutover, so you keep a fallback
-until you're sure; raise the DNS TTL back up afterward.
+Inspect the target application, data, health and domain routing before confirming cutover. Removing
+the original containers leaves their volumes on the source server. For an external cross-server
+import, **Keep originals** restarts only the previously running source containers; their data is now
+an independent copy. Same-server imports and moves of an existing Openship project leave the
+originals stopped. Keep the old server until you have verified the application and its backups.
 
-<Callout title="Verify the new server before you cut over" type="warn">
-Cutover **stops and removes the old workload** — don't run it until you've confirmed server B is fully healthy:
-the app loads and serves traffic, your **data is intact** (log in, open a record, check volumes/uploads and any
-database), and every service is `RUNNING`. Because cutover leaves your **source volumes on A untouched**, you can
-keep the old server as a fallback until you're certain. If something doesn't look right — missing data, a service
-that won't start, routing/TLS off — **don't cut over**; leave A running and
-[open an issue on GitHub](https://github.com/oblien/openship/issues) so we can help.
-</Callout>
+A failed or cancelled transfer before cutover restores the original placement and running state.
+Recovery also handles interrupted workers. A **partial** run lists data that still needs attention:
+review, retry or explicitly skip each item before cutover. Do not start both copies of a stateful
+application against independently writable data.
 </Step>
-
 </Steps>
 
-## What moves, and what doesn't
+## Move a project you already manage
 
-- **Moves:** the running containers (via their current image), named volumes, and movable app-data mounts —
-  streamed host-to-host; routing + Let's Encrypt are re-established on the target.
-- **Doesn't move:** locally-built images (no registry on the target — take those over in place), and system
-  paths / sockets (never copied).
-- **Downtime:** a short window while volumes copy and the target verifies. A low DNS TTL set ahead of time is
-  what shrinks the DNS half of that to seconds.
+Open the project's migration action and select another server. The same steps move the project while
+preserving its identity. On self-hosted installations, connected SSH servers and linked managed servers
+can be sources or destinations. Cloud destinations remain managed servers. Same-server imports can
+attach existing containers instead of recreating them; cross-server moves must transfer their state.
+
+## Transfer and cleanup
+
+- Named and anonymous volumes, application bind mounts and reviewed extra paths use one storage plan.
+  System paths and sockets are excluded.
+- Direct transfers use SSH and rsync, with retry support. Explicit relay uses the shared streaming
+  transfer adapters. A missing path becomes an actionable pending item.
+- Rollback removes only target data created by that run and restores the source's recorded state.
+  If target cleanup needs a retry, it remains visible in the run.
+- A source connection cannot be removed while migration or connection recovery still needs it.
+- Reloading the page reopens the saved run; it does not start another migration.
 
 ## Next steps
 
 <Cards>
-  <Card title="Migrate from Coolify / Dokploy / Dokku" href="/docs/guides/migrate-from-coolify-dokploy-dokku" description="Adopt an existing server's running containers into Openship — the same engine, from another platform." />
-  <Card title="Custom servers" href="/docs/guides/custom-servers" description="Connect the source and target servers over SSH before you migrate." />
-  <Card title="Custom domains" href="/docs/guides/custom-domains" description="Manage the domain + TLS that you'll re-point at the new server." />
+  <Card title="Migrate from Coolify / Dokploy / Dokku" href="/docs/guides/migrate-from-coolify-dokploy-dokku" description="Review platform-specific discovery and import behavior." />
+  <Card title="Custom servers" href="/docs/guides/custom-servers" description="Connect servers to a self-hosted installation." />
+  <Card title="Custom domains" href="/docs/guides/custom-domains" description="Configure and verify your destination's domains and TLS." />
 </Cards>

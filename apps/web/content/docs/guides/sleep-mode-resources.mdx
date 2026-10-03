@@ -1,16 +1,14 @@
 ---
 title: Sleep mode & resources
-description: Tune what your app costs and how it performs — pick how much CPU, memory, and disk it gets, and choose whether it sleeps when idle or stays on all the time.
+description: Set optional container resource limits and choose whether your app sleeps when idle or stays on.
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Think of your deployed app like a rented room. Two things decide what it costs and how it feels to visitors:
-how **big the room is** (how much CPU, memory, and disk it gets) and whether **the lights stay on all the
-time** or switch off when nobody's there (sleep mode). This guide shows you how to set both.
-
-Neither setting changes your code — they only change how the machine behind your app runs. You can adjust
-them at any time.
+Projects share their server's available CPU and memory by default. You can add container limits
+to control how much an individual app can use, and choose whether it sleeps when idle or stays on.
+These settings do not change your code or resize the server. On Openship Cloud, the subscription
+sets the server's purchased capacity separately.
 
 <Callout title="What you need first">
 - A project you've already deployed (see [Your first deployment](/docs/getting-started/first-deployment) if not).
@@ -20,9 +18,9 @@ them at any time.
 
 ## The two settings, in plain words
 
-- **Resources** — the size of the machine: how many **vCPU** (processing power), how much **RAM** (working
-  memory), and how much **disk** (storage) your app gets. Bigger means faster and able to handle more at
-  once, but costs more.
+- **Resources** — optional ceilings on the **vCPU** (processing power) and **RAM** (working memory)
+  an app can use within its server. **Full capacity** adds no container cap; other projects share
+  the available capacity. Server storage and paid capacity are managed separately.
 - **Sleep mode** — what happens when your app is idle:
   - **Auto Sleep** (the default) — the app stops when no one is using it and wakes up on the next request.
     Cheaper to run, and Openship wakes it instantly, so visitors don't wait.
@@ -36,21 +34,18 @@ app that can't tolerate the brief wake-up on the very first request after a quie
 
 ## Set resources
 
-Resource sizing lives in the **deploy screen**, under a section called **Power**, when you deploy to
-**Openship Cloud** — and on any existing project under **Machine Power** (Configuration tab, or the
-Services tab for a multi-service project). You can also set it from the API.
+Optional container limits live below the server selector in **Machine Power** on the deployment
+settings page. Existing projects also expose Machine Power in their settings. The API uses the
+same values. The Cloud subscription controls the server's capacity separately.
 
-<Callout title="Self-hosted: no limits by default" type="info">
-A self-hosted container is **uncapped** unless you say otherwise — the machine is the ceiling, because
-it's your hardware. Pick a tier (or **No limits**, the default) only when you deliberately want to cap
-a container. A non-zero value is checked against the **target machine's real capacity**, so a 64 GB box
-can hand a container 64 GB.
+<Callout title="Full capacity by default" type="info">
+Connected and managed servers default to **Full capacity**: a container uses the server's available
+CPU and RAM, shared with its other projects. Select a preset or **Custom** only when you need an
+additional per-container limit. Choosing a limit does not change the server's plan or disk size.
 
-Builds are uncapped too. Capping a build is opt-in via the `build` field below, and is really only
-useful on a small box where an unbounded production build would otherwise take the whole host down.
-
-Openship Cloud is the opposite: a workspace is metered and must be sized, so there's no "no limits"
-option there and an unset project falls back to the **Low** tier.
+Managed builds use measured CPU and memory headroom on the same host. An optional build cap can
+lower that budget; it does not reserve a second server. Connected-server builds retain their
+existing uncapped default.
 </Callout>
 
 <Tabs items={['Deploy wizard (Cloud)', 'Project settings', 'API']}>
@@ -64,29 +59,29 @@ option there and an unset project falls back to the **Low** tier.
 ### Start a deploy and choose Openship Cloud
 
 Begin a deployment as usual. When you reach the "Where do you want to deploy?" choice, pick **Openship
-Cloud**. A **Power** section appears next to it — this is where you pick the machine size.
+Cloud**. Select your server; runtime and **Machine Power** settings appear below it, with a preview
+and **Continue** on the right.
 
 </Step>
 
 <Step>
 
-### Pick a size
+### Keep full capacity or add a limit
 
-Choose one of the ready-made sizes. Each shows its vCPU, RAM, and disk:
+**Full capacity** is selected by default. Choose **Customized** beside it to reveal the
+presets and custom limits. Pick a preset or save custom values before continuing; the
+choices stay visible. Selecting **Full capacity** again clears the limits and hides them:
 
-| Size | vCPU | RAM | Disk |
-|---|---|---|---|
-| **Micro** | 0.25 | 256 MB | 4 GB |
-| **Low** | 0.5 | 512 MB | 8 GB |
-| **Medium** | 1 | 1 GB | 16 GB |
-| **High** | 2 | 2 GB | 32 GB |
+| Limit | vCPU | RAM |
+|---|---|---|
+| **Micro** | 0.25 | 256 MB |
+| **Low** | 0.5 | 512 MB |
+| **Medium** | 1 | 1 GB |
+| **High** | 2 | 2 GB |
+| **Extra large** | 4 | 8 GB |
 
-If none fit, pick **Custom** and type your own vCPU, RAM (in MB), and disk (in GB).
-
-<Callout title="Not sure?" type="info">
-Smaller apps and side projects are happy on **Micro** or **Low**. **Medium** suits most production apps.
-Reach for **High** only for heavy traffic or slow builds. You can change size later, so start small.
-</Callout>
+**Custom** edits CPU and RAM inline. Enter `0` in a dimension to leave it uncapped; Save applies
+the choice and Cancel retains the previous selection. Positive limits must fit the selected server.
 
 </Step>
 
@@ -94,7 +89,7 @@ Reach for **High** only for heavy traffic or slow builds. You can change size la
 
 ### Deploy
 
-Finish the deploy. Your app runs at the size you picked.
+Continue to the app configuration, then deploy. Any selected container limits apply when it starts.
 
 </Step>
 
@@ -110,8 +105,8 @@ project shape has no single-app Configuration.
 
 The card shows the target machine's detected capacity in its header, and offers:
 
-- **No limits** — the self-hosted default. The container gets the whole machine.
-- **Micro / Low / Medium / High** — the same presets Openship Cloud offers. A preset larger than the
+- **Full capacity** — the default on connected and managed servers. The container shares the host’s available capacity.
+- **Micro / Low / Medium / High / Extra large** — the same presets Openship Cloud offers. A preset larger than the
   machine is greyed out rather than silently unhonored.
 - **Custom** — type your own vCPU and MB. `0` in either field means no limit for that dimension, so
   you can cap memory while leaving CPU free.
@@ -149,15 +144,15 @@ curl -X PATCH https://your-host/api/projects/PROJECT_ID/resources \
 ```
 
 You can also send `{"tier": "medium"}` instead of explicit numbers, or `{"tier": "unlimited"}`
-(self-hosted) to remove the caps.
+to remove the caps on either server type.
 
 `0` means **no limit**. A non-zero `cpuCores` must be at least 0.25 and `memoryMb` at least 128; the
 UPPER bound is the target machine's own capacity, not a fixed number — so a large self-hosted box is
-usable in full. `diskMb` is 64–204800 and only enforced by cloud workspaces. Every field is optional —
-send only what you want to change.
+usable in full. Managed server storage is controlled by its subscription, not the project's
+`diskMb` field. Resource fields are optional; omitted dimensions have no additional container cap.
 
 `GET /api/projects/PROJECT_ID/resources` reads the current values, and also reports the detected
-machine `capacity` (the ceiling) plus `requiresLimit` (true on cloud, where unsized isn't allowed).
+machine `capacity` when available, plus `requiresLimit: false` for connected and managed hosts.
 Openship Cloud also returns `buildMode`: `automatic` or `custom`. In automatic mode, the
 returned build CPU/RAM values are zero because no cap is saved; each build receives a
 concrete allocation from Oblien's current limits and usage.

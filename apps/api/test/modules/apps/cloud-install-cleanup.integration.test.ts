@@ -15,21 +15,30 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
   };
 });
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
-  issueNamespaceToken: async (organizationId: string) => ({
-    namespace: `ns-${organizationId}`,
-    token: `test-${organizationId}`,
-  }),
+  issueNamespaceToken: async (organizationId: string, workspaceId: string) => {
+    const { repos } = await import("@repo/db");
+    const owner = await repos.cloudWorkspace.findByIdInOrganization(workspaceId, organizationId);
+    if (!owner?.namespace) throw new Error("Managed server owner missing");
+    return { namespace: owner.namespace, token: `test-${organizationId}` };
+  },
 }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
   ...(await original<object>()),
   assertCloudCanSpend: async () => {},
+  syncOblienEntitlement: async (organizationId: string, options: { workspaceId: string }) => {
+    const { repos } = await import("@repo/db");
+    const { planLimits, resolvePlan } = await import("@repo/core");
+    const { cloudNamespaceLimits } = await import("@repo/platform/engine/lib/cloud-resource-limits");
+    const tier = resolvePlan((await repos.cloudWorkspace.findByIdInOrganization(options.workspaceId, organizationId))?.planTierId).id;
+    return { tier, limits: planLimits(tier), resourceLimits: cloudNamespaceLimits(tier) };
+  },
 }));
 
 import {
   db,
   schema,
   repos,
-  seedOwner,
+  seedOwner as seedBaseOwner,
   installFakeRunner,
   type SeededOwner,
 } from "../jobs/_harness";
@@ -43,6 +52,7 @@ import {
 import { appRoutes } from "../../../src/modules/apps/app.routes";
 import { projectRoutes } from "../../../src/modules/projects/project.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
+import { seedProject } from "../../helpers/seed";
 
 // Real authenticated HTTP install/delete, shared engine, SQL repositories, and
 // Oblien adapter. Only the external provider transport and billing admission
@@ -171,17 +181,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function seedOwner(tier: "pro" | "starter" | "hobby" = "pro") {
+  const owner = await seedBaseOwner();
+  const workspace = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Production" });
+  const namespace = `ns-${workspace.id}`;
+  await repos.cloudWorkspace.setNamespace(workspace.id, owner.orgId, namespace);
+  await repos.cloudWorkspace.setBillingEntitlement(workspace.id, owner.orgId, namespace, {
+    planTierId: tier, subscriptionStatus: "active", currentPeriodStart: null, currentPeriodEnd: null,
+  });
+  const server = await repos.server.findByWorkspace(workspace.id, owner.orgId);
+  return { ...owner, workspaceId: workspace.id, namespace, serverId: server!.id };
+}
+
 async function installSupabase(tier: "pro" | "starter" = "pro") {
-  const owner = await seedOwner();
-  await db
-    .update(schema.organization)
-    .set({ planTierId: tier })
-    .where(eq(schema.organization.id, owner.orgId));
+  const owner = await seedOwner(tier);
   const response = await app.request("/api/apps", {
     method: "POST",
     headers: { ...owner.auth, "Content-Type": "application/json" },
     body: JSON.stringify({
       templateId: "supabase",
+      serverId: owner.serverId,
       name: "Supabase",
       routes: [{ service: "kong", port: 8000, mode: "free" }],
     }),
@@ -228,7 +247,6 @@ async function expectDeleted(projectId: string) {
   expect(await repos.project.findById(projectId)).toBeUndefined();
   expect(await repos.service.listByProject(projectId)).toEqual([]);
   expect(await repos.project.listEnvVars(projectId)).toEqual([]);
-  expect(workspaces.size).toBe(0);
 }
 
 describe("Supabase Cloud installation failure and deletion", () => {
@@ -240,6 +258,7 @@ describe("Supabase Cloud installation failure and deletion", () => {
       headers: { ...owner.auth, "Content-Type": "application/json" },
       body: JSON.stringify({
         templateId: "mongodb",
+        serverId: owner.serverId,
         name: "Production database",
         routes: [{ service: "mongo-express", port: 8081, mode: "free", domain: "mongodb-mongo-express" }],
       }),
@@ -262,7 +281,7 @@ describe("Supabase Cloud installation failure and deletion", () => {
     const existing = await app.request("/api/projects", {
       method: "POST",
       headers,
-      body: JSON.stringify({ name: "MongoDB", projectType: "services", hasBuild: false }),
+      body: JSON.stringify({ name: "MongoDB", serverId: owner.serverId, projectType: "services", hasBuild: false }),
     });
     expect(existing.ok, await existing.text()).toBe(true);
     const response = await app.request("/api/apps", {
@@ -270,6 +289,7 @@ describe("Supabase Cloud installation failure and deletion", () => {
       headers,
       body: JSON.stringify({
         templateId: "mongodb",
+        serverId: owner.serverId,
         name: "MongoDB",
         routes: [{ service: "mongo-express", port: 8081, mode: "free" }],
       }),
@@ -292,12 +312,12 @@ describe("Supabase Cloud installation failure and deletion", () => {
       { headers: owner.auth },
     );
     expect(response.status).toBe(200);
-    expect((await response.json()).data.cloud.status).toBe("upgrade");
+    expect((await response.json()).data.cloud.status).toBe("ready");
     expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
     expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
   });
   it("previews the plan and actual draft resources without provisioning or changing saved settings", async () => {
-    const { owner, projectId, secrets } = await installSupabase();
+    const { owner, projectId, secrets } = await installSupabase("starter");
     const preview = async () => {
       const response = await app.request(
         `/api/apps/catalog/supabase/host-fit?deployTarget=cloud&projectId=${projectId}`,
@@ -308,17 +328,17 @@ describe("Supabase Cloud installation failure and deletion", () => {
       return body.data.cloud;
     };
     expect(await preview()).toMatchObject({
-      status: "upgrade",
+      status: "ready",
       resources: { cpuCores: 4, memoryMb: 8192, diskMb: 40960 },
     });
     await db
-      .update(schema.organization)
+      .update(schema.cloudWorkspace)
       .set({ planTierId: "team" })
-      .where(eq(schema.organization.id, owner.orgId));
+      .where(eq(schema.cloudWorkspace.id, owner.workspaceId));
     expect(await preview()).toMatchObject({ status: "ready" });
     const services = await repos.service.listByProject(projectId);
     const database = services.find((service) => service.name === "db")!;
-    for (const [cpuCores, workspaceCpu, status] of [[5, 8, "ready"], [6, 9, "upgrade"]] as const) {
+    for (const [cpuCores, workspaceCpu, status] of [[8, 11, "ready"], [9, 12, "upgrade"]] as const) {
       await repos.service.update(database.id, {
         advanced: { ...database.advanced, resources: { cpuCores, memoryMb: 3072, diskMb: 40960 } },
       });
@@ -337,22 +357,18 @@ describe("Supabase Cloud installation failure and deletion", () => {
   });
 
   it("checks Cloud apps without declared host minimums before a project exists", async () => {
-    const owner = await seedOwner();
-    await db
-      .update(schema.organization)
-      .set({ planTierId: "hobby" })
-      .where(eq(schema.organization.id, owner.orgId));
-    const response = await app.request("/api/apps/catalog/ghost/host-fit?deployTarget=cloud", {
+    const owner = await seedOwner("hobby");
+    const response = await app.request(`/api/apps/catalog/ghost/host-fit?serverId=${owner.serverId}`, {
       headers: owner.auth,
     });
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(200);
-    expect(body.data.cloud).toMatchObject({ status: "upgrade" });
+    expect(body.data.cloud).toMatchObject({ status: "ready" });
     expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
   });
 
   it.each(["quota", "legacy-quota"] as const)(
-    "deletes a %s refusal without creating anything during cleanup",
+    "deletes an unstarted app after %s refusal without provisioning during cleanup",
     async (mode) => {
       createMode = mode;
       const { owner, projectId } = await installSupabase();
@@ -361,92 +377,68 @@ describe("Supabase Cloud installation failure and deletion", () => {
       const beforeDelete = requests.length;
       const result = await remove(owner, projectId);
       expect(result.status, JSON.stringify(result.body)).toBe(200);
-      expect(result.body.ok).toBe(true);
-      expect(requests.slice(beforeDelete).every((request) => request.startsWith("GET "))).toBe(
-        true,
-      );
       await expectDeleted(projectId);
+      expect(requests.slice(beforeDelete)).toEqual([]);
+      expect(await repos.cloudWorkspace.findById(owner.workspaceId)).toBeDefined();
+      expect(await repos.server.getInOrganization(owner.serverId, owner.orgId)).toBeDefined();
     },
   );
 
-  it("retains the failed VM and project data on cleanup failure, then confirms async deletion on retry", async () => {
+  it("deletes a draft while its subscribed server is unreachable, retaining that server and neighboring projects", async () => {
     createMode = "failed-workspace";
-    const { owner, projectId, secrets } = await installSupabase();
+    const { owner, projectId } = await installSupabase();
     await failProvisioning(owner, projectId);
-    expect(await repos.cloudDockerWorkspace.find(projectId, owner.orgId)).toMatchObject({
-      workspaceId: "ws-initial-failure",
+    const binding = await repos.cloudDockerWorkspace.find(projectId, owner.orgId);
+    expect(binding).toMatchObject({ workspaceId: "ws-initial-failure", ownerWorkspaceId: owner.workspaceId });
+    const neighbor = await seedProject(owner.orgId, {
+      name: "Neighbor", slug: "neighbor", serverId: owner.serverId,
     });
     const beforeDelete = requests.length;
     deleteFails = true;
-    const failure = await remove(owner, projectId);
-    expect(failure.status, JSON.stringify(failure.body)).toBe(409);
-    expect(failure.body.code).toBe("PROJECT_TEARDOWN_FAILED");
-    expect(JSON.stringify(failure.body.unrecoverable)).toContain("PROVIDER_UNAVAILABLE");
+    const result = await remove(owner, projectId);
+    expect(result.status, JSON.stringify(result.body)).toBe(200);
+    await expectDeleted(projectId);
+    expect(requests.slice(beforeDelete)).toEqual([]);
+    expect(workspaces.size).toBe(1);
+    expect(await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: owner.workspaceId }, owner.orgId)).toEqual(binding);
+    expect(await repos.project.findById(neighbor.id)).toBeDefined();
+    expect(await repos.server.getInOrganization(owner.serverId, owner.orgId)).toBeDefined();
+  });
+
+  it("keeps a failed deployment's records when remote cleanup cannot verify its resources", async () => {
+    createMode = "failed-workspace";
+    const { owner, projectId, secrets } = await installSupabase();
+    await failProvisioning(owner, projectId);
+    await repos.deployment.create({
+      projectId, organizationId: owner.orgId, status: "failed", branch: "main",
+      meta: { deployTarget: "cloud", serverId: owner.serverId, managedWorkspaceId: owner.workspaceId,
+        runtimeMode: "docker", managedServer: { projectId, workspaceId: "ws-initial-failure", ownerWorkspaceId: owner.workspaceId } },
+    });
+    const beforeDelete = requests.length;
+    const result = await remove(owner, projectId);
+    expect(result.status, JSON.stringify(result.body)).toBe(409);
+    expect(result.body.code).toBe("PROJECT_TEARDOWN_FAILED");
     expect(await repos.project.findById(projectId)).toMatchObject({ deletionInProgress: false });
     expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
     expect(workspaces.size).toBe(1);
-
-    deleteFails = false;
-    const retry = await remove(owner, projectId);
-    expect(retry.status, JSON.stringify(retry.body)).toBe(200);
-    await expectDeleted(projectId);
-    const cleanup = requests.slice(beforeDelete);
-    expect(cleanup.some((request) => request.startsWith("POST "))).toBe(false);
-    expect(cleanup.at(-1)).toBe("GET /workspace/ws-initial-failure");
+    expect(requests.slice(beforeDelete).some(request => request.startsWith("DELETE "))).toBe(false);
   });
 
-  it("recovers a lost create response by namespace and project slug before deleting the failed VM", async () => {
-    createMode = "lost-response";
+  it("removes a draft without discarding an uncertain server reservation or leaking it to another tenant", async () => {
+    createMode = "unknown";
     const { owner, projectId } = await installSupabase();
     await failProvisioning(owner, projectId);
-    expect(await repos.cloudDockerWorkspace.find(projectId, owner.orgId)).toMatchObject({
-      workspaceId: null,
-    });
+    const target = { ownerWorkspaceId: owner.workspaceId };
+    const binding = await repos.cloudDockerWorkspace.find(target, owner.orgId);
+    expect(binding).toMatchObject({ workspaceId: null });
     const beforeDelete = requests.length;
     const stranger = await seedOwner();
     expect((await remove(stranger, projectId)).status).toBe(404);
     expect(requests).toHaveLength(beforeDelete);
     const result = await remove(owner, projectId);
     expect(result.status, JSON.stringify(result.body)).toBe(200);
-    expect(requests.slice(beforeDelete).some((request) => request.startsWith("POST "))).toBe(false);
     await expectDeleted(projectId);
-  });
-
-  it("recovers the original VM when a create replay hits quota, then retries and deletes that same VM", async () => {
-    createMode = "lost-response";
-    const { owner, projectId, secrets } = await installSupabase();
-    await failProvisioning(owner, projectId);
-    const reserved = await repos.cloudDockerWorkspace.find(projectId, owner.orgId);
-    expect(reserved?.workspaceId).toBeNull();
-    createMode = "quota";
-
-    const recovered = await ensureCloudDockerWorkspace({ projectId, organizationId: owner.orgId, resources });
-
-    expect(recovered.workspaceId).toBe("ws-initial-failure");
-    expect(await repos.cloudDockerWorkspace.find(projectId, owner.orgId)).toMatchObject({
-      provisionKey: reserved!.provisionKey,
-      workspaceId: "ws-initial-failure",
-      state: "ready",
-    });
-    expect(workspaces.size).toBe(1);
-    expect(requests.filter(request => request === "POST /workspace")).toHaveLength(2);
-    expect(requests).toContain("POST /workspace/ws-initial-failure/provisioning/retry");
-    expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
-    const removed = await remove(owner, projectId);
-    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
-    await expectDeleted(projectId);
-  });
-
-  it("preserves an uncertain old reservation when the provider cannot confirm its outcome", async () => {
-    createMode = "unknown";
-    const { owner, projectId, secrets } = await installSupabase();
-    await failProvisioning(owner, projectId);
-    const binding = await repos.cloudDockerWorkspace.find(projectId, owner.orgId);
-    const result = await remove(owner, projectId);
-    expect(result.status, JSON.stringify(result.body)).toBe(409);
-    expect(result.body.canForceOrphan).toBe(false);
-    expect(await repos.cloudDockerWorkspace.find(projectId, owner.orgId)).toEqual(binding);
-    expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
-    expect(await repos.project.findById(projectId)).toMatchObject({ deletionInProgress: false });
+    expect(await repos.cloudDockerWorkspace.find(target, owner.orgId)).toEqual(binding);
+    expect(requests).toHaveLength(beforeDelete);
   });
 });

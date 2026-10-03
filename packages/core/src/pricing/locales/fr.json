@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits en vous connectant au Cloud",
     "usageCredits": "{credits} crédits d’utilisation par mois",
     "namespaceCapacity": "Total : {namespaceCpu} vCPU, {namespaceRamGb} Go de RAM, {namespaceDiskGb} Go de disque",
-    "finiteUsage": "L’hébergement continu peut nécessiter des recharges de crédits.",
-    "oneRunningService": "1 application, base de données ou worker en cours d’exécution"
+    "finiteUsage": "L’hébergement continu peut nécessiter des recharges de crédits."
   },
   "selfHosted": {
     "name": "Auto-hébergé",

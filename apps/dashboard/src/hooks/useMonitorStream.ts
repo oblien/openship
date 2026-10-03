@@ -1,155 +1,125 @@
-/**
- * Hook for streaming live server stats via SSE.
- *
- * Connects to GET /system/monitor/stream and receives real-time
- * CPU, memory, disk, uptime, and load average updates every ~3s.
- */
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiBaseUrl } from "@/lib/api";
+import { parseSSE } from "@repo/core";
+import { ApiError, getApiBaseUrl, getApiErrorMessage } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/endpoints";
 import type { ServerStats } from "@/lib/api/system";
 
 export interface UseMonitorStreamReturn {
-  /** Current stats (null until first data received) */
   stats: ServerStats | null;
-  /** Connection state */
   isConnected: boolean;
-  /** Error (if any) */
   error: string | null;
-  /** Manually reconnect */
   reconnect: () => void;
-  /** Disconnect */
   disconnect: () => void;
 }
 
-export function useMonitorStream(
-  serverId: string | null,
-  /** Set to false to disable streaming (e.g. when tab is not visible) */
-  enabled = true,
-): UseMonitorStreamReturn {
-  const [stats, setStats] = useState<ServerStats | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** One cancellable SSE connection per selected server. Reads never start it. */
+export function useMonitorStream(serverId: string | null, enabled = true): UseMonitorStreamReturn {
+  const [sample, setSample] = useState<{ serverId: string; stats: ServerStats } | null>(null);
+  const [connection, setConnection] = useState<{
+    serverId: string;
+    error: string | null;
+    connected: boolean;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const bufferRef = useRef("");
+  const targetRef = useRef(serverId);
+  targetRef.current = serverId;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
   const disconnect = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setIsConnected(false);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setConnection((current) => (current ? { ...current, connected: false } : null));
   }, []);
 
   const connect = useCallback(async () => {
-    if (!serverId) {
-      setStats(null);
-      setError(null);
-      setIsConnected(false);
-      return;
-    }
-
     disconnect();
+    if (!serverId || !enabledRef.current) return;
 
     const abort = new AbortController();
     abortRef.current = abort;
-    bufferRef.current = "";
-
-    const baseUrl = getApiBaseUrl();
+    const current = () =>
+      !abort.signal.aborted && abortRef.current === abort && targetRef.current === serverId;
+    setConnection({ serverId, connected: false, error: null });
     const params = new URLSearchParams({ serverId });
-    const url = `${baseUrl}${endpoints.system.monitorStream}?${params.toString()}`;
-
+    let streamError: string | null = null;
     try {
-      const res = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "text/event-stream" },
-        signal: abort.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        setError(`Connection failed (${res.status})`);
+      const response = await fetch(
+        `${getApiBaseUrl()}${endpoints.system.monitorStream}?${params}`,
+        {
+          credentials: "include",
+          headers: { Accept: "text/event-stream" },
+          signal: abort.signal,
+        },
+      );
+      if (!current()) {
+        await response.body?.cancel();
         return;
       }
+      if (!response.ok)
+        throw new ApiError(
+          response.status,
+          response.statusText,
+          await response.json().catch(() => null),
+        );
+      if (!response.body) throw new Error("Live monitoring is unavailable. Retry to reconnect.");
+      setConnection({ serverId, connected: true, error: null });
 
-      setIsConnected(true);
-      setError(null);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const buffer = bufferRef.current + chunk;
-        const parts = buffer.split("\n\n");
-        bufferRef.current = parts.pop() || "";
-
-        for (const part of parts) {
-          if (!part.trim()) continue;
-
-          let eventType = "";
-          let dataStr = "";
-
-          for (const line of part.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("event:")) {
-              eventType = trimmed.substring(6).trim();
-            } else if (trimmed.startsWith("data:")) {
-              dataStr = trimmed.substring(5).trim();
-            }
-          }
-
-          if (!dataStr) continue;
-
-          try {
-            if (eventType === "stats") {
-              const parsed = JSON.parse(dataStr) as ServerStats;
-              setStats(parsed);
-              setError(null);
-            } else if (eventType === "error") {
-              const parsed = JSON.parse(dataStr);
-              setError(parsed.error || "Unknown error");
-            }
-          } catch {
-            // Skip malformed events
-          }
+      for await (const event of parseSSE(response.body)) {
+        if (!current()) return;
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          continue;
+        }
+        if (event.event === "stats") {
+          setSample({ serverId, stats: data as ServerStats });
+          streamError = null;
+          setConnection({ serverId, connected: true, error: null });
+        } else if (event.event === "error") {
+          streamError =
+            typeof data?.error === "string" ? data.error : "Live monitoring is unavailable.";
+          setConnection({ serverId, connected: true, error: streamError });
         }
       }
-    } catch (err) {
-      if (abort.signal.aborted) return;
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      if (current())
+        setConnection({
+          serverId,
+          connected: false,
+          error: streamError ?? "Live monitoring disconnected. Retry to reconnect.",
+        });
+    } catch (error) {
+      if (current())
+        setConnection({ serverId, connected: false, error: getApiErrorMessage(error) });
     } finally {
-      if (!abort.signal.aborted) {
-        setIsConnected(false);
-      }
+      if (abortRef.current === abort) abortRef.current = null;
     }
   }, [disconnect, serverId]);
 
   const reconnect = useCallback(() => {
-    if (enabledRef.current) void connect();
+    void connect();
   }, [connect]);
-
   useEffect(() => {
     if (!enabled) {
       disconnect();
       return;
     }
-
-    // Small delay avoids double-connect from React StrictMode remount
-    const id = setTimeout(() => void connect(), 50);
+    // Avoid opening two connections during StrictMode's mount check.
+    const timer = setTimeout(() => void connect(), 50);
     return () => {
-      clearTimeout(id);
+      clearTimeout(timer);
       disconnect();
     };
-  }, [enabled, serverId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connect, disconnect, enabled]);
 
-  return { stats, isConnected, error, reconnect, disconnect };
+  return {
+    stats: sample?.serverId === serverId ? sample.stats : null,
+    isConnected: enabled && connection?.serverId === serverId && connection.connected,
+    error: connection?.serverId === serverId ? connection.error : null,
+    reconnect,
+    disconnect,
+  };
 }

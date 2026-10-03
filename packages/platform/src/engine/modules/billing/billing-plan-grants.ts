@@ -13,7 +13,7 @@ import {
 import { cloudNamespaceLimits, syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
 import { supportedOfferReference, savedResourceLimits, subscriptionPlan } from "./billing-catalog";
 
-export const cloudBillingLockKey = (organizationId: string) => `billing:entitlement:${organizationId}`;
+export const cloudBillingLockKey = (organizationId: string, workspaceId?: string | null) => `billing:entitlement:${workspaceId ? `workspace:${workspaceId}` : organizationId}`;
 
 export interface ProviderBillingState {
   entitlement: OblienEntitlement;
@@ -90,7 +90,7 @@ export async function reconcilePlanGrant(input: {
   const { organizationId, namespace, grants, billing, state } = input;
   const now = input.now ?? new Date();
   const syncLimits = input.syncLimits ?? syncCloudResourceLimits;
-  const row = await grants.current(organizationId);
+  const row = await grants.current(organizationId, namespace);
   if (!row) return { ...state, grant: null };
   const grant = resolvePlanGrant(row, organizationId, namespace, now);
 

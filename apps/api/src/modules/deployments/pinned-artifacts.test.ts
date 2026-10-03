@@ -103,7 +103,7 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
     // A staged local directory is not cloned.
     expect(snapshotNeedsGitSource({ localPath: "/srv/app", hasBuild: true })).toBe(false);
     // A folder upload is not cloned.
-    expect(snapshotNeedsGitSource({ uploadWorkspaceId: "up_1", hasBuild: true })).toBe(false);
+    expect(snapshotNeedsGitSource({ localPath: "/uploads/up_1", hasBuild: true })).toBe(false);
     // A release/dist tarball deploys verbatim.
     expect(snapshotNeedsGitSource({ releaseVersion: "1.2.3", hasBuild: true })).toBe(false);
     // An explicit image source is never cloned.
@@ -170,10 +170,10 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
   });
 
   it("stages uploaded Compose source without asking for a Git credential", () => {
-    const snapshot = { uploadWorkspaceId: "upload-a", composeServices: [{ name: "web", build: "." }] };
+    const snapshot = { localPath: "/uploads/upload-a", composeServices: [{ name: "web", build: "." }] };
     expect(snapshotNeedsProjectSource(snapshot)).toBe(true);
     expect(snapshotNeedsGitSource(snapshot)).toBe(false);
-    expect(snapshotNeedsGitSource({ ...snapshot, uploadWorkspaceId: undefined, localPath: "/source" })).toBe(false);
+    expect(snapshotNeedsGitSource({ ...snapshot, localPath: "/source" })).toBe(false);
   });
 
   it("uses inline catalog files without requiring a project repository", () => {

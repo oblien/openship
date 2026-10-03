@@ -23,6 +23,6 @@ export const billingPlanGrant = pgTable("billing_plan_grant", {
   /** Provider resetQuota uses this timestamp as its durable idempotency key. */
   appliedPeriodEnd: timestamp("applied_period_end", { withTimezone: true }),
 }, (t) => [
-  uniqueIndex("billing_plan_grant_current_org").on(t.organizationId).where(sql`${t.releasedAt} IS NULL`),
+  uniqueIndex("billing_plan_grant_current_namespace").on(t.organizationId, t.namespace).where(sql`${t.releasedAt} IS NULL`),
   index("billing_plan_grant_org_created").on(t.organizationId, t.createdAt),
 ]);

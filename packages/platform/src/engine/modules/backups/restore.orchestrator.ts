@@ -77,6 +77,7 @@ import { boundedStorableText } from "../deployments/build-log-sanitize";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
 import { withBackupRunLock } from "./backup-lock";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 
 const TRUNCATE_ERROR = 4096;
 
@@ -964,6 +965,13 @@ export class RestoreOrchestrator {
   }
 
   private async runApply(restoreId: string): Promise<void> {
+    const restore = await repos.backupRestore.findById(restoreId);
+    const target = restore?.forkServiceId ? await repos.service.findById(restore.forkServiceId) : null;
+    const projectId = target?.projectId ?? restore?.projectId;
+    return projectId ? withProjectRuntimeLock(projectId, () => this.runApplyLocked(restoreId)) : this.runApplyLocked(restoreId);
+  }
+
+  private async runApplyLocked(restoreId: string): Promise<void> {
     // The durable applying transition was claimed synchronously by apply(). The
     // local handle is registered before this worker re-reads the row or touches
     // the target; a cancel that landed before registration is still carried by

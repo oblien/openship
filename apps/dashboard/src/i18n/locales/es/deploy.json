@@ -218,7 +218,10 @@
     "backupSummaryConfigured": "{count} política(s) de copia · pre-despliegue: {preDeploy}",
     "backupManage": "Gestionar copias",
     "on": "activado",
-    "off": "desactivado"
+    "off": "desactivado",
+    "previewTitle": "Vista previa del despliegue",
+    "previewHint": "Continúa para configurar tu app. El despliegue se inicia desde la siguiente página.",
+    "back": "Volver"
   },
   "summary": {
     "buildAndDeploy": "Compilar y desplegar:",
@@ -237,8 +240,8 @@
     "rollbackOne": "{count} versión",
     "rollbackOther": "{count} versiones",
     "rollbackAuto": "Rollback: automático",
-    "rollbackSnapshotHint": "Se guarda una copia de cada versión, así un rollback nunca reconstruye. Cámbialo en Avanzado.",
-    "rollbackGitHint": "Cuántas versiones anteriores siguen restaurables. Cámbialo en Avanzado."
+    "rollbackSnapshotHint": "Se guarda una copia de cada versión, así que revertir no requiere reconstruir. Cambia esto en la configuración del despliegue.",
+    "rollbackGitHint": "Cuántas versiones anteriores se pueden restaurar. Cambia esto en la configuración del despliegue."
   },
   "power": {
     "heading": "Potencia",

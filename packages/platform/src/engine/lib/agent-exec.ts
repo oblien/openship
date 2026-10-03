@@ -35,6 +35,7 @@
  *     the single most important thing to be able to reconstruct afterwards.
  */
 
+import { StringDecoder } from "node:string_decoder";
 import { shellQuote, EXEC_TIMEOUT_MAX_MS, EXEC_TIMEOUT_DEFAULT_MS, EXEC_OUTPUT_MAX_BYTES } from "@repo/core";
 import type { CommandExecutor, ExecOnly } from "@repo/adapters";
 
@@ -84,7 +85,7 @@ function withCwd(command: string, cwd: string | undefined): string {
 }
 
 /**
- * Run a command ON THE HOST, over the pooled SSH executor.
+ * Run a command on the host through its resolved executor.
  *
  * Uses `streamExec` rather than `exec` for two reasons: it returns the real exit
  * code instead of rejecting on non-zero (an agent needs to see `exit 1` and its
@@ -101,16 +102,33 @@ export async function execOnHost(
 
   let bytes = 0;
   let truncated = false;
-  const chunks: string[] = [];
-  const onLog = (log: { message?: string }) => {
+  const chunks: Buffer[] = [];
+  const onLog = (log: { message?: string; rawData?: string }) => {
     if (truncated) return;
-    const line = `${log.message ?? ""}\n`;
-    if (bytes + line.length > maxBytes) {
+    // Executors emit byte chunks, not lines. Keep their boundaries invisible,
+    // including a UTF-8 character split across two transport frames.
+    const chunk = log.rawData !== undefined
+      ? Buffer.from(log.rawData, "base64")
+      : Buffer.from(`${log.message ?? ""}\n`);
+    const remaining = maxBytes - bytes;
+    if (chunk.length > remaining) {
+      if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+      bytes = maxBytes;
       truncated = true;
       return;
     }
-    bytes += line.length;
-    chunks.push(line);
+    bytes += chunk.length;
+    chunks.push(chunk);
+  };
+  const output = () => {
+    const decoder = new StringDecoder("utf8");
+    const decoded = decoder.write(Buffer.concat(chunks)) + (truncated ? "" : decoder.end());
+    // Invalid UTF-8 expands into replacement characters. Keep the response cap
+    // as well as the input cap, without ending on half a character.
+    const encoded = Buffer.from(decoded);
+    if (encoded.length <= maxBytes) return decoded;
+    truncated = true;
+    return new StringDecoder("utf8").write(encoded.subarray(0, maxBytes));
   };
 
   // `streamExec` honours an AbortSignal by killing the child, which is what makes
@@ -125,7 +143,7 @@ export async function execOnHost(
     });
     return {
       exitCode: res.code,
-      output: chunks.join(""),
+      output: output(),
       truncated,
       timedOut: false,
       durationMs: Date.now() - started,
@@ -135,7 +153,7 @@ export async function execOnHost(
     if (!timedOut) throw err;
     return {
       exitCode: -1,
-      output: chunks.join(""),
+      output: output(),
       truncated,
       timedOut: true,
       durationMs: Date.now() - started,

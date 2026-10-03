@@ -81,8 +81,8 @@ daemon answers successfully.
 | --- | --- | --- |
 | Read visible active or resolved issues and their suggested actions. | `issues.list(input?)` | `GET /api/issues`<br />`project:list` |
 | Read issue counts by severity. | `issues.summary()` | `GET /api/issues/summary`<br />`project:list` |
-| Read cached workload health snapshots. | `issues.health()` | `GET /api/issues/health`<br />`project:list` · Self-hosted |
-| Refresh current workload health without enabling the scheduler. | `issues.scanHealth()` | `POST /api/issues/health/scan`<br />`project:list` · Self-hosted |
+| Read cached workload health snapshots. | `issues.health()` | `GET /api/issues/health`<br />`project:list` |
+| Refresh current workload health without enabling the scheduler. | `issues.scanHealth()` | `POST /api/issues/health/scan`<br />`project:list` |
 | Run applicable issue checkers, or only container/server health. | `issues.rescan(input?)` | `POST /api/issues/rescan`<br />`job:write` · Self-hosted |
 | Read the status of an issue rescan. | `issues.rescanStatus()` | `GET /api/issues/rescan/status`<br />`job:read` · Self-hosted |
 

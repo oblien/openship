@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "{freeSubdomains} kostenlose Subdomains unter {freeDomainSuffix} bei Verbindung mit Openship Cloud",
     "usageCredits": "{credits} Nutzungsguthaben pro Monat",
     "namespaceCapacity": "Insgesamt: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB Speicher",
-    "finiteUsage": "Dauerbetrieb kann zusätzliches Guthaben erfordern.",
-    "oneRunningService": "1 laufende App, Datenbank oder Worker"
+    "finiteUsage": "Dauerbetrieb kann zusätzliches Guthaben erfordern."
   },
   "selfHosted": {
     "name": "Selbst gehostet",

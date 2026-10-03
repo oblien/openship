@@ -99,7 +99,7 @@ describe("bare restore survives the transport's quoting", () => {
     const { archive, name } = gzippedTar("hello maildir");
     const { exec, captured } = fakeExec();
 
-    await executorFor(exec).receiveStream(service, target, Readable.from([archive]), {
+    await executorFor(exec).receiveStream({ ...service, volumes: [target] }, target, Readable.from([archive]), {
       compression: "gzip",
       clearTarget: true,
     });
@@ -121,7 +121,7 @@ describe("bare restore survives the transport's quoting", () => {
     const { archive, name } = gzippedTar("quoted ok");
     const { exec, captured } = fakeExec();
 
-    await executorFor(exec).receiveStream(service, target, Readable.from([archive]), {
+    await executorFor(exec).receiveStream({ ...service, volumes: [target] }, target, Readable.from([archive]), {
       compression: "gzip",
       clearTarget: true,
     });
@@ -155,7 +155,7 @@ describe("bare restore refuses to clear a target it cannot decompress into", () 
     writeFileSync(join(target, "Maildir", "important.eml"), "do not delete me");
 
     const { exec, captured } = fakeExec();
-    await executorFor(exec).receiveStream(service, target, Readable.from([Buffer.from("junk")]), {
+    await executorFor(exec).receiveStream({ ...service, volumes: [target] }, target, Readable.from([Buffer.from("junk")]), {
       compression: "zstd",
       clearTarget: true,
     });

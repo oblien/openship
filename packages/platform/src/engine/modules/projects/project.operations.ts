@@ -46,7 +46,7 @@ const create = async (ctx: ExecutionContext, input: EnsureProjectInput) => {
     const preference = await getRouteStrategy(ctx.userId).catch(() => "auto" as const);
     if (preference !== "auto") input.routeStrategy = preference;
   }
-  return service.createProject(input, ctx.organizationId, ctx.tokenScope ?? undefined);
+  return service.createProject(input, ctx.organizationId, ctx.tokenScope ?? undefined, ctx);
 };
 
 export const projectDependencies: ProjectDependencies = {
@@ -62,7 +62,7 @@ export const projectDependencies: ProjectDependencies = {
   async ensure(ctx, input) {
     const service = await import("./project.service");
     await checkSource(input);
-    return service.ensureProject(input, ctx.organizationId);
+    return service.ensureProject(input, ctx.organizationId, ctx);
   },
   async get(ctx, id) {
     const service = await import("./project.service");

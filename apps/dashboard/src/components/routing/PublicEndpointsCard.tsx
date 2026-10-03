@@ -29,6 +29,8 @@ interface PublicEndpointsCardProps {
   /** Hide each route's internal Free/Custom toggle — for callers that drive the
    *  domain type from their own outer control (e.g. the migrate wizard). */
   hideTypeToggle?: boolean;
+  /** Preserve discovered path routing while editing imported proxy endpoints. */
+  preserveProxyPaths?: boolean;
   /** Allow removing EVERY domain (down to zero = internal-only). Off by default so
    *  deploy/migrate flows keep ≥1 route; the project domains tab opts in so a user
    *  can delete their only/last domain and re-add one. */
@@ -63,6 +65,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   hideHeader = false,
   portInline = false,
   hideTypeToggle = false,
+  preserveProxyPaths = false,
   allowRemoveAll = false,
   wwwToggle,
   allowRedirects = false,
@@ -97,7 +100,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
       ? {
           ...endpoint,
           port: endpoint.port || linkedRuntimePort || "",
-          targetPath: "",
+          targetPath: preserveProxyPaths ? endpoint.targetPath : "",
         }
       : {
           ...endpoint,
@@ -131,17 +134,18 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
 
   const handleAddEndpoint = () => {
     const lastEndpoint = endpoints[endpoints.length - 1];
+    const domainType = hideTypeToggle ? (lastEndpoint?.domainType ?? newEndpointDomainType) : newEndpointDomainType;
     commitEndpoints([
       ...endpoints,
       normalizeEndpointForMode(createPublicEndpoint(
         hasServer
           ? {
               port: lastEndpoint?.port || runtimePort || "",
-              domainType: newEndpointDomainType,
+              domainType,
             }
           : {
               targetPath: lastEndpoint?.targetPath || "/",
-              domainType: newEndpointDomainType,
+              domainType,
             },
       )),
     ]);
@@ -165,10 +169,19 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   const describeEndpointTarget = (endpoint: PublicEndpoint) => {
     if (hasServer) {
       const mappedPort = endpoint.port || runtimePort || "";
-      return mappedPort ? interpolate(w.mappedToPort, { port: mappedPort }) : w.noPortYet;
+      const target = mappedPort ? interpolate(w.mappedToPort, { port: mappedPort }) : w.noPortYet;
+      return preserveProxyPaths && endpoint.targetPath
+        ? `${target} · ${endpoint.exact ? "= " : ""}${endpoint.targetPath}` : target;
     }
 
     return interpolate(w.mappedTo, { path: endpoint.targetPath || "/" });
+  };
+
+  const endpointSummary = (endpoint: PublicEndpoint) => {
+    const host = endpointHostname(endpoint);
+    if (!host) return describeEndpointTarget(endpoint);
+    return preserveProxyPaths && endpoint.targetPath
+      ? `${host} ${endpoint.exact ? "= " : ""}${endpoint.targetPath}` : host;
   };
 
   const renderRoutingCard = (endpoint: PublicEndpoint, actionSlot?: React.ReactNode) => {
@@ -297,17 +310,15 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
           <>
             {endpoints.map((endpoint, index) => {
               const isOpen = expandedIds.has(endpoint.id);
-              const summary =
-                (endpoint.domainType === "custom" ? endpoint.customDomain : endpoint.domain) ||
-                describeEndpointTarget(endpoint);
+              const summary = endpointSummary(endpoint);
               return (
-                <div key={endpoint.id} className="rounded-xl border border-border/50 bg-background/40 overflow-hidden">
+                <div key={endpoint.id} className="rounded-xl bg-background overflow-hidden">
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <button
                       type="button"
                       onClick={() => toggleExpanded(endpoint.id)}
                       aria-expanded={isOpen}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-start focus-visible:outline-2 focus-visible:outline-ring"
                     >
                       <UiIcon name="chevron-down"
                         className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`}
@@ -385,9 +396,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
       <div className="p-4 space-y-4">
         {hasMultipleEndpoints ? endpoints.map((endpoint, index) => {
           const isOpen = expandedIds.has(endpoint.id);
-          const summary =
-            (endpoint.domainType === "custom" ? endpoint.customDomain : endpoint.domain) ||
-            describeEndpointTarget(endpoint);
+          const summary = endpointSummary(endpoint);
           return (
             <div key={endpoint.id} className="rounded-xl border border-border/50 bg-background/50 overflow-hidden">
               <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -395,7 +404,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                   type="button"
                   onClick={() => toggleExpanded(endpoint.id)}
                   aria-expanded={isOpen}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-start focus-visible:outline-2 focus-visible:outline-ring"
                 >
                   <UiIcon name="chevron-down"
                     className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`}

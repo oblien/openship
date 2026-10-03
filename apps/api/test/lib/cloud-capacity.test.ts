@@ -3,6 +3,7 @@ import { OperationError } from "@repo/contracts";
 const h = vi.hoisted(() => ({
   cloud: true,
   org: vi.fn(),
+  project: vi.fn(),
   binding: vi.fn(),
   workspace: vi.fn(),
   namespace: vi.fn(),
@@ -15,7 +16,7 @@ vi.mock("@repo/platform/engine/config/env", () => ({
   },
 }));
 vi.mock("@repo/db", () => ({
-  repos: { organization: { findById: h.org }, cloudDockerWorkspace: { find: h.binding } },
+  repos: { project: { findByIdInOrganization: h.project }, organization: { findById: h.org }, cloudDockerWorkspace: { find: h.binding } },
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({
@@ -24,7 +25,6 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   }),
 }));
 import {
-  assertCloudWorkspaceCapacity,
   cloudCapacityFailure,
   readCloudWorkspaceAllocation,
 } from "@repo/platform/engine/lib/cloud-capacity";
@@ -58,6 +58,7 @@ const namespace = {
 beforeEach(() => {
   vi.resetAllMocks();
   h.cloud = true;
+  h.project.mockResolvedValue({ id: "project", organizationId: "org", workspaceId: null });
   h.org.mockResolvedValue({ oblienNamespace: "tenant" });
   h.binding.mockResolvedValue({ workspaceId: "workspace", namespace: "tenant" });
   h.workspace.mockResolvedValue({
@@ -68,42 +69,7 @@ beforeEach(() => {
   h.namespace.mockResolvedValue(structuredClone(namespace));
 });
 
-describe("Cloud allocation admission", () => {
-  it("does not read or enforce Cloud quotas on self-hosted deployments", async () => {
-    h.cloud = false;
-    await assertCloudWorkspaceCapacity(input);
-    expect(h.org).not.toHaveBeenCalled();
-    expect(h.workspace).not.toHaveBeenCalled();
-    expect(h.namespace).not.toHaveBeenCalled();
-  });
-  it("allows downsizing a verified Docker workspace in a full pool", async () => {
-    await expect(assertCloudWorkspaceCapacity(input)).resolves.toBeUndefined();
-    expect(h.binding).toHaveBeenCalledWith("project", "org");
-  });
-  it("reserves the full allocation for a replacement workspace", async () => {
-    await expect(
-      assertCloudWorkspaceCapacity({ ...input, reuseDockerWorkspace: false }),
-    ).rejects.toMatchObject({
-      code: "CLOUD_CAPACITY_REQUIRED",
-      details: {
-        projectId: "project",
-        capacity: {
-          shortfalls: expect.arrayContaining([
-            expect.objectContaining({ dimension: "workspaces", additional: 1 }),
-          ]),
-        },
-      },
-    });
-    expect(h.binding).not.toHaveBeenCalled();
-    expect(h.workspace).not.toHaveBeenCalled();
-  });
-  it("never credits an existing host's allocation when its namespace changed", async () => {
-    h.binding.mockResolvedValue({ namespace: "foreign", workspaceId: "workspace" });
-    await expect(assertCloudWorkspaceCapacity(input)).rejects.toMatchObject({
-      code: "CLOUD_NAMESPACE_MISMATCH",
-    });
-    expect(h.workspace).not.toHaveBeenCalled();
-  });
+describe("provider allocation identity and deployment recovery", () => {
   it.each([
     { id: "different", namespace: "tenant" },
     { id: "workspace", namespace: "foreign" },
@@ -112,7 +78,7 @@ describe("Cloud allocation admission", () => {
       ...identity,
       resources: { cpus: 2, memory_mb: 3072, disk_size_mb: 8192 },
     });
-    await expect(assertCloudWorkspaceCapacity(input)).rejects.toMatchObject({
+    await expect(readCloudWorkspaceAllocation("workspace", "tenant")).rejects.toMatchObject({
       code: "CLOUD_NAMESPACE_MISMATCH",
     });
   });
@@ -125,46 +91,6 @@ describe("Cloud allocation admission", () => {
     await expect(readCloudWorkspaceAllocation("workspace", "tenant")).rejects.toMatchObject({
       code: "CLOUD_CAPACITY_UNAVAILABLE",
     });
-    await expect(assertCloudWorkspaceCapacity(input)).resolves.toBeUndefined();
-  });
-  it("requires complete measurements for edits while deferring ordinary admission to the provider", async () => {
-    h.namespace.mockResolvedValue({ success: true, data: { slug: "tenant" } });
-    await expect(readCloudCapacityPool("tenant")).rejects.toMatchObject({
-      code: "CLOUD_CAPACITY_UNAVAILABLE",
-    });
-    await expect(assertCloudWorkspaceCapacity(input)).resolves.toBeUndefined();
-  });
-  it.each(["workspace", "namespace"] as const)(
-    "does not reject a deployment just because its %s preflight read is unavailable",
-    async (read) => {
-      h[read].mockRejectedValue(new Error("Provider read timed out"));
-      await expect(assertCloudWorkspaceCapacity(input)).resolves.toBeUndefined();
-    },
-  );
-  it("still rejects a namespace mismatch at the provider read boundary", async () => {
-    h.namespace.mockResolvedValue({ ...namespace, data: { ...namespace.data, slug: "foreign" } });
-    await expect(assertCloudWorkspaceCapacity(input)).rejects.toMatchObject({
-      code: "CLOUD_NAMESPACE_MISMATCH",
-    });
-  });
-  it("does not pay for memory growth with a CPU reduction", async () => {
-    await expect(
-      assertCloudWorkspaceCapacity({ ...input, requested: { ...input.requested, memoryMb: 4096 } }),
-    ).rejects.toMatchObject({
-      code: "CLOUD_CAPACITY_REQUIRED",
-      details: {
-        capacity: {
-          shortfalls: [
-            expect.objectContaining({ dimension: "memoryMb", additional: 1024, missing: 1024 }),
-          ],
-        },
-      },
-    });
-  });
-  it("retains the effective builder size in a measured pool refusal", async () => {
-    const buildResources = { cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 };
-    await expect(assertCloudWorkspaceCapacity({ ...input, requested: { ...input.requested, memoryMb: 4096 }, buildResources }))
-      .rejects.toMatchObject({ code: "CLOUD_CAPACITY_REQUIRED", details: { capacity: { buildResources } } });
   });
   it.each([null, { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 }])("keeps build recovery after an asynchronous provider refusal: %j", (buildResources) => {
     expect(cloudCapacityFailure({ code: "NAMESPACE_LIMIT_REACHED" }, "project", buildResources))

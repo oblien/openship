@@ -172,6 +172,28 @@ const creditPackSchema = z.object({
   sortOrder: z.number().int(),
 });
 
+const resourceRangeSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive(),
+  step: z.number().int().positive(),
+}).strict().refine(range => range.max >= range.min && range.min % range.step === 0 && range.max % range.step === 0,
+  "Resource bounds must be ordered and align with their step");
+
+export const customPricingSchema = z.object({
+  resources: z.object({
+    cpuCores: resourceRangeSchema,
+    memoryMb: resourceRangeSchema,
+    diskGb: resourceRangeSchema,
+  }).strict(),
+  extraMonthlyCents: z.object({
+    cpuCore: z.number().int().positive(),
+    memoryGb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+  }).strict(),
+  // 100 credits/USD: a percentage of added cents is a funded credit grant.
+  extraCreditPercent: z.number().int().min(1).max(100),
+}).strict();
+
 export const pricingCatalogSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -193,6 +215,7 @@ export const pricingCatalogSchema = z
     }),
     /** Time-bounded automatic discounts. Empty = list price. */
     campaigns: z.array(campaignSchema),
+    custom: customPricingSchema,
     plans: z.array(planSchema).min(1),
     creditPacks: z.array(creditPackSchema),
     /**
@@ -227,6 +250,14 @@ export const pricingCatalogSchema = z
       }
       ids.add(plan.id);
     });
+
+    const retailPlans = data.plans.filter(plan => (plan.price.monthly ?? 0) > 0 && !plan.contactSales);
+    if (!retailPlans.length || retailPlans.some(plan => plan.billing.resourceLimits.max_workspaces !== 1)) {
+      ctx.addIssue({ code: "custom", path: ["custom"], message: "Custom pricing requires single-server retail bundles" });
+    }
+    if (data.custom.resources.memoryMb.step % 1024 !== 0) {
+      ctx.addIssue({ code: "custom", path: ["custom", "resources", "memoryMb"], message: "Custom memory increments must be whole GB" });
+    }
 
     data.plans.forEach((plan, i) => {
       // `inherits` drives the "Everything in X" bullet, so a dangling id would

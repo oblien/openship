@@ -1,20 +1,21 @@
 ---
 title: Server terminal
-description: Issue access tickets and open an SSH session.
+description: Issue access tickets and open a terminal on connected or managed Cloud servers.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-The Terminal API opens a live shell (a PTY) on one of your SSH-managed servers and streams it to the browser
+The Terminal API opens a live shell (a PTY) on a connected server or a managed Cloud server and streams it to the browser
 over a WebSocket — the dashboard's server **Terminal** tab, backed by `xterm.js`. Because a browser can't set
 an `Authorization` header on a `WebSocket()`, auth is split into two steps: a normal HTTP call mints a
 short-lived, single-use **ticket**, and the WebSocket upgrade presents that ticket inside its
 `Sec-WebSocket-Protocol` header.
 
-<Callout title="Self-hosted only" type="warn">
-This module is mounted only when the instance is **not** in cloud mode, and every route is additionally
-guarded by a local-only middleware. On Openship Cloud these paths return **404**. (Cloud service shells go
-through a different subsystem, `/api/services/terminal`.)
+<Callout title="Server capabilities" type="info">
+Use the server's `capabilities.terminal` and `terminalSessionLimit` fields to determine availability and
+the concurrent shell limit. Managed Cloud servers support one live host shell at a time through
+the provider, covering both Docker and bare projects. SSH servers use the configured per-user limit
+(3 by default). Service shells use `/api/services/terminal`.
 </Callout>
 
 ## Mint a ticket
@@ -29,7 +30,7 @@ POST /api/terminal/ticket
 
 <TypeTable
   type={{
-    serverId: { type: 'string', description: 'The SSH-managed server to open a shell on. Must belong to your organization.', required: true },
+    serverId: { type: 'string', description: 'The connected or managed server to open a shell on. Must belong to your organization.', required: true },
   }}
 />
 
@@ -76,8 +77,8 @@ const ws = new WebSocket(`wss://your-host/api/terminal/ws/${serverId}`, [
 ]);
 ```
 
-The upgrade enforces, in order: the request `Origin` must be a trusted origin; the ticket must be valid (or a
-same-origin session cookie present); the ticket's `serverId` must match the path; the caller must hold
+The upgrade enforces, in order: the request `Origin` must be a trusted origin; a presented ticket must be valid
+(same-origin session cookies are accepted only when no ticket is presented); the ticket's `serverId` must match the path; the caller must hold
 `server:admin`; the server must exist in the org; and the per-user concurrent-session cap must not be
 exceeded. Any failure opens the socket only to send an `error` control frame and close with a `4xxx` code.
 
@@ -149,7 +150,7 @@ before opening another. Resumes don't count against the cap.
 
 | Operation | REST API |
 | --- | --- |
-| Mint a one-shot ticket for a WebSocket handshake against a server. | `POST /api/terminal/ticket`<br />`terminal:write` · Self-hosted |
-| WebSocket upgrade that opens the remote PTY. | `GET /api/terminal/ws/:serverId`<br />`Handler authentication` · Self-hosted |
+| Mint a one-shot ticket for a WebSocket handshake against a server. | `POST /api/terminal/ticket`<br />`terminal:write` |
+| WebSocket upgrade that opens the remote PTY. | `GET /api/terminal/ws/:serverId`<br />`Handler authentication` |
 
 {/* api-operations:end */}

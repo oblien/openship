@@ -8,25 +8,23 @@
  *                                 SaaS (which becomes the source of truth),
  *                                 then DELETE the local rows so there's no
  *                                 shadow. The project becomes cloud-canonical.
- *   transferProjectToSelfHosted — bring-home: pull project subgraph from SaaS,
- *                                 wipe the local rows, restore, clear
- *                                 cloudWorkspaceId. (Demote — see plan.)
+ *   transferProjectToSelfHosted — copy an undeployed project's configuration
+ *                                 home, then remove the remote configuration.
  *
  * SCOPE OF THIS FILE: the data-layer transfer, plus source-side teardown on the
  * PROMOTE path — which calls `teardownProject(… force, preserveWebhook)` once the
  * rows have landed, so that half is no longer deferred.
  *
- * Still INTENTIONALLY deferred for the business-logic discussion, with hooks as
- * TODOs below: destroying the cloud workspace RUNTIME on the bring-home path,
- * re-triggering the local deploy, mail-server reattachment, GitHub installation
- * re-binding, DNS / domain re-provisioning, the audit_event row, and racing
- * concurrent deploys.
+ * A configuration transfer does not move application data. Deployed Cloud
+ * projects use the project migration/backup workflow; no transfer owns or
+ * deletes their subscription's managed server.
  */
 
 import {
   dumpSubgraph,
   restoreSubgraph,
   deleteProjectSubgraph,
+  stripInstanceRefsInPlace,
   PkCollisionError,
   repos,
   db,
@@ -58,9 +56,7 @@ export class TransferConflictError extends Error {
     public readonly conflictKind: "id" | "slug",
     public readonly conflictValue: string,
   ) {
-    super(
-      `Target organization already has a project with this ${conflictKind}: ${conflictValue}.`,
-    );
+    super(`Target organization already has a project with this ${conflictKind}: ${conflictValue}.`);
     this.name = "TransferConflictError";
   }
 }
@@ -95,20 +91,17 @@ interface ProjectRow {
   id: string;
   slug: string;
   organizationId: string;
-  cloudWorkspaceId: string | null;
+  workspaceId: string | null;
   clusterId: string | null;
 }
 
-async function loadProject(
-  projectId: string,
-  organizationId: string,
-): Promise<ProjectRow | null> {
+async function loadProject(projectId: string, organizationId: string): Promise<ProjectRow | null> {
   const rows = await db
     .select({
       id: schema.project.id,
       slug: schema.project.slug,
       organizationId: schema.project.organizationId,
-      cloudWorkspaceId: schema.project.cloudWorkspaceId,
+      workspaceId: schema.project.workspaceId,
       clusterId: schema.project.clusterId,
     })
     .from(schema.project)
@@ -138,20 +131,31 @@ export async function transferProjectToCloud(
   // 1) Pre-flight: project exists in this org and isn't already on cloud.
   const project = await loadProject(input.projectId, input.organizationId);
   if (!project) throw new TransferProjectNotFoundError(input.projectId);
-  if (project.cloudWorkspaceId) {
+  if (project.workspaceId) {
     throw new TransferAlreadyOnTargetError("cloud");
   }
-  const [clusterRelease] = await db.select({ id: schema.deployment.id }).from(schema.deployment)
-    .where(and(eq(schema.deployment.projectId, project.id), sql`${schema.deployment.meta}->>'clusterId' is not null`)).limit(1);
+  const [clusterRelease] = await db
+    .select({ id: schema.deployment.id })
+    .from(schema.deployment)
+    .where(
+      and(
+        eq(schema.deployment.projectId, project.id),
+        sql`${schema.deployment.meta}->>'clusterId' is not null`,
+      ),
+    )
+    .limit(1);
   if (project.clusterId || clusterRelease)
-    throw new AppError("Projects with Kubernetes releases cannot be transferred to Cloud yet. Keep cluster workloads on this self-hosted installation.", 409, "CLUSTER_TRANSFER_UNSUPPORTED");
+    throw new AppError(
+      "Projects with Kubernetes releases cannot be transferred to Cloud yet. Keep cluster workloads on this self-hosted installation.",
+      409,
+      "CLUSTER_TRANSFER_UNSUPPORTED",
+    );
 
   // 2) Dump the project subgraph from local. stripEncrypted: true — the
   //    SaaS can't decrypt local-host blobs; re-link is the operator's
   //    job on the cloud side.
   //    stripInstanceRefs: true — project.serverId points at a `servers` row that
-  //    does not travel (instance-scope) and cannot exist on the SaaS, and the FK is
-  //    not DEFERRABLE, so shipping it takes a raw FK violation at insert.
+  //    does not travel (instance-scope); the destination has its own servers.
   const dump = await dumpSubgraph(
     { kind: "project", projectId: input.projectId },
     { stripEncrypted: true, stripInstanceRefs: true },
@@ -284,7 +288,7 @@ export async function transferProjectToSelfHosted(
   // 1) Pre-flight: project exists in this org and IS currently on cloud.
   const project = await loadProject(input.projectId, input.organizationId);
   if (!project) throw new TransferProjectNotFoundError(input.projectId);
-  if (!project.cloudWorkspaceId) {
+  if (!project.workspaceId) {
     throw new TransferAlreadyOnTargetError("self_hosted");
   }
 
@@ -300,11 +304,14 @@ export async function transferProjectToSelfHosted(
     throw new TransferCloudCallFailedError(result.error);
   }
   const dump: DatabaseDump = result.dump;
-  if ((dump.tables.cloud_docker_workspace?.length ?? 0) > 0) {
-    throw new TransferCloudCallFailedError(
-      "This project stores container and volume data in its Cloud Docker workspace. Migrate that data to the destination before transferring the project.",
+  if ((dump.tables.deployment?.length ?? 0) > 0) {
+    throw new AppError(
+      "This project has deployment history on its managed server. Move its runtime and persistent data with the project migration or backup workflow before transferring configuration.",
+      409,
+      "PROJECT_DATA_TRANSFER_REQUIRED",
     );
   }
+  stripInstanceRefsInPlace(dump.tables);
 
   // 3) Wipe the local rows for this project, then merge-insert the dump.
   //    Uses the shared subgraph-delete primitive (child→parent FK order,
@@ -328,26 +335,22 @@ export async function transferProjectToSelfHosted(
     throw err;
   }
 
-  // 4) Clear cloudWorkspaceId; project is now canonical-local again.
+  // 4) Clear workspaceId; project is now canonical-local again.
   await db
     .update(schema.project)
-    .set({ cloudWorkspaceId: null, updatedAt: new Date() })
+    .set({ workspaceId: null, updatedAt: new Date() })
     .where(eq(schema.project.id, project.id));
 
   // The project is local again — drop any cloud webhook binding so pushes are
   // handled locally, not forwarded to the (now torn-down) SaaS copy.
-  await repos.cloudWebhookBinding
-    .deleteByCloudProject(project.id)
-    .catch(() => {});
+  await repos.cloudWebhookBinding.deleteByCloudProject(project.id).catch(() => {});
 
   // 5) Tear down the SaaS copy's ROWS so it doesn't linger as a leftover that
   //    would collide on a future re-promote. Best-effort: the local copy is
   //    already authoritative, so a teardown failure is drift to reconcile later
   //    (via the teardown endpoint), not a reason to fail the bring-home.
-  //    SCOPE: data-only — this drops rows, it does NOT destroy the cloud
-  //    workspace RUNTIME. Row-only leftovers (never-deployed promotes, dev) are
-  //    fully cleaned; a project that was actually RUNNING on cloud leaves its
-  //    workspace to be destroyed by the deferred cloud-workspace teardown below.
+  //    The remote endpoint rechecks that this is still an undeployed project
+  //    under its runtime lock. It never removes a shared server or its neighbors.
   const teardown = await cloudClient({
     organizationId: input.organizationId,
   }).teardownProject({ projectId: project.id });
@@ -356,13 +359,6 @@ export async function transferProjectToSelfHosted(
       `[transfer] bring-home: cloud teardown failed for project ${project.id}: ${teardown.error}`,
     );
   }
-
-  // TODO (business-logic phase, NOT in this change):
-  //   - destroy the cloud workspace RUNTIME (containers/routes) for a project
-  //     that was live on cloud — teardownProject above is data-only
-  //   - kick the local deploy pipeline so containers come back up
-  //   - re-bind GitHub installation to the local org
-  //   - audit_event row
 
   const imported = Object.fromEntries(
     Object.entries(dump.tables)

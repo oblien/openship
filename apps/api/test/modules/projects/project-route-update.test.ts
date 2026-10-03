@@ -58,7 +58,7 @@ const project = {
   name: "Portfolio",
   port: 4321,
   activeDeploymentId: "dep_123",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   resources: null,
   buildResources: null,
   sleepMode: "auto_sleep",
@@ -132,8 +132,7 @@ describe("updateProject route persistence", () => {
   it("does not start a live route writer after deletion has claimed the project", async () => {
     projectRepo.findById
       .mockResolvedValueOnce(project)
-      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
-      .mockResolvedValue(project);
+      .mockResolvedValue({ ...project, deletionInProgress: true });
 
     await updateProject(
       project.id,
@@ -151,8 +150,7 @@ describe("updateProject route persistence", () => {
   it("also gates a routingConfig-only live writer after deletion claims the project", async () => {
     projectRepo.findById
       .mockResolvedValueOnce(project)
-      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
-      .mockResolvedValue(project);
+      .mockResolvedValue({ ...project, deletionInProgress: true });
 
     await updateProject(
       project.id,

@@ -104,6 +104,9 @@ export async function hydrateServerAdapterRow(params: {
       `Server ${serverId} referenced by destination "${name}" no longer exists`,
     );
   }
+  if (server.workspaceId) {
+    throw new Error("Managed Cloud servers do not expose SFTP credentials. Choose object storage or an external SFTP destination for backups.");
+  }
 
   // A stored destination must obey the same native host-key-file policy as deployments.
   assertNativeSshSettings(server);

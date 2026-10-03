@@ -204,3 +204,46 @@ export async function reconcileKnownHosts(config: SshConfig): Promise<void> {
     }
   }
 }
+
+/**
+ * Resolve the SSH agent socket for "agent" auth.
+ *
+ * The orchestrator is often a GUI-launched desktop app that never inherited the
+ * user's `SSH_AUTH_SOCK` from a login shell — so plain `process.env` is empty
+ * even though `ssh` works fine in the user's terminal. When the env var is
+ * unset, ask the OS for the per-user agent socket: on macOS `launchctl getenv
+ * SSH_AUTH_SOCK` returns it even for GUI processes (the same trick VS Code uses).
+ * Returns null when no agent can be found.
+ */
+export async function resolveSshAuthSock(): Promise<string | null> {
+  // 1. Inherited env — covers shell- and service-launched processes on every
+  //    platform (the common case for the dev server and self-hosted installs).
+  const fromEnv = process.env.SSH_AUTH_SOCK;
+  if (fromEnv) return fromEnv;
+
+  // 2. GUI-launched apps (the desktop shell) often don't inherit it. Ask the
+  //    OS session manager for the per-user value.
+  if (process.platform === "darwin") {
+    // macOS: the value lives in the launchd user session.
+    try {
+      const stdout = await execFileText("launchctl", ["getenv", "SSH_AUTH_SOCK"], 4_000);
+      const sock = stdout.trim();
+      if (sock) return sock;
+    } catch {
+      // launchctl missing / no value — fall through.
+    }
+  } else if (process.platform === "linux") {
+    // Linux desktops that run an ssh-agent under the systemd user manager
+    // (gnome-keyring, the ssh-agent.service unit) export it there.
+    try {
+      const stdout = await execFileText("systemctl", ["--user", "show-environment"], 4_000);
+      const line = stdout.split("\n").find((l) => l.startsWith("SSH_AUTH_SOCK="));
+      const sock = line?.slice("SSH_AUTH_SOCK=".length).trim();
+      if (sock) return sock;
+    } catch {
+      // systemctl missing (non-systemd) / no value — fall through.
+    }
+  }
+  // Windows OpenSSH resolves its agent named pipe and user configuration itself.
+  return null;
+}

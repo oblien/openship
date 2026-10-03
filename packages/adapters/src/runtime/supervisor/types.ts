@@ -18,6 +18,7 @@ import type {
   LogCallback,
   ResourceUsage,
   RuntimeLogStreamOptions,
+  ContainerInfo,
 } from "../../types";
 
 // ─── Deploy options ──────────────────────────────────────────────────────────
@@ -33,6 +34,8 @@ export interface SupervisorDeployOpts {
   startCommand: string;
   /** Port the application listens on */
   port: number;
+  /** Declared listeners; an empty list represents a portless worker. */
+  ports?: number[];
   /** Environment variables to set for the process */
   env: Record<string, string>;
 }
@@ -63,6 +66,15 @@ export interface ProcessSupervisor {
 
   /** Check if the process is currently running */
   isRunning(deploymentId: string): Promise<boolean>;
+
+  /** Detailed state and owned listeners, when supplied by the host's process manager. */
+  getInfo?(deploymentId: string): Promise<ContainerInfo>;
+
+  /** Authoritative project inventory, including stopped and failed releases. */
+  listProjectDeploymentIds?(projectId: string): Promise<string[]>;
+
+  /** Release log subscriptions owned by this runtime borrower. */
+  dispose?(): Promise<void>;
 
   /**
    * Current CPU / memory / disk-IO for the process.

@@ -40,7 +40,6 @@ import {
 } from "./project-import";
 import { summarizeExportCounts } from "./selection";
 import { transferServer } from "./export.service";
-import { getCloudConnectionStatusForOrg } from "@repo/platform/engine/lib/cloud/session";
 import type {
   DataTransferFile,
   ImportMode,
@@ -348,12 +347,6 @@ export async function importPreparedInstance(opts: {
 
   let secretsRehydrated = 0;
   let projectPreview: ImportPreview | undefined;
-  // Resolve cloud identity before opening the DB transaction. PGlite has one
-  // connection; a global repo query inside its transaction would deadlock.
-  const cloud =
-    projectScope && file.dump.tables.project?.some((row) => row.cloudWorkspaceId)
-      ? await getCloudConnectionStatusForOrg(opts.context!.organizationId)
-      : undefined;
 
   await withMigrationLock(async () => {
     await db.transaction(async (rawTx) => {
@@ -367,7 +360,6 @@ export async function importPreparedInstance(opts: {
           { ...opts.selection, scope: "projects" },
           opts.context!,
           tx,
-          cloud,
         );
         if (plan.preview.blockers.length)
           throw new ProjectImportError(plan.preview.blockers.join("\n"));

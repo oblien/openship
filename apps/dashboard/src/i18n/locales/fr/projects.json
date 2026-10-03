@@ -194,7 +194,8 @@
     "services": "Services",
     "created": "Créé",
     "managedImages": "Images de conteneur gérées",
-    "managedImagesText": "Cette application s'exécute à partir d'images préconstruites — il n'y a pas de dépôt à connecter. Déployez simplement."
+    "managedImagesText": "Cette application s'exécute à partir d'images préconstruites — il n'y a pas de dépôt à connecter. Déployez simplement.",
+    "subtextNoSource": "Connectez une source pour configurer votre premier déploiement."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name} : vos modifications ont été conservées",
     "failedResolveDrift": "Échec de la résolution de l'écart",
     "failedCreateService": "Échec de la création du service",
-    "requestFailed": "Échec de la requête"
+    "requestFailed": "Échec de la requête",
+    "application": "Application",
+    "applicationHint": "Gérée via les déploiements de ce projet.",
+    "companionsTitle": "Ajouter une autre application ou un service"
   },
   "serviceStatus": {
     "checking": "Vérification…",

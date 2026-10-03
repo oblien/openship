@@ -17,6 +17,7 @@
  */
 
 import type { CommandExecutor } from "@repo/adapters";
+import { cloudDockerProjectPaths } from "@repo/adapters";
 import { shellQuote } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { posix as pathPosix } from "node:path";
@@ -40,18 +41,20 @@ function safeHostSegment(value: string): string {
   return sanitized === "." || sanitized === ".." ? "_" : sanitized;
 }
 
-export function appConfigHostServiceRoot(projectId: string, serviceName: string): string {
-  return `${APP_CONFIG_HOST_ROOT}/${safeHostSegment(projectId)}/${safeHostSegment(serviceName)}`;
+export function appConfigHostServiceRoot(projectId: string, serviceName: string, workspaceId?: string | null): string {
+  const root = workspaceId ? `${cloudDockerProjectPaths(projectId).mounts}/config` : `${APP_CONFIG_HOST_ROOT}/${safeHostSegment(projectId)}`;
+  return `${root}/${safeHostSegment(serviceName)}`;
 }
 
 export function appConfigHostPath(
   projectId: string,
   serviceName: string,
   containerPath: string,
+  workspaceId?: string | null,
 ): string {
   assertValidGeneratedConfigFiles([{ path: containerPath, content: "" }]);
   const rel = containerPath.replace(/^\/+/, "");
-  return `${appConfigHostServiceRoot(projectId, serviceName)}/${rel}`;
+  return `${appConfigHostServiceRoot(projectId, serviceName, workspaceId)}/${rel}`;
 }
 
 /**

@@ -261,8 +261,8 @@ describe("apply service environment operation", () => {
     expect(h.updateRow).not.toHaveBeenCalled();
   });
 
-  it("does not call cloud routing for a workspace-private IP change", async () => {
-    Object.defineProperty(runtime, "name", { value: "cloud" });
+  it("reapplies routes after replacing a container on a managed Docker server", async () => {
+    h.cloud.CLOUD_MODE = true;
     apply.mockImplementation(async (_id, _env, options) => {
       const next = { containerId: "new-api", ip: "172.22.0.9" };
       await options.onReplaced(next);
@@ -270,8 +270,8 @@ describe("apply service environment operation", () => {
     });
     await applyServiceEnvironment(ctx, "p1", "api");
     expect(h.record).toHaveBeenCalledOnce();
-    expect(h.projectRoutes).not.toHaveBeenCalled();
-    expect(h.serviceRoutes).not.toHaveBeenCalled();
+    expect(h.projectRoutes).toHaveBeenCalledOnce();
+    expect(h.serviceRoutes).toHaveBeenCalledOnce();
   });
 
   it("timestamps the captured env before a concurrent save can happen", async () => {
@@ -329,11 +329,11 @@ describe("apply service environment operation", () => {
   it("keeps Cloud quota and allocation checks ahead of the runtime replacement", async () => {
     h.cloud.CLOUD_MODE = true;
     await applyServiceEnvironment(ctx, "p1", "api");
-    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1");
-    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"]);
+    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1", null);
+    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"], null);
     expect(h.limits).toHaveBeenCalledExactlyOnceWith("org1", runtime, [
       { containerId: "old-api", allocatedResources: row.allocatedResources },
-    ]);
+    ], null);
     expect(h.limits.mock.invocationCallOrder[0]).toBeLessThan(apply.mock.invocationCallOrder[0]!);
   });
 

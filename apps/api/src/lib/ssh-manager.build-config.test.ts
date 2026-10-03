@@ -21,6 +21,7 @@ vi.mock("@repo/adapters", async () => ({
   createHostExecutor: vi.fn(),
   hostChannelHealth: vi.fn(),
   probeTcp: vi.fn(),
+  resolveSshAuthSock: () => process.env.SSH_AUTH_SOCK,
 }));
 vi.mock("@repo/platform/engine/lib/box-org", () => ({ isLocalHostRow: vi.fn() }));
 

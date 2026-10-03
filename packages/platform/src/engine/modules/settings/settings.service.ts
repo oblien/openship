@@ -19,7 +19,7 @@ export type BuildMode = "auto" | "server" | "local";
  *
  * "local" is deliberately absent, even though `DeployTarget` (@repo/core) has it.
  * That value is not a destination: it is the *absence* of a binding, derived per
- * deploy from the project row (`cloudWorkspaceId ? cloud : serverId ? server :
+ * deploy from the project row (`workspaceId ? cloud : serverId ? server :
  * local`, see project.ts), and on a server-host the box already appears as its own
  * "This Server" row — so offering it was a second, dimmer name for a server that is
  * right there in the list, and picking it dropped that row's real address. Desktop

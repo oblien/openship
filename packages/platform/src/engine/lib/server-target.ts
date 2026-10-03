@@ -2,6 +2,7 @@ import { findActiveDeployment } from "@repo/platform/engine/lib/active-deploymen
 import { repos, type Project } from "@repo/db";
 import { AppError, isLoopbackHost as isCoreLoopbackHost } from "@repo/core";
 import { env } from "../config/env";
+import { assertDeploymentServer } from "../modules/system/server-access";
 
 interface DeploymentSnapshotLike {
   serverId?: string;
@@ -23,6 +24,7 @@ export async function requireOrgServer(serverId: string, organizationId: string)
       "SERVER_TARGET_UNAVAILABLE",
     );
   }
+  assertDeploymentServer(server);
   return server;
 }
 

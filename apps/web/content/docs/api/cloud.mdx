@@ -296,6 +296,18 @@ from the dashboard.
 
 {/* api-operations:start */}
 
+### Managed server connections
+
+| Operation | REST API |
+| --- | --- |
+| Verify the connected Cloud user's administration of a server in the exact requested organization before linking an installation. | `POST /api/cloud/servers/:id/authorize`<br />`server:admin` |
+| Issue namespace-scoped server credentials after ownership checks; work admission also verifies the subscription. Credentials stay on the installation's server and must not be exposed to a browser. | `POST /api/cloud/servers/:id/connection`<br />`server:admin` |
+| Claim durable server activity for a linked installation and synchronize its project registry before execution; a disconnected claim does not expire. | `POST /api/cloud/servers/:id/activity`<br />`server:admin` |
+| Release the same user's exact controller and activity claim after work finishes, and update its registered projects. | `POST /api/cloud/servers/:id/activity/release`<br />`server:admin` |
+| Read a durable deletion receipt using billing administration, the original organization and exact operationId after the server row has been removed. | `GET /api/cloud/server-deletions/:id`<br />`billing:admin` |
+
+### HTTP endpoints
+
 | Operation | REST API |
 | --- | --- |
 | The connected cloud account (name, email, avatar). | `GET /api/cloud/account`<br />`cloud:read` |
@@ -333,6 +345,5 @@ from the dashboard.
 | Openship Cloud connection status for this instance. | `GET /api/cloud/status`<br />`cloud:read` · Self-hosted |
 | Delete a project's rows on the SaaS (bring-home / reconcile). | `POST /api/cloud/teardown-project`<br />`cloud:admin` |
 | Mint a namespace-scoped Oblien token for the caller's org. | `POST /api/cloud/token`<br />`cloud:write` |
-| List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local). | `GET /api/cloud/workspaces`<br />`cloud:read` · Self-hosted |
 
 {/* api-operations:end */}

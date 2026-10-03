@@ -32,8 +32,12 @@ vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
   withProjectRuntimeLock: async (_id: string, run: () => Promise<unknown>) => run(),
 }));
 
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({ withCloudWorkspaceActivity: async (_id: string, fn: () => Promise<unknown>) => fn() }));
+
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
+    cloudWorkspace: { findByIdInOrganization: async (id: string, organizationId: string) => ({ id, organizationId }) },
     project: { findById: h.findById, listEnvVars: h.listEnvVars },
     deployment: { findById: h.deploymentFindById },
     server: { getInOrganization: h.serverGetInOrganization },
@@ -136,14 +140,14 @@ describe("createConnection — synthesized internal source", () => {
     expect(res.requiresRedeploy).toBe(true);
   });
 
-  it("still steers a CLOUD-hosted source to Public before injecting anything", async () => {
+  it("refuses an internal link between a managed server and a different host", async () => {
     // The DURABLE half of the union: a project bound to cloud that hasn't redeployed
     // has no snapshot to read. The snapshot half is pinned separately below —
     // neither signal alone catches every cloud shape.
     h.findById.mockImplementation(async (id: string) =>
       id === "app-a"
         ? { id: "app-a", name: "App A", slug: "app-a", organizationId: "org1", activeDeploymentId: null }
-        : { id: "db-c", name: "Plain App", slug: "plain-app", organizationId: "org1", appTemplateId: null, activeDeploymentId: null, cloudWorkspaceId: "ws_1" },
+        : { id: "db-c", name: "Plain App", slug: "plain-app", organizationId: "org1", appTemplateId: null, activeDeploymentId: null, workspaceId: "ws_1", serverId: "managed-server" },
     );
 
     await expect(
@@ -153,7 +157,7 @@ describe("createConnection — synthesized internal source", () => {
         { sourceProjectId: "db-c", outputId: "svc", envKey: "DB_URL", mode: "internal" },
         { defer: true },
       ),
-    ).rejects.toThrow(/Public/);
+    ).rejects.toThrow(/same server/);
 
     // Guard fires before the env write — no half-wired state.
     expect(h.saveBindings).not.toHaveBeenCalled();
@@ -255,15 +259,11 @@ describe("createConnection — synthesized internal source", () => {
     expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
-  it("catches a cloud source from the deployment SNAPSHOT when cloudWorkspaceId is null", async () => {
-    // A self-hosted instance orchestrating a cloud deploy deliberately leaves
-    // `cloudWorkspaceId` null to stay local-canonical (deployment-lifecycle,
-    // isLocalOrchestratedCloud), so the column alone reads "local" and the guard went
-    // silent. `meta.deployTarget` is that shape's only cloud signal.
+  it("refuses an unbound Cloud snapshot before saving a private connection", async () => {
     h.findById.mockImplementation(async (id: string) =>
       id === "app-a"
         ? { id: "app-a", name: "App A", slug: "app-a", organizationId: "org1", activeDeploymentId: null, serverId: null }
-        : { id: "db-c", name: "Plain App", slug: "plain-app", organizationId: "org1", appTemplateId: null, activeDeploymentId: "dep-c", serverId: null, cloudWorkspaceId: null },
+        : { id: "db-c", name: "Plain App", slug: "plain-app", organizationId: "org1", appTemplateId: null, activeDeploymentId: "dep-c", serverId: null, workspaceId: null },
     );
     h.deploymentFindById.mockResolvedValue({
       id: "dep-c",
@@ -278,7 +278,7 @@ describe("createConnection — synthesized internal source", () => {
         { sourceProjectId: "db-c", outputId: "svc", envKey: "DB_URL", mode: "internal" },
         { defer: true },
       ),
-    ).rejects.toThrow(/cloud-hosted/i);
+    ).rejects.toThrow(/Select a managed server/i);
 
     expect(h.saveBindings).not.toHaveBeenCalled();
     expect(h.saveBindings).not.toHaveBeenCalled();
@@ -299,6 +299,20 @@ describe("createConnection — synthesized internal source", () => {
     );
 
     expect(res.connection.mode).toBe("internal");
+  });
+
+  it("uses the same private connection flow for projects sharing a managed server", async () => {
+    h.findById.mockImplementation(async (id: string) => ({
+      id, name: id, slug: id, organizationId: "org1", appTemplateId: null,
+      activeDeploymentId: null, serverId: "managed-server", workspaceId: "same-workspace", runtimeMode: "docker",
+    }));
+    const result = await createConnection(ctx, "app-a", {
+      sourceProjectId: "db-c", outputId: "svc", envKey: "DB_URL", mode: "internal",
+    }, { defer: true });
+    expect(result.connection.mode).toBe("internal");
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      encryptedValue: "enc:http://my-app:8080",
+    })]);
   });
 
   it("never falls back to public for a private-only address on another server", async () => {

@@ -194,7 +194,8 @@
     "deleteConfirmPrefix": "Kalıcı olarak silinsin mi: ",
     "deleteConfirmSuffix": "?",
     "cancel": "İptal",
-    "delete": "Sil"
+    "delete": "Sil",
+    "subtextNoSource": "İlk dağıtımını yapılandırmak için bir kaynak bağla."
   },
   "overview": {
     "platformCloud": "Openship Bulut",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: düzenlemeleriniz korundu",
     "failedResolveDrift": "Yapılandırma çakışması giderilemedi",
     "failedCreateService": "Servis oluşturulamadı",
-    "requestFailed": "İstek başarısız oldu"
+    "requestFailed": "İstek başarısız oldu",
+    "application": "Uygulama",
+    "applicationHint": "Bu projenin dağıtımları üzerinden yönetilir.",
+    "companionsTitle": "Başka bir uygulama veya servis ekle"
   },
   "serviceStatus": {
     "checking": "Kontrol ediliyor…",

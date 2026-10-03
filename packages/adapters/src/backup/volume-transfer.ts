@@ -35,6 +35,8 @@ export interface TransferEndpoint {
   exec: BackupExecutor;
   handle: ServiceHandle;
   sourceId: string;
+  /** Captured while enumerating the source's actual Docker mount. */
+  isFile?: boolean;
 }
 
 export interface TransferOptions {
@@ -49,6 +51,7 @@ export interface TransferOptions {
   /** Running byte count as data streams (stream mode only — the direct
    *  same-daemon copy reports its total once at the end). */
   onProgress?: (bytesMoved: number) => void;
+  signal?: AbortSignal;
 }
 
 export interface TransferPlan {
@@ -72,7 +75,7 @@ function isSameDaemon(src: TransferEndpoint, dst: TransferEndpoint): boolean {
 }
 
 function directSupported(src: TransferEndpoint, dst: TransferEndpoint): boolean {
-  return isSameDaemon(src, dst) && typeof src.exec.copyVolumeLocal === "function";
+  return !src.isFile && isSameDaemon(src, dst) && typeof src.exec.copyVolumeLocal === "function";
 }
 
 /**
@@ -159,7 +162,11 @@ export async function transferVolume(
   // one daemon or across two (src.exec / dst.exec may differ).
   const read = await src.exec.streamPath(src.handle, src.sourceId, {
     compression: plan.compression,
+    allowEmpty: true,
   });
+  // Observe source termination from the start, including a rejected target
+  // setup. A broken destination must not leave the producer streaming forever.
+  void read.awaitExit.catch(() => {});
   let source = read.stdout;
   if (opts?.onProgress) {
     let moved = 0;
@@ -173,15 +180,18 @@ export async function transferVolume(
     read.stdout.on("error", (err) => counter.destroy(err));
     source = read.stdout.pipe(counter);
   }
-  const { bytesWritten } = await dst.exec.receiveStream(dst.handle, dst.sourceId, source, {
-    compression: plan.compression,
-    clearTarget,
-  });
-  const exit = await read.awaitExit;
-  if (exit.code !== 0) {
-    throw new Error(
-      `Volume transfer failed (${src.sourceId}): ${exit.stderr || `exit ${exit.code}`}`,
-    );
+  try {
+    const { bytesWritten } = await dst.exec.receiveStream(dst.handle, dst.sourceId, source, {
+      compression: plan.compression,
+      clearTarget,
+      sourceIsFile: src.isFile,
+      signal: opts?.signal,
+    });
+    const exit = await read.awaitExit;
+    if (exit.code !== 0) throw new Error(`Volume transfer failed (${src.sourceId}): ${exit.stderr || `exit ${exit.code}`}`);
+    return { bytesMoved: bytesWritten, strategy: "stream", compression: plan.compression };
+  } finally {
+    source.destroy();
+    read.stdout.destroy();
   }
-  return { bytesMoved: bytesWritten, strategy: "stream", compression: plan.compression };
 }

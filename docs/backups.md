@@ -113,7 +113,7 @@ worker from the data path.
 Volume capture is crash-consistent by default. Docker's optional **Quiesce** freezes
 the service while its volumes are copied, then resumes it even if capture or upload
 fails. This prevents concurrent writes but does not flush application buffers. Prefer
-a logical database dump for a live database. Bare hosts and native Cloud workspaces
+a logical database dump for a live database. Bare processes
 reject quiescing because they cannot provide that guarantee.
 
 Capture commands must exit successfully. A successful compressor cannot hide a failed
@@ -184,13 +184,12 @@ staged length and clean up after success or failure. These transports need tempo
 disk space for the artifact. A disconnected host can defer remote cleanup until its
 operation settles or require operator cleanup of the reported staging failure.
 
-Modern Cloud Docker services use the same Docker backup executor as self-hosted
-Docker. Legacy native Cloud command/file restores use the workspace command transport
-and the SDK's tar.gz upload format. Legacy **offline volume restore is refused during
-preparation**: stopping that workspace also stops the filesystem API required for
-restore. Use a files-and-folders policy for an online restore, or move the service to
-the Docker runtime for offline volume restores. Native Cloud transport tests use a
-local simulated gateway; they do not certify a live Cloud account's infrastructure.
+Managed Cloud servers use the same Docker and bare backup executors as connected
+servers. An offline restore stops the selected application, leaving the managed
+server and neighboring applications available. The provider command transport
+stages restore input when streaming stdin is unavailable. Project-owned paths and
+volume labels are checked before capture and restore. Local provider simulations
+do not certify a live Cloud account's infrastructure.
 
 ## Release verification
 

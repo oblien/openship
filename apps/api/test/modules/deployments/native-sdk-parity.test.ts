@@ -373,6 +373,7 @@ import { appSettingsRoutes } from "../../../src/modules/apps/app-settings.routes
 import { appConnectionRoutes } from "../../../src/modules/apps/app-connection.routes";
 import { backupDestinationRoutes } from "../../../src/modules/backup-destinations/destination.routes";
 import { backupRoutes } from "../../../src/modules/backups/backup.routes";
+import { serverResourceRoutes } from "../../../src/modules/system/server-resource.routes";
 import { serverManagementRoutes } from "../../../src/modules/system/server-management.routes";
 import { systemManagementRoutes } from "../../../src/modules/system/system-management.routes";
 import { getInternalSetup, onboardingSetup } from "../../../src/modules/system/setup.controller";
@@ -402,7 +403,8 @@ app.route("/api/apps", appRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
 app.route("/api/projects/:id/app-settings", appSettingsRoutes);
 app.route("/api/projects/:id/app-connection", appConnectionRoutes);
-app.route("/api/system", serverManagementRoutes);
+app.route("/api/system", serverResourceRoutes);
+app.route("/api/system", serverResourceRoutes).route("/api/system", serverManagementRoutes);
 app.route("/api/system", systemManagementRoutes);
 app.route("/api", backupRoutes);
 
@@ -736,7 +738,8 @@ describe("app HTTP/native parity through retained catalog, installer, and settin
     expect(result).toMatchObject({ kind: "template", projectId: "installed-app" });
     expect(h.projectCreate).toHaveBeenCalledTimes(2);
     for (const args of h.projectCreate.mock.calls) {
-      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" }]);
+      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" },
+        expect.objectContaining({ organizationId: "org-a", role: "restricted", tokenScope: { tokenId: "app-token" } })]);
     }
     expect(h.serviceCreate.mock.calls.every(([ctx]) => ctx.role === "restricted" && !ctx.hono)).toBe(true);
     expect(h.audit).toHaveBeenCalledTimes(2);
@@ -1056,7 +1059,7 @@ beforeEach(() => {
   h.domains.set("domain-b", { projectId: "project-b" });
   h.servers.set("server-a", { ...serverFixture(), organizationId: "org-a", sshPrivateKey: "enc1:stored-secret" });
   h.servers.set("server-b", { ...serverFixture("server-b"), organizationId: "org-b" });
-  h.serverWithExecutor.mockImplementation(async (_id, work) => work({}));
+  h.serverWithExecutor.mockImplementation(async (_id, work) => work({ exec: h.monitorExec }));
   h.serverExec.mockResolvedValue({ output: "private-output", exitCode: 0, timedOut: false, truncated: false, durationMs: 1 });
   h.serverWorkloads.mockResolvedValue([]);
   h.serverRateRead.mockResolvedValue({ rps: 10, burst: 20, whitelist: [] });
@@ -1068,7 +1071,11 @@ beforeEach(() => {
   h.installDocker.mockResolvedValue({ component: "docker", success: true });
   h.installEdge.mockResolvedValue({ component: "edge", success: true });
   h.removeEdge.mockResolvedValue({ component: "edge", success: true });
-  h.monitorExec.mockResolvedValue(JSON.stringify({ cpu: 10, memUsed: 1024 }));
+  h.monitorExec.mockResolvedValue(JSON.stringify({
+    cpu: 10, memTotal: 4096, memUsed: 1024, memAvail: 3072,
+    diskTotal: 10000, diskUsed: 1000, diskAvail: 9000,
+    uptime: "120", load1: "0.1", load5: "0.2", load15: "0.3",
+  }));
   h.containerRows.set("server-a:edge", serverContainerFixture());
   h.containerRows.set("server-b:edge", serverContainerFixture("server-b", "org-b"));
   h.mailRecord.mockResolvedValue(undefined);
@@ -2050,7 +2057,12 @@ describe("server installation HTTP/native parity", () => {
       const abort = new AbortController();
       const iterator = servers.monitor("server-a", { signal: abort.signal })[Symbol.asyncIterator]();
       const event = await iterator.next();
-      expect(event.value).toMatchObject({ event: "stats", data: JSON.stringify({ cpu: 10, memUsed: 1024 }) });
+      expect(event.value).toMatchObject({ event: "stats" });
+      expect(JSON.parse(event.value!.data)).toEqual({
+        cpu: 10, memTotal: 4096, memUsed: 1024, memAvail: 3072,
+        diskTotal: 10000, diskUsed: 1000, diskAvail: 9000,
+        uptime: "120", load1: "0.1", load5: "0.2", load15: "0.3",
+      });
       abort.abort();
       await iterator.return?.();
     }

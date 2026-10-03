@@ -22,7 +22,7 @@ import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.se
 const project = (proxy?: unknown) => ({
   id: "proj-1",
   organizationId: "org-1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   activeDeploymentId: "dep-1",
   webhookDomain: null,
   routingConfig: proxy ? ({ proxy } as never) : null,

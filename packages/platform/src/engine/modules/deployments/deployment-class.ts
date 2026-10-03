@@ -65,7 +65,6 @@ export interface SnapshotClassInput {
   localPath?: string | null;
   hasBuild?: boolean | null;
   hasServer?: boolean | null;
-  uploadWorkspaceId?: string | null;
   releaseVersion?: string | null;
   releaseRepo?: string | null;
   /** Frozen triple — absent on pre-#538 snapshots (then null → derive). */
@@ -84,7 +83,6 @@ export function snapshotToClass(s: SnapshotClassInput): DeploymentClass {
     localPath: s.localPath,
     hasBuild: s.hasBuild,
     hasServer: s.hasServer,
-    isUpload: !!s.uploadWorkspaceId,
     isRelease: !!(s.releaseVersion || s.releaseRepo),
     sourceKind: toSourceKind(s.source),
     buildKind: toBuildKind(s.build),

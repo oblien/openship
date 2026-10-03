@@ -1,12 +1,88 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "在源服务器上检测到 {proxy}",
+      "detected": "已检测到 {proxy}",
       "handoff": "请检查下方匹配的域名。迁移会设置目标服务器的边缘代理；如果需要替换现有代理，会先请求确认。",
       "warnings": "查看 {count} 条检测提示"
+    },
+    "steps": {
+      "mapNoRepo": "关联仓库，将检测到的容器映射到仓库中的服务（可选）。",
+      "linkRepoDesc": "使用 Git 进行后续构建和自动部署。",
+      "repoOnSourceHint": "在下一步关联仓库。",
+      "mapHint": "将容器与仓库中的服务对应起来。"
     }
   },
   "entry": {
     "tab": "导入现有项目"
+  },
+  "sources": {
+    "title": "连接迁移源服务器",
+    "connect": "连接源服务器",
+    "disconnect": "断开源服务器",
+    "empty": "连接您要从中导入项目的服务器。",
+    "hint": "仅用于迁移。完成后可以移除此连接。",
+    "importHint": "将应用和数据复制到 Openship 托管服务器。确认切换前，源服务器将被保留。"
+  },
+  "tab": {
+    "safetyTitle": "源数据会保留。",
+    "safetyBody": "数据会被复制。传输期间，所选源容器会停止，数据仍保留在源服务器上。删除原容器需要你批准。"
+  },
+  "run": {
+    "downtimeNote": "复制数据和启动目标期间，所选源容器会停止。请预留停机时间。",
+    "routeHint": "配置路由之前，服务保持私有。请在项目的“域名”标签页中添加或检查域名。"
+  },
+  "cutover": {
+    "warning": "目标已上线。你可以删除原容器，也可以让它们保持停止状态。源数据卷会保留。",
+    "warningRestart": "目标已上线。“保留原容器”会将之前运行的源容器作为独立副本重新启动。“删除原容器”会将它们移除。源数据卷会保留。"
+  },
+  "discover": {
+    "chooseProject": "选择要导入的内容",
+    "chooseHint": "选择 Compose 项目或单个服务。",
+    "topology": "拓扑",
+    "cards": "卡片",
+    "viewLabel": "发现视图",
+    "topologyHint": "连线表示检测到的启动依赖关系。",
+    "unavailable": "不可用",
+    "selected": "已选择",
+    "selectService": "选择服务",
+    "selectNamedService": "选择 {name}",
+    "selectProject": "选择 {name} 中的所有服务",
+    "clearSelection": "清除选择",
+    "selectionKeyboard": "按 Enter 或空格键选择服务。",
+    "expandProject": "{name} 中的服务"
+  },
+  "review": {
+    "progress": "导入进度",
+    "title": "检查服务",
+    "hint": "迁移前检查访问方式和数据。",
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起",
+    "configureService": "配置 {name}",
+    "internal": "仅内部访问",
+    "detected": "已检测",
+    "finishRoute": "完成路由设置",
+    "finishRouteHint": "请填写域名和端口，或选择仅内部访问。",
+    "routingTitle": "域名与路由",
+    "scanOptions": "扫描选项",
+    "destination": "目标",
+    "summary": "导入摘要",
+    "publicServices": "公开服务",
+    "internalServices": "内部服务",
+    "dataMounts": "数据挂载",
+    "destinationNext": "在下一步选择这些服务的运行位置。",
+    "importDetails": "导入详情",
+    "detectProjects": "检测项目",
+    "includeManaged": "包含受管理的容器"
+  },
+  "reimport": {
+    "review": "恢复项目",
+    "reviewNamed": "恢复 {name}",
+    "groupLabel": "Openship 项目",
+    "recoverHint": "恢复设置并重新关联正在运行的容器。",
+    "configuration": "配置",
+    "snapshot": "已保存的快照",
+    "containerMetadata": "从容器获取",
+    "checkSettings": "恢复后可能需要检查构建设置。",
+    "chooseHint": "选择一个项目以恢复其设置和正在运行的服务。"
   }
 }

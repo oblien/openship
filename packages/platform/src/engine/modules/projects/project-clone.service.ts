@@ -35,6 +35,7 @@ import { repos, type Project } from "@repo/db";
 import type { AdoptResult } from "../migration/migrate.service";
 import type { DiscoveredService } from "../migration/docker-reconcile";
 import { assertProjectQuota, uniqueProjectSlug, withProjectCreationLock } from "./project-crud.service";
+import { requireOrgServer } from "../../lib/server-target";
 
 /**
  * Project columns the clone must NOT copy verbatim, each with the reason it is here. Anything
@@ -68,8 +69,9 @@ const PROJECT_FIELDS_NOT_CLONED = [
   // Routing that names specific hostnames. The copy starts with no domains (the confirm dialog
   // promises exactly this) — the originals stay with the project still serving them.
   "compositeRoutes",
-  // A server-hosted copy is not a cloud project, whatever the source was.
-  "cloudWorkspaceId",
+  // Placement comes from the chosen destination, never from the source.
+  "workspaceId",
+  "clusterId",
 ] as const;
 
 /**
@@ -136,6 +138,7 @@ export async function cloneProjectToServer(input: {
     input.organizationId,
   );
   if (!source) throw new NotFoundError("Project", input.sourceProjectId);
+  const target = await requireOrgServer(input.targetServerId, input.organizationId);
 
   const desiredName = input.name?.trim() || `${source.name} copy`;
 
@@ -160,7 +163,7 @@ export async function cloneProjectToServer(input: {
   const sourceEnv = await repos.project.listEnvVars(source.id);
 
   const { project: created } = await withProjectCreationLock(input.organizationId, async () => {
-    await assertProjectQuota(input.organizationId);
+    await assertProjectQuota(input.organizationId, target.workspaceId);
     const slug = await uniqueProjectSlug(input.organizationId, slugify(desiredName));
     return repos.project.createProjectWithRecords({
       group: {
@@ -180,6 +183,7 @@ export async function cloneProjectToServer(input: {
         name: desiredName,
         slug,
         serverId: input.targetServerId,
+        workspaceId: target.workspaceId,
         activeDeploymentId: null,
       } as Parameters<typeof repos.project.createProjectWithRecords>[0]["project"],
       services: cloning.map((row) => ({

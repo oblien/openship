@@ -185,7 +185,7 @@ describe("deployment plan selection", () => {
     await render();
     await click("Deploy");
     expect(document.querySelector('[role="note"]')?.textContent).toContain("Hobby: 1,234");
-    expect(document.querySelector('[role="dialog"] details')).toBeNull();
+    expect(document.querySelector<HTMLDetailsElement>('[role="dialog"] details')?.open).toBe(false);
     expect(document.querySelectorAll('[role="dialog"] [role="note"]')).toHaveLength(1);
     await click(copy.pricing.annual);
     expect(document.body.textContent).toContain("$150");
@@ -241,26 +241,21 @@ describe("readable Cloud usage", () => {
   it("does not advertise the legacy free build limit as usable Cloud compute", async () => {
     await render(<BillingCapacity state={free} />);
     expect(container.textContent).toContain(copy.onboarding.workspaceDescription);
-    expect(container.textContent).toContain(copy.onboarding.planRequired);
+    expect(container.querySelector('a[href="/billing/plans"]')).not.toBeNull();
     expect(container.textContent).not.toContain("500");
   });
-  it("shows actual resource measurements and whole credit totals without fabricated resource costs", async () => {
+  it("shows actual resource measurements without attributing credits to individual resources", async () => {
     mocks.get.mockResolvedValue({ data: { usage: {
       buckets: [{ timestamp: "2026-09-18T00:00:00Z", credits: 125.5 }],
       totals: { vcpu_hours: 2, gb_hours: 4, disk_io_gb: 0.25, network_gb: 1.5, credits: 125.5 },
     } } });
     await render(<BillingUsage state={paid} />);
-    expect(container.textContent).not.toContain("125.5");
-    expect(container.textContent).toContain("2 vCPU-hours");
-    expect(container.textContent).toContain("4 GB-hours");
-    expect(container.textContent).toContain("0.25 GB");
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("125.5");
+    const measurements = [...container.querySelectorAll("tbody td")].map(cell => cell.textContent);
+    expect(measurements).toEqual(["2vCPU-hours", "4GB-hours", "0.25GB", "1.5GB"]);
     expect(container.textContent).toContain(copy.resourcesGuide.diskHint);
     expect(container.querySelector("table")?.textContent).not.toContain("Credits");
     expect(container.querySelector("table")?.textContent).not.toContain("%");
-    const accounting = container.querySelector("details")!;
-    expect(accounting.open).toBe(false);
-    await act(async () => { accounting.open = true; accounting.dispatchEvent(new Event("toggle")); });
-    expect(container.textContent).toContain("125.5");
     const requestedEnd = new Date(mocks.get.mock.calls[0]![1].params.to).getTime();
     expect(requestedEnd).toBeLessThanOrEqual(Date.now());
     expect(requestedEnd).toBeGreaterThan(Date.now() - 10_000);

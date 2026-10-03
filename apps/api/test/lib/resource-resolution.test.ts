@@ -19,48 +19,46 @@ const unknown: HostCapacity = { cpuCores: 0, memoryMb: 0, source: "unknown" };
  */
 describe("resolveRuntimeResources", () => {
   it("gives a self-hosted project NO limits when nothing is configured", () => {
-    expect(resolveRuntimeResources(null, { isCloud: false })).toEqual({
+    expect(resolveRuntimeResources(null)).toEqual({
       cpuCores: 0,
       memoryMb: 0,
       diskMb: 0,
     });
-    expect(resolveRuntimeResources(undefined, { isCloud: false }).memoryMb).not.toBe(512);
+    expect(resolveRuntimeResources(undefined).memoryMb).not.toBe(512);
   });
 
-  it("still gives a cloud project the metered free tier when nothing is configured", () => {
-    expect(resolveRuntimeResources(null, { isCloud: true })).toEqual({
-      cpuCores: 0.5,
-      memoryMb: 512,
-      diskMb: 5120,
+  it("gives managed-server containers the same full-capacity default", () => {
+    expect(resolveRuntimeResources(null)).toEqual({
+      cpuCores: 0,
+      memoryMb: 0,
+      diskMb: 0,
     });
   });
 
   it("honors a configured value on either target", () => {
     const configured = { cpuCores: 3, memoryMb: 3072, diskMb: 5120 };
-    expect(resolveRuntimeResources(configured, { isCloud: false })).toEqual(configured);
-    expect(resolveRuntimeResources(configured, { isCloud: true })).toEqual(configured);
+    expect(resolveRuntimeResources(configured)).toEqual(configured);
+    expect(resolveRuntimeResources(configured)).toEqual(configured);
   });
 
   it("preserves an explicit 0 on self-hosted (0 is a choice, not 'unset')", () => {
     expect(
-      resolveRuntimeResources({ cpuCores: 0, memoryMb: 0, diskMb: 0 }, { isCloud: false }),
+      resolveRuntimeResources({ cpuCores: 0, memoryMb: 0, diskMb: 0 }),
     ).toEqual({ cpuCores: 0, memoryMb: 0, diskMb: 0 });
   });
 
-  // A project set to unlimited while self-hosted and LATER promoted to cloud
-  // would otherwise reach Oblien as `memory_mb: 0` and fail to provision.
-  it("coerces unlimited to a concrete tier when the target is cloud", () => {
+  // Container limits are independent of the server's purchased allocation.
+  it("preserves unlimited when a project moves to a managed server", () => {
     expect(
-      resolveRuntimeResources({ cpuCores: 0, memoryMb: 0, diskMb: 0 }, { isCloud: true }),
-    ).toEqual({ cpuCores: 0.5, memoryMb: 512, diskMb: 5120 });
+      resolveRuntimeResources({ cpuCores: 0, memoryMb: 0, diskMb: 0 }),
+    ).toEqual({ cpuCores: 0, memoryMb: 0, diskMb: 0 });
   });
 
   it("keeps the legacy { cpus } / { cpuConfig } shapes readable", () => {
-    expect(resolveRuntimeResources({ cpus: 2, memoryMb: 1024 }, { isCloud: false }).cpuCores).toBe(2);
+    expect(resolveRuntimeResources({ cpus: 2, memoryMb: 1024 }).cpuCores).toBe(2);
     expect(
       resolveRuntimeResources(
         { cpuConfig: { quotaUs: 50_000, periodUs: 100_000 }, memoryMb: 1024 },
-        { isCloud: false },
       ).cpuCores,
     ).toBe(0.5);
   });
@@ -68,18 +66,18 @@ describe("resolveRuntimeResources", () => {
 
 describe("resolveBuildResources", () => {
   it("lets a self-hosted build use the whole machine", () => {
-    expect(resolveBuildResources(null, { isCloud: false })).toEqual({
+    expect(resolveBuildResources(null)).toEqual({
       cpuCores: 0,
       memoryMb: 0,
       diskMb: 0,
     });
   });
 
-  it("keeps the bounded build default on cloud", () => {
-    expect(resolveBuildResources(null, { isCloud: true })).toEqual({
-      cpuCores: 1,
-      memoryMb: 2048,
-      diskMb: 8192,
+  it("leaves managed build limits automatic until live headroom is measured", () => {
+    expect(resolveBuildResources(null)).toEqual({
+      cpuCores: 0,
+      memoryMb: 0,
+      diskMb: 0,
     });
   });
 });
@@ -116,14 +114,12 @@ describe("decodeResources", () => {
     ).toMatchObject({ cpuCores: 64, memoryMb: 262144 });
   });
 
-  it("requires an explicit limit when the target is cloud", () => {
-    expect(() =>
-      decodeResources({ cpuCores: 0, memoryMb: 0 }, { requireLimit: true }),
-    ).toThrow(/requires explicit CPU and memory limits/);
+  it("preserves Micro without rounding a quarter CPU to a whole core", () => {
+    expect(decodeResources({ cpuCores: 0.25, memoryMb: 256 })).toEqual({ cpuCores: 0.25, memoryMb: 256, diskMb: 0 });
   });
 
   it("rejects negatives outright", () => {
-    expect(() => decodeResources({ memoryMb: -1 })).toThrow(/cannot be negative/);
+    expect(() => decodeResources({ memoryMb: -1 })).toThrow(/non-negative/);
   });
 
   it("rejects a cap below the workable floor", () => {
@@ -133,15 +129,14 @@ describe("decodeResources", () => {
 
 describe("encodeResources", () => {
   it("reports automatic hosted Cloud builds without inventing a fixed CPU/RAM machine", () => {
-    expect(encodeResources(null, null, "auto_sleep", 3000, { isCloud: true, automaticBuild: true }))
-      .toMatchObject({ buildMode: "automatic", build: { cpuCores: 0, memoryMb: 0, diskMb: 8192 } });
+    expect(encodeResources(null, null, "auto_sleep", 3000, { automaticBuild: true }))
+      .toMatchObject({ buildMode: "automatic", build: { cpuCores: 0, memoryMb: 0, diskMb: 0 } });
     const build = { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 };
-    expect(encodeResources(null, build, "auto_sleep", 3000, { isCloud: true, automaticBuild: true }))
+    expect(encodeResources(null, build, "auto_sleep", 3000, { automaticBuild: true }))
       .toMatchObject({ buildMode: "custom", build });
   });
   it("reports unlimited + the detected tier for an unconfigured self-hosted project", () => {
     const out = encodeResources(null, null, "auto_sleep", 3000, {
-      isCloud: false,
       capacity: box64,
     });
     expect(out.production).toEqual({ cpuCores: 0, memoryMb: 0, diskMb: 0 });
@@ -153,16 +148,16 @@ describe("encodeResources", () => {
   // The project list/info encodes hundreds of rows and must not carry a
   // meaningless capacity blob (or imply one was probed) — absent ≠ "unknown".
   it("omits capacity entirely when none was probed", () => {
-    const out = encodeResources(null, null, "auto_sleep", 3000, { isCloud: false });
+    const out = encodeResources(null, null, "auto_sleep", 3000);
     expect(out).not.toHaveProperty("capacity");
     expect(out.tier).toBe("unlimited");
   });
 
-  it("reports the free tier and requiresLimit for an unconfigured cloud project", () => {
-    const out = encodeResources(null, null, "auto_sleep", 3000, { isCloud: true });
-    expect(out.production).toMatchObject({ memoryMb: 512 });
-    expect(out.tier).toBe("low");
-    expect(out.requiresLimit).toBe(true);
+  it("reports full capacity without a required container limit on managed servers", () => {
+    const out = encodeResources(null, null, "auto_sleep", 3000);
+    expect(out.production).toMatchObject({ memoryMb: 0 });
+    expect(out.tier).toBe("unlimited");
+    expect(out.requiresLimit).toBe(false);
   });
 
   it("labels a saved preset by name and anything else as custom", () => {

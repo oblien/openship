@@ -51,27 +51,30 @@ export async function disconnectSharedServiceNetwork(
   const sourceDeployment = source.activeDeploymentId
     ? await findActiveDeployment(source) : null;
   if (!sourceDeployment) return;
-  await withServiceRuntime(source, sourceDeployment, undefined, async runtime => {
-    if (!runtime.leaveServiceGroupContainers) return;
-    const links = (await repos.projectConnection.listBySourceService(serviceId))
-      .filter(link => link.id !== removedLinkId);
-    const targetLinks = links.filter(link => usesPrivateNetwork(link) && link.targetProjectId === target.id);
-    if (targetLinks.length > 0) return;
-    const ids = new Set(await runtime.listProjectContainerIds?.(target.id) ?? []);
-    if (target.activeDeploymentId) {
+  const links = (await repos.projectConnection.listBySourceService(serviceId))
+    .filter(link => link.id !== removedLinkId);
+  if (links.some(link => usesPrivateNetwork(link) && link.targetProjectId === target.id)) return;
+  const targetDeployment = target.activeDeploymentId ? await findActiveDeployment(target) : null;
+  if (targetDeployment) {
+    await withServiceRuntime(target, targetDeployment, undefined, async runtime => {
+      if (!runtime.leaveServiceGroupContainers) return;
+      const ids = new Set(await runtime.listProjectContainerIds?.(target.id) ?? []);
       for (const row of await listActiveServiceDeployments(target)) {
         if (row.containerId) ids.add(row.containerId);
       }
-    }
-    if (!links.some(usesPrivateNetwork)) {
+      await runtime.leaveServiceGroupContainers(sharedServiceAlias(serviceId), [...ids]);
+    });
+  }
+  if (!links.some(usesPrivateNetwork)) {
+    await withServiceRuntime(source, sourceDeployment, undefined, async runtime => {
+      if (!runtime.leaveServiceGroupContainers) return;
       const service = await repos.service.findById(serviceId);
       if (service) {
         const containerId = await containerIdForService(sourceDeployment, service);
-        if (containerId) ids.add(containerId);
+        if (containerId) await runtime.leaveServiceGroupContainers(sharedServiceAlias(serviceId), [containerId]);
       }
-    }
-    await runtime.leaveServiceGroupContainers(sharedServiceAlias(serviceId), [...ids]);
-  });
+    });
+  }
 }
 
 /** Reuse a deploy's runtime when supplied; release SSH bridges owned by this call. */
@@ -81,7 +84,9 @@ async function withServiceRuntime<T>(
   runtime: RuntimeAdapter | undefined,
   use: (runtime: RuntimeAdapter) => Promise<T>,
 ): Promise<T> {
-  if (runtime) return use(runtime);
+  // A shared Cloud adapter is deliberately project-scoped. An explicitly
+  // authorized service link resolves its source through that project's adapter.
+  if (runtime && !("projectId" in runtime && runtime.projectId !== source.id)) return use(runtime);
   const { platform } = await resolveServicePlatform(source, deployment);
   try { return await use(platform.runtime); }
   finally { disposePlatform(platform); }

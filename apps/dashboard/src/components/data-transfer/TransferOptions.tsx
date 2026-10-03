@@ -166,7 +166,7 @@ export function TransferProjectPicker({
                   />
                   <span className="flex-1">{project.environmentName}</span>
                   <span>
-                    {project.cloudWorkspaceId
+                    {project.workspaceId
                       ? "Cloud"
                       : project.serverId
                         ? "Self-hosted"

@@ -30,7 +30,7 @@
 import { deriveProjectDeployTarget } from "@repo/core";
 import { repos } from "@repo/db";
 
-import { createServerDockerRuntime } from "../../lib/deployment-runtime";
+import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
 import { isControlPlaneProject } from "../../lib/resource-access";
 import { discoverServerStack } from "./docker-inspect.service";
 import type { AdoptResult } from "./migrate.service";
@@ -57,7 +57,7 @@ export class ProjectMoveRefused extends Error {
 /**
  * The project fields this decision needs — a subset, so tests need no full row.
  *
- * `cloudWorkspaceId` + `serverId` rather than a target string: the project table
+ * `workspaceId` + `serverId` rather than a target string: the project table
  * deliberately has NO `deployTarget` column, because the effective target is derived from
  * exactly these two by `deriveProjectDeployTarget`, and that rule is meant to have one
  * implementation. Taking the raw fields keeps this module a caller of that rule instead of
@@ -67,9 +67,10 @@ export interface MovableProject {
   id: string;
   name: string;
   slug: string;
-  cloudWorkspaceId?: string | null;
+  workspaceId?: string | null;
   clusterId?: string | null;
   serverId?: string | null;
+  runtimeMode?: string | null;
 }
 
 /**
@@ -144,15 +145,14 @@ export function assertProjectMovable(input: {
     );
   }
 
-  // Cloud (either direction) and server-host "local" are deliberately later work: the
-  // transfer core moves data between two SSH-reachable Docker hosts, which is not what
-  // either of those is.
+  // Docker migration is shared by connected and managed hosts. Bare processes
+  // and Kubernetes require a different workload conversion, before any stop.
   const target = deriveProjectDeployTarget(project);
-  if (target !== "server" || !project.serverId) {
+  if (target === "cluster" || project.runtimeMode === "bare" || !project.serverId) {
     throw new ProjectMoveRefused(
       "not_server_hosted",
-      target === "cloud"
-        ? `"${project.name}" runs on Openship Cloud. Moving between Cloud and a server isn't supported yet.`
+      project.runtimeMode === "bare"
+        ? `"${project.name}" runs directly on its server. Docker migration supports container workloads only.`
         : target === "cluster"
         ? `"${project.name}" runs on Kubernetes. Docker host migration cannot move its cluster workloads.`
         : `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
@@ -316,7 +316,7 @@ export async function loadProjectMoveWorkload(
   // Checked before the scan: the refusals that need no host round trip should not cost one.
   // `planProjectMove` re-checks them (it is the single decision), this just fails faster.
   if (
-    deriveProjectDeployTarget(project) !== "server" ||
+    deriveProjectDeployTarget(project) === "cluster" || project.runtimeMode === "bare" ||
     !project.serverId ||
     isControlPlaneProject(project)
   ) {

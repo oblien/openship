@@ -482,7 +482,7 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
           meta.serverId ||
           meta.deployTarget === "server" ||
           meta.deployTarget === "cloud" ||
-          project.cloudWorkspaceId
+          project.workspaceId
         ) {
           throw err;
         }

@@ -168,12 +168,12 @@ function startingRuntime() {
 }
 
 it("deploys Cloud Compose endpoints, internal paths, generated files and container identities through one workspace", async () => {
-  const { CloudDockerRuntime } = await import("@repo/adapters");
+  const { CloudDockerRuntime, CloudInfraProvider } = await import("@repo/adapters");
   const configurations: Array<Record<string, any>> = [];
   const publishRoute = vi.fn(async () => undefined);
   const pullImage = vi.fn(async () => undefined);
   const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
-    name: "cloud", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
+    name: "docker", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
     supports: (cap: string) => cap === "dockerHost",
     ensureServiceGroup: vi.fn(async () => ({ id: "shared-network", kind: "docker-network" })),
     deployServiceWorkload: vi.fn(async (_group: unknown, config: Record<string, any>) => {
@@ -186,6 +186,9 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     getContainerIp: vi.fn(async () => "172.18.0.2"), listAllContainers: vi.fn(async () => []),
     destroy: vi.fn(async () => undefined), publishRoute, pullImage,
   }) as CloudDockerRuntime;
+  const routing = Object.assign(Object.create(CloudInfraProvider.prototype), {
+    publishRoute, resolveRoutingTarget: runtime.resolveRoutingTarget,
+  });
   const executor = {
     exec: vi.fn(async () => ""), mkdir: vi.fn(async () => undefined), rm: vi.fn(async () => undefined),
     rename: vi.fn(async () => undefined), writeFile: vi.fn(async () => undefined),
@@ -203,13 +206,13 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     return row;
   });
   const { logger } = recordingLogger();
-  const result = await deployComposeServices({ ...project, cloudWorkspaceId: "shared-vm", routeStrategy: "auto",
+  const result = await deployComposeServices({ ...project, workspaceId: "shared-vm", routeStrategy: "auto",
     compositeRoutes: [{ hostname: "app.opsh.io", isCustomDomain: false, rootServiceId: "svc-web",
       locations: [{ pathPrefix: "/api/", serviceId: "svc-api" }] }] } as Project,
-  { ...dep, projectId: "p1", meta: { deployTarget: "cloud", runtimeMode: "docker", cloudDockerWorkspace: { projectId: "p1", workspaceId: "shared-vm" } } },
+  { ...dep, projectId: "p1", meta: { deployTarget: "cloud", runtimeMode: "docker", managedServer: { projectId: "p1", workspaceId: "shared-vm", ownerWorkspaceId: "subscribed-server" } } },
   runtime, logger, { executor, localHost: false, usesManagedRouting: false, forcePullImages: true,
     resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 },
-    routing: { removeRoute: vi.fn(), registerRoute: vi.fn() } as never, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
+    routing, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
   expect(result.status).toBe("ready");
   expect(result.routeWarnings ?? []).toEqual([]);
   expect(configurations.find(config => config.serviceName === "web")?.cloudEndpoints).toEqual([
@@ -1516,11 +1519,11 @@ describe("compose deploy — host channel unavailable", () => {
     expect(lines.some((l) => l.message.includes("Host operations are unavailable"))).toBe(false);
   });
 
-  it("stays quiet on cloud, which has no executor and no host", async () => {
+  it("refuses a routed Docker deployment without its target executor", async () => {
     const { logger, lines } = recordingLogger();
     await expect(
-      deployComposeServices(project, dep, haltingRuntime("cloud"), logger, { executor: null }),
-    ).rejects.toThrow(/halt/);
+      deployComposeServices(project, dep, haltingRuntime("docker", false), logger, { executor: null }),
+    ).rejects.toThrow("physical target executor");
     expect(lines.some((l) => l.message.includes("Host operations are unavailable"))).toBe(false);
   });
 

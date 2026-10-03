@@ -1,10 +1,8 @@
 /**
- * Curated catalog for **local / self-hosted** Docker deployments.
+ * Curated upstream catalog for Docker deployments, including managed Cloud hosts.
  *
- * The Oblien `images.list()` catalog is cloud-specific (oblien/* images
- * running on managed workspaces). When the user deploys to their own
- * machine or server, those images don't apply - they need the plain
- * upstream Docker images instead.
+ * The Oblien `images.list()` catalog provides server images.
+ * Docker servers use these upstream images regardless of who hosts the server.
  *
  * This list is hand-curated to the things people actually add to apps:
  * databases, caches, search, vector stores, queues, storage, browsers

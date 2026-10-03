@@ -69,7 +69,6 @@ curl -X POST "$OPENSHIP_URL/api/projects" \
     hasServer: { type: 'boolean', description: 'Project runs a long-lived server.', default: 'true' },
     hasBuild: { type: 'boolean', description: 'Project has a build step.', default: 'true' },
     rollbackWindow: { type: 'number', description: 'Deployments kept for instant rollback (0–20).' },
-    cloudArchiveStrategy: { type: '"inplace" | "offload"', description: 'Cloud snapshot strategy (only "inplace" is implemented).' },
     projectType: { type: '"app" | "docker" | "services" | "monorepo"', description: 'Project flavor; "monorepo" enables multi-app fields below.' },
     monorepoApps: { type: 'MonorepoApp[]', description: 'Sub-apps discovered inside a monorepo (1–50).' },
     monorepoWorkspace: { type: 'object', description: 'Shared workspace install run once at repo root.' },

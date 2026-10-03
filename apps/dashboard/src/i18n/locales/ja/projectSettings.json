@@ -615,7 +615,7 @@
   },
   "resources": {
     "title": "マシンパワー",
-    "description": "このプロジェクトのコンテナに適用する CPU とメモリの上限。",
+    "description": "プロジェクトはこのサーバーを共有します。必要な場合のみCPUやメモリの制限を設定してください。",
     "loading": "対象マシンを読み取っています…",
     "unavailable": "マシンパワーを利用できません",
     "loadFailed": "マシンパワーの読み込みに失敗しました",
@@ -625,9 +625,9 @@
     "appliesOnNextDeploy": "上限はコンテナの再作成時に適用されます。変更を反映するには再デプロイしてください。",
     "tiers": {
       "unlimited": {
-        "name": "上限なし",
-        "description": "マシン全体を使う（既定）",
-        "spec": "マシンの容量"
+        "name": "全容量",
+        "description": "サーバーで利用可能なCPUとRAMを使用（デフォルト）",
+        "spec": "他のプロジェクトと共有"
       },
       "micro": {
         "name": "Micro",
@@ -669,6 +669,10 @@
       "updated": "マシンパワーを更新しました",
       "updateFailed": "マシンパワーの更新に失敗しました",
       "invalidValues": "CPU とメモリは 0 または正の数を指定してください"
+    },
+    "customized": {
+      "name": "カスタマイズ",
+      "description": "プリセットを選ぶか、上限を設定"
     }
   },
   "sleep": {

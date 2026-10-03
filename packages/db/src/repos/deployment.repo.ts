@@ -842,7 +842,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
      * `durationMs` for the org's deployments started in [from, to]. Openship's
      * own metric (Oblien does not meter build separately). Bounded by period.
      */
-    async sumBuildMillisForOrg(organizationId: string, from: Date, to: Date): Promise<number> {
+    async sumBuildMillisForOrg(organizationId: string, from: Date, to: Date, workspaceId?: string | null): Promise<number> {
       const [row] = await db
         .select({ total: sql<number>`coalesce(sum(${buildSession.durationMs}), 0)` })
         .from(buildSession)
@@ -852,6 +852,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
             eq(deployment.organizationId, organizationId),
             gte(buildSession.startedAt, from),
             lte(buildSession.startedAt, to),
+            deploymentWorkspaceScope(workspaceId),
           ),
         );
       return Number(row?.total ?? 0);
@@ -996,3 +997,4 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     },
   };
 }
+import { deploymentWorkspaceScope } from "./workspace-scope";

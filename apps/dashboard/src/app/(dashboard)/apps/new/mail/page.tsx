@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { deployApi, mailApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { MAIL_PROVIDERS, mailProvider, type MailProviderId } from "@/lib/mail-providers";
 import { mailTabHref } from "@/lib/sidebar-nav";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/components/deploy/CleanDeployProgress";
 import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -57,6 +58,8 @@ export default function MailWizardPage() {
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState(465);
   const [destination, setDestination] = useState<AppDestination | null>(null);
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
+  const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
 
   const [busy, setBusy] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
@@ -157,7 +160,7 @@ export default function MailWizardPage() {
   }, [phase, deploymentId, baseDomain]);
 
   const deploy = async () => {
-    if (busy) return;
+    if (busy || (!selfHosted && !destinationReady)) return;
     const host = hostname.trim().toLowerCase();
     if (!host) {
       showToast(m.hostnameRequired, "error");
@@ -185,7 +188,7 @@ export default function MailWizardPage() {
         },
         target: {
           deployTarget: destination?.deployTarget ?? "cloud",
-          serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+          serverId: destination?.serverId,
         },
       });
       setProjectId(res.projectId ?? null);
@@ -193,6 +196,7 @@ export default function MailWizardPage() {
       setPhaseLabel(w.progressPreparing);
       setPhase("installing");
     } catch (err) {
+      if (showCloudPricing(err)) return;
       setErrorMsg(getApiErrorMessage(err, w.installFailed));
       setPhase("error");
     } finally {
@@ -397,14 +401,14 @@ export default function MailWizardPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
                 )}
                 <div className="mt-4">
-                  <AppDestinationPicker value={destination} onChange={setDestination} />
+                  <AppDestinationPicker value={destination} onChange={setDestination} onReadyChange={setDestinationReady} disabled={busy} />
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={deploy}
-                disabled={busy || !destination}
+                disabled={busy || !destination || (!selfHosted && !destinationReady)}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />}

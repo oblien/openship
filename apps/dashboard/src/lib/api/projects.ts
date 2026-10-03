@@ -249,6 +249,7 @@ export const projectsApi = {
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
     projectId?: string;
+    serverId?: string;
     name: string;
     /** Rollback retention picked in the wizard before the project existed.
      *  `null` window inherits the instance default. */

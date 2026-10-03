@@ -32,7 +32,7 @@ import {
 } from "../../lib/compose-parser";
 import { unmaskEnv } from "../../lib/secret-env";
 import { encrypt } from "../../lib/encryption";
-import { createServerDockerRuntime } from "../../lib/deployment-runtime";
+import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
 import { sshManager } from "../../lib/ssh-manager";
 import { readProjectSnapshot } from "../../lib/openship-manifest";
 import { discoverServerStack } from "./docker-inspect.service";
@@ -476,6 +476,8 @@ async function saveImportedEnvironments(
 
 export async function adoptServerStack(opts: {
   serverId: string;
+  targetServerId?: string;
+  ctx?: import("../../../context").ExecutionContext;
   organizationId: string;
   projectName: string;
   serviceNames: string[];
@@ -578,8 +580,10 @@ export async function adoptServerStack(opts: {
     projectType: "services",
     hasServer: true,
     hasBuild: anyBuild,
+    serverId: opts.targetServerId ?? serverId,
   };
-  const { project_id, created } = await ensureProject(ensureBody, organizationId);
+  const { project_id, created } = await ensureProject(ensureBody, organizationId, opts.ctx,
+    opts.targetServerId && opts.targetServerId !== serverId ? { mustCreate: true } : undefined);
 
   // `ensureProject` REUSES a project whose slug matches the name, and
   // slugify("Openship") is the control-plane self-app's own slug — so naming a

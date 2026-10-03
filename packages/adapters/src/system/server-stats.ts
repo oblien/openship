@@ -1,3 +1,19 @@
+import type { CommandExecutor } from "../types";
+
+export interface ServerStats {
+  cpu: number;
+  memTotal: number;
+  memUsed: number;
+  memAvail: number;
+  diskTotal: number;
+  diskUsed: number;
+  diskAvail: number;
+  uptime: string;
+  load1: string;
+  load5: string;
+  load15: string;
+}
+
 /** One host-side sample, shared by HTTP and native server monitoring. */
 export const SERVER_STATS_COMMAND = String.raw`(
   set -eu
@@ -56,3 +72,18 @@ export const SERVER_STATS_COMMAND = String.raw`(
   [ "$disk_t" -gt 0 ]
   printf '{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\n' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "$disk_t" "$disk_u" "$disk_a" "$up_s" "$l1" "$l5" "$l15"
 )`;
+
+export async function readServerStats(executor: CommandExecutor): Promise<ServerStats> {
+  const stats = JSON.parse(await executor.exec(SERVER_STATS_COMMAND, { timeout: 12_000 })) as Record<string, unknown>;
+  for (const field of ["cpu", "memTotal", "memUsed", "memAvail", "diskTotal", "diskUsed", "diskAvail"]) {
+    if (typeof stats[field] !== "number" || !Number.isFinite(stats[field]) || stats[field] < 0)
+      throw new Error("Server returned incomplete resource measurements");
+  }
+  for (const field of ["uptime", "load1", "load5", "load15"]) {
+    if (typeof stats[field] !== "string" || stats[field] === "" || !Number.isFinite(Number(stats[field])) || Number(stats[field]) < 0)
+      throw new Error("Server returned incomplete resource measurements");
+  }
+  if ((stats.cpu as number) > 100 || (stats.memUsed as number) > (stats.memTotal as number) || (stats.diskUsed as number) > (stats.diskTotal as number))
+    throw new Error("Server returned invalid resource measurements");
+  return stats as unknown as ServerStats;
+}

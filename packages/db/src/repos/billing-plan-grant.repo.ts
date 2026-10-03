@@ -4,6 +4,7 @@ import { billingPlanGrant } from "../schema/billing-plan-grant";
 import { organization, member } from "../schema/organization";
 import { user } from "../schema/auth";
 import { billingSubscription } from "../schema/billing";
+import { cloudWorkspace } from "../schema/cloud-workspace";
 
 export type BillingPlanGrant = typeof billingPlanGrant.$inferSelect;
 export type NewBillingPlanGrant = typeof billingPlanGrant.$inferInsert;
@@ -21,13 +22,17 @@ export function createBillingPlanGrantRepo(db: Database) {
         .innerJoin(organization, eq(organization.id, member.organizationId))
         .where(sql`lower(${user.email}) = lower(${email})`);
     },
-    async current(organizationId: string): Promise<BillingPlanGrant | null> {
+    async current(organizationId: string, namespace?: string): Promise<BillingPlanGrant | null> {
       const [row] = await db.select().from(billingPlanGrant)
-        .where(and(eq(billingPlanGrant.organizationId, organizationId), isNull(billingPlanGrant.releasedAt))).limit(1);
+        .where(and(eq(billingPlanGrant.organizationId, organizationId), isNull(billingPlanGrant.releasedAt),
+          namespace === undefined ? undefined : eq(billingPlanGrant.namespace, namespace))).limit(1);
       return row ?? null;
     },
-    async latest(organizationId: string): Promise<BillingPlanGrant | null> {
-      const [row] = await db.select().from(billingPlanGrant).where(eq(billingPlanGrant.organizationId, organizationId))
+    async workspaces(organizationId: string) {
+      return db.select().from(cloudWorkspace).where(eq(cloudWorkspace.organizationId, organizationId));
+    },
+    async latest(organizationId: string, namespace?: string): Promise<BillingPlanGrant | null> {
+      const [row] = await db.select().from(billingPlanGrant).where(and(eq(billingPlanGrant.organizationId, organizationId), namespace ? eq(billingPlanGrant.namespace, namespace) : undefined))
         .orderBy(desc(billingPlanGrant.createdAt)).limit(1);
       return row ?? null;
     },
@@ -54,6 +59,10 @@ export function createBillingPlanGrantRepo(db: Database) {
     async mirror(organizationId: string, namespace: string, state: {
       planTierId: string; subscriptionStatus: string; currentPeriodStart: Date | null; currentPeriodEnd: Date | null;
     }): Promise<void> {
+      const managed = await db.update(cloudWorkspace).set({ ...state, updatedAt: new Date() })
+        .where(and(eq(cloudWorkspace.organizationId, organizationId), eq(cloudWorkspace.namespace, namespace)))
+        .returning();
+      if (managed.length === 1) return;
       const rows = await db.update(organization).set(state)
         .where(and(eq(organization.id, organizationId), eq(organization.oblienNamespace, namespace)))
         .returning();

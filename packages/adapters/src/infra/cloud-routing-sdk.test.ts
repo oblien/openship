@@ -1,119 +1,67 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Oblien } from "oblien";
 import { CloudInfraProvider } from "./cloud";
+import { managedRoutingFixture } from "../../test/managed-routing-fixture";
 
 const hostname = "app.opsh.io";
-const namespace = "tenant-one";
-const workspaceId = "workspace-one";
-let workspaceNamespace: string;
-let routeType: string;
-let storedTarget: string;
-let writes: Array<{ hostname: string; input: Record<string, unknown> }>;
-let reads: URL[];
+let h: ReturnType<typeof managedRoutingFixture>;
+let page: Record<string, unknown> | undefined;
+let writes: Array<{ method: string; path: string; body: unknown }>;
+let requests: URL[];
 let provider: CloudInfraProvider;
 
 beforeEach(() => {
-  workspaceNamespace = namespace;
-  routeType = "host";
-  storedTarget = "http://10.103.0.9:3000";
-  writes = [];
-  reads = [];
-  // Use the published SDK's real URL, query and response handling. Only the
-  // HTTP peer is simulated; no production credential or resource is involved.
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : String(input));
-      const method = init?.method ?? "GET";
-      if (url.origin !== "https://oblien.test") throw new Error("Unexpected network origin");
-      if (method === "GET") reads.push(url);
-      if (method === "GET" && url.pathname === "/domain/routes") {
-        return Response.json({
-          success: true,
-          data: [
-            {
-              id: 1,
-              hostname,
-              slug: "app",
-              domain: "opsh.io",
-              namespace,
-              status: "active",
-              owner_type: "port",
-              owner_id: workspaceId,
-              is_custom: 0,
-              route_type: routeType,
-              target: storedTarget,
-            },
-          ],
-        });
-      }
-      if (method === "GET" && url.pathname === `/workspace/${workspaceId}`) {
-        return Response.json({
-          success: true,
-          workspace: {
-            id: workspaceId,
-            namespace: workspaceNamespace,
-            status: "active",
-            ip: "10.103.0.9",
-            info: { status: "running", is_running: true },
-          },
-        });
-      }
-      if (method === "PUT" && url.pathname === `/domain/routes/${hostname}`) {
-        const body = JSON.parse(String(init?.body));
-        writes.push({ hostname, input: body });
-        routeType = "routes";
-        storedTarget = JSON.stringify({
-          v: 1,
-          rules: [{ action: { k: "proxy", backend: "http://10.103.0.9:3000", vm: workspaceId } }],
-        });
-        return Response.json({
-          success: true,
-          hostname,
-          version: writes.length,
-          config: JSON.parse(storedTarget),
-        });
-      }
-      throw new Error(`Unexpected provider request: ${method} ${url.pathname}`);
-    }),
-  );
-  provider = new CloudInfraProvider(
-    new Oblien({ token: "test-namespace-token", baseUrl: "https://oblien.test" }),
-    { namespace },
-  );
+  h = managedRoutingFixture();
+  page = undefined; writes = []; requests = [];
+  // Exercise the SDK's real URL, HTTP methods, and response handling against
+  // a simulated provider. Never send a credential or request to a live service.
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin !== "https://oblien.test") throw new Error("Unexpected network origin");
+    requests.push(url);
+    const method = init?.method ?? "GET";
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    if (method !== "GET") writes.push({ method, path: url.pathname, body });
+    if (url.pathname === "/pages/app" && method === "GET")
+      return page ? Response.json({ success: true, page }) : Response.json({ error: "Not found" }, { status: 404 });
+    if (url.pathname === "/pages" && method === "POST") {
+      page = { id: 42, slug: body.slug, domain: body.domain, namespace: h.namespace,
+        source_workspace_id: body.workspace_id, exported_path: body.path, url: `https://${hostname}` };
+      return Response.json({ success: true, page });
+    }
+    if (url.pathname === "/pages/app/enable" && method === "POST")
+      return Response.json({ success: true });
+    if (url.pathname === `/workspace/${h.workspaceId}/network` && method === "GET")
+      return Response.json({ ingress_ports: [443] });
+    if (url.pathname === `/workspace/${h.workspaceId}/network` && method === "PATCH")
+      return Response.json({ success: true });
+    if (url.pathname === `/domain/routes/${hostname}` && method === "PUT")
+      return Response.json({ success: true, hostname, version: writes.length,
+        config: { v: 1, rules: [{ action: { k: "proxy", backend: "http://10.0.0.9:3000", vm: h.workspaceId } }] } });
+    throw new Error(`Unexpected provider request: ${method} ${url.pathname}`);
+  }));
+  provider = new CloudInfraProvider(new Oblien({ token: "test-namespace-token", baseUrl: "https://oblien.test" }),
+    { namespace: h.namespace, scope: h.scope });
 });
-
 afterEach(() => vi.unstubAllGlobals());
 
-it("updates a native port route twice through the SDK after the provider switches to a compiled table", async () => {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await provider.registerRoute({
-      domain: hostname,
-      targetUrl: "http://10.103.0.9:3000",
-      tls: true,
-    });
-  }
-  expect(writes).toHaveLength(2);
-  expect(writes[1]).toEqual({
-    hostname,
-    input: {
-      routes: [
-        {
-          match: { path: "/", type: "prefix" },
-          action: { kind: "proxy", workspace: workspaceId, port: 3000 },
-        },
-      ],
-    },
-  });
-  const inventories = reads.filter((url) => url.pathname === "/domain/routes");
-  expect(inventories).toHaveLength(2);
-  expect(inventories.every((url) => url.searchParams.get("namespace") === namespace)).toBe(true);
+it("reuses the owned Page through the SDK after routes become a compiled table", async () => {
+  for (let i = 0; i < 2; i++)
+    await provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true });
+  expect(writes.filter(request => request.path === "/pages")).toHaveLength(1);
+  const routes = writes.filter(request => request.path === `/domain/routes/${hostname}`);
+  expect(routes).toHaveLength(2);
+  expect(routes[1]).toEqual({ method: "PUT", path: `/domain/routes/${hostname}`, body: {
+    routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }],
+  } });
+  expect(writes).toContainEqual({ method: "PATCH", path: `/workspace/${h.workspaceId}/network`, body: { ingress_ports: [443, 3000] } });
+  expect(requests.some(url => url.pathname === "/workspace")).toBe(false);
 });
 
-it("sends no update when the provider's workspace response belongs to a different namespace", async () => {
-  workspaceNamespace = "tenant-two";
-  await expect(
-    provider.registerRoute({ domain: hostname, targetUrl: "http://10.103.0.9:3000", tls: true }),
-  ).rejects.toMatchObject({ code: "CLOUD_ROUTE_OWNER_CHANGED", statusCode: 409 });
+it.each(["namespace", "source_workspace_id", "exported_path"])("does not write when the Page's %s changes", async field => {
+  await provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true });
+  page![field] = "different-owner";
+  writes.length = 0;
+  await expect(provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true })).rejects.toThrow("not owned");
   expect(writes).toEqual([]);
 });

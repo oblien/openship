@@ -1,8 +1,8 @@
 # Client icons
 
 The dashboard, Openship Cloud UI, and desktop chrome use the same icon catalog
-from `@repo/ui/icons`. The default theme is `outline-modern`, with 193 bundled
-PNGs in `apps/dashboard/public/icons` (about 448 KB total). Source files retain
+from `@repo/ui/icons`. The default theme is `outline-modern`, with 198 bundled
+PNGs in `apps/dashboard/public/icons` (about 456 KB total). Source files retain
 their original square dimensions.
 
 The dashboard's `ThemeIcon` shares the current-theme symbols across the sidebar,
@@ -41,7 +41,10 @@ Each catalog entry has a literal `file` name and a rendering `mode`:
 
 Use existing semantic color classes such as `text-muted-foreground`,
 `text-primary`, or `text-danger`. The normal light, dim, and dark appearance themes
-all use the same outline catalog and get their colors from those tokens.
+all use the same outline catalog and get their colors from those tokens. Billing
+plan cards use the catalog’s filled bolt, rocket, gem, layers and building marks.
+These share the same mask renderer, local assets and CDN fallback as the outline
+icons.
 
 Bundled assets also declare their visible alpha `bounds` as `[x, y, width,
 height]` in a 24-unit canvas. The renderer centers that artwork in 22 units by
@@ -157,7 +160,7 @@ separate marketing site and `apps/email/client` are outside this pass.
 
 ## Asset provenance
 
-- 176 assets were selected from the supplied `~/Documents/png-icons` library;
+- 181 assets were selected from the supplied `~/Documents/png-icons` library;
   their filenames are preserved for CDN mirroring.
 - 9 symbols retain the previous Lucide artwork as bundled outline PNGs where
   the library did not offer a suitable equivalent: `archive`, `bug`,

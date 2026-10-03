@@ -115,14 +115,14 @@ beforeEach(() => {
   deregisterManagedEdge.mockReset().mockResolvedValue({ failures: [] });
 });
 
-describe("provider-managed native Cloud routes", () => {
-  it("updates and removes through the Cloud provider without a public-server edge registration", async () => {
+describe("provider-managed Cloud routes", () => {
+  it("removes stale routes and leaves registration to the complete topology writer", async () => {
     const project = {
       id: "project-1",
       slug: "app",
       port: 3000,
       organizationId: "org-1",
-      cloudWorkspaceId: null,
+      workspaceId: null,
       activeDeploymentId: "deployment-1",
       webhookDomain: null,
     } as Parameters<typeof reapplyProjectLiveRoutes>[0];
@@ -152,9 +152,7 @@ describe("provider-managed native Cloud routes", () => {
           organizationId: project.organizationId,
           containerId: "workspace-one",
         }),
-        registers: [
-          { hostname: "app.opsh.io", port: 3000, isCustomDomain: false },
-        ],
+        registers: [],
         removes: [{ hostname: "previous.opsh.io", isCustomDomain: false }],
       }),
     );
@@ -250,7 +248,7 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
     id: "proj-openship",
     slug: "openship",
     port: 3001,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     activeDeploymentId: "dep-1",
     organizationId: "org-1",
     webhookDomain: null,
@@ -328,7 +326,7 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
     id: "proj-site",
     slug: "site",
     port: null,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     activeDeploymentId: "dep-1",
     organizationId: "org-1",
     webhookDomain: null,
@@ -862,7 +860,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     id: "proj-dependabot",
     slug: "dependabot",
     port: null,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     activeDeploymentId: "dep-1",
     organizationId: "org-1",
     webhookDomain: null,

@@ -662,7 +662,7 @@ export async function applyAllContainers(
     blocked.add(q.server.id);
     skipped.push({
       serverId: q.server.id,
-      serverName: q.server.name ?? q.server.sshHost,
+      serverName: q.server.name ?? q.server.sshHost ?? q.server.id,
       component: q.component,
       reason,
     });
@@ -674,7 +674,7 @@ export async function applyAllContainers(
   for (const t of targets) {
     started.push({
       serverId: t.server.id,
-      serverName: t.server.name ?? t.server.sshHost,
+      serverName: t.server.name ?? t.server.sshHost ?? t.server.id,
       component: t.component,
       intent: t.intent,
     });

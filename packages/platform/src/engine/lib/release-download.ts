@@ -17,14 +17,13 @@
  *      compare against the sidecar — mismatch deletes the partial
  *      download and throws. Extraction only happens on a matching hash.
  *
- *   3. **Path-traversal protection.** We list the tarball with
- *      `tar -tvzf` BEFORE extraction (verbose — shows symlink targets,
- *      hardlink targets, and entry types). Each entry is validated:
+ *   3. **Path-traversal protection.** We inspect every archive header BEFORE extraction, including
+ *      symlink targets, hardlink targets, and entry types. Each entry is validated:
  *        - no `..` segments in the name
  *        - no absolute paths
  *        - no symlink/hardlink target with `..`, absolute, or escapes root
  *        - the resolved entry path stays inside the extraction root
- *      Only after the full listing passes do we run `tar -xzf`. This
+ *      Only after every header passes do we extract the archive. This
  *      closes the symlink-target attack vector (a malicious tarball
  *      with an entry like `evil → /etc/passwd` would otherwise create
  *      a symlink that subsequent code could be tricked into following).
@@ -49,10 +48,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { pipeline } from "node:stream/promises";
+import { t as listTar, x as extractTar } from "tar";
 import { safeFetch, type SafeFetchResponse } from "./safe-fetch";
 import { assertPublicHostLiteral, SsrfError } from "./ssrf-guard";
 
@@ -200,15 +200,12 @@ export async function fetchAndExtractRelease(
     }
 
     // 5. Path-traversal + symlink-target validation BEFORE extraction.
-    //    Use verbose listing so symlink/hardlink targets are visible.
+    //    Read link targets directly from archive headers.
     await assertTarEntriesSafe(scratchTarball, scratchDir, envOverride);
 
     // 6. Extract into scratch dir.
     mkdirSync(scratchDir, { recursive: true });
-    await runTar(
-      ["-xzf", scratchTarball, "-C", scratchDir],
-      envOverride,
-    );
+    await readArchive(scratchTarball, extractTar({ cwd: scratchDir, strict: true, preservePaths: false }), envOverride);
 
     // 7. Atomic publish.
     try {
@@ -363,76 +360,31 @@ async function sha256Of(filePath: string): Promise<string> {
 }
 
 /**
- * Run `tar -tvzf` and validate every entry — names, AND symlink /
- * hardlink targets — for path-traversal.
+ * Validate every entry and link target before extracting any files.
  *
- * The verbose listing format we parse:
- *
- *   -rw-r--r-- root/root  123 2026-06-20 ... file.txt
- *   drwxr-xr-x root/root    0 2026-06-20 ... dir/
- *   lrwxrwxrwx root/root    0 2026-06-20 ... evil -> /etc/passwd
- *   hrwxr-xr-x root/root    0 2026-06-20 ... hard => /etc/shadow
- *
- * The arrow-target portion (`-> target` for symlink, `=> target` for
- * hardlink) is what makes the verbose listing necessary — the bare
- * `tar -tzf` output only shows entry names, which lets a malicious
- * tarball slip a symlink with a benign-looking name + a `..`-laden
- * target. Once `tar -xzf` runs, that symlink lands on disk and any
- * downstream code following symlinks gets played.
+ * Entry paths and link targets are validated from the archive headers. No
+ * shell process or locale-dependent listing is involved.
  */
 async function assertTarEntriesSafe(
   tarballPath: string,
   scratchDir: string,
   envOverride: string,
 ): Promise<void> {
-  const stdout = await runTarCapture(
-    ["-tvzf", tarballPath],
-    envOverride,
-  );
   const rootResolved = resolve(scratchDir);
-  for (const line of stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const parsed = parseVerboseTarLine(trimmed);
-    if (!parsed) continue; // ignore lines we can't parse (defensive — fail-open on noise but we still gate on entry-path validation below)
-
-    // 1. Entry name (always present).
-    assertSafePath(parsed.name, rootResolved, envOverride);
-
-    // 2. Symlink/hardlink target (when present).
-    if (parsed.linkTarget) {
-      assertSafeLinkTarget(parsed.name, parsed.linkTarget, rootResolved, envOverride);
+  let invalid: Error | undefined;
+  const listing = listTar({ strict: true, onReadEntry: entry => {
+    if (invalid) return;
+    try {
+      assertSafePath(entry.path, rootResolved, envOverride);
+      if (!["File", "OldFile", "Directory", "SymbolicLink", "Link"].includes(entry.type))
+        throw new ReleaseDownloadError({ reason: `Refusing tarball entry type ${entry.type}`, envOverride });
+      if (entry.linkpath) assertSafeLinkTarget(entry.path, entry.linkpath, rootResolved, envOverride);
+    } catch (error) {
+      invalid = error instanceof Error ? error : new Error(String(error));
     }
-  }
-}
-
-interface TarVerboseEntry {
-  name: string;
-  /** Set when the entry is a symlink (-> target) or hardlink (=> target). */
-  linkTarget?: string;
-}
-
-function parseVerboseTarLine(line: string): TarVerboseEntry | null {
-  // GNU tar verbose: <mode> <owner> <size> <date> <time> <name>[ -> target | => target]
-  // Split off the link target FIRST since path names can contain spaces.
-  let name: string;
-  let linkTarget: string | undefined;
-  const symMatch = line.match(/ -> (.+)$/);
-  const hardMatch = line.match(/ => (.+)$/);
-  if (symMatch) {
-    linkTarget = symMatch[1];
-    line = line.slice(0, symMatch.index);
-  } else if (hardMatch) {
-    linkTarget = hardMatch[1];
-    line = line.slice(0, hardMatch.index);
-  }
-  // The remaining tail is the path. Strip the 5 leading whitespace-
-  // delimited columns (mode owner size date time) to get the name.
-  const cols = line.split(/\s+/);
-  if (cols.length < 6) return null;
-  name = cols.slice(5).join(" ");
-  if (!name) return null;
-  return { name, linkTarget };
+  } });
+  await readArchive(tarballPath, listing, envOverride);
+  if (invalid) throw invalid;
 }
 
 function assertSafePath(
@@ -440,7 +392,7 @@ function assertSafePath(
   rootResolved: string,
   envOverride: string,
 ): void {
-  if (entry.startsWith("/")) {
+  if (entry.startsWith("/") || entry.includes("\\")) {
     throw new ReleaseDownloadError({
       reason: `Refusing tarball: absolute path entry "${entry}"`,
       envOverride,
@@ -474,7 +426,7 @@ function assertSafeLinkTarget(
   rootResolved: string,
   envOverride: string,
 ): void {
-  if (target.startsWith("/")) {
+  if (target.startsWith("/") || target.includes("\\")) {
     throw new ReleaseDownloadError({
       reason: `Refusing tarball: entry "${entry}" links to absolute path "${target}"`,
       envOverride,
@@ -507,90 +459,20 @@ function assertSafeLinkTarget(
   }
 }
 
-function runTar(args: string[], envOverride: string): Promise<void> {
-  return new Promise((resolveTar, rejectTar) => {
-    const child = spawn("tar", args, { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `tar ${args[0]} timed out after ${TAR_TIMEOUT_MS}ms`,
-          envOverride,
-        }),
-      );
-    }, TAR_TIMEOUT_MS);
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
+async function readArchive(
+  file: string,
+  target: ReturnType<typeof listTar> | ReturnType<typeof extractTar>,
+  envOverride: string,
+): Promise<void> {
+  try {
+    await pipeline(createReadStream(file), target as NodeJS.WritableStream, {
+      signal: AbortSignal.timeout(TAR_TIMEOUT_MS),
     });
-    child.once("error", (err) => {
-      clearTimeout(timer);
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `Failed to spawn tar: ${err.message}`,
-          envOverride,
-          cause: err,
-        }),
-      );
+  } catch (error) {
+    throw new ReleaseDownloadError({
+      reason: `Could not read release archive: ${error instanceof Error ? error.message : String(error)}`,
+      envOverride,
+      cause: error,
     });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolveTar();
-        return;
-      }
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `tar exited with code ${code}: ${stderr.trim() || "(no stderr)"}`,
-          envOverride,
-        }),
-      );
-    });
-  });
-}
-
-function runTarCapture(args: string[], envOverride: string): Promise<string> {
-  return new Promise((resolveTar, rejectTar) => {
-    const child = spawn("tar", args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `tar ${args[0]} timed out after ${TAR_TIMEOUT_MS}ms`,
-          envOverride,
-        }),
-      );
-    }, TAR_TIMEOUT_MS);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf-8");
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
-    });
-    child.once("error", (err) => {
-      clearTimeout(timer);
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `Failed to spawn tar: ${err.message}`,
-          envOverride,
-          cause: err,
-        }),
-      );
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolveTar(stdout);
-        return;
-      }
-      rejectTar(
-        new ReleaseDownloadError({
-          reason: `tar exited with code ${code}: ${stderr.trim() || "(no stderr)"}`,
-          envOverride,
-        }),
-      );
-    });
-  });
+  }
 }

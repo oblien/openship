@@ -89,10 +89,13 @@ try {
         const [{ getJobRunner }, { backupOrchestrator }] = await Promise.all([
           import("./engine/lib/job-runner"), import("./engine/modules/backups/backup.orchestrator"),
         ]);
-        await (await getJobRunner()).start({ processRun: id => backupOrchestrator.execute(id) });
+        const { reconcileJobs, runScheduledJob } = await import("./engine/modules/jobs/job.service");
+        await (await getJobRunner()).start({
+          processRun: id => backupOrchestrator.execute(id),
+          processRecurring: runScheduledJob,
+        });
         const { reconcileAllSchedules } = await import("./engine/modules/backups/triggers/cron");
         await reconcileAllSchedules();
-        const { reconcileJobs } = await import("./engine/modules/jobs/job.service");
         await reconcileJobs();
         const { scheduleBillingAnniversary } = await import("./engine/modules/billing/billing-anniversary.cron");
         await scheduleBillingAnniversary();

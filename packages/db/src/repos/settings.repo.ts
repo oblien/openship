@@ -27,6 +27,19 @@ export function createSettingsRepo(db: Database) {
         } });
     },
 
+    async setCloudSession(userId: string, encrypted: string): Promise<void> {
+      await db.insert(userSettings).values({ id: generateId(), userId, cloudSessionToken: encrypted })
+        .onConflictDoUpdate({ target: userSettings.userId, set: {
+          cloudSessionToken: encrypted, updatedAt: new Date(),
+        } });
+    },
+
+    /** An expired in-flight request must not erase a newly connected session. */
+    async clearCloudSession(userId: string, encrypted: string): Promise<void> {
+      await db.update(userSettings).set({ cloudSessionToken: null, updatedAt: new Date() })
+        .where(and(eq(userSettings.userId, userId), eq(userSettings.cloudSessionToken, encrypted)));
+    },
+
     /** Create or update (upsert) settings for a user */
     async upsert(data: NewUserSettings): Promise<UserSettings> {
       const [row] = await db

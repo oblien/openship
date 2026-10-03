@@ -722,7 +722,7 @@ export async function buildComposeImages(opts: {
         (data, streamId) => dnsDiagnostics?.observe(data, streamId),
       );
 
-      if (opts.runtime.name === "cloud" && !opts.project.localPath) {
+      if (opts.project.workspaceId != null && !opts.project.localPath) {
         opts.logger.log(
           `Resolving Dockerfile for compose service "${service.name}" from the build source checkout.\n`,
           "info",
@@ -772,7 +772,7 @@ export async function buildComposeImages(opts: {
                 ? {
                     isStatic: true,
                     hasServer: false,
-                    ...(opts.runtime.name === "cloud"
+                    ...(opts.project.workspaceId != null
                       ? {}
                       : {
                           staticExtractOnly: true,

@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import * as schema from "../schema";
 import { createServerClusterRepo } from "./server-cluster.repo";
@@ -56,6 +56,9 @@ beforeAll(async () => {
 }, 30_000);
 afterAll(async () => client.close());
 beforeEach(async () => {
+  await db.delete(schema.project);
+  await db.delete(schema.servers).where(isNotNull(schema.servers.workspaceId));
+  await db.delete(schema.cloudWorkspace);
   await db.delete(schema.organization);
   await db.insert(schema.organization).values([
     { id: "org", name: "Org" },
@@ -132,9 +135,11 @@ describe("durable project databases", () => {
     const { row } = await databases.start(input());
     await expect(databases.get("other", "project", row.id)).rejects.toThrow();
     expect(await databases.list("other", "project")).toEqual([]);
+    await db.insert(schema.cloudWorkspace).values({ id: "cloud-workspace", name: "Managed", organizationId: "org" });
+    await db.insert(schema.servers).values({ id: "cloud-server", name: "Managed", organizationId: "org", workspaceId: "cloud-workspace" });
     await db
       .update(schema.project)
-      .set({ clusterId: null, cloudWorkspaceId: "cloud-workspace" })
+      .set({ clusterId: null, serverId: "cloud-server" })
       .where(eq(schema.project.id, "project"));
     await expect(
       databases.start({ ...input(), requestId: "another", name: "another" }),

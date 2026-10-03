@@ -112,20 +112,20 @@ export {
 // location with the SAME confinement rules the deploy used (no reimplementation:
 // this function is what rejects absolute paths and `../` traversal out of the root).
 export { resolveServedStaticPath, resolveStaticOutputPath } from "./runtime/stack-output";
-export {
-  CloudRuntime,
-  type CloudAdminProxy,
-  PAGE_CONTAINER_PREFIX,
-  provisionCloudWorkspace,
-} from "./runtime/cloud";
+export type { CloudAdminProxy } from "./infra/cloud-admin";
+export { HostBuildForbiddenError, isHostBuildForbiddenError } from "./runtime/host-build-policy";
 export {
   CloudDockerRuntime,
   CLOUD_DOCKER_IMAGE,
   type CloudDockerOptions,
 } from "./runtime/cloud/docker";
-export { cloudWorkspaceStatus, waitForCloudDockerWorkspace } from "./runtime/cloud/workspace-ready";
+export { cloudWorkspaceStatus, waitForCloudDockerWorkspace, waitForCloudWorkspaceStopped } from "./runtime/cloud/workspace-ready";
+export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
+export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
+export { CloudServerConnection } from "./runtime/cloud/server-connection";
+export { withManagedCommandTracking } from "./runtime/cloud/command-tracking";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -394,7 +394,9 @@ export { elevatedExecutor, elevateCommand } from "./system/elevated-executor";
 export type { Privileged, RootChecked } from "./system/privilege";
 export { privilegedExecutor, rootChecked, rootOrDegrade } from "./system/privilege";
 export { systemCatalog, MIN_DOCKER_VERSION } from "./system/catalog";
-export { SERVER_STATS_COMMAND } from "./system/server-stats";
+export { SERVER_STATS_COMMAND, readServerStats, type ServerStats } from "./system/server-stats";
+export { dockerProjectStorage, type DockerStorageSnapshot } from "./runtime/docker-storage";
+export { deleteCloudWorkspace } from "./runtime/cloud/workspace-delete";
 // Native-module versioning + migration framework (verify → reconcile).
 export {
   resolveVerifiedCatalog,
@@ -613,3 +615,8 @@ export * from "./cluster/database";
 export { databaseArchiveName } from "./cluster/redis-backups";
 export * from "./runtime/kubernetes";
 export { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime/runtime-env";
+
+export { managedProcessState, readManagedProcessStatus, waitForManagedProcess } from "./runtime/cloud/server-connection";
+
+export { resolveSshAuthSock } from "./system/ssh-support";
+export { probeLocalGitHubToken } from "./system/local-github";

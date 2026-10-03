@@ -6,6 +6,12 @@ const color = (file: string, bounds: Bounds): IconAsset => ({ file, mode: "color
 
 /** Default outline artwork. IDs are stable; filenames belong only in this catalog. */
 export const outlineModern = {
+  // Filled marks for plan cards, using the same asset and fallback handling.
+  "bolt-solid": mask("flash-11-1666004345.png", [3.9375,2.4375,16.125,19.125]),
+  "rocket-solid": mask("rocket-31-1666784017.png", [3.1875,3.1875,17.625,17.625]),
+  "gem": mask("gem-12-1666004103.png", [2.625,3.9375,18.75,16.125]),
+  "layers-solid": mask("layers-35-1666783638.png", [4.125,3,15.1875,18.375]),
+  "building-solid": mask("building-56-1673361415.png", [2.625,3,18.75,17.4375]),
   "activity": mask("heart rate-116-1658433496.png", [2.25, 3.0, 18.9375, 18.0]),
   "alert-circle": mask("error circle-79-1658234612.png", [2.25, 2.25, 19.5, 19.5]),
   "apple": mask("apple-66-1693375491.png", [4.5, 2.25, 15.0, 19.5]),

@@ -1,28 +1,18 @@
-import { getPlatform } from "@repo/adapters";
-import { AppError } from "@repo/core";
 import { env } from "../../config/env";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 
 export const HEALTH_WATCH_JOB = "services:health-watch";
 
-/** Local/SSH Docker observation is never a cloud-runtime capability. */
-export function containerHealthSupported(): boolean {
-  return !env.CLOUD_MODE && getPlatform().target !== "cloud";
-}
-
-export function assertContainerHealthSupported(): void {
-  if (!containerHealthSupported()) {
-    throw new AppError(
-      "Container monitoring is not available in cloud mode",
-      404,
-      "CAPABILITY_UNAVAILABLE",
-    );
-  }
+/** A deliberately stopped host (or one still starting) is not a Docker outage. */
+export function isManagedServerIdle(error: unknown): boolean {
+  return ["CLOUD_WORKSPACE_STOPPED", "CLOUD_WORKSPACE_STARTING"].includes(
+    (error as { code?: string } | null)?.code ?? "",
+  );
 }
 
 /** Desktop can use the same worker for as long as its API process is running. */
 export function continuousHealthAvailable(): boolean {
-  return containerHealthSupported() && nativeJobsEnabled();
+  return nativeJobsEnabled();
 }
 
 export function containerHealthEventsAvailable(): boolean {

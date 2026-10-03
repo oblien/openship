@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { systemApi } from "@/lib/api";
 import { issuesApi, type SystemIssue } from "@/lib/api/issues";
 import { useIssueActions } from "@/components/issues/useIssueActions";
+import { usePlatform } from "@/context/PlatformContext";
 import { infraScanStale, markInfraScanned } from "@/lib/infra-autoscan";
 import { hide as hideCard, isHidden, type AttentionCardKey } from "@/lib/attention-hide";
 
@@ -22,6 +23,7 @@ import { hide as hideCard, isHidden, type AttentionCardKey } from "@/lib/attenti
  * and self-expiring; see {@link isHidden} for why it can't bury a new problem.
  */
 export function useAttentionFeed() {
+  const { selfHosted } = usePlatform();
   const [issues, setIssues] = useState<SystemIssue[] | null>(null);
 
   const load = useCallback(async () => {
@@ -37,6 +39,10 @@ export function useAttentionFeed() {
 
   const autoScanRan = useRef(false);
   useEffect(() => {
+    if (!selfHosted) {
+      void load();
+      return;
+    }
     // When auto-scan is on and the shared cache is stale, run ONE detect-only scan
     // first so the feed reflects live drift, then read it. Otherwise read straight
     // from the cache the scheduled jobs maintain. The localStorage throttle plus this
@@ -51,7 +57,7 @@ export function useAttentionFeed() {
       }
       void load();
     })();
-  }, [load]);
+  }, [load, selfHosted]);
 
   const { broken, behind } = useMemo(() => {
     const rows = issues ?? [];

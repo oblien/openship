@@ -61,6 +61,9 @@ export interface ServiceHandle {
    *  fallback in listSources resolves the same name deploy used. False for
    *  grandfathered pre-migration services (bare names). */
   namespaceVolumes: boolean;
+  /** Migration includes bind-mounted config files; default backups keep their
+   * existing directory/volume selection. */
+  includeFileBinds?: boolean;
 }
 
 export interface ExecExitInfo {
@@ -75,6 +78,8 @@ export interface ExecExitInfo {
 /** The set of physical sources an executor can pull bytes out of for a
  *  given service. Producers iterate this to decide what to back up. */
 export interface BackupSource {
+  /** False for a single bind-mounted file when explicitly requested. */
+  isDirectory?: boolean;
   /** Opaque id understood by the executor — typically the path or
    *  volume name. */
   id: string;
@@ -113,6 +118,8 @@ export interface ExecuteCommandOpts {
 
 export interface StreamPathOpts {
   compression?: PayloadCompression;
+  /** A migration may intentionally copy an empty source; backups stay strict. */
+  allowEmpty?: boolean;
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
   /**
@@ -152,6 +159,8 @@ export interface StreamPathOpts {
 
 export interface ReceiveStreamOpts {
   compression?: PayloadCompression;
+  /** Incoming archive contains one file at the canonical `file` entry. */
+  sourceIsFile?: boolean;
   /** Wipe the target before extracting. Default false — adapter-
    *  specific safer modes (delete-then-recreate volume) take precedence. */
   clearTarget?: boolean;
@@ -185,7 +194,7 @@ export interface ReceiveStreamOpts {
  *  Oblien cloud, or an SSH host. */
 export interface BackupExecutor {
   /** Identifies which RuntimeAdapter this executor pairs with. */
-  readonly runtimeName: "docker" | "bare" | "cloud";
+  readonly runtimeName: "docker" | "bare";
   /** False when stopping the service also stops access to its filesystem. */
   readonly supportsOfflineVolumeRestore?: boolean;
 

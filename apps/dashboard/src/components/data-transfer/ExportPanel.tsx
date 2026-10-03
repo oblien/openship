@@ -51,7 +51,7 @@ export function ExportPanel({
     ? preview.core + selection.history.reduce((sum, category) => sum + preview.history[category], 0)
     : null;
   const cloudProjects = useMemo(
-    () => (preview?.manifest?.projects ?? []).filter((project) => project.cloudWorkspaceId),
+    () => (preview?.manifest?.projects ?? []).filter((project) => project.workspaceId),
     [preview],
   );
 

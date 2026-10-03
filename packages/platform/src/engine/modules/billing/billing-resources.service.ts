@@ -1,13 +1,13 @@
 /** Display telemetry is independent of checkout, entitlements and provisioning. */
 import { z } from "zod";
 import { Oblien } from "@repo/adapters";
-import { AppError, type PlanTierId } from "@repo/core";
+import { type PlanTierId } from "@repo/core";
 import type { BillingResources } from "@repo/contracts";
-import { repos } from "@repo/db";
 import { env } from "../../config/env";
 import { getOblienClient } from "../../lib/oblien-client";
 import { buildMinutePeriod } from "../../lib/plan-guard";
 import { CLOUD_EDGE_BANDWIDTH_GB } from "./billing-catalog";
+import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 
 const amount = z.number().finite().nonnegative();
 const computeSchema = z.object({ success: z.literal(true), data: z.object({
@@ -74,9 +74,8 @@ async function readEdge(namespace: string, from: Date, to: Date, signal: AbortSi
   return totals;
 }
 
-export async function getBillingResources(organizationId: string): Promise<BillingResources> {
-  const org = await repos.organization.findById(organizationId);
-  if (!org) throw new AppError("Organization not found", 404, "ORGANIZATION_NOT_FOUND");
+export async function getBillingResources(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<BillingResources> {
+  const org = await cloudBillingOwner(organizationId, workspaceId);
   const now = new Date();
   const tier = (org.planTierId ?? "free") as PlanTierId;
   const monthly = buildMinutePeriod(org.currentPeriodStart ?? org.createdAt, now);
@@ -91,8 +90,8 @@ export async function getBillingResources(organizationId: string): Promise<Billi
   };
   // No namespace is not evidence of metered zero usage. This endpoint never
   // creates resources or updates their policies merely to display a dashboard.
-  if (!org.oblienNamespace) return empty;
-  const namespace = org.oblienNamespace;
+  if (!org.namespace) return empty;
+  const namespace = org.namespace;
   const key = JSON.stringify([organizationId, namespace, tier, period, edgePeriod]);
   const existing = cache.get(key);
   if (existing && existing.until > now.getTime()) return structuredClone(await existing.value);

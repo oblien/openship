@@ -218,11 +218,7 @@ export function isSensitiveGrantType(type: string): boolean {
  * and tools that always 404.
  */
 export const SELF_HOSTED_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = [
-  "server",
   "mail_server",
-  // The jobs router is `localOnly`, so on the hosted control plane every job route
-  // 404s regardless of the grant.
-  "job",
 ];
 
 /** Grantable types that exist only on the hosted control plane. */

@@ -1,15 +1,20 @@
 "use client";
 
-import { Icon as UiIcon } from "@repo/ui/icons";
-
-import { useState, useEffect, useCallback } from "react";
-import { BlurIp } from "@/components/BlurIp";
-import { systemApi, type ServerInfo } from "@/lib/api/system";
+import { useEffect, useRef, useState } from "react";
+import type { ServerDetail } from "@repo/contracts";
+import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
+import type { ServerInfo } from "@/lib/api/system";
+import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
-import { DismissiblePopover } from "@/components/ui/Popover";
-
-/* ── Types ──────────────────────────────────────────────────────────── */
+import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
+import { Button } from "@/components/ui/button";
+import { usePlatform } from "@/context/PlatformContext";
+import { settingsApi } from "@/lib/api/settings";
+import { serverPreference } from "@/lib/server-preference";
+import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
+import { dockerMigrationApi } from "@/lib/api/server-migration";
+import { getApiErrorMessage } from "@/lib/api/client";
 
 export interface ServerOption {
   id: string;
@@ -19,334 +24,299 @@ export interface ServerOption {
   port: number;
   raw: ServerInfo;
 }
-
 export interface ServerSelectorProps {
-  /** Called when a server is selected (or null when deselected) */
   onSelect: (server: ServerOption | null) => void;
-  /** Currently selected server id */
   value?: string | null;
-  /** Label above the selector */
   label?: string;
-  /** Disable interaction */
   disabled?: boolean;
-  /** Show compact variant (no label) */
+  /** Saved bindings can deploy without permission to list other servers. */
+  readOnly?: boolean;
+  selectedName?: string;
+  disabledReason?: string;
+  onReadyChange?: (ready: boolean) => void;
   compact?: boolean;
-  /** Open the dropdown upward (for selectors pinned near the bottom of a modal). */
-  dropUp?: boolean;
-  /**
-   * Pre-select the first server on load even when there are several (nothing
-   * chosen yet). A lone server always auto-selects; this extends that to the
-   * "many servers" case so an install wizard opens with a destination already
-   * picked. Off by default — flows that must not guess (adopt / migrate) skip it.
-   */
   autoSelectFirst?: boolean;
-  /**
-   * Server ids to leave OUT of the list — a destination picker for a flow that already
-   * involves a server ("move this project to another server" must not offer the one it is
-   * already on, and the API refuses that anyway).
-   *
-   * Filtered after the fetch, so the auto-select rules below count only what remains: with
-   * one other server left, that one still auto-selects.
-   */
+  useSavedDefault?: boolean;
   excludeIds?: string[];
-  /**
-   * Replaces the empty state's second line. With {@link excludeIds} the list can be empty
-   * while servers DO exist, and "No server connected" would then be a lie — the caller says
-   * what is actually missing ("Add a second server to move this project to one"). The
-   * action is unchanged: adding one is still the way out.
-   */
   emptyHint?: string;
+  forDeployment?: boolean;
+  requiredCapability?: keyof NonNullable<ServerDetail["capabilities"]>;
+  /** Cloud import sources use this same picker with a restricted inventory. */
+  migrationSource?: boolean;
 }
 
-/* ── Helpers ────────────────────────────────────────────────────────── */
-
-function serverInfoToOption(s: ServerInfo): ServerOption {
+function option(server: ServerDetail | ServerInfo): ServerOption {
   return {
-    id: s.id,
-    name: s.name || s.sshHost,
-    host: s.sshHost,
-    user: s.sshUser || "root",
-    port: s.sshPort ?? 22,
-    raw: s,
+    id: server.id,
+    name: server.name || server.sshHost || server.id,
+    host: server.sshHost ?? "",
+    user: server.sshUser ?? "",
+    port: server.sshPort ?? 22,
+    raw: { ...server, sshUser: server.sshUser ?? "", sshPort: server.sshPort ?? 22 },
   };
 }
 
-/* ── Component ──────────────────────────────────────────────────────── */
-
-export default function ServerSelector({
-  onSelect,
-  value,
-  label,
-  disabled = false,
-  compact = false,
-  dropUp = false,
-  autoSelectFirst = false,
-  excludeIds,
-  emptyHint,
-}: ServerSelectorProps) {
-  const { t } = useI18n();
-  const w = t.widgets.shared.serverSelector;
-  const labelText = label ?? w.serverLabel;
-  const [servers, setServers] = useState<ServerOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const openAddServer = useAddServerModal();
-
-  // A caller that passes no `value` is uncontrolled, so mirror our own picks
-  // here. The dropdown resolves the selection by id, and `undefined` matches no
-  // server — without this an uncontrolled host would read "select a server"
-  // forever despite having auto-selected one.
-  const [internalId, setInternalId] = useState<string | null>(null);
-  const effectiveValue = value === undefined ? internalId : value;
-
-  const fetchServers = useCallback(async () => {
-    try {
-      setLoading(true);
-      const all = await systemApi.listServers();
-      // Excluded BEFORE the auto-select below, so "one server" means one CHOOSABLE server.
-      const skip = new Set(excludeIds ?? []);
-      const list = skip.size > 0 ? all.filter((s) => !skip.has(s.id)) : all;
-      if (list.length > 0) {
-        const opts = list.map(serverInfoToOption);
-        setServers(opts);
-        // Auto-select the lone server, or the first one when the caller asked
-        // for a default and nothing's chosen yet (captured initial `value`).
-        if (opts.length === 1 || (autoSelectFirst && !value)) {
-          setInternalId(opts[0].id);
-          onSelect(opts[0]);
-        }
-      } else {
-        setServers([]);
-        setInternalId(null);
-        onSelect(null);
-      }
-    } catch {
-      setServers([]);
-      setInternalId(null);
-      onSelect(null);
-    } finally {
-      setLoading(false);
-    }
-  // `onSelect` stays out (same-callback-identity contract as before), but the exclusion
-  // must be in: a host that changes it and keeps the old list would offer a server the
-  // flow has just ruled out. Joined rather than passed by reference — callers build the
-  // array inline, so a fresh identity every render would refetch forever.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(excludeIds ?? []).join(",")]);
-
-  useEffect(() => {
-    fetchServers();
-  }, [fetchServers]);
-
-  // Adding a server never leaves the flow: the panel opens on top, and the
-  // saved row is spliced in and selected so the caller can carry straight on.
-  // createServerEntry returns the full row, so no refetch is needed.
-  const addServer = useCallback(() => {
-    openAddServer((created: ServerInfo) => {
-      const opt = serverInfoToOption(created);
-      setServers((prev) => (prev.some((p) => p.id === opt.id) ? prev : [...prev, opt]));
-      setInternalId(opt.id);
-      onSelect(opt);
-    });
-  }, [openAddServer, onSelect]);
-
-  const selected = servers.find((s) => s.id === effectiveValue) ?? null;
-
-  /* ── Loading state ─────────────────────────────────────────────────── */
-
-  if (loading) {
-    return (
-      <div className={compact ? "" : "mb-5"}>
-        {!compact && (
-          <label className="block text-sm font-medium text-foreground mb-1.5">
-            {labelText}
-          </label>
-        )}
-        <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border/50 bg-muted/20">
-          <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{w.loadingServers}</span>
-        </div>
-      </div>
-    );
-  }
-
-  /* ── No servers - empty state ──────────────────────────────────────── */
-
-  if (servers.length === 0) {
-    // Compact hosts (picker rows inside wizards and modals) get a single
-    // clickable row instead of a full-height hero — same action, no layout jump.
-    if (compact) {
-      return (
-        <button
-          type="button"
-          onClick={addServer}
-          disabled={disabled}
-          className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-dashed border-border text-start transition-colors hover:bg-muted/20 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <UiIcon name="plus" className="size-4 text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground">{w.addServer}</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {emptyHint ?? w.noServerConnected}
-            </p>
-          </div>
-        </button>
-      );
-    }
-
-    // Full hosts are FORMS, not empty pages: this sits in a column of labelled
-    // full-width fields, so it renders as one of them — same label, same width,
-    // same left edge. It used to be a centered `max-w-sm` hero padded with
-    // py-16, which in a wide card was a narrow island floating in dead space
-    // above left-aligned inputs.
-    return (
-      <div className="mb-5">
-        <label className="block text-sm font-medium text-foreground mb-1.5">
-          {labelText}
-        </label>
-        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/[0.15] p-4 sm:flex-row sm:items-center sm:gap-4">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-              <UiIcon name="server" className="size-4 text-muted-foreground" />
-            </div>
-            <div className="min-w-0">
-              {/* With `emptyHint` servers DO exist (they were excluded), so the
-                  "no server connected" headline would be a lie — the caller's
-                  sentence takes the headline slot instead of trailing one. */}
-              <p className="text-sm font-medium text-foreground">
-                {emptyHint ?? w.noServerConnected}
-              </p>
-              {!emptyHint && (
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {w.connectServerFirst}
-                </p>
-              )}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={addServer}
-            disabled={disabled}
-            className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <UiIcon name="plus" className="size-4" />
-            {w.addServer}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  /* ── Servers - dropdown ────────────────────────────────────────────── */
-
-  /**
-   * ONE server is not a special case. It used to get a bespoke static row with
-   * an "add server" text button bolted underneath, which meant a one-server box
-   * offered a different control — and a different way to reach "add server" —
-   * than a two-server box asking the identical question. The dropdown already
-   * renders a 1-item list and already carries the add-server row in its menu, so
-   * the branch bought nothing and cost the two pickers agreeing with each other.
-   */
+function ServerSummary({ name, description }: { name: string; description?: string }) {
   return (
-    <div className={compact ? "" : "mb-5"}>
-      {!compact && (
-        <label className="block text-sm font-medium text-foreground mb-1.5">
-          {labelText}
-        </label>
-      )}
-      <DismissiblePopover open={open} onOpenChange={setOpen} className="relative">
-        <button
-          type="button"
-          onClick={() => !disabled && setOpen(!open)}
-          disabled={disabled}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border/50 bg-background hover:bg-muted/20 transition-colors text-start disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {selected ? (
-            <>
-              <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-                <UiIcon name="server" className="size-4 text-success" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {selected.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {selected.user}@<BlurIp>{selected.host}</BlurIp>:{selected.port}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <UiIcon name="server" className="size-4 text-muted-foreground" />
-              </div>
-              <span className="text-sm text-muted-foreground">{w.selectServer}</span>
-            </>
-          )}
-          <UiIcon name="chevron-down"
-            className={`size-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        </button>
-
-        {open && (
-          <div
-            role="listbox"
-            className={`absolute z-50 start-0 end-0 max-h-64 overflow-auto rounded-xl border border-border bg-popover shadow-lg ${
-              dropUp ? "bottom-full mb-1.5" : "mt-1.5"
-            }`}
-          >
-            {servers.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                role="option"
-                aria-selected={effectiveValue === s.id}
-                onClick={() => {
-                  setInternalId(s.id);
-                  onSelect(s);
-                  setOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 text-start transition-colors hover:bg-muted/40 ${
-                  effectiveValue === s.id ? "bg-muted/30" : ""
-                }`}
-              >
-                <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-                  <UiIcon name="server" className="size-4 text-success" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {s.user}@<BlurIp>{s.host}</BlurIp>:{s.port}
-                  </p>
-                </div>
-                {effectiveValue === s.id && (
-                  <UiIcon name="check-circle" className="size-4 text-success shrink-0" />
-                )}
-              </button>
-            ))}
-
-            <div className="border-t border-border/50">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  addServer();
-                }}
-                className="w-full flex items-center gap-3 px-3.5 py-3 text-start transition-colors hover:bg-muted/40"
-              >
-                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                  <UiIcon name="plus" className="size-4 text-muted-foreground" />
-                </div>
-                <span className="text-sm text-muted-foreground">{w.addNewServer}</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </DismissiblePopover>
+    <div className="rounded-xl bg-muted/30 px-4 py-3">
+      <p className="break-words text-sm font-medium">{name}</p>
+      {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
     </div>
   );
+}
+
+/** Selection stays mounted when a wizard switches between its summary and editor. */
+export function useServerSelection({
+  onSelect,
+  value,
+  disabled = false,
+  readOnly = false,
+  selectedName,
+  disabledReason,
+  onReadyChange,
+  autoSelectFirst = false,
+  useSavedDefault = false,
+  excludeIds,
+  forDeployment = false,
+  requiredCapability,
+  migrationSource = false,
+}: ServerSelectorProps, enabled = true) {
+  const { selfHosted, deployMode } = usePlatform();
+  const restrictedSource = migrationSource && !selfHosted;
+  const { data, loading: destinationsLoading, error, refresh, contextKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
+  const [removing, setRemoving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
+  const loadingPreference = useSavedDefault && !readOnly && preference?.contextKey !== contextKey;
+  const loading = destinationsLoading || loadingPreference;
+  const [internalId, setInternalId] = useState<string | null>(null);
+  const autoSelected = useRef(false);
+  const canAddServer = restrictedSource || selfHosted || requiredCapability !== "ssh";
+  const openAddServer = useAddServerModal({ connectedOnly: requiredCapability === "ssh" || restrictedSource, migrationSource: restrictedSource });
+  const selectedId = value === undefined ? internalId : value;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const selectionContext = useRef(contextKey);
+  selectionContext.current = contextKey;
+
+  useEffect(() => {
+    autoSelected.current = false;
+    setInternalId(null);
+    setActionError(null);
+    setRemoving(false);
+  }, [contextKey]);
+
+  useEffect(() => {
+    if (!enabled || readOnly || !useSavedDefault) return;
+    let active = true;
+    void settingsApi.get().then(
+      (settings) => { if (active) setPreference({ contextKey, serverId: settings.defaultServerId }); },
+      () => { if (active) setPreference({ contextKey, serverId: null }); },
+    );
+    return () => { active = false; };
+  }, [enabled, readOnly, useSavedDefault, contextKey]);
+
+  const rows = (data?.servers ?? []).filter((server) => {
+    if (!restrictedSource && requiredCapability && !server.capabilities?.[requiredCapability]) return false;
+    if (excludeIds?.includes(server.id)) return false;
+    if (!server.managed) return true;
+    return (
+      server.id === selectedId ||
+      !forDeployment ||
+      server.managed.state !== "deleting"
+    );
+  });
+  const ids = rows.map((row) => row.id).join(",");
+  const automaticCloud =
+    !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
+  useEffect(() => {
+    if (
+      !enabled || disabled || readOnly || loading || error ||
+      selectedId ||
+      (!autoSelectFirst && value === null) ||
+      autoSelected.current
+    )
+      return;
+    if (automaticCloud) {
+      autoSelected.current = true;
+      onSelectRef.current(null);
+    } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
+      autoSelected.current = true;
+      const remembered = useSavedDefault ? serverPreference(contextKey).read() : null;
+      const preferred = rows.find(row => row.id === preference?.serverId)
+        ?? rows.find(row => row.id === remembered)
+        ?? (useSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
+        ?? rows[0]!;
+      const selected = option(preferred);
+      setInternalId(selected.id);
+      onSelectRef.current(selected);
+    }
+  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, useSavedDefault, preference, deployMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
+    automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
+  ));
+  useEffect(() => {
+    onReadyChange?.(selectionReady);
+  }, [selectionReady, onReadyChange]);
+
+  function addServer() {
+    if (!canAddServer) return;
+    const owner = contextKey;
+    openAddServer((server) => {
+      if (selectionContext.current !== owner) return;
+      if ((!restrictedSource && requiredCapability && !server.capabilities?.[requiredCapability]) || excludeIds?.includes(server.id)) {
+        refresh();
+        return;
+      }
+      autoSelected.current = true;
+      setInternalId(server.id);
+      onSelectRef.current(option(server));
+      refresh();
+    });
+  }
+  const select = (id: string) => {
+    autoSelected.current = true;
+    setInternalId(id);
+    const server = rows.find((row) => row.id === id);
+    onSelectRef.current(server ? option(server) : null);
+  };
+  const removeSource = async () => {
+    if (!restrictedSource || !selectedId || removing) return;
+    const owner = contextKey;
+    setRemoving(true); setActionError(null);
+    try {
+      await dockerMigrationApi.deleteSource(selectedId);
+      if (selectionContext.current !== owner) return;
+      autoSelected.current = false;
+      setInternalId(null);
+      onSelectRef.current(null);
+      refresh();
+    } catch (error) {
+      if (selectionContext.current === owner) setActionError(getApiErrorMessage(error));
+    } finally { if (selectionContext.current === owner) setRemoving(false); }
+  };
+  return {
+    rows, selectedId, selected: rows.find(server => server.id === selectedId),
+    loading, error, refresh, automaticCloud, ready: selectionReady,
+    disabled, readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
+    restrictedSource, removeSource, removing, actionError,
+    remember: () => { if (selectionReady && selectedId) serverPreference(contextKey).write(selectedId); },
+  };
+}
+
+export type ServerSelection = ReturnType<typeof useServerSelection>;
+
+/** Render the same picker against a form-owned selection, without a second fetch or seed. */
+export function ServerSelectorView({
+  selection,
+  label,
+  compact = false,
+  emptyHint,
+}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection }) {
+  const { t } = useI18n();
+  const copy = t.widgets.shared.serverSelector;
+  const managedCopy = t.billing.workspaces;
+  const { selfHosted } = usePlatform();
+  const {
+    rows, selectedId, loading, error, refresh, automaticCloud, disabled,
+    readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
+    restrictedSource, removeSource, removing, actionError,
+  } = selection;
+  const effective = selectedId ?? "";
+  const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
+  return (
+    <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
+      {!compact && (
+        <label className="block text-sm font-medium text-foreground">
+          {label ?? copy.serverLabel}
+        </label>
+      )}
+      {readOnly ? (
+        <ServerSummary
+          name={selectedName || (selectedId ? managedCopy.singular : copy.loadingServers)}
+          description={disabledReason}
+        />
+      ) : loading ? (
+        <div
+          aria-busy="true"
+          aria-label={copy.loadingServers}
+          className="h-16 animate-pulse rounded-xl bg-muted/50"
+        />
+      ) : error ? (
+        <div role="alert" className="space-y-2 text-sm text-danger">
+          <p>{error}</p>
+          <Button variant="secondary" size="sm" onClick={refresh}>
+            {t.billing.plansRoute.tryAgain}
+          </Button>
+        </div>
+      ) : automaticCloud ? (
+        <ServerSummary name={t.deploy.targetStep.options.cloud} description={managedCopy.defaultHint} />
+      ) : rows.length > 0 ? (
+        <>
+          {rows.length === 1 && effective === rows[0]!.id ? (
+            <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-4 py-3">
+              <ServerRowContent server={rows[0]!} active />
+            </div>
+          ) : (
+            <ServerPicker
+              label={label ?? copy.serverLabel}
+              showLabel={false}
+              selectedId={effective}
+              servers={rows}
+              disabled={disabled}
+              onSelect={server => select(server.id)}
+              onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
+              addServerLabel={addLabel}
+            />
+          )}
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-4">
+          <p className="min-w-0 text-sm text-muted-foreground">
+            {emptyHint ?? (restrictedSource ? t.migration.sources.empty : selfHosted ? copy.noServerConnected : managedCopy.noneAvailable)}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={disabled || !canAddServer}
+            onClick={addServer}
+          >
+            <Icon name="plus" className="size-3.5" aria-hidden />
+            {restrictedSource ? addLabel : copy.addServer}
+          </Button>
+        </div>
+      )}
+      {!readOnly && !loading && !error && (automaticCloud || rows.length > 0) && (
+        disabledReason ? (
+          <p className="text-xs text-muted-foreground">{disabledReason}</p>
+        ) : !disabled && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {!selfHosted && (
+              <p className="text-xs text-muted-foreground">
+                {restrictedSource ? t.migration.sources.hint : forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
+              </p>
+            )}
+            {canAddServer && (automaticCloud || rows.length === 1) && (
+              <Button type="button" variant="secondary" size="sm" onClick={addServer}>
+                <Icon name="plus" className="size-3.5" aria-hidden />
+                {addLabel}
+              </Button>
+            )}
+            {restrictedSource && effective && <Button type="button" variant="ghost" size="sm" disabled={removing} onClick={removeSource}>
+              {t.migration.sources.disconnect}
+            </Button>}
+          </div>
+        )
+      )}
+      {actionError && <p role="alert" className="text-sm text-danger">{actionError}</p>}
+    </div>
+  );
+}
+
+/** Standalone forms use the same selection state and view. */
+export default function ServerSelector(props: ServerSelectorProps) {
+  const selection = useServerSelection(props);
+  return <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />;
 }

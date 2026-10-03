@@ -57,8 +57,7 @@
     "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個",
     "usageCredits": "月あたり{credits}利用クレジット",
     "namespaceCapacity": "合計: {namespaceCpu} vCPU、RAM {namespaceRamGb} GB、ディスク {namespaceDiskGb} GB",
-    "finiteUsage": "常時稼働にはクレジットの追加購入が必要な場合があります。",
-    "oneRunningService": "アプリ、データベース、ワーカーのいずれか1つを実行"
+    "finiteUsage": "常時稼働にはクレジットの追加購入が必要な場合があります。"
   },
   "selfHosted": {
     "name": "セルフホスト",

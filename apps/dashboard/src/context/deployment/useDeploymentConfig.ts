@@ -18,8 +18,12 @@ import type { BuildMode } from "@/lib/api/settings";
 import {
   STACKS,
   getBuildImage,
+  detectTier,
+  resolveTierResources,
   toWorkloadType,
   type DeployTarget,
+  type ResourceTier,
+  type ResourceValues,
   type StackDefinition,
   type StackId,
   type WorkloadType,
@@ -318,35 +322,20 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
   };
 }
 
-/**
- * Map a declared `resources` block (openship.json) to the deploy config's cloud
- * tier fields. A named tier maps straight through; explicit cpu/mem/disk becomes
- * the "custom" tier (missing values fall back to low-tier defaults). Returns an
- * empty object when nothing is declared, so the config keeps its default tier.
- *
- * `unlimited` is deliberately NOT forwarded: it's a self-hosted-only selection
- * (the machine is the cap) and has no cloud spec, so passing it through would
- * reach the provisioner as a tier with no cpu/memory behind it. A repo that
- * declares it simply keeps the cloud default here.
- */
+/** Saved limits win over a fresh scan. An unset value uses the server itself as
+ * the ceiling; named and custom limits keep the same semantics as project settings. */
 function resolveCloudResources(
-  resources: PrepareProjectResponse["resources"],
-): Partial<Pick<DeploymentConfig, "cloudResourceTier" | "cloudResourceCustom">> {
-  if (!resources) return {};
-  if (resources.tier && resources.tier !== "unlimited") {
-    return { cloudResourceTier: resources.tier };
+  resources: (Partial<ResourceValues> & { tier?: ResourceTier }) | null | undefined,
+): Pick<DeploymentConfig, "cloudResourceTier" | "cloudResourceCustom"> {
+  if (resources?.tier && resources.tier !== "custom") {
+    return { cloudResourceTier: resources.tier, cloudResourceCustom: undefined };
   }
-  if (resources.cpuCores != null || resources.memoryMb != null || resources.diskMb != null) {
-    return {
-      cloudResourceTier: "custom",
-      cloudResourceCustom: {
-        cpuCores: resources.cpuCores ?? 1,
-        memoryMb: resources.memoryMb ?? 1024,
-        diskMb: resources.diskMb ?? 16384,
-      },
-    };
-  }
-  return {};
+  const values = resolveTierResources("custom", resources);
+  const tier = resources?.tier === "custom" ? "custom" : detectTier(values);
+  return {
+    cloudResourceTier: tier,
+    cloudResourceCustom: tier === "custom" ? values : undefined,
+  };
 }
 
 function buildComposeDefaults(
@@ -932,8 +921,11 @@ export function useDeploymentConfig() {
           productionPortTouched: routingState.hasStoredPort,
           lastAutoDetectedEnvPort: null,
           options: runtimeConfig.options,
-          // Declared cloud sizing (openship.json). Absent → keep the default tier.
-          ...resolveCloudResources(response.resources),
+          // Editing an existing project preserves its saved limits. Only a new
+          // project inherits resources declared by its source.
+          ...resolveCloudResources(projectId
+            ? project?.resources?.production ?? project?.resources
+            : response.resources),
         },
         resolvePreparedSingleModeDefaults(
           preparedContext,
@@ -1389,7 +1381,7 @@ export function useDeploymentConfig() {
 
         setConfig((prev) =>
           buildPreparedConfig(
-            seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false),
+            { ...seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false), workspaceId: scan.workspaceId, serverId: scan.serverId },
             {
               response,
               project,
@@ -1474,6 +1466,14 @@ export function useDeploymentConfig() {
         // page. The API already resolves it (`server.name || server.sshHost`).
         const savedServerName =
           typeof project.serverName === "string" && project.serverName ? project.serverName : null;
+        const savedWorkspaceId = typeof project.workspaceId === "string" ? project.workspaceId : undefined;
+        const hasSavedServer = savedTarget === "server" || (savedTarget === "cloud" && !!savedWorkspaceId);
+        const savedPlacement = savedTarget ? {
+          deployTarget: savedTarget,
+          workspaceId: savedWorkspaceId,
+          serverId: hasSavedServer ? savedServerId ?? undefined : undefined,
+          serverName: hasSavedServer ? savedServerName ?? undefined : undefined,
+        } : {};
 
         setConfig((prev) => {
           // Guard: don't let an EMPTY service-row fetch collapse an already-loaded
@@ -1495,14 +1495,7 @@ export function useDeploymentConfig() {
               // stale rows here would turn a later save into unintended upserts.
               envVars: envState.rows,
               projectEnvBaseline: envState.baseline,
-              ...(savedTarget
-                ? {
-                    deployTarget: savedTarget,
-                    serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
-                    serverName:
-                      savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
-                  }
-                : null),
+              ...savedPlacement,
             };
           }
 
@@ -1535,13 +1528,7 @@ export function useDeploymentConfig() {
             // DEFAULT_CONFIG's "cloud" standing. The page's target seeders are gated on
             // this having landed; before it existed they were gated on a comment that
             // claimed it, and a saved project's deploy went out addressed to "cloud".
-            ...(savedTarget
-              ? {
-                  deployTarget: savedTarget,
-                  serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
-                  serverName: savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
-                }
-              : null),
+            ...savedPlacement,
           };
         });
 

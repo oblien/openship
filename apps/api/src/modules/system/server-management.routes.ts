@@ -690,39 +690,9 @@ r.delete(
   tunnels.deleteTunnel,
 );
 
-r.get(
-  "/servers",
-  {
-    tag: "server:list",
-    mcp: {
-      description:
-        "List registered deployment servers accessible to this credential, with server IDs and connection summaries. Use these IDs for infrastructure operations; private-network and compute-cluster IDs are different.",
-    },
-  },
-  serversCtrl.listServers,
-);
-r.get(
-  "/servers/:id",
-  {
-    tag: "server:read",
-    mcp: {
-      description:
-        "Read this registered server’s configuration and current connection summary. Stored SSH secrets are not returned. Use reachability for a fresh connection check.",
-    },
-  },
-  serversCtrl.getServer,
-);
-r.get(
-  "/servers/:id/reachability",
-  {
-    tag: "server:read",
-    mcp: {
-      description:
-        "Probe whether the Openship controller can reach this server now. A controller connection failure is not evidence that deployed applications are down.",
-    },
-  },
-  serversCtrl.probeReachability,
-);
+
+
+
 r.get(
   "/servers/:id/infrastructure",
   {
@@ -765,19 +735,7 @@ r.post(
   },
   serversCtrl.createServer,
 );
-r.patch(
-  "/servers/:id",
-  {
-    tag: "server:write",
-    body: UpdateServerInputSchema,
-    auditHandledByOperation: true,
-    mcp: {
-      description:
-        "Update this registered server’s name or SSH connection settings. Omitted fields are preserved. Check reachability after changing connection settings.",
-    },
-  },
-  serversCtrl.updateServer,
-);
+
 r.delete(
   "/servers/:id",
   {
@@ -794,22 +752,7 @@ r.delete(
 // Host exec. `server:admin` on the id, so a {server,<id>,[admin]} grant confines an
 // agent to this one box — the per-resource scope the jobs-based workaround could not
 // express. MCP-exposed deliberately: this is the sanctioned agent execution point.
-r.post(
-  "/servers/:id/exec",
-  {
-    tag: "server:admin",
-    // Tighter than the default-authed 3000/min: each call opens a pooled SSH
-    // connection and runs an arbitrary command, so the generic read budget is the
-    // wrong shape for it.
-    rateLimit: "write-authed",
-    body: AgentExecBody,
-    mcp: {
-      description:
-        "Run a shell command on this server's host and return its exit code and combined output. Interpreted by `sh -c`, so pipes and redirects work; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Use this to inspect or repair a server; prefer the read-only endpoints when they answer the question.",
-    },
-  },
-  serversCtrl.execOnServer,
-);
+
 
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */
 r.get(
@@ -876,18 +819,6 @@ r.post(
 );
 
 r.post(
-  "/servers/:id/ports/scan",
-  {
-    tag: "server:read",
-    readOnly: true,
-    mcp: {
-      description:
-        "Inspect exposed listening ports on the server. Returns protocol, address, process and known service information without changing listeners.",
-    },
-  },
-  serverCheck.scanExposedPorts,
-);
-r.post(
   "/test-connection",
   {
     tag: "server:write",
@@ -901,23 +832,7 @@ r.post(
   },
   serverCheck.testConnection,
 );
-r.post(
-  "/check",
-  {
-    tag: "server:admin",
-    body: Type.Object(
-      { ...CheckServerInputSchema.properties, serverId: ResourceIdSchema },
-      { additionalProperties: false },
-    ),
-    authorizationHandledByOperation: true,
-    auditHandledByOperation: true,
-    mcp: {
-      description:
-        "Inspect required software and component readiness on body.serverId. Returns missing components and health messages; does not install them.",
-    },
-  },
-  serverCheck.checkServer,
-);
+
 r.post(
   "/install",
   {
@@ -1007,16 +922,7 @@ r.get(
   },
   serverCheck.getInstallSession,
 );
-r.get(
-  "/monitor/stream",
-  {
-    tag: "server:read",
-    authorizationHandledByOperation: true,
-    mcpExcluded:
-      "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
-  },
-  serverCheck.monitorStream,
-);
+
 
 // ── Managed CONTAINER versioning (edge / mail images pinned to APP_VERSION).
 //    Same `:id`-server permission resource + cloud/org guards as modules; apply

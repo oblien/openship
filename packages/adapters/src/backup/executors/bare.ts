@@ -1,7 +1,7 @@
-/** Backup capture and restore on bare SSH hosts using the shared command transport. */
+/** Backup capture and restore for bare applications using the shared command transport. */
 
 import { Readable } from "node:stream";
-import { shellQuote } from "@repo/core";
+import { shellQuote, appVolumeTargets, normalizeAppVolumes } from "@repo/core";
 import { safeDumpCommand } from "../common/dump-pipeline";
 import {
   backupShellCommand,
@@ -20,6 +20,7 @@ import type {
   StreamPathOpts,
 } from "../types";
 import { captureCommandOutput } from "../common/command-stream";
+import { matchBackupSource } from "../common/source-match";
 
 export class BareBackupExecutor implements BackupExecutor {
   readonly runtimeName = "bare" as const;
@@ -30,18 +31,24 @@ export class BareBackupExecutor implements BackupExecutor {
     const exec = this.runtime.commandExecutor;
     if (!exec.rawExec) {
       throw new Error(
-        "BareBackupExecutor requires an SSH executor (rawExec) — a local host can't stream backups over a raw channel.",
+        "Bare backups require a command transport that supports streaming.",
       );
     }
     return exec as typeof exec & { rawExec: NonNullable<typeof exec.rawExec> };
   }
 
   async listSources(service: ServiceHandle): Promise<BackupSource[]> {
-    // Volume strings are bare host paths for a bare source (e.g.
-    // "/var/vmail"). Take the last colon segment defensively in case a
-    // compose-style "name:/path" slipped through.
-    return (service.volumes ?? []).filter(Boolean).map((v) => {
-      const path = v.includes(":") ? (v.split(":").pop() as string) : v;
+    const volumes = normalizeAppVolumes(service.volumes);
+    if (this.runtime.scopedProjectId || appVolumeTargets(volumes).length) {
+      return this.runtime.persistentPaths(service.projectId, volumes).map(path => ({
+        id: path.source, source: path.source, target: path.target, type: "bind" as const,
+      }));
+    }
+    // Host-level sources (for example mail) explicitly name host directories.
+    return service.volumes.filter(Boolean).map(spec => {
+      const body = spec.replace(/:(?:ro|rw|z|Z|nocopy)$/, "");
+      const path = body.includes(":") ? body.slice(body.indexOf(":") + 1) : body;
+      if (!path.startsWith("/") || path.includes(":")) throw new Error("Host backup sources must be absolute paths");
       return { id: path, source: path, target: path, type: "bind" as const };
     });
   }
@@ -66,8 +73,11 @@ export class BareBackupExecutor implements BackupExecutor {
       );
     }
     const compression = opts?.compression ?? "zstd";
+    const source = matchBackupSource(await this.listSources(service), sourceId);
+    if (!source) throw new Error(`Backup source does not belong to service ${service.name}`);
+    await this.assertSource(service, source.source);
     const excludeArgs = (opts?.exclude ?? []).map((p) => `--exclude=${shellQuote(p)}`).join(" ");
-    const tarCmd = `tar ${compression === "gzip" ? "-cz" : "-c"} -C ${shellQuote(sourceId)} ${excludeArgs} .`;
+    const tarCmd = `tar ${compression === "gzip" ? "-cz" : "-c"} -C ${shellQuote(source.source)} ${excludeArgs} .`;
     return this.execStream(
       service,
       safeDumpCommand(tarCmd, compression === "zstd" ? "zstd" : "none"),
@@ -84,9 +94,12 @@ export class BareBackupExecutor implements BackupExecutor {
     body: Readable,
     opts?: ReceiveStreamOpts,
   ): Promise<{ bytesWritten: number }> {
+    const source = matchBackupSource(await this.listSources(service), targetSourceId);
+    if (!source) throw new Error(`Restore target does not belong to service ${service.name}`);
+    await this.assertSource(service, source.source);
     return receiveCommandArchive(
       (cmd, stream, options) => this.pipeIntoCommand(service, cmd, stream, options),
-      targetSourceId,
+      source.source,
       body,
       opts,
     );
@@ -121,17 +134,25 @@ export class BareBackupExecutor implements BackupExecutor {
     );
   }
 
-  // Mail (and other bare) sources are long-lived services we don't cycle
-  // wholesale for a backup — the produce/restore commands handle any
-  // per-daemon reload themselves. Treat lifecycle as no-ops / always-up.
-  async stopService(): Promise<void> {
-    /* no-op: bare services aren't stopped for backup */
+  private async assertSource(service: ServiceHandle, source: string) {
+    if (!this.runtime.scopedProjectId) return;
+    const paths = this.runtime.persistentPaths(service.projectId, normalizeAppVolumes(service.volumes));
+    if (!paths.some(path => path.source === source)) throw new Error("Backup path is outside this project");
+    const resolved = (await this.executor().exec(`readlink -f -- ${shellQuote(source)}`)).trim();
+    if (resolved !== source) throw new Error("Backup path points outside its persistent directory");
   }
-  async startService(): Promise<void> {
-    /* no-op */
+
+  async stopService(service: ServiceHandle): Promise<void> {
+    if (service.containerId) await this.runtime.stop(service.containerId);
   }
-  async isRunning(): Promise<boolean> {
-    return true;
+  async startService(service: ServiceHandle): Promise<void> {
+    if (service.containerId) await this.runtime.start(service.containerId);
+  }
+  async isRunning(service: ServiceHandle): Promise<boolean> {
+    if (service.containerId) return (await this.runtime.getContainerInfo(service.containerId)).status === "running";
+    // Host-level mail producers own their daemon reload. A project without a
+    // saved activation has no running app to stop or restore.
+    return !service.projectId;
   }
 }
 
