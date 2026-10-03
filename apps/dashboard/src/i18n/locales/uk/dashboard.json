@@ -1,0 +1,221 @@
+{
+  "home": {
+    "goodMorning": "Доброго ранку",
+    "goodAfternoon": "Доброго дня",
+    "goodEvening": "Доброго вечора",
+    "subtitle": "Ось що відбувається у ваших проєктах",
+    "statsProjects": "Проєкти",
+    "statsDeployments": "Деплої",
+    "statsSuccessful": "Успішні",
+    "statsFailed": "Невдалі",
+    "recentProjects": "Останні проєкти",
+    "yourLatestActivity": "Ваша остання активність",
+    "viewAll": "Переглянути всі",
+    "noProjectsYet": "Поки що немає проєктів",
+    "createFirstProject": "Створіть свій перший проєкт",
+    "justNow": "щойно",
+    "minutesAgo": "{n} хв тому",
+    "hoursAgo": "{n} год тому",
+    "daysAgo": "{n} дн тому",
+    "monthsAgo": "{n} міс тому",
+    "statusLive": "Активний",
+    "statusPaused": "Призупинено",
+    "yourProjects": "Ваші проєкти",
+    "loading": "Завантаження...",
+    "projectCountOne": "{count} проєкт",
+    "projectCountOther": "{count} проєктів",
+    "viewAllProjects": "Переглянути всі проєкти ({count}) →",
+    "viewAllApps": "Переглянути всі застосунки ({count}) →",
+    "greetingName": "{greeting}, {name}",
+    "importGit": "Імпорт з Git",
+    "importGitDesc": "З репозиторію",
+    "mcpDeploy": "MCP-деплой",
+    "mcpDeployDesc": "Підключити AI-агента",
+    "settingsCard": "Налаштування",
+    "settingsCardDesc": "Акаунт і команда",
+    "docs": "Документація",
+    "docsDesc": "Дізнатися більше",
+    "activityTitle": "Активність",
+    "systemStatus": "Стан системи",
+    "operational": "Працює справно",
+    "oneIssue": "1 проблема",
+    "manyIssues": "{n} проблем(и)",
+    "recentTitle": "Нещодавні",
+    "activityEmpty": "Тут з'являтиметься ваша активність",
+    "appsEmptyTitle": "Поки що немає застосунків",
+    "appsEmptyDesc": "Один клік — і повністю самостійний хостинг: бази даних, автоматизація, аналітика, менеджери паролів та інше, що працює на ваших власних серверах.",
+    "allSystemsOperational": "Усі системи працюють справно",
+    "runningSmoothly": "Ваші проєкти працюють без збоїв",
+    "time": {
+      "justNow": "щойно",
+      "minutes": "{n} хв тому",
+      "hours": "{n} год тому",
+      "days": "{n} дн тому",
+      "months": "{n} міс тому"
+    }
+  },
+  "nav": {
+    "home": "Головна",
+    "new-project": "Новий проєкт",
+    "projects": "Проєкти",
+    "apps": "Застосунки",
+    "deployments": "Деплої",
+    "issues": "Моніторинг",
+    "backups": "Резервні копії",
+    "domains": "Домени",
+    "monitoring": "Моніторинг",
+    "servers": "Сервери",
+    "emails": "Пошта",
+    "jobs": "Завдання",
+    "settings": "Налаштування",
+    "billing": "Оплата та використання",
+    "audit": "Журнал аудиту",
+    "mailSetup": "Налаштувати пошту",
+    "mailSetupProgress": "Прогрес налаштування",
+    "addMailbox": "Додати поштову скриньку",
+    "webmail": "Вебпошта",
+    "sections": {
+      "main": "Основне",
+      "settings": "Налаштування",
+      "infrastructure": "Інфраструктура",
+      "mail": "Пошта",
+      "delivery": "Доставка",
+      "system": "Система",
+      "account": "Акаунт"
+    }
+  },
+  "sidebar": {
+    "expand": "Розгорнути бічну панель",
+    "collapse": "Згорнути бічну панель"
+  },
+  "user": {
+    "logout": "Вийти",
+    "loggingOut": "Виходимо…",
+    "profile": "Профіль",
+    "preferences": "Налаштування"
+  },
+  "pages": {
+    "apps": {
+      "title": "Застосунки",
+      "description": "Керовані сервіси в один клік — встановлюйте та запускайте Convex, WordPress, пошту та інше.",
+      "createButton": "Встановити застосунок",
+      "loading": "Завантаження застосунків…",
+      "countOne": "Встановлено {count} застосунок",
+      "countOther": "Встановлено {count} застосунків",
+      "emptyTitle": "Встановіть свій перший застосунок",
+      "emptyDescription": "Розгортайте Convex, n8n, Ghost та інше — в один клік, повністю на власному хостингу. Оберіть, з чого почати.",
+      "popular": "Популярні застосунки",
+      "alsoDeploy": "Ви також можете розгорнути",
+      "browseAll": "Переглянути всі застосунки",
+      "moreApps": "ще {count}",
+      "catalogTitle": "Встановити застосунок",
+      "catalogDescription": "Керовані сервіси в один клік. Оберіть один, щоб встановити його як застосунок.",
+      "catalogSearchPlaceholder": "Пошук застосунків…",
+      "catalogNoResults": "За вашим запитом застосунків не знайдено.",
+      "categories": {
+        "all": "Усі",
+        "backend": "Бекенд",
+        "database": "База даних",
+        "cms": "CMS",
+        "analytics": "Аналітика",
+        "automation": "Автоматизація",
+        "mail": "Пошта",
+        "other": "Інструменти"
+      },
+      "installing": "Встановлення…",
+      "install": "Встановити",
+      "cancel": "Скасувати",
+      "nameLabel": "Назва",
+      "configTitle": "Налаштування {app}",
+      "comingSoon": "Скоро"
+    },
+    "projects": {
+      "title": "Проєкти",
+      "description": "Розгортайте та керуйте своїми застосунками легко",
+      "createButton": "Створити проєкт",
+      "stats": {
+        "totalProjects": "Усього проєктів",
+        "liveNow": "Активні зараз",
+        "avgPerDay": "У середньому на день",
+        "successRate": "Відсоток успіху"
+      },
+      "searchPlaceholder": "Пошук проєктів...",
+      "pinnedProjects": "Закріплені проєкти",
+      "otherProjects": "Інші проєкти",
+      "noResultsFound": "Проєктів за запитом \"{query}\" не знайдено",
+      "emptyState": {
+        "title": "Почніть свій перший проєкт",
+        "description": "Імпортуйте Git-репозиторій, скористайтеся шаблоном або розгортайте через CLI. Ваші проєкти з'являться тут.",
+        "createProject": "Створити проєкт",
+        "browseTemplates": "Переглянути шаблони",
+        "zeroConfig": "Розгортання без налаштувань",
+        "instant": "Миттєво",
+        "instantDesc": "Розгортання за секунди",
+        "global": "Глобально",
+        "globalDesc": "100+ регіонів на межі мережі",
+        "previews": "Прев'ю",
+        "previewsDesc": "URL для кожної гілки",
+        "rollbacks": "Відкати",
+        "rollbacksDesc": "Повернення в один клік",
+        "commandPalette": "Або натисніть {key}, щоб відкрити палітру команд"
+      },
+      "view": {
+        "label": "Вигляд",
+        "list": "Список",
+        "grid": "Сітка"
+      }
+    },
+    "deployments": {
+      "title": "Деплої",
+      "description": "Переглядайте історію деплоїв і керуйте нею."
+    },
+    "domains": {
+      "title": "Домени",
+      "description": "Керуйте власними доменами та DNS-записами."
+    },
+    "monitoring": {
+      "title": "Моніторинг",
+      "description": "Логи, метрики та перевірки стану ваших сервісів."
+    },
+    "servers": {
+      "title": "Сервери",
+      "description": "Керуйте своїми серверами для розгортання та інфраструктурою."
+    },
+    "settings": {
+      "title": "Налаштування",
+      "description": "Акаунт, команда та налаштування платформи."
+    },
+    "billing": {
+      "title": "Оплата та використання",
+      "description": "Керуйте підпискою, використанням і способами оплати."
+    }
+  },
+  "quickLinks": {
+    "title": "Швидкі дії",
+    "subtitle": "Перейдіть до типових завдань",
+    "deployProject": {
+      "title": "Розгорнути проєкт",
+      "description": "Імпорт із Git"
+    },
+    "projects": {
+      "title": "Проєкти",
+      "description": "Усі проєкти"
+    },
+    "deployments": {
+      "title": "Деплої",
+      "description": "Історія збірок"
+    },
+    "settings": {
+      "title": "Налаштування",
+      "description": "Керування доступом"
+    },
+    "domains": {
+      "title": "Домени",
+      "description": "Власні домени"
+    },
+    "billing": {
+      "title": "Оплата та використання",
+      "description": "Використання і тарифи"
+    }
+  }
+}
