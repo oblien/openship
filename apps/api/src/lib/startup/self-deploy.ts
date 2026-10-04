@@ -454,6 +454,7 @@ export function registerSelfAdoptReconcile(): void {
     id: "self-app:reconcile",
     modes: ["desktop", "selfhosted"],
     run: async () => {
+      if (env.OPENSHIP_REMOTE_ONLY) return;
       const project = await findSelfAppProject();
       if (!project) return;
 

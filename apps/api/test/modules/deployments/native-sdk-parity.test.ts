@@ -86,6 +86,7 @@ const h = vi.hoisted(() => ({
   tunnelUpsert: vi.fn(), tunnelRemove: vi.fn(), tunnelForward: vi.fn(), tunnelClose: vi.fn(),
   env: {
     CLOUD_MODE: false, DEPLOY_MODE: "docker", BETTER_AUTH_SECRET: "server-parity-test-encryption-secret-32-bytes",
+    OPENSHIP_REMOTE_ONLY: false,
     OPENSHIP_PRODUCT: "platform", OPENSHIP_AUTH_MODE: undefined as string | undefined, OPENSHIP_ALLOW_ZERO_AUTH: false,
   },
 }));
@@ -1039,6 +1040,7 @@ beforeEach(() => {
   clearBoxOwningOrgCache();
   configureNativeSourceRoots([]);
   h.env.CLOUD_MODE = false;
+  h.env.OPENSHIP_REMOTE_ONLY = false;
   h.env.DEPLOY_MODE = "docker";
   h.env.OPENSHIP_AUTH_MODE = undefined;
   h.env.OPENSHIP_ALLOW_ZERO_AUTH = false;
@@ -2410,6 +2412,19 @@ describe("HTTP/native system parity", () => {
       const { setHostControlOverride } = await import("@repo/adapters");
       setHostControlOverride(null);
     }
+  });
+
+  it("refuses to re-enable host control on a remote-only installation through HTTP or the native SDK", async () => {
+    h.env.OPENSHIP_REMOTE_ONLY = true;
+    h.instanceRoles.set("alice", "admin");
+    h.members.set("org_founder:alice", { id: "founder-membership", role: "owner" });
+    h.settings = { hostControlEnabled: true };
+    const local = await native("org_founder");
+    for (const system of [local.system, remote("org_founder").system]) {
+      expect(await system.getSettings()).toMatchObject({ hostControlEffective: false });
+      await expect(system.updateSettings({ hostControl: true, productMode: "mail" })).rejects.toMatchObject({ statusCode: 400, code: "INVALID_INSTANCE_SETTINGS" });
+    }
+    expect(h.settingsUpsert).not.toHaveBeenCalled();
   });
 
   it("clears settings caches on reset and deletes only the caller's server records", async () => {

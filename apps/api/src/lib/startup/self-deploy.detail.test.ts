@@ -45,6 +45,7 @@ vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
 }));
 vi.mock("@repo/db", () => ({
   repos: {
+    settings: { listCloudLinkedOrgIds: vi.fn(async () => []) },
     project: { findById: async () => h.project },
     domain: { findByHostname: async () => null },
   },
@@ -53,7 +54,10 @@ vi.mock("@repo/db", () => ({
   eq: vi.fn(),
 }));
 
-import { provisionSelfAppEdge, type SelfEdgeStepProgress } from "./self-deploy";
+import { provisionSelfAppEdge, registerSelfAdoptReconcile, type SelfEdgeStepProgress } from "./self-deploy";
+import { registerStartupHook } from "@repo/platform/engine/lib/startup/index";
+import { env } from "@repo/platform/engine/config/env";
+import { repos } from "@repo/db";
 import {
   createSetupSession,
   updateComponentProgress,
@@ -82,6 +86,21 @@ beforeEach(() => {
 const SUSE = "Openship has no package manager for openSUSE (distro family suse).";
 
 describe("provisionSelfAppEdge failure detail", () => {
+  it("remote-only startup skips self-adoption and local edge recovery", async () => {
+    registerSelfAdoptReconcile();
+    const hook = vi.mocked(registerStartupHook).mock.calls[0]![0];
+    expect(hook.id).toBe("self-app:reconcile");
+    const previous = env.OPENSHIP_REMOTE_ONLY;
+    env.OPENSHIP_REMOTE_ONLY = true;
+    try {
+      await hook.run();
+      expect(repos.settings.listCloudLinkedOrgIds).not.toHaveBeenCalled();
+      expect(h.reapply).not.toHaveBeenCalled();
+    } finally {
+      env.OPENSHIP_REMOTE_ONLY = previous;
+    }
+  });
+
   it("returns the infra layer's diagnosis alongside the code, and only when there is one", async () => {
     h.infra = { ok: false, reason: "unsupported_host", detail: SUSE };
     expect(await provisionSelfAppEdge("p1", "app.example.com", 3001, {})).toEqual({

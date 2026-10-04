@@ -183,6 +183,10 @@ The API mounts the host Docker socket so it can build and run your deployed apps
 
 When it's up, open the dashboard at `http://localhost:3001`.
 
+For a control plane that manages **remote servers only**, use the
+[remote-only Compose overlay](/docs/security/control-plane#install-a-remote-only-control-plane).
+It removes API host mounts and socket access and requires your own reverse proxy.
+
 <Callout title="Pull-based — pin a version" type="info">
 The stack pulls published images (`ghcr.io/oblien/*`), so it comes up without a build. Pin `OPENSHIP_VERSION`
 in `.env` (e.g. `0.2.3`) for reproducible upgrades, then

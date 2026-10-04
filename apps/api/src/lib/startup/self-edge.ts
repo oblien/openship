@@ -68,6 +68,13 @@ export function ensureSelfEdgeInfra(
   progress?: SelfEdgeInfraProgress,
   options?: SelfEdgeOptions,
 ): Promise<SelfEdgeInfraResult> {
+  if (env.OPENSHIP_REMOTE_ONLY) {
+    return Promise.resolve({
+      ok: false,
+      reason: "remote_only",
+      detail: "This control plane manages remote servers only. Configure its public URL on your external reverse proxy.",
+    });
+  }
   if (inFlight) return inFlight;
   inFlight = runEnsure(progress, options).finally(() => {
     inFlight = null;

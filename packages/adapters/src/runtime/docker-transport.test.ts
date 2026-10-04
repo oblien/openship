@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DockerRuntime, type DockerConnectionOptions } from "./docker";
 import {
   clearDockerContextCache,
   DEFAULT_DOCKER_SOCKET_PATH,
@@ -37,6 +38,28 @@ function dockerConfigDir(
 }
 
 beforeEach(() => clearDockerContextCache());
+afterEach(() => vi.unstubAllEnvs());
+
+// Inspect selection without opening a network connection to the remote host.
+class UnconnectedDockerRuntime extends DockerRuntime {
+  constructor(options?: DockerConnectionOptions) { super(options); }
+}
+
+describe("remote-only Docker runtime", () => {
+  it("rejects every local socket entry point, including a rootless socket or an inherited Docker context", () => {
+    vi.stubEnv("OPENSHIP_REMOTE_ONLY", "true");
+    vi.stubEnv("DOCKER_HOST", "unix:///run/user/1000/docker.sock");
+    for (const options of [undefined, {}, { transport: "socket" as const }, { dockerSocketPath: "/run/other.sock" }]) {
+      expect(() => new UnconnectedDockerRuntime(options)).toThrow(/remote servers only/);
+    }
+  });
+
+  it("keeps SSH transport available for a connected remote server", () => {
+    vi.stubEnv("OPENSHIP_REMOTE_ONLY", "true");
+    const runtime = new UnconnectedDockerRuntime({ transport: "ssh", host: "remote.example.test", privateKey: "test-key" });
+    expect(runtime.transport.kind).toBe("ssh");
+  });
+});
 
 describe("resolveLocalDockerSocketPath", () => {
   it("prefers an explicit dockerSocketPath over everything", () => {

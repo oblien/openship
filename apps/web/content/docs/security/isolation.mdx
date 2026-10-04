@@ -7,6 +7,10 @@ Think of your Openship server like an apartment building. Every app you deploy g
 
 ## Scoping comes first
 
+This page describes workload isolation. The self-hosted API itself is trusted to manage its host;
+its Docker socket can grant host-root access. See the [control-plane trust model](/docs/security/control-plane)
+for that boundary and the remote-only installation option.
+
 Before anything runs, access is decided by **organization** (a workspace that owns projects) and **project**. Every API request passes through one permission check, and an organization id from the client is only trusted if you're actually a member. So one team can never list, deploy, or tear down another team's projects. That control-plane boundary is covered in the [permission model](/docs/security/permissions); the rest of this page is about the walls between apps *at runtime*, once a deploy is live.
 
 Everything Openship creates on a host is stamped with the project and deployment it belongs to, using Docker **labels** (key/value tags attached to a container):

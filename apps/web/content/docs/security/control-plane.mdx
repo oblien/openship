@@ -1,0 +1,140 @@
+---
+title: Control-plane trust model
+description: Host privileges, remote-only self-hosting, stored secrets, and responsibility for security updates.
+---
+
+The Openship control plane is trusted infrastructure. In the standard self-hosted installation,
+the API manages Docker on its host. Access to a **rootful Docker socket is effectively host-root
+access**: a compromised API could ask Docker to mount the host filesystem or start a privileged
+container. Workload containers and organization permissions do not isolate the host from the API itself.
+
+This describes a trust boundary, not evidence of an exploitable vulnerability. An advisory affecting
+a dependency does not, by itself, establish that Openship uses the affected feature or is vulnerable.
+
+## Choose the host boundary
+
+| Installation                       | API access to its host                                                                                                 | Workload targets                                  |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Standard self-hosted Compose / CLI | Docker socket and shared routing, certificate, and static-file mounts; CLI also provisions host SSH                    | This host and connected servers                   |
+| CLI with `--no-host-control`       | Docker socket and shared mounts remain; host SSH operations are disabled                                               | Local Docker remains available; connected servers |
+| Remote-only Compose overlay        | No API volume mounts, host SSH key, or host-gateway alias; all Linux capabilities dropped; `no-new-privileges` enabled | Connected remote servers                          |
+| Openship Cloud SaaS control plane  | Separate Compose stack with no local Docker socket or edge; local workload builds denied                               | Managed cloud infrastructure                      |
+
+`--no-host-control` is an operational setting, not a sandbox. Settings can re-enable it.
+The remote-only overlay also sets `OPENSHIP_REMOTE_ONLY=true`, which makes local deployments,
+local Docker access, local routing, and host-control enables refuse explicitly. Remote servers use
+the same SSH, deployment, edge, and certificate providers as other self-hosted installations.
+Existing Cloud connections remain available, but builds must run remotely, not on the API host.
+
+The container settings provide the host boundary. **Setting the environment flag alone does not
+remove any privileges or mounts.** Keep the overlay on every Compose operation. Adding host mounts,
+a Docker socket, or host credentials restores the corresponding access.
+
+## Install a remote-only control plane
+
+Use this for a **fresh installation** on a dedicated control-plane host. Docker Compose **2.24.4 or
+newer** is required for the volume-list reset. Before converting an existing installation, migrate its
+local workloads and arrange an external reverse proxy; removing local access strands local workloads
+and prevents Openship from managing its old edge. The overlay does not perform that migration.
+
+1. Clone the repository and copy `.env.example` to `.env` as described in
+   [Installation](/docs/getting-started/installation). Generate separate random values for
+   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, and `INTERNAL_TOKEN`. Protect `.env` and its backups.
+2. Set `OPENSHIP_PUBLIC_URL=https://openship.example.com` to the dashboard's actual origin.
+   Configure your existing reverse proxy to send that origin to the dashboard on `127.0.0.1:3001`.
+   Set `TRUST_PROXY=true` only behind a proxy you control that overwrites forwarded client headers.
+   The API stays on loopback `:4000`; the dashboard proxies browser API requests.
+3. Use Compose files and API/dashboard images from the **same release supporting this mode**.
+   Pin `OPENSHIP_VERSION` in `.env`, then start both files together:
+
+```bash
+docker compose --env-file .env \
+  -f docker/docker-compose.yml -f docker/docker-compose.remote.yml up -d --wait
+```
+
+For an unreleased source checkout, build the matching images instead of using older published ones:
+
+```bash
+docker compose --env-file .env \
+  -f docker/docker-compose.yml -f docker/docker-compose.build.yml \
+  -f docker/docker-compose.remote.yml up -d --build --wait
+```
+
+The active services are Postgres, Redis, API, and dashboard. The bundled local edge is excluded;
+your external proxy owns this control plane's TLS. Remote workload edges remain managed by Openship.
+Keep the default loopback port bindings unless your proxy requires a different, firewalled interface.
+
+### Create the first administrator
+
+The Compose path requires a real admin account. Create a private `admin.json` file containing your
+chosen name, email, and a unique password (8–128 characters), then restrict it with `chmod 600 admin.json`:
+
+```json
+{
+  "name": "Your name",
+  "email": "you@example.com",
+  "password": "replace-with-your-own-unique-password"
+}
+```
+
+Call the existing one-time bootstrap endpoint from inside the API container. Its internal token stays
+inside the container; the command reads your account details from the file:
+
+```bash
+docker compose --env-file .env \
+  -f docker/docker-compose.yml -f docker/docker-compose.remote.yml exec -T api bun -e '
+const response = await fetch("http://127.0.0.1:" + process.env.PORT + "/api/system/bootstrap-admin", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-Internal-Token": process.env.INTERNAL_TOKEN },
+  body: await Bun.stdin.text(),
+});
+console.log(await response.json());
+if (!response.ok) process.exit(1);
+' < admin.json
+```
+
+Delete `admin.json` after success. Sign in at your dashboard URL and connect a remote server.
+There is no **This Server** deploy target. The bootstrap endpoint refuses another admin creation once
+the founding admin exists. Do not use `openship up` to configure this stack: the CLI generates its own
+host-managed stack and does not preserve this overlay.
+
+## Secrets and remote credentials
+
+Stored workload secrets use authenticated encryption with a key derived from `BETTER_AUTH_SECRET`.
+This protects encrypted fields in a stolen database or database-only backup when the instance secret
+is absent. It does **not** protect those secrets from an attacker controlling the API process: the API
+has database access and can decrypt them. A backup containing both the database and `.env` has both.
+
+Remote-only mode retains this trust model for data and remote credentials. Compromising its API may
+expose connected servers to the privileges of their SSH credentials. Use a dedicated control-plane
+host, restrict host management ports, and do not register that same host with privileged credentials
+if you intend to keep it separate. Removing the host-gateway alias is not a network firewall.
+
+Changing the authentication secret without re-encrypting stored data is not a safe key rotation.
+Keep the instance secret with your protected recovery material. A separate workload-key migration or
+an external secret service would be additional work; this mode does not move decryption out of the API.
+
+## Security updates
+
+Self-hosted control-plane updates require operator action. Even `OPENSHIP_VERSION=latest` does not
+replace an already running container. Follow releases and apply security updates promptly.
+For this remote-only stack, update the pinned version and matching files, then run:
+
+```bash
+docker compose --env-file .env \
+  -f docker/docker-compose.yml -f docker/docker-compose.remote.yml pull
+docker compose --env-file .env \
+  -f docker/docker-compose.yml -f docker/docker-compose.remote.yml up -d --wait
+```
+
+Keep the same Compose project name and data volumes across updates. Source-built installations use
+the three-file build command above. Keep a database backup and the matching protected `.env` before
+an upgrade; rolling an image back alone may not reverse a database migration.
+
+The infrastructure auto-update setting covers managed infrastructure such as edge/mail images, not
+the API control plane. Desktop automatic updates are a separate mechanism. See
+[Updating Openship](/docs/guides/updating) for the existing update paths.
+
+A restricted host-side executor that supports local management without the full Docker API,
+workload-side secret decryption, and automatic control-plane security updates with health checks and
+rollback are separate architectural changes. The standard host-managed installation remains privileged.

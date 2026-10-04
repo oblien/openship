@@ -6,4 +6,5 @@ RUN apk add --no-cache openssh-server openssl curl && \
 COPY start.sh /usr/local/bin/migration-target
 RUN chmod +x /usr/local/bin/migration-target
 EXPOSE 22
-ENTRYPOINT ["/usr/local/bin/migration-target"]
+# Prepare nested cgroups with the image's own wrapper before either daemon starts.
+ENTRYPOINT ["/usr/local/bin/dind", "/usr/local/bin/migration-target"]

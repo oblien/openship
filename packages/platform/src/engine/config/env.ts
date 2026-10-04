@@ -204,6 +204,8 @@ const envSchema = z.object({
    *   - "desktop"           → Bare runtime, no routing/SSL (desktop app)
    */
   DEPLOY_MODE: z.enum(["docker", "bare", "cloud", "desktop"]).default("docker"),
+  /** Socket-free control plane. Set by the remote-only Compose overlay, not by Settings. */
+  OPENSHIP_REMOTE_ONLY: envBool("false"),
   /**
    * Which PRODUCT this instance presents itself as — the INSTANCE DEFAULT, which
    * `instance_settings.product_mode` may override (so an operator can flip it

@@ -52,11 +52,13 @@ vi.mock("@repo/platform/engine/lib/deliver-managed-image", () => ({
 }));
 
 import { ensureSelfEdgeInfra } from "./self-edge";
+import { env } from "@repo/platform/engine/config/env";
 
 const origPlatform = Object.getOwnPropertyDescriptor(process, "platform");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  env.OPENSHIP_REMOTE_ONLY = false;
   Object.defineProperty(process, "platform", { value: "linux", configurable: true });
   // No `process.getuid` stub: privilege comes from the resolver now, so root-ness is a
   // property of `h.host` (the base fixture is a root box).
@@ -78,10 +80,19 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  env.OPENSHIP_REMOTE_ONLY = false;
   if (origPlatform) Object.defineProperty(process, "platform", origPlatform);
 });
 
 describe("ensureSelfEdgeInfra — halt + report", () => {
+  it("remote-only refuses even an explicitly authorized local edge takeover", async () => {
+    env.OPENSHIP_REMOTE_ONLY = true;
+    expect(await ensureSelfEdgeInfra(undefined, { edgeTakeover: true, edgeMigrate: true })).toMatchObject({ ok: false, reason: "remote_only" });
+    expect(h.foreignProxyOnEdge).not.toHaveBeenCalled();
+    expect(h.runEdgeTakeover).not.toHaveBeenCalled();
+    expect(h.ensureFeature).not.toHaveBeenCalled();
+  });
+
   it("occupied edge, no consent → { ok:false, reason:'edge_conflict' } and does NOT install", async () => {
     const res = await ensureSelfEdgeInfra();
     expect(res.ok).toBe(false);

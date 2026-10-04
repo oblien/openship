@@ -1,4 +1,4 @@
 {
   "title": "Security",
-  "pages": ["permissions", "isolation", "cloud-boundary", "auth"]
+  "pages": ["permissions", "isolation", "control-plane", "cloud-boundary", "auth"]
 }

@@ -39,6 +39,7 @@ vi.mock("./reachability", async (importOriginal) => ({
 vi.mock("./ssh-client", () => ({ connectSshClient: net.connect }));
 
 const ENV_KEYS = [
+  "OPENSHIP_REMOTE_ONLY",
   "OPENSHIP_HOST_CONTROL",
   "OPENSHIP_HOST_SSH_HOST",
   "OPENSHIP_HOST_SSH_KEY",
@@ -82,6 +83,22 @@ async function throwFrom(): Promise<unknown> {
 }
 
 describe("createHostExecutor", () => {
+  it.each(["true", "1"])("remote-only=%s cannot be overridden by Settings or a configured host channel", async (value) => {
+    clearEnv();
+    process.env.OPENSHIP_REMOTE_ONLY = value;
+    process.env.OPENSHIP_HOST_CONTROL = "true";
+    process.env.OPENSHIP_HOST_SSH_HOST = "host.docker.internal";
+    const { createHostExecutor, hostControlDisabled, hostChannelHealth, setHostControlOverride } = await load();
+    net.probe.mockClear();
+    net.connect.mockClear();
+    setHostControlOverride(false);
+    expect(hostControlDisabled()).toBe(true);
+    expect(() => createHostExecutor()).toThrow(/remote servers only/);
+    expect(await hostChannelHealth()).toMatchObject({ ok: false, code: "disabled", hint: expect.stringContaining("remote servers only") });
+    expect(net.probe).not.toHaveBeenCalled();
+    expect(net.connect).not.toHaveBeenCalled();
+  });
+
   it("bare install (not containerized, no host channel) → LocalExecutor IS the host", async () => {
     clearEnv();
     const { createHostExecutor } = await load();

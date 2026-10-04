@@ -576,6 +576,7 @@ export {
   resetPlatform,
   sharedMountExecutor,
 } from "./platform";
+export { REMOTE_ONLY_MESSAGE } from "./remote-only";
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
 export { Oblien, cloudWorkspaceCreationFailure } from "./oblien";
