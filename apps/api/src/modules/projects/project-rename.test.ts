@@ -67,13 +67,16 @@ const h = vi.hoisted(() => ({
     projectFields: Record<string, unknown>;
     groupFields: Record<string, unknown>;
   }>,
-  ensureSharedWebhook: vi.fn(async () => null as number | null),
-  webhookStrategy: "none" as "none" | "app",
+  ensureSharedWebhook: vi.fn(
+    async (_ctx: unknown, _project: { gitProvider?: string | null }) => null as number | null,
+  ),
+  webhookStrategy: "none" as "none" | "app" | "domain" | "repo",
   authInstallationId: undefined as number | undefined,
   resolveInstallUrl: vi.fn(async () => ({
     url: "https://github.com/apps/operator-app/installations/new?state=workspace-nonce",
     state: "workspace-nonce",
   })),
+  repositoryCloneUrl: "https://github.com/acme/source-app.git",
 }));
 
 vi.mock("@repo/db", () => ({
@@ -141,7 +144,12 @@ vi.mock("../../lib/controller-helpers", () => ({
   platform: () => ({ runtime: { name: "docker" } }),
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
-  resolveDefaultBranch: async () => "main",
+  getRepository: async (_ctx: unknown, owner: string, repo: string) => ({
+    name: repo,
+    owner,
+    default_branch: "main",
+    clone_url: h.repositoryCloneUrl,
+  }),
   listBranches: async () => [],
   getLatestCommit: async () => null,
   resolveWebhookStrategy: async () => h.webhookStrategy,
@@ -178,6 +186,7 @@ describe("project rename — the slug is immutable", () => {
     h.bySlug = {};
     h.projectUpdates = [];
     h.groupUpdates = [];
+    h.repositoryCloneUrl = "https://github.com/acme/source-app.git";
     h.routeSyncs = [];
     h.webhookStrategy = "none";
     h.authInstallationId = undefined;
@@ -271,6 +280,7 @@ describe("project source transitions", () => {
     h.sourceUpdates = [];
     h.project.deletionInProgress = false;
     h.webhookStrategy = "none";
+    h.ensureSharedWebhook.mockReset().mockResolvedValue(null);
     h.authInstallationId = undefined;
     h.resolveInstallUrl.mockClear();
     Object.assign(h.project, {
@@ -486,6 +496,53 @@ describe("project source transitions", () => {
     expect(fields).not.toHaveProperty("startCommand");
   });
 
+  it("stores the provider-returned clone URL instead of rebuilding github.com", async () => {
+    h.repositoryCloneUrl = "https://github.enterprise.test/acme/source-app.git";
+    const { linkProjectRepo } = await load();
+
+    await linkProjectRepo({ userId: "user_1", organizationId: "org_1" } as never, "proj_1", {
+      owner: "acme",
+      repo: "source-app",
+      branch: "main",
+    });
+
+    expect(h.sourceUpdates[0]?.projectFields).toMatchObject({
+      gitProvider: "github",
+      gitUrl: "https://github.enterprise.test/acme/source-app.git",
+    });
+  });
+
+  it("registers the webhook with the provider being linked, not the project's old source", async () => {
+    Object.assign(h.project, {
+      gitProvider: "upload",
+      gitOwner: null,
+      gitRepo: null,
+      gitUrl: null,
+      webhookId: null,
+      autoDeploy: false,
+    });
+    h.webhookStrategy = "repo";
+    h.ensureSharedWebhook.mockImplementation(async (_ctx, project) =>
+      project.gitProvider === "github" ? 321 : null,
+    );
+    const { linkProjectRepo } = await load();
+
+    await expect(
+      linkProjectRepo({ userId: "user_1", organizationId: "org_1" } as never, "proj_1", {
+        owner: "acme",
+        repo: "source-app",
+        branch: "main",
+        gitProvider: "github",
+      }),
+    ).resolves.toMatchObject({ ok: true, strategy: "repo", autoDeploy: true });
+
+    expect(h.sourceUpdates[0]?.projectFields).toMatchObject({
+      gitProvider: "github",
+      webhookId: 321,
+      autoDeploy: true,
+    });
+  });
+
   it("does not register a webhook or repoint source after deletion claims the project", async () => {
     h.project.deletionInProgress = true;
     const { linkProjectRepo } = await load();
@@ -520,8 +577,8 @@ describe("project source transitions", () => {
       installUrl: "https://github.com/apps/operator-app/installations/new?state=workspace-nonce",
     });
     expect(h.resolveInstallUrl).toHaveBeenCalledWith(expect.objectContaining({
-      userId: "user_1",
-      organizationId: "org_1",
+        userId: "user_1",
+        organizationId: "org_1",
     }));
     expect(h.sourceUpdates).toEqual([]);
   });

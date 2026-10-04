@@ -10,11 +10,24 @@ export const SOURCE_PROVIDERS = [
   "github",
   "gitlab",
   "bitbucket",
+  "self-hosted",
   "local",
   "upload",
   "release",
 ] as const;
 export type SourceProvider = (typeof SOURCE_PROVIDERS)[number];
+
+/** Providers backed by a remote Git/VCS strategy. */
+export const VCS_PROVIDERS = ["github", "gitlab", "self-hosted"] as const;
+export type VcsProvider = (typeof VCS_PROVIDERS)[number];
+
+export function isSourceProvider(value: unknown): value is SourceProvider {
+  return SOURCE_PROVIDERS.includes(value as SourceProvider);
+}
+
+export function isVcsProvider(value: unknown): value is VcsProvider {
+  return VCS_PROVIDERS.includes(value as VcsProvider);
+}
 
 /** True for a release source (no clone/build — deploy an archive or container image). */
 export function isReleaseProvider(gitProvider: string | null | undefined): boolean {

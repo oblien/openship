@@ -4,7 +4,7 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import { CreateDeploymentSchema } from "./deployments";
-import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
+import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN, VcsProviderEnum } from "./project-inputs";
 import { SourceScanOptionsSchema } from "./env-reveal";
 import { ListDeploymentsSchema } from "./deployment-resources";
 
@@ -186,6 +186,7 @@ export const PrepareDeployBody = Type.Object({
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
+  provider: Type.Optional(VcsProviderEnum({ default: "github" })),
   owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
   repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
   branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),

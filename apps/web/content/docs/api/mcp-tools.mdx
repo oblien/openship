@@ -795,7 +795,19 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/tokens/mcp-clients` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `DELETE /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
-| `POST /api/webhooks/:provider` | Provider webhook (GitHub) - HMAC/signature verified in handler |
+| `GET /api/vcs/:provider/orgs/:org/repos` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/branches` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/clone-token` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/detect` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/file` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/files` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/tree` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `DELETE /api/vcs/:provider/repos/:owner/:repo/webhooks` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `GET /api/vcs/:provider/repos/:owner/:repo/webhooks` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `POST /api/vcs/:provider/repos/:owner/:repo/webhooks` | Provider-neutral repository transport used by the dashboard and deployment internals; MCP continues to use the existing permission-scoped GitHub tools until provider-aware grants are implemented. |
+| `POST /api/webhooks/:provider` | Provider webhook - HMAC/signature verified in handler |
 | `POST /api/webhooks/backup` | Backup webhook - bearer token in Authorization header is the credential |
 | `POST /api/webhooks/incoming/:id` | Incoming webhook - per-hook token/HMAC/none credential verified in handler |
 | `GET /auth/callback/close` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |

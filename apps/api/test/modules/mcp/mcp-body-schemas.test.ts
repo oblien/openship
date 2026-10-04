@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
-import { SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "@repo/contracts";
+import { CreateProjectBody, SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "@repo/contracts";
 import { CreateChannelBody, UpsertSubscriptionBody } from "@repo/contracts";
 import { CreateConnectionBody, CreateBundleBody } from "@repo/contracts";
 import { PrepareDeployBody, BuildRespondBody } from "@repo/contracts";
@@ -26,9 +26,25 @@ describe("MCP write-tool body schemas", () => {
 
   it("LinkRepoBody: owner+repo required, branch/installationId optional", () => {
     expect(ok(LinkRepoBody, { owner: "acme", repo: "web" })).toBe(true);
-    expect(ok(LinkRepoBody, { owner: "acme", repo: "web", branch: "main", installationId: 42 })).toBe(true);
+    expect(
+      ok(LinkRepoBody, {
+        owner: "acme",
+        repo: "web",
+        branch: "main",
+        installationId: 42,
+        gitProvider: "gitlab",
+        gitUrl: "https://gitlab.example/acme/web.git",
+      }),
+    ).toBe(true);
     expect(ok(LinkRepoBody, { owner: "acme" })).toBe(false); // repo missing
     expect(ok(LinkRepoBody, { owner: "acme", repo: "web", installationId: "42" })).toBe(false); // wrong type
+    expect(ok(LinkRepoBody, { owner: "acme", repo: "web", gitProvider: "svn" })).toBe(false);
+  });
+
+  it("CreateProjectBody: gitProvider is a checked source union", () => {
+    expect(ok(CreateProjectBody, { name: "web", gitProvider: "github" })).toBe(true);
+    expect(ok(CreateProjectBody, { name: "web", gitProvider: "release" })).toBe(true);
+    expect(ok(CreateProjectBody, { name: "web", gitProvider: "svn" })).toBe(false);
   });
 
   it("SetOptionsBody: all optional + open (free-form config route)", () => {
@@ -61,7 +77,16 @@ describe("MCP write-tool body schemas", () => {
 
   it("deploy prepare/respond: prepare all-optional, respond needs action", () => {
     expect(ok(PrepareDeployBody, {})).toBe(true);
-    expect(ok(PrepareDeployBody, { source: "github", owner: "a", repo: "b", branch: "main" })).toBe(true);
+    expect(
+      ok(PrepareDeployBody, {
+        source: "github",
+        provider: "gitlab",
+        owner: "a",
+        repo: "b",
+        branch: "main",
+      }),
+    ).toBe(true);
+    expect(ok(PrepareDeployBody, { provider: "svn", owner: "a", repo: "b" })).toBe(false);
     expect(ok(PrepareDeployBody, { source: "svn" })).toBe(false);
     expect(ok(BuildRespondBody, { action: "approve" })).toBe(true);
     expect(ok(BuildRespondBody, {})).toBe(false);
