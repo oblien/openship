@@ -30,7 +30,7 @@ export function resolvePlatformConfig(): PlatformConfig {
       cloudClientId: env.OBLIEN_CLIENT_ID,
       cloudClientSecret: env.OBLIEN_CLIENT_SECRET,
       cloudApiUrl: env.OBLIEN_API_URL,
-      allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
+      allowHostBuild: !env.CLOUD_MODE && !env.OPENSHIP_REMOTE_ONLY && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
     };
   }
 

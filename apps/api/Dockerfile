@@ -15,8 +15,10 @@ COPY apps/ ./apps/
 # and the BuildKit cache mount reuses bun's download store across builds so a
 # rebuild doesn't re-fetch the graph. (Cache mount needs BuildKit — Compose v2
 # enables it by default.)
+# Install the API's workspace dependency closure, not desktop Electron binaries
+# or the webmail workspace's nested install scripts, in a server image.
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile \
+    bun install --frozen-lockfile --filter @repo/api \
  && cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────

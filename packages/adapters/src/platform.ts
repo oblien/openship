@@ -42,6 +42,7 @@ import type { DockerConnectionOptions } from "./runtime/docker";
 import type { BareRuntimeOptions } from "./runtime/bare";
 import type { NginxProviderOptions } from "./infra/nginx";
 import { EDGE_CONTAINER_NAME } from "./system/port-owner";
+import { createRemoteOnlyPlatform, isRemoteOnlyInstance, REMOTE_ONLY_MESSAGE } from "./remote-only";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     case "cloud":
       return createCloudPlatform(config);
     case "desktop":
+      if (isRemoteOnlyInstance()) throw new Error(REMOTE_ONLY_MESSAGE);
       return createDesktopPlatform(config);
     case "selfhosted":
     default:
@@ -250,6 +252,7 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   const { Oblien } = await import("./oblien");
   const { CloudRuntime } = await import("./runtime/cloud");
   const { CloudInfraProvider } = await import("./infra/cloud");
+  const allowHostBuild = !isRemoteOnlyInstance() && config.allowHostBuild === true;
 
   // Single Oblien client - either from token or master creds
   const client = config.cloudToken
@@ -267,10 +270,10 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
     ? await (await import("./runtime/cloud/docker")).CloudDockerRuntime.forWorkspace(client, {
         ...config.cloudDocker, namespace: config.cloudNamespace!,
         adminProxy: config.cloudAdminProxy, beforeProvision: config.cloudBeforeProvision,
-        allowHostSource: config.allowHostBuild,
+        allowHostSource: allowHostBuild,
       })
     : new CloudRuntime(client, {
-        adminProxy: config.cloudAdminProxy, allowHostBuild: config.allowHostBuild,
+        adminProxy: config.cloudAdminProxy, allowHostBuild,
         namespace: config.cloudNamespace,
         allowProvisioning: Boolean(config.cloudToken && config.cloudNamespace),
         beforeProvision: config.cloudBeforeProvision,
@@ -450,6 +453,9 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   // An `ssh` config is unambiguously remote and always wins; otherwise trust the
   // explicit flag, falling back to the old inference. See PlatformConfig.localHost.
   const targetIsThisMachine = !config.ssh && (config.localHost ?? !config.executor);
+  // A pooled executor or localHost:false alone does not identify a remote
+  // destination. Remote server callers supply its SSH config as well.
+  if (isRemoteOnlyInstance() && !config.ssh) return createRemoteOnlyPlatform();
   const useDockerEdge = targetIsThisMachine && process.env.OPENSHIP_EDGE_MODE === "docker";
   const edgeContainer = process.env.OPENSHIP_EDGE_CONTAINER?.trim() || EDGE_CONTAINER_NAME;
 

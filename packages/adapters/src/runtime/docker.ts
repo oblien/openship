@@ -115,6 +115,7 @@ function clampShellWindow(
 }
 import type { Feature, SystemLog } from "../system/types";
 import { isRuntimeNotFoundError } from "../system/errors";
+import { isRemoteOnlyInstance, REMOTE_ONLY_MESSAGE } from "../remote-only";
 import { OPENSHIP_LABEL } from "../system/port-owner";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
 import { dockerConfigJsonFor, registryForImage, resolveDockerAuth } from "./docker-auth";
@@ -1129,6 +1130,9 @@ export class DockerRuntime implements RuntimeAdapter {
     systemManager?: DockerSystemManager | null,
     provisionLock?: ProvisionLock,
   ) {
+    if (isRemoteOnlyInstance() && (!opts?.transport || opts.transport === "socket")) {
+      throw new Error(REMOTE_ONLY_MESSAGE);
+    }
     this.connectionOptions = opts;
     this.transport = resolveDockerTransport(opts);
     this.systemManager = systemManager ?? null;

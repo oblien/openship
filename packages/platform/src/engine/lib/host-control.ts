@@ -4,7 +4,8 @@
  * "Host control" governs whether this box is itself a deploy target: the isLocal
  * "This Server" row, and every host-OS operation that reaches the machine through
  * the container→host SSH channel (or LocalExecutor on a bare install). Turning it
- * off (`openship up --no-host-control`) makes the box control-plane-only.
+ * off (`openship up --no-host-control`) withholds host operations but leaves the
+ * Docker socket available. The remote-only Compose overlay removes host access.
  *
  * Precedence (DELIBERATELY the productMode direction, NOT authMode's):
  *   1. Not a self-hosted target (SaaS / desktop / Oblien runtime) → always false.
@@ -25,10 +26,12 @@
  */
 
 import { resolvePlatformConfig } from "./platform-config";
+import { env } from "../config/env";
 
 /** Native no-routing mode reuses the bare desktop adapter, but is still an owned
  * control plane. Explicit host policy controls whether its local server exists. */
 export function isHostControlTarget(): boolean {
+  if (env.OPENSHIP_REMOTE_ONLY) return false;
   const target = resolvePlatformConfig().target;
   return target === "selfhosted" || (process.env.OPENSHIP_NATIVE === "true" && target === "desktop");
 }

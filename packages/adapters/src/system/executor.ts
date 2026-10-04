@@ -11,6 +11,7 @@ import {
 } from "@repo/core";
 
 import type { CommandExecutor, SshConfig } from "../types";
+import { isRemoteOnlyInstance, REMOTE_ONLY_MESSAGE } from "../remote-only";
 import { HostChannelUnavailableError, isSshAuthError } from "./errors";
 import { LocalExecutor } from "./local-executor";
 import { probeTcpDetailed, type TcpProbeFailure, type TcpProbeResult } from "./reachability";
@@ -78,6 +79,7 @@ export function setHostControlOverride(disabled: boolean | null): void {
 /** Host control explicitly switched off — by the operator's Settings toggle
  *  (runtime override) or, absent that, by `--no-host-control` at install. */
 export function hostControlDisabled(): boolean {
+  if (isRemoteOnlyInstance()) return true;
   if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") return true;
   return (
     hostControlOverride ??
@@ -439,7 +441,9 @@ export async function hostChannelHealth(timeoutMs = 2_500): Promise<HostChannelH
     return {
       ok: false,
       code: "disabled",
-      hint: "Host control is off (OPENSHIP_HOST_CONTROL=false). Re-run `openship up` without --no-host-control.",
+      hint: isRemoteOnlyInstance()
+        ? REMOTE_ONLY_MESSAGE
+        : "Host control is off (OPENSHIP_HOST_CONTROL=false). Re-run `openship up` without --no-host-control.",
     };
   }
 
@@ -571,8 +575,10 @@ export function createHostExecutor(): CommandExecutor {
   if (hostControlDisabled()) {
     throw new HostChannelUnavailableError(
       "disabled",
-      "Host control is disabled on this instance (OPENSHIP_HOST_CONTROL=false). " +
-        "Re-run `openship up` without --no-host-control to allow host operations.",
+      isRemoteOnlyInstance()
+        ? REMOTE_ONLY_MESSAGE
+        : "Host control is disabled on this instance (OPENSHIP_HOST_CONTROL=false). " +
+          "Re-run `openship up` without --no-host-control to allow host operations.",
     );
   }
   const host = process.env.OPENSHIP_HOST_SSH_HOST?.trim();

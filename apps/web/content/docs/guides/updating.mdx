@@ -144,6 +144,11 @@ openship update --via npm    # or: --via bun
 
 ## About the always-on service
 
+Git-clone Compose installations update by pulling and recreating their containers. If you use the
+remote-only overlay, retain it on **every** update command; the CLI does not manage that stack.
+See [control-plane updates](/docs/security/control-plane#security-updates) for the exact commands
+and the distinction between API updates and infrastructure auto-updates.
+
 If you started Openship with `openship up`, it runs as a **persistent service**: it starts again when the
 machine reboots and restarts itself if it ever crashes. That keeps your apps online.
 

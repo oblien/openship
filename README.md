@@ -157,6 +157,8 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 The stack is **postgres + redis + api + dashboard + edge**. The `edge` is OpenResty on **:80/:443** as a container (`network_mode: host`) — routing + Let's Encrypt, no bare host install. **Linux only** (host networking); on mac/win use `openship up` (bare). The `api` container mounts the host Docker socket so the control plane can build + run your apps as host containers — it's host-privileged through the socket, so run it only on a trusted host.
 
+To manage remote servers without giving the API its host's Docker socket or shared mounts, use the opt-in [remote-only Compose overlay](https://openship.io/docs/security/control-plane). It requires an external reverse proxy. The guide also covers stored-secret access and responsibility for control-plane security updates; `--no-host-control` alone does not remove Docker privileges.
+
 **Upgrade:** pin `OPENSHIP_VERSION` in `.env` for reproducible pulls, then `docker compose --env-file .env -f docker/docker-compose.yml pull && … up -d`. `openship update` only reconciles a stack the CLI installed, and `openship up` would *adopt* this one — don't reach for either here. **Build from source instead:** add `-f docker/docker-compose.build.yml … up -d --build`.
 
 **Host operations** (`:80`/`:443` takeover, the mail engine, host terminal/port scans) need the container→host SSH channel, which `openship up` provisions and this path does not — the five manual steps are in `.env.example` under *Host operations from the container*, and the failure it produces is [Troubleshooting → Host control channel](https://openship.io/docs/troubleshooting/host-channel). Everything else, including deploys, works without it.

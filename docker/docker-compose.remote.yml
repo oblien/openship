@@ -1,0 +1,30 @@
+# Remote-only self-hosted control plane. Requires Docker Compose 2.24.4+.
+# Layer over docker-compose.yml; keep BOTH files on every up/update command.
+# See /docs/security/control-plane for the trust model and setup instructions.
+# This is intended for a new installation. Migrate local workloads and arrange an
+# external reverse proxy before converting an existing host-managed installation.
+services:
+  api:
+    # Reset the WHOLE list: socket, host SSH key, registry config, routing state,
+    # certificates, and static roots must not remain reachable from the API.
+    volumes: !reset []
+    extra_hosts: !reset []
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CLOUD_MODE: "false"
+      DEPLOY_MODE: docker
+      OPENSHIP_REMOTE_ONLY: "true"
+      OPENSHIP_REQUIRE_AUTH: "true"
+      OPENSHIP_HOST_CONTROL: "false"
+      OPENSHIP_MANAGED_EDGE: "false"
+      OPENSHIP_EDGE_MODE: none
+      OPENSHIP_EDGE_CONTAINER: ""
+      OPENSHIP_HOST_SSH_HOST: ""
+      OPENSHIP_HOST_SSH_PORT: ""
+      OPENSHIP_HOST_SSH_USER: ""
+      OPENSHIP_HOST_SSH_KEY: ""
+  # The control plane has no local edge to manage. Use your existing external
+  # proxy for its own URL; remote workload routing uses each remote server's edge.
+  edge:
+    profiles: [local-edge]

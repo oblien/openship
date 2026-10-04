@@ -106,7 +106,7 @@ vi.mock("@repo/platform/engine/modules/deployments/observed-host-port-claims", (
   reserveResolvedLoopbackRoutes: (...args: unknown[]) => h.reserveResolvedLoopbackRoutes(...args),
 }));
 
-const { resolveServerExecutor } = await import("@repo/platform/engine/lib/deployment-runtime");
+const { resolveServerExecutor, resolveTargetPlatform, createServerDockerRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
 const { deployComposeServices } =
   await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
 
@@ -340,6 +340,25 @@ function addDisabledPreviousService() {
 }
 
 describe("compose deploy — host channel unavailable", () => {
+  it("remote-only rejects both a local target and an existing local server row before acquiring a transport", async () => {
+    const { env } = await import("@repo/platform/engine/config/env");
+    const { sshManager } = await import("@repo/platform/engine/lib/ssh-manager");
+    const acquire = vi.spyOn(sshManager, "acquire");
+    const host = vi.spyOn(sshManager, "acquireHostChannel");
+    env.OPENSHIP_REMOTE_ONLY = true;
+    try {
+      await expect(resolveTargetPlatform("local", "docker", undefined, "org1")).rejects.toMatchObject({ statusCode: 403, code: "LOCAL_HOST_ACCESS_DENIED" });
+      await expect(resolveServerExecutor("srv-local", "org1")).rejects.toMatchObject({ statusCode: 403, code: "LOCAL_HOST_ACCESS_DENIED" });
+      await expect(createServerDockerRuntime("srv-local", "org1")).rejects.toMatchObject({ statusCode: 403, code: "LOCAL_HOST_ACCESS_DENIED" });
+      expect(acquire).not.toHaveBeenCalled();
+      expect(host).not.toHaveBeenCalled();
+    } finally {
+      env.OPENSHIP_REMOTE_ONLY = false;
+      acquire.mockRestore();
+      host.mockRestore();
+    }
+  });
+
   it.each([false, true])("preserves a carried container's allocation rather than its unapplied settings (live inspect: %s)", async inspect => {
     const runtime = carriedRuntime();
     const allocatedResources = { containerId: "container-old", cpuCores: 2, memoryMb: 2048 };

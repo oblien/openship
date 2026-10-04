@@ -1,6 +1,7 @@
 import {
   createPlatform,
   DockerRuntime,
+  REMOTE_ONLY_MESSAGE,
   isHostChannelUnavailableError,
   peekPlatform,
   resolveStaticOutputPath,
@@ -281,6 +282,9 @@ async function resolveServerTargetTopology(
 
 /** One authority check before either a host channel or the local Docker socket. */
 async function assertLocalDeploymentAccess(organizationId?: string): Promise<void> {
+  if (env.OPENSHIP_REMOTE_ONLY) {
+    throw new AppError(REMOTE_ONLY_MESSAGE, 403, "LOCAL_HOST_ACCESS_DENIED");
+  }
   const target = platform().target;
   if (env.CLOUD_MODE || target === "cloud") {
     throw new AppError("The cloud control plane cannot be a local deployment target", 403, "LOCAL_HOST_ACCESS_DENIED");
@@ -431,7 +435,7 @@ async function resolveCloudPlatformForOrg(organizationId?: string, docker?: Depl
     cloudNamespace: result.namespace,
     cloudApiUrl: env.OBLIEN_API_URL,
     cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId) : undefined,
-    allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
+    allowHostBuild: !env.CLOUD_MODE && !env.OPENSHIP_REMOTE_ONLY && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
     cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace) : createRemoteCloudAdmin(organizationId),
     cloudDocker: docker ? {
       ...docker, provisionLock: createProvisionLock(`cloud:docker:${docker.workspaceId}`),

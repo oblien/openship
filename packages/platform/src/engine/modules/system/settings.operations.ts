@@ -2,6 +2,7 @@
 import type { ExecutionContext } from "../../../context";
 import { OperationError, type SystemOperations, type UpdateInstanceSettingsInput, type UpdateInstanceEmailSettingsInput } from "@repo/contracts";
 import { repos } from "@repo/db";
+import { REMOTE_ONLY_MESSAGE } from "@repo/adapters";
 import { normalizeRollbackWindow } from "@repo/core";
 import { env } from "../../config";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
@@ -207,6 +208,9 @@ export async function updateSettings(ctx: ExecutionContext, body: UpdateInstance
     }
     if (ctx.organizationId !== (await boxOwningOrgId())) {
       return failSettings({ error: "Only the owner of this machine's workspace can change host control." }, 403);
+    }
+    if (body.hostControl === true && env.OPENSHIP_REMOTE_ONLY) {
+      return failSettings({ error: REMOTE_ONLY_MESSAGE }, 400);
     }
     patch.hostControlEnabled = body.hostControl;
   }

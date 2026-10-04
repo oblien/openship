@@ -15,13 +15,16 @@ import { sharedTestOptions, testAlias } from "./vitest.config";
  * `E2E_SCOPE` splits the suite by cost — unset (the local default)
  * runs everything.
  *
- * `fast` drops scaling and `rollback-build-restore`, which pulls a Node base image and runs a
- * real `docker build`: ~225s cold, and `fileParallelism: false` means it's 225s
- * of the wall clock nobody else can use. `heavy` runs only that file. Set from
- * the workflow rather than from a package.json script, so the scripts stay
- * cross-platform and there is exactly one entry point to run these locally.
+ * `heavy` runs the image-building suites (rollback/rebuild and the production
+ * control-plane isolation test). `fast` excludes these and scaling, so cold
+ * image builds do not delay its sequential tests. Set from the workflow rather
+ * than package.json to keep one cross-platform entry point.
  */
-const HEAVY = "test/e2e/rollback-build-restore.e2e.test.ts";
+const HEAVY = [
+  "test/e2e/rollback-build-restore.e2e.test.ts",
+  // Builds the production API image and a separate SSH/Docker target.
+  "test/e2e/remote-only-control-plane.e2e.test.ts",
+];
 // Three real K3s nodes, registry and Edge; has its own CI/release job.
 const SCALING = "test/e2e/scaling-*.e2e.test.ts";
 const SCALING_JOURNEYS = {
@@ -45,7 +48,7 @@ if (
   throw new Error(`Unknown E2E_SCOPE: ${scope}`);
 const include =
   scope === "heavy"
-    ? [HEAVY]
+    ? HEAVY
     : scope === "update"
       ? [UPDATE]
       : scope === "scaling"
@@ -85,7 +88,7 @@ export default defineConfig({
     },
     exclude: [
       ...configDefaults.exclude,
-      ...(scope === "fast" ? [HEAVY, SCALING] : []),
+      ...(scope === "fast" ? [...HEAVY, SCALING] : []),
       // Opt-in only: `E2E_SCOPE=update` is the sole way to run it (see UPDATE above).
       ...(scope === "update" ? [] : [UPDATE]),
     ],
