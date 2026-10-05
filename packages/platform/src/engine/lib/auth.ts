@@ -19,6 +19,7 @@ import {
 import { provisionUser } from "./provision-user";
 import { socialProviderCredentials } from "./auth-providers";
 import { isAuthorizedLocalSignup } from "./local-bootstrap";
+import { secureCookiePreference } from "./auth-cookie-policy";
 
 /**
  * Better Auth - handles registration, login, OAuth, sessions, tokens.
@@ -81,6 +82,7 @@ const sharedCookieDomain = getSharedCookieDomain();
 const useSessionCookieCache = getDriver() !== "pglite";
 const githubOAuth = socialProviderCredentials("github");
 const googleOAuth = socialProviderCredentials("google");
+const useSecureCookies = secureCookiePreference(env.OPENSHIP_PUBLIC_URL);
 
 export const auth = betterAuth({
   basePath: "/api/auth",
@@ -332,13 +334,11 @@ export const auth = betterAuth({
   /* ---------- Advanced ---------- */
   advanced: {
     cookiePrefix: COOKIE_PREFIX,
-    // Pin secure-cookie behavior when served on a public URL. The dynamic
-    // `baseURL` (an object) would otherwise make Better Auth derive `secure`
-    // from NODE_ENV (→ true in prod) instead of the previous static-localhost
-    // `false` — which renames the session cookie (`__Secure-` prefix, logging
-    // everyone out once) and breaks the pre-TLS HTTP window. Preserve today's
-    // exact behavior; secure-cookie hardening is a separate, deliberate change.
-    ...(env.OPENSHIP_PUBLIC_URL ? { useSecureCookies: false } : {}),
+    // The dynamic base URL cannot tell Better Auth whether the browser is using
+    // TLS. Pin the value for declared public URLs: HTTPS gets Secure cookies,
+    // while an explicit HTTP/LAN setup remains usable. With no public URL the
+    // library keeps its normal cloud/development inference.
+    ...(useSecureCookies === undefined ? {} : { useSecureCookies }),
     ...(sharedCookieDomain
       ? {
           crossSubDomainCookies: {
