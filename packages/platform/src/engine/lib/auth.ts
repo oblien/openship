@@ -4,7 +4,7 @@ import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, mcp, emailOTP } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
-import { db, getDriver, repos, schema, and, eq, gt } from "@repo/db";
+import { db, getDriver, repos, schema, and, eq, gt, sql } from "@repo/db";
 import { env, runtimeTarget, runtimeTargetId, trustedOrigins } from "../config/env";
 import {
   resolveAuthBaseUrl,
@@ -296,6 +296,20 @@ export const auth = betterAuth({
       },
     },
     session: {
+      update: {
+        before: async (session) => {
+          if (session.activeOrganizationId !== null) return;
+          // Better Auth clears this before deletion/leave hooks. Keep the NOT NULL
+          // invariant using the stored session owner: update payloads are partial
+          // and the request's user need not own the session being updated.
+          return {
+            data: {
+              ...session,
+              activeOrganizationId: sql`'org_' || ${schema.session.userId}`,
+            },
+          };
+        },
+      },
       create: {
         before: async (session) => {
           // Default activeOrganizationId to the user's deterministic
