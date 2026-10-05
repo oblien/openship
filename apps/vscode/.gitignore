@@ -1,0 +1,5 @@
+schemas/
+media/icon.png
+LICENSE
+.vscode-test/
+*.vsix

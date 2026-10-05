@@ -1,0 +1,253 @@
+{
+  "name": "openship-vscode",
+  "displayName": "Openship",
+  "description": "Deploy Git projects, follow deployments, and read application logs from Openship.",
+  "version": "0.8.0",
+  "publisher": "oblien",
+  "private": true,
+  "preview": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oblien/openship.git",
+    "directory": "apps/vscode"
+  },
+  "homepage": "https://github.com/oblien/openship/tree/main/apps/vscode",
+  "bugs": {
+    "url": "https://github.com/oblien/openship/issues"
+  },
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "openship",
+    "deployment",
+    "logs",
+    "self-hosted"
+  ],
+  "icon": "media/icon.png",
+  "main": "./dist/extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "workspaceContains:.openship/project.json"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Browsing projects and logs is available. Trust the workspace to link a folder, deploy, cancel, or respond to a deployment."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "openship.connect",
+        "title": "Connect",
+        "category": "Openship",
+        "icon": "$(add)"
+      },
+      {
+        "command": "openship.updateToken",
+        "title": "Update Access Token",
+        "category": "Openship",
+        "icon": "$(key)"
+      },
+      {
+        "command": "openship.removeConnection",
+        "title": "Remove Connection",
+        "category": "Openship",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "openship.refresh",
+        "title": "Refresh Projects",
+        "category": "Openship",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "openship.linkWorkspace",
+        "title": "Link Workspace to Project",
+        "category": "Openship",
+        "enablement": "isWorkspaceTrusted && workspaceFolderCount != 0",
+        "icon": "$(link)"
+      },
+      {
+        "command": "openship.deploy",
+        "title": "Deploy Git Branch",
+        "category": "Openship",
+        "enablement": "isWorkspaceTrusted",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "openship.watchDeployment",
+        "title": "Watch Deployment",
+        "category": "Openship",
+        "icon": "$(output)"
+      },
+      {
+        "command": "openship.runtimeLogs",
+        "title": "Show Application Logs",
+        "category": "Openship",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "openship.stopLogs",
+        "title": "Stop Watching Logs",
+        "category": "Openship",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "openship.cancelDeployment",
+        "title": "Cancel Deployment",
+        "category": "Openship",
+        "enablement": "isWorkspaceTrusted",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "openship.respondToDeployment",
+        "title": "Respond to Deployment",
+        "category": "Openship",
+        "enablement": "isWorkspaceTrusted",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "openship.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Openship",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "openship.openApplication",
+        "title": "Open Application",
+        "category": "Openship",
+        "icon": "$(globe)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "openship",
+          "title": "Openship",
+          "icon": "media/openship.svg"
+        }
+      ]
+    },
+    "views": {
+      "openship": [
+        {
+          "id": "openship.projects",
+          "name": "Projects"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "openship.projects",
+        "contents": "Connect to your Openship instance to browse projects, deploy a Git branch, and follow logs.\n[Connect to Openship](command:openship.connect)\nCreate a personal access token in your dashboard's Settings."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "openship.connect",
+          "when": "view == openship.projects",
+          "group": "navigation@1"
+        },
+        {
+          "command": "openship.refresh",
+          "when": "view == openship.projects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "openship.stopLogs",
+          "when": "view == openship.projects && openship.watching",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "openship.updateToken",
+          "when": "view == openship.projects && viewItem == openship.connection",
+          "group": "connection@1"
+        },
+        {
+          "command": "openship.removeConnection",
+          "when": "view == openship.projects && viewItem == openship.connection",
+          "group": "connection@2"
+        },
+        {
+          "command": "openship.linkWorkspace",
+          "when": "view == openship.projects && viewItem == openship.project",
+          "group": "project@1"
+        },
+        {
+          "command": "openship.deploy",
+          "when": "view == openship.projects && viewItem == openship.project",
+          "group": "inline@1"
+        },
+        {
+          "command": "openship.runtimeLogs",
+          "when": "view == openship.projects && viewItem == openship.project",
+          "group": "inline@2"
+        },
+        {
+          "command": "openship.watchDeployment",
+          "when": "view == openship.projects && viewItem == openship.deployment",
+          "group": "inline@1"
+        },
+        {
+          "command": "openship.cancelDeployment",
+          "when": "view == openship.projects && viewItem == openship.deployment",
+          "group": "deployment@1"
+        },
+        {
+          "command": "openship.respondToDeployment",
+          "when": "view == openship.projects && viewItem == openship.deployment",
+          "group": "deployment@2"
+        },
+        {
+          "command": "openship.openApplication",
+          "when": "view == openship.projects && viewItem =~ /^openship\\.(project|deployment)$/",
+          "group": "open@1"
+        },
+        {
+          "command": "openship.openDashboard",
+          "when": "view == openship.projects && viewItem =~ /^openship\\.(connection|project|deployment)$/",
+          "group": "open@2"
+        }
+      ]
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "**/openship.json"
+        ],
+        "url": "./schemas/openship.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:host": "node test/run-host.mjs",
+    "vscode:prepublish": "npm run lint && npm run build",
+    "package": "vsce package --no-dependencies --out dist/"
+  },
+  "devDependencies": {
+    "@repo/sdk": "workspace:*",
+    "@types/node": "^22.13.0",
+    "@types/vscode": "1.105.0",
+    "@vscode/test-electron": "2.5.2",
+    "@vscode/vsce": "3.6.2",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

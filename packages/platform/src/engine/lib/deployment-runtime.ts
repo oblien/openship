@@ -1,5 +1,6 @@
 import {
   createPlatform,
+  BareRuntime,
   DockerRuntime,
   isHostChannelUnavailableError,
   peekPlatform,
@@ -1084,8 +1085,9 @@ export async function deploymentContainerIds(
 export async function withDeploymentRuntime<T>(
   dep: Pick<Deployment, "meta" | "organizationId">,
   fn: (runtime: RuntimeAdapter, serverId: string | null) => Promise<T>,
+  options?: RuntimeReadOptions,
 ): Promise<T> {
-  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep, options);
   try {
     return await fn(runtime, serverId);
   } catch (err) {
@@ -1259,22 +1261,32 @@ function asHostUnreachable(err: unknown): unknown {
   return err;
 }
 
+export interface RuntimeReadOptions {
+  /** Service reads default to Docker. Project logs use the deployment's own runtime. */
+  runtime?: "docker" | "deployment";
+}
+
 export async function resolveDeploymentRuntimeForRead(
   dep: Pick<Deployment, "meta" | "organizationId"> & Partial<Pick<Deployment, "projectId">>,
+  options?: RuntimeReadOptions,
 ): Promise<{
   runtime: RuntimeAdapter;
   serverId: string | null;
   hostPortTarget: HostPortTargetIdentity | null;
 }> {
-  // Services are containers even when the app itself deploys "bare" — pin docker
-  // so a bare project's sidecars still resolve a docker runtime (matches
-  // resolveServicePlatform's long-standing behaviour).
-  const snapshot = { ...((dep.meta ?? {}) as DeploymentMeta), runtimeMode: "docker" as const };
+  // Services remain containers when the app runs bare. Project log callers opt
+  // into the deployment runtime so a process id is never sent to Docker.
+  const basePlatform = platform();
+  const snapshot = { ...((dep.meta ?? {}) as DeploymentMeta) };
+  const runtimeMode = options?.runtime === "deployment"
+    ? snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare")
+    : "docker";
+  snapshot.runtimeMode = runtimeMode;
   assertDeploymentProjectTarget(snapshot, dep.projectId);
   if (snapshot.cloudDockerWorkspace && dep.projectId && snapshot.cloudDockerWorkspace.projectId !== dep.projectId) {
     throw new AppError("Cloud Docker workspace does not belong to this deployment's project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   }
-  const effectiveTarget = resolveEffectiveTarget(platform().target, snapshot);
+  const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
 
   if (effectiveTarget === "cluster") {
     const { resolveClusterDeploymentRuntime } = await import("./cluster-deployment-target");
@@ -1283,7 +1295,9 @@ export async function resolveDeploymentRuntimeForRead(
 
   if (effectiveTarget === "server") {
     const target = await resolveServerExecutor(snapshot.serverId, dep.organizationId);
-    const runtime = await createDockerRuntimeForResolvedServer(target, dep.organizationId);
+    const runtime = runtimeMode === "bare"
+      ? await createWithRetainedConnection(target.executor, async () => new BareRuntime({ executor: target.executor }))
+      : await createDockerRuntimeForResolvedServer(target, dep.organizationId);
     try {
       return {
         runtime,
@@ -1298,6 +1312,17 @@ export async function resolveDeploymentRuntimeForRead(
   }
   if (effectiveTarget === "local") {
     await assertLocalDeploymentAccess(dep.organizationId);
+    if (runtimeMode === "bare") {
+      // Native installations own their runtime and work directory. Reuse that
+      // identity; a fresh BareRuntime would look for these logs under /opt.
+      if (process.env.OPENSHIP_NATIVE === "true") {
+        const owned = await resolveTargetPlatform("local", "bare", undefined, dep.organizationId);
+        return { runtime: owned.runtime, serverId: null, hostPortTarget: LOCAL_HOST_PORT_TARGET };
+      }
+      const executor = await acquireLocalHostExecutor();
+      const runtime = await createWithRetainedConnection(executor, async () => new BareRuntime({ executor }));
+      return { runtime, serverId: null, hostPortTarget: LOCAL_HOST_PORT_TARGET };
+    }
     return {
       runtime: await DockerRuntime.create({ transport: "socket" }),
       serverId: null,

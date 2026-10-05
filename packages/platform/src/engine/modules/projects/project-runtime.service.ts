@@ -54,7 +54,7 @@ export async function getRuntimeLogs(projectId: string, organizationId: string, 
       throw new NotFoundError("No running container for project", projectId);
     }
     return runtime.getRuntimeLogs(containerId, tail);
-  });
+  }, { runtime: "deployment" });
 }
 
 export async function streamRuntimeLogs(
@@ -78,7 +78,7 @@ export async function streamRuntimeLogs(
   // NOT withDeploymentRuntime: the transport has to outlive this call, so the
   // runtime is disposed in the stream's cleanup instead — same shape as
   // streamServiceRuntimeLogs. Disposing here would kill the live stream.
-  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep, { runtime: "deployment" });
   const containerId = await livePrimaryContainerId(runtime, dep).catch(() => null);
   if (!containerId) {
     disposeRuntime(runtime);
