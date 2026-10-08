@@ -165,6 +165,26 @@ const customSvc = {
 } as any;
 
 describe("buildProjectRouteDomains", () => {
+  it("keeps a Cloud web endpoint when local managed routing is disabled", () => {
+    const input = {
+      project: { slug: "cloud-app" } as any,
+      projectDomains: [],
+      publicEndpoints: [{ domain: "cloud-app", domainType: "free" as const, port: 3000 }],
+      runtimeName: "docker",
+      usesManagedRouting: false,
+      isStatic: false,
+    };
+    const planned = buildProjectRouteDomains({ ...input, certificateManagement: "provider" });
+    expect(planned).toHaveLength(1);
+    expect(planned[0]).toMatchObject({
+      hostname: `cloud-app.${getRoutingBaseDomain()}`,
+      targetPort: 3000,
+      requiresSslTooling: false,
+      provisionSsl: false,
+    });
+    expect(buildProjectRouteDomains(input)).toEqual([]);
+  });
+
   it.each([true, false])(
     "routes container-served static roots during deploy and retry (endpoints=%s)",
     (withEndpoints) => {

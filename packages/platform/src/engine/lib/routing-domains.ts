@@ -376,7 +376,9 @@ export function buildProjectRouteDomains(opts: {
       }
 
       const routeSlug = endpoint.domain || managedSlug;
-      if (routeSlug && usesManagedRouting) {
+      // Cloud owns the managed hostname through its provider even though it
+      // does not use the local OpenResty/managed-edge routing path.
+      if (routeSlug && (usesManagedRouting || opts.certificateManagement === "provider")) {
         add(`${routeSlug}.${baseDomain}`, {
           domainType: "free",
           destination,
