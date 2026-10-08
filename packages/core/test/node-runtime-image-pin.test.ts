@@ -12,12 +12,20 @@ describe("Node runtime image pinning", () => {
     "node:24-bookworm",
     "node:24-alpine",
     "docker.io/library/node:24",
+    `node@sha256:${"a".repeat(64)}`,
     `node:24@sha256:${"a".repeat(64)}`,
   ])("preserves the full image reference: %s", (image) => {
     expect(getRuntimeImage("node", "npm", image)).toBe(image);
   });
   it("keeps unrelated, invalid and Bun runtime selection unchanged", () => {
-    for (const image of [undefined, "acme/node:24", "node:24 && echo wrong", "ruby:3.4"])
+    for (const image of [
+      undefined,
+      "acme/node:24",
+      "registry.example/node:24",
+      "acme/library/node:24",
+      "node:24 && echo wrong",
+      "ruby:3.4",
+    ])
       expect(getRuntimeImage("node", "npm", image)).toBe("node:22");
     expect(getRuntimeImage("node", "bun", "node:24")).toBe("oven/bun:latest");
     expect(getRuntimeImage("static", "npm", "node:24")).toBe(getRuntimeImage("static", "npm"));

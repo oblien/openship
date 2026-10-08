@@ -1212,7 +1212,9 @@ export function getRuntimeImage(
     (stack.language === "javascript" || stack.language === "typescript") &&
     buildImage &&
     !validateImageReference(buildImage) &&
-    /^node(?::|$)/.test(normalizeImageRef(buildImage))
+    /^(?:(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/)?(?:library\/)?node(?::|@|$)/.test(
+      buildImage,
+    )
   ) {
     return buildImage;
   }
