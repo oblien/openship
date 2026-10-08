@@ -171,6 +171,8 @@ with tempfile.TemporaryDirectory() as folder:
     config = json.loads(writes[str(ns['CONFIG'])])
     assert config['bind-address'] == '10.20.0.1'
     assert config['kubelet-arg'] == ['address=10.20.0.1']
+    # A private-only kubelet refuses the agent tunnel's loopback dial, so servers must dial it directly.
+    assert config['egress-selector-mode'] == 'disabled'
     assert config['disable'] == ['traefik','servicelb','local-storage']
     assert config['secrets-encryption'] is True
     assert 'token' not in config

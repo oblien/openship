@@ -191,7 +191,10 @@ def configure():
     if host['role'] == 'server':
         config.update({'bind-address': host['privateIp'], 'advertise-address': host['privateIp'], 'tls-san': [host['privateIp']],
             'cluster-cidr': C['podCidr'], 'service-cidr': C['serviceCidr'], 'flannel-backend': 'vxlan',
-            'disable': ['traefik', 'servicelb', 'local-storage'], 'write-kubeconfig-mode': '0600', 'secrets-encryption': True})
+            'disable': ['traefik', 'servicelb', 'local-storage'], 'write-kubeconfig-mode': '0600', 'secrets-encryption': True,
+            # The agent tunnel dials the kubelet on loopback, which the private-address kubelet refuses
+            # (exec/logs on workers fail with "error dialing backend: EOF"). Peers reach 10250 directly.
+            'egress-selector-mode': 'disabled'})
     if C['bootstrap']:
         config['cluster-init'] = True
     else:
