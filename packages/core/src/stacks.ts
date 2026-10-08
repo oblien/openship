@@ -1193,8 +1193,8 @@ export function nodeBinPathExport(packageManager: string | undefined, roots: str
   return `export PATH=${dirs.map(shellQuote).join(":")}:"$PATH"`;
 }
 
-/** Resolve the runtime image. Ruby copies compiled gems from the builder, so
- *  retain its full image reference, including the OS variant and digest. */
+/** Resolve the runtime image. Keep explicit official Node/Ruby pins across
+ *  build and runtime, including the OS variant and digest. */
 export function getRuntimeImage(
   stackId: StackId,
   packageManager?: string,
@@ -1206,6 +1206,14 @@ export function getRuntimeImage(
   }
   if (stack.language === "ruby" && buildImage &&
       !validateImageReference(buildImage) && /^ruby(?::|$)/.test(normalizeImageRef(buildImage))) {
+    return buildImage;
+  }
+  if (
+    (stack.language === "javascript" || stack.language === "typescript") &&
+    buildImage &&
+    !validateImageReference(buildImage) &&
+    /^node(?::|$)/.test(normalizeImageRef(buildImage))
+  ) {
     return buildImage;
   }
   return stack.runtimeImage ?? LANGUAGES[stack.language].runtimeImage;
