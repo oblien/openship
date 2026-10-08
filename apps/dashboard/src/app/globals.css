@@ -225,6 +225,15 @@
     background-color: var(--th-bg-page);
     color: var(--th-text-body);
   }
+  /* Native <select> option lists: `color-scheme` (theme.css) makes the popup
+   * dark, but options still inherit the select's translucent bg (bg-muted/30,
+   * bg-card …) which some browsers ignore, falling back to white. Pin an opaque
+   * theme-aware surface + text so options are always legible in every theme. */
+  select option,
+  select optgroup {
+    background-color: var(--th-bg-card);
+    color: var(--th-text-heading);
+  }
 }
 
 ::-webkit-scrollbar {
