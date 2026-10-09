@@ -66,6 +66,8 @@ export default defineConfig({
     sourcemap: false,
   },
   resolve: {
+    // Editor transactions require one ProseMirror instance across TipTap and direct imports.
+    dedupe: ['prosemirror-model', 'prosemirror-state', 'prosemirror-view'],
     alias: {
       tslib: 'tslib/tslib.es6.js',
       'react-tweet': new URL('./lib/react-tweet-stub.ts', import.meta.url).pathname,

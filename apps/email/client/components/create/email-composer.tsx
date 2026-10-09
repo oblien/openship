@@ -22,6 +22,7 @@ import { ScheduleSendPicker } from './schedule-send-picker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEmailAliases } from '@/hooks/use-email-aliases';
 import useComposeEditor from '@/hooks/use-compose-editor';
+import { useComposerSignature } from '@/hooks/use-composer-signature';
 import { useComposerHeaders } from '@/hooks/use-composer-headers';
 import { CurvedArrow, Sparkles, X } from '../icons/icons';
 import { gitHubEmojis } from '@tiptap/extension-emoji';
@@ -286,6 +287,8 @@ export function EmailComposer({
     placeholder: 'Start your email here',
     autofocus,
   });
+
+  useComposerSignature(editor, settings?.settings, initialMessage, draftId);
 
   // Add effect to focus editor when component mounts
   useEffect(() => {
