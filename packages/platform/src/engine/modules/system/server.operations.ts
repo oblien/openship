@@ -26,6 +26,7 @@ import * as managed from "../cloud-workspaces/cloud-workspace.service";
 import { withServerExecution } from "../../lib/server-execution";
 import { managedServerCollection, serverLifecycleResources } from "./server-lifecycle.operations";
 import { serverNetworkSettings } from "./server-network-settings.operations";
+import { serverManagedControls } from "./server-managed.operations";
 import { hostControlDisabled } from "@repo/adapters";
 import { AppError, assertSshSettings, normalizeSshTransport, safeErrorMessage } from "@repo/core";
 import { invalidateOpenRestyPaths } from "../../lib/openresty-paths";
@@ -798,6 +799,7 @@ export const serverDependencies: ServerDependencies = {
   resources: {
     ...serverLifecycleResources,
     ...serverNetworkSettings,
+    ...serverManagedControls,
     ...infrastructureResources,
     get: getServer,
     reachability: probeReachability,

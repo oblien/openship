@@ -36,15 +36,28 @@ The list shows each server's state, placement, and project count. Open one for:
 - **Security** — scan listening ports through the server's existing execution connection. A listener
   inside the server does not establish public reachability; provider networking and project routes
   control external access.
-- **Networking** — inspect provider ingress ports and control outbound internet access when supported.
-  Applying a change explains that it affects every project on this server. Domains and HTTPS stay in each
+- **Networking** — inspect private/outbound IPs and provider ingress ports; control internet access
+  and an outbound hostname allowlist. A revision check rejects stale edits. Applying a change affects every project on this server. Domains and HTTPS stay in each
   project's **Domains & routing** tab; Oblien manages the edge proxy and certificates.
+- **Workloads** — inspect native host processes and their live state. Read recent logs, or create a
+  stopped manual background process and explicitly start it. Project and system processes link to their
+  owning controls; they cannot be deleted or stopped from this view. Docker containers remain in projects.
+- **SSH access** — enable SSH, replace an authorized public key or password, and issue a temporary
+  connection for a terminal or SFTP client. Disabling SSH requires confirmation.
+- **Runtime API** — reveal a server-only automation token or rotate it with confirmation. This API
+  remains enabled because Openship uses it for deployments and terminals. Rotation invalidates older
+  tokens and connections; let active work finish first.
+- **Settings** — inspect the managed image, operating system, persistent lifecycle and allocated
+  resources, read recent boot logs, and open the existing capacity-change review. Application images
+  belong to project deployment settings; the shared server image is maintained by Openship.
 - **Terminal** — an interactive shell on a running managed server. The provider supports one server shell
   at a time; an existing session is preserved if another connection is attempted.
 
 Only supported tabs appear. These are the shared server overview, health, listener and terminal
-components, with provider networking and the plan card for managed servers. SSH setup, host component
-installation, and OpenResty maintenance belong to connected servers.
+components, with provider controls and the plan card for managed servers. Host package installation
+and OpenResty maintenance belong to connected servers. Secret access, process logs and mutations
+require server-admin permission. Credentials are cleared from the page after one minute, when the
+browser tab is hidden, or when you leave the server tab; copying them does not revoke them.
 
 ### Plan changes and recovery
 

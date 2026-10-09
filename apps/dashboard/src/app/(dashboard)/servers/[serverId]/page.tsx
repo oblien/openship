@@ -52,9 +52,13 @@ import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerS
 import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { ManagedServerNetwork } from "@/components/servers/managed/ManagedServerNetwork";
+import { ManagedServerSsh } from "@/components/servers/managed/ManagedServerSsh";
+import { ManagedServerRuntime } from "@/components/servers/managed/ManagedServerRuntime";
+import { ManagedServerSettings } from "@/components/servers/managed/ManagedServerSettings";
+import { ManagedServerWorkloads } from "@/components/servers/managed/ManagedServerWorkloads";
 
 
-type Tab = "overview" | "activity" | "migrations" | "components" | "github" | "security" | "networking" | "ports" | "terminal";
+type Tab = "overview" | "activity" | "migrations" | "components" | "github" | "security" | "networking" | "ports" | "terminal" | "ssh" | "runtimeApi" | "settings" | "workloads";
 type ManualActionMode = "remove" | null;
 
 interface TabDef {
@@ -75,6 +79,10 @@ const TABS: TabDef[] = [
   { key: "github",     icon: "git-branch" },
   { key: "security",   icon: "shield" },
   { key: "networking", icon: "network" },
+  { key: "workloads", icon: "layers" },
+  { key: "ssh", icon: "key" },
+  { key: "runtimeApi", icon: "code" },
+  { key: "settings", icon: "server-settings" },
   // Port forwarding is meaningful only in desktop mode (the orchestrator IS
   // the user's machine); hidden elsewhere.
   { key: "ports",      icon: "port-forwarding", desktopOnly: true },
@@ -141,6 +149,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const [requestedTab, setActiveTab] = useState<Tab>("overview");
   const visibleTabs = TABS.filter(tab => {
     if (tab.desktopOnly && !isDesktop) return false;
+    if (["ssh", "runtimeApi", "settings", "workloads"].includes(tab.key)) return !!managed && !!server?.capabilities?.networkSettings && server.purpose !== "migration_source";
     if (tab.key === "activity") return !!managed;
     if (tab.key === "terminal") return canTerminal;
     if (tab.key === "networking") return !!server?.capabilities?.networkSettings;
@@ -148,14 +157,10 @@ function ServerDetail({ serverId }: { serverId: string }) {
     return tab.key === "overview" || hostConfiguration;
   });
   const activeTab = visibleTabs.some(tab => tab.key === requestedTab) ? requestedTab : "overview";
-  // Deep-link support: honour ?tab= once on mount (e.g. ?tab=github to land
-  // straight on the GitHub connect tab).
-  const tabParamApplied = useRef(false);
+  // Follow real tab links and browser navigation as well as the initial URL.
   useEffect(() => {
-    if (tabParamApplied.current) return;
-    tabParamApplied.current = true;
     const tab = searchParams.get("tab");
-    if (tab && TABS.some((td) => td.key === tab)) setActiveTab(tab as Tab);
+    setActiveTab(tab && TABS.some(td => td.key === tab) ? tab as Tab : "overview");
   }, [searchParams]);
   // Switch tab AND persist it in the URL (?tab=), so a reload / "service restart"
   // reopens the same tab. Shallow replace (no scroll) preserves other params.
@@ -751,6 +756,10 @@ function ServerDetail({ serverId }: { serverId: string }) {
             {loadError && <p role="alert" className="rounded-xl bg-danger/5 p-4 text-sm text-danger">{loadError}</p>}
             {managed && <ManagedServerActionFeedback server={managed} actions={managedActions} deleting={removeOpen} onCancelDelete={() => setRemoveOpen(false)} />}
             {/* Tab content */}
+            {activeTab === "ssh" && managed && <ManagedServerSsh serverId={serverId} />}
+            {activeTab === "runtimeApi" && managed && <ManagedServerRuntime serverId={serverId} />}
+            {activeTab === "settings" && managed && <ManagedServerSettings serverId={serverId} actions={managedActions} />}
+            {activeTab === "workloads" && managed && <ManagedServerWorkloads serverId={serverId} />}
             {activeTab === "activity" && managed && <ManagedServerActivity server={managed} actions={managedActions} />}
             {activeTab === "overview" && <>
               {canMonitor && <OverviewTab

@@ -11,8 +11,9 @@ include `capabilities`; offer only the actions supported by that server. The
 `terminalSessionLimit` field reports the supported concurrent host shell count.
 
 Server administration requires a server grant. Shared host access can affect all
-projects on that host. SSH setup, components and edge administration are available
-only for self-hosted connections. Openship Cloud manages those automatically.
+projects on that host. Connected hosts use their SSH configuration for deployment
+access. Managed Cloud servers expose their own SSH and Runtime API controls below;
+Openship continues to manage their base image and edge infrastructure.
 
 ## Managed Cloud servers
 
@@ -77,10 +78,13 @@ cannot report complete service counts or build minutes for projects whose record
 live on another installation; those billing counters are `null` rather than a
 partial total. Host measurements and provider billing remain available.
 
-`servers.getNetworkSettings(id)` reads the supported provider network fields.
+`servers.getNetworkSettings(id)` reads internet access and route-managed ingress
+ports. Pass `{ details: true }` to also read outbound rules, IP diagnostics and
+the revision required when editing rules.
 `updateNetworkSettings(id, { internetAccess, expectedInternetAccess, confirm: true })`
-changes outbound internet only. Disabling it affects external APIs and builds
-for every project. Ingress, domains and private connectivity remain managed by
+changes outbound internet. To edit the destination allowlist too, include `egress`
+and the `expectedRevision` from the read. Disabling internet affects external APIs
+and builds for every project. Ingress, domains and private connectivity remain managed by
 project routing. Host terminals use the normal authenticated terminal endpoint;
 the provider supports one host terminal session per managed server at a time.
 
@@ -135,6 +139,82 @@ curl -X POST "$OPENSHIP_URL/api/system/servers" \
 />
 
 `PATCH /api/system/servers/:id` takes the same fields, all optional — only the keys you send are changed.
+
+## Managed server access and native processes
+
+Use the Openship `serverId`, not an Oblien VM ID. Each operation resolves that
+server's organization, subscription and namespace. API-key read-only restrictions
+and server resource permissions apply equally to native SDK, HTTP SDK and REST.
+The API and dashboard must be from a release that includes these operations.
+Existing server-list and server-detail response shapes are unchanged.
+
+`managedInfo`, `managedSshStatus`, `managedRuntimeStatus` and `managedWorkloads`
+are safe reads and never start a VM. Credentials, logs and all changes require
+**`server:admin`**. Gateway credentials grant full access to every project on that
+server. They do not grant access to another server, namespace or the reseller account.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const info = await ship.servers.managedInfo("srv_123");
+const processes = await ship.servers.managedWorkloads("srv_123");
+const access = await ship.servers.managedRuntimeCredential("srv_123", { confirm: true });
+// Store access.token as a secret; access.endpoint is the Runtime API origin.
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -H "Authorization: Bearer $OPENSHIP_TOKEN" "$OPENSHIP_API/api/system/servers/srv_123/managed/info"
+curl -X POST -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"confirm":true}' \
+  "$OPENSHIP_API/api/system/servers/srv_123/managed/runtime-api/credential"
+```
+
+</Tab>
+</Tabs>
+
+Credential responses are `private, no-store`. Runtime reveal does not enable a
+disabled API; use `enableManagedRuntime` explicitly. The Runtime API powers Openship,
+so there is no managed-server disable operation. `rotateManagedRuntimeCredential`
+requires `expectedRevision` from the current credential plus `confirm: true`.
+A stale revision returns `409 MANAGED_RUNTIME_TOKEN_CHANGED`; reveal the current
+token instead of repeatedly rotating after an uncertain response. SSH connection
+responses include host, port, username, temporary password, expiry and host-key
+fingerprint. SSH public-key replacement accepts one public key and affects root
+access to the server; private keys are rejected.
+
+`getNetworkSettings(id, { details: true })` (REST: `?details=true`) adds
+`egress`, `revision`, `ingressAll`, `privateIp`, `outboundIp` and `outboundMode`.
+Omitting this option preserves the original two-field response for existing clients.
+Send `expectedInternetAccess`, `expectedRevision`, `internetAccess`,
+`egress` and `confirm: true` to change outbound destinations. Use `*` alone for all
+hosts, or up to 50 hostnames/IPs. When disabling internet, omit `egress`; the
+provider clears it. Writes with `expectedRevision` return the detailed response;
+older internet-only writes retain the original response.
+A changed policy returns `409 SERVER_NETWORK_SETTINGS_CHANGED`.
+The operation patches outbound fields only; routing, private peers and proxy
+credentials keep their owning control flows.
+
+A manual workload runs inside the shared server as root and consumes its existing
+resources. It creates neither a project nor a public route. Creation accepts a
+name, shell command, absolute `workingDirectory`, `environment` entries of the
+form `KEY=value`, and a `restartPolicy` of `never`, `on-failure` or `always`.
+It saves the process **stopped**. Reuse its `idempotencyKey` with the identical
+request after a timeout; changing the payload under that key returns a conflict.
+Then use `controlManagedWorkload` with `start`, `stop` or `delete` and `confirm: true`.
+Only processes created as manual workloads can be changed here; application and
+platform workloads return `409 MANAGED_WORKLOAD_PROTECTED`. Logs require a tail
+of 1–500 lines and return at most 64 KiB. Lists omit commands and environments and
+show `unknown` when live process status cannot be observed.
+
+Mutations participate in the managed server's existing activity lock. Active
+builds, terminal sessions, migrations or lifecycle operations may delay/refuse
+changes. Resume, resize, subscription changes and image selection retain their
+existing workflows; these access controls do not bypass billing or replace the VM.
 
 ## Server health check & install
 
@@ -701,7 +781,7 @@ shared storage before removing the cluster runtime.
 | Preview purchased capacity and projects that may restart, without changing the host. | `servers.previewResize(id)` | `GET /api/system/servers/:id/resize`<br />`server:read` |
 | Queue a reviewed resize with a revision, request key and explicit restart confirmation. | `servers.resize(id, input)` | `POST /api/system/servers/:id/resize`<br />`server:admin` |
 | Remove an empty server after its subscription ends and provider cleanup is confirmed. | `servers.removeManaged(id, input)` | `DELETE /api/system/servers/:id/managed`<br />`server:admin` |
-| Read provider outbound internet settings and route-managed ingress ports without starting the server. | `servers.getNetworkSettings(id)` | `GET /api/system/servers/:id/network-settings`<br />`server:read` |
+| Read outbound internet and route-managed ingress without starting the server; request details for egress rules, IP diagnostics and a revision. | `servers.getNetworkSettings(id, input?)` | `GET /api/system/servers/:id/network-settings`<br />`server:read` |
 | Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity. | `servers.updateNetworkSettings(id, input)` | `PATCH /api/system/servers/:id/network-settings`<br />`server:admin` |
 
 ### Observe
@@ -709,6 +789,26 @@ shared storage before removing the cluster runtime.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Read accessible deployment servers, including linked managed servers, with their capabilities and readiness. | `servers.destinations()` | `GET /api/system/servers/destinations`<br />`server:list` |
+
+### Managed server controls
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the selected managed server image, operating system, lifecycle and purchased allocation. Does not start the VM or return its raw configuration. | `servers.managedInfo(id)` | `GET /api/system/servers/:id/managed/info`<br />`server:read` |
+| Read a bounded tail of managed server boot logs. Requires server admin; logs may contain application output. | `servers.managedBootLogs(id, input)` | `POST /api/system/servers/:id/managed/boot-logs`<br />`server:admin` |
+| Read SSH enablement and public connection instructions for this managed server. Never returns passwords. | `servers.managedSshStatus(id)` | `GET /api/system/servers/:id/managed/ssh`<br />`server:read` |
+| Enable or disable SSH with explicit confirmation and expected enablement. Changes all SSH users on this server. | `servers.setManagedSsh(id, input)` | `PATCH /api/system/servers/:id/managed/ssh`<br />`server:admin` |
+| Replace the root authorized public key on this server. Accepts one OpenSSH public key; never a private key. Requires confirmation. | `servers.setManagedSshKey(id, input)` | `PUT /api/system/servers/:id/managed/ssh/key`<br />`server:admin` |
+| Set the root SSH password on this managed server. Requires confirmation. The password is never returned or audited. | `servers.setManagedSshPassword(id, input)` | `PUT /api/system/servers/:id/managed/ssh/password`<br />`server:admin` |
+| Issue a short-lived SSH connection for this managed server. Requires server admin and confirmation. Treat its password as a secret. | `servers.managedSshConnection(id, input)` | `POST /api/system/servers/:id/managed/ssh/connection`<br />`server:admin` |
+| Read the managed server Runtime API status without enabling it or returning a token. | `servers.managedRuntimeStatus(id)` | `GET /api/system/servers/:id/managed/runtime-api`<br />`server:read` |
+| Enable the Runtime API used by Openship for deployments and server management. Requires server admin and active server entitlement. | `servers.enableManagedRuntime(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/enable`<br />`server:admin` |
+| Reveal the current workspace-only Runtime API credential. Requires server admin and confirmation. Does not enable the service or issue an account/namespace token. | `servers.managedRuntimeCredential(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/credential`<br />`server:admin` |
+| Rotate the Runtime API credential after reviewing the current revision. Invalidates prior tokens and sessions. A stale revision cannot repeat a successful rotation. | `servers.rotateManagedRuntimeCredential(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/rotate`<br />`server:admin` |
+| List native managed processes with live status, capped at 100 entries. Distinguishes manual, project and system workloads; does not return environments or commands. | `servers.managedWorkloads(id)` | `GET /api/system/servers/:id/managed/workloads`<br />`server:read` |
+| Read bounded logs for a process on this managed server. Requires server admin. Process ID is scoped to the server. | `servers.managedWorkloadLogs(id, input)` | `POST /api/system/servers/:id/managed/workloads/logs`<br />`server:admin` |
+| Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation. | `servers.createManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads`<br />`server:admin` |
+| Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls. | `servers.controlManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads/control`<br />`server:admin` |
 
 ### Legacy network URLs
 

@@ -5,6 +5,7 @@ import {
 } from "./infrastructure-resources";
 import { ClusterRuntimeCollectionSchemas } from "./cluster-runtime";
 import { ClusterStorageCollectionSchemas } from "./cluster-storage";
+import { ManagedServerResourceSchemas } from "./server-managed";
 import { Type, type Static } from "@sinclair/typebox";
 import { AgentExecBody } from "./exec";
 import { CloudWorkspaceSchema, CloudWorkspaceUsageSchema, CloudWorkspaceResizePreviewSchema, CreateManagedServerInputSchema, ResizeManagedServerInputSchema, RemoveManagedServerInputSchema } from "./cloud-workspaces";
@@ -40,6 +41,12 @@ const nullableString = Type.Union([Type.String(), Type.Null()]);
 export const ServerNetworkSettingsSchema = Type.Object({
   internetAccess: Type.Union([Type.Boolean(), Type.Null()]),
   ingressPorts: Type.Array(Type.Integer({ minimum: 1, maximum: 65535 })),
+  ingressAll: Type.Optional(Type.Boolean()),
+  egress: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+  privateIp: Type.Optional(nullableString),
+  outboundIp: Type.Optional(nullableString),
+  outboundMode: Type.Optional(nullableString),
+  revision: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
 }, { additionalProperties: false });
 const connectionFields = {
   name: Type.Optional(nullableString),
@@ -466,13 +473,21 @@ export const ServerCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  ...ManagedServerResourceSchemas,
   usage: { action: "read", output: CloudWorkspaceUsageSchema },
-  getNetworkSettings: { action: "read", output: ServerNetworkSettingsSchema },
+  getNetworkSettings: {
+    action: "read",
+    input: Type.Object({ details: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+    optionalInput: true,
+    output: ServerNetworkSettingsSchema,
+  },
   updateNetworkSettings: {
     action: "admin",
     input: Type.Object({
       internetAccess: Type.Boolean(),
       expectedInternetAccess: Type.Boolean(),
+      egress: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 253, pattern: "^[^\\s/\\\\:@?#\\x00]+$" }), { minItems: 1, maxItems: 50 })),
+      expectedRevision: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
       confirm: Type.Literal(true),
     }, { additionalProperties: false }),
     output: ServerNetworkSettingsSchema,

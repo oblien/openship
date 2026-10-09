@@ -11,6 +11,7 @@ import {
 } from "@repo/contracts";
 import { secureRouter } from "../../lib/secure-router";
 import * as serversCtrl from "./servers.controller";
+import * as managedCtrl from "./server-managed.controller";
 import * as serverCheck from "./server-check.controller";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system" });
@@ -246,9 +247,12 @@ r.get(
   {
     tag: "server:read",
     authorizationHandledByOperation: true,
+    query: Type.Object({
+      details: Type.Optional(Type.Union([Type.Literal("true"), Type.Literal("false")])),
+    }, { additionalProperties: false }),
     mcp: {
       description:
-        "Read a managed Docker server's provider network settings. Null internetAccess means unavailable. Ports are managed by project routing; this read never starts the server.",
+        "Read a managed Docker server's provider network settings. Add details=true for outbound rules, IP diagnostics and the revision required to edit rules. Null internetAccess means unavailable. Ports are managed by project routing; this read never starts the server.",
     },
   },
   serversCtrl.getServerNetworkSettings,
@@ -262,10 +266,231 @@ r.patch(
     body: ServerResourceSchemas.updateNetworkSettings.input,
     mcp: {
       description:
-        "Change outbound internet access on a managed Docker server after reviewing current settings. Disabling it affects downloads, external APIs and builds for every project. Send expectedInternetAccess and confirm:true. Ingress, private links and edge routing remain managed by Openship and Oblien.",
+        "Change outbound internet access and optional egress host allowlist on a managed Docker server after reviewing current settings. Egress changes also require expectedRevision from the network read. Disabling it affects downloads, external APIs and builds for every project. Send expectedInternetAccess and confirm:true. Ingress, private links and edge routing remain managed by Openship and Oblien.",
     },
   },
   serversCtrl.updateServerNetworkSettings,
+);
+
+r.get(
+  "/servers/:id/managed/info",
+  {
+    tag: "server:read",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    mcp: {
+      description:
+        "Read the selected managed server image, operating system, lifecycle and actual allocation. Does not start the VM or return its raw configuration.",
+    },
+  },
+  managedCtrl.managedInfo,
+);
+
+r.post(
+  "/servers/:id/managed/boot-logs",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.managedBootLogs.input,
+    mcp: {
+      description:
+        "Read a bounded tail of managed server boot logs. Requires server admin; logs may contain application output.",
+    },
+  },
+  managedCtrl.managedBootLogs,
+);
+
+r.get(
+  "/servers/:id/managed/ssh",
+  {
+    tag: "server:read",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    mcp: {
+      description:
+        "Read SSH enablement and public connection instructions for this managed server. Never returns passwords.",
+    },
+  },
+  managedCtrl.managedSshStatus,
+);
+
+r.patch(
+  "/servers/:id/managed/ssh",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.setManagedSsh.input,
+    mcp: {
+      description:
+        "Enable or disable SSH with explicit confirmation and expected enablement. Changes all SSH users on this server.",
+    },
+  },
+  managedCtrl.setManagedSsh,
+);
+
+r.put(
+  "/servers/:id/managed/ssh/key",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.setManagedSshKey.input,
+    mcp: {
+      description:
+        "Replace the root authorized public key on this server. Accepts one OpenSSH public key; never a private key. Requires confirmation.",
+    },
+  },
+  managedCtrl.setManagedSshKey,
+);
+
+r.put(
+  "/servers/:id/managed/ssh/password",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.setManagedSshPassword.input,
+    mcp: {
+      description:
+        "Set the root SSH password on this managed server. Requires confirmation. The password is never returned or audited.",
+    },
+  },
+  managedCtrl.setManagedSshPassword,
+);
+
+r.post(
+  "/servers/:id/managed/ssh/connection",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.managedSshConnection.input,
+    mcp: {
+      description:
+        "Issue a short-lived SSH connection for this managed server. Requires server admin and confirmation. Treat its password as a secret.",
+    },
+  },
+  managedCtrl.managedSshConnection,
+);
+
+r.get(
+  "/servers/:id/managed/runtime-api",
+  {
+    tag: "server:read",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    mcp: {
+      description:
+        "Read the managed server Runtime API status without enabling it or returning a token.",
+    },
+  },
+  managedCtrl.managedRuntimeStatus,
+);
+
+r.post(
+  "/servers/:id/managed/runtime-api/enable",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.enableManagedRuntime.input,
+    mcp: {
+      description:
+        "Enable the Runtime API used by Openship for deployments and server management. Requires server admin and active server entitlement.",
+    },
+  },
+  managedCtrl.enableManagedRuntime,
+);
+
+r.post(
+  "/servers/:id/managed/runtime-api/credential",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.managedRuntimeCredential.input,
+    mcp: {
+      description:
+        "Reveal the current workspace-only Runtime API credential. Requires server admin and confirmation. Does not enable the service or issue an account/namespace token.",
+    },
+  },
+  managedCtrl.managedRuntimeCredential,
+);
+
+r.post(
+  "/servers/:id/managed/runtime-api/rotate",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.rotateManagedRuntimeCredential.input,
+    mcp: {
+      description:
+        "Rotate the Runtime API credential after reviewing the current revision. Invalidates prior tokens and sessions. A stale revision cannot repeat a successful rotation.",
+    },
+  },
+  managedCtrl.rotateManagedRuntimeCredential,
+);
+
+r.get(
+  "/servers/:id/managed/workloads",
+  {
+    tag: "server:read",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    mcp: {
+      description:
+        "List native managed processes with live status, capped at 100 entries. Distinguishes manual, project and system workloads; does not return environments or commands.",
+    },
+  },
+  managedCtrl.managedWorkloads,
+);
+
+r.post(
+  "/servers/:id/managed/workloads/logs",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.managedWorkloadLogs.input,
+    mcp: {
+      description:
+        "Read bounded logs for a process on this managed server. Requires server admin. Process ID is scoped to the server.",
+    },
+  },
+  managedCtrl.managedWorkloadLogs,
+);
+
+r.post(
+  "/servers/:id/managed/workloads",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.createManagedWorkload.input,
+    mcp: {
+      description:
+        "Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation.",
+    },
+  },
+  managedCtrl.createManagedWorkload,
+);
+
+r.post(
+  "/servers/:id/managed/workloads/control",
+  {
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    auditHandledByOperation: true,
+    body: ServerResourceSchemas.controlManagedWorkload.input,
+    mcp: {
+      description:
+        "Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls.",
+    },
+  },
+  managedCtrl.controlManagedWorkload,
 );
 
 export const serverResourceRoutes = r.hono;

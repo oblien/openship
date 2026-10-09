@@ -86,6 +86,7 @@ export * from "./notices";
 
 export * from "./billing";
 export * from "./cloud-workspaces";
+export * from "./server-managed";
 
 export * from "./billing-inputs";
 

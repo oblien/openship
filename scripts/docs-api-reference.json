@@ -2805,7 +2805,7 @@
     "servers.getNetworkSettings": {
       "page": "servers",
       "section": "Managed servers",
-      "description": "Read provider outbound internet settings and route-managed ingress ports without starting the server.",
+      "description": "Read outbound internet and route-managed ingress without starting the server; request details for egress rules, IP diagnostics and a revision.",
       "route": "GET /api/system/servers/:id/network-settings"
     },
     "servers.updateNetworkSettings": {
@@ -2813,6 +2813,96 @@
       "section": "Managed servers",
       "description": "Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity.",
       "route": "PATCH /api/system/servers/:id/network-settings"
+    },
+    "servers.managedInfo": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read the selected managed server image, operating system, lifecycle and purchased allocation. Does not start the VM or return its raw configuration.",
+      "route": "GET /api/system/servers/:id/managed/info"
+    },
+    "servers.managedBootLogs": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read a bounded tail of managed server boot logs. Requires server admin; logs may contain application output.",
+      "route": "POST /api/system/servers/:id/managed/boot-logs"
+    },
+    "servers.managedSshStatus": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read SSH enablement and public connection instructions for this managed server. Never returns passwords.",
+      "route": "GET /api/system/servers/:id/managed/ssh"
+    },
+    "servers.setManagedSsh": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Enable or disable SSH with explicit confirmation and expected enablement. Changes all SSH users on this server.",
+      "route": "PATCH /api/system/servers/:id/managed/ssh"
+    },
+    "servers.setManagedSshKey": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Replace the root authorized public key on this server. Accepts one OpenSSH public key; never a private key. Requires confirmation.",
+      "route": "PUT /api/system/servers/:id/managed/ssh/key"
+    },
+    "servers.setManagedSshPassword": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Set the root SSH password on this managed server. Requires confirmation. The password is never returned or audited.",
+      "route": "PUT /api/system/servers/:id/managed/ssh/password"
+    },
+    "servers.managedSshConnection": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Issue a short-lived SSH connection for this managed server. Requires server admin and confirmation. Treat its password as a secret.",
+      "route": "POST /api/system/servers/:id/managed/ssh/connection"
+    },
+    "servers.managedRuntimeStatus": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read the managed server Runtime API status without enabling it or returning a token.",
+      "route": "GET /api/system/servers/:id/managed/runtime-api"
+    },
+    "servers.enableManagedRuntime": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Enable the Runtime API used by Openship for deployments and server management. Requires server admin and active server entitlement.",
+      "route": "POST /api/system/servers/:id/managed/runtime-api/enable"
+    },
+    "servers.managedRuntimeCredential": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Reveal the current workspace-only Runtime API credential. Requires server admin and confirmation. Does not enable the service or issue an account/namespace token.",
+      "route": "POST /api/system/servers/:id/managed/runtime-api/credential"
+    },
+    "servers.rotateManagedRuntimeCredential": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Rotate the Runtime API credential after reviewing the current revision. Invalidates prior tokens and sessions. A stale revision cannot repeat a successful rotation.",
+      "route": "POST /api/system/servers/:id/managed/runtime-api/rotate"
+    },
+    "servers.managedWorkloads": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "List native managed processes with live status, capped at 100 entries. Distinguishes manual, project and system workloads; does not return environments or commands.",
+      "route": "GET /api/system/servers/:id/managed/workloads"
+    },
+    "servers.managedWorkloadLogs": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read bounded logs for a process on this managed server. Requires server admin. Process ID is scoped to the server.",
+      "route": "POST /api/system/servers/:id/managed/workloads/logs"
+    },
+    "servers.createManagedWorkload": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation.",
+      "route": "POST /api/system/servers/:id/managed/workloads"
+    },
+    "servers.controlManagedWorkload": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls.",
+      "route": "POST /api/system/servers/:id/managed/workloads/control"
     },
     "mail.getSteps": {
       "page": "mail",

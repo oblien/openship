@@ -60,7 +60,9 @@ has ended can enter host deletion. Financial history remains with the provider.
 - `serverId`, subscription, namespace and project ownership are checked before
   opening the provider connection. A Cloud request cannot fall through to the
   control plane's local Docker socket or filesystem.
-- Provider credentials and runtime tokens stay server-side. Source uploads must
+- Provider account and namespace credentials stay server-side. An explicit
+  server-admin operation can reveal a workspace-only Runtime API token or a
+  short-lived SSH credential. Source uploads must
   belong to the same organization, project and server; a stored local path is not
   authorization to transfer a control-plane directory.
 - Host activity uses `cloud:workspace-activity:<subscription>`. Runtime/route
@@ -136,3 +138,60 @@ ID; reads return saved command, environment and labels; Start/Stop persist
 `enabled`; stopped processes stay stopped
 after restarting the server. SDK type checking and simulated responses do not
 prove these live provider guarantees.
+
+
+## Managed server controls
+
+The shared server detail adds **Settings**, **SSH access**, **Runtime API**, and
+**Workloads** tabs. **Networking** includes the outbound hostname allowlist and
+read-only ingress/private/outbound diagnostics. The API and native/HTTP SDK use
+`ManagedServerResourceSchemas`, the existing server authorization layer, and the
+same namespace-bound provider connection as deployments. No generic provider
+proxy or new provisioning/billing path is introduced.
+
+- Settings reports the actual managed image and allocation, and offers bounded
+  boot logs. Application image changes stay in project deployment settings;
+  replacing the VM image, changing paid resources directly, and destructive TTLs
+  are deliberately not controls on an active shared managed server.
+- SSH supports enable/disable, one authorized public key, password replacement,
+  and temporary connections. Passwords and keys never enter server overview or
+  audit payloads. Provider sharing restrictions are honored.
+- Runtime API status never enables it. Credential reveal and rotation require
+  server-admin authorization and a confirmed request. Rotation compares a hash
+  of the current underlying token under the activity lock. A retry after a lost
+  success response cannot rotate it again with the old revision. The Runtime API
+  is required by Openship; the dashboard does not offer to disable it.
+- Native workloads distinguish platform services, project-owned releases and
+  manual processes. Only manual processes created by this interface can be
+  started, stopped or deleted here. A deterministic ID and request fingerprint
+  recover lost create replies without duplicating a process. Creation saves a
+  stopped process; starting it is a separate explicit action. Process environment
+  and command text are never included in lists or audits.
+- Outbound rules use an optimistic revision and a narrow patch. Routes, private
+  peers, ingress rules and proxy credentials are never round-tripped by this form.
+  Disabling internet clears egress in the provider; re-enabling it explicitly
+  sends the displayed destination list. Wildcard ingress is represented as such.
+
+Mutations reauthorize after acquiring managed workspace activity admission, so
+linked controllers, deployments and terminals retain their existing coordination.
+New execution/access requires authoritative paid entitlement; revocation does not.
+Unconfirmed provider results are errors, and unknown process observations are not
+reported as stopped. These controls do not promise a distributed SQL/provider
+transaction: uncertain replies are recovered by reading state and retaining the
+original identity or revision.
+
+Secret responses carry `Cache-Control: private, no-store`. The dashboard holds
+credentials in component memory for at most one minute, clears them when hidden,
+and ignores responses from a previous account/server/tab. Gateway tokens grant
+root-equivalent access to this server, not project-scoped access. Direct SSH/SDK
+clients run outside Openship's deployment queue; administrators must coordinate
+their own commands with application work.
+
+The provider Runtime endpoint defaults to `https://workspace.oblien.com` and can
+be overridden with `OBLIEN_RUNTIME_URL`. All provider methods used here are in
+Oblien SDK 2.10.0; no new provider SDK release is required. Deploy the Openship API
+and dashboard from the same release to use the new controls. Existing server
+response shapes are unchanged. Detailed network reads opt in with
+`getNetworkSettings(id, { details: true })` / `?details=true`; writes return
+diagnostics only when the caller supplies `expectedRevision`, preserving the
+original internet-only contract for older clients.
