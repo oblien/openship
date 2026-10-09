@@ -253,6 +253,10 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install webmail server dependencies for shared client imports
+        working-directory: apps/email/server
+        run: bun install --frozen-lockfile
+
       - name: Install webmail client dependencies
         working-directory: apps/email/client
         run: bun install --frozen-lockfile
