@@ -36,13 +36,19 @@ const ENGINE_SRC = fileURLToPath(new URL("../../platform/src/engine", import.met
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SOURCE_ROOTS = [API_SRC, ENGINE_SRC];
 
-/** Every `.ts` file under the HTTP API and its retained shared engine. */
+/** Production TypeScript under the HTTP API and its retained shared engine.
+ * Provider events and deliberately invalid event names in test fixtures are
+ * not audit emissions and must not expand the customer-facing catalog. */
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...sourceFiles(full));
-    else if (entry.name.endsWith(".ts")) out.push(full);
+    if (entry.isDirectory()) {
+      if (!["test", "tests", "__tests__", "__fixtures__"].includes(entry.name))
+        out.push(...sourceFiles(full));
+    } else if (entry.name.endsWith(".ts") && !/\.(?:test|spec|d)\.ts$/.test(entry.name)) {
+      out.push(full);
+    }
   }
   return out;
 }
