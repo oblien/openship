@@ -86,7 +86,8 @@
     },
     "apps": "Applications",
     "jobs": "Tâches",
-    "workspaces": "Espaces de travail"
+    "workspaces": "Espaces de travail",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Développer la barre latérale",

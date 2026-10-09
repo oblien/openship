@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageActionRunnerAssets } from "../actions-runner/assets.mjs";
 
 const packageDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(packageDir, "../..");
@@ -27,4 +28,5 @@ cpSync(join(root, "packages/db/drizzle"), join(out, "migrations"), { recursive: 
 cpSync(join(root, "apps/email/engine"), join(out, "engine"), { recursive: true });
 cpSync(join(root, "packages/adapters/src/infra/lua"), join(out, "lua"), { recursive: true });
 cpSync(join(root, "apps/api/assets/geoip"), join(out, "assets/geoip"), { recursive: true });
+stageActionRunnerAssets(join(out, "assets/actions-runner"));
 console.log("[platform] built native Node worker and runtime assets");

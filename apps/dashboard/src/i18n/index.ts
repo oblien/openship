@@ -39,9 +39,10 @@ import jobs from "./locales/en/jobs.json";
 import issues from "./locales/en/issues.json";
 import autoDns from "./locales/en/autoDns.json";
 import support from "./locales/en/support.json";
+import actions from "./locales/en/actions.json";
 
 /** The base (English) dictionary — bundled, used as the type + fallback. */
-export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns, support };
+export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns, support, actions };
 export type Dictionary = typeof baseDictionary;
 
 export const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;

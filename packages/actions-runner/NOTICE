@@ -1,0 +1,4 @@
+OpenShip Actions runner uses nektos/act, Copyright (c) 2019 Christopher P. Lee,
+under the MIT License, and its dependencies under their respective licenses.
+The pinned dependency versions and integrity sums are in go.mod and go.sum.
+https://github.com/nektos/act/blob/v0.2.89/LICENSE

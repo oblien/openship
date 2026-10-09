@@ -19,7 +19,7 @@
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import { AppError } from "@repo/core";
+import { AppError, validateGitHubInstallationScope } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
@@ -1194,7 +1194,7 @@ export async function githubInstallations(c: Context) {
  */
 export async function githubInstallationToken(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{ owner?: string; repos?: string[] }>();
+  const body = await c.req.json<{ owner?: string; repos?: string[]; permissions?: Record<string, "read" | "write"> }>();
   if (!body.owner) return c.json({ error: "owner is required" }, 400);
 
   // The repo-grant gate. Without it the route's `cloud:write` tag was the only check,
@@ -1203,8 +1203,10 @@ export async function githubInstallationToken(c: Context) {
   // live GitHub App installation token, and the grant system that decides WHICH repos
   // a member may touch was never consulted. The repos-vs-no-repos distinction is the
   // security-relevant part; it lives in canMintInstallationToken.
+  const scope = body.permissions ? validateGitHubInstallationScope(body.repos, body.permissions) : null;
+  const access = scope && Object.values(scope.permissions).includes("write") ? "write" : "read";
   const requested = (body.repos ?? []).map((r) => r.trim()).filter(Boolean);
-  if (!(await canMintInstallationToken(ctx, body.owner, body.repos))) {
+  if (!(await canMintInstallationToken(ctx, body.owner, body.repos, access))) {
     return c.json(
       {
         error: requested.length
@@ -1216,11 +1218,11 @@ export async function githubInstallationToken(c: Context) {
     );
   }
 
-  const result = await mintOrgInstallationToken(ctx.organizationId, body.owner, body.repos);
+  const result = await mintOrgInstallationToken(ctx.organizationId, body.owner, body.repos, scope?.permissions);
   if (result.kind === "not-found") {
     return c.json({ error: `No GitHub App installation found for ${result.owner}` }, 404);
   }
-  return c.json({ data: { token: result.token, expiresAt: result.expiresAt } });
+  return c.json({ data: { token: result.token, expiresAt: result.expiresAt, ...(scope ? { scope } : {}) } });
 }
 
 /**

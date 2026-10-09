@@ -30,6 +30,8 @@
     "build:native": "bun run build-native.ts"
   },
   "dependencies": {
+    "@actions/expressions": "0.3.61",
+    "@actions/workflow-parser": "0.3.61",
     "@better-auth/core": "^1.5.4",
     "@better-auth/drizzle-adapter": "^1.5.4",
     "@better-auth/passkey": "1.5.4",
@@ -46,6 +48,7 @@
     "dockerode": "^4.0.9",
     "drizzle-orm": "^0.45.1",
     "ioredis": "^5.10.0",
+    "jose": "6.2.0",
     "ipaddr.js": "^2.4.0",
     "maxmind": "^5.0.6",
     "nodemailer": "^9.0.3",
@@ -57,6 +60,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@actions/artifact": "2.3.2",
+    "@actions/cache": "4.1.0",
     "@types/node": "^22.13.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",

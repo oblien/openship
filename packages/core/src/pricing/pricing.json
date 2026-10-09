@@ -420,6 +420,40 @@
       }
     }
   ],
+  "actions": {
+    "version": 1,
+    "currency": "usd",
+    "transferGiBPerDollar": 5,
+    "depositsCents": [
+      500,
+      2000,
+      5000,
+      10000
+    ],
+    "runners": [
+      {
+        "id": "linux_2",
+        "cpuCores": 2,
+        "memoryMb": 4096,
+        "diskGb": 40,
+        "microUsdPerMinute": 4000
+      },
+      {
+        "id": "linux_4",
+        "cpuCores": 4,
+        "memoryMb": 8192,
+        "diskGb": 80,
+        "microUsdPerMinute": 8000
+      },
+      {
+        "id": "linux_8",
+        "cpuCores": 8,
+        "memoryMb": 16384,
+        "diskGb": 160,
+        "microUsdPerMinute": 16000
+      }
+    ]
+  },
   "creditPacks": [
     {
       "id": "pack_400",

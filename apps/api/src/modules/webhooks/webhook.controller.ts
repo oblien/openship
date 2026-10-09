@@ -60,7 +60,7 @@ async function dispatchProvider(c: Context, providerName: WebhookProviderName) {
   }
 
   try {
-    const result = await provider.handle(payload, headers);
+    const result = await provider.handle(payload, headers, verification);
     // A valid signature proves who sent the delivery, not that its action ran.
     // Failed dispatches must remain visible and redeliverable at the provider.
     return c.json(result, result.success ? 200 : 500);

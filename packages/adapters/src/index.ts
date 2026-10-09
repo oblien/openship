@@ -621,3 +621,4 @@ export { managedProcessState, readManagedProcessStatus, waitForManagedProcess } 
 
 export { resolveSshAuthSock } from "./system/ssh-support";
 export { probeLocalGitHubToken } from "./system/local-github";
+export { ActionsWorker, probeActionCapabilities, type ActionWorkerSnapshot } from "./actions/worker";

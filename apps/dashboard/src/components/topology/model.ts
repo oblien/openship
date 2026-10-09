@@ -45,7 +45,10 @@ export type TopologyState =
   | "unknown"
   | "disabled"
   | "configured"
-  | "pending";
+  | "pending"
+  | "succeeded"
+  | "cancelled"
+  | "skipped";
 
 export interface TopologyResource {
   id: string;
@@ -58,7 +61,8 @@ export interface TopologyResource {
     | "instance"
     | "traffic"
     | "database"
-    | "volume";
+    | "volume"
+    | "workflow-job";
   name: string;
   description: string;
   tone: TopologyTone;
@@ -78,6 +82,8 @@ export interface TopologyResource {
   ownerName?: string;
   pending?: boolean;
   isNew?: boolean;
+  /** Optional dependency depth for non-infrastructure graphs. */
+  layoutColumn?: number;
 }
 
 export interface TopologyRelation {
@@ -526,14 +532,14 @@ export function topologyPositions(
 ): Record<string, { x: number; y: number }> {
   const columns = new Map<number, TopologyResource[]>();
   for (const node of graph.nodes) {
-    const column =
+    const column = node.layoutColumn ?? (
       node.kind === "edge" || node.kind === "traffic"
         ? 0
         : node.kind === "linked"
           ? 3
           : node.kind === "environment" || node.tone === "postgres" || node.tone === "redis"
             ? 2
-            : 1;
+            : 1);
     columns.set(column, [...(columns.get(column) ?? []), node]);
   }
   const positions: Record<string, { x: number; y: number }> = {};

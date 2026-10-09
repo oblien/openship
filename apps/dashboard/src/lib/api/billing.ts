@@ -5,6 +5,7 @@ import type { ApiPlan } from "@/components/billing/PricingCards";
 import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingCustomQuote, BillingState as BillingStateContract, BillingOperations, BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
 import type { BillingPendingCheckouts, BillingCheckoutActionInput, BillingCheckoutActionResult } from "@repo/contracts";
+import type { ActionBudget, ActionCreditPurchase } from "@repo/contracts";
 export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
@@ -178,6 +179,14 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  getActionsBudget: async (): Promise<ActionBudget> =>
+    (await api.get<Envelope<ActionBudget>>(endpoints.billing.actions)).data,
+  getActionsPurchase: async (purchaseId: string): Promise<ActionCreditPurchase> =>
+    (await api.get<Envelope<ActionCreditPurchase>>(endpoints.billing.actionsPurchase, { params: { purchaseId } })).data,
+  createActionsCheckout: async (input: Parameters<BillingOperations["createActionsCheckout"]>[0]) =>
+    (await api.post<Envelope<Awaited<ReturnType<BillingOperations["createActionsCheckout"]>>>>(endpoints.billing.actionsCheckout, input)).data,
+  resumeActionsCheckout: async (purchaseId: string) =>
+    (await api.post<Envelope<Awaited<ReturnType<BillingOperations["resumeActionsCheckout"]>>>>(endpoints.billing.actionsResume, { purchaseId })).data,
   listCheckouts: async (workspaceId?: string): Promise<BillingPendingCheckouts> =>
     (await api.get<Envelope<BillingPendingCheckouts>>(endpoints.billing.checkouts, { params: { workspaceId } })).data,
   resumeCheckout: async (input: BillingCheckoutActionInput): Promise<BillingCheckoutActionResult> =>

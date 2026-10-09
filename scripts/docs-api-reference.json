@@ -3283,6 +3283,162 @@
       "page": "service-terminal",
       "description": "Mint a one-shot, short-lived WebSocket auth ticket for a service.",
       "route": "POST /api/services/terminal/ticket"
+    },
+    "actions.list": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "List authorized workflows.",
+      "route": "GET /api/actions/workflows"
+    },
+    "actions.create": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Configure a workflow and its allowed runners. Encrypts secrets without returning their values.",
+      "route": "POST /api/actions/workflows"
+    },
+    "actions.get": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Read a workflow definition, runner selection and secret names.",
+      "route": "GET /api/actions/workflows/:id"
+    },
+    "actions.update": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Replace workflow configuration while preserving secret values omitted from the update.",
+      "route": "PATCH /api/actions/workflows/:id"
+    },
+    "actions.remove": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Disable a workflow without deleting its run history.",
+      "route": "DELETE /api/actions/workflows/:id"
+    },
+    "actions.preview": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Validate YAML and inspect logical job dependencies without executing the workflow.",
+      "route": "POST /api/actions/preview"
+    },
+    "actions.discover": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "List workflow files at an authorized repository revision.",
+      "route": "GET /api/actions/discover"
+    },
+    "actions.runners": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "List authorized runners and their verified capabilities.",
+      "route": "GET /api/actions/runners"
+    },
+    "actions.addRunner": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Enable a runner on a connected server. Requires server administration access.",
+      "route": "POST /api/actions/runners"
+    },
+    "actions.inspectDestination": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Inspect OS, architecture, Git, Node and Docker on an authorized server.",
+      "route": "POST /api/actions/runners/inspect"
+    },
+    "actions.updateRunner": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Update an idle runner; active execution settings cannot be changed.",
+      "route": "PATCH /api/actions/runners/:id"
+    },
+    "actions.removeRunner": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Disable a runner for new jobs while retaining active work and history.",
+      "route": "DELETE /api/actions/runners/:id"
+    },
+    "actions.probeRunner": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Refresh a runner’s verified capabilities.",
+      "route": "POST /api/actions/runners/:id/probe"
+    },
+    "actions.dispatch": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "Dispatch a workflow with a caller idempotency key and resolved immutable commit.",
+      "route": "POST /api/actions/workflows/:id/dispatch"
+    },
+    "actions.listRuns": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "List recent runs, optionally filtered by workflow.",
+      "route": "GET /api/actions/runs"
+    },
+    "actions.getRun": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "Read durable run, job, matrix and step state.",
+      "route": "GET /api/actions/runs/:id"
+    },
+    "actions.cancel": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "Request cancellation; runner capacity remains held until cleanup is confirmed.",
+      "route": "POST /api/actions/runs/:id/cancel"
+    },
+    "actions.approve": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "Approve an untrusted fork run on disposable runners without secrets or write tokens.",
+      "route": "POST /api/actions/runs/:id/approve"
+    },
+    "actions.rerun": {
+      "page": "actions",
+      "section": "Runs",
+      "description": "Create a new attempt of the saved workflow and commit using an idempotency key.",
+      "route": "POST /api/actions/runs/:id/rerun"
+    },
+    "actions.jobEvents": {
+      "page": "actions",
+      "section": "Output",
+      "description": "Read masked job events after a durable sequence cursor.",
+      "route": "GET /api/actions/jobs/:id/events"
+    },
+    "actions.artifacts": {
+      "page": "actions",
+      "section": "Output",
+      "description": "List retained artifacts belonging to an authorized run.",
+      "route": "GET /api/actions/runs/:id/artifacts"
+    },
+    "actions.artifactDownload": {
+      "page": "actions",
+      "section": "Output",
+      "description": "Create a short-lived link for one authorized run artifact.",
+      "route": "POST /api/actions/runs/:id/artifacts/download"
+    },
+    "billing.getActionsBudget": {
+      "page": "billing",
+      "section": "Actions budget",
+      "description": "Read the separate prepaid Actions balance, runner rates and recent deposits. Amounts use unitsPerDollar; no namespace or checkout is created.",
+      "route": "GET /api/billing/actions"
+    },
+    "billing.getActionsPurchase": {
+      "page": "billing",
+      "section": "Actions budget",
+      "description": "Reconcile an owned Actions purchase with its verified provider receipt. Returns payment state without a payment URL.",
+      "route": "GET /api/billing/actions/purchase"
+    },
+    "billing.createActionsCheckout": {
+      "page": "billing",
+      "section": "Actions budget",
+      "description": "Start a prepaid Actions checkout with an approved deposit and idempotency key. Unavailable until customer-funded execution is enabled.",
+      "route": "POST /api/billing/actions/checkout"
+    },
+    "billing.resumeActionsCheckout": {
+      "page": "billing",
+      "section": "Actions budget",
+      "description": "Resume the original Actions checkout. Unavailable while customer purchases are disabled.",
+      "route": "POST /api/billing/actions/checkout/resume"
     }
   },
   "http": {
@@ -3996,6 +4152,116 @@
       "page": "data-transfer",
       "section": "Instance location",
       "description": "Verify and store an encrypted snapshot chunk for the bound receiver."
+    },
+    "GET /api/actions/runtime/_apis/artifactcache/cache": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Resolve a legacy cache entry. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/_apis/artifactcache/caches": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Reserve a legacy cache upload. Requires a purpose-bound job capability."
+    },
+    "PATCH /api/actions/runtime/_apis/artifactcache/caches/:id": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Upload a legacy cache byte range. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/_apis/artifactcache/caches/:id": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Finalize a legacy cache upload. Requires a purpose-bound job capability."
+    },
+    "GET /api/actions/runtime/objects/:id": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Read an object or byte range. Requires a purpose-bound job capability."
+    },
+    "PUT /api/actions/runtime/objects/:id": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Upload an authorized object or block. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Reserve an artifact upload. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Remove an artifact owned by this job. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Finalize a completed artifact upload. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Obtain a short-lived artifact URL. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "List artifacts available to this job. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Reserve a cache upload. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Finalize a cache upload. Requires a purpose-bound job capability."
+    },
+    "POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Resolve a compatible cache entry. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Reserve an artifact upload. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Remove an artifact owned by this job. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Finalize a completed artifact upload. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Obtain a short-lived artifact URL. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "List artifacts available to this job. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Reserve a cache upload. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Finalize a cache upload. Requires a purpose-bound job capability."
+    },
+    "POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL": {
+      "page": "actions",
+      "section": "Job runtime protocols",
+      "description": "Resolve a compatible cache entry. Requires a purpose-bound job capability."
     }
   }
 }

@@ -1,0 +1,16 @@
+name: Prepare Actions runner
+description: Build and verify the pinned execution bridge for installed Openship releases.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version: "1.26.4"
+        cache-dependency-path: packages/actions-runner/go.sum
+    - uses: actions/cache@v6
+      with:
+        path: packages/actions-runner/dist
+        key: ${{ runner.os }}-${{ runner.arch }}-actions-runner-${{ hashFiles('packages/actions-runner/*.go', 'packages/actions-runner/*.mjs', 'packages/actions-runner/go.mod', 'packages/actions-runner/go.sum', 'packages/actions-runner/NOTICE') }}
+    - name: Verify or build every supported target
+      shell: bash
+      run: node --input-type=module -e 'import { ensureRunnerAssets } from "./packages/actions-runner/assets.mjs"; ensureRunnerAssets();'

@@ -1,0 +1,140 @@
+---
+title: Openship Actions
+description: Run GitHub-compatible workflows on connected servers and temporary Cloud runners.
+---
+
+Actions runs CI workflows from your repositories. Jobs remains the place for
+scheduled commands against an existing application. Both use Openship's authorized
+destinations; Actions adds workflow dependencies, matrices, artifacts and GitHub Checks.
+
+## Add a runner
+
+Open **Actions → Runners** and select an existing server. Openship probes its OS,
+architecture, Git, Node and Docker capabilities before enabling a runtime.
+
+- **Linux containers:** use a runner image with the tools your workflow needs.
+  Docker and service-container actions require Docker on the destination.
+- **Native macOS:** use a connected Mac with Git and Node installed. Jobs execute
+  as the connected server user and share that user's filesystem and installed tools.
+- **Temporary Cloud runners:** each job receives a disposable Linux VM. Its funding
+  is separate from managed application-server subscriptions.
+
+Only run trusted code on persistent destinations. Enabling a native runner gives
+its workflows the same host access as the connected user. Runner labels select
+compatible capabilities; adding `macos` to a Linux runner does not make it a Mac.
+
+## Connect a workflow
+
+Create a workflow in `.github/workflows/` or `.openship/workflows/`, then select it
+in **Actions → New workflow**. Choose the allowed runners and, optionally, an
+artifact destination. You can preview the dependency graph before saving.
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm test
+  complete:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All matrix jobs passed"
+```
+
+Every run records the resolved commit and workflow definition. Rerunning creates a
+new attempt of that recorded revision. A controller restart resumes inspection of
+the same worker; it does not replay a job whose start was already accepted.
+
+The run page shows logical jobs as a topology and matrix executions in the job
+list. Step state and masked logs survive refreshes. Logs resume from their saved
+cursor instead of starting over.
+
+## GitHub events and checks
+
+A connected GitHub App receives signed push and pull-request events and publishes
+Checks on the commit. Each job uses a token scoped to its repository and declared
+permissions. Stored personal credentials are not substituted for an unavailable
+App token. GitHub installation tokens normally expire after one hour; token refresh
+inside a running job is not currently supported.
+
+Scheduled workflows run while the controller is online, at intervals of at least
+five minutes. Missed schedules are not replayed after downtime. For Desktop, keep
+it running or [move the control plane to a server](/docs/guides/migrate-control-plane).
+
+GitHub may also execute files in `.github/workflows/`. Use `.openship/workflows/`
+when you only want Openship execution. If a workflow deploys an application,
+review that project's separate push-to-deploy setting to avoid two deployments.
+
+Fork runs require explicit approval and disposable runners. Their workflow comes
+from the trusted base revision, while checkout can use the pull-request merge
+commit. They receive no stored secrets, write credential or shared cache access.
+Authorization is rechecked during execution; revoking the originating user's
+access prevents further authorized work.
+
+## Artifacts and cache
+
+Select an existing backup destination for artifacts and cache. Cloud requires an
+S3-compatible destination; self-hosted instances can also use a local destination.
+Workflow code never receives the destination's storage credentials.
+
+The API implements the protocols used by `actions/upload-artifact@v4`,
+`actions/download-artifact@v4` and `actions/cache@v4`. One object is limited to
+1 GiB, with 20 GiB of reserved and retained objects per organization. Artifact
+retention defaults to seven days and can be set up to 30 days. Expired objects are
+removed by the controller's cleanup loop.
+
+Runners must be able to reach the instance's public API. Set
+`OPENSHIP_ACTIONS_RUNTIME_URL` when it differs from `OPENSHIP_PUBLIC_URL`; preserve
+the artifact API and `/twirp` proxy routes. Runtime URLs use short-lived tokens
+scoped to one organization, run and job.
+
+## Cancellation and limits
+
+Cancel stops the remote execution and then cleans its resources. A runner remains
+busy until cleanup succeeds. Cloud workers also have a provider TTL as a fallback;
+an unreachable controller does not leave a VM running indefinitely.
+
+Workflows support up to 256 concrete jobs after matrix expansion. A job defaults
+to a 60-minute timeout and can request up to 360 minutes. Logs are bounded at
+8 MiB per job. Settled run history is retained for 30 days, with runs referenced
+by retained artifacts or retry attempts protected from early removal.
+
+Reusable workflows, protected environments, OIDC, attestations and Windows runners
+are not supported yet. Unsupported execution features are rejected before dispatch
+where they can be determined from the workflow.
+
+## Cloud Actions funding
+
+The planned Cloud Actions offering uses a separate prepaid budget. Approved Linux runner prices are
+$0.004/minute for 2 vCPU and 4 GiB RAM, $0.008/minute for 4 vCPU and 8 GiB RAM, and
+$0.016/minute for 8 vCPU and 16 GiB RAM. Temporary disks are 40, 80 and 160 GiB,
+respectively. The approved charging model bills execution by the second, including
+failed workflow steps, and excludes queue time and provisioning failures.
+
+**Actions → Budget** shows the rates, dollar balance and deposit history. Deposits
+are $5, $20, $50 and $100. The approved offer includes 5 GiB of combined upload and
+download transfer per deposited dollar. Internet pauses when that allowance is
+exhausted; additional funding restores access. Artifacts and caches use your
+configured storage destination.
+
+Customer purchases are not enabled. Provider execution metering, transfer
+enforcement and payment fulfillment still need to be connected and verified.
+A configured runner or an open checkout is not a funded entitlement.
+Operator-funded test pools are separate from monthly app servers and remain
+subject to the provider's namespace limits.

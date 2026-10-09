@@ -86,7 +86,8 @@
     },
     "apps": "Apps",
     "jobs": "Jobs",
-    "workspaces": "Arbeitsbereiche"
+    "workspaces": "Arbeitsbereiche",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Seitenleiste ausklappen",

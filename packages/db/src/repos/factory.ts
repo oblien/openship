@@ -1,4 +1,8 @@
 import { createClusterStorageRepo } from "./cluster-storage.repo";
+import { createActionsRepo } from "./actions.repo";
+import { createActionStorageRepo } from "./action-storage.repo";
+import { createActionBillingRepo } from "./action-billing.repo";
+export { createActionsRepo, type ActionRunner, type ActionWorkflow, type ActionRun, type ActionJob } from "./actions.repo";
 import { createCloudAnalyticsRepo } from "./cloud-analytics.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
@@ -443,6 +447,9 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     auditEvent: createAuditEventRepo(db, auditSettingsRepo),
     jobRun: createJobRunRepo(db),
     job: createJobRepo(db),
+    actions: createActionsRepo(db),
+    actionStorage: createActionStorageRepo(db),
+    actionBilling: createActionBillingRepo(db),
     orphanedResource: createOrphanedResourceRepo(db),
     hostPortClaim: createHostPortClaimRepo(db),
     resourceGrant: createResourceGrantRepo(db),

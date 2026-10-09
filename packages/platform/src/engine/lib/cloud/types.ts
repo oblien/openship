@@ -46,6 +46,7 @@ export interface CloudGithubInstallation {
 }
 
 export interface CloudGithubInstallationToken {
+  scope?: import("@repo/core").GitHubInstallationScope;
   token: string;
   /** ISO 8601 timestamp - GitHub install tokens expire in 60min. */
   expiresAt: string;
@@ -109,7 +110,8 @@ export interface CloudClient {
     installationToken(
       owner: string,
       repos?: string[],
-    ): Promise<{ token: string; expiresAt: string } | null>;
+      permissions?: Record<string, "read" | "write">,
+    ): Promise<{ token: string; expiresAt: string; scope?: import("@repo/core").GitHubInstallationScope } | null>;
   };
   pages: {
     create(input: {

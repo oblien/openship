@@ -88,7 +88,8 @@
 .topology-status {
   color: var(--muted-foreground);
 }
-.topology-status[data-state="running"] {
+.topology-status[data-state="running"],
+.topology-status[data-state="succeeded"] {
   color: var(--success);
 }
 .topology-status[data-state="starting"],

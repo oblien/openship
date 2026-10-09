@@ -3,6 +3,7 @@ import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema, PreviewSubscriptionChangeBody, ConfirmSubscriptionChangeBody, SubscriptionChangeScopeSchema } from "./billing-inputs";
 import { CloudWorkspaceResizePreviewSchema, CloudWorkspaceSchema } from "./cloud-workspaces";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
+import { ActionBillingOperationSchemas } from "./action-billing";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
 const stringOrNull = Type.Union([Type.String(), Type.Null()]);
@@ -220,6 +221,7 @@ export const BillingPublicSchemas = {
   listPlans: { action: "read", input: Type.Object({ locale: Type.Optional(Type.String({ maxLength: 512 })) }), optionalInput: true, output: BillingPlansSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
+  ...ActionBillingOperationSchemas,
   quoteCustomPlan: { action: "read", input: CustomServerResourcesSchema, output: BillingCustomQuoteSchema },
   listCheckouts: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingPendingCheckoutsSchema },
   resumeCheckout: { action: "write", input: BillingCheckoutActionInputSchema, output: BillingCheckoutActionResultSchema },

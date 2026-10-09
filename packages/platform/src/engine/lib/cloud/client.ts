@@ -140,10 +140,10 @@ export function cloudClient(scope: CloudClientScope, expectedIdentity?: CloudIde
         const json = await readCloudJson<{ data: CloudGithubInstallation[] }>(res);
         return json?.data ?? null;
       },
-      async installationToken(owner, repos) {
+      async installationToken(owner, repos, permissions) {
         const res = await fetchScoped("/api/cloud/github/installation-token", {
           method: "POST",
-          body: JSON.stringify({ owner, repos }),
+          body: JSON.stringify({ owner, repos, ...(permissions ? { permissions } : {}) }),
         });
         if (!res || !res.ok) return null;
         const json = await readCloudJson<{ data: CloudGithubInstallationToken }>(res);

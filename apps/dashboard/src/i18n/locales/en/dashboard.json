@@ -86,7 +86,8 @@
       "system": "System",
       "account": "Account"
     },
-    "workspaces": "Workspaces"
+    "workspaces": "Workspaces",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Expand sidebar",

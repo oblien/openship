@@ -1,4 +1,13 @@
 # syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM golang:1.26.4-bookworm AS actions-runner
+WORKDIR /runner
+COPY packages/actions-runner/go.mod packages/actions-runner/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY packages/actions-runner/ ./
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    apt-get update && apt-get install -y --no-install-recommends nodejs \
+ && node build.mjs
+
 # ─── Build stage ────────────────────────────────────────
 # Keep both stages on .bun-version; runtime tests cover private-CA HTTPS and async WebSocket upgrades.
 FROM oven/bun:1.3.14 AS builder
@@ -6,8 +15,10 @@ WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
 COPY tsconfig.base.json ./
+COPY patches/ ./patches/
 COPY packages/ ./packages/
 COPY apps/ ./apps/
+COPY --from=actions-runner /runner/dist ./packages/actions-runner/dist
 
 # The build died in "Resolving dependencies" — bun's network metadata resolution
 # for the whole monorepo, slow enough to trip the build's idle timeout.

@@ -22,6 +22,9 @@ export {
 
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
+export type { ActionRunConfiguration } from "./schema/actions";
+export { createActionsRepo, type ActionRunner, type ActionWorkflow, type ActionRun, type ActionJob, type ActionDelivery } from "./repos/actions.repo";
+export { createActionStorageRepo, type ActionStorageObject, type ActionStorageChunk } from "./repos/action-storage.repo";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
 export type { CloudWorkspaceOperation, CloudWorkspaceActivity, LinkedCloudServer, CloudSubscriptionChangeIntent } from "./schema/cloud-workspace";
 export type { ServerContainerDetail } from "./schema/server-container-status";

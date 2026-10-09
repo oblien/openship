@@ -1,3 +1,5 @@
+import { ActionCollectionSchemas, ActionResourceSchemas } from "@repo/contracts";
+import type { PlatformActionOperations } from "./actions";
 /** Passive host facade. The engine is loaded only by an explicitly constructed worker. */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Worker } from "node:worker_threads";
@@ -328,6 +330,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     issues: Object.freeze(Object.fromEntries(Object.keys({ ...IssueCollectionSchemas, ...IssueJobSchemas }).map(name => [name, (...args: unknown[]) => call(`issues.${name}`, ...args)]))) as PlatformIssueOperations,
     analytics: Object.freeze(analytics),
     jobs: Object.freeze(jobs),
+    actions: Object.freeze(Object.fromEntries(Object.keys({ ...ActionCollectionSchemas, ...ActionResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`actions.${name}`, ...args)]))) as PlatformActionOperations,
     system: Object.freeze(Object.fromEntries([...Object.keys(SystemOperationSchemas), "info"].map(name => [name, (...args: unknown[]) => call(`system.${name}`, ...args)]))) as PlatformSystemOperations,
     apps: Object.freeze(Object.fromEntries(Object.keys({ ...AppCollectionSchemas, ...AppResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`apps.${name}`, ...args)]))) as PlatformAppOperations,
     backupDestinations: Object.freeze(Object.fromEntries(Object.keys({ ...BackupDestinationCollectionSchemas, ...BackupDestinationResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`backupDestinations.${name}`, ...args)]))) as PlatformBackupDestinationOperations,

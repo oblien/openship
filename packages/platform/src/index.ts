@@ -1,3 +1,5 @@
+export * from "./actions";
+import { createActionOperations, type ActionDependencies, type PlatformActionOperations } from "./actions";
 export * from "./context";
 export * from "./authorization";
 export * from "./instance-authorization";
@@ -102,10 +104,11 @@ export interface PlatformKernel {
   readonly issues: PlatformIssueOperations;
   readonly analytics: PlatformAnalyticsOperations;
   readonly jobs: PlatformJobOperations;
+  readonly actions: PlatformActionOperations;
 }
 
 /** Composition boundary. It acquires no resources and owns no implicit global state. */
-export function createPlatform(deps: DeploymentDependencies & { projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies }): PlatformKernel {
+export function createPlatform(deps: DeploymentDependencies & { projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies; actions?: ActionDependencies }): PlatformKernel {
   const kernel = {
     resolveScope: deps.authorization.resolveScope,
     deployments: createDeploymentOperations(deps),
@@ -133,6 +136,7 @@ export function createPlatform(deps: DeploymentDependencies & { projects?: Proje
     issues: createIssueOperations(deps.authorization, deps.issues),
     analytics: createAnalyticsOperations(deps.authorization, deps.analytics),
     jobs: createJobOperations(deps.authorization, deps.jobs),
+    actions: createActionOperations(deps.authorization, deps.actions),
   };
   return Object.freeze(Object.fromEntries(Object.entries(kernel).map(([name, value]) =>
     [name, typeof value === "object" ? observePlatformOperations(name, value) : value],

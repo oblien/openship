@@ -55,6 +55,7 @@ import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageActionRunnerAssets } from "../../../packages/actions-runner/assets.mjs";
 
 const API_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(API_DIR, "../..");
@@ -541,6 +542,9 @@ async function main(): Promise<void> {
   });
 
   await copyReleaseTransferScripts(DIST);
+  await step("staging Actions runners", async () => {
+    stageActionRunnerAssets(join(DIST, "packages/actions-runner/dist"));
+  });
 
   // 4. Copy each workspace package source + (for db) drizzle/. We
   //    drop dist/, node_modules/, .turbo/ if any leaked into the

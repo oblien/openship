@@ -74,6 +74,10 @@ jobs:
         if: steps.resume.outputs.reused != 'true'
         run: bun install --frozen-lockfile
 
+      - name: Prepare installed Actions worker assets
+        if: steps.resume.outputs.reused != 'true'
+        uses: ./.github/actions/actions-runner
+
       - name: Build openship release
         if: steps.resume.outputs.reused != 'true'
         run: bun run --cwd apps/api build-release
@@ -316,6 +320,10 @@ jobs:
       # tsup + stage-server (Bun.build) → dist/, then stage-cli-payload stages the
       # arch-independent prod closure and tars openship-cli-<TAG>.tar.gz. The tag
       # is taken from GITHUB_REF_NAME by the staging script.
+      - name: Prepare installed Actions worker assets
+        if: steps.resume.outputs.reused != 'true'
+        uses: ./.github/actions/actions-runner
+
       - name: Build CLI payload
         if: steps.resume.outputs.reused != 'true'
         run: bun run --cwd apps/cli build:payload
@@ -413,6 +421,10 @@ jobs:
       - name: Install AppImage build deps (Linux)
         if: steps.resume.outputs.reused != 'true' && (runner.os == 'Linux')
         run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      - name: Prepare installed Actions worker assets
+        if: steps.resume.outputs.reused != 'true'
+        uses: ./.github/actions/actions-runner
 
       - name: Build installer
         if: steps.resume.outputs.reused != 'true'
@@ -566,6 +578,10 @@ jobs:
       # Import the Developer ID cert into a throwaway keychain so `electron-forge
       # make` can sign (osxSign in forge.config.js activates when APPLE_IDENTITY
       # is set). Skipped entirely when the secret is absent → unsigned build.
+      - name: Prepare installed Actions worker assets
+        if: steps.resume.outputs.reused != 'true'
+        uses: ./.github/actions/actions-runner
+
       - name: Import Apple signing certificate
         if: steps.resume.outputs.reused != 'true' && (env.APPLE_IDENTITY != '')
         run: |
@@ -817,6 +833,11 @@ jobs:
       - name: Install dependencies
         working-directory: ${{ env.NPM_SOURCE_ROOT }}
         run: bun install --frozen-lockfile
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.4'
+          cache: false
 
       - name: Build SDK and CLI package
         working-directory: ${{ env.NPM_SOURCE_ROOT }}

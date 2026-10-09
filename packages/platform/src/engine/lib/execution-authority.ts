@@ -4,9 +4,17 @@ import { freezeContext, type ExecutionContext } from "../../context";
 import { authorization } from "./authorization";
 
 const invalid = () => new UnauthorizedError("The saved action's authorization is no longer valid");
+// Resolved background identities have no login session to recapture. Retain
+// their verified delegation privately, never as a caller-supplied context field.
+const delegations = new WeakMap<ExecutionContext, ExecutionAuthority>();
 
 /** Only an already-authorized application operation may capture a delegation. */
 export async function captureExecutionAuthority(ctx: ExecutionContext): Promise<ExecutionAuthority> {
+  const delegated = delegations.get(ctx);
+  if (delegated) {
+    await resolveExecutionAuthority(delegated, "recapture");
+    return structuredClone(delegated);
+  }
   let tokenId = ctx.tokenScope?.tokenId;
   if (!tokenId && ctx.principalKind === "pat" && ctx.sessionId.startsWith("pat:")) tokenId = ctx.sessionId.slice(4);
   if (!tokenId && ctx.principalKind === "oauth" && ctx.sessionId.startsWith("oauth:"))
@@ -71,5 +79,7 @@ export async function resolveExecutionAuthority(value: ExecutionAuthority | null
     tokenScope,
     credential,
   }, value.organizationId);
-  return freezeContext({ ...context, source: "system", userAgent: `openship-action:${label}` });
+  const frozen = freezeContext({ ...context, source: "system", userAgent: `openship-action:${label}` });
+  delegations.set(frozen, structuredClone(value));
+  return frozen;
 }

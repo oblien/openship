@@ -192,6 +192,13 @@ export interface TableSpec {
 }
 
 const TABLES: ReadonlyArray<TableSpec> = [
+  ...[
+    ["action_runner", schema.actionRunner], ["action_workflow", schema.actionWorkflow], ["action_delivery", schema.actionDelivery],
+    ["action_run", schema.actionRun], ["action_job", schema.actionJob], ["action_event", schema.actionEvent],
+    ["action_storage_object", schema.actionStorageObject], ["action_storage_chunk", schema.actionStorageChunk],
+    ["action_budget", schema.actionBudget], ["action_credit_purchase", schema.actionCreditPurchase], ["action_charge", schema.actionCharge],
+  ].map(([sqlName, table]) => ({ sqlName: sqlName as string, table: table as PgTable,
+    scopes: [{ in: "instance" as const, via: "all-rows" as const }], hasOrganizationId: true })),
   {
     sqlName: "external_identity", table: schema.externalIdentity,
     scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
@@ -963,6 +970,9 @@ export interface EncryptedColumnSpec {
  * per-install), so it MUST be redacted on any cross-host move.
  */
 export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
+  { table: "action_credit_purchase", column: "checkoutUrlEnc" },
+  { table: "action_workflow", column: "secrets" },
+  { table: "action_run", column: "configuration", secretPaths: ["secrets"] },
   { table: "two_factor", column: "secret" },
   { table: "two_factor", column: "backupCodes" },
   { table: "cluster_database", column: "secretEncrypted" },
@@ -1638,6 +1648,13 @@ export async function restoreSubgraphInTransaction(
     const updateOnConflict = opts.mode === "merge" && opts.mergeConflictUpdate?.includes(spec.sqlName);
 
     try {
+      const sequences = Object.values(columns).filter(column =>
+        ["PgSerial", "PgSmallSerial", "PgBigSerial53", "PgBigSerial64"].includes(column.columnType),
+      );
+      // Explicit IDs do not advance PostgreSQL sequences. Block concurrent
+      // inserts while importing generated IDs and advancing their allocator;
+      // otherwise the next artifact upload can collide with a restored row.
+      if (sequences.length) await tx.execute(sql`LOCK TABLE ${sql.identifier(spec.sqlName)} IN SHARE ROW EXCLUSIVE MODE`);
       // Chunked: one INSERT per `insertChunkSize(spec.table)` rows, so a large
       // table cannot exceed the 65535 bind-parameter cap.
       const chunk = insertChunkSize(spec.table);
@@ -1678,6 +1695,15 @@ export async function restoreSubgraphInTransaction(
           opts.writtenIds.set(spec.sqlName, ids);
         }
         if (opts.writtenRows) opts.writtenRows.count += written.length;
+      }
+      for (const column of sequences) {
+        const sequence = sql`pg_get_serial_sequence(${spec.sqlName}, ${column.name})`;
+        // nextval prevents moving an existing allocator backwards during a
+        // merge. Sequence gaps are harmless, including after a rolled-back import.
+        await tx.execute(sql`SELECT setval(${sequence}, GREATEST(
+          (SELECT COALESCE(MAX(${sql.identifier(column.name)}), 1) FROM ${sql.identifier(spec.sqlName)}),
+          nextval(${sequence})
+        ), true)`);
       }
     } catch (err) {
       if (err instanceof PkCollisionError) throw err;

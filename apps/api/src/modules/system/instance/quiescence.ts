@@ -29,6 +29,10 @@ export async function quiesceController(): Promise<void> {
   await drainControllerRequests();
   closeTerminals();
   await Promise.all([stopNetworkSetups(), stopAllTunnels()]);
+  await (await import("@repo/platform/engine/modules/actions/lifecycle")).stopActionController();
+  // Recheck after fencing incoming mutations: a dispatch may have arrived
+  // between the user's preflight and the durable handoff fence.
+  await (await import("@repo/platform/engine/modules/actions/lifecycle")).assertActionsTransferReady();
   await Promise.all([shutdownJobRunner(), stopNotificationRunner(), closeDeviceFlows()]);
   await Promise.all([
     drainDeploymentExecutions(),

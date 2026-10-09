@@ -13,6 +13,8 @@ export type WebhookProviderName = "github";
 /** Result of verifying a webhook signature */
 export interface WebhookVerifyResult {
   valid: boolean;
+  /** Verification provenance, set internally after checking the App signature. */
+  githubApp?: boolean;
   error?: string;
 }
 
@@ -40,5 +42,5 @@ export interface WebhookProvider {
     payload: string | Buffer,
     headers: Record<string, string>,
   ): WebhookVerifyResult | Promise<WebhookVerifyResult>;
-  handle(payload: unknown, headers: Record<string, string>): Promise<WebhookHandlerResult>;
+  handle(payload: unknown, headers: Record<string, string>, verification?: WebhookVerifyResult): Promise<WebhookHandlerResult>;
 }

@@ -24,6 +24,11 @@ import type { SecretEntry } from "./types";
 
 const configuration = createConfigurationSecrets({ encrypt, decrypt });
 function configurationCell(spec: SecretColumn, cell: unknown, direction: "open" | "seal"): unknown {
+  if (spec.sqlName === "action_run" && spec.column === "configuration") {
+    const value = structuredClone(cell) as { secrets?: Record<string, string> };
+    if (value?.secrets) value.secrets = Object.fromEntries(Object.entries(value.secrets).map(([key, text]) => [key, direction === "open" ? decrypt(text) : encrypt(text)]));
+    return value;
+  }
   if (spec.sqlName === "deployment" && spec.column === "meta") {
     return direction === "open"
       ? configuration.openDeploymentMeta(cell)

@@ -136,13 +136,14 @@ export async function canMintInstallationToken(
   ctx: RequestContext,
   owner: string,
   repos?: string[],
+  access: GitHubAccessOp = "read",
 ): Promise<boolean> {
   const named = (repos ?? []).map((r) => r.trim()).filter(Boolean);
   if (!named.length) {
-    return canUseGitHubRepo(ctx, { owner }, "read", { ownerLevel: "authority" });
+    return canUseGitHubRepo(ctx, { owner }, access, { ownerLevel: "authority" });
   }
   const results = await Promise.all(
-    named.map((repo) => canUseGitHubRepo(ctx, { owner, repo }, "read")),
+    named.map((repo) => canUseGitHubRepo(ctx, { owner, repo }, access)),
   );
   return results.every(Boolean);
 }

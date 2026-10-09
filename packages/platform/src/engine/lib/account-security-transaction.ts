@@ -2,8 +2,7 @@ import type { BetterAuthPlugin, GenericEndpointContext } from "@better-auth/core
 import { runWithAdapter } from "@better-auth/core/context";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthEndpoint, getSessionFromCtx } from "better-auth/api";
-import { and, eq, gt } from "drizzle-orm";
-import { schema, type Database } from "@repo/db/factory";
+import { and, eq, gt, schema, type Database } from "@repo/db/factory";
 
 type Endpoint = NonNullable<BetterAuthPlugin["endpoints"]>[string];
 

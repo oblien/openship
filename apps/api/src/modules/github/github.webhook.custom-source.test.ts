@@ -49,7 +49,7 @@ describe("custom GitHub App webhook verification", () => {
         "x-github-event": "installation",
         "x-hub-signature-256": signature(payload, "workspace-app-secret"),
       }),
-    ).resolves.toEqual({ valid: true });
+    ).resolves.toEqual({ valid: true, githubApp: true });
     expect(h.collectSourceSecrets).toHaveBeenCalledWith({
       installationId: 42,
       appId: 12345,

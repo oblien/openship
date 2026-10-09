@@ -1,0 +1,79 @@
+name: Actions execution
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  linux:
+    name: Actions (Docker, SSH and managed execution)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reuse a verified successful job
+        id: resume
+        uses: ./.github/actions/release-resume
+        with:
+          scope: actions-linux
+          job-name: Actions (Docker, SSH and managed execution)
+          workflow: .github/workflows/actions-e2e.yml
+          job-id: linux
+      - uses: oven-sh/setup-bun@v2
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v6
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          node-version: "22"
+      - uses: ./.github/actions/actions-runner
+        if: steps.resume.outputs.reused != 'true'
+      - run: bun install --frozen-lockfile
+        if: steps.resume.outputs.reused != 'true'
+      - name: Check native Linux recovery with the race detector
+        if: steps.resume.outputs.reused != 'true'
+        working-directory: packages/actions-runner
+        run: node test.mjs -race
+      - name: Run workflows on an isolated real Docker and SSH host
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          RUN_DOCKER_E2E: "1"
+          E2E_SCOPE: actions
+        run: bun run --cwd apps/api test:e2e
+
+  macos:
+    name: Actions (native macOS)
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reuse a verified successful job
+        id: resume
+        uses: ./.github/actions/release-resume
+        with:
+          scope: actions-macos
+          job-name: Actions (native macOS)
+          workflow: .github/workflows/actions-e2e.yml
+          job-id: macos
+      - uses: actions/setup-node@v6
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v6
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          go-version: "1.26.4"
+          cache-dependency-path: packages/actions-runner/go.sum
+      - name: Execute native jobs, cancel and recover interrupted process groups
+        if: steps.resume.outputs.reused != 'true'
+        working-directory: packages/actions-runner
+        run: node test.mjs -race

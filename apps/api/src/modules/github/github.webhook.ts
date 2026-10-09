@@ -191,10 +191,12 @@ export const githubWebhookProvider: WebhookProvider = {
     // A delivery is signed with exactly one hook's secret — accept on the first
     // candidate that matches (each comparison is constant-time).
     const valid = candidates.some((secret) => verifyHmacSha256(payload, secret, signature));
-    return valid ? { valid: true } : { valid: false, error: "Invalid signature" };
+    const appSecrets = [...sourceSecrets, ...(!customAppDelivery && env.GITHUB_WEBHOOK_SECRET ? [env.GITHUB_WEBHOOK_SECRET] : [])];
+    const githubApp = valid && installationId !== undefined && appSecrets.some(secret => verifyHmacSha256(payload, secret, signature));
+    return valid ? { valid: true, ...(githubApp ? { githubApp: true } : {}) } : { valid: false, error: "Invalid signature" };
   },
 
-  async handle(payload: unknown, headers: Record<string, string>): Promise<WebhookHandlerResult> {
+  async handle(payload: unknown, headers: Record<string, string>, verification?: WebhookVerifyResult): Promise<WebhookHandlerResult> {
     const event = headers["x-github-event"];
     if (!event) {
       return { success: true, event: "unknown", message: "Missing x-github-event header" };
@@ -207,6 +209,10 @@ export const githubWebhookProvider: WebhookProvider = {
     // by the push handler. Missing id or claim error → process (fail-open; the
     // commit-sha guard in triggerDeployment is the backstop).
     const deliveryId = headers["x-github-delivery"];
+    // Accept Actions work durably before the legacy deployment receipt claim.
+    // A repeated delivery fills any interrupted fan-out without executing twice.
+    if (verification?.githubApp && deliveryId)
+      await (await import("@repo/platform/engine/modules/actions/triggers")).enqueueActionWebhook(event, payload, deliveryId);
     let anchorId = "";
     const handledProjectIds = new Set<string>();
     if (deliveryId) {
@@ -233,6 +239,9 @@ export const githubWebhookProvider: WebhookProvider = {
           break;
         case "check_run":
           result = await handleCheckRun(payload as GitHubCheckRunPayload);
+          break;
+        case "pull_request":
+          result = { success: true, event, message: verification?.githubApp ? "Actions pull request delivery queued" : "Event 'pull_request' not handled" };
           break;
         case "ping":
           result = { success: true, event, message: "Pong" };

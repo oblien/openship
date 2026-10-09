@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { createDatabase, schema, type DatabaseConnection } from "@repo/db/factory";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql } from "@repo/db/factory";
 import { accountSecurityPlugins } from "./account-security";
 import webauthnFixture from "./__fixtures__/passkey.json";
 

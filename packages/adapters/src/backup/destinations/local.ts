@@ -33,6 +33,7 @@ const pipelineP = promisify(pipeline);
 const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>([
   "streamingPut",
   "streamingGet",
+  "rangedGet",
 ]);
 
 class LocalDestinationImpl implements BackupDestination {
@@ -166,8 +167,8 @@ class LocalDestinationImpl implements BackupDestination {
     return { bytesWritten, etag: digest };
   }
 
-  async get(key: string): Promise<Readable> {
-    return createReadStream(await this.resolveKeyForRead(key));
+  async get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable> {
+    return createReadStream(await this.resolveKeyForRead(key), options?.range);
   }
 
   async head(key: string): Promise<HeadInfo | null> {

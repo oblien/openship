@@ -139,6 +139,12 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response
   const upstream = buildUpstreamUrl(req, pathSegments);
   const headers = buildForwardedHeaders(req, upstream);
   headers.set("X-Request-ID", requestId);
+  // Blob clients sign/declare chunk lengths. Keep their validated bound when
+  // forwarding this stream; the Actions endpoint verifies the actual byte count.
+  if (upstream.pathname.startsWith("/api/actions/runtime/") && ["PUT", "PATCH"].includes(req.method)) {
+    const length = req.headers.get("content-length");
+    if (length && /^\d+$/.test(length) && Number(length) <= 64 * 1024 * 1024) headers.set("content-length", length);
+  }
 
   // Body: pass through directly. fetch accepts a ReadableStream and
   // won't double-buffer it.  duplex:'half' lets the body stream upstream

@@ -32,6 +32,7 @@ export async function assertHandoffAccount(userId: string): Promise<void> {
 /** Preserve the host's identity: only its execution connection changes. Runtime
  * ids, ports, service ownership, volumes and retained releases remain untouched. */
 export async function assertPortableInstance(mapping?: HostMapping): Promise<void> {
+  await (await import("@repo/platform/engine/modules/actions/lifecycle")).assertActionsTransferReady();
   const servers = await db.select().from(schema.servers);
   if (
     mapping &&

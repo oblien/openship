@@ -5,9 +5,36 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **444 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **467 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
+
+### actions
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_actions_runners_by_id`<br />`DELETE /api/actions/runners/:id` | Disable a runner for new jobs, retaining active jobs and history. | `job:admin` |
+| `delete_actions_workflows_by_id`<br />`DELETE /api/actions/workflows/:id` | Disable a workflow while retaining its execution history. | `job:write` |
+| `get_actions_discover`<br />`GET /api/actions/discover` | Discover workflow files in a repository. | `job:read` |
+| `get_actions_jobs_by_id_events`<br />`GET /api/actions/jobs/:id/events` | Read masked job logs after a durable cursor. Resume with next after reconnecting. | `job:read` |
+| `get_actions_runners`<br />`GET /api/actions/runners` | List Actions runners and their verified OS, architecture and Docker capabilities. | `job:read` |
+| `get_actions_runs`<br />`GET /api/actions/runs` | List durable workflow runs and their job states. | `job:read` |
+| `get_actions_runs_by_id`<br />`GET /api/actions/runs/:id` | Read workflow topology, jobs, outputs and completion. | `job:read` |
+| `get_actions_runs_by_id_artifacts`<br />`GET /api/actions/runs/:id/artifacts` | List the artifacts retained for an authorized workflow run. | `job:read` |
+| `get_actions_workflows`<br />`GET /api/actions/workflows` | List authorized GitHub-compatible Openship Actions workflows. | `job:read` |
+| `get_actions_workflows_by_id`<br />`GET /api/actions/workflows/:id` | Read a configured workflow without secret values. | `job:read` |
+| `patch_actions_runners_by_id`<br />`PATCH /api/actions/runners/:id` | Update an idle runner's configuration. | `job:admin` |
+| `patch_actions_workflows_by_id`<br />`PATCH /api/actions/workflows/:id` | Update an Actions workflow's configuration. | `job:write` |
+| `post_actions_preview`<br />`POST /api/actions/preview` | Validate workflow YAML and preview its dependency graph without executing it. | `job:read` |
+| `post_actions_runners`<br />`POST /api/actions/runners` | Enable Actions on an authorized server. Native runners execute trusted workflow code as the server's connected user. | `job:admin` |
+| `post_actions_runners_by_id_probe`<br />`POST /api/actions/runners/:id/probe` | Recheck an authorized runner's capabilities. | `job:admin` |
+| `post_actions_runners_inspect`<br />`POST /api/actions/runners/inspect` | Check OS, architecture, Git and Docker on an authorized Actions destination without changing the server. | `job:admin` |
+| `post_actions_runs_by_id_approve`<br />`POST /api/actions/runs/:id/approve` | Approve an untrusted fork run for disposable runners without secrets or write tokens. | `job:admin` |
+| `post_actions_runs_by_id_artifacts_download`<br />`POST /api/actions/runs/:id/artifacts/download` | Get a short-lived download link for one authorized artifact. | `job:read` |
+| `post_actions_runs_by_id_cancel`<br />`POST /api/actions/runs/:id/cancel` | Request cancellation. Runner capacity is released only after execution has stopped. | `job:write` |
+| `post_actions_runs_by_id_rerun`<br />`POST /api/actions/runs/:id/rerun` | Retry the same immutable workflow and commit as a new attempt. | `job:write` |
+| `post_actions_workflows`<br />`POST /api/actions/workflows` | Configure an Actions workflow and its authorized runner destinations. Secrets are encrypted and never returned. | `job:write` |
+| `post_actions_workflows_by_id_dispatch`<br />`POST /api/actions/workflows/:id/dispatch` | Dispatch a workflow using an idempotency key and an immutable resolved commit. | `job:write` |
 
 ### analytics
 
@@ -88,6 +115,7 @@ The current API has **444 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
+| `get_billing_actions`<br />`GET /api/billing/actions` | Read the organization's separate prepaid Cloud Actions budget, approved runner rates and recent deposits. Amounts use the returned unitsPerDollar. Does not create a checkout or expose payment URLs. Purchases may be unavailable. | `billing:read` |
 | `get_billing_checkouts`<br />`GET /api/billing/checkouts` | List unfinished payments for the organization's managed servers, optionally scoped to one server. Saved offers and verified payment state only; no checkout is created or resumed and no payment URL is exposed. Recover payments in Billing. | `billing:read` |
 | `get_billing_subscription_change`<br />`GET /api/billing/subscription/change` | Read a provider-confirmed subscription change for the selected managed server. Queued, payment_pending and scheduled do not activate new capacity; applied confirms the new terms. Server resizing uses its existing operation status. | `billing:read` |
 | `post_billing_subscription_change_preview`<br />`POST /api/billing/subscription/change/preview` | Preview an existing managed server's plan change using the provider's prorated price and next renewal date. Saves an expiring quote without charging. Uses trusted preset or Custom resources, preserves the billing interval, and lists projects that would restart. Complete confirmation in Billing. | `billing:write` |
@@ -587,6 +615,20 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /.well-known/oauth-protected-resource/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-protected-resource/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /accept-invite/:id` | Browser landing pages for API-only instances. |
+| `GET /api/actions/runtime/_apis/artifactcache/cache` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/_apis/artifactcache/caches` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `PATCH /api/actions/runtime/_apis/artifactcache/caches/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/_apis/artifactcache/caches/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `GET /api/actions/runtime/objects/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `PUT /api/actions/runtime/objects/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
@@ -610,6 +652,9 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/auth/sign-up/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/backup-restores/:restoreId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/backup-runs/:runId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/billing/actions/checkout` | Starts a prepaid browser payment. Complete payment in Actions → Budget when purchases are available. |
+| `POST /api/billing/actions/checkout/resume` | Resumes the original prepaid browser checkout. Complete payment in Actions → Budget. |
+| `GET /api/billing/actions/purchase` | Reconciles a browser payment with its verified provider receipt. Use Actions → Budget for payment recovery. |
 | `POST /api/billing/cancel` | Paid subscription renewal is managed by the account owner in Settings → Billing; MCP exposes the resulting subscription state. |
 | `GET /api/billing/checkout` | Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing. |
 | `POST /api/billing/checkout/cancel` | Cancels an unfinished hosted payment and releases its capacity reservation. Financial actions are completed in Billing. |
@@ -863,3 +908,11 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /auth/callback/close` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /auth/callback/install` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /login` | Browser landing pages for API-only instances. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |

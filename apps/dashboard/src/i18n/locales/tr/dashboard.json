@@ -86,7 +86,8 @@
       "system": "Sistem",
       "account": "Hesap"
     },
-    "workspaces": "Çalışma alanları"
+    "workspaces": "Çalışma alanları",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Kenar çubuğunu genişlet",

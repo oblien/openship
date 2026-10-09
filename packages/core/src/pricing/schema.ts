@@ -211,6 +211,27 @@ const paygPricingSchema = z.object({
   }).strict()).min(1),
 }).strict();
 
+/** Retail worker time, separate from app-server subscriptions and provider usage. */
+const actionsPricingSchema = z.object({
+  version: z.number().int().positive(),
+  currency: z.literal("usd"),
+  transferGiBPerDollar: z.number().int().positive(),
+  depositsCents: z.array(z.number().int().min(100).max(100_000)).min(1),
+  runners: z.array(z.object({
+    id: z.string().regex(/^linux_[1-9]\d*$/),
+    cpuCores: z.number().int().min(1).max(12),
+    memoryMb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+    /** Integer micro-USD per minute; converted to exact integer second units. */
+    microUsdPerMinute: z.number().int().positive(),
+  }).strict()).min(1),
+}).strict().superRefine((value, ctx) => {
+  if (new Set(value.runners.map(runner => runner.id)).size !== value.runners.length)
+    ctx.addIssue({ code: "custom", path: ["runners"], message: "Actions runner identities must be unique" });
+  if (value.depositsCents.some((amount, index) => index > 0 && amount <= value.depositsCents[index - 1]!))
+    ctx.addIssue({ code: "custom", path: ["depositsCents"], message: "Actions deposits must be unique and ascending" });
+});
+
 export const pricingCatalogSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -234,6 +255,7 @@ export const pricingCatalogSchema = z
     campaigns: z.array(campaignSchema),
     custom: customPricingSchema,
     payg: paygPricingSchema,
+    actions: actionsPricingSchema,
     plans: z.array(planSchema).min(1),
     creditPacks: z.array(creditPackSchema),
     /**

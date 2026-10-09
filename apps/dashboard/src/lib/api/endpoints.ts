@@ -202,6 +202,18 @@ export const endpoints = {
     runStream: (runId: string) => `jobs/runs/${encodeURIComponent(runId)}/stream`,
   },
 
+  actions: {
+    workflows: "actions/workflows",
+    workflow: (id: string) => `actions/workflows/${encodeURIComponent(id)}`,
+    runs: "actions/runs",
+    run: (id: string) => `actions/runs/${encodeURIComponent(id)}`,
+    runners: "actions/runners",
+    runner: (id: string) => `actions/runners/${encodeURIComponent(id)}`,
+    events: (id: string) => `actions/jobs/${encodeURIComponent(id)}/events`,
+    discover: "actions/discover",
+    preview: "actions/preview",
+  },
+
   /* ---------------------------------------------------------------- */
   /*  Personal access tokens                                          */
   /* ---------------------------------------------------------------- */
@@ -604,6 +616,10 @@ export const endpoints = {
   /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
+    actions: "billing/actions",
+    actionsPurchase: "billing/actions/purchase",
+    actionsCheckout: "billing/actions/checkout",
+    actionsResume: "billing/actions/checkout/resume",
     checkouts: "billing/checkouts",
     checkoutResume: "billing/checkout/resume",
     checkoutCancel: "billing/checkout/cancel",

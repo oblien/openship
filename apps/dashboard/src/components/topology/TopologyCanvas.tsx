@@ -39,6 +39,7 @@ import "@xyflow/react/dist/style.css";
 export type TopologySelection = { kind: "node" | "edge"; id: string } | null;
 /** An optional selection action for unsaved resources, such as an import scan. */
 export interface TopologyNodeAction {
+  kind?: "select" | "open";
   label: string;
   ariaLabel: string;
   selected: boolean;
@@ -61,6 +62,9 @@ const stateLabels: Record<TopologyState, string> = {
   disabled: "Disabled",
   configured: "Configured",
   pending: "Pending",
+  succeeded: "Succeeded",
+  cancelled: "Cancelled",
+  skipped: "Skipped",
 };
 
 export function TopologyResourceIcon({
@@ -82,7 +86,9 @@ export function TopologyResourceIcon({
     return <ResourceIcon kind={resource.tone} className={className} />;
   }
   const Icon =
-    resource.kind === "edge"
+    resource.kind === "workflow-job"
+      ? "terminal"
+      : resource.kind === "edge"
       ? "globe"
       : resource.kind === "linked"
         ? "database"
@@ -119,7 +125,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
       data-pending={resource.pending}
       data-picked={action?.selected || undefined}
       data-unavailable={action?.disabled || undefined}
-      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
+      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : action?.statusLabel ?? stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
     >
       <Handle type="target" position={Position.Left} isConnectable={isService && !action} />
       <div className="flex items-center gap-3 p-4 pb-3">
@@ -157,8 +163,8 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
           <button
             type="button"
             className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            role={action ? "checkbox" : undefined}
-            aria-checked={action?.selected}
+            role={action && action.kind !== "open" ? "checkbox" : undefined}
+            aria-checked={action && action.kind !== "open" ? action.selected : undefined}
             disabled={action?.disabled}
             title={action?.hint}
             onClick={(event) => {
@@ -176,7 +182,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
             }
           >
             <span className="flex min-w-0 items-center gap-2 truncate">
-              {action && <Checkbox asButton={false} checked={action.selected} />}
+              {action && action.kind !== "open" && <Checkbox asButton={false} checked={action.selected} />}
               {action
                 ? action.label
                 : canInspectInstance
@@ -201,7 +207,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
               ) : (
                 <TopologyStatus state={resource.state} />
               )}
-              {!action && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
+              {(!action || action.kind === "open") && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
             </span>
           </button>
         </div>

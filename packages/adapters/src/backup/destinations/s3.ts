@@ -44,6 +44,7 @@ import type {
 const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>([
   "streamingPut",
   "streamingGet",
+  "rangedGet",
   "multipart",
   "presignedGet",
   "presignedPut",
@@ -243,9 +244,11 @@ class S3DestinationImpl implements BackupDestination {
     };
   }
 
-  async get(key: string): Promise<Readable> {
+  async get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable> {
     const result = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: this.fullKey(key) }),
+      new GetObjectCommand({ Bucket: this.bucket, Key: this.fullKey(key),
+        ...(options?.range && { Range: `bytes=${options.range.start}-${options.range.end}` }),
+      }),
     );
     if (!result.Body) {
       throw new Error(`No body in GetObject response for ${key}`);

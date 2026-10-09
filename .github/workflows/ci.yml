@@ -28,6 +28,13 @@ concurrency:
 # unmergeable forever with no visible reason.
 
 jobs:
+  actions-runner:
+    name: Actions execution
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/actions-e2e.yml
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -141,6 +148,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Prepare execution assets used by installed-package tests
+        if: matrix.suite == 'SDK and CLI' || matrix.suite == 'Other packages'
+        uses: ./.github/actions/actions-runner
+
       # Run every workspace test, with the large API suite split across runners.
       # Direct Vitest runs and Turbo's stream mode expose progress immediately.
       # The complete API test/e2e/** suite also runs in release-gate.yml.
@@ -151,7 +162,7 @@ jobs:
   # matrix must fail this check; no individual shard can make the PR green.
   test:
     name: Test
-    needs: test_suites
+    needs: [test_suites, actions-runner]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -159,9 +170,10 @@ jobs:
       - name: Require every test suite to pass
         env:
           TEST_SUITES_RESULT: ${{ needs.test_suites.result }}
+          ACTIONS_RESULT: ${{ needs.actions-runner.result }}
         run: |
-          if [ "$TEST_SUITES_RESULT" != "success" ]; then
-            echo "::error::Test suites finished with status: $TEST_SUITES_RESULT"
+          if [ "$TEST_SUITES_RESULT" != "success" ] || [ "$ACTIONS_RESULT" != "success" ]; then
+            echo "::error::Test suites: $TEST_SUITES_RESULT; Actions execution: $ACTIONS_RESULT"
             exit 1
           fi
 
@@ -184,6 +196,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - uses: ./.github/actions/actions-runner
 
       - name: Build public SDK and CLI
         run: bun run build:sdk

@@ -1,3 +1,4 @@
+import type { ActionOperations } from "@repo/contracts";
 import { createDeploymentHandle, type DeploymentHandle } from "./deployment-handle";
 import {
   UnauthorizedError,
@@ -111,6 +112,7 @@ export interface ScopedShip {
   readonly issues: IssueOperations;
   readonly analytics: AnalyticsOperations;
   readonly jobs: JobOperations;
+  readonly actions: ActionOperations;
   deployment(id: string): DeploymentHandle;
   deploy(input: DeploySourceInput): Promise<SourceDeploymentResult>;
 }
@@ -550,6 +552,7 @@ function createAttachedShip<Assertion>({
         issues: bindGroup(platform.issues),
         analytics,
         jobs,
+        actions: bindGroup(platform.actions),
         deployment: (id: string) => createDeploymentHandle(deployments, id),
         deploy: (input: DeploySourceInput) =>
           deploySourceWorkflow({ deployments, projects, sources }, snapshotSourceInput(input)),

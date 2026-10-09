@@ -1,3 +1,5 @@
+import { createRemoteActionOperations } from "./action-client";
+import type { ActionOperations } from "@repo/contracts";
 import { isCreateDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
 import { ApiError } from "./errors";
 import { HttpClient, type HttpClientOptions } from "./http";
@@ -100,6 +102,7 @@ export class OpenshipClient {
   readonly issues: IssueOperations;
   readonly analytics: AnalyticsOperations;
   readonly jobs: JobOperations;
+  readonly actions: ActionOperations;
   readonly http: HttpClient;
   private readonly options: Readonly<OpenshipClientOptions>;
 
@@ -134,6 +137,7 @@ export class OpenshipClient {
     this.issues = createRemoteIssueOperations(http);
     this.analytics = createRemoteAnalyticsOperations(http);
     this.jobs = createRemoteJobOperations(http);
+    this.actions = createRemoteActionOperations(http);
     this.deployments = Object.freeze({
       ...createRemoteDeploymentResources(http),
       async prepare(value) {

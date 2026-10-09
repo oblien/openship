@@ -30,6 +30,29 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 [CustomSelect](../apps/dashboard/src/components/ui/CustomSelect.tsx), and
 [Button](../apps/dashboard/src/components/ui/button.tsx) instead of copying their implementations.
 
+## Actions
+
+Actions reuses the shared topology canvas, server selector, page layout and filled
+controls. Keep workflow configuration, runner setup and execution history in one
+module; Jobs remains the entry for scheduled application commands. Draw one node
+per logical workflow job, with matrix executions in the selectable job list.
+Show persisted step state and resumable logs together. Refreshing or switching
+views must not discard a running job's state. Only confirm cancellation after the
+worker stops, and show cleanup while its destination remains occupied.
+
+Key remote data by instance, user and organization. Clear private results on a
+scope switch while loading the new scope; stale requests must not populate it.
+Preserve already loaded logs while polling. Surface capability mismatches beside
+the selected destination instead of offering runtimes that cannot execute there.
+Native-runner setup explicitly describes access as the connected server user.
+Cloud Actions funding is separate from application-server billing and must remain
+clearly scoped in the UI.
+Use **Actions → Budget** for its runner rates, dollar balance and deposit history.
+Keep the rate comparison beside a standard 340px funding column. Deposits show
+their included upload/download allowance; never imply transfer is unlimited or
+that a pending payment has funded the balance. Payment returns reconcile the
+saved purchase with the provider, with retryable errors and preserved page state.
+
 ## Layout and density
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
