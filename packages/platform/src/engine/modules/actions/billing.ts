@@ -6,6 +6,7 @@ import type { OblienBillingApi, OblienCheckout } from "../../lib/oblien-billing-
 interface ActionCreditPorts {
   repo: Repositories["actionBilling"];
   provider: Pick<OblienBillingApi, "createCheckout" | "getCheckout">;
+  prepareNamespace(organizationId: string): Promise<void>;
   lock<T>(organizationId: string, operation: () => Promise<T>): Promise<T>;
   encrypt(value: string): string;
   decrypt(value: string): string;
@@ -96,6 +97,7 @@ export class ActionCredits {
         409,
         "ACTIONS_CHECKOUT_CONFLICT",
       );
+    await this.ports.prepareNamespace(purchase.organizationId);
     const result = await this.ports.provider.createCheckout(request);
     await this.ports.repo.recordCheckout(
       purchase.organizationId,

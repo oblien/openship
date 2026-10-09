@@ -24,6 +24,7 @@ import {
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
 import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 import { creditAlertNotification } from "./billing-credit-alert";
+import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -78,28 +79,6 @@ function parseDate(v: unknown): Date | null {
   if (typeof v !== "string" && typeof v !== "number") return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/* ───────── Org resolution by namespace ──────────────────────────────────── */
-
-type BillingOwner =
-  | { kind: "hosting"; organizationId: string; workspaceId: string | null }
-  | { kind: "actions"; organizationId: string };
-
-async function findOwnerByNamespace(namespace: string): Promise<BillingOwner | null> {
-  const [workspace, [row], actions] = await Promise.all([
-    repos.cloudWorkspace.findByNamespace(namespace),
-    db.select({ id: schema.organization.id })
-      .from(schema.organization)
-      .where(eq(schema.organization.oblienNamespace, namespace))
-      .limit(1),
-    repos.actionBilling.byNamespace(namespace),
-  ]);
-  if (Number(!!workspace) + Number(!!row) + Number(!!actions) > 1)
-    throw new Error("Cloud namespace has ambiguous billing ownership");
-  return actions ? { kind: "actions", organizationId: actions.organizationId }
-    : workspace ? { kind: "hosting", organizationId: workspace.organizationId, workspaceId: workspace.id }
-    : row ? { kind: "hosting", organizationId: row.id, workspaceId: null } : null;
 }
 
 /**
@@ -189,7 +168,7 @@ export async function handleOblienWebhook(
   if (!namespace) return { status: 400, payload: { error: "missing namespace" } };
   let orgId: string | undefined;
   try {
-    const owner = await findOwnerByNamespace(namespace);
+    const owner = await findBillingOwnerByNamespace(namespace);
     if (!owner) return { status: 200, payload: { received: true } };
     const organizationId = orgId = owner.organizationId;
     if (owner.kind === "actions") {

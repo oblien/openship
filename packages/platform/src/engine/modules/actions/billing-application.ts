@@ -9,6 +9,7 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { ActionCredits } from "./billing";
+import { ensureActionsBillingNamespace } from "./billing-namespace";
 
 // The transfer contract and trusted execution meter must be integrated before
 // selling execution. This is deliberately not an environment override.
@@ -41,6 +42,7 @@ function credits() {
       getCheckout: (namespace, checkoutId) =>
         getOblienBillingApi().getCheckout(namespace, checkoutId),
     },
+    prepareNamespace: ensureActionsBillingNamespace,
     lock: (org, work) => createProvisionLock(`actions-billing:${org}`).run(work),
     encrypt,
     decrypt,

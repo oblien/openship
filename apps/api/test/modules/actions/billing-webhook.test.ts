@@ -12,6 +12,11 @@ const provider = vi.hoisted(() => ({
   receipts: new Map<string, Receipt>(),
   createCheckout: vi.fn(),
   getCheckout: vi.fn(),
+  ensureNamespace: vi.fn(),
+  getDefaults: vi.fn(),
+  getPolicy: vi.fn(),
+  getEntitlement: vi.fn(),
+  getSubscription: vi.fn(),
   hostingSync: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/config/env", async (original) => {
@@ -32,6 +37,7 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
 vi.mock("@repo/platform/engine/lib/oblien-client", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/lib/oblien-client")>()),
   getOblienBillingApi: () => provider,
+  getOblienClient: () => ({ namespaces: { ensure: provider.ensureNamespace } }),
 }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
   ...(await original<
@@ -47,11 +53,42 @@ import { actionBillingNamespace } from "@repo/platform/engine/modules/actions/bi
 import { runActionsPaymentReconcile } from "@repo/platform/engine/modules/actions/billing-application";
 import { handleOblienWebhook } from "@repo/platform/engine/modules/billing/oblien-webhook.service";
 import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
+import { ensureActionsBillingNamespace } from "@repo/platform/engine/modules/actions/billing-namespace";
+
+const prepaidPolicy = {
+  success: true,
+  service: "workspace_vm",
+  quotaLimit: 0,
+  overdraft: 0,
+  suspendThreshold: 0,
+  onOverdraftAction: "stop_workspaces",
+};
 
 beforeEach(async () => {
   provider.cloud = true;
   provider.receipts.clear();
   provider.hostingSync.mockReset();
+  provider.ensureNamespace.mockReset().mockImplementation(async ({ slug }) => ({ data: { slug } }));
+  provider.getDefaults.mockReset().mockResolvedValue({ ...prepaidPolicy, autoApply: true });
+  provider.getPolicy
+    .mockReset()
+    .mockImplementation(async (namespace) => ({ ...prepaidPolicy, namespace }));
+  provider.getEntitlement.mockReset().mockImplementation(async (namespace) => ({
+    success: true,
+    namespace,
+    tierId: "free",
+    status: "credit_exhausted",
+    periodStart: null,
+    periodEnd: null,
+    billingMode: "metered",
+    capacity: null,
+    quota: { limit: 0, used: 0, balance: 0 },
+  }));
+  provider.getSubscription.mockReset().mockImplementation(async (namespace) => ({
+    success: true,
+    namespace,
+    subscription: null,
+  }));
   provider.createCheckout.mockReset().mockRejectedValue(new Error("Unexpected checkout creation"));
   provider.getCheckout.mockReset().mockImplementation(async (namespace: string, id: string) => {
     const receipt = provider.receipts.get(id);
@@ -183,6 +220,10 @@ describe("signed Actions payment delivery and recurring recovery", () => {
     ).toBe(200);
     expect(await runActionsPaymentReconcile()).toEqual({ scanned: 1, checked: 1, errors: 0 });
     expect(provider.createCheckout).toHaveBeenCalledOnce();
+    expect(provider.ensureNamespace).toHaveBeenCalledOnce();
+    expect(provider.getPolicy.mock.invocationCallOrder[0]).toBeLessThan(
+      provider.createCheckout.mock.invocationCallOrder[0]!,
+    );
     expect(await repos.actionBilling.purchase(f.actor.orgId, f.id)).toMatchObject({
       checkoutId: f.checkoutId,
       fundedUnits: actionDepositUnits(500),
@@ -319,6 +360,194 @@ describe("signed Actions payment delivery and recurring recovery", () => {
     expect(runner.recurring.size).toBe(0);
     expect(await runActionsPaymentReconcile()).toEqual({ scanned: 0, checked: 0, errors: 0 });
     expect(provider.getCheckout).not.toHaveBeenCalled();
+    expect(provider.createCheckout).not.toHaveBeenCalled();
+  });
+});
+
+describe("Actions namespace preparation before checkout", () => {
+  it("creates only the persisted Actions namespace with no free compute or allowance", async () => {
+    const f = await order({ saveCheckout: false });
+    await ensureActionsBillingNamespace(f.actor.orgId);
+    expect(provider.ensureNamespace).toHaveBeenCalledExactlyOnceWith({
+      name: "Openship Actions",
+      slug: f.namespace,
+      resource_limits: {
+        max_workspaces: 0,
+        max_vcpus: 0,
+        max_ram_mb: 0,
+        max_disk_gb: 0,
+        max_total_vcpus: 0,
+        max_total_ram_mb: 0,
+        max_total_disk_gb: 0,
+      },
+    });
+    expect(provider.getPolicy).toHaveBeenCalledExactlyOnceWith(f.namespace);
+    expect(provider.getEntitlement).toHaveBeenCalledExactlyOnceWith(f.namespace);
+    expect(provider.getSubscription).toHaveBeenCalledExactlyOnceWith(f.namespace);
+    expect((await repos.actionBilling.budget(f.actor.orgId))!.fundedUnits).toBe(0);
+    expect(await repos.cloudWorkspace.listByOrganization(f.actor.orgId)).toEqual([]);
+    expect(provider.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it("reuses funded namespaces without resetting purchased allowance, usage or resource caps", async () => {
+    const f = await order();
+    await repos.actionBilling.reconcilePurchase(
+      f.actor.orgId,
+      f.id,
+      f.checkoutId,
+      actionDepositUnits(500),
+      "completed",
+      86_400,
+    );
+    const policy = {
+      ...prepaidPolicy,
+      namespace: f.namespace,
+      purchasedCredits: 500,
+      effectiveCeiling: 500,
+      used: 57,
+    };
+    const limits = { max_workspaces: 1, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 40 };
+    // The documented ensure contract ignores initial resource limits for an
+    // existing slug. No resource/policy update endpoint is available in this fake.
+    provider.ensureNamespace.mockResolvedValue({
+      created: false,
+      data: { slug: f.namespace, resource_limits: limits },
+    });
+    provider.getPolicy.mockResolvedValue(policy);
+    provider.getEntitlement.mockResolvedValue({
+      namespace: f.namespace,
+      billingMode: "metered",
+      capacity: null,
+      quota: { limit: 500, used: 57, balance: 443 },
+    });
+    const before = await repos.actionBilling.budget(f.actor.orgId);
+    await ensureActionsBillingNamespace(f.actor.orgId);
+    await ensureActionsBillingNamespace(f.actor.orgId);
+    expect(await repos.actionBilling.budget(f.actor.orgId)).toEqual(before);
+    expect(policy).toMatchObject({ purchasedCredits: 500, used: 57 });
+    expect(limits).toMatchObject({
+      max_workspaces: 1,
+      max_vcpus: 2,
+      max_ram_mb: 4096,
+      max_disk_gb: 40,
+    });
+    expect(provider.ensureNamespace.mock.calls[1]).toEqual(provider.ensureNamespace.mock.calls[0]);
+    expect(provider.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it("does not contact the provider without a matching persisted budget or outside Cloud", async () => {
+    const actor = await seedOwner();
+    await expect(ensureActionsBillingNamespace(actor.orgId)).rejects.toMatchObject({
+      code: "ACTIONS_CHECKOUT_CONFLICT",
+    });
+    const f = await order();
+    await db
+      .update(schema.actionBudget)
+      .set({ namespace: `${f.namespace}-different` })
+      .where(eq(schema.actionBudget.organizationId, f.actor.orgId));
+    await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toMatchObject({
+      code: "ACTIONS_CHECKOUT_CONFLICT",
+    });
+    provider.cloud = false;
+    await expect(ensureActionsBillingNamespace(actor.orgId)).rejects.toMatchObject({
+      code: "ACTIONS_BILLING_CLOUD_ONLY",
+    });
+    expect(provider.getDefaults).not.toHaveBeenCalled();
+    expect(provider.ensureNamespace).not.toHaveBeenCalled();
+  });
+
+  it.each(["organization", "server"])(
+    "never adopts a namespace also bound to %s billing",
+    async (kind) => {
+      const f = await order();
+      const other = await seedOwner();
+      if (kind === "organization") {
+        await db
+          .update(schema.organization)
+          .set({ oblienNamespace: f.namespace })
+          .where(eq(schema.organization.id, other.orgId));
+      } else {
+        await db
+          .insert(schema.cloudWorkspace)
+          .values({
+            id: generateId("workspace"),
+            organizationId: other.orgId,
+            name: "Paid server",
+            namespace: f.namespace,
+          });
+      }
+      await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toThrow(
+        "ambiguous billing ownership",
+      );
+      expect(provider.ensureNamespace).not.toHaveBeenCalled();
+      expect(provider.getDefaults).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { autoApply: false },
+    { quotaLimit: null },
+    { quotaLimit: 500 },
+    { overdraft: 1 },
+    { suspendThreshold: 1 },
+    { onOverdraftAction: "block" },
+  ])("rejects unsafe onboarding defaults %j before namespace creation", async (invalid) => {
+    const f = await order();
+    provider.getDefaults.mockResolvedValue({ ...prepaidPolicy, autoApply: true, ...invalid });
+    await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toMatchObject({
+      code: "OBLIEN_DEFAULT_POLICY_REQUIRED",
+    });
+    expect(provider.ensureNamespace).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { quotaLimit: null },
+    { quotaLimit: 500 },
+    { overdraft: 1 },
+    { suspendThreshold: null },
+    { suspendThreshold: 1 },
+    { onOverdraftAction: "block" },
+  ])("rejects an existing unsafe policy %j without rewriting it", async (invalid) => {
+    const f = await order();
+    provider.getPolicy.mockResolvedValue({ ...prepaidPolicy, namespace: f.namespace, ...invalid });
+    await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toMatchObject({
+      code: "ACTIONS_FUNDING_POLICY_REQUIRED",
+    });
+    expect((await repos.actionBilling.budget(f.actor.orgId))!.fundedUnits).toBe(0);
+  });
+
+  it.each(["monthly", "capacity", "subscription"])(
+    "rejects a provider %s contract instead of repurposing it",
+    async (kind) => {
+      const f = await order();
+      if (kind === "subscription")
+        provider.getSubscription.mockResolvedValue({
+          namespace: f.namespace,
+          subscription: { tierId: "pro" },
+        });
+      else
+        provider.getEntitlement.mockResolvedValue({
+          namespace: f.namespace,
+          billingMode: kind === "monthly" ? "monthly" : "metered",
+          capacity: kind === "capacity" ? {} : null,
+        });
+      await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toMatchObject({
+        code: "ACTIONS_FUNDING_INVALID",
+      });
+    },
+  );
+
+  it("retries uncertain creation with the original slug and rejects a provider identity mismatch", async () => {
+    const f = await order();
+    provider.ensureNamespace.mockRejectedValueOnce(new Error("Connection lost"));
+    await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toThrow("Connection lost");
+    await ensureActionsBillingNamespace(f.actor.orgId);
+    expect(provider.ensureNamespace.mock.calls[1]).toEqual(provider.ensureNamespace.mock.calls[0]);
+    provider.ensureNamespace.mockResolvedValueOnce({ data: { slug: "another-customer" } });
+    await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toMatchObject({
+      code: "CLOUD_NAMESPACE_MISMATCH",
+    });
+    expect(provider.getPolicy).toHaveBeenCalledOnce();
     expect(provider.createCheckout).not.toHaveBeenCalled();
   });
 });

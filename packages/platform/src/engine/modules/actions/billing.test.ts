@@ -71,6 +71,12 @@ async function fixture() {
   const ports = {
     repo,
     provider: { createCheckout, getCheckout },
+    prepareNamespace: vi.fn(async (organizationId: string) => {
+      expect(await repo.budget(organizationId)).toMatchObject({
+        organizationId,
+        namespace: actionBillingNamespace(organizationId),
+      });
+    }),
     lock: <T>(id: string, operation: () => Promise<T>) =>
       withKeyedMutex(`action-test:${id}`, operation),
     encrypt: (value: string) => `sealed:${value}`,
@@ -91,6 +97,44 @@ async function fixture() {
 }
 
 describe("Actions prepaid checkout recovery", () => {
+  it("saves the order before namespace setup and recovers a setup failure without opening a second purchase", async () => {
+    const f = await fixture();
+    f.ports.prepareNamespace.mockRejectedValueOnce(new Error("Namespace unavailable"));
+    await expect(f.service.checkout(f.org, 500, "setup-retry")).rejects.toThrow(
+      "Namespace unavailable",
+    );
+    const [purchase] = await repo.purchases(f.org);
+    expect(purchase).toMatchObject({ priceCents: 500, checkoutId: null, fundedUnits: 0 });
+    expect(f.createCheckout).not.toHaveBeenCalled();
+    await f.service.inspect(f.org, purchase!.id);
+    expect(f.ports.prepareNamespace).toHaveBeenCalledOnce();
+    expect(await f.service.recoverDuePurchase(f.org, purchase!.id)).toBe(true);
+    expect(f.ports.prepareNamespace).toHaveBeenCalledTimes(2);
+    expect(f.ports.prepareNamespace.mock.invocationCallOrder[1]).toBeLessThan(
+      f.createCheckout.mock.invocationCallOrder[0]!,
+    );
+    expect(await repo.purchases(f.org)).toHaveLength(1);
+    expect(f.createCheckout).toHaveBeenCalledExactlyOnceWith(purchase!.request);
+    await f.service.inspect(f.org, purchase!.id);
+    expect(f.ports.prepareNamespace).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a persisted request for another namespace before preparing it", async () => {
+    const f = await fixture();
+    f.ports.prepareNamespace.mockRejectedValueOnce(new Error("Offline"));
+    await expect(f.service.checkout(f.org, 500, "wrong-namespace")).rejects.toThrow("Offline");
+    const [purchase] = await repo.purchases(f.org);
+    await connection.db
+      .update(schema.actionCreditPurchase)
+      .set({ request: { ...purchase!.request, namespace: "another-tenant" } })
+      .where(eq(schema.actionCreditPurchase.id, purchase!.id));
+    await expect(f.service.resume(f.org, purchase!.id)).rejects.toMatchObject({
+      code: "ACTIONS_CHECKOUT_CONFLICT",
+    });
+    expect(f.ports.prepareNamespace).toHaveBeenCalledOnce();
+    expect(f.createCheckout).not.toHaveBeenCalled();
+  });
+
   it("recovers a lost checkout response after restart without a browser visit or a second payment", async () => {
     const f = await fixture();
     const create = f.createCheckout.getMockImplementation()!;

@@ -39,6 +39,14 @@ credits. Existing reservations retain their saved price version and rate.
 retry uses that request and its original provider idempotency key. Checkout URLs
 are encrypted and are excluded from public run views and diagnostics.
 
+Before creating or recovering checkout, the saved Actions budget must exclusively
+own its deterministic namespace. Setup reuses the managed-server namespace ensure
+operation and verifies zero included credits, no overdraft and stop-on-exhaustion.
+An initial Actions namespace has zero resource capacity; paid runner setup must
+enable its bounded capacity separately. Retrying preparation never resets usage,
+grants funds, changes existing resource caps or alters a server's subscription.
+An unexpected subscription, capacity contract or policy fails before checkout.
+
 Only an authenticated provider receipt for the saved checkout and namespace can
 fund the ledger. A browser redirect, an open checkout or payment without completed
 fulfillment cannot grant funds. Reconciliation applies the absolute net grant,
@@ -91,12 +99,11 @@ Before enabling customer purchases:
    server, so guest-reported timestamps cannot alone authorize a customer debit.
    Billing from the controller's reconnect time would overcharge jobs that ended
    during controller downtime. Do not use either shortcut.
-3. Provision customer Actions namespaces and runner profiles with the provider's
-   resource and transfer limits, then wire budget reservations, bounded execution
-   and settlement through the existing controller. Keep app-server subscriptions
-   and their monthly capacity out of this path. Complete provider namespace setup
-   before opening checkout, then enable purchases only after settlement and
-   transfer enforcement pass real-provider tests.
+3. Activate customer runner profiles on their prepared Actions namespace with the
+   provider's resource and transfer limits, then wire budget reservations, bounded
+   execution and settlement through the existing controller. Keep app-server
+   subscriptions and their monthly capacity out of this path. Enable purchases
+   only after settlement and transfer enforcement pass real-provider tests.
 4. Complete real-provider tests for customer payment, transfer enforcement and
    execution-receipt settlement. Operator-funded provisioning and execution were
    verified against Oblien on 2026-10-09 using isolated 2 vCPU / 4 GiB / 40 GiB
