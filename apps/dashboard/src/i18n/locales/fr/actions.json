@@ -144,7 +144,7 @@
       "superseded": "Remplacé",
       "reversed": "Annulé"
     },
-    "cpuRate": "{price} / vCPU-minute",
+    "cpuRate": "{price} par minute de vCPU",
     "memoryRate": "{price} / Gio-minute",
     "diskRate": "{price} / Go d’E/S disque",
     "estimate": "≈ {minutes} min avec {amount}",
