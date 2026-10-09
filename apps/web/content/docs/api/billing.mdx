@@ -32,14 +32,19 @@ Resize that host through `servers.previewResize` and `servers.resize`.
 `billing.getActionsBudget()` reads the organization's separate prepaid workflow
 budget. It has no `workspaceId` selector and cannot spend a managed server's
 monthly allowance. The response includes dollar conversion units, available and
-reserved balances, approved runner rates, included transfer, and recent deposits.
-Amounts retain sub-cent precision; divide by `unitsPerDollar` for display.
+used provider credits, live usage rates, estimated VM minutes, runner readiness,
+and recent deposits. CPU, measured memory and transfer consume the same balance.
+Amounts retain sub-cent precision; divide by `unitsPerDollar` for display. An
+unavailable balance or estimate is `null`, not zero.
 
 `getActionsPurchase({ purchaseId })` verifies the saved payment with the provider.
-Only verified fulfillment changes the balance. Workflow permissions do not grant
-access to these billing reads or writes. Responses exclude provider credentials
-and payment URLs; checkout URLs are returned only by explicit purchase operations.
-Customer purchases are currently disabled, including direct API calls. See
+Verified fulfillment updates deposit history; Oblien owns the spendable balance
+and usage debits. Payment recovery enables the Cloud runner profiles separately;
+confirmed deposits remain visible while setup retries. Workflow permissions do
+not grant access to these billing reads or writes. Responses exclude provider
+credentials and payment URLs; checkout URLs are returned only by explicit purchase
+operations. Purchases require Cloud billing configuration and valid live rates;
+check `purchasesAvailable` before offering checkout. See
 [Cloud Actions funding](/docs/guides/actions#cloud-actions-funding).
 
 ## List plans
@@ -443,8 +448,8 @@ closure and resource cleanup.
 | --- | --- | --- |
 | Read the separate prepaid Actions balance, runner rates and recent deposits. Amounts use unitsPerDollar; no namespace or checkout is created. | `billing.getActionsBudget()` | `GET /api/billing/actions`<br />`billing:read` |
 | Reconcile an owned Actions purchase with its verified provider receipt. Returns payment state without a payment URL. | `billing.getActionsPurchase(input)` | `GET /api/billing/actions/purchase`<br />`billing:read` |
-| Start a prepaid Actions checkout with an approved deposit and idempotency key. Unavailable until customer-funded execution is enabled. | `billing.createActionsCheckout(input)` | `POST /api/billing/actions/checkout`<br />`billing:write` |
-| Resume the original Actions checkout. Unavailable while customer purchases are disabled. | `billing.resumeActionsCheckout(input)` | `POST /api/billing/actions/checkout/resume`<br />`billing:write` |
+| Start a prepaid Actions checkout with an approved deposit and idempotency key. Requires configured Cloud billing and valid live usage rates. | `billing.createActionsCheckout(input)` | `POST /api/billing/actions/checkout`<br />`billing:write` |
+| Resume the original Actions checkout without creating another payment. Requires configured Cloud billing and valid live usage rates. | `billing.resumeActionsCheckout(input)` | `POST /api/billing/actions/checkout/resume`<br />`billing:write` |
 
 ### HTTP endpoints
 

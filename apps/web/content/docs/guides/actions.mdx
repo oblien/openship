@@ -14,7 +14,8 @@ architecture, Git, Node and Docker capabilities before enabling a runtime.
 
 - **Linux containers:** use a runner image with the tools your workflow needs.
   Docker and service-container actions require Docker on the destination.
-- **Native macOS:** use a connected Mac with Git and Node installed. Jobs execute
+- **Native macOS:** use a connected Mac with Git and Node installed. Native mode
+  is selected by default, even when the Mac also has Docker. Jobs execute
   as the connected server user and share that user's filesystem and installed tools.
 - **Temporary Cloud runners:** each job receives a disposable Linux VM. Its funding
   is separate from managed application-server subscriptions.
@@ -121,20 +122,30 @@ where they can be determined from the workflow.
 
 ## Cloud Actions funding
 
-The planned Cloud Actions offering uses a separate prepaid budget. Approved Linux runner prices are
-$0.004/minute for 2 vCPU and 4 GiB RAM, $0.008/minute for 4 vCPU and 8 GiB RAM, and
-$0.016/minute for 8 vCPU and 16 GiB RAM. Temporary disks are 40, 80 and 160 GiB,
-respectively. The approved charging model bills execution by the second, including
-failed workflow steps, and excludes queue time and provisioning failures.
+**Actions → Budget** provides a separate prepaid balance for temporary VMs and
+transfer. Add $5, $20, $50 or $100, complete the hosted payment, and return to see
+its verified status. Runner setup retries automatically if the provider is
+unavailable; it does not buy another deposit. Once ready, choose the Cloud runners
+in your workflow's allowed destinations.
 
-**Actions → Budget** shows the rates, dollar balance and deposit history. Deposits
-are $5, $20, $50 and $100. The approved offer includes 5 GiB of combined upload and
-download transfer per deposited dollar. Internet pauses when that allowance is
-exhausted; additional funding restores access. Artifacts and caches use your
-configured storage destination.
+| Runner | RAM    | Temporary disk |
+| ------ | ------ | -------------- |
+| 2 vCPU | 4 GiB  | 40 GiB         |
+| 4 vCPU | 8 GiB  | 80 GiB         |
+| 8 vCPU | 16 GiB | 160 GiB        |
 
-Customer purchases are not enabled. Provider execution metering, transfer
-enforcement and payment fulfillment still need to be connected and verified.
-A configured runner or an open checkout is not a funded entitlement.
-Operator-funded test pools are separate from monthly app servers and remain
-subject to the provider's namespace limits.
+All sizes share two concurrent Cloud jobs per organization. You can select a size
+with `runs-on: [ubuntu-latest, openship-linux-2]`, `openship-linux-4` or
+`openship-linux-8`, provided that profile is allowed for the workflow.
+
+The page shows live provider rates and estimated VM minutes for your deposit.
+Estimates assume full CPU and memory use, before transfer or disk I/O. Actual
+charges follow measured CPU time, memory and combined uploads/downloads. VM
+preparation, failed steps and cleanup can consume credits; queued jobs use no VM.
+This is prepaid usage, not a fixed number of execution minutes or a subscription.
+
+Your displayed balance comes from Oblien. Recent usage may appear with a delay.
+Workers stop when the provider marks the balance exhausted. Add funds and rerun
+the workflow to try again; an interrupted attempt is not silently restarted.
+Artifacts and caches use your configured storage destination. Connected servers
+run workflows without spending this Cloud Actions balance.

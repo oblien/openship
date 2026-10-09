@@ -17,7 +17,7 @@ r.get(
     authorizationHandledByOperation: true,
     mcp: {
       description:
-        "Read the organization's separate prepaid Cloud Actions budget, approved runner rates and recent deposits. Amounts use the returned unitsPerDollar. Does not create a checkout or expose payment URLs. Purchases may be unavailable.",
+        "Read the organization's separate prepaid Cloud Actions balance, live VM usage rates, estimated minutes and recent deposits. Amounts use the returned unitsPerDollar. Does not create a checkout or expose payment URLs. Purchases may be unavailable.",
     },
   },
   async (c) => {

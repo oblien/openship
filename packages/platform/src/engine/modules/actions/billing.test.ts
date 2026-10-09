@@ -6,7 +6,7 @@ import {
   schema,
   type DatabaseConnection,
 } from "@repo/db/factory";
-import { actionDepositUnits, generateId, withKeyedMutex } from "@repo/core";
+import { actionDepositUnits, generateId, PRICING, withKeyedMutex } from "@repo/core";
 import type { OblienBillingApi, OblienCheckout } from "../../lib/oblien-billing-api";
 import { ActionCredits, actionBillingNamespace } from "./billing";
 
@@ -77,6 +77,7 @@ async function fixture() {
         namespace: actionBillingNamespace(organizationId),
       });
     }),
+    prepareRunners: vi.fn(async () => {}),
     lock: <T>(id: string, operation: () => Promise<T>) =>
       withKeyedMutex(`action-test:${id}`, operation),
     encrypt: (value: string) => `sealed:${value}`,
@@ -97,6 +98,53 @@ async function fixture() {
 }
 
 describe("Actions prepaid checkout recovery", () => {
+  it("recovers paid runner setup after a failed response without a second checkout or browser mutation", async () => {
+    const f = await fixture();
+    const payment = await f.service.checkout(f.org, 500, "paid-setup");
+    expect(f.ports.prepareRunners).not.toHaveBeenCalled();
+    f.paid();
+    await f.service.inspect(f.org, payment.purchaseId);
+    expect(f.ports.prepareRunners).not.toHaveBeenCalled();
+    expect(await repo.budget(f.org)).toMatchObject({
+      fundedUnits: actionDepositUnits(500),
+      runnerVersion: 0,
+    });
+    expect((await repo.purchase(f.org, payment.purchaseId))!.nextCheckAt!.getTime()).toBeLessThan(
+      Date.now() + 61_000,
+    );
+    f.ports.prepareRunners.mockRejectedValueOnce(new Error("Capacity update response lost"));
+    await makeDue(payment.purchaseId);
+    await expect(f.service.recoverDuePurchase(f.org, payment.purchaseId)).rejects.toThrow(
+      "response lost",
+    );
+    expect((await repo.budget(f.org))!.runnerVersion).toBe(0);
+    expect(
+      (await repo.purchase(f.org, payment.purchaseId))!.nextCheckAt!.getTime(),
+    ).toBeGreaterThan(Date.now());
+    await makeDue(payment.purchaseId);
+    await new ActionCredits(f.ports).recoverDuePurchase(f.org, payment.purchaseId);
+    expect(await repo.budget(f.org)).toMatchObject({
+      fundedUnits: actionDepositUnits(500),
+      runnerVersion: PRICING.actions.version,
+    });
+    expect(f.ports.prepareRunners).toHaveBeenCalledTimes(2);
+    await makeDue(payment.purchaseId);
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    expect(f.ports.prepareRunners).toHaveBeenCalledTimes(2);
+    expect(f.createCheckout).toHaveBeenCalledOnce();
+  });
+
+  it("does not set up runners after an unpaid or refunded receipt", async () => {
+    const f = await fixture();
+    const payment = await f.service.checkout(f.org, 500, "no-paid-setup");
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    f.paid(0);
+    await makeDue(payment.purchaseId);
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    expect(f.ports.prepareRunners).not.toHaveBeenCalled();
+    expect((await repo.budget(f.org))!.runnerVersion).toBe(0);
+  });
+
   it("saves the order before namespace setup and recovers a setup failure without opening a second purchase", async () => {
     const f = await fixture();
     f.ports.prepareNamespace.mockRejectedValueOnce(new Error("Namespace unavailable"));

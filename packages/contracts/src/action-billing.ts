@@ -20,21 +20,41 @@ export const ActionBudgetSchema = Type.Object(
     currency: Type.Literal("usd"),
     unitsPerDollar: Type.Integer({ minimum: 1 }),
     purchasesAvailable: Type.Boolean(),
+    runnersReady: Type.Boolean(),
+    runnerSetupFailed: Type.Boolean(),
     balance: Type.Object(
       {
         fundedUnits: units,
-        spentUnits: units,
-        reservedUnits: units,
-        availableUnits: units,
-        balanceUnits: Type.Integer(),
+        spentUnits: Type.Union([units, Type.Null()]),
+        availableUnits: Type.Union([units, Type.Null()]),
+        blocking: Type.Boolean(),
+        status: Type.Union([
+          Type.Literal("unfunded"),
+          Type.Literal("ready"),
+          Type.Literal("unavailable"),
+        ]),
+        checkedAt: Type.Union([Type.String(), Type.Null()]),
       },
       { additionalProperties: false },
     ),
     pricing: Type.Object(
       {
         version: Type.Integer({ minimum: 1 }),
-        transferGiBPerDollar: Type.Integer({ minimum: 1 }),
+        maxParallel: Type.Integer({ minimum: 1 }),
         depositsCents: Type.Array(Type.Integer({ minimum: 1 })),
+        meter: Type.Union([
+          Type.Object(
+            {
+              rateCardId: Type.String(),
+              cpuUnitsPerMinute: units,
+              memoryUnitsPerGiBMinute: units,
+              networkUnitsPerGb: units,
+              diskUnitsPerGb: units,
+            },
+            { additionalProperties: false },
+          ),
+          Type.Null(),
+        ]),
         runners: Type.Array(
           Type.Object(
             {
@@ -42,7 +62,7 @@ export const ActionBudgetSchema = Type.Object(
               cpuCores: Type.Integer({ minimum: 1 }),
               memoryMb: Type.Integer({ minimum: 1 }),
               diskGb: Type.Integer({ minimum: 1 }),
-              microUsdPerMinute: Type.Integer({ minimum: 1 }),
+              estimatedUnitsPerMinute: Type.Union([units, Type.Null()]),
             },
             { additionalProperties: false },
           ),

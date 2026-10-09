@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   network: vi.fn(),
   probe: vi.fn(),
   prepare: vi.fn(),
+  billingOwner: vi.fn(),
 }));
 vi.mock("../../config/env", () => ({
   env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://api.example.invalid" },
@@ -40,11 +41,16 @@ vi.mock("../../lib/oblien-client", () => ({
   getOblienClient: () => ({ tokens: { create: state.tokens } }),
   getOblienBillingApi: () => ({ getBalance: state.balance, getEntitlement: state.entitlement }),
 }));
+vi.mock("../billing/billing-namespace-owner", () => ({
+  findBillingOwnerByNamespace: state.billingOwner,
+}));
 vi.mock("@repo/db", () => ({
   repos: {
     actions: {
       updateJob: async (_org: string, _id: string, _owner: string, changes: object) =>
         Object.assign(state.job, changes),
+      runner: async (org: string, id: string) =>
+        state.rows.find((row) => row.id === id && row.organizationId === org),
       cloudRunners: async () => state.rows.map((row) => ({ ...row })),
       runnerBusy: state.busy,
       disableRunner: async (_org: string, id: string) => {
@@ -94,6 +100,7 @@ const missing = () => Object.assign(new Error("not found"), { status: 404 });
 beforeEach(() => {
   vi.resetAllMocks();
   state.rows = [];
+  state.billingOwner.mockResolvedValue(null);
   state.job = {
     id: generateId("ajob"),
     organizationId: run.organizationId,
@@ -124,6 +131,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("temporary Cloud Actions workers", () => {
+  it("reports provider exhaustion for a stopped VM instead of waiting indefinitely or restarting it", async () => {
+    Object.assign(state.job, {
+      providerRequestedAt: new Date(),
+      providerWorkspaceId: "workspace-one",
+      workerStartedAt: new Date(),
+    });
+    state.get.mockImplementation(async () => ({ ...workspace(), ready: true, status: "stopped" }));
+    state.balance.mockResolvedValue({ billingMode: "metered", balance: 0, blocking: true });
+    await expect(
+      openCloudActionWorker(run, job(), runner, "owner", "/assets"),
+    ).rejects.toMatchObject({ code: "ACTIONS_CREDITS_REQUIRED" });
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.prepare).not.toHaveBeenCalled();
+  });
+
   it("creates valid, distinct provider names for case-sensitive job IDs ending in punctuation", async () => {
     const ids = ["ajob_Test_", "ajob_test_", "ajob_Test-", "ajob__--", "ajob_Test"];
     for (const id of ids) {
@@ -199,20 +221,22 @@ describe("temporary Cloud Actions workers", () => {
     expect(state.job.providerWorkspaceId).toBe("workspace-one");
   });
 
-  it("does not provision from unpaid or monthly application coverage", async () => {
-    for (const balance of [
-      { billingMode: "metered", balance: 0 },
-      { billingMode: "monthly", balance: 100 },
-      { billingMode: "metered", balance: 100, blocking: true },
-    ]) {
+  it.each([
+    [{ billingMode: "metered", balance: 0 }, "ACTIONS_CREDITS_REQUIRED"],
+    [{ billingMode: "metered", balance: null }, "ACTIONS_BALANCE_UNAVAILABLE"],
+    [{ billingMode: "monthly", balance: 100 }, "ACTIONS_FUNDING_INVALID"],
+    [{ billingMode: "metered", balance: 100, blocking: true }, "ACTIONS_POOL_BLOCKED"],
+  ])(
+    "refuses unavailable funding without treating every refusal as an empty balance: %j",
+    async (balance, code) => {
       state.balance.mockResolvedValue(balance);
       await expect(
         openCloudActionWorker(run, job(), runner, "owner", "/assets"),
-      ).rejects.toMatchObject({ code: "ACTIONS_CREDITS_REQUIRED" });
-    }
-    expect(state.create).not.toHaveBeenCalled();
-    expect(state.job.providerRequestedAt).toBeNull();
-  });
+      ).rejects.toMatchObject({ code });
+      expect(state.create).not.toHaveBeenCalled();
+      expect(state.job.providerRequestedAt).toBeNull();
+    },
+  );
 
   it("reuses the original uncertain request during cleanup and confirms absence", async () => {
     state.create.mockRejectedValueOnce(new Error("response lost after acceptance"));
@@ -272,6 +296,43 @@ describe("temporary Cloud Actions workers", () => {
     expect(state.create).not.toHaveBeenCalled();
     state.get.mockImplementation(async () => workspace());
     expect(await removeCloudActionWorker(run, job(), runner, "owner")).toBe(false);
+  });
+
+  it("keeps purchased profiles enabled when operator configuration is empty", async () => {
+    state.rows.push({
+      id: "customer",
+      organizationId: run.organizationId,
+      cloudPoolId: "funded",
+      cloudProfileId: "linux_2",
+      enabled: true,
+    });
+    vi.stubEnv("OPENSHIP_ACTIONS_CLOUD_POOLS", "[]");
+    await ensureConfiguredActionPools();
+    expect(state.rows[0]!.enabled).toBe(true);
+  });
+
+  it("rejects an operator mapping onto a customer billing namespace", async () => {
+    state.billingOwner.mockResolvedValue({ kind: "actions", organizationId: run.organizationId });
+    vi.stubEnv(
+      "OPENSHIP_ACTIONS_CLOUD_POOLS",
+      JSON.stringify([
+        {
+          organizationId: run.organizationId,
+          namespace: "funded",
+          name: "override",
+          cpu: 8,
+          memoryMb: 4096,
+          diskGb: 40,
+          maxParallel: 16,
+          image: "node:22",
+          labels: [],
+        },
+      ]),
+    );
+    await expect(ensureConfiguredActionPools()).rejects.toMatchObject({
+      code: "ACTIONS_FUNDING_INVALID",
+    });
+    expect(state.rows).toEqual([]);
   });
 
   it("disables removed pools and drains changed configurations without changing in-flight request resources", async () => {

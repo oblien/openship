@@ -34,8 +34,10 @@ export const actionRunner = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     serverId: text("server_id").references(() => servers.id, { onDelete: "restrict" }),
-    /** Cloud pools are operator-provisioned, funded CI namespaces, never monthly app hosts. */
+    /** Funded CI namespaces, never monthly application hosts. */
     cloudPoolId: text("cloud_pool_id"),
+    /** Catalog profile for a customer-funded pool; null for operator pools. */
+    cloudProfileId: text("cloud_profile_id"),
     config: jsonb("config").$type<ActionRunnerConfig>().notNull(),
     capabilities: jsonb("capabilities").$type<ActionCapabilities>(),
     enabled: boolean("enabled").notNull().default(true),
@@ -50,6 +52,11 @@ export const actionRunner = pgTable(
     // One native/container lease policy per physical destination prevents two
     // configurations from accidentally multiplying its allowed concurrency.
     uniqueIndex("action_runner_server_unique").on(t.serverId),
+    uniqueIndex("action_runner_cloud_profile_unique").on(t.cloudPoolId, t.cloudProfileId),
+    check(
+      "action_runner_cloud_profile_check",
+      sql`${t.cloudProfileId} IS NULL OR ${t.cloudPoolId} IS NOT NULL`,
+    ),
     check(
       "action_runner_destination_check",
       sql`(${t.serverId} IS NULL) <> (${t.cloudPoolId} IS NULL)`,

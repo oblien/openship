@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -13,7 +14,7 @@ import {
 import { organization } from "./organization";
 
 /** Financial records are independent of short-lived workflow logs and monthly
- * app-server subscriptions. Amounts use the exact Actions second-based unit. */
+ * app-server subscriptions. Only verified deposits are mirrored locally; Oblien owns usage debits. */
 export const actionBudget = pgTable(
   "action_budget",
   {
@@ -22,15 +23,16 @@ export const actionBudget = pgTable(
       .references(() => organization.id, { onDelete: "restrict" }),
     namespace: text("namespace").notNull().unique(),
     fundedUnits: bigint("funded_units", { mode: "number" }).notNull().default(0),
-    spentUnits: bigint("spent_units", { mode: "number" }).notNull().default(0),
-    reservedUnits: bigint("reserved_units", { mode: "number" }).notNull().default(0),
+    /** Applied customer runner catalog; zero means payment recovery must finish setup. */
+    runnerVersion: integer("runner_version").notNull().default(0),
+    runnerSetupFailed: boolean("runner_setup_failed").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     check(
       "action_budget_amounts_check",
-      sql`${t.fundedUnits} BETWEEN 0 AND 9007199254740991 AND ${t.spentUnits} BETWEEN 0 AND 9007199254740991 AND ${t.reservedUnits} BETWEEN 0 AND 9007199254740991`,
+      sql`${t.fundedUnits} BETWEEN 0 AND 9007199254740991 AND ${t.runnerVersion} >= 0`,
     ),
   ],
 );
@@ -70,35 +72,5 @@ export const actionCreditPurchase = pgTable(
       sql`${t.priceCents} > 0 AND ${t.fundedUnits} BETWEEN 0 AND ${t.priceCents}::bigint * 600000`,
     ),
     check("action_purchase_check_attempts_check", sql`${t.checkAttempts} BETWEEN 0 AND 10`),
-  ],
-);
-
-/** A receipt keeps its immutable job reference after execution history expires.
- * reserve() verifies ownership and the current controller lease before insertion. */
-export const actionCharge = pgTable(
-  "action_charge",
-  {
-    jobId: text("job_id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => actionBudget.organizationId, { onDelete: "restrict" }),
-    runnerPriceId: text("runner_price_id").notNull(),
-    priceVersion: integer("price_version").notNull(),
-    microUsdPerMinute: integer("micro_usd_per_minute").notNull(),
-    reservedSeconds: integer("reserved_seconds").notNull(),
-    reservedUnits: bigint("reserved_units", { mode: "number" }).notNull(),
-    chargedSeconds: integer("charged_seconds"),
-    chargedUnits: bigint("charged_units", { mode: "number" }),
-    settledAt: timestamp("settled_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [
-    index("action_charge_org_idx").on(t.organizationId, t.createdAt),
-    check(
-      "action_charge_amounts_check",
-      sql`${t.microUsdPerMinute} > 0 AND ${t.reservedSeconds} BETWEEN 1 AND 21600 AND ${t.reservedUnits} = ${t.reservedSeconds}::bigint * ${t.microUsdPerMinute}
-    AND ((${t.settledAt} IS NULL AND ${t.chargedSeconds} IS NULL AND ${t.chargedUnits} IS NULL)
-      OR (${t.settledAt} IS NOT NULL AND ${t.chargedSeconds} BETWEEN 0 AND ${t.reservedSeconds} AND ${t.chargedUnits} = ${t.chargedSeconds}::bigint * ${t.microUsdPerMinute}))`,
-    ),
   ],
 );

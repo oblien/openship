@@ -13,6 +13,8 @@ import { AppError, safeErrorMessage } from "@repo/core";
 import { repos, type ActionRun, type ActionJob, type ActionRunner } from "@repo/db";
 import { env } from "../../config/env";
 import { getOblienClient, getOblienBillingApi } from "../../lib/oblien-client";
+import type { OblienBillingApi } from "../../lib/oblien-billing-api";
+import { findBillingOwnerByNamespace } from "../billing/billing-namespace-owner";
 
 /** Operator-owned mapping. A public request cannot select a reseller namespace
  * or grant credits. Billing remains enforced by Oblien's existing namespace quota. */
@@ -34,6 +36,61 @@ const poolsSchema = z
   )
   .max(1000);
 
+/** Operator and purchased profiles use the same immutable worker configuration. */
+export async function saveCloudActionRunner(
+  pool: z.infer<typeof poolsSchema>[number],
+  profileId: string | null = null,
+): Promise<void> {
+  if (pool.labels.some((label) => /^(macos|windows|arm64)(-|$)/i.test(label)))
+    throw new Error("Temporary Cloud Actions pools currently support Linux x64 images");
+  const id = `apool_${createHash("sha256")
+    .update(profileId ? `${pool.namespace}:${profileId}` : pool.namespace)
+    .digest("hex")
+    .slice(0, 24)}`;
+  const config = {
+    mode: "container" as const,
+    labels: pool.labels,
+    image: pool.image,
+    cpu: pool.cpu,
+    memoryMb: pool.memoryMb,
+    maxParallel: pool.maxParallel,
+    allowDockerSocket: false,
+    cloudDiskGb: pool.diskGb,
+  };
+  const existing = await repos.actions.runner(pool.organizationId, id);
+  if (
+    existing &&
+    !isDeepStrictEqual(existing.config, config) &&
+    (await repos.actions.runnerBusy(pool.organizationId, id))
+  ) {
+    await repos.actions.disableRunner(pool.organizationId, id);
+    throw new AppError(
+      "Waiting for active Actions workers before applying the changed pool configuration",
+      409,
+      "ACTIONS_POOL_DRAINING",
+    );
+  }
+  await repos.actions.saveRunner({
+    id,
+    organizationId: pool.organizationId,
+    serverId: null,
+    cloudPoolId: pool.namespace,
+    cloudProfileId: profileId,
+    name: pool.name,
+    config,
+    capabilities: {
+      os: "linux",
+      architecture: "x64",
+      docker: true,
+      git: true,
+      node: true,
+      distribution: null,
+      version: null,
+    },
+    enabled: true,
+  });
+}
+
 export async function ensureConfiguredActionPools(): Promise<void> {
   if (!env.CLOUD_MODE) return;
   const configured = poolsSchema.parse(
@@ -45,6 +102,7 @@ export async function ensureConfiguredActionPools(): Promise<void> {
     );
   const saved = await repos.actions.cloudRunners();
   for (const runner of saved) {
+    if (runner.cloudProfileId) continue;
     const pool = configured.find((pool) => pool.namespace === runner.cloudPoolId);
     if (pool && pool.organizationId !== runner.organizationId)
       throw new Error("An existing Actions pool cannot be reassigned to another organization");
@@ -52,32 +110,14 @@ export async function ensureConfiguredActionPools(): Promise<void> {
   }
   let draining = false;
   for (const pool of configured) {
-    const org = pool.organizationId;
-    if (pool.labels.some((label) => /^(macos|windows|arm64)(-|$)/i.test(label)))
-      throw new Error("Temporary Cloud Actions pools currently support Linux x64 images");
-    const id = `apool_${createHash("sha256").update(pool.namespace).digest("hex").slice(0, 24)}`;
-    const existing = saved.find((runner) => runner.id === id);
-    const config = {
-      mode: "container" as const,
-      labels: pool.labels,
-      image: pool.image,
-      cpu: pool.cpu,
-      memoryMb: pool.memoryMb,
-      maxParallel: pool.maxParallel,
-      allowDockerSocket: false,
-      cloudDiskGb: pool.diskGb,
-    };
-    if (
-      existing &&
-      !isDeepStrictEqual(existing.config, config) &&
-      (await repos.actions.runnerBusy(org, id))
-    ) {
-      // Keep the original idempotency payload for in-flight provisioning and
-      // cleanup. Stop admitting jobs until that configuration can be replaced.
-      await repos.actions.disableRunner(org, id);
-      draining = true;
-      continue;
-    }
+    // Customer budgets and managed-server namespaces cannot be overridden by
+    // operator configuration, even when the organization happens to match.
+    if (await findBillingOwnerByNamespace(pool.namespace))
+      throw new AppError(
+        "This namespace is already owned by customer billing",
+        409,
+        "ACTIONS_FUNDING_INVALID",
+      );
     // A paid app-server namespace must never be adopted as a CI funding pool.
     const entitlement = await getOblienBillingApi().getEntitlement(pool.namespace);
     if (entitlement.billingMode === "monthly" || entitlement.capacity)
@@ -86,24 +126,12 @@ export async function ensureConfiguredActionPools(): Promise<void> {
         409,
         "ACTIONS_FUNDING_INVALID",
       );
-    await repos.actions.saveRunner({
-      id,
-      organizationId: org,
-      serverId: null,
-      cloudPoolId: pool.namespace,
-      name: pool.name,
-      config,
-      capabilities: {
-        os: "linux",
-        architecture: "x64",
-        docker: true,
-        git: true,
-        node: true,
-        distribution: null,
-        version: null,
-      },
-      enabled: true,
-    });
+    try {
+      await saveCloudActionRunner(pool);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== "ACTIONS_POOL_DRAINING") throw error;
+      draining = true;
+    }
   }
   if (draining)
     throw new AppError(
@@ -171,6 +199,33 @@ function assertWorkspace(
     );
 }
 
+function assertFunded(balance: Awaited<ReturnType<OblienBillingApi["getBalance"]>>) {
+  if (balance.billingMode === "monthly")
+    throw new AppError(
+      "Actions requires a separate prepaid budget",
+      409,
+      "ACTIONS_FUNDING_INVALID",
+    );
+  if (balance.balance === null)
+    throw new AppError(
+      "The Actions balance could not be verified. Try again shortly.",
+      503,
+      "ACTIONS_BALANCE_UNAVAILABLE",
+    );
+  if (balance.balance <= 0)
+    throw new AppError(
+      "Add funds in Actions → Budget, then rerun this workflow.",
+      402,
+      "ACTIONS_CREDITS_REQUIRED",
+    );
+  if (balance.blocking)
+    throw new AppError(
+      "Cloud Actions is paused for this budget. Your funds are saved; contact support if it remains paused.",
+      503,
+      "ACTIONS_POOL_BLOCKED",
+    );
+}
+
 export async function openCloudActionWorker(
   run: ActionRun,
   job: ActionJob,
@@ -182,17 +237,7 @@ export async function openCloudActionWorker(
   const firstRequest = !job.providerRequestedAt;
   if (!job.providerRequestedAt) {
     const balance = await getOblienBillingApi().getBalance(runner.cloudPoolId!);
-    if (
-      balance.billingMode === "monthly" ||
-      balance.blocking ||
-      balance.balance === null ||
-      balance.balance <= 0
-    )
-      throw new AppError(
-        "This Actions pool needs funded CI credits before it can start another worker",
-        402,
-        "ACTIONS_CREDITS_REQUIRED",
-      );
+    assertFunded(balance);
     const saved = await repos.actions.updateJob(run.organizationId, job.id, owner, {
       providerRequestedAt: new Date(),
     });
@@ -239,8 +284,18 @@ export async function openCloudActionWorker(
       502,
       "ACTIONS_PROVISIONING_FAILED",
     );
-  if (workspace.ready === false || !["active", "running"].includes(cloudWorkspaceStatus(workspace)))
-    return null;
+  const status = cloudWorkspaceStatus(workspace);
+  if (["stopped", "suspended", "paused"].includes(status)) {
+    const balance = await getOblienBillingApi().getBalance(runner.cloudPoolId!);
+    assertFunded(balance);
+    if (job.workerStartedAt)
+      throw new AppError(
+        "The Cloud worker stopped before the workflow finished. This attempt will not be restarted automatically.",
+        410,
+        "ACTIONS_WORKER_STOPPED",
+      );
+  }
+  if (workspace.ready === false || !["active", "running"].includes(status)) return null;
   const executor = new CloudWorkspaceExecutor(
     () => client.workspace(workspace.id).runtime(),
     workspace.id,

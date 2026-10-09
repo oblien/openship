@@ -49,11 +49,14 @@ the selected destination instead of offering runtimes that cannot execute there.
 Native-runner setup explicitly describes access as the connected server user.
 Cloud Actions funding is separate from application-server billing and must remain
 clearly scoped in the UI.
-Use **Actions → Budget** for its runner rates, dollar balance and deposit history.
-Keep the rate comparison beside a standard 340px funding column. Deposits show
-their included upload/download allowance; never imply transfer is unlimited or
-that a pending payment has funded the balance. Payment returns reconcile the
-saved purchase with the provider, with retryable errors and preserved page state.
+Use **Actions → Budget** for live usage rates, estimated VM minutes, provider
+balance and deposit history. Keep the comparison beside a standard 340px funding
+column. State that estimates assume full CPU and RAM before transfer or disk I/O;
+CPU time, measured memory and transfer consume one balance. Never imply guaranteed
+minutes or a separate included transfer allowance. Payment returns reconcile the
+saved purchase, then distinguish confirmed funds from runner setup. Preserve page
+state and show an unavailable balance as unknown, not zero. Connected Macs default
+to native execution and clear incompatible labels when the destination changes.
 
 ## Layout and density
 

@@ -30,6 +30,19 @@ function setup(body: unknown, status = 200) {
   return { api, fetcher };
 }
 describe("Oblien billing SDK and transport contract", () => {
+  it("quotes the live VM credit meter and ignores preview rate cards without sending credentials", async () => {
+    const live = { success: true, credits_per_dollar: 100, rate_card_id: "live", rates: { cpu_per_min: 1.5, memory_per_gb_min: 0.2, disk_per_gb: 0, network_per_gb: 0.15 } };
+    const { api, fetcher } = setup({ ...live, compute_rate_cards: [{ chargeEnabled: false, cpu_per_min: 0.001 }] });
+    expect(await api.getMeteredPricing()).toEqual(live);
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/pricing/calculator", expect.objectContaining({ method: "GET", redirect: "error", headers: { Accept: "application/json" } }));
+  });
+  it.each([
+    { credits_per_dollar: 50, rate_card_id: "new", rates: { cpu_per_min: 1, memory_per_gb_min: 1, disk_per_gb: 0, network_per_gb: 0 } },
+    { credits_per_dollar: 100, rate_card_id: "new", rates: { cpu_per_min: -1, memory_per_gb_min: 1, disk_per_gb: 0, network_per_gb: 0 } },
+    { credits_per_dollar: 100, rate_card_id: "new", compute_rate_cards: [] },
+  ])("refuses malformed meter prices or a changed credit conversion", async body => {
+    await expect(setup({ success: true, ...body }).api.getMeteredPricing()).rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+  });
   it("reads a pending capacity checkout without exposing the reseller wallet or prices", async () => {
     const pendingCheckout = { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe", wholesaleAmount: 940 },
       checkoutId: "cs_requested", url: "https://checkout.stripe.com/c/pay/test" };

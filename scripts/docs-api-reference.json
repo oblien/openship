@@ -3521,13 +3521,13 @@
     "billing.createActionsCheckout": {
       "page": "billing",
       "section": "Actions budget",
-      "description": "Start a prepaid Actions checkout with an approved deposit and idempotency key. Unavailable until customer-funded execution is enabled.",
+      "description": "Start a prepaid Actions checkout with an approved deposit and idempotency key. Requires configured Cloud billing and valid live usage rates.",
       "route": "POST /api/billing/actions/checkout"
     },
     "billing.resumeActionsCheckout": {
       "page": "billing",
       "section": "Actions budget",
-      "description": "Resume the original Actions checkout. Unavailable while customer purchases are disabled.",
+      "description": "Resume the original Actions checkout without creating another payment. Requires configured Cloud billing and valid live usage rates.",
       "route": "POST /api/billing/actions/checkout/resume"
     }
   },

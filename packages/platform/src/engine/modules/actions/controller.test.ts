@@ -175,6 +175,49 @@ const reconcile = (engine: { controller: ActionController }, run: ActionRun) =>
   engine.controller.reconcile(run.organizationId, run.id);
 
 describe("durable Actions controller", () => {
+  it("shares a Cloud namespace's concurrency across sizes and holds slots through cleanup", async () => {
+    const f = await fixture(yaml, true);
+    const small = await repo.saveRunner({
+      ...f.runner,
+      config: { ...f.runner.config, maxParallel: 2 },
+    });
+    const large = await repo.saveRunner({
+      ...small,
+      id: generateId("runner"),
+      cloudProfileId: "large",
+      config: { ...small.config, cpu: 8 },
+    });
+    const newRun = async (runnerIds: string[]) => {
+      const run = await repo.createRun({
+        ...f.input,
+        id: generateId("run"),
+        idempotencyKey: generateId("key"),
+        configuration: { ...f.input.configuration, runnerIds },
+      });
+      const e = engine();
+      await reconcile(e, run);
+      return { run, e, job: (await repo.jobs(f.org, run.id))[0]! };
+    };
+    const one = await newRun([small.id]),
+      two = await newRun([large.id]),
+      three = await newRun([small.id, large.id]);
+    expect(one.job.runnerId).toBe(small.id);
+    expect(two.job.runnerId).toBe(large.id);
+    expect(three.job.runnerId).toBeNull();
+    await connection.db
+      .update(schema.actionJob)
+      .set({ status: "success", finishedAt: new Date() })
+      .where(eq(schema.actionJob.id, one.job.id));
+    await reconcile(three.e, three.run);
+    expect((await repo.job(f.org, three.job.id))!.runnerId).toBeNull();
+    await connection.db
+      .update(schema.actionJob)
+      .set({ cleanedAt: new Date() })
+      .where(eq(schema.actionJob.id, one.job.id));
+    await reconcile(three.e, three.run);
+    expect((await repo.job(f.org, three.job.id))!.runnerId).toBeTruthy();
+  });
+
   it("keeps a reserved destination immutable and rejects stale capability selection", async () => {
     const f = await fixture();
     const e = engine({ provisioning: true });
@@ -250,34 +293,30 @@ describe("durable Actions controller", () => {
     await insert("retry", { originalRunId: parent.id });
     const jobId = generateId("job");
     const destinationId = generateId("dst");
-    await connection.db
-      .insert(schema.actionJob)
-      .values({
-        id: jobId,
-        runId: stored.id,
-        organizationId: f.org,
-        jobKey: "first",
-        matrixIndex: 0,
-      });
+    await connection.db.insert(schema.actionJob).values({
+      id: jobId,
+      runId: stored.id,
+      organizationId: f.org,
+      jobKey: "first",
+      matrixIndex: 0,
+    });
     await connection.db
       .insert(schema.backupDestination)
       .values({ id: destinationId, organizationId: f.org, name: "Artifacts", kind: "local" });
-    await connection.db
-      .insert(schema.actionStorageObject)
-      .values({
-        organizationId: f.org,
-        runId: stored.id,
-        jobId,
-        destinationId,
-        kind: "artifact",
-        repository: "acme/app",
-        ref: "refs/heads/main",
-        name: "build",
-        key: "test-build",
-        reservedBytes: 1,
-        maxBytes: 1,
-        expiresAt: past,
-      });
+    await connection.db.insert(schema.actionStorageObject).values({
+      organizationId: f.org,
+      runId: stored.id,
+      jobId,
+      destinationId,
+      kind: "artifact",
+      repository: "acme/app",
+      ref: "refs/heads/main",
+      name: "build",
+      key: "test-build",
+      reservedBytes: 1,
+      maxBytes: 1,
+      expiresAt: past,
+    });
     await repo.pruneRuns(new Date(Date.now() - 30 * 86_400_000));
     expect(await repo.run(f.org, expired.id)).toBeUndefined();
     for (const id of [f.run.id, stored.id, parent.id])
@@ -510,19 +549,24 @@ describe("durable Actions controller", () => {
       await reconcile(e, run);
       const [job] = await repo.jobs(org, run.id);
       e.finish(job!.id, conclusion);
-      const originalError = conclusion === "failure" ? "The workflow step exited with code 1" : null;
+      const originalError =
+        conclusion === "failure" ? "The workflow step exited with code 1" : null;
       if (originalError) e.executions.get(job!.id)!.result!.error = originalError;
       e.ports.cleanup = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
       await reconcile(e, run);
       expect(await repo.job(org, job!.id)).toMatchObject({
-        status: conclusion, error: originalError, cleanedAt: null,
+        status: conclusion,
+        error: originalError,
+        cleanedAt: null,
       });
       expect(await repo.runnerBusy(org, runner.id)).toBe(true);
       expect(e.ports.reportError).not.toHaveBeenCalled();
       const successor = new ActionController(e.ports);
       await successor.reconcile(org, run.id);
       expect(await repo.job(org, job!.id)).toMatchObject({
-        status: conclusion, error: originalError, cleanedAt: expect.any(Date),
+        status: conclusion,
+        error: originalError,
+        cleanedAt: expect.any(Date),
       });
       expect(e.ports.cleanup).toHaveBeenCalledTimes(2);
     },

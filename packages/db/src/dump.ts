@@ -196,7 +196,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ["action_runner", schema.actionRunner], ["action_workflow", schema.actionWorkflow], ["action_delivery", schema.actionDelivery],
     ["action_run", schema.actionRun], ["action_job", schema.actionJob], ["action_event", schema.actionEvent],
     ["action_storage_object", schema.actionStorageObject], ["action_storage_chunk", schema.actionStorageChunk],
-    ["action_budget", schema.actionBudget], ["action_credit_purchase", schema.actionCreditPurchase], ["action_charge", schema.actionCharge],
+    ["action_budget", schema.actionBudget], ["action_credit_purchase", schema.actionCreditPurchase],
   ].map(([sqlName, table]) => ({ sqlName: sqlName as string, table: table as PgTable,
     scopes: [{ in: "instance" as const, via: "all-rows" as const }], hasOrganizationId: true })),
   {

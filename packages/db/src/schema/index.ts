@@ -93,4 +93,4 @@ export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
 export { instanceController, instanceHandoff } from "./instance-controller";
 export { actionRunner, actionWorkflow, actionRun, actionJob, actionEvent, actionDelivery } from "./actions";
 export { actionStorageObject, actionStorageChunk } from "./action-storage";
-export { actionBudget, actionCreditPurchase, actionCharge } from "./action-billing";
+export { actionBudget, actionCreditPurchase } from "./action-billing";

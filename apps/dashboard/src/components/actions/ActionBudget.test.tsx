@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PRICING } from "@repo/core";
+import { PRICING, actionCreditUnits } from "@repo/core";
 import type { ActionBudget as Budget, ActionCreditPurchase } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ActionBudget } from "./ActionBudget";
@@ -39,8 +39,30 @@ const initial = (): Budget => ({
   currency: "usd",
   unitsPerDollar: 60_000_000,
   purchasesAvailable: false,
-  balance: { fundedUnits: 0, spentUnits: 0, reservedUnits: 0, availableUnits: 0, balanceUnits: 0 },
-  pricing: PRICING.actions,
+  runnersReady: false,
+  runnerSetupFailed: false,
+  balance: {
+    fundedUnits: 0,
+    spentUnits: 0,
+    availableUnits: 0,
+    blocking: true,
+    status: "unfunded",
+    checkedAt: null,
+  },
+  pricing: {
+    ...PRICING.actions,
+    meter: {
+      rateCardId: "live-meter",
+      cpuUnitsPerMinute: 900000,
+      memoryUnitsPerGiBMinute: 120000,
+      networkUnitsPerGb: 90000,
+      diskUnitsPerGb: 0,
+    },
+    runners: PRICING.actions.runners.map((r) => ({
+      ...r,
+      estimatedUnitsPerMinute: actionCreditUnits(r.cpuCores * 1.5 + (r.memoryMb / 1024) * 0.2),
+    })),
+  },
   purchases: [],
 });
 let root: Root;
@@ -71,23 +93,27 @@ afterEach(async () => {
 });
 
 describe("Actions funding UI", () => {
-  it("shows exact sub-cent rates and usage with included transfer while purchases are unavailable", async () => {
+  it("shows live VM estimates and one usage balance without a separate transfer allowance", async () => {
     h.budget.mockResolvedValue({
       ...initial(),
       balance: { ...initial().balance, spentUnits: 4000 },
     });
     await render();
     for (const amount of [
-      "$0.004",
-      "$0.008",
-      "$0.016",
+      "$0.038",
+      "$0.076",
+      "$0.152",
       "$0.000067",
-      "25 GiB",
-      "100 GiB",
-      "250 GiB",
-      "500 GiB",
+      "$0.0015",
+      "$0.015 / vCPU-minute",
+      "131 min with $5",
     ])
       expect(host.textContent).toContain(amount);
+    expect(host.textContent).not.toContain("GiB transfer");
+    expect(host.textContent).toContain("including preparation and cleanup");
+    await act(async () => button("$20").click());
+    expect(host.textContent).toContain("526 min with $20");
+    await act(async () => button("$5").click());
     expect(button("Add $5").disabled).toBe(true);
     await act(async () => button("Add $5").click());
     expect(h.checkout).not.toHaveBeenCalled();
@@ -117,12 +143,68 @@ describe("Actions funding UI", () => {
       }),
     );
     expect(h.budget).toHaveBeenCalledTimes(2);
-    expect(host.querySelector('[role="status"]')?.textContent).toBe("Funds added");
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      "Funds added. Preparing your Cloud runners…",
+    );
     const available = [...host.querySelectorAll("section")].find((node) =>
-      node.textContent?.includes("Available for jobs"),
+      node.textContent?.includes("Available balance"),
     )!;
     expect(available.textContent).toContain("$0.00");
     expect(available.textContent).not.toContain("$5.00");
+  });
+
+  it("does not display an unavailable provider balance as zero", async () => {
+    h.budget.mockResolvedValue({
+      ...initial(),
+      balance: {
+        ...initial().balance,
+        availableUnits: null,
+        spentUnits: null,
+        status: "unavailable",
+      },
+      pricing: {
+        ...initial().pricing,
+        meter: null,
+        runners: initial().pricing.runners.map((r) => ({ ...r, estimatedUnitsPerMinute: null })),
+      },
+    });
+    await render();
+    expect(host.textContent).toContain("Balance is temporarily unavailable");
+    expect(host.textContent).toContain("Live rates are unavailable");
+    expect(button("Add $5").disabled).toBe(true);
+  });
+
+  it("reuses the payment attempt after a lost response and shows the funded workflow entry", async () => {
+    h.budget.mockResolvedValue({
+      ...initial(),
+      purchasesAvailable: true,
+      runnersReady: true,
+      balance: { ...initial().balance, blocking: false, availableUnits: 300000000 },
+    });
+    h.checkout.mockRejectedValueOnce(new Error("Temporary failure")).mockResolvedValueOnce({
+      purchaseId: "acredit_one",
+      checkoutUrl: "https://checkout.stripe.com/saved",
+    });
+    await render();
+    expect(host.querySelector('a[href="/actions/new"]')?.textContent).toBe("Create workflow");
+    await act(async () => button("Add $5").click());
+    await act(async () => button("Add $5").click());
+    expect(h.checkout.mock.calls[0]).toEqual(h.checkout.mock.calls[1]);
+    expect(h.navigate).toHaveBeenCalledWith("https://checkout.stripe.com/saved");
+  });
+
+  it("distinguishes a funded but paused budget from a balance that needs topping up", async () => {
+    h.budget.mockResolvedValue({
+      ...initial(),
+      runnersReady: true,
+      balance: { ...initial().balance, blocking: true, availableUnits: 300000000 },
+    });
+    await render();
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Cloud Actions is paused. Your balance is saved",
+    );
+    expect(host.querySelector('a[href="/actions/new"]')).toBeNull();
+    expect(host.textContent).toContain("$5.00");
   });
 
   it("does not navigate to a previous organization's checkout after switching accounts", async () => {

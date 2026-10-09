@@ -1,13 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 
-const provider = vi.hoisted(() => ({ cloud: true, createCheckout: vi.fn(), getCheckout: vi.fn() }));
+const provider = vi.hoisted(() => ({
+  cloud: true,
+  enabled: false,
+  createCheckout: vi.fn(),
+  getCheckout: vi.fn(),
+  getMeteredPricing: vi.fn(),
+  getBalance: vi.fn(),
+  getEntitlement: vi.fn(),
+  prepare: vi.fn(),
+}));
 vi.mock("@repo/platform/engine/config/env", async (original) => {
   const actual = await original<{ env: Record<string, unknown> }>();
   return {
     ...actual,
     env: {
       ...actual.env,
+      get BILLING_ENABLED() {
+        return provider.enabled;
+      },
+      OBLIEN_CLIENT_ID: "test-actions-id",
+      OBLIEN_CLIENT_SECRET: "test-actions-secret",
       get CLOUD_MODE() {
         return provider.cloud;
       },
@@ -19,8 +33,13 @@ vi.mock("@repo/platform/engine/lib/oblien-client", async (original) => ({
   getOblienBillingApi: () => provider,
 }));
 
+vi.mock("@repo/platform/engine/modules/actions/billing-namespace", () => ({
+  ensureActionsBillingNamespace: provider.prepare,
+  ensureFundedActionRunners: vi.fn(),
+}));
+
 import { db, repos, schema, seedOwner, type SeededOwner } from "../jobs/_harness";
-import { actionDepositUnits, generateId, PRICING } from "@repo/core";
+import { actionDepositUnits, actionCreditUnits, generateId, PRICING } from "@repo/core";
 import { eq } from "@repo/db";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
@@ -72,7 +91,28 @@ async function purchase(actor: SeededOwner) {
 }
 beforeEach(() => {
   provider.cloud = true;
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  provider.enabled = false;
+  provider.getMeteredPricing.mockResolvedValue({
+    success: true,
+    credits_per_dollar: 100,
+    rate_card_id: "live-meter",
+    rates: { cpu_per_min: 1.5, memory_per_gb_min: 0.2, disk_per_gb: 0, network_per_gb: 0.15 },
+  });
+  provider.getBalance.mockImplementation(async (namespace) => ({
+    success: true,
+    namespace,
+    balance: 443.25,
+    blocking: false,
+    billingMode: "metered",
+  }));
+  provider.getEntitlement.mockImplementation(async (namespace) => ({
+    success: true,
+    namespace,
+    billingMode: "metered",
+    capacity: null,
+    quota: { used: 56.75, limit: 500 },
+  }));
 });
 afterEach(() => {
   provider.cloud = true;
@@ -99,15 +139,20 @@ describe("Actions budget through native and HTTP billing permissions", () => {
         purchasesAvailable: false,
         balance: {
           fundedUnits: actionDepositUnits(500),
-          availableUnits: actionDepositUnits(500),
-          reservedUnits: 0,
-          spentUnits: 0,
+          availableUnits: actionCreditUnits(443.25),
+          spentUnits: actionCreditUnits(56.75),
+          status: "ready",
         },
         pricing: {
           version: PRICING.actions.version,
-          transferGiBPerDollar: 5,
+          maxParallel: PRICING.actions.maxParallel,
           depositsCents: PRICING.actions.depositsCents,
-          runners: PRICING.actions.runners,
+          runners: PRICING.actions.runners.map((r) => ({
+            ...r,
+            estimatedUnitsPerMinute: actionCreditUnits(
+              r.cpuCores * 1.5 + (r.memoryMb / 1024) * 0.2,
+            ),
+          })),
         },
         purchases: [
           {
@@ -138,7 +183,7 @@ describe("Actions budget through native and HTTP billing permissions", () => {
     expect(provider.getCheckout).not.toHaveBeenCalled();
   });
 
-  it("keeps checkout creation and resume disabled server-side, including for owners", async () => {
+  it("keeps checkout disabled when Cloud payments are not configured", async () => {
     const owner = await seedOwner();
     for (const client of await clients(owner)) {
       await expect(
@@ -152,6 +197,69 @@ describe("Actions budget through native and HTTP billing permissions", () => {
     expect(provider.createCheckout).not.toHaveBeenCalled();
   });
 
+  it("opens only an approved deposit on the enabled path with a stable payment identity", async () => {
+    provider.enabled = true;
+    const owner = await seedOwner();
+    provider.createCheckout.mockResolvedValue({
+      checkoutId: "checkout-open",
+      url: "https://checkout.stripe.com/actions-test",
+      success: true,
+    });
+    for (const client of await clients(owner)) {
+      expect((await client.getActionsBudget()).purchasesAvailable).toBe(true);
+      provider.getCheckout.mockImplementation(async (namespace) => ({
+        namespace,
+        checkout: {
+          id: "checkout-open",
+          kind: "topup",
+          status: "open",
+          paymentStatus: "unpaid",
+          fulfilled: false,
+          fulfillmentStatus: "pending",
+          namespaceCreditsGranted: 0,
+        },
+      }));
+      await expect(
+        client.createActionsCheckout({ amountCents: 500, idempotencyKey: "same-deposit" }),
+      ).resolves.toMatchObject({ checkoutUrl: "https://checkout.stripe.com/actions-test" });
+      await expect(
+        client.createActionsCheckout({ amountCents: 1, idempotencyKey: "fake-deposit" }),
+      ).rejects.toMatchObject({ code: "ACTIONS_DEPOSIT_INVALID" });
+    }
+    expect(provider.createCheckout).toHaveBeenCalledOnce();
+    expect(provider.createCheckout.mock.calls[0]![0]).toMatchObject({
+      namespace: actionBillingNamespace(owner.orgId),
+      offer: { unitAmount: 500, credits: 500 },
+    });
+    expect((await repos.actionBilling.budget(owner.orgId))!.fundedUnits).toBe(0);
+    expect(await repos.actions.listRunners(owner.orgId)).toEqual([]);
+  });
+
+  it("keeps deposits visible but does not invent balances or estimates during provider errors", async () => {
+    const owner = await seedOwner();
+    await purchase(owner);
+    provider.getBalance.mockRejectedValue(new Error("Provider unavailable"));
+    provider.getMeteredPricing.mockRejectedValue(new Error("Pricing unavailable"));
+    provider.enabled = true;
+    for (const client of await clients(owner)) {
+      const state = await client.getActionsBudget();
+      expect(state.balance).toMatchObject({
+        availableUnits: null,
+        spentUnits: null,
+        blocking: true,
+        status: "unavailable",
+      });
+      expect(state.pricing.meter).toBeNull();
+      expect(state.pricing.runners.every((r) => r.estimatedUnitsPerMinute === null)).toBe(true);
+      expect(state.purchasesAvailable).toBe(false);
+      expect(state.purchases).toHaveLength(1);
+      await expect(
+        client.createActionsCheckout({ amountCents: 500, idempotencyKey: "retry-payment" }),
+      ).rejects.toThrow();
+    }
+    expect(provider.createCheckout).not.toHaveBeenCalled();
+  });
+
   it("requires billing read separately from workflow authority, and write separately from read", async () => {
     const owner = await seedOwner(),
       member = await seedOwner({ bound: false });
@@ -159,14 +267,12 @@ describe("Actions budget through native and HTTP billing permissions", () => {
       .update(schema.organization)
       .set({ isTeam: true })
       .where(eq(schema.organization.id, owner.orgId));
-    await db
-      .insert(schema.member)
-      .values({
-        id: generateId("member"),
-        organizationId: owner.orgId,
-        userId: member.userId,
-        role: "restricted",
-      });
+    await db.insert(schema.member).values({
+      id: generateId("member"),
+      organizationId: owner.orgId,
+      userId: member.userId,
+      role: "restricted",
+    });
     await repos.resourceGrant.upsert({
       organizationId: owner.orgId,
       userId: member.userId,

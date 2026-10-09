@@ -7,6 +7,7 @@ interface ActionCreditPorts {
   repo: Repositories["actionBilling"];
   provider: Pick<OblienBillingApi, "createCheckout" | "getCheckout">;
   prepareNamespace(organizationId: string): Promise<void>;
+  prepareRunners(organizationId: string): Promise<void>;
   lock<T>(organizationId: string, operation: () => Promise<T>): Promise<T>;
   encrypt(value: string): string;
   decrypt(value: string): string;
@@ -55,7 +56,6 @@ export class ActionCredits {
           organizationId,
           orderId: id,
           priceVersion: String(PRICING.actions.version),
-          transferGiBPerDollar: String(PRICING.actions.transferGiBPerDollar),
         },
         successUrl: `${dashboard}/actions/billing?purchase=${encodeURIComponent(id)}`,
         cancelUrl: `${dashboard}/actions/billing?purchase=${encodeURIComponent(id)}&cancelled=1`,
@@ -121,7 +121,7 @@ export class ActionCredits {
       const purchase = await this.ports.repo.beginPurchaseCheck(organizationId, id);
       if (!purchase) return false;
       if (!purchase.checkoutId) await this.restoreCheckout(purchase);
-      await this.inspectUnlocked(organizationId, id);
+      await this.inspectUnlocked(organizationId, id, true);
       return true;
     });
   }
@@ -132,7 +132,7 @@ export class ActionCredits {
     return this.ports.lock(organizationId, () => this.inspectUnlocked(organizationId, id));
   }
 
-  private async inspectUnlocked(organizationId: string, id: string) {
+  private async inspectUnlocked(organizationId: string, id: string, prepareRunners = false) {
     const purchase = await this.ports.repo.purchase(organizationId, id);
     if (!purchase) throw new NotFoundError("Actions payment", id);
     if (!purchase.checkoutId) return purchase;
@@ -169,9 +169,11 @@ export class ActionCredits {
           : checkout.fulfilled || checkout.fulfillmentStatus === "failed"
             ? checkout.fulfillmentStatus
             : "processing";
+    const budget = await this.ports.repo.budget(organizationId);
+    const needsSetup = net > 0 && (budget?.runnerVersion ?? 0) < PRICING.actions.version;
     // Provider credit grants are cents at this offer's saved 1:1 conversion.
     // Floor sub-unit refunds conservatively; never round an allowance upward.
-    return this.ports.repo.reconcilePurchase(
+    const saved = await this.ports.repo.reconcilePurchase(
       organizationId,
       id,
       purchase.checkoutId,
@@ -179,7 +181,32 @@ export class ActionCredits {
       status,
       // Fulfilled receipts remain auditable after refund/dispute events are
       // missed. Pending fulfillment is revisited promptly without a browser.
-      status === "expired" ? null : status === "open" ? 300 : status === "processing" ? 60 : 86_400,
+      status === "expired"
+        ? null
+        : status === "open"
+          ? 300
+          : status === "processing" || needsSetup
+            ? 60
+            : 86_400,
+    );
+    if (!needsSetup || !prepareRunners) return saved;
+    // Confirm funds BEFORE setup. A failed capacity update must never hide a
+    // completed payment. The receipt's short recheck survives process loss.
+    try {
+      await this.ports.prepareRunners(organizationId);
+      await this.ports.repo.markRunnersReady(organizationId, PRICING.actions.version);
+    } catch (error) {
+      await this.ports.repo.recordRunnerSetupFailure(organizationId);
+      throw error;
+    }
+    // The absolute receipt is unchanged; only its next audit moves to daily.
+    return this.ports.repo.reconcilePurchase(
+      organizationId,
+      id,
+      purchase.checkoutId,
+      saved.fundedUnits,
+      status,
+      86_400,
     );
   }
 }

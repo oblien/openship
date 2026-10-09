@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
@@ -44,12 +44,16 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
     [serverId],
   );
   const capabilities = useActionResource(inspect);
+  const configuredServer = useRef<string | null>(null);
   useEffect(() => {
-    if (!runner && capabilities.data && !capabilities.data.docker) {
-      setConfig((current) => ({ ...current, mode: "native" }));
-      setLabels("");
+    if (!runner && serverId && capabilities.data && configuredServer.current !== serverId) {
+      configuredServer.current = serverId;
+      const mode =
+        capabilities.data.os === "macos" || !capabilities.data.docker ? "native" : "container";
+      setConfig((current) => ({ ...current, mode }));
+      setLabels(mode === "native" ? "" : "ubuntu-latest, ubuntu-22.04");
     }
-  }, [capabilities.data, runner]);
+  }, [capabilities.data, runner, serverId]);
   const change = <K extends keyof ActionRunnerConfig>(key: K, value: ActionRunnerConfig[K]) =>
     setConfig((current) => ({ ...current, [key]: value }));
   return (
@@ -100,6 +104,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
             value={serverId}
             onSelect={(server) => {
               setServerId(server?.id ?? null);
+              configuredServer.current = null;
               if (!name && server) setName(server.name);
             }}
             forDeployment
@@ -142,7 +147,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
                     selected={config.mode === mode}
                     onSelect={() => {
                       change("mode", mode);
-                      if (mode === "native") setLabels("");
+                      setLabels(mode === "native" ? "" : "ubuntu-latest, ubuntu-22.04");
                     }}
                     icon={
                       <Icon name={mode === "native" ? "terminal" : "docker"} className="size-4" />

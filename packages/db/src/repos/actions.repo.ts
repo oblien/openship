@@ -183,6 +183,7 @@ export function createActionsRepo(db: Database) {
           current &&
           (current.serverId !== (value.serverId ?? null) ||
             current.cloudPoolId !== (value.cloudPoolId ?? null) ||
+            current.cloudProfileId !== (value.cloudProfileId ?? null) ||
             !isDeepStrictEqual(current.config, value.config))
         ) {
           const [busy] = await tx
@@ -733,7 +734,17 @@ export function createActionsRepo(db: Database) {
         const [allocated] = await tx
           .select({ value: count() })
           .from(actionJob)
-          .where(and(eq(actionJob.runnerId, runnerId), isNull(actionJob.cleanedAt)));
+          .innerJoin(actionRunner, eq(actionRunner.id, actionJob.runnerId))
+          .where(
+            and(
+              eq(actionJob.organizationId, org),
+              eq(actionRunner.organizationId, org),
+              runner.cloudPoolId
+                ? eq(actionRunner.cloudPoolId, runner.cloudPoolId)
+                : eq(actionJob.runnerId, runnerId),
+              isNull(actionJob.cleanedAt),
+            ),
+          );
         if ((allocated?.value ?? 0) >= runner.config.maxParallel) return false;
         const [siblings] = await tx
           .select({ value: count() })

@@ -1,15 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
-import {
-  AppError,
-  actionAffordableSeconds,
-  actionDepositUnits,
-  actionExecutionUnits,
-  actionFinished,
-  type ActionRunnerPrice,
-} from "@repo/core";
+import { AppError, actionDepositUnits } from "@repo/core";
 import type { Database } from "../factory";
-import { actionBudget, actionCharge, actionCreditPurchase } from "../schema/action-billing";
-import { actionJob, actionRun } from "../schema/actions";
+import { actionBudget, actionCreditPurchase } from "../schema/action-billing";
 import { oblienWebhookEvent } from "../schema/billing";
 
 /** IDs come from a signature-verified event. Its amounts are deliberately absent:
@@ -197,7 +189,7 @@ export function createActionBillingRepo(db: Database) {
     },
     /** Apply an absolute NET receipt after the billing service serializes the
      * provider read under its advisory lock. Duplicate delivery cannot credit
-     * twice; refunds can put spendable balance below zero. */
+     * twice. Oblien independently applies refunds to the spendable balance. */
     async reconcilePurchase(
       org: string,
       id: string,
@@ -258,126 +250,24 @@ export function createActionBillingRepo(db: Database) {
         )[0]!;
       });
     },
-    async charge(org: string, jobId: string) {
-      return (
-        await db
-          .select()
-          .from(actionCharge)
-          .where(and(eq(actionCharge.organizationId, org), eq(actionCharge.jobId, jobId)))
-          .limit(1)
-      )[0];
+    /** Checkpoint only after namespace limits and all runner profiles are saved.
+     * Replaying after a crash is safe; it never creates a VM or grants credits. */
+    async markRunnersReady(org: string, version: number) {
+      if (!Number.isSafeInteger(version) || version < 1)
+        throw new Error("Invalid Actions runner catalog version");
+      const [budget] = await db
+        .update(actionBudget)
+        .set({ runnerVersion: version, runnerSetupFailed: false, updatedAt: new Date() })
+        .where(eq(actionBudget.organizationId, org))
+        .returning();
+      if (!budget) throw new Error("Actions budget not found");
+      return budget;
     },
-    /** Reserve a bounded maximum before provisioning; sibling jobs cannot spend
-     * the same funds. A saved reservation always retains its original tariff. */
-    async reserve(
-      org: string,
-      jobId: string,
-      leaseOwner: string,
-      rate: ActionRunnerPrice,
-      priceVersion: number,
-    ) {
-      return db.transaction(async (tx) => {
-        const [budget] = await tx
-          .select()
-          .from(actionBudget)
-          .where(eq(actionBudget.organizationId, org))
-          .for("update");
-        if (!budget)
-          throw new AppError(
-            "Add funds to your Actions budget before using a temporary Cloud runner.",
-            402,
-            "ACTIONS_CREDITS_REQUIRED",
-          );
-        const [job] = await tx
-          .select()
-          .from(actionJob)
-          .where(
-            and(
-              eq(actionJob.organizationId, org),
-              eq(actionJob.id, jobId),
-              isNull(actionJob.finishedAt),
-              isNull(actionJob.cancelRequestedAt),
-              sql`EXISTS (SELECT 1 FROM ${actionRun} WHERE ${actionRun.id} = ${actionJob.runId} AND ${actionRun.leaseOwner} = ${leaseOwner} AND ${actionRun.leaseUntil} > now() AND ${actionRun.cancelRequestedAt} IS NULL)`,
-            ),
-          );
-        if (!job?.spec) return null;
-        const [prior] = await tx
-          .select()
-          .from(actionCharge)
-          .where(and(eq(actionCharge.organizationId, org), eq(actionCharge.jobId, jobId)));
-        if (prior) return prior;
-        const available = Math.max(
-          0,
-          budget.fundedUnits - budget.spentUnits - budget.reservedUnits,
-        );
-        const seconds = actionAffordableSeconds(rate, available, job.spec.timeoutSeconds);
-        if (seconds < Math.min(60, job.spec.timeoutSeconds))
-          throw new AppError(
-            "Your Actions budget is fully used or reserved by other jobs. Add funds or wait for those jobs to finish.",
-            402,
-            "ACTIONS_CREDITS_REQUIRED",
-          );
-        const reservedUnits = actionExecutionUnits(rate, seconds);
-        await tx
-          .update(actionBudget)
-          .set({ reservedUnits: budget.reservedUnits + reservedUnits, updatedAt: new Date() })
-          .where(eq(actionBudget.organizationId, org));
-        return (
-          await tx
-            .insert(actionCharge)
-            .values({
-              jobId,
-              organizationId: org,
-              runnerPriceId: rate.id,
-              priceVersion,
-              microUsdPerMinute: rate.microUsdPerMinute,
-              reservedSeconds: seconds,
-              reservedUnits,
-            })
-            .returning()
-        )[0]!;
-      });
-    },
-    /** Must run after worker cleanup is confirmed. A provisioning failure has
-     * zero execution seconds. The rest of its reserved amount is released. */
-    async settle(org: string, jobId: string, seconds: number) {
-      return db.transaction(async (tx) => {
-        const [budget] = await tx
-          .select()
-          .from(actionBudget)
-          .where(eq(actionBudget.organizationId, org))
-          .for("update");
-        const [charge] = await tx
-          .select()
-          .from(actionCharge)
-          .where(and(eq(actionCharge.organizationId, org), eq(actionCharge.jobId, jobId)))
-          .for("update");
-        if (!budget || !charge || charge.settledAt) return charge;
-        const [job] = await tx
-          .select()
-          .from(actionJob)
-          .where(and(eq(actionJob.organizationId, org), eq(actionJob.id, jobId)));
-        if (!job?.cleanedAt || !actionFinished(job.status))
-          throw new Error("Actions worker cleanup must finish before settling its reservation");
-        if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > charge.reservedSeconds)
-          throw new Error("Execution time exceeds the Actions reservation");
-        const chargedUnits = actionExecutionUnits(charge, seconds);
-        await tx
-          .update(actionBudget)
-          .set({
-            spentUnits: budget.spentUnits + chargedUnits,
-            reservedUnits: budget.reservedUnits - charge.reservedUnits,
-            updatedAt: new Date(),
-          })
-          .where(eq(actionBudget.organizationId, org));
-        return (
-          await tx
-            .update(actionCharge)
-            .set({ chargedSeconds: seconds, chargedUnits, settledAt: new Date() })
-            .where(eq(actionCharge.jobId, jobId))
-            .returning()
-        )[0]!;
-      });
+    async recordRunnerSetupFailure(org: string) {
+      await db
+        .update(actionBudget)
+        .set({ runnerSetupFailed: true, updatedAt: new Date() })
+        .where(eq(actionBudget.organizationId, org));
     },
   };
 }

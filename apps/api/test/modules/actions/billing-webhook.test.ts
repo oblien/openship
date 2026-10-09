@@ -13,6 +13,8 @@ const provider = vi.hoisted(() => ({
   createCheckout: vi.fn(),
   getCheckout: vi.fn(),
   ensureNamespace: vi.fn(),
+  getNamespace: vi.fn(),
+  updateNamespace: vi.fn(),
   getDefaults: vi.fn(),
   getPolicy: vi.fn(),
   getEntitlement: vi.fn(),
@@ -37,7 +39,13 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
 vi.mock("@repo/platform/engine/lib/oblien-client", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/lib/oblien-client")>()),
   getOblienBillingApi: () => provider,
-  getOblienClient: () => ({ namespaces: { ensure: provider.ensureNamespace } }),
+  getOblienClient: () => ({
+    namespaces: {
+      ensure: provider.ensureNamespace,
+      get: provider.getNamespace,
+      update: provider.updateNamespace,
+    },
+  }),
 }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
   ...(await original<
@@ -48,7 +56,7 @@ vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (ori
 
 import { db, repos, schema, seedOwner, installFakeRunner } from "../jobs/_harness";
 import { eq } from "@repo/db";
-import { actionDepositUnits, generateId } from "@repo/core";
+import { actionDepositUnits, generateId, PRICING } from "@repo/core";
 import { actionBillingNamespace } from "@repo/platform/engine/modules/actions/billing";
 import { runActionsPaymentReconcile } from "@repo/platform/engine/modules/actions/billing-application";
 import { handleOblienWebhook } from "@repo/platform/engine/modules/billing/oblien-webhook.service";
@@ -68,6 +76,15 @@ beforeEach(async () => {
   provider.cloud = true;
   provider.receipts.clear();
   provider.hostingSync.mockReset();
+  provider.getNamespace
+    .mockReset()
+    .mockImplementation(async (slug) => ({ success: true, data: { id: slug, slug } }));
+  provider.updateNamespace
+    .mockReset()
+    .mockImplementation(async (id, { resource_limits }) => ({
+      success: true,
+      data: { id, slug: id, resource_limits, effective_resource_limits: resource_limits },
+    }));
   provider.ensureNamespace.mockReset().mockImplementation(async ({ slug }) => ({ data: { slug } }));
   provider.getDefaults.mockReset().mockResolvedValue({ ...prepaidPolicy, autoApply: true });
   provider.getPolicy
@@ -162,6 +179,66 @@ async function deliver(
 }
 
 describe("signed Actions payment delivery and recurring recovery", () => {
+  it("activates all sizes once after signed funding and recovers a failed capacity update", async () => {
+    const f = await order();
+    provider.updateNamespace.mockRejectedValueOnce(new Error("Provider temporarily unavailable"));
+    expect(await runActionsPaymentReconcile()).toMatchObject({ checked: 0, errors: 1 });
+    expect(await repos.actions.listRunners(f.actor.orgId)).toEqual([]);
+    expect(await repos.actionBilling.budget(f.actor.orgId)).toMatchObject({
+      fundedUnits: actionDepositUnits(500),
+      runnerVersion: 0,
+      runnerSetupFailed: true,
+    });
+    await deliver(f.namespace, { checkoutId: f.checkoutId });
+    expect(await runActionsPaymentReconcile()).toMatchObject({ checked: 1, errors: 0 });
+    const runners = await repos.actions.listRunners(f.actor.orgId);
+    expect(runners).toHaveLength(3);
+    expect(new Set(runners.map((runner) => runner.cloudPoolId))).toEqual(new Set([f.namespace]));
+    expect(runners.map((runner) => runner.config.cpu).sort((a, b) => a - b)).toEqual([2, 4, 8]);
+    expect(
+      runners.every(
+        (runner) =>
+          runner.enabled &&
+          runner.cloudProfileId &&
+          runner.config.maxParallel === PRICING.actions.maxParallel,
+      ),
+    ).toBe(true);
+    expect((await repos.actionBilling.budget(f.actor.orgId))!.runnerVersion).toBe(
+      PRICING.actions.version,
+    );
+    await deliver(f.namespace, { checkoutId: f.checkoutId });
+    await runActionsPaymentReconcile();
+    expect((await repos.actions.listRunners(f.actor.orgId)).map((runner) => runner.id)).toEqual(
+      runners.map((runner) => runner.id),
+    );
+    expect(provider.updateNamespace).toHaveBeenCalledTimes(2);
+    expect(provider.createCheckout).not.toHaveBeenCalled();
+    expect(await repos.cloudWorkspace.listByOrganization(f.actor.orgId)).toEqual([]);
+  });
+
+  it("does not enable runners if the provider returns another namespace or insufficient caps", async () => {
+    const f = await order();
+    provider.getNamespace.mockResolvedValueOnce({
+      success: true,
+      data: { id: "other", slug: "other" },
+    });
+    expect(await runActionsPaymentReconcile()).toMatchObject({ checked: 0, errors: 1 });
+    expect(provider.updateNamespace).not.toHaveBeenCalled();
+    await deliver(f.namespace, { checkoutId: f.checkoutId });
+    provider.updateNamespace.mockImplementationOnce(async (id, { resource_limits }) => ({
+      success: true,
+      data: {
+        id,
+        slug: id,
+        resource_limits,
+        effective_resource_limits: { ...resource_limits, max_total_vcpus: 0 },
+      },
+    }));
+    expect(await runActionsPaymentReconcile()).toMatchObject({ checked: 0, errors: 1 });
+    expect(await repos.actions.listRunners(f.actor.orgId)).toEqual([]);
+    expect((await repos.actionBilling.budget(f.actor.orgId))!.runnerVersion).toBe(0);
+  });
+
   it("queues a signed event without funding from its payload and settles through the existing recurring runner", async () => {
     const f = await order();
     await repos.actionBilling.reconcilePurchase(f.actor.orgId, f.id, f.checkoutId, 0, "open", 300);
@@ -220,7 +297,8 @@ describe("signed Actions payment delivery and recurring recovery", () => {
     ).toBe(200);
     expect(await runActionsPaymentReconcile()).toEqual({ scanned: 1, checked: 1, errors: 0 });
     expect(provider.createCheckout).toHaveBeenCalledOnce();
-    expect(provider.ensureNamespace).toHaveBeenCalledOnce();
+    // Payment preparation and funded runner setup both verify the same namespace.
+    expect(provider.ensureNamespace).toHaveBeenCalledTimes(2);
     expect(provider.getPolicy.mock.invocationCallOrder[0]).toBeLessThan(
       provider.createCheckout.mock.invocationCallOrder[0]!,
     );
@@ -467,14 +545,12 @@ describe("Actions namespace preparation before checkout", () => {
           .set({ oblienNamespace: f.namespace })
           .where(eq(schema.organization.id, other.orgId));
       } else {
-        await db
-          .insert(schema.cloudWorkspace)
-          .values({
-            id: generateId("workspace"),
-            organizationId: other.orgId,
-            name: "Paid server",
-            namespace: f.namespace,
-          });
+        await db.insert(schema.cloudWorkspace).values({
+          id: generateId("workspace"),
+          organizationId: other.orgId,
+          name: "Paid server",
+          namespace: f.namespace,
+        });
       }
       await expect(ensureActionsBillingNamespace(f.actor.orgId)).rejects.toThrow(
         "ambiguous billing ownership",

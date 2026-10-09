@@ -1,4 +1,10 @@
-import { ACTIONS_UNITS_PER_CENT, AppError, PRICING, tryWithKeyedMutex } from "@repo/core";
+import {
+  ACTIONS_UNITS_PER_CENT,
+  actionCreditUnits,
+  AppError,
+  PRICING,
+  tryWithKeyedMutex,
+} from "@repo/core";
 import { diagnostics } from "@repo/core/diagnostics";
 import type { ActionBudget, ActionCreditPurchase } from "@repo/contracts";
 import { repos } from "@repo/db";
@@ -8,12 +14,11 @@ import { env, localDashboardUrl } from "../../config/env";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { createProvisionLock } from "../../lib/provision-lock";
-import { ActionCredits } from "./billing";
-import { ensureActionsBillingNamespace } from "./billing-namespace";
+import { ActionCredits, actionBillingNamespace } from "./billing";
+import { ensureActionsBillingNamespace, ensureFundedActionRunners } from "./billing-namespace";
 
-// The transfer contract and trusted execution meter must be integrated before
-// selling execution. This is deliberately not an environment override.
-const purchasesAvailable = false;
+const purchasesConfigured = () =>
+  env.BILLING_ENABLED && !!env.OBLIEN_CLIENT_ID && !!env.OBLIEN_CLIENT_SECRET;
 
 function requireCloud() {
   if (!env.CLOUD_MODE)
@@ -24,14 +29,17 @@ function requireCloud() {
     );
 }
 
-function requirePurchases() {
+async function requirePurchases() {
   requireCloud();
-  if (!purchasesAvailable)
+  if (!purchasesConfigured())
     throw new AppError(
-      "Cloud Actions purchases are not available yet. You can use a connected server to run workflows.",
+      "Cloud Actions payments are temporarily unavailable. You can still use a connected server.",
       503,
       "ACTIONS_CHECKOUT_UNAVAILABLE",
     );
+  // Check the live conversion before opening a new checkout. No preview tariff
+  // or hardcoded execution-minute price can silently substitute for the meter.
+  await getOblienBillingApi().getMeteredPricing();
 }
 
 function credits() {
@@ -43,6 +51,7 @@ function credits() {
         getOblienBillingApi().getCheckout(namespace, checkoutId),
     },
     prepareNamespace: ensureActionsBillingNamespace,
+    prepareRunners: ensureFundedActionRunners,
     lock: (org, work) => createProvisionLock(`actions-billing:${org}`).run(work),
     encrypt,
     decrypt,
@@ -110,24 +119,99 @@ export async function getActionsBudget(ctx: ExecutionContext): Promise<ActionBud
     repos.actionBilling.budget(ctx.organizationId),
     repos.actionBilling.purchases(ctx.organizationId),
   ]);
-  const { fundedUnits = 0, spentUnits = 0, reservedUnits = 0 } = budget ?? {};
+  const pricing: ActionBudget["pricing"] = {
+    version: PRICING.actions.version,
+    maxParallel: PRICING.actions.maxParallel,
+    depositsCents: [...PRICING.actions.depositsCents],
+    runners: PRICING.actions.runners.map((runner) => ({
+      ...runner,
+      estimatedUnitsPerMinute: null,
+    })),
+    meter: null,
+  };
+  const balance: ActionBudget["balance"] = {
+    fundedUnits: budget?.fundedUnits ?? 0,
+    spentUnits: budget ? null : 0,
+    availableUnits: budget ? null : 0,
+    blocking: true,
+    status: budget ? "unavailable" : "unfunded",
+    checkedAt: null,
+  };
+  await Promise.all([
+    (async () => {
+      try {
+        const { rates, rate_card_id } = await getOblienBillingApi().getMeteredPricing();
+        const runners = PRICING.actions.runners.map((runner) => ({
+          ...runner,
+          estimatedUnitsPerMinute: actionCreditUnits(
+            runner.cpuCores * rates.cpu_per_min +
+              (runner.memoryMb / 1024) * rates.memory_per_gb_min,
+          ),
+        }));
+        pricing.meter = {
+          rateCardId: rate_card_id,
+          cpuUnitsPerMinute: actionCreditUnits(rates.cpu_per_min),
+          memoryUnitsPerGiBMinute: actionCreditUnits(rates.memory_per_gb_min),
+          networkUnitsPerGb: actionCreditUnits(rates.network_per_gb),
+          diskUnitsPerGb: actionCreditUnits(rates.disk_per_gb),
+        };
+        pricing.runners = runners;
+      } catch (error) {
+        diagnostics.warn(
+          "platform/engine/modules/actions/billing-application",
+          "Actions pricing is unavailable",
+          error,
+        );
+      }
+    })(),
+    (async () => {
+      if (!budget) return;
+      try {
+        if (budget.namespace !== actionBillingNamespace(ctx.organizationId))
+          throw new AppError(
+            "Actions payment ownership could not be verified",
+            409,
+            "ACTIONS_FUNDING_INVALID",
+          );
+        const api = getOblienBillingApi();
+        const [current, entitlement] = await Promise.all([
+          api.getBalance(budget.namespace),
+          api.getEntitlement(budget.namespace),
+        ]);
+        if (current.billingMode === "monthly" || entitlement.capacity || current.balance === null)
+          throw new AppError(
+            "Actions requires a separate prepaid budget",
+            409,
+            "ACTIONS_FUNDING_INVALID",
+          );
+        // Never subtract workflow durations, reservations or locally mirrored
+        // deposits. The provider has already debited compute AND transfer.
+        const available = actionCreditUnits(Math.max(0, current.balance));
+        const spent = actionCreditUnits(Math.max(0, entitlement.quota.used));
+        Object.assign(balance, {
+          availableUnits: available,
+          spentUnits: spent,
+          blocking: current.blocking || current.balance <= 0,
+          status: "ready",
+          checkedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        diagnostics.warn(
+          "platform/engine/modules/actions/billing-application",
+          "Actions balance is unavailable",
+          error,
+        );
+      }
+    })(),
+  ]);
   return {
     currency: "usd",
     unitsPerDollar: ACTIONS_UNITS_PER_CENT * 100,
-    purchasesAvailable,
-    balance: {
-      fundedUnits,
-      spentUnits,
-      reservedUnits,
-      balanceUnits: fundedUnits - spentUnits,
-      availableUnits: Math.max(0, fundedUnits - spentUnits - reservedUnits),
-    },
-    pricing: {
-      version: PRICING.actions.version,
-      transferGiBPerDollar: PRICING.actions.transferGiBPerDollar,
-      depositsCents: [...PRICING.actions.depositsCents],
-      runners: structuredClone(PRICING.actions.runners),
-    },
+    purchasesAvailable: purchasesConfigured() && pricing.meter !== null,
+    runnersReady: (budget?.runnerVersion ?? 0) >= PRICING.actions.version,
+    runnerSetupFailed: budget?.runnerSetupFailed ?? false,
+    balance,
+    pricing,
     purchases: purchases.map(presentPurchase),
   };
 }
@@ -141,11 +225,11 @@ export async function createActionsCheckout(
   ctx: ExecutionContext,
   input: { amountCents: number; idempotencyKey: string },
 ) {
-  requirePurchases();
+  await requirePurchases();
   return credits().checkout(ctx.organizationId, input.amountCents, input.idempotencyKey);
 }
 
 export async function resumeActionsCheckout(ctx: ExecutionContext, input: { purchaseId: string }) {
-  requirePurchases();
+  await requirePurchases();
   return credits().resume(ctx.organizationId, input.purchaseId);
 }
