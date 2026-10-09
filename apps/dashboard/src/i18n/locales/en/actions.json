@@ -7,7 +7,7 @@
   "newWorkflow": "Add workflow",
   "newRunner": "Add runner",
   "emptyTitle": "From commit to done",
-  "emptyDescription": "Connect a workflow from your repository and run it on an authorized server or a temporary Cloud runner.",
+  "emptyDescription": "Build, test and ship from your repositories. Follow every job and its logs in one place.",
   "noRuns": "No runs yet",
   "noRunsHint": "Your workflow runs and their results will appear here.",
   "noRunners": "Choose where your jobs run",
@@ -156,5 +156,26 @@
     "runWorkflow": "Create workflow",
     "setupRetrying": "Your funds are saved. Cloud runner setup is retrying automatically.",
     "paused": "Cloud Actions is paused. Your balance is saved; contact support if it remains paused."
+  },
+  "setup": {
+    "title": "Get started",
+    "runnerTitle": "Choose a runner",
+    "runnerHint": "Use a connected Linux server or Mac.",
+    "cloudRunnerHint": "Use a temporary Cloud VM or a connected server.",
+    "workflowTitle": "Connect a workflow",
+    "workflowHint": "Load a repository file or paste your YAML.",
+    "runTitle": "Follow your first run",
+    "runHint": "See each job, its logs and results.",
+    "overview": "At a glance",
+    "readyRunners": "Ready runners",
+    "latestRun": "Latest run",
+    "guide": "Actions guide",
+    "onlineTitle": "Keep automations online",
+    "cloudHint": "Every job gets a temporary Linux VM. VM usage and transfer use your separate Actions balance.",
+    "reviewRunners": "Review runners",
+    "prepareCloud": "Set up Cloud runners",
+    "openWorkflow": "Open workflow",
+    "noMatches": "No workflows match your search.",
+    "clearSearch": "Clear search"
   }
 }

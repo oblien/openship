@@ -56,7 +56,7 @@ function Detail({ id }: { id: string }) {
                 </Link>
               </Button>
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-semibold tracking-tight">
+                <h1 className="text-2xl font-medium tracking-tight text-foreground">
                   {run.name}{" "}
                   <span className="font-normal text-muted-foreground">#{run.number}</span>
                 </h1>

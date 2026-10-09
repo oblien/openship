@@ -7,7 +7,7 @@
   "newWorkflow": "Ajouter un workflow",
   "newRunner": "Ajouter un runner",
   "emptyTitle": "Du commit au résultat",
-  "emptyDescription": "Connectez un workflow de votre dépôt et exécutez-le sur un serveur autorisé ou un exécuteur Cloud temporaire.",
+  "emptyDescription": "Compilez, testez et publiez depuis vos dépôts. Suivez chaque tâche et ses journaux au même endroit.",
   "noRuns": "Aucune exécution pour le moment",
   "noRunsHint": "Les exécutions de vos workflows et leurs résultats apparaîtront ici.",
   "noRunners": "Choisissez où exécuter vos jobs",
@@ -156,5 +156,26 @@
     "runWorkflow": "Créer un workflow",
     "setupRetrying": "Vos fonds sont enregistrés. La préparation des runners Cloud est relancée automatiquement.",
     "paused": "Cloud Actions est en pause. Votre solde est conservé ; contactez le support si la pause persiste."
+  },
+  "setup": {
+    "title": "Premiers pas",
+    "runnerTitle": "Choisir un exécuteur",
+    "runnerHint": "Utilisez un serveur Linux ou un Mac connecté.",
+    "cloudRunnerHint": "Utilisez une VM Cloud temporaire ou un serveur connecté.",
+    "workflowTitle": "Connecter un workflow",
+    "workflowHint": "Chargez un fichier du dépôt ou collez votre YAML.",
+    "runTitle": "Suivre la première exécution",
+    "runHint": "Consultez chaque tâche, ses journaux et ses résultats.",
+    "overview": "En un coup d’œil",
+    "readyRunners": "Exécuteurs prêts",
+    "latestRun": "Dernière exécution",
+    "guide": "Guide Actions",
+    "onlineTitle": "Garder les automatisations en ligne",
+    "cloudHint": "Chaque tâche dispose d’une VM Linux temporaire. L’utilisation de la VM et le transfert sont déduits de votre solde Actions séparé.",
+    "reviewRunners": "Vérifier les exécuteurs",
+    "prepareCloud": "Configurer les exécuteurs Cloud",
+    "openWorkflow": "Ouvrir le workflow",
+    "noMatches": "Aucun workflow ne correspond à votre recherche.",
+    "clearSearch": "Effacer la recherche"
   }
 }

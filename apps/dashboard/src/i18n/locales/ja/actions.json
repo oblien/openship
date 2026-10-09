@@ -7,7 +7,7 @@
   "newWorkflow": "ワークフローを追加",
   "newRunner": "ランナーを追加",
   "emptyTitle": "コミットから完了まで",
-  "emptyDescription": "リポジトリのワークフローを接続し、許可されたサーバーまたは一時的な Cloud ランナーで実行します。",
+  "emptyDescription": "リポジトリからビルド、テスト、公開。すべてのジョブとログを一か所で確認できます。",
   "noRuns": "まだ実行履歴がありません",
   "noRunsHint": "ワークフローの実行と結果がここに表示されます。",
   "noRunners": "ジョブの実行先を選択",
@@ -156,5 +156,26 @@
     "runWorkflow": "ワークフローを作成",
     "setupRetrying": "入金は保存されています。Cloudランナーの準備を自動的に再試行しています。",
     "paused": "Cloud Actions は一時停止中です。残高は保持されています。停止が続く場合はサポートにお問い合わせください。"
+  },
+  "setup": {
+    "title": "はじめに",
+    "runnerTitle": "ランナーを選ぶ",
+    "runnerHint": "接続済みの Linux サーバーまたは Mac を使用します。",
+    "cloudRunnerHint": "一時的な Cloud VM または接続済みサーバーを使用します。",
+    "workflowTitle": "ワークフローを接続",
+    "workflowHint": "リポジトリのファイルを読み込むか、YAML を貼り付けます。",
+    "runTitle": "最初の実行を確認",
+    "runHint": "各ジョブのログと結果を確認できます。",
+    "overview": "概要",
+    "readyRunners": "準備済みランナー",
+    "latestRun": "最新の実行",
+    "guide": "Actions ガイド",
+    "onlineTitle": "自動化をオンラインに保つ",
+    "cloudHint": "各ジョブに一時的な Linux VM が割り当てられます。VM の使用量と転送量は専用の Actions 残高から差し引かれます。",
+    "reviewRunners": "ランナーを確認",
+    "prepareCloud": "Cloud ランナーを設定",
+    "openWorkflow": "ワークフローを開く",
+    "noMatches": "検索に一致するワークフローがありません。",
+    "clearSearch": "検索をクリア"
   }
 }

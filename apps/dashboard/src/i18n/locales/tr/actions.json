@@ -7,7 +7,7 @@
   "newWorkflow": "İş akışı ekle",
   "newRunner": "Çalıştırıcı ekle",
   "emptyTitle": "Commit’ten sonuca",
-  "emptyDescription": "Deponuzdaki bir iş akışını bağlayın ve yetkili sunucuda veya geçici Cloud çalıştırıcısında çalıştırın.",
+  "emptyDescription": "Depolarınızdan derleyin, test edin ve yayınlayın. Her işi ve günlüklerini tek bir yerden takip edin.",
   "noRuns": "Henüz çalıştırma yok",
   "noRunsHint": "İş akışı çalıştırmaları ve sonuçları burada görünür.",
   "noRunners": "İşlerinizin çalışacağı yeri seçin",
@@ -156,5 +156,26 @@
     "runWorkflow": "İş akışı oluştur",
     "setupRetrying": "Bakiyeniz kaydedildi. Cloud çalıştırıcı kurulumu otomatik olarak yeniden deneniyor.",
     "paused": "Cloud Actions duraklatıldı. Bakiyeniz korunuyor; duraklatma sürerse destekle iletişime geçin."
+  },
+  "setup": {
+    "title": "Başlayın",
+    "runnerTitle": "Bir çalıştırıcı seçin",
+    "runnerHint": "Bağlı bir Linux sunucusu veya Mac kullanın.",
+    "cloudRunnerHint": "Geçici bir Cloud VM veya bağlı bir sunucu kullanın.",
+    "workflowTitle": "Bir iş akışı bağlayın",
+    "workflowHint": "Depodan bir dosya yükleyin veya YAML içeriğinizi yapıştırın.",
+    "runTitle": "İlk çalıştırmanızı izleyin",
+    "runHint": "Her işi, günlüklerini ve sonuçlarını görün.",
+    "overview": "Genel bakış",
+    "readyRunners": "Hazır çalıştırıcılar",
+    "latestRun": "Son çalıştırma",
+    "guide": "Actions kılavuzu",
+    "onlineTitle": "Otomasyonları çevrimiçi tutun",
+    "cloudHint": "Her iş geçici bir Linux VM alır. VM kullanımı ve veri aktarımı ayrı Actions bakiyenizden düşülür.",
+    "reviewRunners": "Çalıştırıcıları incele",
+    "prepareCloud": "Cloud çalıştırıcılarını ayarla",
+    "openWorkflow": "İş akışını aç",
+    "noMatches": "Aramanızla eşleşen iş akışı yok.",
+    "clearSearch": "Aramayı temizle"
   }
 }

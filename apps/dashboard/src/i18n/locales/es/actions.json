@@ -7,7 +7,7 @@
   "newWorkflow": "Añadir flujo",
   "newRunner": "Añadir runner",
   "emptyTitle": "Del commit al resultado",
-  "emptyDescription": "Conecta un flujo de tu repositorio y ejecútalo en un servidor autorizado o un ejecutor temporal de Cloud.",
+  "emptyDescription": "Compila, prueba y publica desde tus repositorios. Sigue cada tarea y sus registros en un solo lugar.",
   "noRuns": "Aún no hay ejecuciones",
   "noRunsHint": "Aquí aparecerán las ejecuciones de tus flujos y sus resultados.",
   "noRunners": "Elige dónde se ejecutan tus trabajos",
@@ -156,5 +156,26 @@
     "runWorkflow": "Crear flujo de trabajo",
     "setupRetrying": "Tus fondos están guardados. La preparación de los ejecutores Cloud se reintenta automáticamente.",
     "paused": "Cloud Actions está en pausa. Tu saldo se conserva; contacta con soporte si la pausa continúa."
+  },
+  "setup": {
+    "title": "Primeros pasos",
+    "runnerTitle": "Elige un ejecutor",
+    "runnerHint": "Usa un servidor Linux o un Mac conectado.",
+    "cloudRunnerHint": "Usa una VM temporal de Cloud o un servidor conectado.",
+    "workflowTitle": "Conecta un flujo de trabajo",
+    "workflowHint": "Carga un archivo del repositorio o pega tu YAML.",
+    "runTitle": "Sigue tu primera ejecución",
+    "runHint": "Consulta cada tarea, sus registros y resultados.",
+    "overview": "De un vistazo",
+    "readyRunners": "Ejecutores listos",
+    "latestRun": "Última ejecución",
+    "guide": "Guía de Actions",
+    "onlineTitle": "Mantén las automatizaciones en línea",
+    "cloudHint": "Cada tarea recibe una VM Linux temporal. El uso de la VM y la transferencia consumen tu saldo independiente de Actions.",
+    "reviewRunners": "Revisar ejecutores",
+    "prepareCloud": "Configurar ejecutores de Cloud",
+    "openWorkflow": "Abrir flujo de trabajo",
+    "noMatches": "Ningún flujo de trabajo coincide con tu búsqueda.",
+    "clearSearch": "Borrar búsqueda"
   }
 }

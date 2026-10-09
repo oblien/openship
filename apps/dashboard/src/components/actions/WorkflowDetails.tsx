@@ -134,7 +134,7 @@ function Detail({ id }: { id: string }) {
                   {a.back}
                 </Link>
               </Button>
-              <h1 className="text-2xl font-semibold tracking-tight">{data.workflow.name}</h1>
+              <h1 className="text-2xl font-medium tracking-tight text-foreground">{data.workflow.name}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 <bdi>
                   {data.workflow.owner}/{data.workflow.repo} · {data.workflow.path}
@@ -149,7 +149,7 @@ function Detail({ id }: { id: string }) {
             </Button>
           </header>
           <ActionError message={data.workflow.lastError} />
-          <div className="grid items-start gap-5 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-5">
               <WorkflowGraph plan={data.workflow.plan} />
               <div>

@@ -177,7 +177,7 @@ function Form({
               {a.back}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">
             {workflow ? workflow.name : a.newWorkflow}
           </h1>
         </div>
@@ -186,7 +186,7 @@ function Form({
         </Button>
       </header>
       <ActionError message={mutation.error} />
-      <div className="grid items-start gap-5 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
           <section className="space-y-5 rounded-2xl bg-card p-5">
             <div className="grid gap-4 @min-[700px]:grid-cols-2">

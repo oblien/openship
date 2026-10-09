@@ -93,7 +93,7 @@ function Budget() {
     <PageContainer className="@container space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">{copy.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <Button asChild variant="secondary">

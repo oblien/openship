@@ -7,7 +7,7 @@
   "newWorkflow": "添加工作流",
   "newRunner": "添加运行器",
   "emptyTitle": "从提交到完成",
-  "emptyDescription": "连接仓库中的工作流，在已授权的服务器或临时 Cloud 运行器上执行。",
+  "emptyDescription": "从代码仓库构建、测试并发布。在一处跟踪每项任务及其日志。",
   "noRuns": "暂无运行记录",
   "noRunsHint": "工作流运行及其结果将显示在这里。",
   "noRunners": "选择任务运行位置",
@@ -156,5 +156,26 @@
     "runWorkflow": "创建工作流",
     "setupRetrying": "充值已保存，正在自动重试 Cloud 运行器配置。",
     "paused": "Cloud Actions 已暂停。您的余额会保留；如果持续暂停，请联系支持团队。"
+  },
+  "setup": {
+    "title": "开始使用",
+    "runnerTitle": "选择运行器",
+    "runnerHint": "使用已连接的 Linux 服务器或 Mac。",
+    "cloudRunnerHint": "使用临时 Cloud 虚拟机或已连接的服务器。",
+    "workflowTitle": "连接工作流",
+    "workflowHint": "加载仓库文件或粘贴 YAML。",
+    "runTitle": "跟踪首次运行",
+    "runHint": "查看每项任务的日志和结果。",
+    "overview": "概览",
+    "readyRunners": "就绪运行器",
+    "latestRun": "最近运行",
+    "guide": "Actions 指南",
+    "onlineTitle": "保持自动化在线",
+    "cloudHint": "每项任务都会获得一个临时 Linux 虚拟机。虚拟机使用量和流量从独立的 Actions 余额中扣除。",
+    "reviewRunners": "检查运行器",
+    "prepareCloud": "设置 Cloud 运行器",
+    "openWorkflow": "打开工作流",
+    "noMatches": "没有与搜索条件匹配的工作流。",
+    "clearSearch": "清除搜索"
   }
 }

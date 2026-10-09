@@ -49,6 +49,14 @@ the selected destination instead of offering runtimes that cannot execute there.
 Native-runner setup explicitly describes access as the connected server user.
 Cloud Actions funding is separate from application-server billing and must remain
 clearly scoped in the UI.
+Actions page titles match Projects: 24px, medium weight, and explicit foreground
+color. Use the normal 340px sidebar on the Actions home page, with a themed SVG
+workflow illustration for empty workflows, runners and run history. The sidebar
+guides first use through runner, workflow and first run, based on the loaded
+records; after a run exists, show the current overview and latest run. Keep Cloud
+funding and Desktop availability guidance in that column. Use the same loaded
+data for the list and guidance, and keep fetch failures distinct from empty
+accounts. Stack the sidebar below the list on narrow containers.
 Use **Actions → Budget** for live usage rates, estimated VM minutes, provider
 balance and deposit history. Keep the comparison beside a standard 340px funding
 column. State that estimates assume full CPU and RAM before transfer or disk I/O;

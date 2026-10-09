@@ -91,14 +91,14 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
               {a.back}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold tracking-tight">{runner?.name ?? a.newRunner}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">{runner?.name ?? a.newRunner}</h1>
         </div>
         <Button asChild variant="ghost">
           <Link href="/actions">{a.cancel}</Link>
         </Button>
       </header>
       <ActionError message={mutation.error} />
-      <div className="grid items-start gap-5 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
         <section className="space-y-5 rounded-2xl bg-card p-5">
           <ServerSelector
             value={serverId}

@@ -7,7 +7,7 @@
   "newWorkflow": "Workflow hinzufügen",
   "newRunner": "Runner hinzufügen",
   "emptyTitle": "Vom Commit zum Ergebnis",
-  "emptyDescription": "Verbinde einen Workflow aus deinem Repository und führe ihn auf einem berechtigten Server oder temporären Cloud-Runner aus.",
+  "emptyDescription": "Erstelle, teste und veröffentliche aus deinen Repositories. Verfolge alle Jobs und ihre Logs an einem Ort.",
   "noRuns": "Noch keine Ausführungen",
   "noRunsHint": "Hier erscheinen deine Workflow-Ausführungen und deren Ergebnisse.",
   "noRunners": "Wähle, wo deine Jobs laufen",
@@ -156,5 +156,26 @@
     "runWorkflow": "Workflow erstellen",
     "setupRetrying": "Dein Guthaben ist gespeichert. Die Einrichtung der Cloud-Runner wird automatisch wiederholt.",
     "paused": "Cloud Actions ist pausiert. Dein Guthaben bleibt erhalten. Kontaktiere den Support, falls die Pause anhält."
+  },
+  "setup": {
+    "title": "Erste Schritte",
+    "runnerTitle": "Runner auswählen",
+    "runnerHint": "Nutze einen verbundenen Linux-Server oder Mac.",
+    "cloudRunnerHint": "Nutze eine temporäre Cloud-VM oder einen verbundenen Server.",
+    "workflowTitle": "Workflow verbinden",
+    "workflowHint": "Lade eine Repository-Datei oder füge dein YAML ein.",
+    "runTitle": "Ersten Lauf verfolgen",
+    "runHint": "Sieh dir jeden Job, seine Logs und Ergebnisse an.",
+    "overview": "Auf einen Blick",
+    "readyRunners": "Bereite Runner",
+    "latestRun": "Letzter Lauf",
+    "guide": "Actions-Anleitung",
+    "onlineTitle": "Automatisierung online halten",
+    "cloudHint": "Jeder Job erhält eine temporäre Linux-VM. VM-Nutzung und Datentransfer werden mit deinem separaten Actions-Guthaben bezahlt.",
+    "reviewRunners": "Runner überprüfen",
+    "prepareCloud": "Cloud-Runner einrichten",
+    "openWorkflow": "Workflow öffnen",
+    "noMatches": "Keine Workflows entsprechen deiner Suche.",
+    "clearSearch": "Suche löschen"
   }
 }
