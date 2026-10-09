@@ -694,15 +694,30 @@ function refusalReason(port: number, occupant: PortOccupant, why: PortRefusal): 
  * the operator's server. When the owner can be named but not safely stopped, no free
  * action is offered at all — an honest dead end beats a button that does more damage
  * than the conflict it clears.
+ *
+ * `outgoingDeploymentId` names the deployment this deploy replaces. When that is what
+ * holds the port, the caller stops it before the new release binds, so there is nothing
+ * to ask; any other owner, another Openship deployment included, is still prompted for.
  */
 export async function ensurePortAvailable(
   executor: CommandExecutor,
   port: number,
   logger: BuildLogger,
   promptUser: PromptUserFn,
+  options: { outgoingDeploymentId?: string } = {},
 ): Promise<void> {
   const occupant = await resolvePortOwner(executor, port);
   if (!occupant) return;
+
+  if (
+    options.outgoingDeploymentId !== undefined &&
+    occupant.deploymentId === options.outgoingDeploymentId
+  ) {
+    logger.log(
+      `Port ${port} is held by the outgoing deployment ${occupant.deploymentId}, which is stopped before the new release starts.\n`,
+    );
+    return;
+  }
 
   const verdict = portStopVerdict(occupant);
   const stopTarget = verdict.target;

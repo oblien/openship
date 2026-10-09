@@ -1143,10 +1143,30 @@ describe("single-app prebuilt release-image pipeline", () => {
 
     expect(ensurePortAvailable).toHaveBeenCalledExactlyOnceWith(
       resolvedPlatform.platform.executor, 8080, expect.anything(), expect.any(Function),
+      { outgoingDeploymentId: undefined },
     );
     expect(mocks.onFailure).toHaveBeenCalledOnce();
     expect(mocks.deploy).not.toHaveBeenCalled();
     expect(mocks.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("names the release a Bare redeploy replaces to the host-port check (#1038)", async () => {
+    resolvedRuntime.name = "bare";
+    resolvedPlatform.usesManagedRouting = false;
+    const previous = deployment({ id: "previous-deployment", containerId: "old-unit", status: "ready" });
+    const next = deployment();
+    mocks.findDeploymentById.mockImplementation(async id => id === "previous-deployment" ? previous : next);
+    vi.mocked(resolveDeploymentRuntime).mockResolvedValue({ runtime: resolvedRuntime } as never);
+    vi.mocked(ensurePortAvailable).mockRejectedValue(new Error("Host port 8080 is occupied"));
+    mocks.runDeployPipeline.mockImplementationOnce(runRealDeployPipeline);
+
+    await kickoffBuild(project({ activeDeploymentId: "previous-deployment" }), next);
+    await drainDeploymentExecutions();
+
+    expect(ensurePortAvailable).toHaveBeenCalledExactlyOnceWith(
+      resolvedPlatform.platform.executor, 8080, expect.anything(), expect.any(Function),
+      { outgoingDeploymentId: "previous-deployment" },
+    );
   });
 
   it("deploys an unrouted native app without reserving routed host ports or preparing an edge", async () => {
