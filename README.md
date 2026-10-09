@@ -28,6 +28,7 @@
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/lang-English-0b7285" alt="English" /></a>
   <a href="docs/i18n/README.ar.md"><img src="https://img.shields.io/badge/lang-العربية-555" alt="العربية" /></a>
+  <a href="docs/i18n/README.fa.md"><img src="https://img.shields.io/badge/lang-فارسی-555" alt="فارسی" /></a>
   <a href="docs/i18n/README.zh.md"><img src="https://img.shields.io/badge/lang-简体中文-555" alt="简体中文" /></a>
   <a href="docs/i18n/README.es.md"><img src="https://img.shields.io/badge/lang-Español-555" alt="Español" /></a>
   <a href="docs/i18n/README.fr.md"><img src="https://img.shields.io/badge/lang-Français-555" alt="Français" /></a>

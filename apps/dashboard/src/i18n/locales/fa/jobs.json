@@ -1,0 +1,186 @@
+{
+  "backups": {
+    "section": "زمان‌بندی پشتیبان",
+    "sectionDesc": "پشتیبان‌های خودکار زمان‌بندی‌شده برای هر پروژه یا سرویس. از زبانهٔ پشتیبان هر پروژه مدیریت می‌شود.",
+    "projectDefault": "پیش‌فرض پروژه",
+    "mailServer": "سرور ایمیل",
+    "manage": "مدیریت در پشتیبان‌ها",
+    "badge": "پشتیبان",
+    "never": "هرگز اجرا نشده",
+    "status": {
+      "succeeded": "موفق",
+      "failed": "ناموفق",
+      "cancelled": "لغو شده",
+      "running": "در حال اجرا"
+    }
+  },
+  "title": "کارها",
+  "subtitle": "نگهداری داخلی و دستورهای سفارشی که روی سرورهای شما اجرا می‌شوند.",
+  "empty": "هنوز کار زمان‌بندی‌شده‌ای نیست.",
+  "searchPlaceholder": "جستجوی کارها…",
+  "noResults": "هیچ کاری با فیلترهای شما هم‌خوان نیست.",
+  "overview": {
+    "title": "در یک نگاه",
+    "subtitle": "کارهای این نمونه",
+    "all": "همهٔ کارها",
+    "running": "در حال اجرا",
+    "failed": "ناموفق",
+    "scheduled": "زمان‌بندی‌شده",
+    "disabled": "غیرفعال"
+  },
+  "loadFailed": "بارگذاری کارها ناموفق بود.",
+  "kind": {
+    "system": "سیستم",
+    "custom": "سفارشی"
+  },
+  "fields": {
+    "schedule": "زمان‌بندی",
+    "nextRun": "اجرای بعدی",
+    "lastRun": "آخرین اجرا",
+    "never": "هرگز اجرا نشده",
+    "notScheduled": "زمان‌بندی نشده"
+  },
+  "status": {
+    "success": "موفق",
+    "failed": "ناموفق",
+    "running": "در حال اجرا"
+  },
+  "actions": {
+    "run": "الان اجرا کن",
+    "running": "در حال اجرا…",
+    "edit": "ویرایش زمان‌بندی",
+    "save": "ذخیره",
+    "cancel": "لغو",
+    "enable": "فعال کردن",
+    "disable": "غیرفعال کردن",
+    "viewLogs": "لاگ‌ها"
+  },
+  "cronHint": "cron استاندارد ۵ فیلدی (دقیقه ساعت روز ماه روزهفته)، UTC.",
+  "toast": {
+    "ran": "{label} شروع شد.",
+    "ranFailed": "اجرای {label} ناموفق بود.",
+    "saved": "زمان‌بندی {label} به‌روز شد.",
+    "saved2": "کار به‌روز شد.",
+    "saveFailed": "به‌روزرسانی {label} ناموفق بود.",
+    "enabled": "{label} فعال شد.",
+    "disabled": "{label} غیرفعال شد.",
+    "toggleFailed": "به‌روزرسانی {label} ناموفق بود.",
+    "title": "کارها",
+    "created": "کار ایجاد شد.",
+    "createFailed": "ایجاد کار ناموفق بود.",
+    "deleted": "کار حذف شد.",
+    "deleteFailed": "حذف کار ناموفق بود."
+  },
+  "newJob": "کار جدید",
+  "sections": {
+    "system": "کارهای سیستم",
+    "systemDesc": "نگهداری داخلی روی این نمونه.",
+    "custom": "کارهای سفارشی",
+    "customDesc": "دستورهایی که طبق زمان‌بندی روی سرورهایتان اجرا می‌کنید."
+  },
+  "customEmpty": {
+    "title": "هنوز کار سفارشی نیست",
+    "desc": "دستوری را روی یکی از سرورها اجرا کنید — زمان‌بندی‌شده، یک‌بار، یا با رویداد — با تلاش دوباره، سکرت، لاگ زنده و اعلان.",
+    "cta": "ایجاد کار",
+    "docs": "مستندات"
+  },
+  "create": {
+    "title": "کار جدید",
+    "name": "نام",
+    "namePlaceholder": "vacuum شبانهٔ DB",
+    "server": "سرور",
+    "servers": "سرورها",
+    "noServers": "هنوز سروری وصل نیست — اول یکی اضافه کنید.",
+    "command": "دستور",
+    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "commandHint": "از طریق SSH روی سرور(های) انتخاب‌شده اجرا می‌شود. یک `docker run --rm image cmd` هم کار می‌کند.",
+    "scheduleType": "زمان اجرا",
+    "scheduleTypes": {
+      "recurring": "طبق زمان‌بندی",
+      "once": "یک‌بار",
+      "manual": "دستی"
+    },
+    "sections": {
+      "basics": "اصول",
+      "schedule": "زمان‌بندی",
+      "servers": "سرورهای مقصد",
+      "reliability": "قابلیت اطمینان",
+      "environment": "محیط",
+      "triggers": "وابستگی‌ها و تریگرها",
+      "notifications": "اعلان‌ها"
+    },
+    "schedule": "زمان‌بندی (cron)",
+    "runAt": "اجرا در",
+    "manualHint": "فقط وقتی تریگر شود اجرا می‌شود — اجرای الان، یک وابستگی، یا یک رویداد.",
+    "timeout": "مهلت (ثانیه)",
+    "retryAttempts": "حداکثر تلاش",
+    "retryBackoff": "تأخیر بین تلاش (ثانیه)",
+    "advanced": "پیشرفته",
+    "env": "متغیرهای محیطی",
+    "addVar": "افزودن متغیر",
+    "secrets": "سکرت‌ها",
+    "addSecret": "افزودن سکرت",
+    "replaceSecrets": "جایگزینی سکرت‌ها",
+    "secretsSet": "سکرت تنظیم‌شده",
+    "noSecrets": "سکرتی تنظیم نشده.",
+    "dependencies": "اجرا پس از",
+    "dependenciesHint": "این کار پس از موفقیت کار(های) انتخاب‌شده اجرا می‌شود.",
+    "triggers": "تریگرهای رویداد",
+    "notifications": "اعلان‌ها",
+    "noChannels": "هنوز کانال اعلانی نیست — یکی در تنظیمات ← اعلان‌ها اضافه کنید.",
+    "notificationsHint": "تنظیمات سراسری اعلان را برای این کار بازنویسی می‌کند.",
+    "submit": "ایجاد کار",
+    "creating": "در حال ذخیره…",
+    "cancel": "لغو",
+    "needServer": "اول یک سرور وصل کنید",
+    "pasteEnv": "چسباندن .env",
+    "uploadEnv": "آپلود .env",
+    "envPasteEmpty": "متغیری پیدا نشد",
+    "comingSoon": "به‌زودی",
+    "setupChannel": "راه‌اندازی کانال",
+    "customTriggerSoon": "تریگر سفارشی",
+    "docsLink": "دربارهٔ کارها بیشتر بدانید",
+    "docsBody": "زمان‌بندی، تلاش دوباره، سکرت و اعلان",
+    "summary": {
+      "title": "خلاصه",
+      "command": "دستور",
+      "schedule": "زمان‌بندی",
+      "targets": "مقصدها",
+      "retry": "تلاش دوباره",
+      "timeout": "مهلت",
+      "notify": "اعلان‌ها",
+      "none": "—",
+      "retryOff": "هیچ"
+    }
+  },
+  "edit": {
+    "title": "ویرایش کار",
+    "action": "ویرایش",
+    "save": "ذخیرهٔ تغییرات"
+  },
+  "detail": {
+    "back": "بازگشت به کارها",
+    "tabs": {
+      "overview": "نمای کلی",
+      "runs": "اجراها"
+    },
+    "servers": "سرورها",
+    "retry": "تلاش دوباره",
+    "retryValue": "{n} تلاش، {s}ث تأخیر",
+    "notifyValue": "{c} کانال در {s}",
+    "onceAt": "یک‌بار در",
+    "noRuns": "هنوز اجرایی نیست."
+  },
+  "delete": {
+    "action": "حذف",
+    "confirm": "این کار حذف شود؟",
+    "deleting": "در حال حذف…"
+  },
+  "logs": {
+    "title": "لاگ‌های اجرا",
+    "streaming": "در حال استریم…",
+    "empty": "هنوز خروجی نیست.",
+    "close": "بستن",
+    "exit": "کد خروج {code}"
+  }
+}

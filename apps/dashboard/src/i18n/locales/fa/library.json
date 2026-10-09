@@ -1,0 +1,187 @@
+{
+  "ghCliConsent": {
+    "title": "مخزن‌های شما خوانده شود؟",
+    "body": "Openship می‌تواند مخزن‌های GitHub شما را با gh CLI که از قبل وارد آن شده‌اید فهرست کند.",
+    "bodyWithLogin": "Openship می‌تواند مخزن‌های GitHub شما را با gh CLI که به‌عنوان @{login} وارد آن شده‌اید فهرست کند.",
+    "pointNoCloud": "چیزی به ابر فرستاده نمی‌شود — فهرست هرگز این ماشین را ترک نمی‌کند.",
+    "pointDesktopOnly": "فقط در اپ دسکتاپ اجرا می‌شود، با احراز هویت محلی gh.",
+    "pointReadOnly": "فقط خواندنی: مخزن‌ها را فهرست می‌کند تا یکی را برای استقرار انتخاب کنید.",
+    "allow": "اجازه دادن"
+  },
+  "page": {
+    "title": "پروژه جدید",
+    "subtitle": "یک مخزن وارد کنید، URL جای‌گذاری کنید، یا از قالب شروع کنید",
+    "tabs": {
+      "folder": "پوشه",
+      "github": "GitHub",
+      "url": "نشانی Git",
+      "template": "قالب"
+    }
+  },
+  "connect": {
+    "connectGithub": "اتصال GitHub",
+    "manageInSettings": "سایر روش‌های اتصال",
+    "terminal": {
+      "title": "اتصال GitHub",
+      "checkConnection": "بررسی اتصال",
+      "afterLogin": "پس از ورود، برای ادامه روی «بررسی اتصال» کلیک کنید."
+    },
+    "deviceFlow": {
+      "title": "ورود به GitHub",
+      "goToPrefix": "بروید به",
+      "goToSuffix": "این کد را در GitHub وارد کنید تا ورود تمام شود.",
+      "waiting": "در انتظار مجوز…",
+      "openGithub": "باز کردن GitHub",
+      "copyCode": "برای کپی کلیک کنید"
+    },
+    "default": {
+      "title": "برای استقرار به GitHub متصل شوید",
+      "descSelfHosted": "نحوه دسترسی Openship به مخزن‌هایتان را انتخاب کنید.",
+      "descSaas": "حساب GitHub را پیوند دهید تا مخزن‌ها را ببینید و با هر push مستقر شوید.",
+      "recommended": "پیشنهادی",
+      "cloudApp": "GitHub App ابری Openship",
+      "cloudAppDesc": "GitHub App مدیریت‌شده — استقرار روی سرورهای راه دور با توکن‌های کوتاه‌عمر.",
+      "connectCloud": "اتصال Openship Cloud",
+      "manual": "اتصال دستی GitHub",
+      "manualDesc": "در تنظیمات راه‌اندازی کنید — GitHub App/OAuth خودتان، یا gh CLI همین نمونه. بدون حساب Openship.",
+      "manualCta": "راه‌اندازی در تنظیمات",
+      "localBuilds": "ساخت‌های محلی",
+      "ghCli": "ورود با GitHub",
+      "ghCliDesc": "ورود مرورگر با کد دستگاه. بدون راه‌اندازی اپ، بدون SSH، بدون حساب Openship.",
+      "useGhCli": "ورود",
+      "connecting": "در حال اتصال…",
+      "byoc": "کلید SSH یا توکن دسترسی",
+      "byocDesc": "اعتبار خودتان را بیاورید — یک کلید استقرار برای هر سرور، یا یک توکن. بدون ورود.",
+      "byocCta": "راه‌اندازی"
+    },
+    "token": {
+      "title": "اتصال با توکن GitHub",
+      "connect": "اتصال",
+      "create": "ساخت توکن در GitHub",
+      "failed": "ذخیره توکن ممکن نشد."
+    }
+  },
+  "folderUpload": {
+    "emptyFolder": "آن پوشه خالی به نظر می‌رسد (یا همه چیز نادیده گرفته شده). یک پوشه پروژه انتخاب کنید.",
+    "uploadError": "بارگذاری پوشه ناموفق بود",
+    "stackTitle": "چه چیزی را مستقر می‌کنید؟",
+    "stackDesc": "استک پوشه را انتخاب کنید — این محیط ساخت را تعیین می‌کند. سپس بارگذاری می‌کنید.",
+    "backToStack": "بازگشت به انتخاب استک",
+    "uploadTitle": "پوشه {stack} خود را بارگذاری کنید",
+    "uploadSubtitle": "در مرورگر بسته‌بندی می‌شود — node_modules، .git و خروجی ساخت رد می‌شوند",
+    "dropTitle": "پوشه پروژه را رها کنید یا برای مرور کلیک کنید",
+    "dropSubtitle": "کل پوشه بارگذاری و به‌عنوان اپ {stack} ساخته می‌شود",
+    "filesSingular": "{count} پرونده",
+    "filesPlural": "{count} پرونده",
+    "clearSelection": "پاک کردن انتخاب",
+    "packing": "در حال بسته‌بندی پوشه…",
+    "uploading": "در حال بارگذاری…",
+    "continue": "ادامه"
+  },
+  "localProjects": {
+    "title": "پروژه‌های محلی",
+    "loading": "در حال بارگذاری...",
+    "projectCountSingular": "{count} پروژه",
+    "projectCountPlural": "{count} پروژه",
+    "import": "وارد کردن",
+    "empty": {
+      "title": "هنوز پروژه محلی نیست",
+      "description": "یک پوشه پروژه را از ماشین خود وارد کنید تا به‌صورت محلی اسکن، ساخته و مستقر شود",
+      "importProject": "وارد کردن پروژه",
+      "howItWorks": "چگونه کار می‌کند",
+      "dropTitle": "رها کنید یا مرور کنید",
+      "dropDesc": "هر پوشه پروژه‌ای را انتخاب کنید",
+      "autoDetectTitle": "تشخیص خودکار",
+      "autoDetectDesc": "فریم‌ورک و پیکربندی پیدا شد",
+      "deployTitle": "استقرار محلی",
+      "deployDesc": "روی ماشین خود بسازید و اجرا کنید"
+    },
+    "form": {
+      "title": "وارد کردن از پوشه",
+      "scanErrorDefault": "اسکن پوشه ناموفق بود",
+      "dropTitle": "یک پوشه را اینجا رها کنید یا برای مرور کلیک کنید",
+      "dropSubtitle": "پوشه پروژه را انتخاب کنید تا فریم‌ورک به‌صورت خودکار تشخیص داده شود",
+      "folderViaBrowser": "پوشه از طریق مرورگر انتخاب شد — مسیر مطلق کامل را وارد کنید و اسکن را بزنید",
+      "folderDropped": "پوشه رها شد — مسیر مطلق کامل را وارد کنید و اسکن را بزنید",
+      "pathPlaceholder": "/path/to/your/project",
+      "browse": "مرور",
+      "scan": "اسکن",
+      "importError": "وارد کردن پروژه ناموفق بود",
+      "projectName": "نام پروژه",
+      "detected": "تشخیص‌داده‌شده",
+      "build": "ساخت:",
+      "install": "نصب:",
+      "output": "خروجی:",
+      "start": "شروع:",
+      "importing": "در حال وارد کردن...",
+      "importProject": "وارد کردن پروژه"
+    }
+  },
+  "repositoryList": {
+    "searchPlaceholder": "جستجوی مخزن‌ها...",
+    "visibility": {
+      "all": "همه",
+      "public": "عمومی",
+      "private": "خصوصی"
+    },
+    "sort": {
+      "recent": "اخیر",
+      "name": "نام",
+      "stars": "ستاره"
+    },
+    "addAccount": "افزودن حساب GitHub",
+    "installTitle": "نصب GitHub App",
+    "installDesc": "GitHub App را روی حساب یا سازمان خود نصب کنید تا به مخزن‌ها دسترسی داده شود.",
+    "installButton": "نصب GitHub App",
+    "noMatching": "مخزن مطابقی نیست",
+    "noRepos": "مخزنی پیدا نشد",
+    "noMatchingDesc": "عبارت جستجوی دیگری امتحان کنید یا فیلترها را تنظیم کنید",
+    "noReposDesc": "این حساب هنوز مخزنی ندارد",
+    "privateBadge": "خصوصی",
+    "localOnly": "فقط محلی",
+    "localOnlyTooltip": "اپ Openship روی {owner} نصب نشده. فقط ساخت محلی — برای استقرار راه دور، App را روی این مالک نصب کنید.",
+    "repoCountSingular": "{count} مخزن",
+    "repoCountPlural": "{count} مخزن",
+    "matching": "مطابق «{query}»",
+    "pagination": {
+      "previous": "قبلی",
+      "next": "بعدی",
+      "pageOf": "صفحه {page} از {total}"
+    },
+    "time": {
+      "justNow": "همین الان",
+      "minutesAgo": "{n} دقیقه پیش",
+      "hoursAgo": "{n} ساعت پیش",
+      "daysAgo": "{n} روز پیش",
+      "monthsAgo": "{n} ماه پیش"
+    }
+  },
+  "sidebar": {
+    "overview": "نمای کلی",
+    "total": "کل",
+    "public": "عمومی",
+    "private": "خصوصی",
+    "quickTip": "نکته سریع",
+    "quickTipDesc": "هر مخزنی را انتخاب کنید تا فوری مستقر شود. استقرار خودکار را روی هر push پیکربندی کنید.",
+    "connection": "اتصال",
+    "openshipGithubApp": "اپ GitHub مربوط به Openship",
+    "connected": "متصل",
+    "notConnected": "متصل نیست",
+    "ghCli": "gh CLI",
+    "runGhAuth": "اجرای `gh auth login`",
+    "openshipCloudApp": "اپ ابری Openship",
+    "checking": "در حال بررسی…",
+    "notConnectedManage": "متصل نیست — مدیریت در تنظیمات",
+    "optional": "اختیاری",
+    "footnote": "کتابخانه محلی از طریق gh CLI؛ استقرارهای راه دور از توکن‌های کوتاه‌عمر استفاده می‌کنند —",
+    "manageGithubSettings": "مدیریت GitHub در تنظیمات",
+    "methodToken": "توکن GitHub",
+    "methodDevice": "ورود GitHub"
+  },
+  "urlImport": {
+    "invalidUrl": "یک URL معتبر مخزن GitHub وارد کنید",
+    "title": "وارد کردن از Git URL",
+    "description": "URL یک مخزن عمومی را جای‌گذاری کنید. اتصال GitHub لازم نیست.",
+    "importButton": "وارد کردن مخزن"
+  }
+}
