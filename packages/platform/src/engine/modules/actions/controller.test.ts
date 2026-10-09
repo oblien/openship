@@ -572,3 +572,27 @@ describe("durable Actions controller", () => {
     },
   );
 });
+
+describe("workflow job completion handoff", () => {
+  it("retries a failed completion handoff without executing the worker again", async () => {
+    const f = await fixture(
+      "on: workflow_dispatch\njobs:\n  task:\n    runs-on: [self-hosted, macos]\n    steps:\n      - run: echo done\n",
+    );
+    const e = engine();
+    const completed = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Temporary completion-store failure"))
+      .mockResolvedValue(undefined);
+    e.ports.completed = completed;
+    await reconcile(e, f.run);
+    const [job] = await repo.jobs(f.org, f.run.id);
+    expect(completed).not.toHaveBeenCalled();
+    e.finish(job!.id);
+    await reconcile(e, f.run);
+    expect((await repo.run(f.org, f.run.id))?.settledAt).toBeNull();
+    await reconcile(e, f.run);
+    expect(completed).toHaveBeenCalledTimes(2);
+    expect((await repo.run(f.org, f.run.id))?.settledAt).not.toBeNull();
+    expect(e.executions.size).toBe(1);
+  });
+});

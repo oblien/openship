@@ -44,6 +44,7 @@ export interface ActionControllerPorts {
     run: ActionRun,
     job: ActionJob,
   ): Promise<{ id: string | null; error: string | null; unavailable?: boolean }>;
+  completed?(run: ActionRun): Promise<void>;
   reportError(error: unknown, context: { runId: string; jobId?: string }): void;
 }
 
@@ -56,8 +57,10 @@ export function actionContext(
       ...run.event,
       event: run.event,
       event_name: run.eventName,
-      repository: `${run.configuration.owner}/${run.configuration.repo}`,
-      repository_owner: run.configuration.owner,
+      repository: run.configuration.owner
+        ? `${run.configuration.owner}/${run.configuration.repo}`
+        : "",
+      repository_owner: run.configuration.owner ?? "",
       ref: run.ref,
       sha: run.revision,
       actor: run.actor,
@@ -180,8 +183,10 @@ export class ActionController {
           (job) =>
             job.cleanedAt && (job.checkStatus === job.status || job.checkStatus === "unavailable"),
         )
-      )
+      ) {
+        await this.ports.completed?.(run);
         await repo.updateRun(org, id, this.owner, { settledAt: new Date() });
+      }
     } catch (error) {
       this.ports.reportError(error, { runId: id });
       // Keep recoverable executions visible; the next lease holder can inspect
@@ -512,8 +517,10 @@ export class ActionController {
       strategy: spec.strategy,
       needs: spec.needs,
       environment: {
-        GITHUB_REPOSITORY: `${run.configuration.owner}/${run.configuration.repo}`,
-        GITHUB_REPOSITORY_OWNER: run.configuration.owner,
+        GITHUB_REPOSITORY: run.configuration.owner
+          ? `${run.configuration.owner}/${run.configuration.repo}`
+          : "",
+        GITHUB_REPOSITORY_OWNER: run.configuration.owner ?? "",
         GITHUB_REF: run.ref,
         SHA_REF: run.revision,
         GITHUB_RUN_ID: run.id,

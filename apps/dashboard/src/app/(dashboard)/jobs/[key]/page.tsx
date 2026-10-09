@@ -2,6 +2,7 @@
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { jobsApi, getApiErrorMessage, type JobView, type JobRunSummary } from "@/lib/api";
@@ -163,6 +164,7 @@ export default function JobDetailPage() {
           <InfoRow icon={"clock"} label={j.fields.nextRun} value={job.enabled ? fmtTime(job.nextRunAt) : j.fields.notScheduled} />
           {isCustom && (
             <>
+              {job.actionType === "workflow" ? <InfoRow icon="git-branch" label={t.actions.integration.workflowStep} value={<Link href={`/actions/workflows/${cfg.workflowId}`} className="font-medium hover:underline">{t.actions.integration.jobWorkflow}</Link>} /> : <>
               <InfoRow icon={"server"} label={j.detail.servers} value={(cfg.serverIds ?? (cfg.serverId ? [cfg.serverId] : [])).join(", ") || "—"} />
               <div className="rounded-xl border border-border/50 bg-card p-4">
                 <p className="mb-2 text-[12px] font-medium text-muted-foreground">{j.create.command}</p>
@@ -172,6 +174,7 @@ export default function JobDetailPage() {
               {cfg.timeoutMs && <InfoRow icon={"clock"} label={j.create.timeout} value={`${Math.round(cfg.timeoutMs / 1000)}s`} />}
               {cfg.env && Object.keys(cfg.env).length > 0 && <InfoRow icon={"git-branch"} label={j.create.env} value={Object.keys(cfg.env).join(", ")} />}
               {cfg.secrets && Object.keys(cfg.secrets).length > 0 && <InfoRow icon={"git-branch"} label={j.create.secrets} value={Object.keys(cfg.secrets).map((k) => `${k}=••••`).join(", ")} />}
+              </>}
               {job.dependsOn && job.dependsOn.length > 0 && <InfoRow icon={"git-branch"} label={j.create.dependencies} value={job.dependsOn.join(", ")} />}
               {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.join(", ")} />}
               {job.notifyConfig && job.notifyConfig.channels.length > 0 && (

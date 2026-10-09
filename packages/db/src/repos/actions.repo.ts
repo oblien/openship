@@ -18,8 +18,11 @@ import {
   actionRun,
   actionRunner,
   actionWorkflow,
+  actionProject,
 } from "../schema/actions";
 import { organization } from "../schema/organization";
+import { createActionProjectRepo } from "./action-project.repo";
+import { withProjectWorkAdmission } from "./project-work-admission";
 
 export type ActionRunner = typeof actionRunner.$inferSelect;
 export type ActionWorkflow = typeof actionWorkflow.$inferSelect;
@@ -43,6 +46,7 @@ export function createActionsRepo(db: Database) {
   const deliveryWhere = (org: string, id: string) =>
     and(eq(actionDelivery.organizationId, org), eq(actionDelivery.id, id));
   return {
+    ...createActionProjectRepo(db),
     async enqueueDelivery(
       input: Pick<
         ActionDelivery,
@@ -137,6 +141,9 @@ export function createActionsRepo(db: Database) {
         SELECT r.id FROM action_run r WHERE r.settled_at < ${cutoff}
         AND NOT EXISTS (SELECT 1 FROM action_storage_object s WHERE s.run_id = r.id)
         AND NOT EXISTS (SELECT 1 FROM action_run retry WHERE retry.original_run_id = r.id)
+        AND NOT EXISTS (SELECT 1 FROM action_deployment d WHERE d.organization_id = r.organization_id
+          AND d.revision = r.revision AND d.ref = r.ref AND d.requirements ? r.workflow_id
+          AND d.status IN ('waiting', 'blocked', 'deploying'))
         ORDER BY r.settled_at LIMIT 100
       )`);
     },
@@ -153,6 +160,20 @@ export function createActionsRepo(db: Database) {
         (await db.select({ value: count() }).from(actionRun).where(isNull(actionRun.settledAt)))[0]
           ?.value ?? 0
       );
+    },
+    /** Job schedules use the Actions run itself as their execution history. */
+    async runsForJob(org: string, key: string, limit = 50) {
+      return db
+        .select()
+        .from(actionRun)
+        .where(
+          and(
+            eq(actionRun.organizationId, org),
+            sql`${actionRun.configuration} -> 'sourceJob' ->> 'key' = ${key}`,
+          ),
+        )
+        .orderBy(desc(actionRun.createdAt), desc(actionRun.attempt))
+        .limit(limit);
     },
     async listRunners(org: string) {
       return db
@@ -243,29 +264,98 @@ export function createActionsRepo(db: Database) {
         .set({ enabled: false, updatedAt: new Date() })
         .where(runnerWhere(org, id));
     },
-    async listWorkflows(org: string) {
+    async listWorkflows(org: string, projectId?: string) {
       return db
         .select()
         .from(actionWorkflow)
-        .where(eq(actionWorkflow.organizationId, org))
+        .where(
+          and(
+            eq(actionWorkflow.organizationId, org),
+            projectId
+              ? sql`EXISTS (SELECT 1 FROM ${actionProject} WHERE ${actionProject.workflowId} = ${actionWorkflow.id} AND ${actionProject.organizationId} = ${org} AND ${actionProject.projectId} = ${projectId})`
+              : undefined,
+          ),
+        )
         .orderBy(desc(actionWorkflow.updatedAt));
     },
     async workflow(org: string, id: string) {
       return (await db.select().from(actionWorkflow).where(workflowWhere(org, id)).limit(1))[0];
     },
-    async saveWorkflow(value: NewWorkflow) {
+    async saveWorkflow(value: NewWorkflow, projectIds?: string[], expectedProjectIds?: string[]) {
       const { id, organizationId, createdAt, nextNumber, ...changes } = value;
-      return (
-        await db
-          .insert(actionWorkflow)
-          .values(value)
-          .onConflictDoUpdate({
-            target: actionWorkflow.id,
-            set: { ...changes, updatedAt: new Date() },
-            setWhere: eq(actionWorkflow.organizationId, organizationId),
-          })
-          .returning()
-      )[0]!;
+      const saved = await withProjectWorkAdmission(
+        db,
+        projectIds ? [...new Set([...projectIds, ...(expectedProjectIds ?? [])])] : undefined,
+        organizationId,
+        async (tx) => {
+          const currentLinks = await tx
+            .select()
+            .from(actionProject)
+            .where(
+              and(
+                eq(actionProject.organizationId, organizationId),
+                eq(actionProject.workflowId, id),
+              ),
+            );
+          if (
+            projectIds &&
+            expectedProjectIds &&
+            (currentLinks.length !== expectedProjectIds.length ||
+              currentLinks.some((link) => !expectedProjectIds.includes(link.projectId)))
+          )
+            throw new AppError(
+              "Linked projects changed. Reload the workflow before saving.",
+              409,
+              "ACTIONS_PROJECT_LINKS_CHANGED",
+            );
+          if (
+            projectIds &&
+            currentLinks.some((link) => link.required && !projectIds.includes(link.projectId))
+          )
+            throw new AppError(
+              "Remove this workflow from the project's required checks before unlinking it",
+              409,
+              "ACTIONS_WORKFLOW_REQUIRED",
+            );
+          const [workflow] = await tx
+            .insert(actionWorkflow)
+            .values(value)
+            .onConflictDoUpdate({
+              target: actionWorkflow.id,
+              set: { ...changes, updatedAt: new Date() },
+              setWhere: eq(actionWorkflow.organizationId, organizationId),
+            })
+            .returning();
+          if (!workflow)
+            throw new AppError("Workflow not found", 404, "ACTIONS_WORKFLOW_NOT_FOUND");
+          if (projectIds) {
+            await tx
+              .delete(actionProject)
+              .where(
+                and(
+                  eq(actionProject.organizationId, organizationId),
+                  eq(actionProject.workflowId, id),
+                ),
+              );
+            if (projectIds.length)
+              await tx
+                .insert(actionProject)
+                .values(
+                  projectIds.map((projectId) => ({
+                    organizationId,
+                    workflowId: id,
+                    projectId,
+                    required: currentLinks.some(
+                      (link) => link.projectId === projectId && link.required,
+                    ),
+                  })),
+                );
+          }
+          return workflow;
+        },
+      );
+      if (!saved) throw new AppError("A linked project is unavailable", 409, "PROJECT_UNAVAILABLE");
+      return saved;
     },
     async workflowError(org: string, id: string, error: string | null) {
       await db.update(actionWorkflow).set({ lastError: error }).where(workflowWhere(org, id));
@@ -316,7 +406,7 @@ export function createActionsRepo(db: Database) {
           .limit(1)
       )[0];
     },
-    async runs(org: string, workflowId?: string, limit = 30) {
+    async runs(org: string, workflowId?: string, limit = 30, projectId?: string) {
       return db
         .select()
         .from(actionRun)
@@ -324,6 +414,9 @@ export function createActionsRepo(db: Database) {
           and(
             eq(actionRun.organizationId, org),
             workflowId ? eq(actionRun.workflowId, workflowId) : undefined,
+            projectId
+              ? sql`EXISTS (SELECT 1 FROM ${actionProject} WHERE ${actionProject.workflowId} = ${actionRun.workflowId} AND ${actionProject.organizationId} = ${org} AND ${actionProject.projectId} = ${projectId})`
+              : undefined,
           ),
         )
         .orderBy(desc(actionRun.createdAt))

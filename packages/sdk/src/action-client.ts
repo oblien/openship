@@ -24,6 +24,12 @@ export function createRemoteActionOperations(http: HttpClient): ActionOperations
       },
       preview: { method: "POST", path: () => "/actions/preview", envelope: "data" },
       discover: { method: "GET", path: () => "/actions/discover", envelope: "data" },
+      repositorySource: { method: "GET", path: () => "/actions/repository-source", envelope: "data" },
+      updateRepositorySource: { method: "PUT", path: () => "/actions/repository-source", envelope: "data" },
+      projects: { method: "GET", path: () => "/actions/projects", envelope: "data" },
+      projectPolicy: { method: "GET", path: () => "/actions/project", envelope: "data" },
+      updateDeploymentRequest: { method: "POST", path: () => "/actions/project/requests", envelope: "data" },
+      updateProjectPolicy: { method: "PUT", path: () => "/actions/project", envelope: "data" },
     }),
     ...createRemoteResourceOperations(http, ActionResourceSchemas, {
       get: { method: "GET", path: workflow, envelope: "data" },

@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
 import { useToast } from "@/context/ToastContext";
@@ -12,6 +12,7 @@ export default function NewJobPage() {
   const { t } = useI18n();
   const j = t.jobs;
   const router = useRouter();
+  const search = useSearchParams();
   const { showToast } = useToast();
 
   return (
@@ -27,6 +28,7 @@ export default function NewJobPage() {
       </div>
 
       <JobForm
+        initialWorkflowId={search.get("workflowId") ?? undefined}
         onCancel={() => router.push("/jobs")}
         onSaved={(saved) => {
           showToast(j.toast.created, "success", j.toast.title);

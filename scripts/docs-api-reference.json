@@ -3455,13 +3455,13 @@
     "actions.dispatch": {
       "page": "actions",
       "section": "Runs",
-      "description": "Dispatch a workflow with a caller idempotency key and resolved immutable commit.",
+      "description": "Dispatch a manual or authenticated webhook event with an idempotency key and immutable source.",
       "route": "POST /api/actions/workflows/:id/dispatch"
     },
     "actions.listRuns": {
       "page": "actions",
       "section": "Runs",
-      "description": "List recent runs, optionally filtered by workflow.",
+      "description": "List recent runs, optionally filtered by workflow or linked project.",
       "route": "GET /api/actions/runs"
     },
     "actions.getRun": {
@@ -3529,6 +3529,42 @@
       "section": "Actions budget",
       "description": "Resume the original Actions checkout without creating another payment. Requires configured Cloud billing and valid live usage rates.",
       "route": "POST /api/billing/actions/checkout/resume"
+    },
+    "actions.repositorySource": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "GET /api/actions/repository-source",
+      "description": "Read an authorized workflow file and its GitHub content SHA for review."
+    },
+    "actions.updateRepositorySource": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "PUT /api/actions/repository-source",
+      "description": "Commit a reviewed workflow change to a branch, guarded by the original content SHA and repository write access."
+    },
+    "actions.projects": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "GET /api/actions/projects",
+      "description": "List projects available for workflow associations."
+    },
+    "actions.projectPolicy": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "GET /api/actions/project",
+      "description": "Read linked workflows, required checks and pending deployment requests for a project."
+    },
+    "actions.updateProjectPolicy": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "PUT /api/actions/project",
+      "description": "Choose manual, push or required-check deployments and link existing workflows."
+    },
+    "actions.updateDeploymentRequest": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "POST /api/actions/project/requests",
+      "description": "Retry or cancel an unaccepted required-check deployment request without duplicating deployment."
     }
   },
   "http": {

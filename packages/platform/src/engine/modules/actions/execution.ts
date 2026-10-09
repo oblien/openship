@@ -88,6 +88,7 @@ export const actionControllerPorts: ActionControllerPorts = {
     if (!run.untrusted)
       for (const [key, value] of Object.entries(run.configuration.secrets ?? {}))
         secrets[key] = decrypt(value);
+    if (!run.configuration.owner || !run.configuration.repo) return secrets;
     const ctx = await resolveExecutionAuthority(run.authority, `actions-token:${run.id}`);
     // Untrusted forks get no stored secrets and no write credential, even after approval.
     const permissions = Object.fromEntries(
@@ -122,6 +123,10 @@ export const actionControllerPorts: ActionControllerPorts = {
     return true;
   },
   check: syncActionCheck,
+  completed: (run) =>
+    run.configuration.sourceJob
+      ? import("../jobs/job-workflow").then((m) => m.workflowJobCompleted(run))
+      : Promise.resolve(),
   reportError(error, context) {
     diagnostics.warn("actions/controller", "Workflow reconciliation failed", error, context);
   },

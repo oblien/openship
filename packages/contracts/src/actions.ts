@@ -85,8 +85,8 @@ export const ActionRunnerSchema = Type.Object(
 export const ActionWorkflowInput = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 100 }),
-    owner,
-    repo,
+    owner: nullable(owner),
+    repo: nullable(repo),
     path,
     ref,
     source: Type.Optional(
@@ -102,6 +102,7 @@ export const ActionWorkflowInput = Type.Object(
     removeSecrets: Type.Optional(Type.Array(Type.String(), { maxItems: 100 })),
     enabled: Type.Optional(Type.Boolean()),
     allowForks: Type.Optional(Type.Boolean()),
+    projectIds: Type.Optional(Type.Array(id, { maxItems: 50, uniqueItems: true })),
   },
   { additionalProperties: false },
 );
@@ -116,6 +117,7 @@ export const ActionPlanSchema = Type.Object(
   {
     name: Type.String(),
     triggers: Type.Array(Type.String()),
+    triggerRules: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     jobs: Type.Array(plannedJob),
     inputs: Type.Array(
       Type.Object({
@@ -134,8 +136,8 @@ export const ActionWorkflowSchema = Type.Object(
   {
     id,
     name: Type.String(),
-    owner,
-    repo,
+    owner: nullable(owner),
+    repo: nullable(repo),
     path,
     ref,
     source: nullable(Type.String()),
@@ -149,6 +151,7 @@ export const ActionWorkflowSchema = Type.Object(
     allowForks: Type.Boolean(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
+    projectIds: Type.Optional(Type.Array(id)),
   },
   { additionalProperties: false },
 );
@@ -192,8 +195,8 @@ export const ActionRunSchema = Type.Object(
     number: Type.Number(),
     attempt: Type.Number(),
     status: ActionStatusSchema,
-    owner,
-    repo,
+    owner: nullable(owner),
+    repo: nullable(repo),
     revision: Type.String(),
     ref: Type.String(),
     eventName: Type.String(),
@@ -235,13 +238,44 @@ const event = Type.Object({
   jobResult: Type.Optional(Type.String()),
   result: Type.Optional(Type.Unknown()),
 });
+export const ActionProjectSchema = Type.Object({
+  id,
+  name: Type.String(),
+  owner: nullable(owner),
+  repo: nullable(repo),
+  branch: nullable(Type.String()),
+});
+export const ActionDeploymentRequestSchema = Type.Object({
+  id,
+  projectId: id,
+  revision: Type.String(),
+  ref: Type.String(),
+  status: Type.String(),
+  error: nullable(Type.String()),
+  deploymentId: nullable(id),
+  createdAt: Type.String(),
+  workflowIds: Type.Array(id),
+});
+export const ActionProjectPolicySchema = Type.Object({
+  project: ActionProjectSchema,
+  mode: Type.Union([Type.Literal("manual"), Type.Literal("push"), Type.Literal("actions")]),
+  workflowIds: Type.Array(id),
+  requiredWorkflowIds: Type.Array(id),
+  requests: Type.Array(ActionDeploymentRequestSchema),
+});
 export const ActionCollectionSchemas = {
-  list: { action: "read", output: Type.Array(ActionWorkflowSchema) },
+  list: {
+    action: "read",
+    input: Type.Object({ projectId: Type.Optional(id) }),
+    optionalInput: true,
+    output: Type.Array(ActionWorkflowSchema),
+  },
   create: { action: "write", input: ActionWorkflowInput, output: ActionWorkflowSchema },
   listRuns: {
     action: "read",
     input: Type.Object({
       workflowId: Type.Optional(id),
+      projectId: Type.Optional(id),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
     }),
     optionalInput: true,
@@ -267,6 +301,54 @@ export const ActionCollectionSchemas = {
     input: Type.Object({ owner, repo, ref }),
     output: Type.Array(Type.Object({ path: Type.String(), name: Type.String() })),
   },
+  repositorySource: {
+    action: "read",
+    input: Type.Object({ owner, repo, ref, path }),
+    output: Type.Object({
+      source: Type.String(),
+      sha: Type.String(),
+      plan: Type.Union([ActionPlanSchema, Type.Null()]),
+      error: nullable(Type.String()),
+    }),
+  },
+  updateRepositorySource: {
+    action: "write",
+    input: Type.Object({
+      owner,
+      repo,
+      ref,
+      path,
+      sha: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+      source: Type.String({ maxLength: ACTIONS_MAX_WORKFLOW_BYTES }),
+    }),
+    output: Type.Object({ sha: Type.String(), commit: Type.String() }),
+  },
+  projects: { action: "read", output: Type.Array(ActionProjectSchema) },
+  projectPolicy: {
+    action: "read",
+    input: Type.Object({ projectId: id }),
+    output: ActionProjectPolicySchema,
+  },
+  updateProjectPolicy: {
+    action: "write",
+    input: Type.Object({
+      projectId: id,
+      mode: ActionProjectPolicySchema.properties.mode,
+      workflowIds: Type.Array(id, { maxItems: 50, uniqueItems: true }),
+      requiredWorkflowIds: Type.Array(id, { maxItems: 20, uniqueItems: true }),
+    }),
+    output: ActionProjectPolicySchema,
+  },
+  updateDeploymentRequest: {
+    action: "write",
+    input: Type.Object({
+      projectId: id,
+      requestId: id,
+      action: Type.Union([Type.Literal("retry"), Type.Literal("cancel")]),
+      idempotencyKey: Type.String({ minLength: 8, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }),
+    }),
+    output: ActionProjectPolicySchema,
+  },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ActionResourceSchemas = {
   get: { action: "read", output: ActionWorkflowSchema },
@@ -277,6 +359,13 @@ export const ActionResourceSchemas = {
     input: Type.Object({
       ref: Type.Optional(ref),
       inputs: Type.Optional(strings),
+      /** Authenticated external events share dispatch permissions and idempotency. */
+      eventType: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_.-]+$" }),
+      ),
+      clientPayload: Type.Optional(
+        Type.Record(Type.String(), Type.Unknown(), { maxProperties: 100 }),
+      ),
       idempotencyKey: Type.String({ minLength: 8, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }),
     }),
     output: ActionRunSchema,
@@ -328,6 +417,8 @@ export type ActionJobView = Static<typeof ActionJobSchema>;
 export type ActionRunnerView = Static<typeof ActionRunnerSchema>;
 export type CreateActionWorkflow = Static<typeof ActionWorkflowInput>;
 export type ActionPlanView = Static<typeof ActionPlanSchema>;
+export type ActionProjectPolicy = Static<typeof ActionProjectPolicySchema>;
+export type ActionProjectView = Static<typeof ActionProjectSchema>;
 export interface ActionOperations
   extends
     ScopedOperations<typeof ActionCollectionSchemas>,

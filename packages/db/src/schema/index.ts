@@ -91,6 +91,6 @@ export { clusterDatabase } from "./cluster-database";
 export { cloudAnalyticsEvent, cloudAnalyticsCheckout, cloudAnalyticsWorkspace } from "./cloud-analytics";
 export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
 export { instanceController, instanceHandoff } from "./instance-controller";
-export { actionRunner, actionWorkflow, actionRun, actionJob, actionEvent, actionDelivery } from "./actions";
+export { actionRunner, actionWorkflow, actionProject, actionDeployment, actionRun, actionJob, actionEvent, actionDelivery } from "./actions";
 export { actionStorageObject, actionStorageChunk } from "./action-storage";
 export { actionBudget, actionCreditPurchase } from "./action-billing";

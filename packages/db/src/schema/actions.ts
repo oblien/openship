@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -24,6 +25,7 @@ import type {
 import { organization } from "./organization";
 import { servers } from "./servers";
 import { backupDestination } from "./backup";
+import { project } from "./project";
 
 export const actionRunner = pgTable(
   "action_runner",
@@ -65,8 +67,8 @@ export const actionRunner = pgTable(
 );
 
 export interface ActionRunConfiguration {
-  owner: string;
-  repo: string;
+  owner: string | null;
+  repo: string | null;
   path: string;
   defaultBranch: string;
   runnerIds: string[];
@@ -74,6 +76,15 @@ export interface ActionRunConfiguration {
   /** Encrypted at rest, never part of the run view or diagnostics. */
   secrets: Record<string, string>;
   storageDestinationId?: string | null;
+  /** Configuration approved when this immutable run was dispatched. */
+  workflowVersion?: string;
+  /** Jobs schedules dispatch into this queue; they do not copy the execution. */
+  sourceJob?: {
+    key: string;
+    label: string;
+    trigger: string;
+    notifyConfig?: { channels: string[]; states: Array<"running" | "success" | "failed"> } | null;
+  };
 }
 
 export const actionWorkflow = pgTable(
@@ -84,8 +95,8 @@ export const actionWorkflow = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    owner: text("owner").notNull(),
-    repo: text("repo").notNull(),
+    owner: text("owner"),
+    repo: text("repo"),
     path: text("path").notNull(),
     ref: text("ref").notNull(),
     /** Null follows the repository file. Inline workflows are explicitly configured by an administrator. */
@@ -110,6 +121,86 @@ export const actionWorkflow = pgTable(
     uniqueIndex("action_workflow_owner_unique").on(t.id, t.organizationId),
     uniqueIndex("action_workflow_repo_path_unique").on(t.organizationId, t.owner, t.repo, t.path),
     index("action_workflow_repo_idx").on(t.owner, t.repo),
+    check(
+      "action_workflow_source_check",
+      sql`(${t.owner} IS NOT NULL AND ${t.repo} IS NOT NULL) OR (${t.owner} IS NULL AND ${t.repo} IS NULL AND ${t.source} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/** Association, not a workflow copy. A monorepo workflow can check several projects. */
+export const actionProject = pgTable(
+  "action_project",
+  {
+    organizationId: text("organization_id").notNull(),
+    workflowId: text("workflow_id").notNull(),
+    projectId: text("project_id").notNull(),
+    required: boolean("required").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workflowId, t.projectId] }),
+    foreignKey({
+      columns: [t.workflowId, t.organizationId],
+      foreignColumns: [actionWorkflow.id, actionWorkflow.organizationId],
+      name: "action_project_workflow_owner_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.projectId, t.organizationId],
+      foreignColumns: [project.id, project.organizationId],
+      name: "action_project_project_owner_fk",
+    }).onDelete("cascade"),
+    index("action_project_project_idx").on(t.projectId, t.organizationId),
+  ],
+);
+
+/** Intent retained while CI runs. Only the regular deployment engine activates it. */
+export const actionDeployment = pgTable(
+  "action_deployment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    projectId: text("project_id").notNull(),
+    revision: text("revision").notNull(),
+    ref: text("ref").notNull(),
+    requirements: jsonb("requirements").$type<Record<string, string>>().notNull(),
+    intent: jsonb("intent")
+      .$type<{
+        serverId?: string;
+        environment?: string;
+        commitMessage?: string;
+        serviceIds?: string[];
+        forceAll?: boolean;
+        changedPaths?: string[] | null;
+        forcePullImages?: boolean;
+        strictServiceScope?: boolean;
+        smartRoute?: boolean;
+        event?: Record<string, unknown>;
+      }>()
+      .notNull(),
+    authority: jsonb("authority").$type<ExecutionAuthority>().notNull(),
+    status: text("status")
+      .$type<
+        "waiting" | "blocked" | "deploying" | "deployed" | "superseded" | "failed" | "cancelled"
+      >()
+      .notNull()
+      .default("waiting"),
+    deploymentId: text("deployment_id"),
+    error: text("error"),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
+    retryAt: timestamp("retry_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.projectId, t.organizationId],
+      foreignColumns: [project.id, project.organizationId],
+      name: "action_deployment_project_owner_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("action_deployment_commit_unique").on(t.projectId, t.revision),
+    index("action_deployment_pending_idx").on(t.status, t.retryAt),
   ],
 );
 

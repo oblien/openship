@@ -46,7 +46,7 @@ export function WorkflowGraph({
                 ? t.actions.status[status as keyof typeof t.actions.status]
                 : run
                   ? t.actions.waitingDependency
-                  : t.actions.sourceHint,
+                  : undefined,
             } satisfies TopologyNodeAction,
           ];
         }),

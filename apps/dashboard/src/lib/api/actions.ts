@@ -10,14 +10,14 @@ const data = <K extends keyof ActionOperations>(response: Promise<{ data: Result
 
 /** HTTP transport only; authorization, validation and scheduling live in the platform. */
 export const actionsApi = {
-  list: () => data<"list">(api.get(p.workflows)),
+  list: (projectId?: string) => data<"list">(api.get(`${p.workflows}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`)),
   get: (id: string) => data<"get">(api.get(p.workflow(id))),
   save: (input: CreateActionWorkflow, id?: string) =>
     data<"create">(id ? api.patch(p.workflow(id), input) : api.post(p.workflows, input)),
   disable: (id: string) => api.delete(p.workflow(id)),
-  runs: (workflowId?: string) =>
+  runs: (workflowId?: string, projectId?: string) =>
     data<"listRuns">(
-      api.get(`${p.runs}${workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : ""}`),
+      api.get(`${p.runs}?${new URLSearchParams({ ...(workflowId && { workflowId }), ...(projectId && { projectId }) })}`),
     ),
   run: (id: string) => data<"getRun">(api.get(p.run(id))),
   artifacts: (id: string) => data<"artifacts">(api.get(`${p.run(id)}/artifacts`)),
@@ -39,6 +39,12 @@ export const actionsApi = {
   events: (id: string, after = 0) => data<"jobEvents">(api.get(`${p.events(id)}?after=${after}`)),
   preview: (source: string, path?: string) =>
     data<"preview">(api.post(p.preview, { source, path })),
+  projects: () => data<"projects">(api.get("actions/projects")),
+  projectPolicy: (projectId: string) => data<"projectPolicy">(api.get(`actions/project?${new URLSearchParams({ projectId })}`)),
+  updateProjectPolicy: (input: Input<"updateProjectPolicy">[0]) => data<"updateProjectPolicy">(api.put("actions/project", input)),
+  updateDeploymentRequest: (input: Input<"updateDeploymentRequest">[0]) => data<"updateDeploymentRequest">(api.post("actions/project/requests", input)),
+  repositorySource: (input: Input<"repositorySource">[0]) => data<"repositorySource">(api.get(`actions/repository-source?${new URLSearchParams(input)}`)),
+  updateRepositorySource: (input: Input<"updateRepositorySource">[0]) => data<"updateRepositorySource">(api.put("actions/repository-source", input)),
   discover: (owner: string, repo: string, ref: string) =>
     data<"discover">(api.get(`${p.discover}?${new URLSearchParams({ owner, repo, ref })}`)),
 };

@@ -28,6 +28,8 @@ export interface JobRetryConfig {
 
 /** Custom-job action config (secrets are returned with masked values). */
 export interface JobActionConfig {
+  workflowId?: string;
+  inputs?: Record<string, string>;
   serverId?: string;
   serverIds?: string[];
   command?: string;
@@ -111,7 +113,7 @@ export const jobsApi = {
   backupSchedules: () =>
     api.get<{ data: BackupScheduleView[] }>(endpoints.jobs.backupSchedules),
 
-  /** Create a custom command job. */
+  /** Create a command or workflow job. */
   create: (body: import("@repo/contracts").CreateJobInput) => api.post<{ data: JobView }>(endpoints.jobs.list, body),
 
   /** Update a job (cron/enabled for any; full config for custom jobs). */

@@ -1,3 +1,4 @@
+import { assertRequiredPushWorkflow } from "./required-checks";
 import { createHash } from "node:crypto";
 import { parse } from "yaml";
 import { AppError, NotFoundError, ValidationError, generateId, isFullCommitSha } from "@repo/core";
@@ -44,6 +45,18 @@ export async function saveActionWorkflow(
   id?: string,
 ): Promise<ActionWorkflow> {
   const existing = id ? await requireActionWorkflow(ctx, id, true) : undefined;
+  if (!!input.owner !== !!input.repo || (!input.owner && !input.source))
+    throw new ValidationError("Choose a repository workflow or provide standalone YAML");
+  const previousProjectIds =
+    input.projectIds && existing
+      ? (await repos.actions.workflowProjects(ctx.organizationId, existing.id)).map(
+          (link) => link.projectId,
+        )
+      : [];
+  if (input.projectIds)
+    await (
+      await import("./project.service")
+    ).authorizeActionProjects(ctx, [...input.projectIds, ...previousProjectIds], true);
   await authorizeActionRunners(ctx, input.runnerIds, true);
   if (input.allowForks ?? existing?.allowForks) {
     const runners = await Promise.all(
@@ -55,8 +68,10 @@ export async function saveActionWorkflow(
   await authorizeActionRepository(ctx, input.owner, input.repo);
   const source =
     input.source ??
-    (await getFileContent(ctx, input.owner, input.repo, input.path, { branch: input.ref })).content;
+    (await getFileContent(ctx, input.owner!, input.repo!, input.path, { branch: input.ref }))
+      .content;
   const definition = await parseActionWorkflow(source, input.path);
+  if (!input.owner) validateStandaloneWorkflow(source, definition);
   const storageDestinationId =
     input.storageDestinationId === undefined
       ? (existing?.storageDestinationId ?? null)
@@ -79,25 +94,55 @@ export async function saveActionWorkflow(
       );
     if (value) secrets[key] = encrypt(value);
   }
-  return repos.actions.saveWorkflow({
-    id: existing?.id ?? generateId("awf"),
-    organizationId: ctx.organizationId,
-    name: input.name.trim(),
-    owner: input.owner.toLowerCase(),
-    repo: input.repo.toLowerCase(),
-    path: input.path,
-    ref: input.ref,
-    source: input.source ?? null,
-    definition,
-    lastError: null,
-    runnerIds: input.runnerIds,
-    variables: input.variables ?? existing?.variables ?? {},
-    secrets,
-    authority: await captureExecutionAuthority(ctx),
-    enabled: input.enabled ?? existing?.enabled ?? true,
-    allowForks: input.allowForks ?? existing?.allowForks ?? false,
-    storageDestinationId,
-  });
+  return repos.actions.saveWorkflow(
+    {
+      id: existing?.id ?? generateId("awf"),
+      organizationId: ctx.organizationId,
+      name: input.name.trim(),
+      owner: input.owner?.toLowerCase() ?? null,
+      repo: input.repo?.toLowerCase() ?? null,
+      path: input.path,
+      ref: input.ref,
+      source: input.source ?? null,
+      definition,
+      lastError: null,
+      runnerIds: input.runnerIds,
+      variables: input.variables ?? existing?.variables ?? {},
+      secrets,
+      authority: await captureExecutionAuthority(ctx),
+      enabled: input.enabled ?? existing?.enabled ?? true,
+      allowForks: input.allowForks ?? existing?.allowForks ?? false,
+      storageDestinationId,
+    },
+    input.projectIds,
+    previousProjectIds,
+  );
+}
+
+function validateStandaloneWorkflow(
+  source: string,
+  plan: Awaited<ReturnType<typeof parseActionWorkflow>>,
+) {
+  if ("push" in plan.triggers || "pull_request" in plan.triggers)
+    throw new ValidationError(
+      "Push and pull-request triggers require a repository. Use manual, schedule or webhook triggers for a standalone workflow.",
+    );
+  const workflow = record(parse(source, { maxAliasCount: 0 }));
+  for (const job of Object.values(record(workflow.jobs))) {
+    const steps = record(job).steps;
+    if (!Array.isArray(steps)) continue;
+    for (const value of steps) {
+      const step = record(value);
+      if (
+        typeof step.uses === "string" &&
+        /^actions\/checkout(?:@|\/)/i.test(step.uses) &&
+        !record(step.with).repository
+      )
+        throw new ValidationError(
+          "A standalone workflow has no default repository. Specify with.repository for actions/checkout or connect a repository.",
+        );
+    }
+  }
 }
 
 export async function discoverActionWorkflows(
@@ -164,18 +209,21 @@ export interface ActionTrigger {
   key: string;
   ref?: string;
   revision?: string;
-  eventName: "workflow_dispatch" | "push" | "pull_request" | "schedule";
+  eventName: "workflow_dispatch" | "push" | "pull_request" | "schedule" | "repository_dispatch";
   event?: Record<string, unknown>;
   inputs?: Record<string, unknown>;
   actor?: string;
   untrusted?: boolean;
   /** A PR uses the trusted base workflow, while checkout receives its immutable merge ref. */
   workflowRevision?: string;
+  /** Internal deployment admission, never accepted from HTTP. */
+  requiredBranch?: string;
+  sourceJob?: import("@repo/db").ActionRunConfiguration["sourceJob"];
 }
 
 async function resolveActionRef(
   ctx: ExecutionContext,
-  workflow: ActionWorkflow,
+  workflow: Pick<ActionWorkflow, "owner" | "repo"> & { owner: string; repo: string },
   base: string,
   selected: string,
 ): Promise<string> {
@@ -195,40 +243,42 @@ async function resolveActionRef(
   throw new ValidationError(`Branch or tag ${selected} was not found`);
 }
 
-export async function triggerActionWorkflow(
+/** Resolving source is independent of execution; standalone YAML never requests a GitHub credential. */
+async function resolveActionSource(
   ctx: ExecutionContext,
   workflow: ActionWorkflow,
   trigger: ActionTrigger,
-): Promise<ActionRun> {
-  await authorizeActionWorkflow(ctx, workflow, true);
-  const idempotencyKey = `${workflow.id}:${trigger.eventName}:${trigger.key}`;
-  const existing = await repos.actions.runByKey(ctx.organizationId, idempotencyKey);
-  if (existing) return existing;
-  if (!workflow.enabled)
-    throw new AppError("This workflow is disabled", 409, "ACTIONS_WORKFLOW_DISABLED");
-  if (trigger.untrusted && !workflow.allowForks)
-    throw new AppError(
-      "Fork pull requests are disabled for this workflow",
-      409,
-      "ACTIONS_FORK_DISABLED",
-    );
-  let selectedRef = trigger.ref ?? workflow.ref;
+) {
+  if (!workflow.owner || !workflow.repo) {
+    if (!workflow.source)
+      throw new ValidationError("The standalone workflow has no YAML definition");
+    if (trigger.ref && trigger.ref !== workflow.ref)
+      throw new ValidationError("Standalone workflows do not have repository branches");
+    return {
+      source: workflow.source,
+      revision: createHash("sha256").update(workflow.source).digest("hex"),
+      ref: workflow.ref,
+      repository: null,
+      defaultBranch: workflow.ref,
+    };
+  }
+  const repositoryIdentity = { owner: workflow.owner, repo: workflow.repo };
   const base = `https://api.github.com/repos/${encodeURIComponent(workflow.owner)}/${encodeURIComponent(workflow.repo)}`;
-  const repo = await githubFetch<{
+  const repository = await githubFetch<{
     default_branch: string;
     private: boolean;
     full_name: string;
     id: number;
-  }>({ ctx, owner: workflow.owner, repo: workflow.repo, url: base });
-  if (trigger.eventName === "schedule") selectedRef = repo.default_branch;
-  const ref = await resolveActionRef(ctx, workflow, base, selectedRef);
+  }>({ ctx, ...repositoryIdentity, url: base });
+  const selectedRef =
+    trigger.eventName === "schedule" ? repository.default_branch : (trigger.ref ?? workflow.ref);
+  const ref = await resolveActionRef(ctx, repositoryIdentity, base, selectedRef);
   const revision =
     trigger.revision ??
     (
       await githubFetch<{ sha: string }>({
         ctx,
-        owner: workflow.owner,
-        repo: workflow.repo,
+        ...repositoryIdentity,
         url: `${base}/commits/${encodeURIComponent(ref)}`,
       })
     ).sha;
@@ -241,8 +291,58 @@ export async function triggerActionWorkflow(
         branch: trigger.workflowRevision ?? revision,
       })
     ).content;
+  return { source, revision, ref, repository, defaultBranch: repository.default_branch };
+}
+
+/** The Jobs form validates the same declared manual inputs used at dispatch. */
+export async function validateActionDispatchInputs(
+  ctx: ExecutionContext,
+  workflow: ActionWorkflow,
+  inputs: Record<string, unknown>,
+) {
+  const { source } = await resolveActionSource(ctx, workflow, {
+    eventName: "workflow_dispatch",
+    key: "validate",
+  });
+  return dispatchInputs(source, inputs);
+}
+
+export async function triggerActionWorkflow(
+  ctx: ExecutionContext,
+  workflow: ActionWorkflow,
+  trigger: ActionTrigger,
+): Promise<ActionRun> {
+  await authorizeActionWorkflow(ctx, workflow, true);
+  // A required-check admission and the signed push inbox converge on the same run.
+  const key =
+    trigger.eventName === "push" && trigger.revision
+      ? createHash("sha256")
+          .update(`${workflow.updatedAt.toISOString()}:${trigger.ref}:${trigger.revision}`)
+          .digest("hex")
+      : trigger.key;
+  const idempotencyKey = `${workflow.id}:${trigger.eventName}:${key}`;
+  const existing = await repos.actions.runByKey(ctx.organizationId, idempotencyKey);
+  if (existing) {
+    if (trigger.requiredBranch) assertRequiredPushWorkflow(existing.plan, trigger.requiredBranch);
+    return existing;
+  }
+  if (!workflow.enabled)
+    throw new AppError("This workflow is disabled", 409, "ACTIONS_WORKFLOW_DISABLED");
+  if (trigger.untrusted && !workflow.allowForks)
+    throw new AppError(
+      "Fork pull requests are disabled for this workflow",
+      409,
+      "ACTIONS_FORK_DISABLED",
+    );
+  const { source, ref, revision, repository, defaultBranch } = await resolveActionSource(
+    ctx,
+    workflow,
+    trigger,
+  );
   const plan = await parseActionWorkflow(source, workflow.path);
-  if (!workflow.source && ref === `refs/heads/${repo.default_branch}`)
+  if (!workflow.owner) validateStandaloneWorkflow(source, plan);
+  if (trigger.requiredBranch) assertRequiredPushWorkflow(plan, trigger.requiredBranch);
+  if (!workflow.source && ref === `refs/heads/${defaultBranch}`)
     await repos.actions.refreshDefinition(
       workflow.organizationId,
       workflow.id,
@@ -251,6 +351,11 @@ export async function triggerActionWorkflow(
     );
   if (!(trigger.eventName in plan.triggers))
     throw new ValidationError(`This workflow does not declare on: ${trigger.eventName}`);
+  if (trigger.eventName === "repository_dispatch") {
+    const types = record(plan.triggers.repository_dispatch).types;
+    if (Array.isArray(types) && !types.includes(trigger.event?.action))
+      throw new ValidationError("This webhook event type is not enabled in the workflow");
+  }
   if (
     trigger.eventName === "schedule" &&
     !(
@@ -265,14 +370,14 @@ export async function triggerActionWorkflow(
     trigger.eventName === "workflow_dispatch" ? dispatchInputs(source, trigger.inputs ?? {}) : {};
   const event = {
     ...trigger.event,
-    repository: { ...repo, ...record(trigger.event?.repository) },
+    ...(repository && { repository: { ...record(trigger.event?.repository), ...repository } }),
     inputs,
   };
   const concurrency = actionConcurrency(plan.concurrency, {
     github: {
       event,
       event_name: trigger.eventName,
-      repository: `${workflow.owner}/${workflow.repo}`,
+      repository: workflow.owner ? `${workflow.owner}/${workflow.repo}` : "",
       ref,
       sha: revision,
       workflow: plan.name,
@@ -282,7 +387,9 @@ export async function triggerActionWorkflow(
   });
   const group = concurrency
     ? createHash("sha256")
-        .update(`${workflow.owner}/${workflow.repo}:${concurrency.group}`)
+        .update(
+          `${workflow.owner ? `${workflow.owner}/${workflow.repo}` : workflow.id}:${concurrency.group}`,
+        )
         .digest("hex")
     : null;
   return repos.actions.createRun({
@@ -307,7 +414,9 @@ export async function triggerActionWorkflow(
       owner: workflow.owner,
       repo: workflow.repo,
       path: workflow.path,
-      defaultBranch: repo.default_branch,
+      defaultBranch,
+      workflowVersion: workflow.updatedAt.toISOString(),
+      ...(trigger.sourceJob && { sourceJob: trigger.sourceJob }),
       runnerIds: workflow.runnerIds,
       variables: trigger.untrusted ? {} : workflow.variables,
       secrets: trigger.untrusted ? {} : workflow.secrets,

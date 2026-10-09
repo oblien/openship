@@ -364,6 +364,8 @@ export interface CloudResourceCustom {
 }
 
 export interface DeploymentConfig {
+  /** Explicitly staged Actions links and future push deployment rules. */
+  actions?: Pick<import("@repo/contracts").ActionProjectPolicy, "mode" | "workflowIds" | "requiredWorkflowIds">;
   /** Existing deployable environment to update/deploy, when launched from a project page. */
   projectId?: string;
   /** One-click catalog app (repo-less services project). Deploys from its saved

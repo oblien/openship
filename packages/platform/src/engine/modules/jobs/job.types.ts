@@ -23,6 +23,19 @@ export interface CommandConfig {
   secrets?: Record<string, string>;
 }
 
+export interface WorkflowJobConfig {
+  workflowId: string;
+  inputs: Record<string, string>;
+  /** Captured by the operation, never accepted or exposed by the API. */
+  authority: import("@repo/core").ExecutionAuthority;
+}
+
+export function workflowJobConfig(row: { actionType: string; actionConfig: unknown }): WorkflowJobConfig | null {
+  if (row.actionType !== "workflow") return null;
+  const config = row.actionConfig as WorkflowJobConfig | null;
+  return config?.workflowId && config.authority?.organizationId ? config : null;
+}
+
 export const JOB_RUN_STATES = ["running", "success", "failed"] as const;
 export type JobRunState = (typeof JOB_RUN_STATES)[number];
 

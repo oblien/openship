@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **482 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **488 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -17,6 +17,9 @@ The current API has **482 unique tools**. Permission tags below describe the rou
 | `delete_actions_workflows_by_id`<br />`DELETE /api/actions/workflows/:id` | Disable a workflow while retaining its execution history. | `job:write` |
 | `get_actions_discover`<br />`GET /api/actions/discover` | Discover workflow files in a repository. | `job:read` |
 | `get_actions_jobs_by_id_events`<br />`GET /api/actions/jobs/:id/events` | Read masked job logs after a durable cursor. Resume with next after reconnecting. | `job:read` |
+| `get_actions_project`<br />`GET /api/actions/project` | Read project workflows and deployment automation. | `job:read` |
+| `get_actions_projects`<br />`GET /api/actions/projects` | List projects available for linking to workflows. | `job:read` |
+| `get_actions_repository_source`<br />`GET /api/actions/repository-source` | Read a repository workflow and preview its topology. | `job:read` |
 | `get_actions_runners`<br />`GET /api/actions/runners` | List Actions runners and their verified OS, architecture and Docker capabilities. | `job:read` |
 | `get_actions_runs`<br />`GET /api/actions/runs` | List durable workflow runs and their job states. | `job:read` |
 | `get_actions_runs_by_id`<br />`GET /api/actions/runs/:id` | Read workflow topology, jobs, outputs and completion. | `job:read` |
@@ -26,6 +29,7 @@ The current API has **482 unique tools**. Permission tags below describe the rou
 | `patch_actions_runners_by_id`<br />`PATCH /api/actions/runners/:id` | Update an idle runner's configuration. | `job:admin` |
 | `patch_actions_workflows_by_id`<br />`PATCH /api/actions/workflows/:id` | Update an Actions workflow's configuration. | `job:write` |
 | `post_actions_preview`<br />`POST /api/actions/preview` | Validate workflow YAML and preview its dependency graph without executing it. | `job:read` |
+| `post_actions_project_requests`<br />`POST /api/actions/project/requests` | Retry or cancel a project's pending Actions deployment approval. | `job:write` |
 | `post_actions_runners`<br />`POST /api/actions/runners` | Enable Actions on an authorized server. Native runners execute trusted workflow code as the server's connected user. | `job:admin` |
 | `post_actions_runners_by_id_probe`<br />`POST /api/actions/runners/:id/probe` | Recheck an authorized runner's capabilities. | `job:admin` |
 | `post_actions_runners_inspect`<br />`POST /api/actions/runners/inspect` | Check OS, architecture, Git and Docker on an authorized Actions destination without changing the server. | `job:admin` |
@@ -35,6 +39,8 @@ The current API has **482 unique tools**. Permission tags below describe the rou
 | `post_actions_runs_by_id_rerun`<br />`POST /api/actions/runs/:id/rerun` | Retry the same immutable workflow and commit as a new attempt. | `job:write` |
 | `post_actions_workflows`<br />`POST /api/actions/workflows` | Configure an Actions workflow and its authorized runner destinations. Secrets are encrypted and never returned. | `job:write` |
 | `post_actions_workflows_by_id_dispatch`<br />`POST /api/actions/workflows/:id/dispatch` | Dispatch a workflow using an idempotency key and an immutable resolved commit. | `job:write` |
+| `put_actions_project`<br />`PUT /api/actions/project` | Configure required workflow checks before automatic project deployment. | `job:write` |
+| `put_actions_repository_source`<br />`PUT /api/actions/repository-source` | Commit reviewed workflow YAML to its branch using the expected file SHA. | `job:write` |
 
 ### analytics
 

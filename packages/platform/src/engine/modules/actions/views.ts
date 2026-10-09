@@ -6,6 +6,7 @@ export function actionPlanView(plan: ActionWorkflowPlan) {
   return {
     name: plan.name,
     triggers: Object.keys(plan.triggers),
+    triggerRules: plan.triggers,
     jobs: plan.jobs.map(({ id, name, needs, runsOn, requiresDocker }) => ({
       id,
       name,

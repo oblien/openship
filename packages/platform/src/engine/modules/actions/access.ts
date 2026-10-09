@@ -8,9 +8,16 @@ import { assertJobServersWritable } from "../jobs/job-access";
 
 export async function authorizeActionRepository(
   ctx: ExecutionContext,
-  owner: string,
-  repo: string,
+  owner: string | null,
+  repo: string | null,
 ): Promise<void> {
+  if (!owner && !repo) return;
+  if (!owner || !repo)
+    throw new AppError(
+      "Select a complete repository or use a standalone workflow",
+      400,
+      "ACTIONS_REPOSITORY_INVALID",
+    );
   await assertGitHubRepoAccess(ctx, { owner, repo }, "read");
   const base = await resolveGitHubApiBaseUrl(ctx.organizationId, owner);
   // The pinned execution engine is configured for github.com. Never give a

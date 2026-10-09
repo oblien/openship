@@ -4,7 +4,7 @@ import { param } from "../../lib/controller-helpers";
 import { operationContext, operationData } from "../../lib/operation-context";
 const actions = () => getPlatformKernel().actions;
 export async function list(c: Context) {
-  return c.json({ data: await operationData(c, actions().list(operationContext(c))) });
+  return c.json({ data: await operationData(c, actions().list(operationContext(c), { projectId: c.req.query("projectId") })) });
 }
 export async function create(c: Context) {
   return c.json({
@@ -17,6 +17,7 @@ export async function listRuns(c: Context) {
       c,
       actions().listRuns(operationContext(c), {
         workflowId: c.req.query("workflowId"),
+        projectId: c.req.query("projectId"),
         limit: c.req.query("limit") === undefined ? undefined : Number(c.req.query("limit")),
       }),
     ),
@@ -59,6 +60,23 @@ export async function get(c: Context) {
   return c.json({
     data: await operationData(c, actions().get(operationContext(c), param(c, "id"))),
   });
+}
+export async function repositorySource(c: Context) {
+  return c.json({ data: await operationData(c, actions().repositorySource(operationContext(c), {
+    owner: c.req.query("owner") ?? "", repo: c.req.query("repo") ?? "", ref: c.req.query("ref") ?? "", path: c.req.query("path") ?? "",
+  })) });
+}
+export async function updateRepositorySource(c: Context) {
+  return c.json({ data: await operationData(c, actions().updateRepositorySource(operationContext(c), await c.req.json())) });
+}
+export async function projects(c: Context) {
+  return c.json({ data: await operationData(c, actions().projects(operationContext(c))) });
+}
+export async function projectPolicy(c: Context) {
+  return c.json({ data: await operationData(c, actions().projectPolicy(operationContext(c), { projectId: c.req.query("projectId") ?? "" })) });
+}
+export async function updateProjectPolicy(c: Context) {
+  return c.json({ data: await operationData(c, actions().updateProjectPolicy(operationContext(c), await c.req.json())) });
 }
 export async function update(c: Context) {
   return c.json({
@@ -142,4 +160,8 @@ export async function jobEvents(c: Context) {
       }),
     ),
   });
+}
+
+export async function updateDeploymentRequest(c: Context) {
+  return c.json({ data: await operationData(c, actions().updateDeploymentRequest(operationContext(c), await c.req.json())) });
 }

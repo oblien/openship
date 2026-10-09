@@ -503,6 +503,7 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("project_owner_unique").on(table.id, table.organizationId),
     check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`),
     foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),
     foreignKey({ columns: [table.serverId, table.workspaceId, table.organizationId], foreignColumns: [servers.id, servers.workspaceId, servers.organizationId], name: "project_server_workspace_fk" }).onDelete("restrict"),

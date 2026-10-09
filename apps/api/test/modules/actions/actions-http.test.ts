@@ -5,8 +5,23 @@ import { createHmac } from "node:crypto";
 import { initPlatform, resetPlatform, type CommandExecutor } from "@repo/adapters";
 import { generateId } from "@repo/core";
 import { eq } from "@repo/db";
-import { seedOwner, seedServer, db, schema, repos, type SeededOwner } from "../jobs/_harness";
+import {
+  seedOwner,
+  seedServer,
+  installFakeRunner,
+  db,
+  schema,
+  repos,
+  type SeededOwner,
+} from "../jobs/_harness";
 
+const traffic = vi.hoisted(() => ({
+  requests: [] as Array<{ url: string; method?: string; params?: Record<string, unknown> }>,
+}));
+vi.mock("@repo/platform/engine/modules/github/github.service", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/modules/github/github.service")>()),
+  resolveWebhookStrategy: async () => "app",
+}));
 vi.mock("@repo/platform/engine/config/env", async (original) => {
   const actual = await original<typeof import("@repo/platform/engine/config/env")>();
   return {
@@ -28,7 +43,22 @@ vi.mock("@repo/platform/engine/lib/server-execution", async (original) => ({
 }));
 vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.auth")>()),
-  githubFetch: async ({ url }: { url: string }) => {
+  githubFetch: async (input: {
+    url: string;
+    method?: string;
+    params?: Record<string, unknown>;
+  }) => {
+    const { url, method } = input;
+    traffic.requests.push(input);
+    if (url.includes("/contents/"))
+      return method === "PUT"
+        ? { content: { sha: "d".repeat(40) }, commit: { sha: "c".repeat(40) } }
+        : {
+            sha: "b".repeat(40),
+            size: source.length,
+            content: Buffer.from(source).toString("base64"),
+            download_url: null,
+          };
     if (url.includes("/git/matching-refs/heads/")) return [{ ref: "refs/heads/main" }];
     if (url.includes("/commits/")) return { sha: "a".repeat(40) };
     if (url.match(/\/repos\/acme\/app$/))
@@ -36,6 +66,7 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
     throw new Error(`Unexpected GitHub fixture request ${url}`);
   },
 }));
+import { jobRoutes } from "../../../src/modules/jobs/job.routes";
 import { actionRoutes } from "../../../src/modules/actions/action.routes";
 import {
   actionRuntimeRoutes,
@@ -68,10 +99,12 @@ app.use("*", (c, next) => {
 });
 app.onError(handleApiError);
 app.route("/api/actions", actionRoutes);
+app.route("/api/jobs", jobRoutes);
 app.route("/api/actions/runtime", actionRuntimeRoutes);
 app.route("/twirp", actionTwirpRoutes);
 app.route("/api/webhooks", webhookRoutes);
 beforeAll(async () => {
+  installFakeRunner();
   await initPlatform({ target: "selfhosted", runtime: "docker" });
   registerWebhookProvider(githubWebhookProvider);
 });
@@ -109,7 +142,12 @@ async function clients(owner: SeededOwner) {
     token: owner.token,
     fetch: ((url, init) => app.request(url as string, init)) as typeof fetch,
   });
-  return { native: native.actions, remote: remote.actions };
+  return {
+    native: native.actions,
+    remote: remote.actions,
+    nativeJobs: native.jobs,
+    remoteJobs: remote.jobs,
+  };
 }
 async function fixture() {
   const owner = await seedOwner();
@@ -185,15 +223,13 @@ describe("Actions HTTP, native SDK and authorization", () => {
     const b = await clients(bob);
     const run = await f.native.dispatch(f.workflow.id, { idempotencyKey: "tenant-run-one" });
     const jobId = generateId("ajob");
-    await db
-      .insert(schema.actionJob)
-      .values({
-        id: jobId,
-        runId: run.id,
-        organizationId: f.owner.orgId,
-        jobKey: "test",
-        matrixIndex: 0,
-      });
+    await db.insert(schema.actionJob).values({
+      id: jobId,
+      runId: run.id,
+      organizationId: f.owner.orgId,
+      jobKey: "test",
+      matrixIndex: 0,
+    });
     for (const client of [b.native, b.remote]) {
       expect(await client.list()).toEqual([]);
       expect(await client.listRuns()).toEqual([]);
@@ -288,15 +324,13 @@ describe("Actions HTTP, native SDK and authorization", () => {
   it("durably accepts only App-signed repository deliveries and prevents duplicate runs", async () => {
     const f = await fixture();
     const installationId = 912345;
-    await db
-      .insert(schema.gitInstallation)
-      .values({
-        id: generateId("git"),
-        userId: f.owner.userId,
-        organizationId: f.owner.orgId,
-        owner: "acme",
-        installationId,
-      });
+    await db.insert(schema.gitInstallation).values({
+      id: generateId("git"),
+      userId: f.owner.userId,
+      organizationId: f.owner.orgId,
+      owner: "acme",
+      installationId,
+    });
     await f.remote.update(f.workflow.id, {
       ...f.input,
       source: source.replace("on: workflow_dispatch", "on: [push, workflow_dispatch]"),
@@ -382,15 +416,13 @@ describe("Actions HTTP, native SDK and authorization", () => {
         distribution: null,
       },
     });
-    await db
-      .insert(schema.gitInstallation)
-      .values({
-        id: generateId("git"),
-        userId: f.owner.userId,
-        organizationId: f.owner.orgId,
-        owner: "acme",
-        installationId,
-      });
+    await db.insert(schema.gitInstallation).values({
+      id: generateId("git"),
+      userId: f.owner.userId,
+      organizationId: f.owner.orgId,
+      owner: "acme",
+      installationId,
+    });
     await f.remote.update(f.workflow.id, {
       ...f.input,
       runnerIds: [cloud.id],
@@ -443,5 +475,307 @@ describe("Actions HTTP, native SDK and authorization", () => {
     await expect(resolveExecutionAuthority(saved, "retry-trigger")).rejects.toMatchObject({
       statusCode: 401,
     });
+  });
+});
+
+async function projectFor(owner: SeededOwner) {
+  const groupId = generateId("app"),
+    id = generateId("proj");
+  await db
+    .insert(schema.projectGroup)
+    .values({ id: groupId, organizationId: owner.orgId, name: "App", slug: groupId });
+  await db
+    .insert(schema.project)
+    .values({
+      id,
+      groupId,
+      organizationId: owner.orgId,
+      name: "App",
+      slug: id,
+      gitOwner: "acme",
+      gitRepo: "app",
+      gitBranch: "main",
+      gitUrl: "https://github.com/acme/app.git",
+    });
+  return id;
+}
+
+describe("Actions project, repository and Jobs integration", () => {
+  it("runs standalone YAML with validated manual inputs and authenticated webhooks without requesting GitHub", async () => {
+    const f = await fixture();
+    const before = traffic.requests.length;
+    const workflow = await f.remote.create({
+      ...f.input,
+      owner: null,
+      repo: null,
+      path: ".openship/workflows/automation.yml",
+      source: source.replace(
+        "on: workflow_dispatch",
+        "on:\n  workflow_dispatch:\n    inputs:\n      version:\n        type: string\n        required: true\n  repository_dispatch:\n    types: [release]",
+      ),
+    });
+    await expect(
+      f.remote.dispatch(workflow.id, { idempotencyKey: "missing-input" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    const run = await f.remote.dispatch(workflow.id, {
+      inputs: { version: "v1" },
+      idempotencyKey: "standalone-once",
+    });
+    expect(run).toMatchObject({ owner: null, repo: null, status: "queued" });
+    expect(run.revision).toMatch(/^[a-f0-9]{64}$/);
+    const webhook = await f.remote.dispatch(workflow.id, {
+      eventType: "release",
+      clientPayload: { version: "v2" },
+      idempotencyKey: "release-id",
+    });
+    expect(
+      (
+        await f.remote.dispatch(workflow.id, {
+          eventType: "release",
+          clientPayload: { version: "v2" },
+          idempotencyKey: "release-id",
+        })
+      ).id,
+    ).toBe(webhook.id);
+    expect((await repos.actions.run(f.owner.orgId, webhook.id))?.event).toMatchObject({
+      action: "release",
+      client_payload: { version: "v2" },
+    });
+    await expect(
+      f.remote.dispatch(workflow.id, { eventType: "unknown", idempotencyKey: "wrong-event" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      f.remote.dispatch(workflow.id, {
+        ref: "other",
+        inputs: { version: "v1" },
+        idempotencyKey: "no-branch",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(traffic.requests).toHaveLength(before);
+    expect(
+      (
+        await app.request(`/api/actions/workflows/${workflow.id}/dispatch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType: "release", idempotencyKey: "anonymous-event" }),
+        })
+      ).status,
+    ).toBe(401);
+    await expect(
+      f.remote.create({
+        ...f.input,
+        owner: null,
+        repo: null,
+        source: source.replace("on: workflow_dispatch", "on: push"),
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("reuses a workflow across projects and conceals foreign project links", async () => {
+    const f = await fixture(),
+      other = await seedOwner();
+    const first = await projectFor(f.owner),
+      second = await projectFor(f.owner),
+      foreign = await projectFor(other);
+    await f.remote.update(f.workflow.id, { ...f.input, projectIds: [first, second] });
+    expect((await f.native.list({ projectId: first })).map((w) => w.id)).toEqual([f.workflow.id]);
+    expect((await f.remote.get(f.workflow.id)).projectIds?.sort()).toEqual([first, second].sort());
+    expect((await f.remote.projectPolicy({ projectId: first })).mode).toBe("manual");
+    await expect(
+      f.remote.update(f.workflow.id, { ...f.input, projectIds: [foreign] }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const otherClient = await clients(other);
+    await expect(otherClient.remote.list({ projectId: first })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      otherClient.remote.updateProjectPolicy({
+        projectId: first,
+        mode: "manual",
+        workflowIds: [],
+        requiredWorkflowIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("validates required push checks and changes deployment policy atomically", async () => {
+    const f = await fixture(),
+      projectId = await projectFor(f.owner);
+    await db
+      .insert(schema.gitInstallation)
+      .values({
+        id: generateId("git"),
+        userId: f.owner.userId,
+        organizationId: f.owner.orgId,
+        owner: "acme",
+        installationId: 912399,
+      });
+    const policy = {
+      projectId,
+      mode: "actions" as const,
+      workflowIds: [f.workflow.id],
+      requiredWorkflowIds: [f.workflow.id],
+    };
+    await expect(f.remote.updateProjectPolicy(policy)).rejects.toMatchObject({ statusCode: 400 });
+    expect((await repos.project.findById(projectId))?.autoDeploy).toBe(false);
+    await f.remote.update(f.workflow.id, {
+      ...f.input,
+      source: source.replace("on: workflow_dispatch", "on:\n  push:\n    paths: [src/**]"),
+    });
+    await expect(f.remote.updateProjectPolicy(policy)).rejects.toMatchObject({ statusCode: 400 });
+    await f.remote.update(f.workflow.id, {
+      ...f.input,
+      source: source.replace("on: workflow_dispatch", "on: [push, workflow_dispatch]"),
+    });
+    expect(await f.remote.updateProjectPolicy(policy)).toMatchObject({
+      project: { id: projectId },
+      mode: policy.mode,
+      workflowIds: policy.workflowIds,
+      requiredWorkflowIds: policy.requiredWorkflowIds,
+    });
+    expect((await repos.project.findById(projectId))?.autoDeploy).toBe(true);
+    await expect(
+      f.remote.update(f.workflow.id, { ...f.input, projectIds: [] }),
+    ).rejects.toMatchObject({ code: "ACTIONS_WORKFLOW_REQUIRED" });
+    expect(
+      await f.remote.updateProjectPolicy({ ...policy, mode: "manual", requiredWorkflowIds: [] }),
+    ).toMatchObject({ mode: "manual", requiredWorkflowIds: [] });
+  });
+
+  it("edits a repository file with its expected SHA and requires repository write permission", async () => {
+    const f = await fixture();
+    const input = { owner: "acme", repo: "app", ref: "main", path: f.workflow.path };
+    const read = await f.remote.repositorySource(input);
+    expect(read).toMatchObject({ source, sha: "b".repeat(40), error: null });
+    await f.remote.updateRepositorySource({ ...input, sha: read.sha, source });
+    expect(traffic.requests.at(-1)).toMatchObject({
+      method: "PUT",
+      params: { sha: read.sha, branch: "main", content: Buffer.from(source).toString("base64") },
+    });
+    const count = traffic.requests.length;
+    await expect(
+      f.remote.updateRepositorySource({ ...input, sha: read.sha, source: "not yaml workflow" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(traffic.requests).toHaveLength(count);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.userId, f.owner.userId));
+    for (const [resourceType, resourceId, permissions] of [
+      ["job", "*", ["admin"]],
+      ["github_repository", "acme/app", ["read"]],
+    ] as const)
+      await repos.resourceGrant.upsert({
+        organizationId: f.owner.orgId,
+        userId: f.owner.userId,
+        resourceType,
+        resourceId,
+        permissions: [...permissions],
+        grantedByUserId: null,
+      });
+    await expect(
+      f.remote.updateRepositorySource({ ...input, sha: read.sha, source }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it("retries a partial Jobs handoff without duplicating a previously accepted dependent", async () => {
+    const f = await fixture();
+    const parent = await f.remoteJobs.create({
+      label: "CI",
+      workflowId: f.workflow.id,
+      scheduleType: "manual",
+    });
+    const first = await f.remoteJobs.create({
+      label: "Publish",
+      workflowId: f.workflow.id,
+      scheduleType: "manual",
+      dependsOn: [parent.key],
+    });
+    const second = await f.remoteJobs.create({
+      label: "Notify",
+      workflowId: f.workflow.id,
+      scheduleType: "manual",
+      dependsOn: [parent.key],
+    });
+    const started = await f.remoteJobs.run(parent.key);
+    await db
+      .update(schema.actionRun)
+      .set({ status: "success", finishedAt: new Date() })
+      .where(eq(schema.actionRun.id, started.runId!));
+    const run = (await repos.actions.run(f.owner.orgId, started.runId!))!;
+    const { workflowJobCompleted } =
+      await import("@repo/platform/engine/modules/jobs/job-workflow");
+    const createRun = repos.actions.createRun;
+    let unavailable = true;
+    const spy = vi.spyOn(repos.actions, "createRun").mockImplementation(async (input) => {
+      if (input.configuration.sourceJob?.key === second.key && unavailable) {
+        unavailable = false;
+        throw new Error("Temporary admission outage");
+      }
+      return createRun(input);
+    });
+    try {
+      await expect(workflowJobCompleted(run)).rejects.toThrow("Temporary admission outage");
+      await workflowJobCompleted(run);
+      await workflowJobCompleted(run);
+      expect(await f.remoteJobs.listRuns(first.key)).toHaveLength(1);
+      expect(await f.remoteJobs.listRuns(second.key)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("runs a scheduled workflow through Jobs and exposes the same Actions execution history", async () => {
+    const f = await fixture();
+    const job = await f.remoteJobs.create({
+      label: "Scheduled CI",
+      workflowId: f.workflow.id,
+      scheduleType: "manual",
+    });
+    expect(job.actionConfig).toEqual({ workflowId: f.workflow.id, inputs: {} });
+    const started = await f.remoteJobs.run(job.key);
+    const run = await f.native.getRun(started.runId!);
+    expect(run.workflowId).toBe(f.workflow.id);
+    expect(await repos.jobRun.findById(run.id)).toBeUndefined();
+    expect(await f.remoteJobs.getRun(run.id)).toMatchObject({
+      id: run.id,
+      kind: "workflow",
+      status: "running",
+    });
+    expect((await f.nativeJobs.listRuns(job.key)).map((r) => r.id)).toEqual([run.id]);
+    await db
+      .update(schema.actionRun)
+      .set({ status: "success", finishedAt: new Date() })
+      .where(eq(schema.actionRun.id, run.id));
+    expect((await f.remoteJobs.get(job.key)).lastRun).toMatchObject({
+      id: run.id,
+      status: "success",
+    });
+    const foreign = await clients(await seedOwner());
+    expect((await foreign.remoteJobs.list()).some((row) => row.key === job.key)).toBe(false);
+    await expect(foreign.remoteJobs.run(job.key)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(foreign.remoteJobs.getRun(run.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(f.remoteJobs.update(job.key, { command: "echo bypass" })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(
+      f.remoteJobs.create({
+        label: "Mixed action",
+        workflowId: f.workflow.id,
+        command: "echo unexpected",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    // Execution delegation stays revocable after the schedule is saved.
+    const stored = (await repos.actions.workflow(f.owner.orgId, f.workflow.id))!;
+    await db
+      .update(schema.personalAccessToken)
+      .set({ revokedAt: new Date() })
+      .where(eq(schema.personalAccessToken.id, stored.authority.token!.id));
+    await expect(
+      (await import("@repo/platform/engine/modules/jobs/job-workflow")).startWorkflowJob(
+        (await repos.job.findByKey(job.key))!,
+        "schedule",
+      ),
+    ).rejects.toMatchObject({ statusCode: 401 });
   });
 });

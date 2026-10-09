@@ -1240,6 +1240,13 @@
       "when": 1791569000001,
       "tag": "0176_actions_runner_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1791581000000,
+      "tag": "0177_actions_project_integration",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { useState, useEffect, useRef } from "react";
-import { GITHUB_SOURCES_CHANGED_EVENT, githubApi } from "@/lib/api";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { GITHUB_SOURCES_CHANGED_EVENT, githubApi, getApiErrorMessage } from "@/lib/api";
 import type { GitHubRepo } from "@/context/GitHubContext";
 import type { VisibilityFilter, SortBy } from "./types";
 
@@ -34,6 +34,8 @@ export interface LibraryReposState {
   repos: GitHubRepo[];
   meta: RepoPageMeta;
   loading: boolean;
+  error: string | null;
+  refresh: () => void;
   search: string;
   setSearch: (s: string) => void;
   visibility: VisibilityFilter;
@@ -61,6 +63,9 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [meta, setMeta] = useState<RepoPageMeta>(EMPTY_META);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
 
   // Reset to page 1 and drop the previous owner's data the instant `owner`
   // changes — done during render (React's "adjust state on a prop change"
@@ -74,6 +79,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
     setQuery((q) => (q.page === 1 ? q : { ...q, page: 1 }));
     setRepos([]);
     setMeta(EMPTY_META);
+    setError(null);
   }
 
   // Debounce the search term; land the page-1 reset in the same tick as the
@@ -93,6 +99,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
       setRepos([]);
       setMeta(EMPTY_META);
       setLoading(false);
+      setError(null);
       return;
     }
     const load = (force = false) => {
@@ -112,6 +119,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
         )
         .then((res) => {
           if (id !== reqId.current) return; // superseded by a newer request
+          setError(null);
           setRepos((res.data ?? []) as GitHubRepo[]);
           setMeta({
             count: res.count ?? 0,
@@ -125,6 +133,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
         .catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/useLibraryRepos");
           if (id !== reqId.current) return;
+          setError(getApiErrorMessage(diagnosticFailure));
           setRepos([]);
           setMeta(EMPTY_META);
         })
@@ -141,12 +150,14 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
       reqId.current++;
       window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
     };
-  }, [owner, enabled, query.page, query.visibility, query.sort, debouncedSearch]);
+  }, [owner, enabled, query.page, query.visibility, query.sort, debouncedSearch, revision]);
 
   return {
     repos,
     meta,
     loading,
+    error,
+    refresh,
     search: query.search,
     setSearch: (search) => setQuery((q) => ({ ...q, search })),
     visibility: query.visibility,

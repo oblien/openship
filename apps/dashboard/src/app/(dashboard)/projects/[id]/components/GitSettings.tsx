@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -460,16 +461,17 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                     <div className="flex max-w-full shrink-0 flex-col items-end gap-1.5 pt-0.5">
                       <div className="flex items-center gap-2" aria-busy={togglingAuto || undefined}>
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                          {t.projectSettings.gitInfo.autoDeploy}
+                          {t.actions.integration.autoMode}
                           {togglingAuto && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                         </span>
                         <Toggle
                           checked={!!gitData.autoDeployEnabled}
-                          aria-label={t.projectSettings.gitInfo.autoDeploy}
+                          aria-label={t.actions.integration.autoMode}
                           onChange={() => void toggleAutoDeploy()}
                           disabled={disabled}
                         />
                       </div>
+                      <Link href={`/projects/${id}/actions`} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">{t.actions.integration.configureRules}</Link>
                       {cannotReceive && (
                         <div className="max-w-72 space-y-2 text-end">
                           <details className="text-xs text-muted-foreground">

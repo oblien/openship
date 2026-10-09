@@ -64,8 +64,10 @@ function Detail({ id }: { id: string }) {
               </div>
               <p className="mt-2 truncate text-xs text-muted-foreground">
                 <bdi>
-                  {run.owner}/{run.repo} · {run.ref.replace(/^refs\/(heads|tags)\//, "")} ·{" "}
-                  {run.revision.slice(0, 7)} · {run.actor}
+                  {run.owner
+                    ? `${run.owner}/${run.repo} · ${run.ref.replace(/^refs\/(heads|tags)\//, "")}`
+                    : t.actions.integration.standalone}{" "}
+                  · {run.revision.slice(0, 7)} · {run.actor}
                 </bdi>
               </p>
             </div>

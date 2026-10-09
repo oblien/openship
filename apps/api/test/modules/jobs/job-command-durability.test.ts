@@ -46,6 +46,10 @@ vi.mock("@repo/db", () => ({
         if (d.trigger === "dependency") h.dependencyStarts.push(String(d.jobId));
         return { id: `jrun_${h.attempted.length + 1}`, ...d };
       },
+      startOnce: async (d: Record<string, unknown>, id: string) => {
+        if (d.trigger === "dependency") h.dependencyStarts.push(String(d.jobId));
+        return { id, ...d };
+      },
       finish: async (id: string, data: Record<string, unknown>) => {
         h.attempted.push({ id, ...data });
         if (h.dbDown) throw new Error("connection terminated unexpectedly");
@@ -82,6 +86,7 @@ import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/
 
 const cmdJob = (key: string, cfg: Record<string, unknown>) => ({
   key,
+  updatedAt: new Date("2026-10-10T00:00:00Z"),
   scheduleType: "recurring",
   actionType: "command",
   actionConfig: cfg,

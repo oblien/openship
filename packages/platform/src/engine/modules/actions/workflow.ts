@@ -57,7 +57,11 @@ export async function parseActionWorkflow(
         ? Object.fromEntries(raw.on.map((e) => [String(e), {}]))
         : record(raw.on);
   for (const trigger of Object.keys(triggers)) {
-    if (!["push", "pull_request", "workflow_dispatch", "schedule"].includes(trigger))
+    if (
+      !["push", "pull_request", "workflow_dispatch", "schedule", "repository_dispatch"].includes(
+        trigger,
+      )
+    )
       unsupported(`on.${trigger}`);
   }
   if (triggers.schedule !== undefined) {

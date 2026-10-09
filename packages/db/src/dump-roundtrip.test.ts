@@ -154,6 +154,10 @@ async function seedOneRowPerTable(): Promise<Map<string, Record<string, unknown>
     // A project chooses exactly one execution target. Other instance parents
     // still get their own rows and are independently round-tripped.
     if (spec.sqlName === "project") { row.clusterId = null; }
+    // A standalone workflow has nullable repository fields but must carry its YAML.
+    if (spec.sqlName === "action_workflow") {
+      row.source = "name: Automation\non: workflow_dispatch\njobs:\n  run:\n    runs-on: self-hosted\n    steps:\n      - run: echo restored\n";
+    }
     await db.insert(spec.table).values(row as never);
 
     const bySqlColumn: Record<string, unknown> = {};

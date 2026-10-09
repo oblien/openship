@@ -1,4 +1,4 @@
-import { actionFinished, NotFoundError } from "@repo/core";
+import { actionFinished, NotFoundError, ValidationError } from "@repo/core";
 import { repos } from "@repo/db";
 import type { ActionDependencies } from "../../../actions";
 import type { ExecutionContext } from "../../../context";
@@ -15,6 +15,14 @@ import { actionPlanView, actionRunnerView, actionRunView, actionWorkflowView } f
 import { parseActionWorkflow } from "./workflow";
 import { inspectActionDestination, probeActionRunner, saveActionRunner } from "./runner.service";
 import { actionArtifacts, actionArtifactDownload } from "./storage";
+import {
+  getActionProjectPolicy,
+  updateActionProjectPolicy,
+  listActionProjects,
+  requireActionProject,
+  visibleWorkflowProjectIds,
+} from "./project.service";
+import { readActionRepositorySource, updateActionRepositorySource } from "./repository-source";
 
 function record(ctx: ExecutionContext, id: string, operation: string) {
   audit.recordAsync(operationAuditContext(ctx), {
@@ -28,25 +36,45 @@ async function presentRun(ctx: ExecutionContext, id: string) {
   const run = await service.requireActionRun(ctx, id);
   return actionRunView(run, await repos.actions.jobs(ctx.organizationId, id));
 }
+async function presentWorkflow(
+  ctx: ExecutionContext,
+  row: Awaited<ReturnType<typeof service.requireActionWorkflow>>,
+) {
+  return { ...actionWorkflowView(row), projectIds: await visibleWorkflowProjectIds(ctx, row.id) };
+}
 
 export const actionDependencies: ActionDependencies = {
   collection: {
-    async list(ctx) {
+    updateDeploymentRequest: async (ctx, input) => {
+      const result = await (
+        await import("./deployment-gate")
+      ).updateActionDeploymentRequest(ctx, input);
+      record(ctx, input.projectId, `deployment-${input.action}`);
+      return result;
+    },
+    async list(ctx, input = {}) {
+      if (input.projectId) await requireActionProject(ctx, input.projectId);
       const result = [];
-      for (const row of await repos.actions.listWorkflows(ctx.organizationId))
+      for (const row of await repos.actions.listWorkflows(ctx.organizationId, input.projectId))
         if (await visibleAction(() => authorizeActionWorkflow(ctx, row)))
-          result.push(actionWorkflowView(row));
+          result.push(await presentWorkflow(ctx, row));
       return result;
     },
     async create(ctx, input) {
       const row = await service.saveActionWorkflow(ctx, input);
       record(ctx, row.id, "create");
-      return actionWorkflowView(row);
+      return presentWorkflow(ctx, row);
     },
     async listRuns(ctx, input = {}) {
       if (input.workflowId) await service.requireActionWorkflow(ctx, input.workflowId);
+      if (input.projectId) await requireActionProject(ctx, input.projectId);
       const result = [];
-      for (const run of await repos.actions.runs(ctx.organizationId, input.workflowId, input.limit))
+      for (const run of await repos.actions.runs(
+        ctx.organizationId,
+        input.workflowId,
+        input.limit,
+        input.projectId,
+      ))
         if (await visibleAction(() => authorizeActionRun(ctx, run)))
           result.push(actionRunView(run, await repos.actions.jobs(ctx.organizationId, run.id)));
       return result;
@@ -69,15 +97,28 @@ export const actionDependencies: ActionDependencies = {
     },
     discover: (ctx, input) =>
       service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref),
+    repositorySource: readActionRepositorySource,
+    async updateRepositorySource(ctx, input) {
+      const result = await updateActionRepositorySource(ctx, input);
+      record(ctx, `${input.owner}/${input.repo}/${input.path}`, "update-source");
+      return result;
+    },
+    projects: listActionProjects,
+    projectPolicy: (ctx, input) => getActionProjectPolicy(ctx, input.projectId),
+    async updateProjectPolicy(ctx, input) {
+      const result = await updateActionProjectPolicy(ctx, input);
+      record(ctx, input.projectId, "deployment-policy");
+      return result;
+    },
   },
   resources: {
     async get(ctx, id) {
-      return actionWorkflowView(await service.requireActionWorkflow(ctx, id));
+      return presentWorkflow(ctx, await service.requireActionWorkflow(ctx, id));
     },
     async update(ctx, id, input) {
       const row = await service.saveActionWorkflow(ctx, input, id);
       record(ctx, id, "update");
-      return actionWorkflowView(row);
+      return presentWorkflow(ctx, row);
     },
     async remove(ctx, id) {
       await service.requireActionWorkflow(ctx, id, true);
@@ -88,8 +129,17 @@ export const actionDependencies: ActionDependencies = {
     async dispatch(ctx, id, input) {
       assertNativeJobs();
       const workflow = await service.requireActionWorkflow(ctx, id, true);
+      if (input.clientPayload && !input.eventType)
+        throw new ValidationError("clientPayload requires an eventType");
+      if (input.eventType && input.inputs)
+        throw new ValidationError("Webhook events use clientPayload; manual runs use inputs");
+      if (Buffer.byteLength(JSON.stringify(input.clientPayload ?? {})) > 65536)
+        throw new ValidationError("Webhook payload exceeds 64 KiB");
       const run = await service.triggerActionWorkflow(ctx, workflow, {
-        eventName: "workflow_dispatch",
+        eventName: input.eventType ? "repository_dispatch" : "workflow_dispatch",
+        event: input.eventType
+          ? { action: input.eventType, client_payload: input.clientPayload ?? {} }
+          : undefined,
         key: input.idempotencyKey,
         ref: input.ref,
         inputs: input.inputs,

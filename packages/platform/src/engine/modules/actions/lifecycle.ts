@@ -14,7 +14,10 @@ let poolsReady = false;
 let retentionAt = 0;
 
 export async function assertActionsTransferReady(): Promise<void> {
-  if (await repos.actions.unsettledRunCount())
+  if (
+    (await repos.actions.unsettledRunCount()) ||
+    (await repos.actions.pendingActionDeploymentCount())
+  )
     throw new AppError(
       "Finish or cancel active Actions runs before moving this instance. Their artifact connections must stay on the current controller until cleanup finishes.",
       409,
@@ -54,6 +57,8 @@ export function startActionController(): void {
         if (abort.signal.aborted) return;
         await (await import("./triggers")).actionWebhookInbox.tick();
         await actionController.tick(abort.signal);
+        if (!abort.signal.aborted)
+          await (await import("./deployment-gate")).actionDeploymentController.tick();
       })().catch((error) => diagnostics.warn("actions/controller", "Actions sweep failed", error)),
     );
     void current.finally(() => {

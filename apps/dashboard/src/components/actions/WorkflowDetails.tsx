@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import type { ActionWorkflowView } from "@repo/contracts";
 import { actionsApi } from "@/lib/api/actions";
+import { getApiBaseUrl } from "@/lib/api/client";
+import { WorkflowInputs, workflowInputDefaults } from "./WorkflowInputs";
+import { workflowEventConfig } from "./workflow-yaml";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
 import { ActionField } from "./ActionField";
@@ -25,7 +26,7 @@ function Dispatch({ workflow }: { workflow: ActionWorkflowView }) {
   const mutation = useActionMutation();
   const [ref, setRef] = useState(workflow.ref);
   const [inputs, setInputs] = useState<Record<string, string>>(() =>
-    Object.fromEntries(workflow.plan.inputs.map((input) => [input.name, input.default])),
+    workflowInputDefaults(workflow.plan.inputs),
   );
   const [key, setKey] = useState(() => crypto.randomUUID());
   return (
@@ -41,54 +42,27 @@ function Dispatch({ workflow }: { workflow: ActionWorkflowView }) {
     >
       <h2 className="text-sm font-semibold">{a.run}</h2>
       <ActionError message={mutation.error} />
-      <ActionField label={a.ref}>
-        <Input
-          variant="filled"
-          value={ref}
-          required
-          onChange={(event) => {
-            setRef(event.target.value);
-            setKey(crypto.randomUUID());
-          }}
-        />
-      </ActionField>
-      {workflow.plan.inputs.map((input) => (
-        <ActionField key={input.name} label={input.name} hint={input.description}>
-          {input.type === "boolean" ? (
-            <Checkbox
-              aria-label={input.name}
-              checked={inputs[input.name] === "true"}
-              onCheckedChange={(value) => {
-                setInputs((previous) => ({ ...previous, [input.name]: String(value) }));
-                setKey(crypto.randomUUID());
-              }}
-            />
-          ) : input.options.length ? (
-            <CustomSelect
-              aria-label={input.name}
-              variant="filled"
-              triggerClassName="bg-muted/60 hover:bg-muted"
-              value={inputs[input.name] ?? ""}
-              onChange={(value) => {
-                setInputs((previous) => ({ ...previous, [input.name]: value }));
-                setKey(crypto.randomUUID());
-              }}
-              options={input.options.map((value) => ({ value, label: value }))}
-            />
-          ) : (
-            <Input
-              variant="filled"
-              value={inputs[input.name] ?? ""}
-              required={input.required}
-              type={input.type === "number" ? "number" : "text"}
-              onChange={(event) => {
-                setInputs((previous) => ({ ...previous, [input.name]: event.target.value }));
-                setKey(crypto.randomUUID());
-              }}
-            />
-          )}
+      {workflow.owner && (
+        <ActionField label={a.ref}>
+          <Input
+            variant="filled"
+            value={ref}
+            required
+            onChange={(event) => {
+              setRef(event.target.value);
+              setKey(crypto.randomUUID());
+            }}
+          />
         </ActionField>
-      ))}
+      )}
+      <WorkflowInputs
+        definitions={workflow.plan.inputs}
+        values={inputs}
+        onChange={(value) => {
+          setInputs(value);
+          setKey(crypto.randomUUID());
+        }}
+      />
       <Button
         type="submit"
         className="w-full"
@@ -116,6 +90,7 @@ function Detail({ id }: { id: string }) {
       workflow: await actionsApi.get(id),
       runs: await actionsApi.runs(id),
       runners: await actionsApi.runners(),
+      projects: await actionsApi.projects(),
     }),
     [id],
   );
@@ -134,10 +109,15 @@ function Detail({ id }: { id: string }) {
                   {a.back}
                 </Link>
               </Button>
-              <h1 className="text-2xl font-medium tracking-tight text-foreground">{data.workflow.name}</h1>
+              <h1 className="text-2xl font-medium tracking-tight text-foreground">
+                {data.workflow.name}
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 <bdi>
-                  {data.workflow.owner}/{data.workflow.repo} · {data.workflow.path}
+                  {data.workflow.owner
+                    ? `${data.workflow.owner}/${data.workflow.repo}`
+                    : a.integration.standalone}{" "}
+                  · {data.workflow.path}
                 </bdi>
               </p>
             </div>
@@ -158,7 +138,61 @@ function Detail({ id }: { id: string }) {
               </div>
             </div>
             <aside className="space-y-4">
-              <Dispatch workflow={data.workflow} />
+              <Dispatch key={data.workflow.id} workflow={data.workflow} />
+              <section className="space-y-3 rounded-2xl bg-card p-5">
+                <h2 className="text-sm font-semibold">{a.integration.triggers}</h2>
+                <div className="flex flex-wrap gap-2">
+                  {data.workflow.plan.triggers.map((trigger) => (
+                    <code key={trigger} className="rounded-md bg-muted px-2 py-1 text-xs">
+                      {trigger}
+                    </code>
+                  ))}
+                </div>
+                {data.workflow.plan.triggers.includes("workflow_dispatch") && (
+                  <Button asChild variant="secondary" className="w-full">
+                    <Link href={`/jobs/new?workflowId=${encodeURIComponent(id)}`}>
+                      <Icon name="calendar-clock" />
+                      {a.integration.jobTrigger}
+                    </Link>
+                  </Button>
+                )}
+                {data.workflow.plan.triggers.includes("repository_dispatch") && (
+                  <details className="text-sm">
+                    <summary className="cursor-pointer py-1 font-medium">
+                      {a.integration.webhookEndpoint}
+                    </summary>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {a.integration.tokenHint}
+                    </p>
+                    <pre
+                      dir="ltr"
+                      className="mt-3 overflow-x-auto rounded-xl bg-background p-3 text-xs"
+                    >{`POST ${getApiBaseUrl().replace(/\/$/, "")}/actions/workflows/${id}/dispatch
+Authorization: Bearer <API_TOKEN>
+Content-Type: application/json
+
+${JSON.stringify({ eventType: (workflowEventConfig(data.workflow.plan.triggerRules?.repository_dispatch).types as string[] | undefined)?.[0] ?? "release", clientPayload: {}, idempotencyKey: "unique-event-id" }, null, 2)}`}</pre>
+                  </details>
+                )}
+              </section>
+              {!!data.workflow.projectIds?.length && (
+                <section className="space-y-3 rounded-2xl bg-card p-5">
+                  <h2 className="text-sm font-semibold">{a.integration.projects}</h2>
+                  {data.projects
+                    .filter((project) => data.workflow.projectIds?.includes(project.id))
+                    .map((project) => (
+                      <Link
+                        key={project.id}
+                        href={`/projects/${project.id}/actions`}
+                        className="flex items-center gap-2 text-sm font-medium hover:underline"
+                      >
+                        <Icon name="folder" className="size-4 text-muted-foreground" />
+                        <span className="truncate">{project.name}</span>
+                        <Icon name="arrow-right" className="ms-auto size-4 rtl:rotate-180" />
+                      </Link>
+                    ))}
+                </section>
+              )}
               <section className="rounded-2xl bg-card p-5">
                 <h2 className="text-sm font-semibold">{a.destinations}</h2>
                 <div className="mt-4 space-y-3">

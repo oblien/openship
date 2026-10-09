@@ -1285,11 +1285,12 @@ export async function checkNoActiveBuild(projectId: string) {
   }
   if (active) {
     const cancelling = active.status === "cancelled";
-    throw new ForbiddenError(
+    throw new AppError(
       cancelling
         ? `The previous deployment is still finishing cancellation (${active.id}). ` +
             "Wait a few seconds and retry; a parallel redeploy is blocked until its worker stops."
         : `A deployment is already in progress (${active.id}). Cancel it first or wait for it to complete.`,
+      409, "DEPLOYMENT_IN_PROGRESS",
     );
   }
 }
@@ -1302,6 +1303,8 @@ export async function createQueuedDeployment(opts: Parameters<typeof createQueue
 }
 
 async function createQueuedDeploymentUnlocked(opts: {
+  actionRequestId?: string;
+  actionLeaseOwner?: string;
   /** Internal, reviewed resource edit committed with deployment admission. */
   resourceChanges?: DeploymentResourceChanges;
   /** Attribution only; ownership/authorization still comes from organizationId. */
@@ -1438,15 +1441,16 @@ async function createQueuedDeploymentUnlocked(opts: {
 
     // The insert is atomic against the one-active-per-project index: undefined
     // means another deployment won/holds the slot (raced past checkNoActiveBuild,
-    // or a queued/building one already exists). Surface as a 403, same as the
-    // early-rejection path — no error-code/message inspection needed.
-    return repos.deployment.create({
+    // or a queued/building one already exists). Surface the same conflict as the
+    // early-rejection path, so automatic admissions can wait for the slot.
+    const admission: Parameters<typeof repos.deployment.create> = [{
       projectId: opts.projectId,
       organizationId: opts.organizationId,
       branch: opts.branch,
       commitSha: opts.commitSha,
       commitMessage: opts.commitMessage,
       trigger: opts.trigger ?? "manual",
+      actionRequestId: opts.actionRequestId,
       environment: opts.environment,
       framework: opts.framework,
       status: "queued",
@@ -1465,14 +1469,18 @@ async function createQueuedDeploymentUnlocked(opts: {
       forceAll: opts.forceAll ?? false,
       changedPaths: opts.changedPaths ?? null,
       changedPathsTruncated: opts.changedPathsTruncated ?? false,
-    }, ...(opts.resourceChanges ? [opts.resourceChanges] as const : []));
+    }];
+    if (opts.resourceChanges || opts.actionLeaseOwner) admission[1] = opts.resourceChanges;
+    if (opts.actionLeaseOwner) admission[2] = opts.actionLeaseOwner;
+    return repos.deployment.create(...admission);
   };
   const dep = env.CLOUD_MODE
     ? await createProvisionLock(`cloud:service-quota:${opts.organizationId}`).run(insertDeployment)
     : await insertDeployment();
   if (!dep) {
-    throw new ForbiddenError(
+    throw new AppError(
       "Another deployment is already in progress for this project. Wait for it to finish or cancel it.",
+      409, "DEPLOYMENT_IN_PROGRESS",
     );
   }
 
@@ -2563,9 +2571,7 @@ export async function startBuild(deploymentId: string) {
   };
 }
 
-export async function triggerDeployment(
-  ctx: RequestContext,
-  data: {
+export interface DeploymentTriggerInput {
     projectId: string;
     /**
      * Explicit registered-server target for CLI/API deploys. It is resolved by
@@ -2655,13 +2661,26 @@ export async function triggerDeployment(
      * the newest advertised version. Ignored for non-release projects.
      */
     releaseVersion?: string;
-  },
-) {
+  /** Internal Actions admission receipt; public deployment inputs cannot set it. */
+  actionRequestId?: string;
+  actionLeaseOwner?: string;
+  actionEvent?: Record<string, unknown>;
+}
+
+export async function triggerDeployment(ctx: RequestContext, data: DeploymentTriggerInput) {
   const project = await repos.project.findById(data.projectId);
   // Recheck the ownership invariant at the engine boundary too: a project may
   // have moved since application authorization resolved its organization.
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
+  }
+  if (data.actionRequestId) {
+    const existing = await repos.actions.deploymentForActionRequest(ctx.organizationId, data.actionRequestId);
+    if (existing && existing.projectId === project.id) {
+      assertNotControlPlane(project);
+      if (existing.status === "queued") await kickoffBuild(project, existing);
+      return { deployment: existing, skipped: true as const };
+    }
   }
   const environment = resolveDeploymentEnvironment(project, data.environment);
   if (data.serverId) await requireOrgServer(data.serverId, ctx.organizationId);
@@ -2719,6 +2738,11 @@ export async function triggerDeployment(
   // written in the same alphabet. See canonicalizeCommitRef.
   const requestedCommitSha = await canonicalizeCommitRef(ctx, project, data.commitSha);
 
+  if (data.trigger === "webhook") {
+    const request = await (await import("../actions/deployment-gate")).queueActionDeployment(ctx, project, { ...data, branch, commitSha: requestedCommitSha });
+    if (request) return { awaitingActions: request, deployment: undefined, skipped: true as const };
+  }
+
   // Skip an auto (webhook) deploy whose commit is already in-flight or live —
   // closes the App + repo-webhook double-deploy window. Manual/forceAll bypass.
   if (data.trigger === "webhook" && !data.forceAll && requestedCommitSha) {
@@ -2764,11 +2788,14 @@ export async function triggerDeployment(
   }
 
   if (!data.reuseSnapshot && data.trigger !== "rollback") {
-    let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, branch, {
+    // Required checks approve the entire source tree at this commit, including
+    // Compose and lifecycle configuration. Do not re-read those files at HEAD.
+    const sourceRef = data.actionRequestId ? requestedCommitSha! : branch;
+    let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
     });
-    sourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, branch);
+    sourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);
     const sourceEnv = mergeSourceEnvDefaults(encryptedEnvVars, sourceInfo);
     encryptedEnvVars = sourceEnv.encrypted;
     if (sourceEnv.additions.length > 0) {
@@ -3012,6 +3039,8 @@ export async function triggerDeployment(
     commitSha,
     commitMessage,
     trigger: data.trigger ?? "manual",
+    actionRequestId: data.actionRequestId,
+    actionLeaseOwner: data.actionLeaseOwner,
     environment,
     framework: snapshot.framework,
     meta: await metaWithPrevious(snapshot, project),

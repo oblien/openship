@@ -42,6 +42,20 @@ provided encrypted entries; `removeSecrets` explicitly removes named entries.
 `storageDestinationId` selects an authorized backup destination for artifacts and
 cache. Reads return secret names, never their values.
 
+For a standalone workflow, omit `owner` and `repo` and provide `source`. It can run
+manually, on a schedule, from an authenticated webhook, or through a Job without
+GitHub credentials. `actions/checkout` needs an explicit `with.repository` in this mode.
+
+Optional `projectIds` associates a workflow with projects the caller can edit.
+`actions.projectPolicy(projectId)` reads linked workflows and pending deployment requests;
+`actions.updateProjectPolicy(projectId, input)` selects manual, push, or required-check
+deployment. Required workflows must cover every push to the project's branch without
+path filters. Linking workflows alone does not enable automatic deployment.
+
+`dispatch` accepts either declared manual `inputs` or an `eventType` and optional
+`clientPayload` for `repository_dispatch`. Both use normal API authentication and the
+caller's selected organization. See the [webhook example](/docs/guides/actions#triggers-and-jobs).
+
 ## Observe and cancel
 
 ```ts
@@ -72,7 +86,7 @@ Preserve both paths when configuring an external reverse proxy.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| List authorized workflows. | `actions.list()` | `GET /api/actions/workflows`<br />`job:read` |
+| List authorized workflows. | `actions.list(input?)` | `GET /api/actions/workflows`<br />`job:read` |
 | Configure a workflow and its allowed runners. Encrypts secrets without returning their values. | `actions.create(input)` | `POST /api/actions/workflows`<br />`job:write` |
 | Read a workflow definition, runner selection and secret names. | `actions.get(id)` | `GET /api/actions/workflows/:id`<br />`job:read` |
 | Replace workflow configuration while preserving secret values omitted from the update. | `actions.update(id, input)` | `PATCH /api/actions/workflows/:id`<br />`job:write` |
@@ -95,8 +109,8 @@ Preserve both paths when configuring an external reverse proxy.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Dispatch a workflow with a caller idempotency key and resolved immutable commit. | `actions.dispatch(id, input)` | `POST /api/actions/workflows/:id/dispatch`<br />`job:write` |
-| List recent runs, optionally filtered by workflow. | `actions.listRuns(input?)` | `GET /api/actions/runs`<br />`job:read` |
+| Dispatch a manual or authenticated webhook event with an idempotency key and immutable source. | `actions.dispatch(id, input)` | `POST /api/actions/workflows/:id/dispatch`<br />`job:write` |
+| List recent runs, optionally filtered by workflow or linked project. | `actions.listRuns(input?)` | `GET /api/actions/runs`<br />`job:read` |
 | Read durable run, job, matrix and step state. | `actions.getRun(id)` | `GET /api/actions/runs/:id`<br />`job:read` |
 | Request cancellation; runner capacity remains held until cleanup is confirmed. | `actions.cancel(id)` | `POST /api/actions/runs/:id/cancel`<br />`job:write` |
 | Approve an untrusted fork run on disposable runners without secrets or write tokens. | `actions.approve(id)` | `POST /api/actions/runs/:id/approve`<br />`job:admin` |
@@ -109,6 +123,17 @@ Preserve both paths when configuring an external reverse proxy.
 | Read masked job events after a durable sequence cursor. | `actions.jobEvents(id, input?)` | `GET /api/actions/jobs/:id/events`<br />`job:read` |
 | List retained artifacts belonging to an authorized run. | `actions.artifacts(id)` | `GET /api/actions/runs/:id/artifacts`<br />`job:read` |
 | Create a short-lived link for one authorized run artifact. | `actions.artifactDownload(id, input)` | `POST /api/actions/runs/:id/artifacts/download`<br />`job:read` |
+
+### Project integration
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read an authorized workflow file and its GitHub content SHA for review. | `actions.repositorySource(input)` | `GET /api/actions/repository-source`<br />`job:read` |
+| Commit a reviewed workflow change to a branch, guarded by the original content SHA and repository write access. | `actions.updateRepositorySource(input)` | `PUT /api/actions/repository-source`<br />`job:write` |
+| List projects available for workflow associations. | `actions.projects()` | `GET /api/actions/projects`<br />`job:read` |
+| Read linked workflows, required checks and pending deployment requests for a project. | `actions.projectPolicy(input)` | `GET /api/actions/project`<br />`job:read` |
+| Choose manual, push or required-check deployments and link existing workflows. | `actions.updateProjectPolicy(input)` | `PUT /api/actions/project`<br />`job:write` |
+| Retry or cancel an unaccepted required-check deployment request without duplicating deployment. | `actions.updateDeploymentRequest(input)` | `POST /api/actions/project/requests`<br />`job:write` |
 
 ### Job runtime protocols
 

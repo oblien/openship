@@ -1059,6 +1059,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       { id: "services", label: tl.services, icon: "layers" },
       { id: "domains", label: tl.domains, icon: "globe" },
       { id: "deployments", label: tl.deployments, icon: "rocket" },
+      { id: "actions", label: t.actions.title, icon: "topology" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via
       // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography

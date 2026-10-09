@@ -3,9 +3,10 @@ title: Openship Actions
 description: Run GitHub-compatible workflows on connected servers and temporary Cloud runners.
 ---
 
-Actions runs CI workflows from your repositories. Jobs remains the place for
-scheduled commands against an existing application. Both use Openship's authorized
-destinations; Actions adds workflow dependencies, matrices, artifacts and GitHub Checks.
+Actions runs repository CI and standalone automation on Openship's authorized
+destinations. Workflows can be linked to projects or run independently. Jobs can
+schedule an application command or invoke a saved workflow, with the same Actions
+execution, topology and logs.
 
 ## Add a runner
 
@@ -26,9 +27,23 @@ compatible capabilities; adding `macos` to a Linux runner does not make it a Mac
 
 ## Connect a workflow
 
-Create a workflow in `.github/workflows/` or `.openship/workflows/`, then select it
-in **Actions → New workflow**. Choose the allowed runners and, optionally, an
-artifact destination. You can preview the dependency graph before saving.
+Open **Actions → Add workflow**, **Project → Actions**, or the Actions section in
+the deployment wizard. These entry points share the same setup:
+
+1. Select a repository and branch. Openship discovers files in `.github/workflows/`
+   and `.openship/workflows/` and previews their job dependencies as a topology.
+2. Choose **Continue** to configure triggers, allowed runners and linked projects.
+   Variables, secrets and artifact storage are available in the same step.
+3. Save the workflow. Trigger edits update the YAML while preserving jobs and
+   expressions. Before writing back to GitHub, review the changes and choose
+   **Commit and save** or **Save Openship copy**. A changed file on GitHub rejects
+   the commit instead of overwriting someone else's changes.
+
+Choose **Standalone** for YAML without a repository. It supports manual runs,
+schedules and authenticated webhooks without GitHub credentials. `actions/checkout`
+in a standalone workflow needs an explicit `with.repository`. **Keep YAML in
+Openship** also works for a repository-linked workflow when you want to keep its
+definition outside Git.
 
 ```yaml
 name: CI
@@ -66,6 +81,68 @@ The run page shows logical jobs as a topology and matrix executions in the job
 list. Step state and masked logs survive refreshes. Logs resume from their saved
 cursor instead of starting over.
 
+## Triggers and Jobs
+
+**When to run** edits the workflow's own `on` rules. It supports manual inputs,
+push and pull-request branch/path filters, UTC Cron schedules and authenticated
+webhooks. Existing exclusions, tags and pull-request event types stay in the YAML;
+edit the YAML to change those advanced rules.
+
+**Manual & Jobs** enables `workflow_dispatch`. Add string, number, boolean or choice
+inputs with defaults and required values. The manual-run form and **Jobs → Run
+workflow** use those same declared inputs. Jobs can run a workflow on a Cron
+schedule, once, after another job succeeds or on a supported platform event.
+Allowed runners and secrets remain configured on the workflow. Job history opens
+the original Actions execution rather than a second copy of its logs or status.
+
+For an authenticated webhook, enable `repository_dispatch` and optionally restrict
+event types. The workflow details show its dispatch endpoint. Call it with an
+Openship API token authorized to run that workflow:
+
+```http
+POST /api/actions/workflows/WORKFLOW_ID/dispatch
+Authorization: Bearer YOUR_OPENSHIP_TOKEN
+Content-Type: application/json
+
+{
+  "eventType": "release",
+  "clientPayload": { "version": "1.2.3" },
+  "idempotencyKey": "release-1.2.3"
+}
+```
+
+The workflow receives these values in `github.event.action` and
+`github.event.client_payload`. Keep the token in the caller's secret store and
+reuse the same idempotency key when retrying one delivery. This is Openship's
+authenticated dispatch API; it does not subscribe to GitHub App
+`repository_dispatch` deliveries. The caller must be able to reach the instance.
+
+## Project deployment rules
+
+In **Project → Actions**, create a workflow or open **Deployment automation** to link
+existing workflows and select:
+
+- **Manual deployments:** workflows run independently; deployment starts when requested.
+- **Deploy on push:** use the project's existing automatic deployment pipeline.
+- **Deploy after Actions pass:** require all selected workflows to pass for the
+  exact pushed commit before entering that same deployment pipeline.
+
+Required workflows must be enabled, belong to the project's repository and run
+on every push to its deployment branch. Path-filtered workflows can be linked as
+optional checks. Required checks need a connected GitHub App and a reachable
+control plane for push events. Manual deployments remain available.
+
+Pending requests and failed checks appear in the project's Actions tab. Retrying
+uses the saved commit and one deployment receipt; duplicate deliveries or a
+controller restart do not create another accepted deployment. Newer commits,
+changed rules and a new manual deployment supersede pending approvals. Pull-request
+runs and manual workflow runs do not approve automatic push deployments.
+
+The deployment wizard saves its selected workflow links and rules before starting
+the initial deployment. If rule setup fails, it keeps the draft for retry. The
+initial deployment remains an explicit manual deployment; the selected automatic
+policy applies to subsequent pushes.
+
 ## GitHub events and checks
 
 A connected GitHub App receives signed push and pull-request events and publishes
@@ -79,8 +156,9 @@ five minutes. Missed schedules are not replayed after downtime. For Desktop, kee
 it running or [move the control plane to a server](/docs/guides/migrate-control-plane).
 
 GitHub may also execute files in `.github/workflows/`. Use `.openship/workflows/`
-when you only want Openship execution. If a workflow deploys an application,
-review that project's separate push-to-deploy setting to avoid two deployments.
+when you only want Openship execution. If a workflow script deploys the application
+itself, use manual project deployment mode to avoid also requesting an automatic
+deployment after its checks pass.
 
 Fork runs require explicit approval and disposable runners. Their workflow comes
 from the trusted base revision, while checkout can use the pull-request merge

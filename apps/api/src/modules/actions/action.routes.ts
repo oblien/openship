@@ -8,6 +8,7 @@ r.get(
   {
     authorizationHandledByOperation: true,
     tag: "job:read",
+    query: C.list.input,
     mcp: { description: "List authorized GitHub-compatible Openship Actions workflows." },
   },
   ctrl.list,
@@ -251,4 +252,46 @@ r.get(
   },
   ctrl.jobEvents,
 );
+r.get("/repository-source", {
+    authorizationHandledByOperation: true,
+    tag: "job:read",
+    query: C.repositorySource.input,
+    mcp: { description: "Read a repository workflow and preview its topology." },
+  }, ctrl.repositorySource);
+
+r.put("/repository-source", {
+    authorizationHandledByOperation: true,
+    tag: "job:write",
+    body: C.updateRepositorySource.input,
+    auditHandledByOperation: true,
+    mcp: { description: "Commit reviewed workflow YAML to its branch using the expected file SHA." },
+  }, ctrl.updateRepositorySource);
+
+r.get("/projects", {
+    authorizationHandledByOperation: true,
+    tag: "job:read",
+    mcp: { description: "List projects available for linking to workflows." },
+  }, ctrl.projects);
+
+r.get("/project", {
+    authorizationHandledByOperation: true,
+    tag: "job:read",
+    query: C.projectPolicy.input,
+    mcp: { description: "Read project workflows and deployment automation." },
+  }, ctrl.projectPolicy);
+
+r.put("/project", {
+    authorizationHandledByOperation: true,
+    tag: "job:write",
+    body: C.updateProjectPolicy.input,
+    auditHandledByOperation: true,
+    mcp: { description: "Configure required workflow checks before automatic project deployment." },
+  }, ctrl.updateProjectPolicy);
+
+r.post("/project/requests", {
+  authorizationHandledByOperation: true, tag: "job:write",
+  body: C.updateDeploymentRequest.input, auditHandledByOperation: true,
+  mcp: { description: "Retry or cancel a project's pending Actions deployment approval." },
+}, ctrl.updateDeploymentRequest);
+
 export const actionRoutes = r.hono;

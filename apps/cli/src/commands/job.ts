@@ -2,6 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { Command, Option } from "commander";
 import { readFileSync } from "node:fs";
 import type { CreateJobInput, UpdateJobInput } from "@repo/sdk";
+import type { JobRun } from "@repo/contracts";
 import { getShipClient } from "../lib/ship-client";
 import { fail, printResult } from "../lib/cmd-helpers";
 import { isJsonMode, printJson, printTable, ok, err } from "../lib/output";
@@ -14,7 +15,7 @@ function jobOptions(command: Command): Command {
     .addOption(new Option("--schedule <type>", "Schedule type").choices(["recurring", "once", "manual"]))
     .option("--cron <expression>", "Five-field cron expression")
     .option("--at <iso>", "Run time for a once schedule")
-    .option("--file <path>", "JSON API body (env, secrets, retry, etc.); flags override file values");
+    .option("--file <path>", "JSON API body (workflowId/inputs or command settings); flags override file values");
 }
 
 async function saveJob(opts: Record<string, string | boolean>, key?: string): Promise<void> {
@@ -48,11 +49,17 @@ async function saveJob(opts: Record<string, string | boolean>, key?: string): Pr
   }
 }
 
+function printRunOutput(run: JobRun): void {
+  if (run.kind === "workflow") {
+    process.stdout.write(`Actions run ${run.id} · ${run.status}\nOpen Actions → Runs in the dashboard for job and step output.\n`);
+  } else if (run.output) process.stdout.write(run.output + "\n");
+}
+
 async function followRun(runId: string): Promise<void> {
   for await (const event of getShipClient().jobs.streamRun(runId)) {
     const data = JSON.parse(event.data);
     if (isJsonMode()) printJson(data);
-    else if (data.type === "snapshot" && data.run.output) process.stdout.write(data.run.output + "\n");
+    else if (data.type === "snapshot") printRunOutput(data.run);
     else if (data.type === "log") process.stdout.write(data.line + "\n");
     if (data.type === "complete") {
       if (data.status !== "success") {
@@ -93,7 +100,7 @@ jobCommand.command("get <key>")
     }
   });
 
-jobOptions(jobCommand.command("create").description("Create a custom job (name, server, command, and schedule required)"))
+jobOptions(jobCommand.command("create").description("Create a scheduled command or saved workflow job"))
   .action((opts) => saveJob(opts));
 
 jobOptions(jobCommand.command("update <key>").description("Update a job; built-ins accept schedule and enabled changes"))
@@ -155,7 +162,7 @@ jobCommand.command("logs <runId>")
       const data = await getShipClient().jobs.getRun(runId);
       if (isJsonMode()) printJson(data);
       else {
-        if (data.output) process.stdout.write(data.output + "\n");
+        printRunOutput(data);
         if (data.error) err(data.error);
       }
     } catch (e) {

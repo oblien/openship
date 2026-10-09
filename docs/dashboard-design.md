@@ -34,7 +34,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 
 Actions reuses the shared topology canvas, server selector, page layout and filled
 controls. Keep workflow configuration, runner setup and execution history in one
-module; Jobs remains the entry for scheduled application commands. Draw one node
+module. Jobs schedules commands or invokes a saved workflow; workflow jobs link to
+the original Actions run and its logs. Draw one node
 per logical workflow job, with matrix executions in the selectable job list.
 Show persisted step state and resumable logs together. Refreshing or switching
 views must not discard a running job's state. Only confirm cancellation after the
@@ -57,6 +58,22 @@ records; after a run exists, show the current overview and latest run. Keep Clou
 funding and Desktop availability guidance in that column. Use the same loaded
 data for the list and guidance, and keep fetch failures distinct from empty
 accounts. Stack the sidebar below the list on narrow containers.
+Use the same two-step workflow setup from Actions, Project → Actions and the
+deployment wizard: repository discovery or standalone YAML with the dependency
+graph first, then triggers, project links and run settings. Keep progress, runner
+selection and Save in the 340px sidebar. Trigger controls edit the original YAML
+without replacing jobs or expressions. Review repository changes before committing;
+offer an Openship copy in the same review. Keep variables, secrets and artifact
+storage in one disclosure. The wizard preserves deployment fields while this setup
+is open and links selected workflows when the project is saved.
+Project Actions owns one deployment policy: Manual, Push, or After required Actions
+pass. Its Workflows, Runs and Deployment automation tabs keep the existing project
+sidebar; do not add a second settings rail inside the project content column.
+Open workflow creation in the same full-width setup dialog used by the deployment
+wizard. Show the persisted pending request, exact commit and retry/cancel controls
+alongside workflow runs. Required checks cover every push to the project branch;
+optional workflows can filter paths. Keep policy failures visible and retryable,
+and never start the wizard's deployment before saving its selected rules.
 Use **Actions → Budget** for live usage rates, estimated VM minutes, provider
 balance and deposit history. Keep the comparison beside a standard 340px funding
 column. State that estimates assume full CPU and RAM before transfer or disk I/O;

@@ -39,6 +39,10 @@ export async function assertJobWritable(
     return;
   }
   if (systemJobAvailability(key) === "unavailable") throw missingJob();
+  if (row.actionType === "workflow") {
+    await (await import("./job-workflow")).authorizeWorkflowJob(ctx, row, true);
+    return;
+  }
   if (row.actionType !== "command") {
     if (env.CLOUD_MODE) throw missingJob();
     await instanceAuthorization.assert(ctx);
@@ -63,6 +67,10 @@ export async function canRunJob(ctx: ExecutionContext, key: string): Promise<boo
 
 export async function canReadJob(ctx: ExecutionContext, row: { key: string; actionType: string; actionConfig: unknown }): Promise<boolean> {
   if (systemJobAvailability(row.key) === "unavailable") return false;
+  if (row.actionType === "workflow") {
+    try { await (await import("./job-workflow")).authorizeWorkflowJob(ctx, row as import("@repo/db").Job); return true; }
+    catch (error) { if (denied(error)) return false; throw error; }
+  }
   return row.actionType === "command"
     ? canAccessServers(ctx, resolveServerIds((row.actionConfig ?? {}) as CommandConfig), "read")
     : !env.CLOUD_MODE;
@@ -76,11 +84,23 @@ export async function requireReadableJob(ctx: ExecutionContext, key: string) {
 
 export async function requireReadableRun(ctx: ExecutionContext, id: string) {
   const run = await repos.jobRun.findById(id);
+  if (!run) {
+    const action = await repos.actions.run(ctx.organizationId, id);
+    if (action?.configuration.sourceJob) {
+      await (await import("../actions/access")).authorizeActionRun(ctx, action);
+      return (await import("./job-workflow")).workflowJobRunView(action);
+    }
+  }
   if (!run || !(await canReadRun(ctx, run))) throw new NotFoundError("Run");
   return run;
 }
 
-export async function canReadRun(ctx: ExecutionContext, run: { kind: string; jobId: string; serverId: string | null; serverIds?: string[] | null }): Promise<boolean> {
+export async function canReadRun(ctx: ExecutionContext, run: { id?: string; kind: string; jobId: string; serverId: string | null; serverIds?: string[] | null }): Promise<boolean> {
+  if (run.kind === "workflow") {
+    const action = run.id && await repos.actions.run(ctx.organizationId, run.id);
+    if (!action || action.configuration.sourceJob?.key !== run.jobId) return false;
+    return (await import("../actions/access")).visibleAction(() => import("../actions/access").then(m => m.authorizeActionRun(ctx, action)));
+  }
   if (run.kind === "custom") {
     // Only persisted execution targets prove who may read historical output.
     // Legacy aggregate rows have no target snapshot: instance-admin access only.

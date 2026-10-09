@@ -1,5 +1,5 @@
-import { AppError, BuildAccessBody, PrepareDeployBody, ResourceIdSchema, parseInput, isCreateDeploymentResult,
-  type BuildOperations, type PrepareDeploymentInput, type BuildAccessInput, type PreparedProject, type CreateDeploymentResult } from "@repo/contracts";
+import { AppError, BuildAccessBody, PrepareDeployBody, ResourceIdSchema, parseInput, isAcceptedDeploymentResult,
+  type BuildOperations, type PrepareDeploymentInput, type BuildAccessInput, type PreparedProject, type AcceptedDeploymentResult } from "@repo/contracts";
 import type { ExecutionContext } from "./context";
 import type { Authorization } from "./authorization";
 import type { DeploymentExecutionOptions, OperationResult } from "./deployments";
@@ -9,8 +9,8 @@ export type PlatformBuildOperations = {
 };
 export interface BuildDependencies {
   prepare(ctx: ExecutionContext, input: PrepareDeploymentInput): Promise<PreparedProject>;
-  access(ctx: ExecutionContext, input: BuildAccessInput, options?: DeploymentExecutionOptions): Promise<CreateDeploymentResult>;
-  start(ctx: ExecutionContext, id: string): Promise<CreateDeploymentResult>;
+  access(ctx: ExecutionContext, input: BuildAccessInput, options?: DeploymentExecutionOptions): Promise<AcceptedDeploymentResult>;
+  start(ctx: ExecutionContext, id: string): Promise<AcceptedDeploymentResult>;
   recordAudit(ctx: ExecutionContext, id: string, after?: Record<string, unknown>): void;
 }
 export function createBuildOperations(authorization: Authorization, dependencies?: BuildDependencies): PlatformBuildOperations {
@@ -20,7 +20,7 @@ export function createBuildOperations(authorization: Authorization, dependencies
   };
   function result(context: ExecutionContext, value: unknown) {
     const data: unknown = JSON.parse(JSON.stringify(value));
-    if (!isCreateDeploymentResult(data)) throw new AppError("Invalid build response", 500, "INVALID_DEPLOYMENT_RESPONSE");
+    if (!isAcceptedDeploymentResult(data)) throw new AppError("Invalid build response", 500, "INVALID_DEPLOYMENT_RESPONSE");
     resources().recordAudit(context, data.deployment_id);
     return { context, data };
   }

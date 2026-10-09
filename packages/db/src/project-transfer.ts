@@ -47,6 +47,10 @@ export const PROJECT_TRANSFER_TABLES = new Set([
 
 /** These project children require their instance's runtime ownership to travel with them. */
 export const PROJECT_TRANSFER_UNSUPPORTED_TABLES: Readonly<Record<string, string>> = {
+  action_project:
+    "Projects linked to Actions require a whole-instance export to preserve workflow secrets, runners and execution authority.",
+  action_deployment:
+    "Projects with Actions deployment approvals require a whole-instance export to preserve their workflow and deployment ownership.",
   cluster_database:
     "Projects with cluster databases cannot be transferred individually yet. Use a whole-instance export to preserve cluster and database ownership.",
 };

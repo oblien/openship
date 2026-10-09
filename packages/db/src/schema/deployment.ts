@@ -52,6 +52,8 @@ export const deployment = pgTable(
      * (no DB check constraint) — keep new values lowercase + hyphenated.
      */
     trigger: text("trigger").notNull().default("manual"),
+    /** Internal CI admission receipt; an uncertain retry cannot create another release. */
+    actionRequestId: text("action_request_id"),
 
     /* ── Build details ──────────────────────────────────────────────────── */
     /** Environment: production | preview */
@@ -211,6 +213,7 @@ export const deployment = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("deployment_action_request_unique").on(t.actionRequestId),
     // At most ONE in-flight deployment per project. The race-prone
     // pattern (SELECT-then-INSERT inside checkNoActiveBuild +
     // createQueuedDeployment) is replaced by relying on this constraint:

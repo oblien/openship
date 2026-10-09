@@ -57,8 +57,10 @@ export function ActionRunList({ runs, empty }: { runs: ActionRunView[]; empty?: 
             </p>
             <p className="mt-1 truncate text-xs text-muted-foreground">
               <bdi>
-                {run.owner}/{run.repo} · {run.ref.replace(/^refs\/(heads|tags)\//, "")} ·{" "}
-                {run.revision.slice(0, 7)}
+                {run.owner
+                  ? `${run.owner}/${run.repo} · ${run.ref.replace(/^refs\/(heads|tags)\//, "")}`
+                  : t.actions.integration.standalone}{" "}
+                · {run.revision.slice(0, 7)}
               </bdi>
             </p>
           </div>
@@ -198,7 +200,9 @@ function Home() {
                               </h2>
                               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                 <bdi>
-                                  {workflow.owner}/{workflow.repo}
+                                  {workflow.owner
+                                    ? `${workflow.owner}/${workflow.repo}`
+                                    : a.integration.standalone}
                                 </bdi>
                               </p>
                             </div>
