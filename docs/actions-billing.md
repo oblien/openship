@@ -84,10 +84,13 @@ Before enabling customer purchases:
    the same receipt service used by the customer UI. Complete provider namespace
    setup before opening checkout, then enable purchases only after settlement and
    transfer enforcement pass real-provider tests.
-5. Run an authorized real Oblien test through funding, temporary VM readiness,
-   execution, cancellation, cleanup and receipt settlement. The isolated Docker/
-   SSH tests use the real managed execution adapter, but do not validate Oblien's
-   hosted billing or provisioning service.
+5. Complete real-provider tests for customer payment, transfer enforcement and
+   execution-receipt settlement. Operator-funded provisioning and execution were
+   verified against Oblien on 2026-10-09 using isolated 2 vCPU / 4 GiB / 40 GiB
+   temporary VMs: services, composite/JavaScript actions, outputs, secret masking,
+   controller replacement, running/provisioning cancellation and confirmed VM
+   deletion all passed. Logs remained in Openship after worker deletion. These
+   checks do not validate customer payment or the proposed retail debit.
 
 ### Contract to confirm with Oblien
 
@@ -129,3 +132,6 @@ uses a stable idempotency key and provider TTL. The setup permits authenticated
 Runtime API access on port 9990, with SSH disabled and no public application routes.
 Cleanup confirms VM absence before releasing the scheduler slot. This path uses
 provider funding limits and does not deduct the proposed retail Actions rates.
+VM names use a stable hash of the case-sensitive job ID. Asynchronous deletion is
+pending cleanup, not a workflow error; the original job result is preserved while
+the controller waits for the provider to confirm removal.

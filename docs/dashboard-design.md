@@ -39,6 +39,8 @@ per logical workflow job, with matrix executions in the selectable job list.
 Show persisted step state and resumable logs together. Refreshing or switching
 views must not discard a running job's state. Only confirm cancellation after the
 worker stops, and show cleanup while its destination remains occupied.
+Expected cancellation uses its status badge; keep engine cancellation details in
+the logs rather than displaying them as a second error alert.
 
 Key remote data by instance, user and organization. Clear private results on a
 scope switch while loading the new scope; stale requests must not populate it.

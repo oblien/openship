@@ -176,7 +176,7 @@ function Detail({ id }: { id: string }) {
                   }
                 />
               </header>
-              <ActionError message={job.error} />
+              <ActionError message={job.status === "cancelled" ? null : job.error} />
               {job.checkError && (
                 <p className="text-xs text-muted-foreground" title={job.checkError}>
                   {a.checkPending}
