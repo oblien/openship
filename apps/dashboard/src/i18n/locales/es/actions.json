@@ -115,7 +115,7 @@
     "subtitle": "Ejecución prepaga en runners temporales de Cloud. Independiente de tus planes de servidor.",
     "rates": "Runners temporales de Linux",
     "preview": "Vista previa de tarifas",
-    "perMinute": "/ min",
+    "perMinute": "por minuto",
     "chargedTime": "Se cobra por segundo de ejecución, incluidos los pasos fallidos. No se cobra el tiempo en cola ni los fallos de aprovisionamiento.",
     "transfer": "Transferencia de internet incluida",
     "transferRate": "{amount} GiB por cada {price} depositado.",

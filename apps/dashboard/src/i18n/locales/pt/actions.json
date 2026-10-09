@@ -115,7 +115,7 @@
     "subtitle": "Execução pré-paga em runners temporários na Cloud. Separada dos seus planos de servidor.",
     "rates": "Runners Linux temporários",
     "preview": "Prévia das tarifas",
-    "perMinute": "/ min",
+    "perMinute": "por minuto",
     "chargedTime": "Cobrança por segundo de execução, incluindo etapas com falha. O tempo na fila e falhas de provisionamento não são cobrados.",
     "transfer": "Transferência de internet incluída",
     "transferRate": "{amount} GiB por {price} depositado.",
