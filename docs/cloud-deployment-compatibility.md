@@ -83,3 +83,19 @@ If the runtime cannot be inspected, the deployment carries a verification warnin
 claiming that the application crashed. This startup check does not guarantee ongoing health or
 validate business operations such as database-backed requests; use a custom readiness endpoint
 when those must gate a deployment.
+
+## Legacy route cleanup
+
+Older deleted projects can leave route cleanup records without a server binding
+or a provider resource identity. In Cloud, these records are reconciled against
+an account-wide, read-only provider inventory, including disabled Pages, edge
+proxies and tunnels. Cleanup does not open a VM runtime or infer permission to
+delete a provider resource from a hostname alone.
+
+A confirmed absent hostname permits an atomic retirement of the legacy cleanup
+record. The database still requires the original project to be gone, the record
+to remain unbound, and no physical host-port claim to remain. Pending workload
+cleanup blocks reconciliation. Current domain rows are preserved. An existing
+provider owner or an unavailable/incomplete inventory retains the reservation
+and produces a diagnostic for follow-up. This is retryable database
+reconciliation, not a distributed transaction with the provider.

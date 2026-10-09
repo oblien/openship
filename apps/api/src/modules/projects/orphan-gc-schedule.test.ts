@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
+  cloudMode: false,
+  routes: vi.fn(async () => ({ success: true, data: [] as Array<{ hostname: string }> })),
+  pages: vi.fn(async () => ({
+    success: true,
+    pages: [] as Array<{ slug: string; domain: string; custom_domain?: string }>,
+  })),
+  proxies: vi.fn(async () => ({
+    success: true,
+    proxies: [] as Array<{ slug: string; domain: string }>,
+  })),
+  tunnels: vi.fn(async () => ({ success: true, tunnels: [] as Array<{ hostname: string }> })),
+  retireUnboundRoute: vi.fn(async () => true),
   orphans: [] as Array<Record<string, unknown>>,
   listAll: vi.fn(),
   acquireGcLock: vi.fn(),
@@ -43,6 +55,7 @@ vi.mock("@repo/db", () => ({
     orphanedResource: {
       listAll: h.listAll,
       delete: h.deleteOrphan,
+      retireUnboundRoute: h.retireUnboundRoute,
       bumpAttempt: h.bumpAttempt,
       updatePayload: h.updatePayload,
     },
@@ -82,6 +95,22 @@ vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
 
 vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   releaseManagedHostnames: h.releaseManagedHostnames,
+}));
+
+vi.mock("@repo/platform/engine/config/env", () => ({
+  env: {
+    get CLOUD_MODE() {
+      return h.cloudMode;
+    },
+  },
+}));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
+  getOblienClient: () => ({
+    domain: { routes: h.routes },
+    pages: { list: h.pages },
+    edgeProxy: { list: h.proxies },
+    edgeTunnel: { list: h.tunnels },
+  }),
 }));
 
 import { DockerRuntime } from "@repo/adapters";
@@ -129,6 +158,12 @@ const resolvedPlatform = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   h.orphans = [];
+  h.cloudMode = false;
+  h.retireUnboundRoute.mockResolvedValue(true);
+  h.routes.mockResolvedValue({ success: true, data: [] });
+  h.pages.mockResolvedValue({ success: true, pages: [] });
+  h.proxies.mockResolvedValue({ success: true, proxies: [] });
+  h.tunnels.mockResolvedValue({ success: true, tunnels: [] });
   h.acquireGcLock.mockImplementation(async () => ({ release: h.releaseGcLock }));
   h.listAll.mockImplementation(async () => h.orphans);
   h.resolveDeploymentPlatform.mockResolvedValue(resolvedPlatform());
@@ -572,4 +607,103 @@ describe("runOrphanSweep execution fence", () => {
 
     expect(h.acquireGcLock).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("legacy Cloud route reconciliation", () => {
+  beforeEach(() => {
+    h.cloudMode = true;
+    h.orphans = [routeOrphan({ serverId: null, targetKey: null })];
+    h.resolveDeploymentPlatform.mockRejectedValue(
+      new Error("This deployment has no managed server binding"),
+    );
+  });
+
+  it("retires an absent route without resolving a deleted deployment or changing provider state", async () => {
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 1, deferred: 0 });
+    expect(h.resolveDeploymentPlatform).not.toHaveBeenCalled();
+    expect(h.removeRoute).not.toHaveBeenCalled();
+    expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+    expect(h.retireUnboundRoute).toHaveBeenCalledWith(h.orphans[0]);
+  });
+
+  it("retires old intent for a reassigned hostname without touching the new owner's route", async () => {
+    h.findDomain.mockResolvedValue({ projectId: "new-owner" });
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 1, deferred: 0 });
+    expect(h.removeRoute).not.toHaveBeenCalled();
+  });
+
+  it("retains intent when a provider route exists, including a different namespace", async () => {
+    h.routes.mockResolvedValue({ success: true, data: [{ hostname: "app.example.com" }] });
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+    expect(h.retireUnboundRoute).not.toHaveBeenCalled();
+    expect(h.removeRoute).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake a disabled Page, proxy or tunnel for an absent route", async () => {
+    for (const source of ["pages", "proxies", "tunnels"] as const) {
+      h.retireUnboundRoute.mockClear();
+      h.pages.mockResolvedValue({ success: true, pages: [] });
+      h.proxies.mockResolvedValue({ success: true, proxies: [] });
+      h.tunnels.mockResolvedValue({ success: true, tunnels: [] });
+      if (source === "pages")
+        h.pages.mockResolvedValue({
+          success: true,
+          pages: [{ slug: "other", domain: "opsh.io", custom_domain: "app.example.com" }],
+        });
+      if (source === "proxies")
+        h.proxies.mockResolvedValue({
+          success: true,
+          proxies: [{ slug: "app", domain: "example.com" }],
+        });
+      if (source === "tunnels")
+        h.tunnels.mockResolvedValue({ success: true, tunnels: [{ hostname: "app.example.com" }] });
+      expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+      expect(h.retireUnboundRoute).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps the reservation on failed or incomplete inventory", async () => {
+    h.routes.mockResolvedValue({ success: false, data: [] });
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+    expect(h.retireUnboundRoute).not.toHaveBeenCalled();
+  });
+
+  it("honors the atomic retirement result if the record changed after inventory", async () => {
+    h.retireUnboundRoute.mockResolvedValue(false);
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+  });
+
+  it("does not reconcile a live original owner or a route with a physical target", async () => {
+    h.findProject.mockResolvedValue({ id: "project-1" });
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+    expect(h.routes).not.toHaveBeenCalled();
+    h.findProject.mockResolvedValue(undefined);
+    h.orphans = [routeOrphan()];
+    expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 1 });
+    expect(h.retireUnboundRoute).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps unbound Cloud routes behind pending workload cleanup", async () => {
+  h.cloudMode = true;
+  h.orphans = [
+    routeOrphan({ serverId: null, targetKey: null }),
+    routeOrphan({ id: "container", serverId: null, targetKey: null, resourceType: "container" }),
+  ];
+  h.resolveDeploymentPlatform.mockRejectedValue(new Error("unreachable"));
+  expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 2 });
+  expect(h.routes).not.toHaveBeenCalled();
+});
+
+it("shares a complete inventory within a sweep but refreshes it for the next sweep", async () => {
+  h.cloudMode = true;
+  h.orphans = [
+    routeOrphan({ serverId: null, targetKey: null }),
+    routeOrphan({ id: "second", ref: "other.example.com", serverId: null, targetKey: null }),
+  ];
+  expect(await runOrphanSweep()).toEqual({ reclaimed: 2, deferred: 0 });
+  expect(h.routes).toHaveBeenCalledTimes(1);
+  h.routes.mockRejectedValueOnce(new Error("provider unavailable"));
+  expect(await runOrphanSweep()).toEqual({ reclaimed: 0, deferred: 2 });
+  expect(h.routes).toHaveBeenCalledTimes(2);
 });

@@ -30,6 +30,8 @@ import { releaseManagedHostnames } from "@repo/platform/engine/lib/managed-edge-
 import { connectionHostPortTargetKey } from "@repo/platform/engine/lib/host-port-target";
 import { ORPHAN_CLEANUP_LOCK } from "../../lib/orphan-cleanup-lock";
 import { withKeyedMutex } from "../../lib/provision-lock";
+import { env } from "../../config/env";
+import { createCloudRouteReconciliation, isUnboundRoute } from "./cloud-route-reconciliation";
 
 interface ProjectTargetSweepPayload {
   slug: string;
@@ -305,6 +307,7 @@ async function runOrphanSweepLocked(): Promise<{ reclaimed: number; deferred: nu
   if (orphans.length === 0) return { reclaimed: 0, deferred: 0 };
 
   const probe = createReachabilityProbe();
+  const confirmCloudRouteAbsent = createCloudRouteReconciliation();
   let reclaimed = 0;
   let deferred = 0;
   const targetGroupKey = (orphan: OrphanedResource): string | null =>
@@ -339,6 +342,26 @@ async function runOrphanSweepLocked(): Promise<{ reclaimed: number; deferred: nu
       if (o.projectId && (await repos.project.findById(o.projectId))) {
         await repos.orphanedResource.bumpAttempt(o.id);
         deferred++;
+        continue;
+      }
+      // Legacy SaaS routes have no physical target or deletion identity. Prove
+      // provider absence without resolving a deleted deployment. The reservation
+      // stays in place across this read and is retired with an atomic DB predicate.
+      // This also safely retires stale intent for reassigned local domain rows:
+      // no provider write is made, and the new domain remains authoritative.
+      if (env.CLOUD_MODE && isUnboundRoute(o)) {
+        const key = targetGroupKey(o);
+        if (key && (pendingResourcesByTarget.get(key) ?? 0) > 0) {
+          await repos.orphanedResource.bumpAttempt(o.id);
+          deferred++;
+          continue;
+        }
+        await confirmCloudRouteAbsent(o);
+        if (await repos.orphanedResource.retireUnboundRoute(o)) reclaimed++;
+        else {
+          await repos.orphanedResource.bumpAttempt(o.id);
+          deferred++;
+        }
         continue;
       }
       // Route orphan rows reserve their hostname until every physical/global
