@@ -1,0 +1,15 @@
+{
+  "name": "@repo/mobile",
+  "productName": "Openship Mobile",
+  "version": "0.6.9",
+  "private": true,
+  "description": "Openship Mobile - Kotlin Multiplatform Compose client for OpenShip",
+  "author": "Oblien",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "./gradlew assembleRelease",
+    "build:debug": "./gradlew assembleDebug",
+    "test": "./gradlew allTests",
+    "clean": "./gradlew clean"
+  }
+}
