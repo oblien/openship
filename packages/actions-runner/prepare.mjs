@@ -16,12 +16,19 @@ import { fileURLToPath } from "node:url";
 
 export const directory = fileURLToPath(new URL(".", import.meta.url));
 export function prepareRunnerModule() {
-  const module = spawnSync("go", ["list", "-m", "-json", "github.com/nektos/act"], {
+  // `go list -m` may succeed without a Dir when only go.mod is cached. Download
+  // the pinned source (verified against go.sum) before reading or patching it.
+  const module = spawnSync("go", ["mod", "download", "-json", "github.com/nektos/act"], {
     cwd: directory,
     encoding: "utf8",
   });
-  if (module.status !== 0) throw new Error(module.stderr || "Cannot locate pinned act module");
+  if (module.status !== 0)
+    throw new Error(module.stderr || module.stdout || "Cannot download pinned act module", {
+      cause: module.error,
+    });
   const info = JSON.parse(module.stdout);
+  if (info.Error || typeof info.Dir !== "string" || !info.Dir)
+    throw new Error(info.Error || "Downloaded act module has no source directory");
   if (info.Version !== "v0.2.89")
     throw new Error("Review the native execution fixes when updating act");
   const original = join(info.Dir, "pkg/container/host_environment.go");
