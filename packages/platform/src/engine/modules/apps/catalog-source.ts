@@ -229,7 +229,19 @@ export function getRuntimeTemplate(id: string | null | undefined): ResolvedAppTe
  *  make it unreachable. */
 export async function listOrgCustomApps(organizationId: string): Promise<ResolvedAppTemplate[]> {
   const rows = await repos.customAppTemplate.listByOrg(organizationId);
-  return rows.map((r) => ({ ...r.template, verified: false, unlisted: false, custom: true }));
+  const valid: ResolvedAppTemplate[] = [];
+  for (const r of rows) {
+    const candidate = { ...r.template, verified: false, unlisted: false, custom: true };
+    if (isValidAppTemplate(candidate)) {
+      valid.push(candidate);
+    } else {
+      errorDiagnostics.warn(
+        "platform/engine/modules/apps/catalog-source",
+        `[catalog] custom app "${r.appId}" for org "${organizationId}" failed shape validation — skipping`,
+      );
+    }
+  }
+  return valid;
 }
 
 /** Resolve a template by id FOR AN ORG: the curated catalog first, else the
@@ -243,7 +255,16 @@ export async function getTemplateForOrg(
   const curated = getRuntimeTemplate(id);
   if (curated) return curated;
   const custom = await repos.customAppTemplate.findByAppId(organizationId, id);
-  return custom ? { ...custom.template, verified: false, unlisted: false, custom: true } : undefined;
+  if (!custom) return undefined;
+  const candidate = { ...custom.template, verified: false, unlisted: false, custom: true };
+  if (!isValidAppTemplate(candidate)) {
+    errorDiagnostics.warn(
+      "platform/engine/modules/apps/catalog-source",
+      `[catalog] custom app "${id}" for org "${organizationId}" failed shape validation`,
+    );
+    return undefined;
+  }
+  return candidate;
 }
 
 // Warm the overlay at boot so instances pick up repo changes promptly. Skipped

@@ -13,7 +13,14 @@ vi.mock("@repo/db", () => ({
         const t = store.get(`${org}:${appId}`);
         return t ? { template: t } : undefined;
       },
-      listByOrg: async () => [],
+      listByOrg: async (org: string) => {
+        const rows: { appId: string; organizationId: string; template: unknown }[] = [];
+        for (const [key, value] of store.entries()) {
+          const [entryOrg, appId] = key.split(":");
+          if (entryOrg === org) rows.push({ appId, organizationId: org, template: value });
+        }
+        return rows;
+      },
       deleteByAppId: async () => {},
     },
   },
@@ -21,6 +28,7 @@ vi.mock("@repo/db", () => ({
 
 import { saveCustomApp } from "@repo/platform/engine/modules/apps/custom-app.service";
 import { getTemplateForOrg } from "@repo/platform/engine/modules/apps/catalog-source";
+import { listOrgCustomApps } from "@repo/platform/engine/modules/apps/catalog-source";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ctx = (organizationId: string) => ({ organizationId, userId: "u1" }) as RequestContext;
@@ -70,5 +78,17 @@ describe("custom apps — saveCustomApp validation + trust", () => {
     await saveCustomApp(ctx("orgA"), validApp);
     expect(await getTemplateForOrg("orgA", "my-custom")).toBeDefined();
     expect(await getTemplateForOrg("orgB", "my-custom")).toBeUndefined();
+  });
+
+  it("skips invalid custom apps from listOrgCustomApps and getTemplateForOrg without throwing", async () => {
+    // Simulate corrupt row in DB (e.g. legacy/invalid definition)
+    store.set("org1:corrupt", { name: "Corrupt", category: "security" });
+    store.set("org1:valid", { ...validApp, id: "valid" });
+
+    const list = await listOrgCustomApps("org1");
+    expect(list.map((a) => a.id)).toEqual(["valid"]);
+
+    expect(await getTemplateForOrg("org1", "corrupt")).toBeUndefined();
+    expect(await getTemplateForOrg("org1", "valid")).toBeDefined();
   });
 });
