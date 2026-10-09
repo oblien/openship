@@ -201,7 +201,9 @@ export const mailRouter = router({
 
       const outgoingHtml = input.isForward
         ? `${input.message ?? input.html ?? input.body ?? ''}${originalHtml ?? ''}`
-        : input.message ?? input.html ?? input.body ?? undefined;
+        : originalHtml && (input.inReplyTo || inReplyToHeader)
+          ? `${input.message ?? input.html ?? input.body ?? ''}<blockquote>${originalHtml}</blockquote>`
+          : (input.message ?? input.html ?? input.body ?? undefined);
       const attachments =
         forwardedAttachments?.length || input.attachments?.length
           ? [...(forwardedAttachments ?? []), ...(input.attachments ?? [])]

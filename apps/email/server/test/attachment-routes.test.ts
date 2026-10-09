@@ -46,6 +46,30 @@ afterAll(() => {
 });
 
 describe('attachment byte routes', () => {
+  it('quotes the original reply body and keeps the signature and thread headers', async () => {
+    send.mockResolvedValueOnce({ messageId: 'reply-message' });
+
+    await caller.send({
+      to: [{ email: 'recipient@example.com' }],
+      subject: 'Re: report',
+      message: '<p>Reply</p><p>Sender signature</p>',
+      originalMessage: '<p>Original report</p>',
+      headers: { 'In-Reply-To': '<original@example.com>', References: '<original@example.com>' },
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      ctx.smtp,
+      ctx.imap,
+      '"Sender" <sender@example.com>',
+      expect.objectContaining({
+        html: '<p>Reply</p><p>Sender signature</p><blockquote><p>Original report</p></blockquote>',
+        inReplyTo: '<original@example.com>',
+        references: ['<original@example.com>'],
+        attachments: undefined,
+      }),
+    );
+  });
+
   it('loads download bytes from the requested mailbox', async () => {
     getThread.mockResolvedValueOnce({ latest: { attachments: [attachment] } } as never);
 
