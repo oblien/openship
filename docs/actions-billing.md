@@ -46,6 +46,21 @@ so duplicate deliveries do not double-credit and partial refunds adjust only the
 relevant deposit. A per-organization lock must cover both the provider read and
 the local update to prevent an older response undoing a refund.
 
+Signed `payment.succeeded` and `entitlement.changed` events resolve the separate
+Actions namespace and queue a receipt check. The queue update and event checkpoint
+commit together, under the same organization lock as receipt reads. Event amounts
+are never credited. Unknown orders cannot create a purchase or fund another tenant.
+
+The existing recurring job runner checks up to 20 due purchases each minute, with
+at most four concurrent checks per process. It runs separately from workflow
+monitoring. A retry deadline is saved before provider I/O, including when replaying
+the original request after a lost checkout response. Failed checks back off from
+30 seconds to five minutes. Pending fulfillment is checked again after a minute;
+open checkouts after five minutes. Fulfilled/refunded receipts remain on a daily
+audit so missing refund events recover too. Expired orders stop polling, but a new
+signed event can request another check. None of this creates a new purchase intent
+or enables the customer checkout gate.
+
 `billing.getActionsBudget`, `getActionsPurchase`, `createActionsCheckout` and
 `resumeActionsCheckout` use the existing billing authorization layer in the native
 SDK and HTTP API. Workflow permissions do not grant financial access. Connected
@@ -79,12 +94,10 @@ Before enabling customer purchases:
 3. Provision customer Actions namespaces and runner profiles with the provider's
    resource and transfer limits, then wire budget reservations, bounded execution
    and settlement through the existing controller. Keep app-server subscriptions
-   and their monthly capacity out of this path.
-4. Wire verified billing webhook delivery and background payment recovery through
-   the same receipt service used by the customer UI. Complete provider namespace
-   setup before opening checkout, then enable purchases only after settlement and
+   and their monthly capacity out of this path. Complete provider namespace setup
+   before opening checkout, then enable purchases only after settlement and
    transfer enforcement pass real-provider tests.
-5. Complete real-provider tests for customer payment, transfer enforcement and
+4. Complete real-provider tests for customer payment, transfer enforcement and
    execution-receipt settlement. Operator-funded provisioning and execution were
    verified against Oblien on 2026-10-09 using isolated 2 vCPU / 4 GiB / 40 GiB
    temporary VMs: services, composite/JavaScript actions, outputs, secret masking,

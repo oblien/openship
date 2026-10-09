@@ -89,6 +89,7 @@ describe("Actions budget through native and HTTP billing permissions", () => {
       payment.checkoutId!,
       actionDepositUnits(500),
       "completed",
+      86_400,
     );
     for (const client of await clients(owner)) {
       const state = await client.getActionsBudget();

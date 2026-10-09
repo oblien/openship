@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createDatabase,
   createRepositories,
+  eq,
   schema,
   type DatabaseConnection,
 } from "@repo/db/factory";
@@ -23,6 +24,12 @@ afterAll(async () => {
 });
 
 type Receipt = Awaited<ReturnType<OblienBillingApi["getCheckout"]>>;
+async function makeDue(id: string) {
+  await connection.db
+    .update(schema.actionCreditPurchase)
+    .set({ nextCheckAt: new Date(0) })
+    .where(eq(schema.actionCreditPurchase.id, id));
+}
 async function fixture() {
   const org = generateId("org");
   await connection.db.insert(schema.organization).values({ id: org, name: "Actions billing" });
@@ -84,6 +91,145 @@ async function fixture() {
 }
 
 describe("Actions prepaid checkout recovery", () => {
+  it("recovers a lost checkout response after restart without a browser visit or a second payment", async () => {
+    const f = await fixture();
+    const create = f.createCheckout.getMockImplementation()!;
+    f.createCheckout.mockImplementationOnce(async (request) => {
+      await create(request);
+      throw new Error("Connection lost after acceptance");
+    });
+    await expect(f.service.checkout(f.org, 500, "lost-response")).rejects.toThrow(
+      "Connection lost",
+    );
+    const [purchase] = await repo.purchases(f.org);
+    // A GET remains a read when checkout creation has an uncertain result.
+    expect((await f.service.inspect(f.org, purchase!.id)).checkoutId).toBeNull();
+    expect(f.createCheckout).toHaveBeenCalledTimes(1);
+    expect(f.getCheckout).not.toHaveBeenCalled();
+    f.paid();
+    const restarted = new ActionCredits({
+      ...f.ports,
+      dashboardUrl: "https://changed.example.test",
+    });
+    expect(
+      await Promise.all([
+        restarted.recoverDuePurchase(f.org, purchase!.id),
+        restarted.recoverDuePurchase(f.org, purchase!.id),
+      ]),
+    ).toEqual([true, false]);
+    expect(f.accepted.size).toBe(1);
+    expect(f.createCheckout.mock.calls[1]?.[0]).toEqual(f.createCheckout.mock.calls[0]?.[0]);
+    expect(f.getCheckout).toHaveBeenCalledOnce();
+    expect(await repo.budget(f.org)).toMatchObject({ fundedUnits: actionDepositUnits(500) });
+    expect(await repo.purchase(f.org, purchase!.id)).toMatchObject({
+      status: "completed",
+      checkAttempts: 0,
+    });
+  });
+
+  it("persists bounded retries before provider I/O and survives a claimed check's process disappearing", async () => {
+    const f = await fixture();
+    const payment = await f.service.checkout(f.org, 500, "retry-payment");
+    // A process can die after this durable claim but before sending a request.
+    const claim = await repo.beginPurchaseCheck(f.org, payment.purchaseId);
+    expect(claim!.checkAttempts).toBe(1);
+    expect(claim!.nextCheckAt!.getTime()).toBeGreaterThan(Date.now() + 25_000);
+    const restarted = new ActionCredits(f.ports);
+    expect(await restarted.recoverDuePurchase(f.org, payment.purchaseId)).toBe(false);
+    expect(f.getCheckout).not.toHaveBeenCalled();
+    await makeDue(payment.purchaseId);
+    f.getCheckout.mockRejectedValueOnce(new Error("Provider unavailable"));
+    await expect(restarted.recoverDuePurchase(f.org, payment.purchaseId)).rejects.toThrow(
+      "Provider unavailable",
+    );
+    const failed = await repo.purchase(f.org, payment.purchaseId);
+    expect(failed).toMatchObject({ checkAttempts: 2, checkedAt: null, fundedUnits: 0 });
+    expect(failed!.nextCheckAt!.getTime()).toBeGreaterThan(Date.now() + 55_000);
+    expect(await restarted.recoverDuePurchase(f.org, payment.purchaseId)).toBe(false);
+    // Even a persistently failing provider cannot overflow the counter/deadline.
+    await connection.db
+      .update(schema.actionCreditPurchase)
+      .set({ checkAttempts: 10 })
+      .where(eq(schema.actionCreditPurchase.id, payment.purchaseId));
+    await makeDue(payment.purchaseId);
+    const last = await repo.beginPurchaseCheck(f.org, payment.purchaseId);
+    expect(last!.checkAttempts).toBe(10);
+    expect(last!.nextCheckAt!.getTime()).toBeGreaterThan(Date.now() + 295_000);
+    expect(last!.nextCheckAt!.getTime()).toBeLessThanOrEqual(Date.now() + 300_000);
+    f.paid();
+    await makeDue(payment.purchaseId);
+    expect(await restarted.recoverDuePurchase(f.org, payment.purchaseId)).toBe(true);
+    expect(await repo.purchase(f.org, payment.purchaseId)).toMatchObject({
+      checkAttempts: 0,
+      fundedUnits: actionDepositUnits(500),
+    });
+  });
+
+  it("does not lose a refund event queued while an older receipt is in flight", async () => {
+    const f = await fixture();
+    const payment = await f.service.checkout(f.org, 500, "refund-race");
+    f.paid();
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const read = f.getCheckout.getMockImplementation()!;
+    f.getCheckout.mockImplementationOnce(async (namespace, id) => {
+      const snapshot = await read(namespace, id);
+      started();
+      await barrier;
+      return snapshot;
+    });
+    const older = f.service.inspect(f.org, payment.purchaseId);
+    await entered;
+    f.paid(0);
+    const event = {
+      eventId: generateId("evt"),
+      eventType: "entitlement.changed",
+      purchaseId: payment.purchaseId,
+    };
+    const queued = f.service.queuePaymentCheck(f.org, event);
+    release();
+    await Promise.all([older, queued]);
+    expect(await f.service.recoverDuePurchase(f.org, payment.purchaseId)).toBe(true);
+    expect((await repo.budget(f.org))!.fundedUnits).toBe(0);
+    const verified = await repo.purchase(f.org, payment.purchaseId);
+    expect(await f.service.queuePaymentCheck(f.org, event)).toBe(false);
+    expect((await repo.purchase(f.org, payment.purchaseId))!.nextCheckAt).toEqual(
+      verified!.nextCheckAt,
+    );
+  });
+
+  it("checks delayed fulfillment promptly and retires expired checkouts until a new signed event", async () => {
+    const f = await fixture();
+    const payment = await f.service.checkout(f.org, 500, "delayed-payment");
+    Object.assign(f.receipt().checkout, { status: "complete", paymentStatus: "paid" });
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    const processing = await repo.purchase(f.org, payment.purchaseId);
+    expect(processing).toMatchObject({ status: "processing", fundedUnits: 0 });
+    expect(processing!.nextCheckAt!.getTime()).toBeGreaterThan(Date.now() + 55_000);
+    Object.assign(f.receipt().checkout, { status: "expired", paymentStatus: "unpaid" });
+    await makeDue(payment.purchaseId);
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    expect(await repo.purchase(f.org, payment.purchaseId)).toMatchObject({
+      status: "expired",
+      nextCheckAt: null,
+    });
+    expect(await f.service.recoverDuePurchase(f.org, payment.purchaseId)).toBe(false);
+    f.paid();
+    await f.service.queuePaymentCheck(f.org, {
+      eventId: generateId("evt"),
+      eventType: "payment.succeeded",
+      checkoutId: f.receipt().checkout.id,
+    });
+    await f.service.recoverDuePurchase(f.org, payment.purchaseId);
+    expect((await repo.budget(f.org))!.fundedUnits).toBe(actionDepositUnits(500));
+  });
+
   it("reuses the exact persisted offer after the provider accepted checkout but its response was lost", async () => {
     const f = await fixture();
     const create = f.createCheckout.getMockImplementation()!;

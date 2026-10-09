@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   AppError,
   actionAffordableSeconds,
@@ -10,6 +10,16 @@ import {
 import type { Database } from "../factory";
 import { actionBudget, actionCharge, actionCreditPurchase } from "../schema/action-billing";
 import { actionJob, actionRun } from "../schema/actions";
+import { oblienWebhookEvent } from "../schema/billing";
+
+/** IDs come from a signature-verified event. Its amounts are deliberately absent:
+ * only a fresh checkout receipt can change the ledger. */
+export interface ActionPaymentEvent {
+  eventId: string;
+  eventType: string;
+  checkoutId?: string;
+  purchaseId?: string;
+}
 
 type PurchaseInput = Pick<
   typeof actionCreditPurchase.$inferInsert,
@@ -42,6 +52,83 @@ export function createActionBillingRepo(db: Database) {
         .where(eq(actionCreditPurchase.organizationId, org))
         .orderBy(desc(actionCreditPurchase.createdAt))
         .limit(Math.min(100, limit));
+    },
+    async duePurchases(limit = 20) {
+      return db
+        .select({
+          id: actionCreditPurchase.id,
+          organizationId: actionCreditPurchase.organizationId,
+        })
+        .from(actionCreditPurchase)
+        .where(lte(actionCreditPurchase.nextCheckAt, sql`now()`))
+        .orderBy(asc(actionCreditPurchase.nextCheckAt), asc(actionCreditPurchase.id))
+        .limit(Math.max(1, Math.min(100, limit)));
+    },
+    /** Called under the same organization lock as receipt reconciliation. Move
+     * the deadline BEFORE provider I/O so a crash leaves a retry, not a hot loop.
+     * The conditional update also rejects a stale sweep from another replica. */
+    async beginPurchaseCheck(org: string, id: string) {
+      return (
+        await db
+          .update(actionCreditPurchase)
+          .set({
+            checkAttempts: sql`LEAST(10, ${actionCreditPurchase.checkAttempts} + 1)`,
+            nextCheckAt: sql`now() + LEAST(300, 30 * power(2, ${actionCreditPurchase.checkAttempts})) * interval '1 second'`,
+          })
+          .where(and(purchaseWhere(org, id), lte(actionCreditPurchase.nextCheckAt, sql`now()`)))
+          .returning()
+      )[0];
+    },
+    /** Queue and acknowledge together. The service's organization lock prevents
+     * a receipt read in flight from overwriting a newer event's requested check. */
+    async queuePurchaseChecks(org: string, event: ActionPaymentEvent) {
+      return db.transaction(async (tx) => {
+        const [accepted] = await tx
+          .insert(oblienWebhookEvent)
+          .values({
+            oblienEventId: event.eventId,
+            eventType: event.eventType,
+            processedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: oblienWebhookEvent.oblienEventId,
+            set: { processedAt: new Date() },
+            setWhere: isNull(oblienWebhookEvent.processedAt),
+          })
+          .returning();
+        if (!accepted) return false;
+
+        let id: string | undefined;
+        if (event.purchaseId || event.checkoutId) {
+          const [purchase] = await tx
+            .select({ id: actionCreditPurchase.id, checkoutId: actionCreditPurchase.checkoutId })
+            .from(actionCreditPurchase)
+            .where(
+              and(
+                eq(actionCreditPurchase.organizationId, org),
+                event.purchaseId
+                  ? eq(actionCreditPurchase.id, event.purchaseId)
+                  : eq(actionCreditPurchase.checkoutId, event.checkoutId!),
+              ),
+            )
+            .limit(1);
+          // A provider payment not opened by this organization is not an order.
+          if (!purchase) return false;
+          if (purchase.checkoutId && event.checkoutId && purchase.checkoutId !== event.checkoutId)
+            throw new Error("Actions payment event does not match the saved checkout");
+          id = purchase.id;
+        }
+        await tx
+          .update(actionCreditPurchase)
+          .set({ nextCheckAt: sql`now()` })
+          .where(
+            and(
+              eq(actionCreditPurchase.organizationId, org),
+              id ? eq(actionCreditPurchase.id, id) : undefined,
+            ),
+          );
+        return true;
+      });
     },
     async createPurchase(input: PurchaseInput, namespace: string) {
       actionDepositUnits(input.priceCents);
@@ -117,9 +204,17 @@ export function createActionBillingRepo(db: Database) {
       checkoutId: string,
       fundedUnits: number,
       status: string,
+      recheckAfterSeconds: number | null,
     ) {
       if (!Number.isSafeInteger(fundedUnits) || fundedUnits < 0)
         throw new Error("Invalid verified Actions credit grant");
+      if (
+        recheckAfterSeconds !== null &&
+        (!Number.isSafeInteger(recheckAfterSeconds) ||
+          recheckAfterSeconds < 1 ||
+          recheckAfterSeconds > 86_400)
+      )
+        throw new Error("Invalid Actions payment check interval");
       return db.transaction(async (tx) => {
         const [budget] = await tx
           .select()
@@ -148,7 +243,16 @@ export function createActionBillingRepo(db: Database) {
         return (
           await tx
             .update(actionCreditPurchase)
-            .set({ fundedUnits, status, checkedAt: new Date() })
+            .set({
+              fundedUnits,
+              status,
+              checkedAt: new Date(),
+              checkAttempts: 0,
+              nextCheckAt:
+                recheckAfterSeconds === null
+                  ? null
+                  : sql`now() + ${recheckAfterSeconds} * interval '1 second'`,
+            })
             .where(purchaseWhere(org, id))
             .returning()
         )[0]!;

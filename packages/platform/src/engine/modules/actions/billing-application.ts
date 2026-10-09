@@ -1,4 +1,5 @@
-import { ACTIONS_UNITS_PER_CENT, AppError, PRICING } from "@repo/core";
+import { ACTIONS_UNITS_PER_CENT, AppError, PRICING, tryWithKeyedMutex } from "@repo/core";
+import { diagnostics } from "@repo/core/diagnostics";
 import type { ActionBudget, ActionCreditPurchase } from "@repo/contracts";
 import { repos } from "@repo/db";
 import type { Repositories } from "@repo/db/factory";
@@ -45,6 +46,47 @@ function credits() {
     decrypt,
     dashboardUrl: localDashboardUrl,
   });
+}
+
+export async function queueActionsPaymentCheck(
+  organizationId: string,
+  event: Parameters<ActionCredits["queuePaymentCheck"]>[1],
+) {
+  requireCloud();
+  return credits().queuePaymentCheck(organizationId, event);
+}
+
+/** Separate from the workflow controller: provider outages must not delay run
+ * observation or cancellation. The purchase rows are the durable queue. */
+export async function runActionsPaymentReconcile() {
+  const stats = { scanned: 0, checked: 0, errors: 0 };
+  if (!env.CLOUD_MODE) return stats;
+  return (
+    (await tryWithKeyedMutex("actions-payment-reconcile", async () => {
+      const pending = await repos.actionBilling.duePurchases(20);
+      const service = credits();
+      for (let start = 0; start < pending.length; start += 4) {
+        const batch = pending.slice(start, start + 4);
+        const results = await Promise.allSettled(
+          batch.map((purchase) => service.recoverDuePurchase(purchase.organizationId, purchase.id)),
+        );
+        stats.scanned += batch.length;
+        for (const [index, result] of results.entries()) {
+          if (result.status === "fulfilled") {
+            if (result.value) stats.checked++;
+          } else {
+            stats.errors++;
+            diagnostics.warn(
+              "platform/engine/modules/actions/billing-application",
+              `Actions payment check failed for ${batch[index]!.id}`,
+              result.reason,
+            );
+          }
+        }
+      }
+      return stats;
+    })) ?? stats
+  );
 }
 
 type Purchase = NonNullable<Awaited<ReturnType<Repositories["actionBilling"]["purchase"]>>>;

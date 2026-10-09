@@ -52,16 +52,24 @@ export const actionCreditPurchase = pgTable(
     /** Provider-confirmed NET credit after refunds/disputes, never browser data. */
     fundedUnits: bigint("funded_units", { mode: "number" }).notNull().default(0),
     checkedAt: timestamp("checked_at"),
+    /** Durable receipt recovery, including a lost checkout response. Null only
+     * after expiry; a verified payment event can request another check. */
+    nextCheckAt: timestamp("next_check_at").defaultNow(),
+    checkAttempts: integer("check_attempts").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("action_purchase_key_unique").on(t.organizationId, t.idempotencyKey),
     uniqueIndex("action_purchase_checkout_unique").on(t.checkoutId),
     index("action_purchase_pending_idx").on(t.status, t.checkedAt),
+    index("action_purchase_check_idx")
+      .on(t.nextCheckAt, t.id)
+      .where(sql`${t.nextCheckAt} IS NOT NULL`),
     check(
       "action_purchase_amounts_check",
       sql`${t.priceCents} > 0 AND ${t.fundedUnits} BETWEEN 0 AND ${t.priceCents}::bigint * 600000`,
     ),
+    check("action_purchase_check_attempts_check", sql`${t.checkAttempts} BETWEEN 0 AND 10`),
   ],
 );
 

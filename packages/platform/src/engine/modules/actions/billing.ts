@@ -12,6 +12,9 @@ interface ActionCreditPorts {
   dashboardUrl: string;
 }
 
+type Purchase = NonNullable<Awaited<ReturnType<Repositories["actionBilling"]["purchase"]>>>;
+type PaymentEvent = Parameters<Repositories["actionBilling"]["queuePurchaseChecks"]>[1];
+
 export function actionBillingNamespace(organizationId: string): string {
   return `osa-${createHash("sha256").update(organizationId).digest("hex").slice(0, 40)}`;
 }
@@ -77,10 +80,17 @@ export class ActionCredits {
       if (purchase.checkoutUrlEnc)
         return { purchaseId: id, checkoutUrl: this.ports.decrypt(purchase.checkoutUrlEnc) };
     }
+    return this.restoreCheckout(purchase);
+  }
+
+  private async restoreCheckout(purchase: Purchase) {
     // Replaying the persisted request reconciles a lost checkout response. No
     // changed price, metadata, return URL or newly generated key is substituted.
     const request = purchase.request as OblienCheckout;
-    if (request.namespace !== actionBillingNamespace(organizationId) || request.kind !== "topup")
+    if (
+      request.namespace !== actionBillingNamespace(purchase.organizationId) ||
+      request.kind !== "topup"
+    )
       throw new AppError(
         "Actions payment ownership could not be verified",
         409,
@@ -88,12 +98,30 @@ export class ActionCredits {
       );
     const result = await this.ports.provider.createCheckout(request);
     await this.ports.repo.recordCheckout(
-      organizationId,
-      id,
+      purchase.organizationId,
+      purchase.id,
       result.checkoutId,
       this.ports.encrypt(result.url),
     );
-    return { purchaseId: id, checkoutUrl: result.url };
+    return { purchaseId: purchase.id, checkoutUrl: result.url };
+  }
+
+  async queuePaymentCheck(organizationId: string, event: PaymentEvent) {
+    return this.ports.lock(organizationId, () =>
+      this.ports.repo.queuePurchaseChecks(organizationId, event),
+    );
+  }
+
+  /** Background recovery may replay an existing intent after a lost response;
+   * the public read path below never opens a checkout. */
+  async recoverDuePurchase(organizationId: string, id: string) {
+    return this.ports.lock(organizationId, async () => {
+      const purchase = await this.ports.repo.beginPurchaseCheck(organizationId, id);
+      if (!purchase) return false;
+      if (!purchase.checkoutId) await this.restoreCheckout(purchase);
+      await this.inspectUnlocked(organizationId, id);
+      return true;
+    });
   }
 
   async inspect(organizationId: string, id: string) {
@@ -147,6 +175,9 @@ export class ActionCredits {
       purchase.checkoutId,
       Math.floor(net * ACTIONS_UNITS_PER_CENT),
       status,
+      // Fulfilled receipts remain auditable after refund/dispute events are
+      // missed. Pending fulfillment is revisited promptly without a browser.
+      status === "expired" ? null : status === "open" ? 300 : status === "processing" ? 60 : 86_400,
     );
   }
 }

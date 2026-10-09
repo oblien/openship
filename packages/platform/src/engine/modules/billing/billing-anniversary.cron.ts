@@ -63,6 +63,18 @@ export async function scheduleBillingAnniversary(): Promise<void> {
       }
     },
   });
+  await runner.scheduleRecurring({
+    jobId: "billing:actions-payments",
+    cronExpression: "* * * * *",
+    onTick: async () => {
+      try {
+        const { runActionsPaymentReconcile } = await import("../actions/billing-application");
+        await runActionsPaymentReconcile();
+      } catch (error) {
+        errorDiagnostics.error("platform/engine/modules/billing/billing-anniversary.cron", "[actions-payment-reconcile] sweep failed", error);
+      }
+    },
+  });
 }
 
 export const scheduleBillingReset = scheduleBillingAnniversary;
