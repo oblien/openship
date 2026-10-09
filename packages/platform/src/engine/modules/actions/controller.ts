@@ -38,8 +38,8 @@ export interface ActionControllerPorts {
   ): Promise<ActionExecution | null>;
   secrets(run: ActionRun, job: ActionJob): Promise<Record<string, string>>;
   environment?(run: ActionRun, job: ActionJob): Promise<Record<string, string>>;
-  /** Deletes disposable compute after log/result persistence. Idempotent. */
-  cleanup(run: ActionRun, job: ActionJob, runner: ActionRunner, owner: string): Promise<void>;
+  /** Deletes disposable compute after log/result persistence. False means still removing. */
+  cleanup(run: ActionRun, job: ActionJob, runner: ActionRunner, owner: string): Promise<boolean>;
   check(
     run: ActionRun,
     job: ActionJob,
@@ -307,7 +307,7 @@ export class ActionController {
           (!job.workerStartedAt && cancelled) ||
           (actionFinished(job.status) && (!job.workerStartedAt || runner.cloudPoolId))
         ) {
-          await this.ports.cleanup(run, job, runner, this.owner);
+          if (!(await this.ports.cleanup(run, job, runner, this.owner))) return;
           await update({
             ...(cancelled && !actionFinished(job.status)
               ? { status: "cancelled" as const, finishedAt: new Date() }
@@ -343,7 +343,7 @@ export class ActionController {
           if (snapshot.state === "idle" && !actionFinished(job.status)) {
             if (cancelled) {
               await worker.clean(binary, directory);
-              await this.ports.cleanup(run, job, runner, this.owner);
+              if (!(await this.ports.cleanup(run, job, runner, this.owner))) return;
               await update({ status: "cancelled", finishedAt: new Date(), cleanedAt: new Date() });
             } else {
               const secrets = await this.ports.secrets(run, job);
@@ -401,7 +401,7 @@ export class ActionController {
           }
           if (actionFinished(job.status)) {
             if (!runner.cloudPoolId) await worker.clean(binary, directory);
-            await this.ports.cleanup(run, job, runner, this.owner);
+            if (!(await this.ports.cleanup(run, job, runner, this.owner))) return;
             await update({ cleanedAt: new Date() });
           }
         } finally {
@@ -431,7 +431,9 @@ export class ActionController {
         Date.now() - job.startedAt.getTime() > 15 * 60_000;
       const workerLost = error instanceof AppError && error.code === "ACTIONS_WORKER_LOST";
       await update({
-        error: safeErrorMessage(error),
+        // Cleanup can outlive execution. Report its failures to diagnostics,
+        // but preserve the completed job's actual result and failure message.
+        error: actionFinished(job.status) ? job.error : safeErrorMessage(error),
         ...(workerLost || (!job.workerStartedAt && (permanent || preparationExpired))
           ? { status: "failure" as const, finishedAt: new Date() }
           : {}),

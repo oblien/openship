@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { generateId } from "@repo/core";
 import type { ActionJob, ActionRun, ActionRunner } from "@repo/db";
 
@@ -84,7 +85,7 @@ const job = () => ({ ...state.job }) as unknown as ActionJob;
 const workspace = () => ({
   id: "workspace-one",
   namespace: runner.cloudPoolId,
-  slug: `actions-${String(state.job.id).toLowerCase().replaceAll("_", "-")}`,
+  slug: `actions-${createHash("sha256").update(String(state.job.id)).digest("hex").slice(0, 32)}`,
   ready: false,
   status: "starting",
 });
@@ -123,6 +124,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("temporary Cloud Actions workers", () => {
+  it("creates valid, distinct provider names for case-sensitive job IDs ending in punctuation", async () => {
+    const ids = ["ajob_Test_", "ajob_test_", "ajob_Test-", "ajob__--", "ajob_Test"];
+    for (const id of ids) {
+      Object.assign(state.job, { id, providerRequestedAt: null, providerWorkspaceId: null });
+      expect(await openCloudActionWorker(run, job(), runner, "owner", "/assets")).toBeNull();
+    }
+    const requests = state.create.mock.calls.map(([input]) => input);
+    expect(requests).toHaveLength(ids.length);
+    expect(new Set(requests.map((input) => input.slug)).size).toBe(ids.length);
+    for (const [index, input] of requests.entries()) {
+      expect(input.slug).toMatch(/^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$/);
+      expect(input.idempotency_key).toBe(`openship-actions-${ids[index]}`);
+    }
+  });
+
   it("uses one namespace-scoped token, durable create key and TTL with ingress closed during provisioning", async () => {
     expect(await openCloudActionWorker(run, job(), runner, "owner", "/assets")).toBeNull();
     expect(state.tokens).toHaveBeenCalledWith({
@@ -205,7 +221,7 @@ describe("temporary Cloud Actions workers", () => {
     );
     expect(state.job.providerRequestedAt).toBeInstanceOf(Date);
     state.get.mockRejectedValue(missing());
-    await removeCloudActionWorker(run, job(), runner, "owner");
+    expect(await removeCloudActionWorker(run, job(), runner, "owner")).toBe(true);
     expect(state.create.mock.calls[1]![0]).toEqual(state.create.mock.calls[0]![0]);
     expect(state.remove).toHaveBeenCalledWith("workspace-one");
   });
@@ -255,9 +271,7 @@ describe("temporary Cloud Actions workers", () => {
     await removeCloudActionWorker(run, job(), runner, "owner");
     expect(state.create).not.toHaveBeenCalled();
     state.get.mockImplementation(async () => workspace());
-    await expect(removeCloudActionWorker(run, job(), runner, "owner")).rejects.toMatchObject({
-      code: "ACTIONS_WORKER_REMOVING",
-    });
+    expect(await removeCloudActionWorker(run, job(), runner, "owner")).toBe(false);
   });
 
   it("disables removed pools and drains changed configurations without changing in-flight request resources", async () => {

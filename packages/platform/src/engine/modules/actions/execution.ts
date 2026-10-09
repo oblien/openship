@@ -107,7 +107,7 @@ export const actionControllerPorts: ActionControllerPorts = {
   environment: actionRuntimeEnvironment,
   async cleanup(run, job, runner, owner) {
     if (runner.cloudPoolId)
-      await (await import("./cloud-runner")).removeCloudActionWorker(run, job, runner, owner);
+      return (await import("./cloud-runner")).removeCloudActionWorker(run, job, runner, owner);
     else if (runner.serverId && job.workerBinary && job.directory && !job.workerStartedAt) {
       const connection = await acquireServerExecution(run.organizationId, runner.serverId);
       try {
@@ -119,6 +119,7 @@ export const actionControllerPorts: ActionControllerPorts = {
         await connection.release();
       }
     }
+    return true;
   },
   check: syncActionCheck,
   reportError(error, context) {

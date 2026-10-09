@@ -422,7 +422,7 @@ jobs:
             directory: `${installed.root}/jobs/${job.id}`,
             release: async () => {},
           }),
-          cleanup: async () => {},
+          cleanup: async () => true,
           check: async (_run, job) => ({ id: `check-${job.id}`, error: null }),
           reportError: (error) => errors.push(error),
         };

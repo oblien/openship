@@ -133,7 +133,9 @@ async function clientFor(run: ActionRun, runner: ActionRunner) {
 function workspaceInput(job: ActionJob, runner: ActionRunner) {
   return {
     name: `Openship Actions ${job.id}`,
-    slug: `actions-${job.id.toLowerCase().replaceAll("_", "-")}`,
+    // Job IDs are case-sensitive and can end in URL-safe punctuation. A hash
+    // preserves their identity while satisfying the provider's hostname rules.
+    slug: `actions-${createHash("sha256").update(job.id).digest("hex").slice(0, 32)}`,
     namespace: runner.cloudPoolId!,
     image: CLOUD_DOCKER_IMAGE,
     mode: "temporary" as const,
@@ -284,8 +286,8 @@ export async function removeCloudActionWorker(
   job: ActionJob,
   runner: ActionRunner,
   owner: string,
-): Promise<void> {
-  if (!job.providerRequestedAt && !job.providerWorkspaceId) return;
+): Promise<boolean> {
+  if (!job.providerRequestedAt && !job.providerWorkspaceId) return true;
   const client = await clientFor(run, runner);
   try {
     // An uncertain create is resolved with its ORIGINAL key and config. No new
@@ -304,17 +306,16 @@ export async function removeCloudActionWorker(
     await client.workspaces.delete(workspace.id);
     try {
       await client.workspaces.get(workspace.id);
-      throw new AppError(
-        "Waiting for Cloud to remove the temporary Actions worker",
-        503,
-        "ACTIONS_WORKER_REMOVING",
-      );
+      // Deletion is asynchronous. Keep the scheduler slot and poll on the
+      // next tick without replacing the workflow result with a cleanup error.
+      return false;
     } catch (error) {
       if (!isMissing(error)) throw error;
     }
   } catch (error) {
     if (!isMissing(error) || !job.providerWorkspaceId) throw error;
   }
+  return true;
 }
 
 function isMissing(error: unknown): boolean {

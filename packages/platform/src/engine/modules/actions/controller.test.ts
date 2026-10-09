@@ -115,7 +115,7 @@ function engine(options: { provisioning?: boolean } = {}) {
     repo,
     authorize: vi.fn(async () => {}),
     secrets: async () => ({}),
-    cleanup: vi.fn(async () => {}),
+    cleanup: vi.fn(async () => true),
     check: vi.fn(async (_run, job) => ({ id: job.id, error: null })),
     reportError: vi.fn(),
     open: vi.fn(async (_run, job) =>
@@ -351,13 +351,20 @@ describe("durable Actions controller", () => {
   it("cleans a cancelled provisioning VM without starting its job", async () => {
     const { run, org, runner } = await fixture(yaml, true);
     const e = engine({ provisioning: true });
+    e.ports.cleanup = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
     await reconcile(e, run);
     expect(e.ports.open).toHaveBeenCalledOnce();
     await repo.requestCancel(org, run.id);
     await reconcile(e, run);
     expect(e.ports.cleanup).toHaveBeenCalledOnce();
+    expect(await repo.runnerBusy(org, runner.id)).toBe(true);
+    expect((await repo.run(org, run.id))?.settledAt).toBeNull();
+    expect(e.ports.reportError).not.toHaveBeenCalled();
+    await new ActionController(e.ports).reconcile(org, run.id);
+    expect(e.ports.cleanup).toHaveBeenCalledTimes(2);
     expect(e.executions.size).toBe(0);
     expect(await repo.runnerBusy(org, runner.id)).toBe(false);
+    expect((await repo.run(org, run.id))?.status).toBe("cancelled");
   });
 
   it("requires fork approval and never selects a persistent host for untrusted code", async () => {
@@ -478,9 +485,10 @@ describe("durable Actions controller", () => {
     e.ports.cleanup = vi
       .fn()
       .mockRejectedValueOnce(new Error("Deletion response uncertain"))
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(true);
     await reconcile(e, run);
     expect((await repo.job(org, job!.id))?.status).toBe("success");
+    expect((await repo.job(org, job!.id))?.error).toBeNull();
     expect(await repo.runnerBusy(org, runner.id)).toBe(true);
     const opens = vi.mocked(e.ports.open).mock.calls.length;
     await reconcile(e, run);
@@ -493,4 +501,30 @@ describe("durable Actions controller", () => {
         .every(([, value]) => value.id !== job!.id),
     ).toBe(true);
   });
+
+  it.each(["success", "failure"] as const)(
+    "preserves a %s result while asynchronous Cloud deletion holds the runner slot",
+    async (conclusion) => {
+      const { run, org, runner } = await fixture(yaml, true);
+      const e = engine();
+      await reconcile(e, run);
+      const [job] = await repo.jobs(org, run.id);
+      e.finish(job!.id, conclusion);
+      const originalError = conclusion === "failure" ? "The workflow step exited with code 1" : null;
+      if (originalError) e.executions.get(job!.id)!.result!.error = originalError;
+      e.ports.cleanup = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+      await reconcile(e, run);
+      expect(await repo.job(org, job!.id)).toMatchObject({
+        status: conclusion, error: originalError, cleanedAt: null,
+      });
+      expect(await repo.runnerBusy(org, runner.id)).toBe(true);
+      expect(e.ports.reportError).not.toHaveBeenCalled();
+      const successor = new ActionController(e.ports);
+      await successor.reconcile(org, run.id);
+      expect(await repo.job(org, job!.id)).toMatchObject({
+        status: conclusion, error: originalError, cleanedAt: expect.any(Date),
+      });
+      expect(e.ports.cleanup).toHaveBeenCalledTimes(2);
+    },
+  );
 });
