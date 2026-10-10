@@ -176,6 +176,37 @@ describe("resolveProjectInfo", () => {
     ]);
   });
 
+  it("parses a Compose project's services when its root also looks like a Vite app (#1020)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-compose-behind-vite-"));
+    tempDirs.push(tempDir);
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({
+        name: "app",
+        scripts: { build: "vite build" },
+        devDependencies: { vite: "^6.0.0" },
+      }),
+    );
+    await writeFile(join(tempDir, "vite.config.ts"), "export default {};\n");
+    await writeFile(join(tempDir, "Dockerfile"), "FROM node:22-alpine\n");
+    await writeFile(
+      join(tempDir, "compose.yaml"),
+      ["services:", "  app:", "    build: .", "  caddy:", "    image: caddy:2"].join("\n"),
+    );
+
+    const scan = await resolveProjectInfo({ source: "local", path: tempDir });
+    expect(scan.stack).toBe("docker");
+    expect(scan.services).toBeUndefined();
+
+    const compose = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      expectCompose: true,
+    });
+    expect(compose.projectType).toBe("services");
+    expect(compose.services?.map((service) => service.name)).toEqual(["app", "caddy"]);
+  });
+
   it("reports a required Compose variable as a value to collect, not a load failure", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
     tempDirs.push(tempDir);

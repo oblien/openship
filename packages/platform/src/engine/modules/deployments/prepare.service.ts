@@ -89,6 +89,8 @@ export type Source =
       rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
+      /** See {@link ResolveOptions.expectCompose}. */
+      expectCompose?: boolean;
     }
   | {
       source: "local";
@@ -97,6 +99,8 @@ export type Source =
       rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
+      /** See {@link ResolveOptions.expectCompose}. */
+      expectCompose?: boolean;
     };
 
 export interface ResolveOptions {
@@ -126,6 +130,15 @@ export interface ResolveOptions {
    * file as unparseable even though the deploy would have succeeded (#383).
    */
   env?: Record<string, string>;
+  /**
+   * The project already deploys Compose services (a services project, or one
+   * with imported Compose rows). The Compose file found at the root is parsed
+   * even when stack detection picks another stack, so a root that also holds a
+   * Vite config and a Dockerfile cannot drop those services (#1020). Root
+   * selection is unchanged, and an app scan still leaves a local-dev Compose
+   * file alone (#959).
+   */
+  expectCompose?: boolean;
 }
 
 /** Thrown when a declared `composePath` has no compose file behind it. */
@@ -868,6 +881,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
       composePath: input.composePath,
       rootDirectory: input.rootDirectory,
       env: input.env,
+      expectCompose: input.expectCompose,
     });
   }
 
@@ -881,6 +895,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     composePath: input.composePath,
     rootDirectory: input.rootDirectory,
     env: input.env,
+    expectCompose: input.expectCompose,
   });
 }
 
@@ -1022,7 +1037,8 @@ export async function resolveFromReader(
     root.monorepo,
     routing,
     {
-      declaredCompose: !!root.declaredComposePath,
+      declaredCompose:
+        !!root.declaredComposePath || (opts.expectCompose === true && root.composeFiles.length > 0),
       // `openship.json.env` is the repository's explicit shared environment
       // layer. Let it resolve Compose fields during the same source read; an
       // environment supplied by the deploy request remains the higher-priority

@@ -875,6 +875,14 @@ async function reconcileComposeSource(
       return; // this push didn't touch the compose file → no drift possible
     }
     const composePath = project.composePath ?? undefined;
+    // `kind: compose` also represents independently added image services. An
+    // app scan can legitimately have no Compose services (#959); only a project
+    // that declares Compose or holds an imported baseline needs them back, and
+    // gets them even when its root also looks like an app (#1020).
+    const expectsComposeServices =
+      isMultiServiceProject(project) ||
+      composeRows.some((service) => service.kind === "compose" && service.importedSpec != null);
+    const expectCompose = expectsComposeServices && !composePath ? { expectCompose: true } : {};
     // Without rootDirectory, a subpath project re-scans at the detected root and
     // finds no compose (or the wrong one), so the deploy fails.
     // Local wins when present because that is the build source transferred to a
@@ -886,6 +894,7 @@ async function reconcileComposeSource(
           composePath,
           rootDirectory: project.rootDirectory ?? undefined,
           env: options.interpolationEnv,
+          ...expectCompose,
         })
       : await resolveProjectInfo({
           source: "github",
@@ -896,18 +905,14 @@ async function reconcileComposeSource(
           composePath,
           rootDirectory: project.rootDirectory ?? undefined,
           env: options.interpolationEnv,
+          ...expectCompose,
         });
     const services = info.services ?? [];
     if (services.length === 0) {
-      // `kind: compose` also represents independently added image services.
-      // An app scan can legitimately have no Compose services (#959). Keep its
-      // source env, leave the attached services alone, and require a nonempty
-      // source only when the project, scan, or imported baseline declares one.
-      const expectsComposeServices =
-        isMultiServiceProject(project) ||
-        info.projectType === "services" ||
-        composeRows.some((service) => service.kind === "compose" && service.importedSpec != null);
-      if (!expectsComposeServices) return info;
+      // Keep an app scan's source env, leave the attached services alone, and
+      // require a nonempty source only when the project, scan, or imported
+      // baseline declares one.
+      if (!expectsComposeServices && info.projectType !== "services") return info;
       throw new ComposeConfigurationError(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );

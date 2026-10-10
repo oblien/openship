@@ -882,6 +882,27 @@ describe("triggerDeployment", () => {
     },
   );
 
+  it("asks the source scan for the Compose services an imported project already deploys (#1020)", async () => {
+    repos.project.findById.mockResolvedValue(
+      baseProject({ framework: "docker", composePath: null }),
+    );
+    repos.service.listByProject.mockResolvedValue([
+      {
+        ...composeServices[0],
+        importedSpec: toComposeSpec(composeServices[0]),
+      },
+    ]);
+    resolveProjectInfo.mockResolvedValue({ projectType: "services", services: composeServices });
+
+    await triggerDeployment(ctx, { projectId: "project-1" });
+
+    expect(resolveProjectInfo).toHaveBeenCalledWith(
+      expect.objectContaining({ expectCompose: true }),
+    );
+    expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
+    expect(kickoffBuild).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { framework: "node", importedSpec: toComposeSpec(composeServices[0]) },
     { framework: "unknown", importedSpec: null },
