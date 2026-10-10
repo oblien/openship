@@ -50,7 +50,7 @@ export function ActionDeploymentRules({
       mode: "actions" as const,
       label: c.deployActions,
       hint: c.deployActionsHint,
-      icon: "topology" as const,
+      icon: "play-circle" as const,
     },
   ];
   const eligible = workflows.filter(
@@ -318,7 +318,7 @@ function ProjectContent({ projectId }: { projectId: string }) {
                     >
                       <div className="flex items-center gap-3">
                         <span className="rounded-xl bg-muted/50 p-2.5">
-                          <Icon name="topology" className="size-5 text-muted-foreground" />
+                          <Icon name="play-circle" className="size-5 text-muted-foreground" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium">
                           {workflow.name}

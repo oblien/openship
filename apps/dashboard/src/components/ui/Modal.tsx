@@ -98,7 +98,7 @@ export function Modal({
         className={`relative w-full rounded-2xl shadow-2xl flex flex-col transition-all duration-300 !overflow-x-hidden ${surface === "frosted" ? "backdrop-blur-3xl" : "backdrop-blur-2xl"}`}
         data-modal-surface={surface}
         style={{
-          background: `color-mix(in oklab, var(--th-card-bg-solid) ${surface === "frosted" ? "88%" : "96%"}, transparent)`,
+          background: `color-mix(in oklab, var(--th-card-bg-solid) ${surface === "frosted" ? "65%" : "96%"}, transparent)`,
           width,
           overflow,
           maxWidth,

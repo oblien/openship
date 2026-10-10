@@ -43,7 +43,7 @@ export function DeployActions() {
     <section className="space-y-4 rounded-2xl bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Icon name="topology" className="size-5 text-muted-foreground" />
+          <Icon name="play-circle" className="size-5 text-muted-foreground" />
           <div>
             <h2 className="text-sm font-semibold">{a.title}</h2>
             <p className="mt-1 text-xs text-muted-foreground">

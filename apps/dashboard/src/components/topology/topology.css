@@ -66,20 +66,20 @@
   background: var(--scale-node-tint);
   color: var(--scale-node-color);
 }
-.topology-node .react-flow__handle {
+.topology-port.react-flow__handle {
   width: 9px;
   height: 9px;
   border: 2px solid var(--th-card-on-page);
   background: var(--muted-foreground);
 }
-.topology-node .react-flow__handle::after {
+.topology-port.react-flow__handle::after {
   content: "";
   position: absolute;
   inset: -7px;
 }
-.topology-node .react-flow__handle:hover,
-.topology-node .react-flow__handle.connectingto {
-  background: var(--scale-node-color);
+.topology-port.react-flow__handle:hover,
+.topology-port.react-flow__handle.connectingto {
+  background: var(--scale-node-color, var(--foreground));
 }
 .topology-canvas-controls {
   background: var(--background);

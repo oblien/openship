@@ -39,7 +39,7 @@ export function ActionsSidebar({
     {
       title: copy.workflowTitle,
       description: copy.workflowHint,
-      icon: "git-branch" as const,
+      icon: "play-circle" as const,
       done: workflowCount > 0,
       href: firstWorkflow ? `/actions/workflows/${firstWorkflow.id}` : "/actions/new",
     },

@@ -526,14 +526,30 @@ export function buildProjectTopology({
   return { nodes, edges };
 }
 
+export interface TopologyNodeLayout {
+  width: number;
+  height: number;
+  gapX: number;
+  gapY: number;
+}
+
+export const DEFAULT_TOPOLOGY_NODE_LAYOUT: TopologyNodeLayout = {
+  width: 250,
+  height: 160,
+  gapX: 90,
+  gapY: 40,
+};
+
 /** Deterministic first layout; later refreshes preserve the user's positions. */
 export function topologyPositions(
   graph: ProjectTopologyGraph,
+  layout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
 ): Record<string, { x: number; y: number }> {
   const columns = new Map<number, TopologyResource[]>();
   for (const node of graph.nodes) {
-    const column = node.layoutColumn ?? (
-      node.kind === "edge" || node.kind === "traffic"
+    const column =
+      node.layoutColumn ??
+      (node.kind === "edge" || node.kind === "traffic"
         ? 0
         : node.kind === "linked"
           ? 3
@@ -545,7 +561,10 @@ export function topologyPositions(
   const positions: Record<string, { x: number; y: number }> = {};
   for (const [column, nodes] of columns) {
     for (const [row, node] of nodes.entries()) {
-      positions[node.id] = { x: column * 340, y: (row - (nodes.length - 1) / 2) * 200 };
+      positions[node.id] = {
+        x: column * (layout.width + layout.gapX),
+        y: (row - (nodes.length - 1) / 2) * (layout.height + layout.gapY),
+      };
     }
   }
   return positions;

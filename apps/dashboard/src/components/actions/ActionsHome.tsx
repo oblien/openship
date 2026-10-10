@@ -192,7 +192,7 @@ function Home() {
                         >
                           <div className="flex items-center gap-3">
                             <span className="rounded-xl bg-muted/50 p-2.5 text-muted-foreground">
-                              <Icon name="topology" className="size-5" />
+                              <Icon name="play-circle" className="size-5" />
                             </span>
                             <div className="min-w-0 flex-1">
                               <h2 className="truncate text-base font-medium text-foreground">

@@ -60,16 +60,20 @@ data for the list and guidance, and keep fetch failures distinct from empty
 accounts. Stack the sidebar below the list on narrow containers.
 Use the same workflow editor from Actions, Project → Actions and the deployment
 wizard. The dialog uses the available viewport, with a persistent canvas on the left
-and a scrollable 360px inspector on the right. Topology is the default; List and YAML
+and a scrollable 400–420px inspector on the right. Topology is the default; List and YAML
 are peer views of the same draft. Source and Run settings stay in the inspector, and
 selecting a job or dependency replaces those controls with its editor. Keep Save
 visible beneath the inspector. Stack the canvas and controls on narrow screens.
-Use the shared modal's frosted surface for the large editor, with the themed scrim
-and backdrop blur; keep fields and content cards readable. The topology canvas owns
-its shared color styles so direct navigation has the same resource colors as a
-project. Carry its service accent into job icons and use the info accent for action
-steps, triggers and runner controls. Keep labels and backgrounds neutral, with the
-shared selection treatment; colors supplement the icons and text.
+Use the shared PNG `play-circle` icon for Actions in navigation, workflow cards and
+the editor. The large editor uses the shared modal's translucent frosted surface;
+its inspector uses `bg-popover/60` with backdrop blur. Apply translucency to surfaces,
+not text or controls; keep filled fields distinct using the theme's background and
+foreground tokens. Workflow nodes are compact neutral rows with a status icon,
+job name and runner label, without service-card footers. They reuse the shared canvas
+with their own node renderer and compact layout dimensions. Reserve color for run
+status, errors and repository differences; plus buttons, sections and configuration
+icons stay neutral. The canvas owns its required styles so direct navigation is
+consistent with navigation from a project.
 Node, step, connection and trigger edits update the original YAML while preserving
 unrelated fields and comments. Reject dependency cycles and dangling job-output
 references; undo/redo affects the same draft across views. Review repository changes

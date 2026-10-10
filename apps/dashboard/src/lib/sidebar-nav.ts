@@ -60,7 +60,7 @@ const MAIN_ITEMS: NavItem[] = [
   { key: "projects", href: "/projects", icon: "project" },
   { key: "apps", href: "/apps", icon: "grid" },
   { key: "deployments", href: "/deployments", icon: "rocket" },
-  { key: "actions", href: "/actions", icon: "topology" },
+  { key: "actions", href: "/actions", icon: "play-circle" },
   // MAIN, not infrastructure: `/api/issues` reports project, domain and update items on
   // the SaaS too (only the server/container sources resolve empty there), and the
   // infrastructure section is `if (selfHosted)` — putting Issues in it would delete the

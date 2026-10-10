@@ -81,7 +81,7 @@ export function WorkflowTriggers({
       className={embedded ? "@container space-y-4" : "@container space-y-4 rounded-2xl bg-card p-5"}
     >
       <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <Icon name="bolt" className="size-4 text-info" />
+        <Icon name="bolt" className="size-4 text-muted-foreground" />
         {c.triggers}
       </h2>
       <ActionError message={error} />
@@ -93,7 +93,7 @@ export function WorkflowTriggers({
             <div className="py-4 first:pt-0 last:pb-0" key={event}>
               <label className="flex cursor-pointer items-start gap-3">
                 <span
-                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${enabled ? "bg-info-bg text-info" : "bg-muted text-muted-foreground"}`}
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted ${enabled ? "text-foreground" : "text-muted-foreground"}`}
                 >
                   <Icon name={icon} className="size-4" />
                 </span>

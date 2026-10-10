@@ -8,6 +8,7 @@ import type { Connection } from "@xyflow/react";
 import type { TopologyNodeAction, TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { workflowGraph, workflowGroupStatus } from "./workflow-graph";
+import { WorkflowJobNode, WORKFLOW_NODE_LAYOUT } from "./WorkflowJobNode";
 
 const Canvas = dynamic(
   () => import("@/components/topology/TopologyCanvas").then((module) => module.TopologyCanvas),
@@ -109,6 +110,8 @@ export function WorkflowGraph({
         onOpen={open}
         onConnect={editor?.onConnect}
         nodeActions={actions}
+        nodeComponent={WorkflowJobNode}
+        nodeLayout={WORKFLOW_NODE_LAYOUT}
         ariaLabel={t.actions.graph}
       />
     </div>

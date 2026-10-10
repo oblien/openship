@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -29,6 +29,8 @@ import { TrafficEdge, type ScaleFlowEdge } from "@/components/scale/TrafficEdge"
 import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
   topologyPositions,
+  DEFAULT_TOPOLOGY_NODE_LAYOUT,
+  type TopologyNodeLayout,
   type ProjectTopologyGraph,
   type TopologyResource,
   type TopologyState,
@@ -56,6 +58,7 @@ type ResourceFlowNode = Node<
   { resource: TopologyResource; onOpen: (id: string) => void; action?: TopologyNodeAction },
   "resource"
 >;
+export type TopologyNodeProps = NodeProps<ResourceFlowNode>;
 const stateLabels: Record<TopologyState, string> = {
   running: "Running",
   starting: "Starting",
@@ -132,6 +135,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
       aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : (action?.statusLabel ?? stateLabels[resource.state])}${resource.pending ? ", pending changes" : ""}`}
     >
       <Handle
+        className="topology-port"
         type="target"
         position={Position.Left}
         isConnectable={(isService && !action) || action?.connectable === true}
@@ -225,6 +229,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
         </div>
       )}
       <Handle
+        className="topology-port"
         type="source"
         position={Position.Right}
         isConnectable={(isService && !action) || action?.connectable === true}
@@ -332,6 +337,9 @@ interface TopologyCanvasProps {
   onOpen: (id: string) => void;
   onConnect?: (connection: Connection) => void;
   nodeActions?: Readonly<Record<string, TopologyNodeAction>>;
+  /** Render workflow jobs or other resources without duplicating canvas behavior. */
+  nodeComponent?: ComponentType<TopologyNodeProps>;
+  nodeLayout?: TopologyNodeLayout;
   ariaLabel?: string;
   nodeDescription?: string;
 }
@@ -346,11 +354,17 @@ function Canvas({
   onOpen,
   onConnect,
   nodeActions,
+  nodeComponent,
+  nodeLayout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
   ariaLabel = "Project topology",
   nodeDescription,
 }: TopologyCanvasProps) {
   const fitOptions = nodeActions ? selectionFitViewOptions : fitViewOptions;
-  const positions = useMemo(() => topologyPositions(graph), [graph]);
+  const positions = useMemo(() => topologyPositions(graph, nodeLayout), [graph, nodeLayout]);
+  const renderedNodeTypes = useMemo(
+    () => (nodeComponent ? { resource: nodeComponent } : nodeTypes),
+    [nodeComponent],
+  );
   const storedPositions = useRef<ReturnType<typeof readTopologyPositions> | null>(null);
   if (storedPositions.current === null)
     storedPositions.current = layoutKey ? readTopologyPositions(layoutKey) : {};
@@ -373,10 +387,11 @@ function Canvas({
           while (
             occupied.some(
               (other) =>
-                Math.abs(other.x - position!.x) < 270 && Math.abs(other.y - position!.y) < 180,
+                Math.abs(other.x - position!.x) < nodeLayout.width + 20 &&
+                Math.abs(other.y - position!.y) < nodeLayout.height + 20,
             )
           )
-            position.y += 200;
+            position.y += nodeLayout.height + nodeLayout.gapY;
           occupied.push(position);
         }
         return {
@@ -396,7 +411,7 @@ function Canvas({
     if (previousIds.current && previousIds.current !== ids)
       setFitRevision((revision) => revision + 1);
     previousIds.current = ids;
-  }, [graph, positions, onOpen, nodeActions]);
+  }, [graph, positions, onOpen, nodeActions, nodeLayout]);
   const edges = useMemo<ScaleFlowEdge[]>(
     () =>
       graph.edges.map((relation) => ({
@@ -433,7 +448,7 @@ function Canvas({
       <ReactFlow<ResourceFlowNode, ScaleFlowEdge>
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={renderedNodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         onNodesChange={(changes) => setNodes((current) => applyNodeChanges(changes, current))}

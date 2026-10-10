@@ -72,12 +72,7 @@ export function WorkflowWorkspace({
             {
               key: "topology",
               label: e.topology,
-              leading: (
-                <Icon
-                  name="topology"
-                  className={`size-4 ${view === "topology" ? "text-success" : "text-muted-foreground"}`}
-                />
-              ),
+              leading: <Icon name="topology" className="size-4" />,
             },
             { key: "list", label: e.list, icon: "list" },
             { key: "yaml", label: e.yaml, icon: "code" },
@@ -111,7 +106,7 @@ export function WorkflowWorkspace({
             <Icon name="arrow-right" className="rtl:rotate-180" />
           </Button>
           <Button size="sm" variant="secondary" disabled={!jobs.length} onClick={onAdd}>
-            <Icon name="plus" className="text-success" />
+            <Icon name="plus" />
             {e.addJob}
           </Button>
         </div>
@@ -155,8 +150,8 @@ export function WorkflowWorkspace({
                       onClick={() => onSelect({ kind: "node", id: job.id })}
                       className={`flex w-full items-start gap-3 rounded-xl border p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${optionCardSurface(selected)}`}
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-success-bg text-success">
-                        <Icon name="terminal" className="size-4" />
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                        <Icon name="play-circle" className="size-5" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline justify-between gap-2">
@@ -174,7 +169,7 @@ export function WorkflowWorkspace({
                         </span>
                         {!!job.needs.length && (
                           <span className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Icon name="git-branch" className="size-3.5 shrink-0 text-info" />
+                            <Icon name="git-branch" className="size-3.5 shrink-0" />
                             {e.dependsOn}: {job.needs.join(", ")}
                           </span>
                         )}
@@ -189,7 +184,7 @@ export function WorkflowWorkspace({
                                 >
                                   <Icon
                                     name={Object.hasOwn(step, "uses") ? "bolt" : "terminal"}
-                                    className={`size-3.5 shrink-0 ${Object.hasOwn(step, "uses") ? "text-info" : "text-success"}`}
+                                    className="size-3.5 shrink-0"
                                   />
                                   <span className="truncate">
                                     {index + 1}.{" "}
@@ -230,7 +225,7 @@ export function WorkflowWorkspace({
       >
         <Icon
           name={invalid ? "alert-circle" : "cursor"}
-          className={`size-3.5 shrink-0 ${invalid ? "text-warning" : "text-info"}`}
+          className={`size-3.5 shrink-0 ${invalid ? "text-warning" : ""}`}
         />
         <span>{invalid ? t.actions.integration.fixYaml : e.canvasHint}</span>
       </div>

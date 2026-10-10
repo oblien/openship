@@ -339,8 +339,8 @@ function SetupForm({
       >
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success-bg text-success">
-              <Icon name="workflow" className="size-5" />
+            <span className="flex size-10 shrink-0 items-center justify-center text-foreground/80">
+              <Icon name="play-circle" className="size-7" />
             </span>
             <div className="min-w-0">
               <h1 className="text-2xl font-medium tracking-tight text-foreground">
@@ -354,7 +354,7 @@ function SetupForm({
           </Button>
         </header>
         <div
-          className="grid gap-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:grid-cols-[minmax(0,1fr)_360px]"
+          className="grid gap-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:grid-cols-[minmax(0,1fr)_400px] @min-[1200px]:grid-cols-[minmax(0,1fr)_420px]"
           inert={mutation.busy}
           aria-busy={mutation.busy}
         >
@@ -377,7 +377,10 @@ function SetupForm({
             loading={preview.loading || file.loading || source !== debounced}
             invalid={!!preview.error}
           />
-          <aside className="flex min-h-0 flex-col rounded-2xl bg-card">
+          <aside
+            className="flex min-h-0 flex-col rounded-2xl bg-popover/60 backdrop-blur-2xl [&_:is(input,textarea).bg-background]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))]"
+            data-testid="workflow-inspector"
+          >
             <div className="@container space-y-5 p-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:overflow-y-auto">
               <ActionError message={mutation.error} />
               <ActionError message={preview.error} />
@@ -402,22 +405,12 @@ function SetupForm({
                       {
                         key: "workflow",
                         label: c.workflowStep,
-                        leading: (
-                          <Icon
-                            name="workflow"
-                            className={`size-4 ${step === "workflow" ? "text-success" : "text-muted-foreground"}`}
-                          />
-                        ),
+                        leading: <Icon name="play-circle" className="size-4" />,
                       },
                       {
                         key: "rules",
                         label: c.rulesStep,
-                        leading: (
-                          <Icon
-                            name="settings"
-                            className={`size-4 ${step === "rules" ? "text-info" : "text-muted-foreground"}`}
-                          />
-                        ),
+                        leading: <Icon name="settings" className="size-4" />,
                       },
                     ]}
                     value={step}
@@ -553,22 +546,12 @@ function SetupForm({
                                     {
                                       key: "repository",
                                       label: e.automatic,
-                                      leading: (
-                                        <Icon
-                                          name="refresh"
-                                          className={`size-3.5 ${mode === "repository" ? "text-info" : "text-muted-foreground"}`}
-                                        />
-                                      ),
+                                      leading: <Icon name="refresh" className="size-3.5" />,
                                     },
                                     {
                                       key: "inline",
                                       label: e.review,
-                                      leading: (
-                                        <Icon
-                                          name="shield-check"
-                                          className={`size-3.5 ${mode === "inline" ? "text-warning" : "text-muted-foreground"}`}
-                                        />
-                                      ),
+                                      leading: <Icon name="shield-check" className="size-3.5" />,
                                     },
                                   ]}
                                   value={mode}
@@ -619,7 +602,7 @@ function SetupForm({
                         />
                         <div className="space-y-3">
                           <h2 className="flex items-center gap-2 text-sm font-semibold">
-                            <Icon name="server" className="size-4 text-info" />
+                            <Icon name="server" className="size-4 text-muted-foreground" />
                             {a.destinations}
                           </h2>
                           <p className="text-xs leading-relaxed text-muted-foreground">
@@ -642,7 +625,7 @@ function SetupForm({
                                     )
                                   }
                                 />
-                                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-bg text-info">
+                                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                                   <Icon
                                     name={runner.kind === "cloud" ? "cloud" : "server"}
                                     className="size-4"
@@ -693,7 +676,7 @@ function SetupForm({
                         </div>
                         <div className="space-y-3">
                           <h2 className="flex items-center gap-2 text-sm font-semibold">
-                            <Icon name="project" className="size-4 text-warning" />
+                            <Icon name="project" className="size-4 text-muted-foreground" />
                             {c.projects}
                           </h2>
                           {projects.length ? (
@@ -726,7 +709,7 @@ function SetupForm({
                         <details className="group">
                           <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
                             <span className="flex items-center gap-2">
-                              <Icon name="layers" className="size-4 text-info" />
+                              <Icon name="layers" className="size-4 text-muted-foreground" />
                               {c.environment}
                             </span>
                             <Icon name="chevron-down" className="size-4 group-open:rotate-180" />
