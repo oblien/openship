@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { Connection } from "@xyflow/react";
 import type { ActionPlanView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -10,8 +10,11 @@ import { useI18n } from "@/components/i18n-provider";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { WorkflowJobList } from "./WorkflowJobList";
 import { ActionsIllustration } from "./ActionsIllustration";
-import { workflowJobs, workflowJobOffset } from "./workflow-editor";
+import { workflowJobs, workflowJobOffset, type WorkflowEdit } from "./workflow-editor";
 import type { useWorkflowDraft } from "./useWorkflowDraft";
+import type { WorkflowStepSelection } from "./WorkflowSteps";
+
+export type WorkflowWorkspaceView = "topology" | "list" | "yaml";
 
 export function WorkflowWorkspace({
   plan,
@@ -23,6 +26,12 @@ export function WorkflowWorkspace({
   loading,
   invalid,
   yamlRequest,
+  view,
+  onViewChange,
+  edit,
+  stepSelection,
+  onSelectStep,
+  onEditYaml,
 }: {
   plan: ActionPlanView | null;
   draft: ReturnType<typeof useWorkflowDraft>;
@@ -33,15 +42,20 @@ export function WorkflowWorkspace({
   loading: boolean;
   invalid: boolean;
   yamlRequest: { id: string; key: number } | null;
+  view: WorkflowWorkspaceView;
+  onViewChange: (view: WorkflowWorkspaceView) => void;
+  edit: WorkflowEdit;
+  stepSelection: WorkflowStepSelection;
+  onSelectStep: (selection: WorkflowStepSelection) => void;
+  onEditYaml: (id: string) => void;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
-  const [view, setView] = useState<"topology" | "list" | "yaml">("topology");
   const id = useId();
   const yaml = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (yamlRequest) setView("yaml");
-  }, [yamlRequest]);
+    if (yamlRequest) onViewChange("yaml");
+  }, [yamlRequest, onViewChange]);
   useEffect(() => {
     if (view !== "yaml" || !yamlRequest || !yaml.current) return;
     try {
@@ -77,7 +91,7 @@ export function WorkflowWorkspace({
             { key: "yaml", label: e.yaml, icon: "code" },
           ]}
           value={view}
-          onChange={setView}
+          onChange={onViewChange}
           idPrefix={id}
           ariaLabel={e.view}
           size="sm"
@@ -135,7 +149,17 @@ export function WorkflowWorkspace({
             />
           ) : (
             <div className="absolute inset-0 overflow-y-auto">
-              <WorkflowJobList plan={plan} jobs={jobs} selection={selection} onSelect={onSelect} />
+              <WorkflowJobList
+                plan={plan}
+                jobs={jobs}
+                selection={selection}
+                onSelect={onSelect}
+                source={draft.source}
+                edit={edit}
+                stepSelection={stepSelection}
+                onSelectStep={onSelectStep}
+                onEditYaml={onEditYaml}
+              />
             </div>
           )
         ) : (

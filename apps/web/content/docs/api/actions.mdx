@@ -101,6 +101,7 @@ Preserve both paths when configuring an external reverse proxy.
 | List authorized runners and their verified capabilities. | `actions.runners()` | `GET /api/actions/runners`<br />`job:read` |
 | Enable a runner on a connected server. Requires server administration access. | `actions.addRunner(input)` | `POST /api/actions/runners`<br />`job:admin` |
 | Inspect OS, architecture, Git, Node and Docker on an authorized server. | `actions.inspectDestination(input)` | `POST /api/actions/runners/inspect`<br />`job:admin` |
+| Enable and verify Docker CPU emulation. Requires administration of the selected server. | `actions.enableEmulation(input)` | `POST /api/actions/runners/emulation`<br />`job:admin` |
 | Update an idle runner; active execution settings cannot be changed. | `actions.updateRunner(id, input)` | `PATCH /api/actions/runners/:id`<br />`job:admin` |
 | Disable a runner for new jobs while retaining active work and history. | `actions.removeRunner(id)` | `DELETE /api/actions/runners/:id`<br />`job:admin` |
 | Refresh a runner’s verified capabilities. | `actions.probeRunner(id)` | `POST /api/actions/runners/:id/probe`<br />`job:admin` |

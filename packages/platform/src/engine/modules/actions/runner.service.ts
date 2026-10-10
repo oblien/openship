@@ -6,7 +6,7 @@ import {
   incompatibleActionLabels,
   safeErrorMessage,
 } from "@repo/core";
-import { probeActionCapabilities } from "@repo/adapters";
+import { ensureDockerEmulation, probeActionCapabilities } from "@repo/adapters";
 import { repos } from "@repo/db";
 import type { Static } from "@sinclair/typebox";
 import type { ActionCollectionSchemas } from "@repo/contracts";
@@ -20,6 +20,31 @@ type RunnerInput = Static<typeof ActionCollectionSchemas.addRunner.input>;
 export async function inspectActionDestination(ctx: ExecutionContext, serverId: string) {
   await assertJobServersWritable(ctx, [serverId]);
   return withServerExecution(ctx.organizationId, serverId, probeActionCapabilities);
+}
+
+/** Explicit server-admin operation; labels can never install or authorize emulation. */
+export async function enableActionEmulation(ctx: ExecutionContext, serverId: string) {
+  await assertJobServersWritable(ctx, [serverId]);
+  const capabilities = await withServerExecution(ctx.organizationId, serverId, async (executor) => {
+    const current = await probeActionCapabilities(executor);
+    if (!current.docker)
+      throw new ValidationError("CPU emulation requires a working Linux Docker engine");
+    const dockerPlatforms = await ensureDockerEmulation(
+      executor,
+      current.dockerArchitecture ?? current.architecture,
+    );
+    return { ...current, dockerPlatforms };
+  });
+  const runner = (await repos.actions.listRunners(ctx.organizationId)).find(
+    (row) => row.serverId === serverId,
+  );
+  if (runner)
+    await repos.actions.recordRunnerProbe(ctx.organizationId, runner.id, {
+      capabilities,
+      error: null,
+      checkedAt: new Date(),
+    });
+  return capabilities;
 }
 
 export async function saveActionRunner(ctx: ExecutionContext, input: RunnerInput, id?: string) {
@@ -53,7 +78,7 @@ export async function saveActionRunner(ctx: ExecutionContext, input: RunnerInput
     throw new ValidationError(
       `These labels do not match this runner's capabilities: ${invalid.join(", ")}`,
     );
-  if (input.config.mode === "container" && (!capabilities.docker || !input.config.image))
+  if (input.config.mode === "container" && (!capabilities.docker || !input.config.image?.trim()))
     throw new ValidationError("Container runners need a working Docker engine and a runner image");
   if (input.config.mode === "native" && !capabilities.git)
     throw new ValidationError("Install Git before adding a native Actions runner");

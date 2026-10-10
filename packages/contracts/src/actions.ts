@@ -60,6 +60,13 @@ export const ActionCapabilitiesSchema = Type.Object(
     os: Type.Union([Type.Literal("linux"), Type.Literal("macos")]),
     architecture: Type.Union([Type.Literal("x64"), Type.Literal("arm64")]),
     docker: Type.Boolean(),
+    dockerArchitecture: Type.Optional(Type.Union([Type.Literal("x64"), Type.Literal("arm64")])),
+    dockerPlatforms: Type.Optional(
+      Type.Array(Type.Union([Type.Literal("linux/amd64"), Type.Literal("linux/arm64")]), {
+        uniqueItems: true,
+        maxItems: 2,
+      }),
+    ),
     git: Type.Boolean(),
     node: Type.Boolean(),
     distribution: nullable(Type.String()),
@@ -287,6 +294,11 @@ export const ActionCollectionSchemas = {
   inspectDestination: {
     action: "admin",
     input: Type.Object({ serverId: id }),
+    output: ActionCapabilitiesSchema,
+  },
+  enableEmulation: {
+    action: "admin",
+    input: Type.Object({ serverId: id }, { additionalProperties: false }),
     output: ActionCapabilitiesSchema,
   },
   preview: {

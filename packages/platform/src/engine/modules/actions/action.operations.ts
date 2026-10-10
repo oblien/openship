@@ -13,7 +13,12 @@ import {
 import * as service from "./action.service";
 import { actionPlanView, actionRunnerView, actionRunView, actionWorkflowView } from "./views";
 import { parseActionWorkflow } from "./workflow";
-import { inspectActionDestination, probeActionRunner, saveActionRunner } from "./runner.service";
+import {
+  enableActionEmulation,
+  inspectActionDestination,
+  probeActionRunner,
+  saveActionRunner,
+} from "./runner.service";
 import { actionArtifacts, actionArtifactDownload } from "./storage";
 import {
   getActionProjectPolicy,
@@ -92,6 +97,7 @@ export const actionDependencies: ActionDependencies = {
       return actionRunnerView(row);
     },
     inspectDestination: (ctx, input) => inspectActionDestination(ctx, input.serverId),
+    enableEmulation: (ctx, input) => enableActionEmulation(ctx, input.serverId),
     async preview(_ctx, input) {
       return actionPlanView(await parseActionWorkflow(input.source, input.path));
     },

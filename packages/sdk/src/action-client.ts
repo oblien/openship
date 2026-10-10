@@ -16,6 +16,11 @@ export function createRemoteActionOperations(http: HttpClient): ActionOperations
       create: { method: "POST", path: () => "/actions/workflows", envelope: "data" },
       listRuns: { method: "GET", path: () => "/actions/runs", envelope: "data" },
       runners: { method: "GET", path: () => "/actions/runners", envelope: "data" },
+      enableEmulation: {
+        method: "POST",
+        path: () => "/actions/runners/emulation",
+        envelope: "data",
+      },
       addRunner: { method: "POST", path: () => "/actions/runners", envelope: "data" },
       inspectDestination: {
         method: "POST",
@@ -24,11 +29,23 @@ export function createRemoteActionOperations(http: HttpClient): ActionOperations
       },
       preview: { method: "POST", path: () => "/actions/preview", envelope: "data" },
       discover: { method: "GET", path: () => "/actions/discover", envelope: "data" },
-      repositorySource: { method: "GET", path: () => "/actions/repository-source", envelope: "data" },
-      updateRepositorySource: { method: "PUT", path: () => "/actions/repository-source", envelope: "data" },
+      repositorySource: {
+        method: "GET",
+        path: () => "/actions/repository-source",
+        envelope: "data",
+      },
+      updateRepositorySource: {
+        method: "PUT",
+        path: () => "/actions/repository-source",
+        envelope: "data",
+      },
       projects: { method: "GET", path: () => "/actions/projects", envelope: "data" },
       projectPolicy: { method: "GET", path: () => "/actions/project", envelope: "data" },
-      updateDeploymentRequest: { method: "POST", path: () => "/actions/project/requests", envelope: "data" },
+      updateDeploymentRequest: {
+        method: "POST",
+        path: () => "/actions/project/requests",
+        envelope: "data",
+      },
       updateProjectPolicy: { method: "PUT", path: () => "/actions/project", envelope: "data" },
     }),
     ...createRemoteResourceOperations(http, ActionResourceSchemas, {

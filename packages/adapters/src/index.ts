@@ -119,13 +119,20 @@ export {
   CLOUD_DOCKER_IMAGE,
   type CloudDockerOptions,
 } from "./runtime/cloud/docker";
-export { cloudWorkspaceStatus, waitForCloudDockerWorkspace, waitForCloudWorkspaceStopped } from "./runtime/cloud/workspace-ready";
+export {
+  cloudWorkspaceStatus,
+  waitForCloudDockerWorkspace,
+  waitForCloudWorkspaceStopped,
+} from "./runtime/cloud/workspace-ready";
 export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
 export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
 export { CloudServerConnection } from "./runtime/cloud/server-connection";
-export { withManagedCommandTracking, currentManagedCommandTracking } from "./runtime/cloud/command-tracking";
+export {
+  withManagedCommandTracking,
+  currentManagedCommandTracking,
+} from "./runtime/cloud/command-tracking";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -179,7 +186,12 @@ export {
 } from "./runtime/volume-namespace";
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
-export type { RoutingProvider, SslProvider, ProvisionCertOptions, DnsCertificateProvider } from "./infra/types";
+export type {
+  RoutingProvider,
+  SslProvider,
+  ProvisionCertOptions,
+  DnsCertificateProvider,
+} from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 // For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
 // the string, which could drift from the page it is checking for.
@@ -617,8 +629,22 @@ export { databaseArchiveName } from "./cluster/redis-backups";
 export * from "./runtime/kubernetes";
 export { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime/runtime-env";
 
-export { managedProcessState, readManagedProcessStatus, waitForManagedProcess } from "./runtime/cloud/server-connection";
+export {
+  managedProcessState,
+  readManagedProcessStatus,
+  waitForManagedProcess,
+} from "./runtime/cloud/server-connection";
 
 export { resolveSshAuthSock } from "./system/ssh-support";
 export { probeLocalGitHubToken } from "./system/local-github";
-export { ActionsWorker, probeActionCapabilities, type ActionWorkerSnapshot } from "./actions/worker";
+export {
+  ActionsWorker,
+  probeActionCapabilities,
+  type ActionWorkerSnapshot,
+} from "./actions/worker";
+
+export {
+  ensureDockerEmulation,
+  probeDockerExecutionPlatforms,
+  DOCKER_BINFMT_IMAGE,
+} from "./runtime/docker-platforms";

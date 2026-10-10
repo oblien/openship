@@ -316,11 +316,17 @@
       "referencedJob": "Outra tarefa faz referência às saídas ou ao resultado desta. Atualize essas expressões antes de removê-la.",
       "jobMapping": "Use uma definição YAML válida da tarefa antes de editar a topologia."
     },
-    "listHint": "Selecione um job para editar suas etapas. As dependências controlam a ordem de execução."
+    "listHint": "Expanda um job e selecione uma etapa para editar.",
+    "jobSettings": "Configurações do job",
+    "architecture": "Arquitetura da CPU",
+    "automaticArchitecture": "Padrão do runner",
+    "jobImage": "Imagem do contêiner do job",
+    "runnerDefault": "Usar padrão do runner",
+    "jobImageHint": "Qualquer imagem Linux compatível. Inclua as ferramentas necessárias para suas etapas e ações."
   },
   "runnerSetup": {
     "subtitle": "Escolha um servidor e um ambiente pronto para usar.",
-    "environment": "Ambiente",
+    "environment": "Ambiente padrão",
     "browse": "Ver catálogo",
     "catalog": "Catálogo de runners",
     "catalogHint": "Escolha um ambiente compatível com o servidor selecionado.",
@@ -338,7 +344,6 @@
     "trustedContainer": "Os jobs compartilham o Docker deste servidor. Use repositórios confiáveis.",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Imagem Linux pronta para usar com Node.js e Git."
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "Imagem personalizada",
         "hint": "Use uma imagem de runner Docker com Node.js e Git."
       }
-    }
+    },
+    "architectures": "Arquiteturas de CPU",
+    "emulated": "Emulada",
+    "enableEmulation": "Ativar emulação de CPU",
+    "enablingEmulation": "Configurando emulação…",
+    "emulationHint": "Adiciona suporte a QEMU ao Docker deste servidor. Jobs emulados podem ser mais lentos.",
+    "dockerAccess": "Permitir acesso ao Docker",
+    "dockerAccessHint": "Permite criar imagens dentro dos contêineres. Execute apenas workflows confiáveis neste servidor.",
+    "defaultImageHint": "Cada job pode escolher sua própria imagem de contêiner compatível."
   }
 }

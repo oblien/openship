@@ -3434,6 +3434,12 @@
       "description": "Inspect OS, architecture, Git, Node and Docker on an authorized server.",
       "route": "POST /api/actions/runners/inspect"
     },
+    "actions.enableEmulation": {
+      "page": "actions",
+      "section": "Runners",
+      "description": "Enable and verify Docker CPU emulation. Requires administration of the selected server.",
+      "route": "POST /api/actions/runners/emulation"
+    },
     "actions.updateRunner": {
       "page": "actions",
       "section": "Runners",

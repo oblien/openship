@@ -10,6 +10,7 @@ import {
   DockerRuntime,
   LocalExecutor,
   createExecutor,
+  ensureDockerEmulation,
   probeActionCapabilities,
   type CommandExecutor,
 } from "@repo/adapters";
@@ -177,6 +178,61 @@ describeDockerE2E("Actions on an isolated SSH Docker host and managed execution 
     expect((await ssh.exec("docker exec existing-app cat /data/value")).trim()).toBe("keep");
   }
 
+  // binfmt registration belongs to the Docker host's kernel. Only opt in on an
+  // isolated test VM (including the disposable CI runner), never a developer's
+  // shared Docker daemon merely because it is reachable.
+  it.skipIf(process.env.ACTIONS_E2E_ENABLE_EMULATION !== "1")(
+    "runs x64 and ARM64 images through SSH and managed execution with truthful runner contexts",
+    async () => {
+      const capabilities = await probeActionCapabilities(ssh);
+      const platforms = await ensureDockerEmulation(ssh, capabilities.dockerArchitecture!);
+      expect(platforms).toEqual(expect.arrayContaining(["linux/amd64", "linux/arm64"]));
+      expect((await probeActionCapabilities(cloud)).dockerPlatforms).toEqual(
+        expect.arrayContaining(platforms),
+      );
+      for (const [platform, architecture, uname, active] of [
+        ["linux/amd64", "X64", "x86_64", worker],
+        [
+          "linux/arm64",
+          "ARM64",
+          "aarch64",
+          new ActionsWorker(cloud, join(runnerDirectory, "dist")),
+        ],
+      ] as const) {
+        const { input, directory } = request(`on: workflow_dispatch
+jobs:
+  test:
+    runs-on: [self-hosted, ${architecture.toLowerCase()}]
+    container: busybox:1.37
+    outputs:
+      architecture: \${{ steps.cpu.outputs.architecture }}
+    steps:
+      - id: cpu
+        shell: sh
+        run: |
+          test "$(uname -m)" = '${uname}'
+          test "$RUNNER_ARCH" = '${architecture}'
+          test '\${{ runner.arch }}' = '${architecture}'
+          test ! -S /var/run/docker.sock
+          echo "architecture=$RUNNER_ARCH" >> "$GITHUB_OUTPUT"
+`);
+        input.containerPlatform = platform;
+        await active.start(installed.binary, directory, input);
+        const events: ActionWorkerEvent[] = [];
+        expect(
+          await finish(active, directory, events),
+          events.map((event) => event.message).join("\n"),
+        ).toMatchObject({
+          conclusion: "success",
+          outputs: { architecture },
+        });
+        await active.clean(installed.binary, directory);
+        await assertAppUnchanged();
+      }
+    },
+    240_000,
+  );
+
   it("runs a container job with a service, composite action and JavaScript action; cleans only its resources", async () => {
     const { input, directory } = request(`on: workflow_dispatch
 jobs:
@@ -340,14 +396,12 @@ jobs:
         await database.db
           .insert(schema.organization)
           .values({ id: org, name: "Actions end-to-end" });
-        await database.db
-          .insert(schema.servers)
-          .values({
-            id: server,
-            organizationId: org,
-            sshHost: "isolated-fixture",
-            sshUser: "root",
-          });
+        await database.db.insert(schema.servers).values({
+          id: server,
+          organizationId: org,
+          sshHost: "isolated-fixture",
+          sshUser: "root",
+        });
         const runner = await repo.saveRunner({
           id: `runner-${randomUUID()}`,
           organizationId: org,

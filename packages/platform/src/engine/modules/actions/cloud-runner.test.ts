@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   network: vi.fn(),
   probe: vi.fn(),
   prepare: vi.fn(),
+  emulation: vi.fn(),
   billingOwner: vi.fn(),
 }));
 vi.mock("../../config/env", () => ({
@@ -24,6 +25,7 @@ vi.mock("../../config/env", () => ({
 vi.mock("@repo/adapters", async (original) => ({
   ...(await original<typeof import("@repo/adapters")>()),
   probeActionCapabilities: state.probe,
+  ensureDockerEmulation: state.emulation,
   ActionsWorker: class {
     prepare = state.prepare;
   },
@@ -105,7 +107,7 @@ beforeEach(() => {
     id: generateId("ajob"),
     organizationId: run.organizationId,
     runId: run.id,
-    spec: { timeoutSeconds: 3600 },
+    spec: { timeoutSeconds: 3600, labels: ["ubuntu-latest"], requiresDocker: false },
     providerRequestedAt: null,
     providerWorkspaceId: null,
   };
@@ -126,6 +128,7 @@ beforeEach(() => {
     distribution: null,
     version: null,
   });
+  state.emulation.mockResolvedValue(["linux/amd64", "linux/arm64"]);
   state.prepare.mockResolvedValue({ binary: "/worker", root: "/actions" });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -203,11 +206,52 @@ describe("temporary Cloud Actions workers", () => {
     const opened = await openCloudActionWorker(run, job(), runner, "owner", "/assets");
     expect(opened).toMatchObject({ binary: "/worker", directory: `/actions/jobs/${state.job.id}` });
     await opened!.release();
-    Object.assign(state.job, { workerBinary: opened!.binary, directory: opened!.directory });
+    Object.assign(state.job, {
+      workerBinary: opened!.binary,
+      directory: opened!.directory,
+      workerStartedAt: new Date(),
+    });
     const resumed = await openCloudActionWorker(run, job(), runner, "owner", "/assets");
     expect(state.network).toHaveBeenCalledOnce();
     expect(state.probe).toHaveBeenCalledOnce();
     await resumed!.release();
+  });
+
+  it("installs and verifies emulation before opening an ARM64 worker on an x64 VM", async () => {
+    state.create.mockResolvedValue({ ...workspace(), ready: true, status: "running" });
+    state.job.spec = {
+      timeoutSeconds: 3600,
+      labels: ["ubuntu-latest", "arm64"],
+      requiresDocker: false,
+    };
+    const opened = await openCloudActionWorker(run, job(), runner, "owner", "/assets");
+    expect(state.emulation).toHaveBeenCalledOnce();
+    expect(opened?.containerPlatform).toBe("linux/arm64");
+    expect(state.emulation.mock.invocationCallOrder[0]).toBeLessThan(
+      state.prepare.mock.invocationCallOrder[0]!,
+    );
+    await opened!.release();
+  });
+
+  it("refuses an unverified emulator and never prepares a worker after failed setup", async () => {
+    state.create.mockResolvedValue({ ...workspace(), ready: true, status: "running" });
+    state.job.spec = { timeoutSeconds: 3600, labels: ["arm64"], requiresDocker: false };
+    state.emulation.mockResolvedValue(["linux/amd64"]);
+    await expect(
+      openCloudActionWorker(run, job(), runner, "owner", "/assets"),
+    ).rejects.toMatchObject({ code: "ACTIONS_RUNNER_UNSUPPORTED" });
+    expect(state.prepare).not.toHaveBeenCalled();
+  });
+
+  it("rechecks capabilities when recovery finds a prepared but never-started attempt", async () => {
+    state.create.mockResolvedValue({ ...workspace(), ready: true, status: "running" });
+    state.get.mockResolvedValue({ ...workspace(), ready: true, status: "running" });
+    Object.assign(state.job, { workerBinary: "/old-worker", directory: "/old-path" });
+    const opened = await openCloudActionWorker(run, job(), runner, "owner", "/assets");
+    expect(state.probe).toHaveBeenCalledOnce();
+    expect(opened?.binary).toBe("/worker");
+    expect(state.emulation).not.toHaveBeenCalled();
+    await opened!.release();
   });
 
   it("does not prepare or start a worker when its runtime firewall cannot be configured", async () => {

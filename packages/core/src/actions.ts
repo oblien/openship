@@ -19,10 +19,17 @@ export function actionFinished(status: string): status is ActionConclusion {
   return (ACTIONS_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
+export type ActionArchitecture = "x64" | "arm64";
+export type ActionContainerPlatform = "linux/amd64" | "linux/arm64";
+
 export interface ActionCapabilities {
   os: "linux" | "macos";
-  architecture: "x64" | "arm64";
+  architecture: ActionArchitecture;
   docker: boolean;
+  /** Docker may run in a VM or on a different CPU from the connected host. */
+  dockerArchitecture?: ActionArchitecture;
+  /** Platforms verified on the Docker daemon, including working binfmt emulators. */
+  dockerPlatforms?: ActionContainerPlatform[];
   git: boolean;
   node: boolean;
   /** OS image identity, never inferred from an arbitrary runner label. */
@@ -78,6 +85,8 @@ export interface ActionWorkerRequest {
   timeoutSeconds: number;
   containerCpu: number;
   containerMemoryMb: number;
+  /** The selected job platform, resolved from verified destination capabilities. */
+  containerPlatform?: ActionContainerPlatform;
   dockerSocket: boolean;
 }
 

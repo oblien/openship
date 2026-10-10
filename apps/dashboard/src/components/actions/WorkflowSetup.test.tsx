@@ -86,7 +86,7 @@ const checkbox = (name: string) =>
     .querySelector<HTMLButtonElement>('[role="checkbox"]')!;
 async function fill(label: string, text: string) {
   const input = [...document.querySelectorAll<HTMLLabelElement>("label")]
-    .find((row) => row.firstElementChild?.textContent === label)!
+    .find((row) => !row.closest("[hidden]") && row.firstElementChild?.textContent === label)!
     .querySelector<HTMLInputElement>("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
@@ -217,6 +217,9 @@ describe("shared workflow setup", () => {
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Edit job: test"]')!.click(),
     );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Job settings"]')!.click(),
+    );
     await fill("Name", "Unit checks");
     await preview();
     await click("List");
@@ -239,6 +242,49 @@ describe("shared workflow setup", () => {
     expect(h.write).not.toHaveBeenCalled();
     await click("Save Openship copy");
     expect(parse(h.save.mock.calls[0]![0].source).jobs.test.name).toBe("Unit checks");
+  });
+
+  it("edits each step inline only in the active view and preserves it when moving to the topology inspector", async () => {
+    await render("ci");
+    await click("List");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Edit job: test"]')!.click(),
+    );
+    const workspace = host.querySelector('[data-testid="workflow-workspace"]')!;
+    const inspector = host.querySelector('[data-testid="workflow-inspector"]')!;
+    expect(workspace.querySelectorAll('[data-testid="workflow-steps"]')).toHaveLength(1);
+    expect(inspector.querySelector('[data-testid="workflow-steps"]')).toBeNull();
+    expect(
+      workspace.querySelector('[aria-label="Job settings"]')!.getAttribute("aria-expanded"),
+    ).toBe("false");
+    const step = [...workspace.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+      item.textContent?.includes("echo tested"),
+    )!;
+    await act(async () => step.click());
+    const command = workspace.querySelector<HTMLTextAreaElement>('[aria-label="Command"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        command,
+        "echo updated",
+      );
+      command.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await preview();
+    await click("Topology");
+    expect(workspace.querySelector('[data-testid="workflow-steps"]')).toBeNull();
+    expect(inspector.querySelectorAll('[data-testid="workflow-steps"]')).toHaveLength(1);
+    expect(inspector.querySelector<HTMLTextAreaElement>('[aria-label="Command"]')!.value).toBe(
+      "echo updated",
+    );
+    expect(
+      inspector.querySelector('[aria-label="Job settings"]')!.getAttribute("aria-expanded"),
+    ).toBe("false");
+    await click("YAML");
+    expect(
+      document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!.value,
+    ).toContain("echo updated");
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
   });
 
   it("keeps a reviewed workflow pinned when its repository changes, then explicitly accepts the update", async () => {

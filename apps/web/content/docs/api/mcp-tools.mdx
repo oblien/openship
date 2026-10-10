@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **488 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **489 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -32,6 +32,7 @@ The current API has **488 unique tools**. Permission tags below describe the rou
 | `post_actions_project_requests`<br />`POST /api/actions/project/requests` | Retry or cancel a project's pending Actions deployment approval. | `job:write` |
 | `post_actions_runners`<br />`POST /api/actions/runners` | Enable Actions on an authorized server. Native runners execute trusted workflow code as the server's connected user. | `job:admin` |
 | `post_actions_runners_by_id_probe`<br />`POST /api/actions/runners/:id/probe` | Recheck an authorized runner's capabilities. | `job:admin` |
+| `post_actions_runners_emulation`<br />`POST /api/actions/runners/emulation` | Enable and verify Docker CPU emulation on an authorized Actions server. Installs only missing binfmt emulators; does not restart Docker or applications. | `job:admin` |
 | `post_actions_runners_inspect`<br />`POST /api/actions/runners/inspect` | Check OS, architecture, Git and Docker on an authorized Actions destination without changing the server. | `job:admin` |
 | `post_actions_runs_by_id_approve`<br />`POST /api/actions/runs/:id/approve` | Approve an untrusted fork run for disposable runners without secrets or write tokens. | `job:admin` |
 | `post_actions_runs_by_id_artifacts_download`<br />`POST /api/actions/runs/:id/artifacts/download` | Get a short-lived download link for one authorized artifact. | `job:read` |

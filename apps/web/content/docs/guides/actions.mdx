@@ -15,6 +15,7 @@ architecture, Git, Node and Docker capabilities before enabling a runtime.
 
 - **Linux containers:** use a runner image with the tools your workflow needs.
   Docker and service-container actions require Docker on the destination.
+- **Native Linux:** use the server's installed toolchain with Git and Node available.
 - **Native macOS:** use a connected Mac with Git and Node installed. Native mode
   is selected by default, even when the Mac also has Docker. Jobs execute
   as the connected server user and share that user's filesystem and installed tools.
@@ -25,6 +26,40 @@ Only run trusted code on persistent destinations. Enabling a native runner gives
 its workflows the same host access as the connected user. Runner labels select
 compatible capabilities; adding `macos` to a Linux runner does not make it a Mac.
 
+The runner image is a default. Each job can use its own compatible Linux image with
+`jobs.<job>.container`, including Debian, Alpine and language images. The image must
+provide the shell and tools used by its steps; a minimal image does not include the
+full GitHub-hosted toolchain. Container image options and registry credentials remain
+available in YAML.
+
+For container runners, **Enable CPU emulation** installs the missing QEMU/binfmt
+support on the selected Docker host and verifies it by executing a foreign binary.
+It requires server administration access. Existing working emulators are reused.
+Normal capability checks do not install packages or register emulators. Use the
+standard `x64` or `arm64` runner label to select a CPU; use a matrix for both:
+
+```yaml
+jobs:
+  test:
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    runs-on: [self-hosted, linux, "${{ matrix.arch }}"]
+    container: alpine:3.22
+    steps:
+      - shell: sh
+        run: uname -m
+```
+
+The selected image needs a build for that architecture. QEMU can be slower than
+native execution. `runner.arch` and `RUNNER_ARCH` describe the selected execution
+architecture; native macOS jobs still need a real Mac.
+
+**Allow Docker access** enables Docker build actions on a connected container runner;
+enable it only for trusted workflows because it grants access to that server's Docker
+daemon. Cloud job containers use the Docker daemon of their own private disposable VM.
+They receive no provider credentials or access to other customers' machines.
+
 ## Connect a workflow
 
 Open **Actions → Add workflow**, **Project → Actions**, or the Actions section in
@@ -32,9 +67,11 @@ the deployment wizard. These entry points share the same setup:
 
 1. Select a repository and branch. Openship discovers files in `.github/workflows/`
    and `.openship/workflows/` and previews their job dependencies as a topology.
-2. The canvas stays visible while you edit. Select a job to change its name, runner
-   labels and steps, or connect jobs to set dependencies. Select a connection to
-   remove it. **List** and **YAML** show the same draft; undo and redo work across
+2. The canvas stays visible while you edit. Select a job to edit its steps in the
+   right panel; expand **Job settings** for its name, runner labels, CPU architecture,
+   container image and dependencies. **List** edits the same steps inline on the
+   left, without duplicating them in the right panel. Connect jobs to set dependencies
+   and select a connection to remove it. **List** and **YAML** show the same draft; undo and redo work across
    views. **Job YAML** exposes matrix, services, conditions, permissions and step
    inputs. Dependency cycles and deletion of referenced job outputs are rejected.
 3. Use **Run settings** on the right for triggers, allowed runners and linked

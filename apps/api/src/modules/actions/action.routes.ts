@@ -78,6 +78,20 @@ r.post(
   ctrl.inspectDestination,
 );
 r.post(
+  "/runners/emulation",
+  {
+    authorizationHandledByOperation: true,
+    tag: "job:admin",
+    auditHandledByOperation: true,
+    body: C.enableEmulation.input,
+    mcp: {
+      description:
+        "Enable and verify Docker CPU emulation on an authorized Actions server. Installs only missing binfmt emulators; does not restart Docker or applications.",
+    },
+  },
+  ctrl.enableEmulation,
+);
+r.post(
   "/preview",
   {
     authorizationHandledByOperation: true,
@@ -252,46 +266,74 @@ r.get(
   },
   ctrl.jobEvents,
 );
-r.get("/repository-source", {
+r.get(
+  "/repository-source",
+  {
     authorizationHandledByOperation: true,
     tag: "job:read",
     query: C.repositorySource.input,
     mcp: { description: "Read a repository workflow and preview its topology." },
-  }, ctrl.repositorySource);
+  },
+  ctrl.repositorySource,
+);
 
-r.put("/repository-source", {
+r.put(
+  "/repository-source",
+  {
     authorizationHandledByOperation: true,
     tag: "job:write",
     body: C.updateRepositorySource.input,
     auditHandledByOperation: true,
-    mcp: { description: "Commit reviewed workflow YAML to its branch using the expected file SHA." },
-  }, ctrl.updateRepositorySource);
+    mcp: {
+      description: "Commit reviewed workflow YAML to its branch using the expected file SHA.",
+    },
+  },
+  ctrl.updateRepositorySource,
+);
 
-r.get("/projects", {
+r.get(
+  "/projects",
+  {
     authorizationHandledByOperation: true,
     tag: "job:read",
     mcp: { description: "List projects available for linking to workflows." },
-  }, ctrl.projects);
+  },
+  ctrl.projects,
+);
 
-r.get("/project", {
+r.get(
+  "/project",
+  {
     authorizationHandledByOperation: true,
     tag: "job:read",
     query: C.projectPolicy.input,
     mcp: { description: "Read project workflows and deployment automation." },
-  }, ctrl.projectPolicy);
+  },
+  ctrl.projectPolicy,
+);
 
-r.put("/project", {
+r.put(
+  "/project",
+  {
     authorizationHandledByOperation: true,
     tag: "job:write",
     body: C.updateProjectPolicy.input,
     auditHandledByOperation: true,
     mcp: { description: "Configure required workflow checks before automatic project deployment." },
-  }, ctrl.updateProjectPolicy);
+  },
+  ctrl.updateProjectPolicy,
+);
 
-r.post("/project/requests", {
-  authorizationHandledByOperation: true, tag: "job:write",
-  body: C.updateDeploymentRequest.input, auditHandledByOperation: true,
-  mcp: { description: "Retry or cancel a project's pending Actions deployment approval." },
-}, ctrl.updateDeploymentRequest);
+r.post(
+  "/project/requests",
+  {
+    authorizationHandledByOperation: true,
+    tag: "job:write",
+    body: C.updateDeploymentRequest.input,
+    auditHandledByOperation: true,
+    mcp: { description: "Retry or cancel a project's pending Actions deployment approval." },
+  },
+  ctrl.updateDeploymentRequest,
+);
 
 export const actionRoutes = r.hono;

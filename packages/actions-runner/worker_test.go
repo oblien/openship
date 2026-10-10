@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nektos/act/pkg/container"
 	"github.com/nektos/act/pkg/model"
 	"github.com/nektos/act/pkg/runner"
 )
@@ -167,5 +168,35 @@ jobs:
 	time.Sleep(1100 * time.Millisecond)
 	if _, err := os.Stat(filepath.Join(r.Directory, "late-side-effect")); !os.IsNotExist(err) {
 		t.Fatal("cancelled command completed its side effect")
+	}
+}
+
+func TestEmulatedJobArchitectureContext(t *testing.T) {
+	for platform, arch := range map[string]string{"linux/amd64": "X64", "linux/arm64": "ARM64"} {
+		ctx := container.WithExecutionPlatform(context.Background(), platform)
+		if actual := container.RunnerArch(ctx); actual != arch {
+			t.Fatalf("%s reported %s", platform, actual)
+		}
+		environment := &container.LinuxContainerEnvironmentExtensions{}
+		if actual := environment.GetRunnerContext(ctx)["arch"]; actual != arch {
+			t.Fatalf("runner.arch = %s", actual)
+		}
+	}
+}
+
+func TestRejectInvalidExecutionPlatforms(t *testing.T) {
+	request := nativeRequest(t, "on: workflow_dispatch\njobs:\n  test:\n    runs-on: self-hosted\n    steps:\n      - run: true\n")
+	request.ContainerPlatform = "linux/arm64"
+	if err := validateRequest(request); err == nil {
+		t.Fatal("native execution accepted a container architecture")
+	}
+	request.Platforms = map[string]string{"self-hosted": "node:22"}
+	request.ContainerPlatform = "linux/unknown"
+	if err := validateRequest(request); err == nil {
+		t.Fatal("unknown architecture accepted")
+	}
+	request.ContainerPlatform = "linux/arm64"
+	if err := validateRequest(request); err != nil {
+		t.Fatal(err)
 	}
 }

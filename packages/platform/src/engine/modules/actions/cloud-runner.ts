@@ -8,8 +8,15 @@ import {
   Oblien,
   cloudWorkspaceStatus,
   probeActionCapabilities,
+  ensureDockerEmulation,
 } from "@repo/adapters";
-import { AppError, safeErrorMessage } from "@repo/core";
+import {
+  AppError,
+  actionContainerPlatform,
+  actionDockerPlatforms,
+  actionRunnerMismatch,
+  safeErrorMessage,
+} from "@repo/core";
 import { repos, type ActionRun, type ActionJob, type ActionRunner } from "@repo/db";
 import { env } from "../../config/env";
 import { getOblienClient, getOblienBillingApi } from "../../lib/oblien-client";
@@ -41,8 +48,10 @@ export async function saveCloudActionRunner(
   pool: z.infer<typeof poolsSchema>[number],
   profileId: string | null = null,
 ): Promise<void> {
-  if (pool.labels.some((label) => /^(macos|windows|arm64)(-|$)/i.test(label)))
-    throw new Error("Temporary Cloud Actions pools currently support Linux x64 images");
+  if (pool.labels.some((label) => /^(macos|windows)(-|$)/i.test(label)))
+    throw new Error(
+      "Temporary Cloud Actions pools support Linux images; native macOS jobs need a connected Mac",
+    );
   const id = `apool_${createHash("sha256")
     .update(profileId ? `${pool.namespace}:${profileId}` : pool.namespace)
     .digest("hex")
@@ -54,7 +63,8 @@ export async function saveCloudActionRunner(
     cpu: pool.cpu,
     memoryMb: pool.memoryMb,
     maxParallel: pool.maxParallel,
-    allowDockerSocket: false,
+    // One private VM per job: Docker build actions may use its disposable daemon.
+    allowDockerSocket: true,
     cloudDiskGb: pool.diskGb,
   };
   const existing = await repos.actions.runner(pool.organizationId, id);
@@ -82,6 +92,9 @@ export async function saveCloudActionRunner(
       os: "linux",
       architecture: "x64",
       docker: true,
+      dockerArchitecture: "x64",
+      // ARM64 is installed and verified on the disposable VM before any ARM job starts.
+      dockerPlatforms: ["linux/amd64", "linux/arm64"],
       git: true,
       node: true,
       distribution: null,
@@ -302,7 +315,7 @@ export async function openCloudActionWorker(
   );
   try {
     const worker = new ActionsWorker(executor, assets);
-    if (job.workerBinary && job.directory)
+    if (job.workerBinary && job.directory && job.workerStartedAt)
       return {
         worker,
         binary: job.workerBinary,
@@ -316,17 +329,30 @@ export async function openCloudActionWorker(
       public_access: true,
       ingress_ports: [9990],
     });
-    const capabilities = await probeActionCapabilities(executor);
+    let capabilities = await probeActionCapabilities(executor);
     if (capabilities.os !== "linux" || capabilities.architecture !== "x64" || !capabilities.docker)
       throw new AppError(
         "The Cloud worker image does not provide the configured Linux Docker capabilities",
         502,
         "ACTIONS_RUNNER_UNSUPPORTED",
       );
+    const containerPlatform = actionContainerPlatform(capabilities, runner.config, job.spec!);
+    if (containerPlatform && !actionDockerPlatforms(capabilities).includes(containerPlatform)) {
+      capabilities = {
+        ...capabilities,
+        dockerPlatforms: await ensureDockerEmulation(
+          executor,
+          capabilities.dockerArchitecture ?? capabilities.architecture,
+        ),
+      };
+    }
+    const mismatch = actionRunnerMismatch(capabilities, runner.config, job.spec!);
+    if (mismatch) throw new AppError(mismatch, 409, "ACTIONS_RUNNER_UNSUPPORTED");
     const prepared = await worker.prepare(capabilities);
     return {
       worker,
       binary: prepared.binary,
+      containerPlatform,
       directory: `${prepared.root}/jobs/${job.id}`,
       release: () => executor.dispose(),
     };

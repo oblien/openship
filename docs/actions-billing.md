@@ -82,8 +82,10 @@ Funded profiles reuse `ActionController`, `ActionsWorker` and the authorized
 `CloudWorkspaceExecutor`; there is no customer-specific execution engine. Each
 job gets a namespace-scoped client, one stable VM creation key, a bounded TTL,
 SSH disabled and no public service route. Only the authenticated Runtime API port
-is exposed for control. Job containers receive no provider credential or Docker
-socket. Cleanup confirms the VM is absent before releasing its shared pool slot.
+is exposed for control. Job containers receive no provider credential. They can
+use their private disposable VM's Docker daemon for image-build actions; the VM
+is the isolation and resource boundary. Cleanup confirms the VM is absent before
+releasing its shared pool slot.
 A stopped, exhausted VM produces an actionable Actions-budget error rather than
 silently restarting or waiting until the entire job timeout.
 

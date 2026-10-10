@@ -316,11 +316,17 @@
       "referencedJob": "Otra tarea hace referencia a las salidas o al resultado de esta. Actualiza esas expresiones antes de eliminarla.",
       "jobMapping": "Usa una definición YAML válida de la tarea antes de editar la topología."
     },
-    "listHint": "Selecciona un trabajo para editar sus pasos. Las dependencias controlan el orden de ejecución."
+    "listHint": "Expande un trabajo y selecciona un paso para editarlo.",
+    "jobSettings": "Ajustes del trabajo",
+    "architecture": "Arquitectura de CPU",
+    "automaticArchitecture": "Predeterminada del ejecutor",
+    "jobImage": "Imagen del contenedor del trabajo",
+    "runnerDefault": "Usar imagen del ejecutor",
+    "jobImageHint": "Cualquier imagen Linux compatible. Incluye las herramientas que necesitan tus pasos y acciones."
   },
   "runnerSetup": {
     "subtitle": "Elige un servidor y un entorno listo para usar.",
-    "environment": "Entorno",
+    "environment": "Entorno predeterminado",
     "browse": "Ver catálogo",
     "catalog": "Catálogo de runners",
     "catalogHint": "Elige un entorno compatible con el servidor seleccionado.",
@@ -338,7 +344,6 @@
     "trustedContainer": "Los trabajos comparten el motor Docker de este servidor. Usa repositorios de confianza.",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Imagen de Linux lista para usar con Node.js y Git."
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "Imagen personalizada",
         "hint": "Usa una imagen de runner Docker con Node.js y Git."
       }
-    }
+    },
+    "architectures": "Arquitecturas de CPU",
+    "emulated": "Emulada",
+    "enableEmulation": "Activar emulación de CPU",
+    "enablingEmulation": "Configurando emulación…",
+    "emulationHint": "Añade QEMU al motor Docker de este servidor. Los trabajos emulados pueden ser más lentos.",
+    "dockerAccess": "Permitir acceso a Docker",
+    "dockerAccessHint": "Permite compilar imágenes dentro de los contenedores. Ejecuta solo flujos de confianza en este servidor.",
+    "defaultImageHint": "Cada trabajo puede elegir su propia imagen de contenedor compatible."
   }
 }

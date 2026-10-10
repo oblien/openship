@@ -316,11 +316,17 @@
       "referencedJob": "別のジョブがこのジョブの出力または結果を参照しています。削除する前に式を更新してください。",
       "jobMapping": "トポロジーを編集するには、有効なYAMLジョブ定義を使用してください。"
     },
-    "listHint": "ジョブを選択してステップを編集します。実行順序は依存関係で決まります。"
+    "listHint": "ジョブを展開して、編集するステップを選択してください。",
+    "jobSettings": "ジョブ設定",
+    "architecture": "CPUアーキテクチャ",
+    "automaticArchitecture": "ランナーの既定値",
+    "jobImage": "ジョブのコンテナイメージ",
+    "runnerDefault": "ランナーの既定値を使用",
+    "jobImageHint": "互換性のあるLinuxイメージを使用できます。ステップやアクションに必要なツールを含めてください。"
   },
   "runnerSetup": {
     "subtitle": "サーバーとすぐに使える実行環境を選択します。",
-    "environment": "実行環境",
+    "environment": "既定の環境",
     "browse": "カタログを見る",
     "catalog": "ランナーカタログ",
     "catalogHint": "選択したサーバーで動作する環境を選んでください。",
@@ -338,7 +344,6 @@
     "trustedContainer": "ジョブはこのサーバーのDockerエンジンを共有します。信頼できるリポジトリを使用してください。",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Node.jsとGitを含む、すぐに使えるLinuxイメージ。"
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "カスタムイメージ",
         "hint": "Node.jsとGitを含むDockerランナーイメージを指定します。"
       }
-    }
+    },
+    "architectures": "CPUアーキテクチャ",
+    "emulated": "エミュレーション",
+    "enableEmulation": "CPUエミュレーションを有効にする",
+    "enablingEmulation": "エミュレーションを設定中…",
+    "emulationHint": "このサーバーのDockerにQEMU対応を追加します。エミュレーションしたジョブは遅くなる場合があります。",
+    "dockerAccess": "Dockerアクセスを許可",
+    "dockerAccessHint": "ジョブコンテナ内でイメージをビルドできます。このサーバーでは信頼できるワークフローのみ実行してください。",
+    "defaultImageHint": "各ジョブで互換性のあるコンテナイメージを個別に選択できます。"
   }
 }

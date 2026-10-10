@@ -316,11 +316,17 @@
       "referencedJob": "其他任务引用了此任务的输出或结果。移除前请先更新这些表达式。",
       "jobMapping": "请先提供有效的 YAML 任务定义，再编辑拓扑。"
     },
-    "listHint": "选择任务以编辑其步骤。依赖关系决定执行顺序。"
+    "listHint": "展开作业，然后选择要编辑的步骤。",
+    "jobSettings": "作业设置",
+    "architecture": "CPU 架构",
+    "automaticArchitecture": "运行器默认值",
+    "jobImage": "作业容器镜像",
+    "runnerDefault": "使用运行器默认值",
+    "jobImageHint": "任何兼容的 Linux 镜像均可。请包含步骤和操作所需的工具。"
   },
   "runnerSetup": {
     "subtitle": "选择服务器和可直接使用的运行环境。",
-    "environment": "运行环境",
+    "environment": "默认环境",
     "browse": "浏览目录",
     "catalog": "运行器目录",
     "catalogHint": "选择与所选服务器兼容的环境。",
@@ -338,7 +344,6 @@
     "trustedContainer": "任务共享此服务器的 Docker 引擎。请使用可信的仓库。",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "包含 Node.js 和 Git 的即用型 Linux 镜像。"
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "自定义镜像",
         "hint": "使用包含 Node.js 和 Git 的 Docker 运行器镜像。"
       }
-    }
+    },
+    "architectures": "CPU 架构",
+    "emulated": "模拟",
+    "enableEmulation": "启用 CPU 模拟",
+    "enablingEmulation": "正在设置模拟…",
+    "emulationHint": "为此服务器的 Docker 添加 QEMU 支持。模拟运行的作业可能较慢。",
+    "dockerAccess": "允许访问 Docker",
+    "dockerAccessHint": "允许在作业容器内构建镜像。仅在此服务器上运行可信的工作流。",
+    "defaultImageHint": "每个作业都可以选择自己的兼容容器镜像。"
   }
 }

@@ -6,7 +6,9 @@ import { Icon } from "@repo/ui/icons";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import type { workflowJobs } from "./workflow-editor";
-import { workflowEventConfig as object } from "./workflow-yaml";
+import type { WorkflowStepSelection } from "./WorkflowSteps";
+import { WorkflowJobEditor } from "./WorkflowJobEditor";
+import type { WorkflowEdit } from "./workflow-editor";
 
 /** A draft outline, not execution progress; dependencies remain explicit. */
 export function WorkflowJobList({
@@ -14,11 +16,21 @@ export function WorkflowJobList({
   jobs,
   selection,
   onSelect,
+  source,
+  edit,
+  stepSelection,
+  onSelectStep,
+  onEditYaml,
 }: {
   plan: ActionPlanView;
   jobs: ReturnType<typeof workflowJobs>;
   selection: TopologySelection;
   onSelect: (selection: TopologySelection) => void;
+  source: string;
+  edit: WorkflowEdit;
+  stepSelection: WorkflowStepSelection;
+  onSelectStep: (selection: WorkflowStepSelection) => void;
+  onEditYaml: (id: string) => void;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
@@ -26,7 +38,8 @@ export function WorkflowJobList({
   return (
     <ol className="p-3 sm:p-5" aria-label={t.actions.list}>
       {plan.jobs.map((job, index) => {
-        const value = jobs.find((item) => item.id === job.id)?.value;
+        const draftJob = jobs.find((item) => item.id === job.id);
+        const value = draftJob?.value;
         const steps = Array.isArray(value?.steps) ? value.steps : [];
         const selected = selection?.kind === "node" && selection.id === job.id;
         const stepsId = `${prefix}-${job.id}-steps`;
@@ -83,32 +96,24 @@ export function WorkflowJobList({
                 className={`mt-1.5 size-3.5 shrink-0 text-muted-foreground ${selected ? "rotate-180" : ""}`}
               />
             </button>
-            <ol
+            <div
               id={stepsId}
               hidden={!selected}
-              aria-label={e.steps}
-              className="ms-[25px] border-s border-border py-2 ps-6 pe-3"
+              className="ms-[25px] border-s border-border py-2 ps-4 pe-3"
             >
-              {steps.map((raw, stepIndex) => {
-                const step = object(raw);
-                const isAction = Object.hasOwn(step, "uses");
-                return (
-                  <li
-                    key={stepIndex}
-                    className="flex items-center gap-2.5 py-2 text-sm text-muted-foreground"
-                  >
-                    <Icon name={isAction ? "bolt" : "terminal"} className="size-3.5 shrink-0" />
-                    <span
-                      className="min-w-0 flex-1 truncate"
-                      title={String(step.name || step.uses || step.run || "")}
-                    >
-                      {String(step.name || step.uses || step.run || "").split("\n")[0]}
-                    </span>
-                    <span className="text-xs tabular-nums">{stepIndex + 1}</span>
-                  </li>
-                );
-              })}
-            </ol>
+              {selected && draftJob && (
+                <WorkflowJobEditor
+                  source={source}
+                  job={draftJob}
+                  jobs={jobs}
+                  edit={edit}
+                  stepSelection={stepSelection}
+                  onSelectStep={onSelectStep}
+                  onEditYaml={onEditYaml}
+                  inline
+                />
+              )}
+            </div>
           </li>
         );
       })}

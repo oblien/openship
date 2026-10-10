@@ -3,6 +3,8 @@ import {
   AppError,
   actionFinished,
   actionRunnerMismatch,
+  actionContainerPlatform,
+  type ActionContainerPlatform,
   safeErrorMessage,
   ACTIONS_PROTOCOL_VERSION,
   type ActionConclusion,
@@ -21,6 +23,7 @@ import { concreteJob, expandMatrix } from "./workflow";
 
 export type ActionsRepository = ReturnType<typeof createActionsRepo>;
 export interface ActionExecution {
+  containerPlatform?: ActionContainerPlatform;
   worker: Pick<ActionsWorker, "inspect" | "start" | "cancel" | "clean">;
   binary: string;
   directory: string;
@@ -339,7 +342,7 @@ export class ActionController {
               });
             return;
           }
-          if (!job.directory || !job.workerBinary) {
+          if (job.directory !== execution.directory || job.workerBinary !== execution.binary) {
             await update({ directory: execution.directory, workerBinary: execution.binary });
             job = (await repo.job(org, job.id))!;
           }
@@ -353,6 +356,7 @@ export class ActionController {
             } else {
               const secrets = await this.ports.secrets(run, job);
               const request = this.request(run, job, runner, directory, secrets);
+              request.containerPlatform = execution.containerPlatform ?? request.containerPlatform;
               Object.assign(request.environment, await this.ports.environment?.(run, job));
               if (Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024)
                 throw new AppError(
@@ -422,6 +426,7 @@ export class ActionController {
           "ACTIONS_RUNNER_ASSET_MISSING",
           "ACTIONS_RUNNER_ASSET_INVALID",
           "ACTIONS_RUNNER_UNSUPPORTED",
+          "DOCKER_EMULATION_UNAVAILABLE",
           "ACTIONS_CREDITS_REQUIRED",
           "ACTIONS_PROVISIONING_FAILED",
           "ACTIONS_PROVISIONING_REJECTED",
@@ -542,6 +547,9 @@ export class ActionController {
       timeoutSeconds: spec.timeoutSeconds,
       containerCpu: runner.config.cpu,
       containerMemoryMb: runner.config.memoryMb,
+      containerPlatform: runner.capabilities
+        ? actionContainerPlatform(runner.capabilities, runner.config, spec)
+        : undefined,
       dockerSocket: runner.config.allowDockerSocket,
     };
   }

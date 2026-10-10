@@ -25,8 +25,9 @@ import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
 import { ActionField } from "./ActionField";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
-import { WorkflowWorkspace } from "./WorkflowWorkspace";
+import { WorkflowWorkspace, type WorkflowWorkspaceView } from "./WorkflowWorkspace";
 import { WorkflowJobInspector } from "./WorkflowJobInspector";
+import type { WorkflowStepSelection } from "./WorkflowSteps";
 import {
   WorkflowEditError,
   addWorkflowJob,
@@ -132,6 +133,8 @@ function SetupForm({
   const draft = useWorkflowDraft(workflow?.source ?? "");
   const { source, change: setSource } = draft;
   const [selection, setSelection] = useState<TopologySelection>(null);
+  const [view, setView] = useState<WorkflowWorkspaceView>("topology");
+  const [stepSelection, setStepSelection] = useState<WorkflowStepSelection>(null);
   const [yamlRequest, setYamlRequest] = useState<{ id: string; key: number } | null>(null);
   const [original, setOriginal] = useState<{
     source: string;
@@ -320,6 +323,10 @@ function SetupForm({
       // diagnostics-ignore: Keep the selected inspector while its YAML draft is incomplete.
     }
   }, [source, selection]);
+  const editJobYaml = (id: string) => {
+    setSelection({ kind: "node", id });
+    setYamlRequest((previous) => ({ id, key: (previous?.key ?? 0) + 1 }));
+  };
   const reviewSource = (kind: "save" | "incoming") => {
     if (!original || original.identity !== identity) return;
     setReview({ kind, source, previous: original.source, sha: original.sha, identity });
@@ -360,6 +367,12 @@ function SetupForm({
         >
           <WorkflowWorkspace
             plan={plan}
+            view={view}
+            onViewChange={setView}
+            edit={edit}
+            stepSelection={stepSelection}
+            onSelectStep={setStepSelection}
+            onEditYaml={editJobYaml}
             draft={draft}
             yamlRequest={yamlRequest}
             selection={selection}
@@ -384,19 +397,15 @@ function SetupForm({
             <div className="@container space-y-5 p-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:overflow-y-auto">
               <ActionError message={mutation.error} />
               <ActionError message={preview.error} />
-              {selection ? (
+              {selection && view !== "list" ? (
                 <WorkflowJobInspector
                   source={source}
                   selection={selection}
                   edit={edit}
                   onClose={() => setSelection(null)}
-                  onEditYaml={() => {
-                    if (selection.kind === "node")
-                      setYamlRequest((previous) => ({
-                        id: selection.id,
-                        key: (previous?.key ?? 0) + 1,
-                      }));
-                  }}
+                  onEditYaml={editJobYaml}
+                  stepSelection={stepSelection}
+                  onSelectStep={setStepSelection}
                 />
               ) : (
                 <>

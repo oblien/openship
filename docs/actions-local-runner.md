@@ -25,6 +25,24 @@ and the selected runner image. Capability-derived OS and architecture labels
 prevent an incompatible server from being advertised as another platform.
 Native execution is for trusted code: it has the connected user's host access.
 
+Container runners record the Docker daemon's architecture separately from the SSH
+host and advertise x64/ARM64 only after verification. The shared Docker emulation
+adapter installs the pinned upstream binfmt helper only on an explicit server-admin
+request or during private Cloud VM preparation. Setup mounts binfmt in the Docker
+host's mount namespace so registrations survive the installer container exiting.
+A pinned foreign BusyBox executable verifies QEMU through the same executor;
+routine probes use cached images without
+privileges, host mounts or network access. Runner selection and execution both check
+capabilities. Each worker receives the concrete Docker platform and propagates its
+architecture through act's request context, including `runner.arch` and `RUNNER_ARCH`.
+The physical host architecture still selects the packaged worker binary.
+
+Default runner images are overridable per job with normal `container` YAML. Docker
+access is opt-in on persistent servers. A Cloud job may use its private VM's Docker
+daemon for build actions; that VM remains the tenant isolation and resource boundary.
+Unavailable emulation fails preparation and cleans up the VM instead of keeping a
+paid worker in a retry loop.
+
 ## Sources of truth
 
 - The repository workflow is the definition; an explicitly saved inline override

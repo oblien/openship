@@ -18,6 +18,9 @@ import {
 const traffic = vi.hoisted(() => ({
   source: null as string | null,
   requests: [] as Array<{ url: string; method?: string; params?: Record<string, unknown> }>,
+  commands: [] as string[],
+  docker: false,
+  emulated: false,
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.service")>()),
@@ -39,7 +42,22 @@ vi.mock("@repo/platform/engine/lib/server-execution", async (original) => ({
     operation: (exec: CommandExecutor) => unknown,
   ) =>
     operation({
-      exec: async () => "Darwin\narm64\ngit=yes\nnode=yes\nversion=15.5\n",
+      exec: async (command: string) => {
+        traffic.commands.push(command);
+        if (command.startsWith("uname -s"))
+          return traffic.docker
+            ? "Linux\nx86_64\ngit=yes\nnode=yes\ndocker=linux\ndockerArch=x86_64\n"
+            : "Darwin\narm64\ngit=yes\nnode=yes\nversion=15.5\n";
+        if (command.includes("--install")) {
+          traffic.emulated = true;
+          return "";
+        }
+        if (command.includes("nsenter")) return "";
+        if (command.startsWith("if docker image inspect"))
+          return traffic.emulated ? "aarch64\n" : "";
+        if (command.startsWith("docker image inspect")) return "";
+        throw new Error(`Unexpected runner command: ${command}`);
+      },
     } as unknown as CommandExecutor),
 }));
 vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => ({
@@ -175,6 +193,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
     for (const path of ["/api/actions/workflows", "/api/actions/runners", "/api/actions/runs"])
       expect((await app.request(path)).status).toBe(401);
     for (const path of [
+      "/api/actions/runners/emulation",
       "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts",
       "/api/actions/runtime/_apis/artifactcache/caches",
     ]) {
@@ -184,6 +203,65 @@ describe("Actions HTTP, native SDK and authorization", () => {
         body: "{}",
       });
       expect(response.status, await response.text()).toBe(401);
+    }
+  });
+
+  it("enables verified CPU emulation through both clients only with administration of the selected server", async () => {
+    const f = await fixture();
+    const other = await seedOwner();
+    const otherClients = await clients(other);
+    traffic.docker = true;
+    traffic.emulated = false;
+    try {
+      for (const client of [otherClients.native, otherClients.remote]) {
+        const count = traffic.commands.length;
+        await expect(client.enableEmulation({ serverId: f.serverId })).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+        expect(traffic.commands).toHaveLength(count);
+      }
+      await db
+        .update(schema.member)
+        .set({ role: "restricted" })
+        .where(eq(schema.member.userId, f.owner.userId));
+      await repos.resourceGrant.upsert({
+        organizationId: f.owner.orgId,
+        userId: f.owner.userId,
+        resourceType: "job",
+        resourceId: "*",
+        permissions: ["admin"],
+        grantedByUserId: null,
+      });
+      for (const client of [f.native, f.remote]) {
+        const count = traffic.commands.length;
+        await expect(client.enableEmulation({ serverId: f.serverId })).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+        expect(traffic.commands).toHaveLength(count);
+      }
+      await repos.resourceGrant.upsert({
+        organizationId: f.owner.orgId,
+        userId: f.owner.userId,
+        resourceType: "server",
+        resourceId: f.serverId,
+        permissions: ["admin"],
+        grantedByUserId: null,
+      });
+      const start = traffic.commands.length;
+      for (const client of [f.native, f.remote])
+        expect(await client.enableEmulation({ serverId: f.serverId })).toMatchObject({
+          dockerArchitecture: "x64",
+          dockerPlatforms: ["linux/amd64", "linux/arm64"],
+        });
+      expect(
+        traffic.commands.slice(start).filter((command) => command.includes("--install")),
+      ).toHaveLength(1);
+      expect(
+        (await repos.actions.runner(f.owner.orgId, f.runner.id))?.capabilities?.dockerPlatforms,
+      ).toEqual(["linux/amd64", "linux/arm64"]);
+    } finally {
+      traffic.docker = false;
+      traffic.emulated = false;
     }
   });
 

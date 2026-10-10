@@ -6,9 +6,20 @@ import type { ActionCapabilities } from "@repo/core";
 import { I18nProvider } from "@/components/i18n-provider";
 import { RunnerEditor } from "./RunnerEditor";
 
-const h = vi.hoisted(() => ({ inspect: vi.fn(), save: vi.fn(), push: vi.fn(), runners: vi.fn() }));
+const h = vi.hoisted(() => ({
+  inspect: vi.fn(),
+  emulation: vi.fn(),
+  save: vi.fn(),
+  push: vi.fn(),
+  runners: vi.fn(),
+}));
 vi.mock("@/lib/api/actions", () => ({
-  actionsApi: { inspectDestination: h.inspect, saveRunner: h.save, runners: h.runners },
+  actionsApi: {
+    inspectDestination: h.inspect,
+    enableEmulation: h.emulation,
+    saveRunner: h.save,
+    runners: h.runners,
+  },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/lib/auth-client", () => ({
@@ -87,6 +98,7 @@ afterEach(async () => {
 describe("capability-based runner setup", () => {
   it("selects native execution for a Mac even if Docker is installed", async () => {
     await click("mac");
+    expect(host.textContent).not.toContain("Enable CPU emulation");
     await submit();
     expect(h.save).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,6 +107,46 @@ describe("capability-based runner setup", () => {
       }),
       undefined,
     );
+  });
+  it("verifies emulation before advertising another architecture and locks the destination while setup runs", async () => {
+    let finish!: (value: ActionCapabilities) => void;
+    h.emulation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await click("linux");
+    await click("Enable CPU emulation");
+    expect(h.emulation).toHaveBeenCalledWith("linux");
+    expect(host.querySelector("fieldset")!.disabled).toBe(true);
+    await submit();
+    expect(h.save).not.toHaveBeenCalled();
+    const verified: ActionCapabilities = {
+      ...capabilities("linux"),
+      dockerArchitecture: "arm64",
+      dockerPlatforms: ["linux/arm64", "linux/amd64"],
+    };
+    h.inspect.mockResolvedValue(verified);
+    await act(async () => finish(verified));
+    expect(h.inspect).toHaveBeenLastCalledWith("linux");
+    expect(host.textContent).toContain("x64 · Emulated");
+    expect(host.textContent).not.toContain("Enable CPU emulation");
+    await submit();
+    expect(h.save.mock.calls[0]![0].config.allowDockerSocket).toBe(false);
+  });
+  it("keeps native containers available and exposes retry after emulation setup fails", async () => {
+    h.emulation.mockRejectedValue(new Error("Docker cannot register the emulator"));
+    await click("linux");
+    await click("Enable CPU emulation");
+    expect(host.textContent).toContain("Docker cannot register the emulator");
+    expect(host.textContent).toContain("Enable CPU emulation");
+    expect(host.textContent).not.toContain("x64 · Emulated");
+    await submit();
+    expect(h.save.mock.calls[0]![0]).toMatchObject({
+      serverId: "linux",
+      config: { mode: "container" },
+    });
   });
   it("restores container defaults when moving from Mac to Linux", async () => {
     await click("mac");

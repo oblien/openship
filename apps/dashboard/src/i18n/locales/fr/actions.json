@@ -316,11 +316,17 @@
       "referencedJob": "Une autre tâche référence les sorties ou le résultat de celle-ci. Modifiez ces expressions avant de la supprimer.",
       "jobMapping": "Utilisez une définition YAML valide de la tâche avant de modifier la topologie."
     },
-    "listHint": "Sélectionnez une tâche pour modifier ses étapes. Les dépendances déterminent l’ordre d’exécution."
+    "listHint": "Développez un job, puis sélectionnez une étape à modifier.",
+    "jobSettings": "Paramètres du job",
+    "architecture": "Architecture CPU",
+    "automaticArchitecture": "Par défaut du runner",
+    "jobImage": "Image du conteneur du job",
+    "runnerDefault": "Utiliser le choix du runner",
+    "jobImageHint": "Toute image Linux compatible. Incluez les outils nécessaires aux étapes et aux actions."
   },
   "runnerSetup": {
     "subtitle": "Choisissez un serveur et un environnement prêt à l’emploi.",
-    "environment": "Environnement",
+    "environment": "Environnement par défaut",
     "browse": "Voir le catalogue",
     "catalog": "Catalogue des runners",
     "catalogHint": "Choisissez un environnement compatible avec le serveur sélectionné.",
@@ -338,7 +344,6 @@
     "trustedContainer": "Les tâches partagent le moteur Docker de ce serveur. Utilisez des dépôts de confiance.",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Image Linux prête à l’emploi avec Node.js et Git."
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "Image personnalisée",
         "hint": "Utilisez une image de runner Docker avec Node.js et Git."
       }
-    }
+    },
+    "architectures": "Architectures CPU",
+    "emulated": "Émulée",
+    "enableEmulation": "Activer l’émulation CPU",
+    "enablingEmulation": "Configuration de l’émulation…",
+    "emulationHint": "Ajoute QEMU au moteur Docker de ce serveur. Les jobs émulés peuvent être plus lents.",
+    "dockerAccess": "Autoriser l’accès Docker",
+    "dockerAccessHint": "Permet de créer des images dans les conteneurs de jobs. Exécutez uniquement des workflows fiables sur ce serveur.",
+    "defaultImageHint": "Chaque job peut choisir sa propre image de conteneur compatible."
   }
 }

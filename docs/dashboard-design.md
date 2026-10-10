@@ -61,8 +61,12 @@ accounts. Stack the sidebar below the list on narrow containers.
 Use the same workflow editor from Actions, Project → Actions and the deployment
 wizard. The dialog uses the available viewport, with a persistent canvas on the left
 and a scrollable 400–420px inspector on the right. Topology is the default; List and YAML
-are peer views of the same draft. Source and Run settings stay in the inspector, and
-selecting a job or dependency replaces those controls with its editor. Keep Save
+are peer views of the same draft. Source and Run settings stay in the inspector.
+In Topology, selecting a job or dependency replaces those controls with its editor.
+In List, expand the selected job and edit its steps inline on the left; keep workflow
+controls on the right. Reuse the same job-and-step editor in both locations without
+rendering a duplicate. Keep job metadata in one compact disclosure and step selection
+in shared state so switching views preserves the edit. Keep Save
 visible beneath the inspector. Stack the canvas and controls on narrow screens.
 Use the shared PNG `play-circle` icon for Actions in navigation, workflow cards and
 the editor. The large editor uses the shared modal's translucent frosted surface;
@@ -110,6 +114,12 @@ server. Presets fill the existing runner configuration and keep resource limits;
 do not create another execution path. Keep image, labels and resource overrides under
 Advanced settings, with the current configuration and matched labels in the sidebar.
 Retain saved runner settings on inspection, and make missing-tool checks retryable.
+The default environment is a convenience, not a limit on job images. Job settings
+can choose a Linux container image and one CPU architecture using standard YAML.
+Show verified native/emulated architecture badges on container runners. Offer explicit
+CPU emulation setup only for a Docker-capable server; keep the destination locked while
+it runs and recheck capabilities before displaying the result. Native Macs continue to
+use their installed tools and physical CPU.
 
 ## Layout and density
 

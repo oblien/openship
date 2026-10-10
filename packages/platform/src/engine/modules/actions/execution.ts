@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ActionsWorker, probeActionCapabilities } from "@repo/adapters";
-import { AppError, actionRunnerMismatch } from "@repo/core";
+import { AppError, actionContainerPlatform, actionRunnerMismatch } from "@repo/core";
 import { repos } from "@repo/db";
 import { diagnostics } from "@repo/core/diagnostics";
 import { acquireServerExecution } from "../../lib/server-execution";
@@ -61,7 +61,7 @@ export const actionControllerPorts: ActionControllerPorts = {
     const connection = await acquireServerExecution(run.organizationId, runner.serverId);
     try {
       const worker = new ActionsWorker(connection.executor, actionWorkerAssets());
-      if (job.workerBinary && job.directory)
+      if (job.workerBinary && job.directory && job.workerStartedAt)
         return {
           worker,
           binary: job.workerBinary,
@@ -75,6 +75,7 @@ export const actionControllerPorts: ActionControllerPorts = {
       return {
         worker,
         binary: prepared.binary,
+        containerPlatform: actionContainerPlatform(capabilities, runner.config, job.spec!),
         directory: `${prepared.root}/jobs/${job.id}`,
         release: connection.release,
       };

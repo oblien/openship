@@ -141,3 +141,52 @@ export function changeWorkflowSteps(
   }
   return String(doc);
 }
+
+/** Keep container options, credentials, environment and YAML comments when changing its image. */
+export function editWorkflowContainerImage(source: string, id: string, image: string) {
+  const doc = jobDocument(source, id);
+  const container = doc.getIn(["jobs", id, "container"], true);
+  if (isMap(container)) doc.setIn(["jobs", id, "container", "image"], image);
+  else if (image) doc.setIn(["jobs", id, "container"], image);
+  else doc.deleteIn(["jobs", id, "container"]);
+  return String(doc);
+}
+
+export function workflowJobArchitecture(value: unknown): "auto" | "x64" | "arm64" {
+  const labels = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+  return (
+    labels
+      .map((label) => String(label).toLowerCase())
+      .find((label) => label === "x64" || label === "arm64") ?? "auto"
+  );
+}
+
+/** Architecture stays native GitHub syntax: one literal runs-on label, including matrix jobs. */
+export function editWorkflowJobArchitecture(
+  source: string,
+  id: string,
+  architecture: "auto" | "x64" | "arm64",
+) {
+  const doc = jobDocument(source, id);
+  const current = doc.getIn(["jobs", id, "runs-on"], true);
+  const labels = isSeq(current) ? current.items : isScalar(current) ? [current] : [];
+  if (
+    !labels.length ||
+    labels.some(
+      (label) => !isScalar(label) || typeof label.value !== "string" || label.value.includes("${{"),
+    )
+  )
+    throw new WorkflowEditError("jobMapping");
+  const retained = labels.filter(
+    (label) => !["x64", "arm64"].includes(String((label as { value: string }).value).toLowerCase()),
+  );
+  const next = isSeq(current) ? current : doc.createNode([]);
+  if (!isSeq(next)) throw new WorkflowEditError("jobMapping");
+  next.items = retained;
+  if (architecture !== "auto") next.add(architecture);
+  if (!next.items.length) next.add("self-hosted");
+  doc.setIn(["jobs", id, "runs-on"], next);
+  return String(doc);
+}
+
+export type WorkflowEdit = (operation: () => string) => void;

@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
-import { actionRunnerLabels, actionRunnerMismatch, type ActionRunnerConfig } from "@repo/core";
+import {
+  actionRunnerArchitectures,
+  actionRunnerLabels,
+  actionRunnerMismatch,
+  type ActionRunnerConfig,
+} from "@repo/core";
 import type { ActionRunnerView } from "@repo/contracts";
 import { actionsApi } from "@/lib/api/actions";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -19,6 +24,7 @@ import { useActionMutation, useActionResource, useActionScope } from "./useActio
 import {
   applyRunnerPreset,
   runnerPreset,
+  runnerPresetName,
   RunnerCatalog,
   RunnerLogo,
   type RunnerPreset,
@@ -30,6 +36,8 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
   const c = a.runnerSetup;
   const router = useRouter();
   const mutation = useActionMutation();
+  const emulation = useActionMutation();
+  const busy = mutation.busy || emulation.busy;
   const [serverId, setServerId] = useState<string | null>(runner?.serverId ?? null);
   const [name, setName] = useState(runner?.name ?? "");
   const [config, setConfig] = useState<ActionRunnerConfig>(
@@ -94,7 +102,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
     !mismatch &&
     (!!runner || configuredServer.current === serverId) &&
     !cloud &&
-    !mutation.busy;
+    !busy;
   const preset = runnerPreset(config, capabilities.data ?? runner?.capabilities ?? null);
   const matchingLabels = capabilities.data
     ? actionRunnerLabels(capabilities.data, effectiveConfig)
@@ -136,9 +144,10 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
         </Button>
       </header>
       <ActionError message={mutation.error} />
+      <ActionError message={emulation.error} />
       <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
         <fieldset
-          disabled={mutation.busy || cloud}
+          disabled={busy || cloud}
           className="m-0 min-w-0 space-y-5 rounded-2xl border-0 bg-card p-5"
         >
           <ServerSelector
@@ -154,7 +163,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
             forDeployment
             autoSelectFirst={false}
             label={a.server}
-            disabled={!!runner || mutation.busy || cloud}
+            disabled={!!runner || busy || cloud}
           />
           {serverId && (
             <>
@@ -210,17 +219,63 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
                 <RunnerLogo preset={preset} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-sm font-medium text-foreground">{c.presets[preset].name}</h3>
+                <h3 className="text-sm font-medium text-foreground">
+                  {runnerPresetName(preset, c.presets)}
+                </h3>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {c.presets[preset].hint}
                 </p>
               </div>
             </div>
-            {!serverId && <p className="text-xs text-muted-foreground">{c.selectServer}</p>}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {serverId ? c.defaultImageHint : c.selectServer}
+            </p>
             <ActionError
               message={config.mode === "container" && !config.image?.trim() ? null : mismatch}
             />
           </div>
+          {config.mode === "container" && capabilities.data?.docker && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">{c.architectures}</p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {actionRunnerArchitectures(capabilities.data, config).map((architecture) => (
+                    <span key={architecture} className="rounded-md bg-background px-2 py-1">
+                      {architecture === "arm64" ? "ARM64" : "x64"}
+                      {architecture !==
+                      (capabilities.data!.dockerArchitecture ?? capabilities.data!.architecture)
+                        ? ` · ${c.emulated}`
+                        : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {actionRunnerArchitectures(capabilities.data, config).length < 2 && (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (!serverId) return;
+                      const result = await emulation.execute(() =>
+                        actionsApi.enableEmulation(serverId),
+                      );
+                      if (result) capabilities.refresh();
+                    }}
+                  >
+                    <Icon
+                      name={emulation.busy ? "spinner" : "cpu"}
+                      className={emulation.busy ? "motion-safe:animate-spin" : ""}
+                    />
+                    {emulation.busy ? c.enablingEmulation : c.enableEmulation}
+                  </Button>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{c.emulationHint}</p>
+                </>
+              )}
+            </div>
+          )}
           <ActionField label={a.runnerName}>
             <Input
               variant="filled"
@@ -307,6 +362,20 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
                   />
                 </ActionField>
               </div>
+              {config.mode === "container" && (
+                <label className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    checked={config.allowDockerSocket}
+                    onCheckedChange={(value) => change("allowDockerSocket", value)}
+                  />
+                  <span>
+                    <span className="block">{c.dockerAccess}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                      {c.dockerAccessHint}
+                    </span>
+                  </span>
+                </label>
+              )}
               {config.mode === "native" && (
                 <p className="text-xs text-muted-foreground">{a.nativeLimits}</p>
               )}
@@ -326,7 +395,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
           <dl className="space-y-3 text-sm">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">{c.environment}</dt>
-              <dd>{c.presets[preset].name}</dd>
+              <dd>{runnerPresetName(preset, c.presets)}</dd>
             </div>
             {config.mode === "container" && (
               <div className="flex items-center justify-between gap-3">
@@ -357,11 +426,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
             </div>
           )}
           <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={mutation.busy || cloud}
-            />
+            <Checkbox checked={enabled} onCheckedChange={setEnabled} disabled={busy || cloud} />
             {c.acceptJobs}
           </label>
           <Button type="submit" className="w-full" disabled={!canSave}>

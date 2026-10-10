@@ -14,6 +14,14 @@ export const UBUNTU_RUNNER_IMAGE = "catthehacker/ubuntu:act-22.04";
 export const RUNNER_PRESETS = ["ubuntu", "macos", "linux", "custom"] as const;
 export type RunnerPreset = (typeof RUNNER_PRESETS)[number];
 
+/** Versioned product names stay in the catalog, rather than prose dictionaries. */
+export function runnerPresetName(
+  preset: RunnerPreset,
+  labels: Record<Exclude<RunnerPreset, "ubuntu">, { name: string }>,
+): string {
+  return preset === "ubuntu" ? "Ubuntu 22.04" : labels[preset].name;
+}
+
 /** Presets only populate the existing runner config; the server still verifies it. */
 export function applyRunnerPreset(
   config: ActionRunnerConfig,
@@ -115,7 +123,7 @@ export function RunnerCatalog({
                 disabled={!!reason}
                 onSelect={() => onSelect(preset)}
                 icon={<RunnerLogo preset={preset} />}
-                label={c.presets[preset].name}
+                label={runnerPresetName(preset, c.presets)}
                 description={
                   <span className="block space-y-3">
                     <span className="block">{c.presets[preset].hint}</span>

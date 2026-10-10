@@ -192,6 +192,27 @@ func (rc *RunContext) runtimeStrategy(value map[string]interface{}) map[string]i
   // Apply the label after Docker option merging so workflow options cannot
   // replace it; this covers job, service and Docker-action containers.
   source = readFileSync(join(patched, "pkg/container/docker_run.go"), "utf8");
+  // Emulated jobs must expose their execution architecture to setup actions and
+  // runner.arch expressions, rather than the Docker daemon's physical CPU.
+  replace(
+    "func RunnerArch(ctx context.Context) string {\n",
+    "func RunnerArch(ctx context.Context) string {\n\tif arch, ok := ctx.Value(executionPlatformKey{}).(string); ok { return arch }\n",
+  );
+  writeFileSync(
+    join(patched, "pkg/container/openship_platform.go"),
+    `package container
+import "context"
+type executionPlatformKey struct{}
+func WithExecutionPlatform(ctx context.Context, platform string) context.Context {
+  switch platform {
+  case "linux/amd64": return context.WithValue(ctx, executionPlatformKey{}, "X64")
+  case "linux/arm64": return context.WithValue(ctx, executionPlatformKey{}, "ARM64")
+  default: return ctx
+  }
+}
+`,
+  );
+
   replace(
     "\t\tcreateResult, err := cr.cli.ContainerCreate(ctx,",
     "\t\tconfig.Labels = ExecutionLabels(ctx, config.Labels)\n\t\tcreateResult, err := cr.cli.ContainerCreate(ctx,",

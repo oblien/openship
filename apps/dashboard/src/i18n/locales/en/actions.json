@@ -316,11 +316,17 @@
       "jobMapping": "Use a valid YAML job mapping before editing the topology."
     },
     "editJobYaml": "Edit job in YAML",
-    "listHint": "Select a job to edit its steps. Dependencies control execution order."
+    "listHint": "Expand a job, then select a step to edit it.",
+    "jobSettings": "Job settings",
+    "architecture": "CPU architecture",
+    "automaticArchitecture": "Runner default",
+    "jobImage": "Job container image",
+    "runnerDefault": "Use runner default",
+    "jobImageHint": "Any compatible Linux image. Include the tools your steps and actions need."
   },
   "runnerSetup": {
     "subtitle": "Choose a server and a ready-to-use environment.",
-    "environment": "Environment",
+    "environment": "Default environment",
     "browse": "Browse catalog",
     "catalog": "Runner catalog",
     "catalogHint": "Choose an environment that works on your selected server.",
@@ -338,7 +344,6 @@
     "trustedContainer": "Jobs share this server’s Docker engine. Use trusted repositories.",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Ready-to-use Linux image with Node.js and Git."
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "Custom image",
         "hint": "Bring a Docker runner image with Node.js and Git."
       }
-    }
+    },
+    "architectures": "CPU architectures",
+    "emulated": "Emulated",
+    "enableEmulation": "Enable CPU emulation",
+    "enablingEmulation": "Setting up emulation…",
+    "emulationHint": "Adds QEMU support to this server’s Docker engine. Emulated jobs may run more slowly.",
+    "dockerAccess": "Allow Docker access",
+    "dockerAccessHint": "Enable image builds inside job containers. Only run trusted workflows on this server.",
+    "defaultImageHint": "Each job can choose its own compatible container image."
   }
 }

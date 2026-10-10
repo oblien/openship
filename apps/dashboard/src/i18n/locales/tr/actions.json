@@ -316,11 +316,17 @@
       "referencedJob": "Başka bir iş bu işin çıktılarına veya sonucuna başvuruyor. Kaldırmadan önce bu ifadeleri güncelleyin.",
       "jobMapping": "Topolojiyi düzenlemeden önce geçerli bir YAML iş tanımı kullanın."
     },
-    "listHint": "Adımlarını düzenlemek için bir iş seçin. Yürütme sırasını bağımlılıklar belirler."
+    "listHint": "Bir işi genişletin, ardından düzenlenecek adımı seçin.",
+    "jobSettings": "İş ayarları",
+    "architecture": "CPU mimarisi",
+    "automaticArchitecture": "Çalıştırıcı varsayılanı",
+    "jobImage": "İş konteyner imajı",
+    "runnerDefault": "Çalıştırıcı varsayılanını kullan",
+    "jobImageHint": "Uyumlu herhangi bir Linux imajı. Adımların ve eylemlerin ihtiyaç duyduğu araçları ekleyin."
   },
   "runnerSetup": {
     "subtitle": "Bir sunucu ve kullanıma hazır ortam seçin.",
-    "environment": "Ortam",
+    "environment": "Varsayılan ortam",
     "browse": "Kataloğu aç",
     "catalog": "Runner kataloğu",
     "catalogHint": "Seçtiğiniz sunucuyla uyumlu bir ortam seçin.",
@@ -338,7 +344,6 @@
     "trustedContainer": "İşler bu sunucunun Docker motorunu paylaşır. Güvenilir depolar kullanın.",
     "presets": {
       "ubuntu": {
-        "name": "Ubuntu 22.04",
         "hint": "Node.js ve Git içeren, kullanıma hazır Linux imajı."
       },
       "macos": {
@@ -353,6 +358,14 @@
         "name": "Özel imaj",
         "hint": "Node.js ve Git içeren bir Docker runner imajı kullanın."
       }
-    }
+    },
+    "architectures": "CPU mimarileri",
+    "emulated": "Öykünme",
+    "enableEmulation": "CPU öykünmesini etkinleştir",
+    "enablingEmulation": "Öykünme ayarlanıyor…",
+    "emulationHint": "Bu sunucunun Docker motoruna QEMU desteği ekler. Öykünen işler daha yavaş çalışabilir.",
+    "dockerAccess": "Docker erişimine izin ver",
+    "dockerAccessHint": "İş konteynerlerinde imaj derlemeyi etkinleştirir. Bu sunucuda yalnızca güvenilir iş akışları çalıştırın.",
+    "defaultImageHint": "Her iş kendi uyumlu konteyner imajını seçebilir."
   }
 }

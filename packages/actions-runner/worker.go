@@ -31,28 +31,29 @@ type dependency struct {
 }
 
 type jobRequest struct {
-	Version        int                    `json:"version"`
-	ID             string                 `json:"id"`
-	Workflow       string                 `json:"workflow"`
-	WorkflowPath   string                 `json:"workflowPath"`
-	Job            string                 `json:"job"`
-	Directory      string                 `json:"directory"`
-	EventName      string                 `json:"eventName"`
-	Event          json.RawMessage        `json:"event"`
-	Actor          string                 `json:"actor"`
-	DefaultBranch  string                 `json:"defaultBranch"`
-	Matrix         map[string]interface{} `json:"matrix"`
-	Strategy       map[string]interface{} `json:"strategy"`
-	Needs          map[string]dependency  `json:"needs"`
-	Environment    map[string]string      `json:"environment"`
-	Secrets        map[string]string      `json:"secrets"`
-	Variables      map[string]string      `json:"variables"`
-	Inputs         map[string]string      `json:"inputs"`
-	Platforms      map[string]string      `json:"platforms"`
-	TimeoutSeconds int                    `json:"timeoutSeconds"`
-	ContainerCPU   float64                `json:"containerCpu"`
-	ContainerRAM   int                    `json:"containerMemoryMb"`
-	DockerSocket   bool                   `json:"dockerSocket"`
+	Version           int                    `json:"version"`
+	ID                string                 `json:"id"`
+	Workflow          string                 `json:"workflow"`
+	WorkflowPath      string                 `json:"workflowPath"`
+	Job               string                 `json:"job"`
+	Directory         string                 `json:"directory"`
+	EventName         string                 `json:"eventName"`
+	Event             json.RawMessage        `json:"event"`
+	Actor             string                 `json:"actor"`
+	DefaultBranch     string                 `json:"defaultBranch"`
+	Matrix            map[string]interface{} `json:"matrix"`
+	Strategy          map[string]interface{} `json:"strategy"`
+	Needs             map[string]dependency  `json:"needs"`
+	Environment       map[string]string      `json:"environment"`
+	Secrets           map[string]string      `json:"secrets"`
+	Variables         map[string]string      `json:"variables"`
+	Inputs            map[string]string      `json:"inputs"`
+	Platforms         map[string]string      `json:"platforms"`
+	TimeoutSeconds    int                    `json:"timeoutSeconds"`
+	ContainerCPU      float64                `json:"containerCpu"`
+	ContainerRAM      int                    `json:"containerMemoryMb"`
+	ContainerPlatform string                 `json:"containerPlatform,omitempty"`
+	DockerSocket      bool                   `json:"dockerSocket"`
 }
 
 type jobResult struct {
@@ -155,6 +156,16 @@ func validateRequest(r jobRequest) error {
 	if r.TimeoutSeconds < 1 || r.TimeoutSeconds > 6*60*60 {
 		return errors.New("job timeout must be between 1 second and 6 hours")
 	}
+	if r.ContainerPlatform != "" && r.ContainerPlatform != "linux/amd64" && r.ContainerPlatform != "linux/arm64" {
+		return errors.New("unsupported Docker execution platform")
+	}
+	if r.ContainerPlatform != "" {
+		for _, image := range r.Platforms {
+			if image == "-self-hosted" {
+				return errors.New("native jobs cannot override the host architecture")
+			}
+		}
+	}
 	if len(r.Platforms) == 0 {
 		return errors.New("job has no authorized execution platform")
 	}
@@ -212,7 +223,7 @@ func runJob(parent context.Context, request jobRequest, events *eventWriter) (jo
 		GitHubInstance: "github.com", RemoteName: "origin", LogOutput: true,
 		AutoRemove: true, NoSkipCheckout: true, ForcePull: false, ConcurrentJobs: 1,
 		ContainerDaemonSocket: socket, ContainerOptions: strings.TrimSpace(options),
-		ContainerNetworkMode: "bridge",
+		ContainerNetworkMode: "bridge", ContainerArchitecture: request.ContainerPlatform,
 	}
 	// Match GitHub's two service addressing modes. An explicit job container
 	// shares the service network; a host-style job uses published localhost
@@ -224,6 +235,7 @@ func runJob(parent context.Context, request jobRequest, events *eventWriter) (jo
 	ctx, cancel := context.WithTimeout(parent, time.Duration(request.TimeoutSeconds)*time.Second)
 	defer cancel()
 	ctx = container.WithExecutionOwner(ctx, request.ID)
+	ctx = container.WithExecutionPlatform(ctx, request.ContainerPlatform)
 	if usesDocker(request) {
 		if err := prepareOwnedVolumes(ctx, request.ID); err != nil {
 			return jobResult{}, err

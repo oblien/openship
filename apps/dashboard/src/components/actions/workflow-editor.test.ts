@@ -5,6 +5,8 @@ import {
   changeWorkflowSteps,
   editWorkflowDependency,
   editWorkflowJob,
+  editWorkflowContainerImage,
+  editWorkflowJobArchitecture,
   editWorkflowStep,
   removeWorkflowJob,
   workflowJobOffset,
@@ -40,6 +42,40 @@ describe("workflow canvas editing", () => {
     expect(result).toContain("# keep this note");
     expect(result).toContain("# pinned by repository");
     expect(result).toContain("# Production CI");
+  });
+  it("changes container images without losing credentials, options, volumes or comments", () => {
+    const current = source.replace(
+      "    runs-on: ubuntu-latest",
+      "    runs-on: ubuntu-latest\n    container:\n      image: node:20 # keep image comment\n      credentials: {username: bot, password: '${{ secrets.REGISTRY_TOKEN }}'}\n      volumes: ['cache:/cache']\n      options: --user 1000",
+    );
+    const changed = editWorkflowContainerImage(current, "test", "node:24");
+    expect(parse(changed).jobs.test.container).toEqual({
+      ...parse(current).jobs.test.container,
+      image: "node:24",
+    });
+    expect(changed).toContain("# keep image comment");
+    const typing = editWorkflowContainerImage(changed, "test", "");
+    expect(parse(typing).jobs.test.container.volumes).toEqual(["cache:/cache"]);
+    expect(
+      parse(editWorkflowJob(typing, "test", "container", undefined)).jobs.test.container,
+    ).toBeUndefined();
+  });
+  it("selects architecture through standard runs-on labels without editing matrix expressions", () => {
+    const arm = editWorkflowJobArchitecture(source, "test", "arm64");
+    expect(parse(arm).jobs.test["runs-on"]).toEqual(["ubuntu-latest", "arm64"]);
+    const x64 = editWorkflowJobArchitecture(arm, "test", "x64");
+    expect(parse(x64).jobs.test["runs-on"]).toEqual(["ubuntu-latest", "x64"]);
+    expect(parse(editWorkflowJobArchitecture(x64, "test", "auto")).jobs.test["runs-on"]).toEqual([
+      "ubuntu-latest",
+    ]);
+    expect(parse(arm).jobs.test.strategy).toEqual(parse(source).jobs.test.strategy);
+    expect(() =>
+      editWorkflowJobArchitecture(
+        source.replace("runs-on: ubuntu-latest", "runs-on: ${{ matrix.os }}"),
+        "test",
+        "arm64",
+      ),
+    ).toThrow("jobMapping");
   });
   it("creates independent job identities and edits dependency edges without duplicates", () => {
     const added = addWorkflowJob(source);

@@ -12,6 +12,7 @@ import {
   type ActionWorkerRequest,
 } from "@repo/core";
 import type { CommandExecutor } from "../types";
+import { dockerArchitecture, probeDockerExecutionPlatforms } from "../runtime/docker-platforms";
 
 export interface ActionWorkerSnapshot {
   state: "idle" | "running" | "finished" | "interrupted";
@@ -29,7 +30,7 @@ export async function probeActionCapabilities(
 uname -m
 command -v git >/dev/null 2>&1 && printf 'git=yes\\n' || true
 command -v node >/dev/null 2>&1 && printf 'node=yes\\n' || true
-docker info --format 'docker={{.OSType}}' 2>/dev/null || true
+docker info --format 'docker={{.OSType}}\ndockerArch={{.Architecture}}' 2>/dev/null || true
 if [ -f /etc/os-release ]; then sed -n -e 's/^ID=/distribution=/p' -e 's/^VERSION_ID=/version=/p' /etc/os-release; fi
 if command -v sw_vers >/dev/null 2>&1; then printf 'version='; sw_vers -productVersion; fi`,
     { timeout: 15_000 },
@@ -56,10 +57,18 @@ if command -v sw_vers >/dev/null 2>&1; then printf 'version='; sw_vers -productV
         return [line.slice(0, i), line.slice(i + 1).replace(/^"|"$/g, "")];
       }),
   );
+  const docker = flags.docker === "linux";
+  const dockerArch = dockerArchitecture(flags.dockerArch) ?? architecture;
   return {
     os,
     architecture,
-    docker: flags.docker === "linux",
+    docker,
+    ...(docker
+      ? {
+          dockerArchitecture: dockerArch,
+          dockerPlatforms: await probeDockerExecutionPlatforms(executor, dockerArch),
+        }
+      : {}),
     git: flags.git === "yes",
     node: flags.node === "yes",
     distribution: flags.distribution ?? null,

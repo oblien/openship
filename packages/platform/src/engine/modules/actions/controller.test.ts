@@ -406,6 +406,28 @@ describe("durable Actions controller", () => {
     expect((await repo.run(org, run.id))?.status).toBe("cancelled");
   });
 
+  it("fails an unavailable emulator once and removes its VM before releasing the slot", async () => {
+    const { run, org, runner } = await fixture(yaml, true);
+    const e = engine();
+    e.ports.open = vi
+      .fn()
+      .mockRejectedValue(
+        new AppError("CPU emulation is unavailable", 409, "DOCKER_EMULATION_UNAVAILABLE"),
+      );
+    e.ports.cleanup = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    await reconcile(e, run);
+    expect((await repo.jobs(org, run.id))[0]?.status).toBe("failure");
+    expect(await repo.runnerBusy(org, runner.id)).toBe(true);
+    await reconcile(e, run);
+    expect(e.ports.open).toHaveBeenCalledOnce();
+    expect((await repo.run(org, run.id))?.settledAt).toBeNull();
+    await reconcile(e, run);
+    expect(e.executions.size).toBe(0);
+    expect(e.ports.cleanup).toHaveBeenCalledTimes(2);
+    expect(await repo.runnerBusy(org, runner.id)).toBe(false);
+    expect((await repo.run(org, run.id))?.status).toBe("failure");
+  });
+
   it("requires fork approval and never selects a persistent host for untrusted code", async () => {
     const { org, input } = await fixture();
     const e = engine();
