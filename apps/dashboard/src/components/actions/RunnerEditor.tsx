@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
-import type { ActionRunnerConfig } from "@repo/core";
+import { actionRunnerLabels, actionRunnerMismatch, type ActionRunnerConfig } from "@repo/core";
 import type { ActionRunnerView } from "@repo/contracts";
 import { actionsApi } from "@/lib/api/actions";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -12,32 +12,46 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import ServerSelector from "@/components/shared/ServerSelector";
-import { OptionCard } from "@/components/shared/OptionCard";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
 import { ActionField } from "./ActionField";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
+import {
+  applyRunnerPreset,
+  runnerPreset,
+  RunnerCatalog,
+  RunnerLogo,
+  type RunnerPreset,
+} from "./RunnerCatalog";
 
 function Form({ runner }: { runner?: ActionRunnerView }) {
   const { t } = useI18n();
   const a = t.actions;
+  const c = a.runnerSetup;
   const router = useRouter();
   const mutation = useActionMutation();
   const [serverId, setServerId] = useState<string | null>(runner?.serverId ?? null);
   const [name, setName] = useState(runner?.name ?? "");
   const [config, setConfig] = useState<ActionRunnerConfig>(
-    runner?.config ?? {
-      mode: "container",
-      image: "catthehacker/ubuntu:act-22.04",
-      labels: ["ubuntu-latest", "ubuntu-22.04"],
-      maxParallel: 1,
-      cpu: 1,
-      memoryMb: 2048,
-      allowDockerSocket: false,
-    },
+    () =>
+      runner?.config ??
+      applyRunnerPreset(
+        {
+          mode: "container",
+          image: null,
+          labels: [],
+          maxParallel: 1,
+          cpu: 1,
+          memoryMb: 2048,
+          allowDockerSocket: false,
+        },
+        "ubuntu",
+      ),
   );
   const [labels, setLabels] = useState(config.labels.join(", "));
   const [enabled, setEnabled] = useState(runner?.enabled ?? true);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
   const cloud = runner?.kind === "cloud";
   const inspect = useCallback(
     () => (serverId ? actionsApi.inspectDestination(serverId) : Promise.resolve(null)),
@@ -45,40 +59,61 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
   );
   const capabilities = useActionResource(inspect);
   const configuredServer = useRef<string | null>(null);
+  const suggestedName = useRef("");
   useEffect(() => {
     if (!runner && serverId && capabilities.data && configuredServer.current !== serverId) {
       configuredServer.current = serverId;
-      const mode =
-        capabilities.data.os === "macos" || !capabilities.data.docker ? "native" : "container";
-      setConfig((current) => ({ ...current, mode }));
-      setLabels(mode === "native" ? "" : "ubuntu-latest, ubuntu-22.04");
+      const preset =
+        capabilities.data.os === "macos" ? "macos" : capabilities.data.docker ? "ubuntu" : "linux";
+      const next = applyRunnerPreset(config, preset);
+      setConfig(next);
+      setLabels(next.labels.join(", "));
     }
-  }, [capabilities.data, runner, serverId]);
+  }, [capabilities.data, runner, serverId, config]);
   const change = <K extends keyof ActionRunnerConfig>(key: K, value: ActionRunnerConfig[K]) =>
     setConfig((current) => ({ ...current, [key]: value }));
+  const effectiveConfig = {
+    ...config,
+    image: config.mode === "native" ? null : config.image,
+    labels: labels
+      .split(",")
+      .map((label) => label.trim())
+      .filter(Boolean),
+  };
+  const mismatch = capabilities.data
+    ? actionRunnerMismatch(capabilities.data, effectiveConfig, {
+        labels: [],
+        requiresDocker: false,
+      })
+    : null;
+  const canSave =
+    !!serverId &&
+    !!capabilities.data &&
+    !capabilities.loading &&
+    !capabilities.error &&
+    !mismatch &&
+    (!!runner || configuredServer.current === serverId) &&
+    !cloud &&
+    !mutation.busy;
+  const preset = runnerPreset(config, capabilities.data ?? runner?.capabilities ?? null);
+  const matchingLabels = capabilities.data
+    ? actionRunnerLabels(capabilities.data, effectiveConfig)
+    : [];
+  const choosePreset = (next: RunnerPreset) => {
+    const updated = applyRunnerPreset(config, next);
+    setConfig(updated);
+    setLabels(updated.labels.join(", "));
+    setCatalogOpen(false);
+    if (next === "custom") setAdvanced(true);
+  };
   return (
     <form
       className="@container space-y-5"
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!serverId || cloud) return;
+        if (!canSave || !serverId) return;
         const result = await mutation.execute(() =>
-          actionsApi.saveRunner(
-            {
-              serverId,
-              name,
-              enabled,
-              config: {
-                ...config,
-                image: config.mode === "native" ? null : config.image,
-                labels: labels
-                  .split(",")
-                  .map((label) => label.trim())
-                  .filter(Boolean),
-              },
-            },
-            runner?.id,
-          ),
+          actionsApi.saveRunner({ serverId, name, enabled, config: effectiveConfig }, runner?.id),
         );
         if (result) router.push("/actions");
       }}
@@ -91,7 +126,10 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
               {a.back}
             </Link>
           </Button>
-          <h1 className="text-2xl font-medium tracking-tight text-foreground">{runner?.name ?? a.newRunner}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">
+            {runner?.name ?? a.newRunner}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">{c.subtitle}</p>
         </div>
         <Button asChild variant="ghost">
           <Link href="/actions">{a.cancel}</Link>
@@ -99,31 +137,90 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
       </header>
       <ActionError message={mutation.error} />
       <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
-        <section className="space-y-5 rounded-2xl bg-card p-5">
+        <fieldset
+          disabled={mutation.busy || cloud}
+          className="m-0 min-w-0 space-y-5 rounded-2xl border-0 bg-card p-5"
+        >
           <ServerSelector
             value={serverId}
             onSelect={(server) => {
               setServerId(server?.id ?? null);
-              configuredServer.current = null;
-              if (!name && server) setName(server.name);
+              if (server?.id !== serverId) configuredServer.current = null;
+              if (server) {
+                if (!name || name === suggestedName.current) setName(server.name);
+                suggestedName.current = server.name;
+              }
             }}
             forDeployment
             autoSelectFirst={false}
             label={a.server}
-            disabled={!!runner || mutation.busy}
+            disabled={!!runner || mutation.busy || cloud}
           />
           {serverId && (
             <>
               <ActionError message={capabilities.error} onRetry={capabilities.refresh} />
-              <p className="text-xs text-muted-foreground" role="status">
-                {capabilities.loading
-                  ? a.checkingDestination
-                  : capabilities.data
-                    ? `${capabilities.data.os === "macos" ? "macOS" : "Linux"} · ${capabilities.data.architecture} · ${capabilities.data.docker ? a.dockerAvailable : a.nativeOnly}`
-                    : ""}
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+                  {capabilities.loading ? (
+                    <>
+                      <Icon name="spinner" className="size-3.5 motion-safe:animate-spin" />
+                      {a.checkingDestination}
+                    </>
+                  ) : capabilities.data ? (
+                    <>
+                      <Icon
+                        name={capabilities.data.os === "macos" ? "apple" : "server"}
+                        className="size-3.5"
+                      />
+                      {capabilities.data.os === "macos" ? "macOS" : "Linux"} ·{" "}
+                      {capabilities.data.architecture} ·{" "}
+                      {capabilities.data.docker ? a.dockerAvailable : a.nativeOnly}
+                    </>
+                  ) : null}
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={a.probe}
+                  title={a.probe}
+                  onClick={capabilities.refresh}
+                  disabled={capabilities.loading}
+                >
+                  <Icon name="refresh" />
+                </Button>
+              </div>
             </>
           )}
+          <div className="space-y-3 border-t border-border/50 pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-medium">{c.environment}</h2>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setCatalogOpen(true)}
+              >
+                <Icon name="grid" />
+                {c.browse}
+              </Button>
+            </div>
+            <div className="flex items-center gap-4 rounded-xl bg-background/70 p-4">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-card">
+                <RunnerLogo preset={preset} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-medium text-foreground">{c.presets[preset].name}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {c.presets[preset].hint}
+                </p>
+              </div>
+            </div>
+            {!serverId && <p className="text-xs text-muted-foreground">{c.selectServer}</p>}
+            <ActionError
+              message={config.mode === "container" && !config.image?.trim() ? null : mismatch}
+            />
+          </div>
           <ActionField label={a.runnerName}>
             <Input
               variant="filled"
@@ -133,113 +230,156 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
               maxLength={100}
             />
           </ActionField>
-          <div>
-            <h2 className="mb-3 text-sm font-semibold">{a.runnerMode}</h2>
-            <div className="grid gap-3 @min-[700px]:grid-cols-2">
-              {(["container", "native"] as const)
-                .filter(
-                  (mode) => mode !== "container" || !capabilities.data || capabilities.data.docker,
-                )
-                .map((mode) => (
-                  <OptionCard
-                    key={mode}
-                    value={mode}
-                    selected={config.mode === mode}
-                    onSelect={() => {
-                      change("mode", mode);
-                      setLabels(mode === "native" ? "" : "ubuntu-latest, ubuntu-22.04");
-                    }}
-                    icon={
-                      <Icon name={mode === "native" ? "terminal" : "docker"} className="size-4" />
-                    }
-                    label={a[mode]}
-                    description={mode === "native" ? a.nativeHint : a.containerHint}
+          <details
+            open={advanced}
+            onToggle={(event) => setAdvanced(event.currentTarget.open)}
+            className="group border-t border-border/50 pt-4"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
+              <span className="flex items-center gap-2">
+                <Icon name="settings" className="size-4 text-muted-foreground" />
+                {c.advanced}
+              </span>
+              <Icon
+                name="chevron-down"
+                className="size-4 text-muted-foreground group-open:rotate-180"
+              />
+            </summary>
+            <div className="mt-5 space-y-5">
+              {config.mode === "container" && (
+                <ActionField label={a.image} hint={c.imageHint}>
+                  <Input
+                    variant="filled"
+                    value={config.image ?? ""}
+                    onChange={(event) => change("image", event.target.value)}
+                    required
                   />
-                ))}
+                </ActionField>
+              )}
+              <ActionField label={a.labels} hint={a.labelsHint}>
+                <Input
+                  variant="filled"
+                  value={labels}
+                  onChange={(event) => setLabels(event.target.value)}
+                />
+              </ActionField>
+              <div
+                className={`grid gap-4 ${config.mode === "container" ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+              >
+                {config.mode === "container" && (
+                  <>
+                    <ActionField label={a.cpu}>
+                      <Input
+                        variant="filled"
+                        type="number"
+                        value={config.cpu}
+                        min={0.25}
+                        step={0.25}
+                        max={128}
+                        onChange={(event) => change("cpu", Number(event.target.value))}
+                        required
+                      />
+                    </ActionField>
+                    <ActionField label={a.memory}>
+                      <Input
+                        variant="filled"
+                        type="number"
+                        value={config.memoryMb}
+                        min={256}
+                        step={1}
+                        max={524288}
+                        onChange={(event) => change("memoryMb", Number(event.target.value))}
+                        required
+                      />
+                    </ActionField>
+                  </>
+                )}
+                <ActionField label={a.parallel}>
+                  <Input
+                    variant="filled"
+                    type="number"
+                    value={config.maxParallel}
+                    min={1}
+                    max={16}
+                    step={1}
+                    onChange={(event) => change("maxParallel", Number(event.target.value))}
+                    required
+                  />
+                </ActionField>
+              </div>
+              {config.mode === "native" && (
+                <p className="text-xs text-muted-foreground">{a.nativeLimits}</p>
+              )}
+            </div>
+          </details>
+        </fieldset>
+        <aside className="space-y-5 rounded-2xl bg-card p-5">
+          <div className="flex items-center gap-3">
+            <Icon name="play-circle" className="size-6 text-info/80" />
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-medium text-foreground">
+                {name || a.newRunner}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{c.summary}</p>
             </div>
           </div>
-          {config.mode === "container" && (
-            <ActionField label={a.image}>
-              <Input
-                variant="filled"
-                value={config.image ?? ""}
-                onChange={(event) => change("image", event.target.value)}
-                required
-              />
-            </ActionField>
-          )}
-          <ActionField label={a.labels} hint={a.labelsHint}>
-            <Input
-              variant="filled"
-              value={labels}
-              onChange={(event) => setLabels(event.target.value)}
-            />
-          </ActionField>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <dl className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">{c.environment}</dt>
+              <dd>{c.presets[preset].name}</dd>
+            </div>
             {config.mode === "container" && (
-              <>
-                <ActionField label={a.cpu}>
-                  <Input
-                    variant="filled"
-                    type="number"
-                    value={config.cpu}
-                    min={0.25}
-                    step={0.25}
-                    max={128}
-                    onChange={(event) => change("cpu", Number(event.target.value))}
-                    required
-                  />
-                </ActionField>
-                <ActionField label={a.memory}>
-                  <Input
-                    variant="filled"
-                    type="number"
-                    value={config.memoryMb}
-                    min={256}
-                    step={1}
-                    max={524288}
-                    onChange={(event) => change("memoryMb", Number(event.target.value))}
-                    required
-                  />
-                </ActionField>
-              </>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{c.perJob}</dt>
+                <dd className="tabular-nums">
+                  {config.cpu} vCPU · {config.memoryMb / 1024} GiB
+                </dd>
+              </div>
             )}
-            <ActionField label={a.parallel}>
-              <Input
-                variant="filled"
-                type="number"
-                value={config.maxParallel}
-                min={1}
-                max={16}
-                step={1}
-                onChange={(event) => change("maxParallel", Number(event.target.value))}
-                required
-              />
-            </ActionField>
-          </div>
-          {config.mode === "native" && (
-            <p className="text-xs text-muted-foreground">{a.nativeLimits}</p>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">{a.parallel}</dt>
+              <dd className="tabular-nums">{config.maxParallel}</dd>
+            </div>
+          </dl>
+          {matchingLabels.length > 0 && (
+            <div className="space-y-2 border-t border-border/50 pt-4">
+              <p className="text-xs text-muted-foreground">{c.matchHint}</p>
+              <div className="flex flex-wrap gap-1.5" dir="ltr">
+                {matchingLabels.map((label) => (
+                  <code
+                    className="rounded-md bg-background px-2 py-1 text-xs text-muted-foreground"
+                    key={label}
+                  >
+                    {label}
+                  </code>
+                ))}
+              </div>
+            </div>
           )}
-        </section>
-        <aside className="space-y-5 rounded-2xl bg-card p-5">
-          <Icon name="server" className="size-6 text-muted-foreground" />
-          <h2 className="text-base font-semibold">{a.destinations}</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">{a.trustedHint}</p>
           <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={enabled} onCheckedChange={setEnabled} />
-            {a.enabled}
+            <Checkbox
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              disabled={mutation.busy || cloud}
+            />
+            {c.acceptJobs}
           </label>
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={
-              mutation.busy || !serverId || cloud || capabilities.loading || !!capabilities.error
-            }
-          >
+          <Button type="submit" className="w-full" disabled={!canSave}>
             {mutation.busy ? a.saving : a.saveRunner}
           </Button>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {config.mode === "native" ? c.trustedNative : c.trustedContainer}
+          </p>
         </aside>
       </div>
+      {catalogOpen && (
+        <RunnerCatalog
+          selected={preset}
+          capabilities={capabilities.error || capabilities.loading ? null : capabilities.data}
+          onSelect={choosePreset}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
     </form>
   );
 }

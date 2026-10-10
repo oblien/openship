@@ -315,6 +315,44 @@
       "lastJob": "Behalte mindestens einen Job im Workflow.",
       "referencedJob": "Ein anderer Job verweist auf Ausgaben oder das Ergebnis dieses Jobs. Passe diese Ausdrücke vor dem Entfernen an.",
       "jobMapping": "Verwende eine gültige YAML-Job-Zuordnung, bevor du die Topologie bearbeitest."
+    },
+    "listHint": "Wähle einen Job, um seine Schritte zu bearbeiten. Abhängigkeiten bestimmen die Ausführungsreihenfolge."
+  },
+  "runnerSetup": {
+    "subtitle": "Wähle einen Server und eine einsatzbereite Umgebung.",
+    "environment": "Umgebung",
+    "browse": "Katalog öffnen",
+    "catalog": "Runner-Katalog",
+    "catalogHint": "Wähle eine Umgebung, die auf deinem ausgewählten Server funktioniert.",
+    "selectServer": "Wähle einen Server, um kompatible Umgebungen zu sehen.",
+    "needsMac": "Erfordert einen verbundenen Mac",
+    "needsLinux": "Erfordert einen Linux-Server",
+    "needsDocker": "Erfordert Docker auf dem Server",
+    "advanced": "Erweiterte Einstellungen",
+    "imageHint": "Verwende ein Image mit installiertem Node.js und Git.",
+    "summary": "Runner-Konfiguration",
+    "perJob": "Pro Job",
+    "matchHint": "Jobs wählen diesen Runner anhand der runs-on-Labels.",
+    "acceptJobs": "Neue Jobs annehmen",
+    "trustedNative": "Jobs laufen als verbundener Serverbenutzer und können auf dessen Dateien zugreifen.",
+    "trustedContainer": "Jobs teilen sich die Docker-Engine dieses Servers. Verwende vertrauenswürdige Repositories.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Einsatzbereites Linux-Image mit Node.js und Git."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Nutze die installierten Tools auf deinem verbundenen Mac."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Führe Jobs direkt mit den installierten Server-Tools aus."
+      },
+      "custom": {
+        "name": "Eigenes Image",
+        "hint": "Nutze ein eigenes Docker-Runner-Image mit Node.js und Git."
+      }
     }
   }
 }

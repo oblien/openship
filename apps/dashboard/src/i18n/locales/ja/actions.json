@@ -315,6 +315,44 @@
       "lastJob": "ワークフローには少なくとも1つのジョブを残してください。",
       "referencedJob": "別のジョブがこのジョブの出力または結果を参照しています。削除する前に式を更新してください。",
       "jobMapping": "トポロジーを編集するには、有効なYAMLジョブ定義を使用してください。"
+    },
+    "listHint": "ジョブを選択してステップを編集します。実行順序は依存関係で決まります。"
+  },
+  "runnerSetup": {
+    "subtitle": "サーバーとすぐに使える実行環境を選択します。",
+    "environment": "実行環境",
+    "browse": "カタログを見る",
+    "catalog": "ランナーカタログ",
+    "catalogHint": "選択したサーバーで動作する環境を選んでください。",
+    "selectServer": "サーバーを選択すると対応する環境が表示されます。",
+    "needsMac": "接続済みのMacが必要です",
+    "needsLinux": "Linuxサーバーが必要です",
+    "needsDocker": "サーバーにDockerが必要です",
+    "advanced": "詳細設定",
+    "imageHint": "Node.jsとGitがインストールされたイメージを使用してください。",
+    "summary": "ランナー設定",
+    "perJob": "ジョブごと",
+    "matchHint": "ジョブはruns-onラベルでこのランナーを選択します。",
+    "acceptJobs": "新しいジョブを受け付ける",
+    "trustedNative": "ジョブは接続先のユーザー権限で実行され、そのユーザーのファイルにアクセスできます。",
+    "trustedContainer": "ジョブはこのサーバーのDockerエンジンを共有します。信頼できるリポジトリを使用してください。",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Node.jsとGitを含む、すぐに使えるLinuxイメージ。"
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "接続済みのMacにインストールされたツールを使用します。"
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "サーバーにインストールされたツールで直接実行します。"
+      },
+      "custom": {
+        "name": "カスタムイメージ",
+        "hint": "Node.jsとGitを含むDockerランナーイメージを指定します。"
+      }
     }
   }
 }

@@ -25,10 +25,12 @@ export const WorkflowJobNode = memo(function WorkflowJobNode({ data }: TopologyN
       ? "text-danger"
       : active
         ? "text-info"
-        : "text-muted-foreground";
+        : resource.state === "configured"
+          ? "text-info/80"
+          : "text-muted-foreground";
   return (
     <article
-      className={`relative flex items-center gap-2.5 rounded-lg border px-3 text-start transition-colors ${action?.selected ? "border-foreground/60 ring-2 ring-foreground/10" : "border-border/80 hover:border-foreground/30"}`}
+      className={`relative flex items-center gap-2.5 rounded-lg border px-3 text-start transition-colors ${action?.selected ? "border-info/50 ring-2 ring-info/10" : "border-border/80 hover:border-foreground/30"}`}
       style={{
         width: WORKFLOW_NODE_LAYOUT.width,
         height: WORKFLOW_NODE_LAYOUT.height,

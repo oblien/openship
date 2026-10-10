@@ -315,6 +315,44 @@
       "lastJob": "Mantenha pelo menos uma tarefa no workflow.",
       "referencedJob": "Outra tarefa faz referência às saídas ou ao resultado desta. Atualize essas expressões antes de removê-la.",
       "jobMapping": "Use uma definição YAML válida da tarefa antes de editar a topologia."
+    },
+    "listHint": "Selecione um job para editar suas etapas. As dependências controlam a ordem de execução."
+  },
+  "runnerSetup": {
+    "subtitle": "Escolha um servidor e um ambiente pronto para usar.",
+    "environment": "Ambiente",
+    "browse": "Ver catálogo",
+    "catalog": "Catálogo de runners",
+    "catalogHint": "Escolha um ambiente compatível com o servidor selecionado.",
+    "selectServer": "Escolha um servidor para ver os ambientes compatíveis.",
+    "needsMac": "Requer um Mac conectado",
+    "needsLinux": "Requer um servidor Linux",
+    "needsDocker": "Requer Docker no servidor",
+    "advanced": "Configurações avançadas",
+    "imageHint": "Use uma imagem com Node.js e Git instalados.",
+    "summary": "Configuração do runner",
+    "perJob": "Por job",
+    "matchHint": "Os jobs selecionam este runner pelas labels runs-on.",
+    "acceptJobs": "Aceitar novos jobs",
+    "trustedNative": "Os jobs executam como o usuário conectado ao servidor e podem acessar seus arquivos.",
+    "trustedContainer": "Os jobs compartilham o Docker deste servidor. Use repositórios confiáveis.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Imagem Linux pronta para usar com Node.js e Git."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Use as ferramentas instaladas no Mac conectado."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Execute diretamente com as ferramentas instaladas no servidor."
+      },
+      "custom": {
+        "name": "Imagem personalizada",
+        "hint": "Use uma imagem de runner Docker com Node.js e Git."
+      }
     }
   }
 }

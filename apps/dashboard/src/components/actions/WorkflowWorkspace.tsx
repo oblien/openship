@@ -5,13 +5,12 @@ import type { ActionPlanView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/Tabs";
-import { optionCardSurface } from "@/components/shared/OptionCard";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { WorkflowGraph } from "./WorkflowGraph";
+import { WorkflowJobList } from "./WorkflowJobList";
 import { ActionsIllustration } from "./ActionsIllustration";
 import { workflowJobs, workflowJobOffset } from "./workflow-editor";
-import { workflowEventConfig as object } from "./workflow-yaml";
 import type { useWorkflowDraft } from "./useWorkflowDraft";
 
 export function WorkflowWorkspace({
@@ -135,79 +134,8 @@ export function WorkflowWorkspace({
               editor={{ selection, onSelect, onConnect }}
             />
           ) : (
-            <div className="absolute inset-0 overflow-y-auto p-4">
-              <div className="space-y-2">
-                {plan.jobs.map((job) => {
-                  const value = jobs.find((item) => item.id === job.id)?.value;
-                  const steps = Array.isArray(value?.steps) ? value.steps : [];
-                  const selected = selection?.kind === "node" && selection.id === job.id;
-                  return (
-                    <button
-                      key={job.id}
-                      type="button"
-                      aria-label={`${e.editJob}: ${job.name}`}
-                      aria-pressed={selected}
-                      onClick={() => onSelect({ kind: "node", id: job.id })}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${optionCardSurface(selected)}`}
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                        <Icon name="play-circle" className="size-5" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="text-sm font-medium">{job.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {e.steps} · {steps.length}
-                          </span>
-                        </span>
-                        <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">
-                          {typeof job.runsOn === "string"
-                            ? job.runsOn
-                            : Array.isArray(job.runsOn)
-                              ? job.runsOn.join(" · ")
-                              : "runs-on"}
-                        </span>
-                        {!!job.needs.length && (
-                          <span className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Icon name="git-branch" className="size-3.5 shrink-0" />
-                            {e.dependsOn}: {job.needs.join(", ")}
-                          </span>
-                        )}
-                        {!!steps.length && (
-                          <span className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            {steps.map((value, index) => {
-                              const step = object(value);
-                              return (
-                                <span
-                                  className="inline-flex max-w-full items-center gap-1.5"
-                                  key={index}
-                                >
-                                  <Icon
-                                    name={Object.hasOwn(step, "uses") ? "bolt" : "terminal"}
-                                    className="size-3.5 shrink-0"
-                                  />
-                                  <span className="truncate">
-                                    {index + 1}.{" "}
-                                    {
-                                      String(step.name || step.uses || step.run || "").split(
-                                        "\n",
-                                      )[0]
-                                    }
-                                  </span>
-                                </span>
-                              );
-                            })}
-                          </span>
-                        )}
-                      </span>
-                      <Icon
-                        name="chevron-right"
-                        className="mt-2 size-4 shrink-0 text-muted-foreground rtl:rotate-180"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="absolute inset-0 overflow-y-auto">
+              <WorkflowJobList plan={plan} jobs={jobs} selection={selection} onSelect={onSelect} />
             </div>
           )
         ) : (
@@ -227,7 +155,9 @@ export function WorkflowWorkspace({
           name={invalid ? "alert-circle" : "cursor"}
           className={`size-3.5 shrink-0 ${invalid ? "text-warning" : ""}`}
         />
-        <span>{invalid ? t.actions.integration.fixYaml : e.canvasHint}</span>
+        <span>
+          {invalid ? t.actions.integration.fixYaml : view === "list" ? e.listHint : e.canvasHint}
+        </span>
       </div>
     </section>
   );

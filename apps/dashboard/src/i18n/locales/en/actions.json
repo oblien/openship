@@ -315,6 +315,44 @@
       "referencedJob": "Another job references this job’s outputs or result. Update those expressions before removing it.",
       "jobMapping": "Use a valid YAML job mapping before editing the topology."
     },
-    "editJobYaml": "Edit job in YAML"
+    "editJobYaml": "Edit job in YAML",
+    "listHint": "Select a job to edit its steps. Dependencies control execution order."
+  },
+  "runnerSetup": {
+    "subtitle": "Choose a server and a ready-to-use environment.",
+    "environment": "Environment",
+    "browse": "Browse catalog",
+    "catalog": "Runner catalog",
+    "catalogHint": "Choose an environment that works on your selected server.",
+    "selectServer": "Choose a server to see compatible environments.",
+    "needsMac": "Requires a connected Mac",
+    "needsLinux": "Requires a Linux server",
+    "needsDocker": "Requires Docker on the server",
+    "advanced": "Advanced settings",
+    "imageHint": "Use an image with Node.js and Git installed.",
+    "summary": "Runner configuration",
+    "perJob": "Per job",
+    "matchHint": "Jobs match this runner using runs-on labels.",
+    "acceptJobs": "Accept new jobs",
+    "trustedNative": "Jobs run as the connected server user and can access that user’s files.",
+    "trustedContainer": "Jobs share this server’s Docker engine. Use trusted repositories.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Ready-to-use Linux image with Node.js and Git."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Use the tools installed on your connected Mac."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Run directly with your server’s installed tools."
+      },
+      "custom": {
+        "name": "Custom image",
+        "hint": "Bring a Docker runner image with Node.js and Git."
+      }
+    }
   }
 }

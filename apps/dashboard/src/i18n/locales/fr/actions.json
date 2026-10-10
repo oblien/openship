@@ -315,6 +315,44 @@
       "lastJob": "Conservez au moins une tâche dans le workflow.",
       "referencedJob": "Une autre tâche référence les sorties ou le résultat de celle-ci. Modifiez ces expressions avant de la supprimer.",
       "jobMapping": "Utilisez une définition YAML valide de la tâche avant de modifier la topologie."
+    },
+    "listHint": "Sélectionnez une tâche pour modifier ses étapes. Les dépendances déterminent l’ordre d’exécution."
+  },
+  "runnerSetup": {
+    "subtitle": "Choisissez un serveur et un environnement prêt à l’emploi.",
+    "environment": "Environnement",
+    "browse": "Voir le catalogue",
+    "catalog": "Catalogue des runners",
+    "catalogHint": "Choisissez un environnement compatible avec le serveur sélectionné.",
+    "selectServer": "Choisissez un serveur pour voir les environnements compatibles.",
+    "needsMac": "Nécessite un Mac connecté",
+    "needsLinux": "Nécessite un serveur Linux",
+    "needsDocker": "Nécessite Docker sur le serveur",
+    "advanced": "Paramètres avancés",
+    "imageHint": "Utilisez une image avec Node.js et Git installés.",
+    "summary": "Configuration du runner",
+    "perJob": "Par tâche",
+    "matchHint": "Les tâches sélectionnent ce runner avec les étiquettes runs-on.",
+    "acceptJobs": "Accepter de nouvelles tâches",
+    "trustedNative": "Les tâches s’exécutent avec le compte connecté au serveur et peuvent accéder à ses fichiers.",
+    "trustedContainer": "Les tâches partagent le moteur Docker de ce serveur. Utilisez des dépôts de confiance.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Image Linux prête à l’emploi avec Node.js et Git."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Utilisez les outils installés sur votre Mac connecté."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Exécutez les tâches directement avec les outils du serveur."
+      },
+      "custom": {
+        "name": "Image personnalisée",
+        "hint": "Utilisez une image de runner Docker avec Node.js et Git."
+      }
     }
   }
 }

@@ -315,6 +315,44 @@
       "lastJob": "Conserva al menos una tarea en el workflow.",
       "referencedJob": "Otra tarea hace referencia a las salidas o al resultado de esta. Actualiza esas expresiones antes de eliminarla.",
       "jobMapping": "Usa una definición YAML válida de la tarea antes de editar la topología."
+    },
+    "listHint": "Selecciona un trabajo para editar sus pasos. Las dependencias controlan el orden de ejecución."
+  },
+  "runnerSetup": {
+    "subtitle": "Elige un servidor y un entorno listo para usar.",
+    "environment": "Entorno",
+    "browse": "Ver catálogo",
+    "catalog": "Catálogo de runners",
+    "catalogHint": "Elige un entorno compatible con el servidor seleccionado.",
+    "selectServer": "Elige un servidor para ver los entornos compatibles.",
+    "needsMac": "Requiere un Mac conectado",
+    "needsLinux": "Requiere un servidor Linux",
+    "needsDocker": "Requiere Docker en el servidor",
+    "advanced": "Ajustes avanzados",
+    "imageHint": "Usa una imagen con Node.js y Git instalados.",
+    "summary": "Configuración del runner",
+    "perJob": "Por trabajo",
+    "matchHint": "Los trabajos seleccionan este runner mediante las etiquetas runs-on.",
+    "acceptJobs": "Aceptar nuevos trabajos",
+    "trustedNative": "Los trabajos se ejecutan como el usuario conectado al servidor y pueden acceder a sus archivos.",
+    "trustedContainer": "Los trabajos comparten el motor Docker de este servidor. Usa repositorios de confianza.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Imagen de Linux lista para usar con Node.js y Git."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Usa las herramientas instaladas en tu Mac conectado."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Ejecuta directamente con las herramientas instaladas del servidor."
+      },
+      "custom": {
+        "name": "Imagen personalizada",
+        "hint": "Usa una imagen de runner Docker con Node.js y Git."
+      }
     }
   }
 }

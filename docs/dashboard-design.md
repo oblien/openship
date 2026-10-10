@@ -69,10 +69,13 @@ the editor. The large editor uses the shared modal's translucent frosted surface
 its inspector uses `bg-popover/60` with backdrop blur. Apply translucency to surfaces,
 not text or controls; keep filled fields distinct using the theme's background and
 foreground tokens. Workflow nodes are compact neutral rows with a status icon,
-job name and runner label, without service-card footers. They reuse the shared canvas
-with their own node renderer and compact layout dimensions. Reserve color for run
-status, errors and repository differences; plus buttons, sections and configuration
-icons stay neutral. The canvas owns its required styles so direct navigation is
+job name and runner label, without service-card footers. A muted info accent on the
+draft's play icon and selected outline gives identity without tinting the node fill.
+They reuse the shared canvas with their own node renderer and compact layout dimensions.
+The List view is a vertical job outline with expandable steps and explicit dependency
+labels; its rail does not imply execution order or completed progress. Reserve other
+color for run status, errors and repository differences; plus buttons, sections and
+configuration icons stay neutral. The canvas owns its required styles so direct navigation is
 consistent with navigation from a project.
 Node, step, connection and trigger edits update the original YAML while preserving
 unrelated fields and comments. Reject dependency cycles and dangling job-output
@@ -100,6 +103,13 @@ minutes or a separate included transfer allowance. Payment returns reconcile the
 saved purchase, then distinguish confirmed funds from runner setup. Preserve page
 state and show an unavailable balance as unknown, not zero. Connected Macs default
 to native execution and clear incompatible labels when the destination changes.
+Runner setup starts with the shared server picker and a compact environment summary.
+Browse catalog opens visual Ubuntu, native macOS/Linux and custom-image presets using
+the shared logos and option cards. Only offer presets compatible with the inspected
+server. Presets fill the existing runner configuration and keep resource limits; they
+do not create another execution path. Keep image, labels and resource overrides under
+Advanced settings, with the current configuration and matched labels in the sidebar.
+Retain saved runner settings on inspection, and make missing-tool checks retryable.
 
 ## Layout and density
 

@@ -315,6 +315,44 @@
       "lastJob": "工作流中必须保留至少一个任务。",
       "referencedJob": "其他任务引用了此任务的输出或结果。移除前请先更新这些表达式。",
       "jobMapping": "请先提供有效的 YAML 任务定义，再编辑拓扑。"
+    },
+    "listHint": "选择任务以编辑其步骤。依赖关系决定执行顺序。"
+  },
+  "runnerSetup": {
+    "subtitle": "选择服务器和可直接使用的运行环境。",
+    "environment": "运行环境",
+    "browse": "浏览目录",
+    "catalog": "运行器目录",
+    "catalogHint": "选择与所选服务器兼容的环境。",
+    "selectServer": "选择服务器以查看兼容的环境。",
+    "needsMac": "需要已连接的 Mac",
+    "needsLinux": "需要 Linux 服务器",
+    "needsDocker": "需要服务器安装 Docker",
+    "advanced": "高级设置",
+    "imageHint": "使用已安装 Node.js 和 Git 的镜像。",
+    "summary": "运行器配置",
+    "perJob": "每个任务",
+    "matchHint": "任务通过 runs-on 标签选择此运行器。",
+    "acceptJobs": "接受新任务",
+    "trustedNative": "任务以连接服务器的用户身份运行，并可访问该用户的文件。",
+    "trustedContainer": "任务共享此服务器的 Docker 引擎。请使用可信的仓库。",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "包含 Node.js 和 Git 的即用型 Linux 镜像。"
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "使用已连接 Mac 上安装的工具。"
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "使用服务器上已安装的工具直接运行。"
+      },
+      "custom": {
+        "name": "自定义镜像",
+        "hint": "使用包含 Node.js 和 Git 的 Docker 运行器镜像。"
+      }
     }
   }
 }

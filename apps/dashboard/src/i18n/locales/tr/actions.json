@@ -315,6 +315,44 @@
       "lastJob": "İş akışında en az bir iş bırakın.",
       "referencedJob": "Başka bir iş bu işin çıktılarına veya sonucuna başvuruyor. Kaldırmadan önce bu ifadeleri güncelleyin.",
       "jobMapping": "Topolojiyi düzenlemeden önce geçerli bir YAML iş tanımı kullanın."
+    },
+    "listHint": "Adımlarını düzenlemek için bir iş seçin. Yürütme sırasını bağımlılıklar belirler."
+  },
+  "runnerSetup": {
+    "subtitle": "Bir sunucu ve kullanıma hazır ortam seçin.",
+    "environment": "Ortam",
+    "browse": "Kataloğu aç",
+    "catalog": "Runner kataloğu",
+    "catalogHint": "Seçtiğiniz sunucuyla uyumlu bir ortam seçin.",
+    "selectServer": "Uyumlu ortamları görmek için bir sunucu seçin.",
+    "needsMac": "Bağlı bir Mac gerektirir",
+    "needsLinux": "Linux sunucusu gerektirir",
+    "needsDocker": "Sunucuda Docker gerektirir",
+    "advanced": "Gelişmiş ayarlar",
+    "imageHint": "Node.js ve Git yüklü bir imaj kullanın.",
+    "summary": "Runner yapılandırması",
+    "perJob": "İş başına",
+    "matchHint": "İşler bu runner’ı runs-on etiketleriyle seçer.",
+    "acceptJobs": "Yeni işleri kabul et",
+    "trustedNative": "İşler sunucuya bağlanan kullanıcı olarak çalışır ve bu kullanıcının dosyalarına erişebilir.",
+    "trustedContainer": "İşler bu sunucunun Docker motorunu paylaşır. Güvenilir depolar kullanın.",
+    "presets": {
+      "ubuntu": {
+        "name": "Ubuntu 22.04",
+        "hint": "Node.js ve Git içeren, kullanıma hazır Linux imajı."
+      },
+      "macos": {
+        "name": "macOS",
+        "hint": "Bağlı Mac’inizde yüklü araçları kullanın."
+      },
+      "linux": {
+        "name": "Linux",
+        "hint": "Sunucuda yüklü araçlarla doğrudan çalıştırın."
+      },
+      "custom": {
+        "name": "Özel imaj",
+        "hint": "Node.js ve Git içeren bir Docker runner imajı kullanın."
+      }
     }
   }
 }

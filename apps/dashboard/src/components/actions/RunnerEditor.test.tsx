@@ -6,9 +6,9 @@ import type { ActionCapabilities } from "@repo/core";
 import { I18nProvider } from "@/components/i18n-provider";
 import { RunnerEditor } from "./RunnerEditor";
 
-const h = vi.hoisted(() => ({ inspect: vi.fn(), save: vi.fn(), push: vi.fn() }));
+const h = vi.hoisted(() => ({ inspect: vi.fn(), save: vi.fn(), push: vi.fn(), runners: vi.fn() }));
 vi.mock("@/lib/api/actions", () => ({
-  actionsApi: { inspectDestination: h.inspect, saveRunner: h.save },
+  actionsApi: { inspectDestination: h.inspect, saveRunner: h.save, runners: h.runners },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/lib/auth-client", () => ({
@@ -48,6 +48,19 @@ const submit = () =>
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
+const choosePreset = (value: string) =>
+  act(async () => {
+    document.querySelector<HTMLButtonElement>(`button[value="${value}"]`)!.click();
+  });
+async function fill(label: string, value: string) {
+  const input = [...host.querySelectorAll<HTMLLabelElement>("label")]
+    .find((item) => item.firstElementChild?.textContent === label)!
+    .querySelector<HTMLInputElement>("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 beforeEach(async () => {
   (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
   vi.resetAllMocks();
@@ -114,5 +127,124 @@ describe("capability-based runner setup", () => {
       serverId: "linux",
       config: { mode: "container" },
     });
+  });
+  it("offers compatible catalog environments and applies native Linux without Ubuntu labels", async () => {
+    await click("linux");
+    await click("Browse catalog");
+    expect(document.querySelector<HTMLButtonElement>('button[value="macos"]')!.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('button[value="ubuntu"]')!.disabled).toBe(
+      false,
+    );
+    await choosePreset("linux");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await submit();
+    expect(h.save.mock.calls[0]![0].config).toMatchObject({
+      mode: "native",
+      image: null,
+      labels: [],
+    });
+  });
+  it("opens custom-image controls and never gives a custom image Ubuntu labels", async () => {
+    await click("linux");
+    await click("Browse catalog");
+    await choosePreset("custom");
+    expect(host.querySelector("details")!.open).toBe(true);
+    await submit();
+    expect(h.save).not.toHaveBeenCalled();
+    await fill("Runner image", "registry.example/ci/node:22");
+    await fill("vCPU per container", "2");
+    await fill("Memory per container (MiB)", "4096");
+    await fill("Additional labels", "ci, build");
+    await submit();
+    expect(h.save.mock.calls[0]![0].config).toMatchObject({
+      mode: "container",
+      image: "registry.example/ci/node:22",
+      cpu: 2,
+      memoryMb: 4096,
+      labels: ["ci", "build"],
+    });
+  });
+  it("keeps resource limits when switching environment presets", async () => {
+    await click("linux");
+    await fill("vCPU per container", "3");
+    await fill("Memory per container (MiB)", "4096");
+    await click("Browse catalog");
+    await choosePreset("linux");
+    await click("Browse catalog");
+    await choosePreset("ubuntu");
+    await submit();
+    expect(h.save.mock.calls[0]![0].config).toMatchObject({
+      mode: "container",
+      image: "catthehacker/ubuntu:act-22.04",
+      cpu: 3,
+      memoryMb: 4096,
+      labels: ["ubuntu-latest", "ubuntu-22.04"],
+    });
+  });
+  it("preserves the chosen environment when reselecting the same server", async () => {
+    await click("linux");
+    await click("Browse catalog");
+    await choosePreset("linux");
+    await click("linux");
+    await fill("Runner name", "Native build runner");
+    await submit();
+    expect(h.save.mock.calls[0]![0]).toMatchObject({
+      name: "Native build runner",
+      config: { mode: "native", image: null, labels: [] },
+    });
+  });
+  it("can recheck missing native tools and never enables Docker presets without Docker", async () => {
+    h.inspect.mockResolvedValue({ ...capabilities("linux"), docker: false, node: false });
+    await click("linux");
+    expect(host.textContent).toContain("Install Node.js");
+    await submit();
+    expect(h.save).not.toHaveBeenCalled();
+    await click("Browse catalog");
+    expect(document.querySelector<HTMLButtonElement>('button[value="ubuntu"]')!.disabled).toBe(
+      true,
+    );
+    expect(document.querySelector<HTMLButtonElement>('button[value="custom"]')!.disabled).toBe(
+      true,
+    );
+    await choosePreset("linux");
+    h.inspect.mockResolvedValue({ ...capabilities("linux"), docker: false });
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Check capabilities"]')!.click(),
+    );
+    await submit();
+    expect(h.save.mock.calls[0]![0].config).toMatchObject({ mode: "native", image: null });
+  });
+  it("preserves an existing runner's custom image, labels and limits during inspection", async () => {
+    const config = {
+      mode: "container",
+      image: "registry.example/ci:stable",
+      labels: ["private-ci"],
+      cpu: 4,
+      memoryMb: 8192,
+      maxParallel: 2,
+      allowDockerSocket: false,
+    };
+    h.runners.mockResolvedValue([
+      {
+        id: "saved",
+        serverId: "linux",
+        name: "Existing runner",
+        kind: "server",
+        config,
+        enabled: false,
+      },
+    ]);
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <RunnerEditor id="saved" />
+        </I18nProvider>,
+      ),
+    );
+    await submit();
+    expect(h.save).toHaveBeenCalledWith(
+      { serverId: "linux", name: "Existing runner", config, enabled: false },
+      "saved",
+    );
   });
 });
