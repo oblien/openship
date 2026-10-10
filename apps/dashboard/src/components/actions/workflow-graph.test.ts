@@ -46,6 +46,7 @@ describe("workflow presentation from durable state", () => {
         source: "test",
         target: "build",
         kind: "dependency",
+        targetGutter: WORKFLOW_NODE_LAYOUT.gapX / 2,
         label: "",
         description: "test → build",
       },
@@ -147,61 +148,104 @@ describe("workflow step topology", () => {
     ],
   };
 
-  it("keeps job dependencies and renders step order as separate child nodes with directional edges", () => {
+  it("keeps job dependencies and renders step order as separate cards with directional edges", () => {
     const base = workflowGraph(plan);
     const expanded = workflowDetailGraph(base, workflowJobs(source), ["test", "docs"], "Command");
     expect(expanded.edges.filter((edge) => edge.kind === "dependency")).toEqual(base.edges);
     expect(
-      expanded.nodes.filter((node) => node.parentId === "test").map((node) => node.name),
+      expanded.nodes.filter((node) => node.workflowStep?.jobId === "test").map((node) => node.name),
     ).toEqual(["Checkout", "Install", "Lint", "Test", "Report"]);
     expect(expanded.nodes.find((node) => node.name === "Checkout")).toMatchObject({
       kind: "workflow-step",
-      parentId: "test",
       workflowStep: { jobId: "test", index: 0, kind: "action" },
     });
     const sequence = expanded.edges.filter(
       (edge) => edge.kind === "sequence" && edge.id.startsWith("test:"),
     );
-    expect(
-      sequence.map(({ source, target, sourceHandle, targetHandle }) => [
-        source,
-        target,
-        sourceHandle,
-        targetHandle,
-      ]),
-    ).toEqual([
-      ["test", "test:step:0", "steps", "top-in"],
-      ["test:step:0", "test:step:1", "right-out", "left-in"],
-      ["test:step:1", "test:step:2", "bottom-out", "top-in"],
-      ["test:step:2", "test:step:3", "left-out", "right-in"],
-      ["test:step:3", "test:step:4", "bottom-out", "top-in"],
+    expect(sequence.map(({ source, target }) => [source, target])).toEqual([
+      ["test", "test:step:0"],
+      ["test:step:0", "test:step:1"],
+      ["test:step:1", "test:step:2"],
+      ["test:step:2", "test:step:3"],
+      ["test:step:3", "test:step:4"],
     ]);
+    const positions = topologyPositions(expanded, WORKFLOW_NODE_LAYOUT);
+    expect(positions.test.y).toBe(positions.build.y);
+    for (const edge of sequence) {
+      const from = positions[edge.source];
+      const to = positions[edge.target];
+      if (edge.source === "test") {
+        expect(edge.sourceHandle).toBe("steps");
+        expect(to.y).toBeGreaterThan(from.y);
+      } else if (from.y === to.y) {
+        expect(edge.sourceHandle).toBe(to.x > from.x ? "right-out" : "left-out");
+        expect(edge.targetHandle).toBe(to.x > from.x ? "left-in" : "right-in");
+      } else {
+        expect(to.x).toBe(from.x);
+        expect(to.y).toBeGreaterThan(from.y);
+        expect(edge.sourceHandle).toBe("bottom-out");
+        expect(edge.targetHandle).toBe("top-in");
+      }
+    }
     expect(sequence.every((edge) => edge.readOnly)).toBe(true);
     const collapsed = workflowDetailGraph(base, workflowJobs(source), ["docs"], "Command");
-    expect(collapsed.nodes.some((node) => node.parentId === "test")).toBe(false);
-    expect(collapsed.nodes.some((node) => node.parentId === "docs")).toBe(true);
-    expect(collapsed.nodes.find((node) => node.id === "test")).toEqual(base.nodes[0]);
+    expect(collapsed.nodes.some((node) => node.workflowStep?.jobId === "test")).toBe(false);
+    expect(collapsed.nodes.some((node) => node.workflowStep?.jobId === "docs")).toBe(true);
+    expect(collapsed.nodes.find((node) => node.id === "test")).toMatchObject(base.nodes[0]);
   });
 
-  it("keeps child cards within the job and leaves space for neighboring jobs in both directions", () => {
+  it("keeps jobs compact, positions steps beneath them and leaves every card clear of its neighbors", () => {
     const base = workflowGraph(plan);
     const expanded = workflowDetailGraph(base, workflowJobs(source), ["test", "docs"], "Command");
     const positions = topologyPositions(expanded, WORKFLOW_NODE_LAYOUT);
-    for (const child of expanded.nodes.filter((node) => node.parentId)) {
-      const parent = expanded.nodes.find((node) => node.id === child.parentId)!;
-      expect(positions[child.id]).toEqual(child.layoutPosition);
-      expect(positions[child.id].x).toBeGreaterThan(0);
-      expect(positions[child.id].y).toBeGreaterThan(WORKFLOW_NODE_LAYOUT.height);
-      expect(positions[child.id].x + child.layoutWidth!).toBeLessThan(parent.layoutWidth!);
-      expect(positions[child.id].y + child.layoutHeight!).toBeLessThan(parent.layoutHeight!);
+    expect(expanded.nodes.every((node) => !node.parentId)).toBe(true);
+    for (const node of expanded.nodes) {
+      expect(positions[node.id]).toEqual(node.layoutPosition);
+      if (node.workflowStep) {
+        expect(positions[node.id].y).toBeGreaterThan(
+          positions[node.workflowStep.jobId].y + WORKFLOW_NODE_LAYOUT.height,
+        );
+      } else {
+        expect(node.layoutWidth ?? WORKFLOW_NODE_LAYOUT.width).toBe(WORKFLOW_NODE_LAYOUT.width);
+        expect(node.layoutHeight ?? WORKFLOW_NODE_LAYOUT.height).toBe(WORKFLOW_NODE_LAYOUT.height);
+      }
     }
-    const parent = expanded.nodes.find((node) => node.id === "test")!;
-    expect(positions.test.y + parent.layoutHeight!).toBeLessThan(positions.docs.y);
-    expect(positions.test.x + parent.layoutWidth!).toBeLessThan(positions.build.x);
+    for (const [index, node] of expanded.nodes.entries()) {
+      const position = positions[node.id];
+      for (const other of expanded.nodes.slice(index + 1)) {
+        const next = positions[other.id];
+        const overlaps =
+          position.x < next.x + (other.layoutWidth ?? WORKFLOW_NODE_LAYOUT.width) &&
+          next.x < position.x + (node.layoutWidth ?? WORKFLOW_NODE_LAYOUT.width) &&
+          position.y < next.y + (other.layoutHeight ?? WORKFLOW_NODE_LAYOUT.height) &&
+          next.y < position.y + (node.layoutHeight ?? WORKFLOW_NODE_LAYOUT.height);
+        expect(overlaps, `${node.id} overlaps ${other.id}`).toBe(false);
+      }
+    }
     const collapsed = workflowDetailGraph(base, workflowJobs(source), [], "Command");
     expect(topologyPositions(collapsed, WORKFLOW_NODE_LAYOUT)).toEqual(
       topologyPositions(base, WORKFLOW_NODE_LAYOUT),
     );
+  });
+
+  it("reflows a long single job into the available aspect ratio without changing its steps or dependencies", () => {
+    const longSource = `jobs:\n  test:\n    steps:\n${Array.from({ length: 12 }, (_, index) => `      - run: echo step-${index + 1}\n`).join("")}`;
+    const base = workflowGraph({ ...plan, jobs: [plan.jobs[0]] });
+    const jobs = workflowJobs(longSource);
+    const wide = workflowDetailGraph(base, jobs, ["test"], "Command", { width: 1280, height: 720 });
+    const tall = workflowDetailGraph(base, jobs, ["test"], "Command", { width: 600, height: 1100 });
+    const wideSteps = wide.nodes.filter((node) => node.workflowStep);
+    const tallSteps = tall.nodes.filter((node) => node.workflowStep);
+    expect(new Set(wideSteps.map((node) => node.layoutPosition!.x)).size).toBeGreaterThan(2);
+    expect(new Set(tallSteps.map((node) => node.layoutPosition!.x)).size).toBeLessThan(
+      new Set(wideSteps.map((node) => node.layoutPosition!.x)).size,
+    );
+    expect(wideSteps.map((node) => node.name)).toEqual(tallSteps.map((node) => node.name));
+    expect(wide.edges.map(({ source, target }) => [source, target])).toEqual(
+      tall.edges.map(({ source, target }) => [source, target]),
+    );
+    expect(base.nodes).toHaveLength(1);
+    expect(base.nodes[0]).not.toHaveProperty("layoutPosition");
   });
 
   it("takes reordered and deleted steps from the same YAML without retaining orphan nodes or edges", () => {
@@ -213,9 +257,9 @@ describe("workflow step topology", () => {
       ["test"],
       "Command",
     );
-    expect(graph.nodes.filter((node) => node.parentId === "test").map((node) => node.name)).toEqual(
-      ["Install", "Lint", "Report", "Test"],
-    );
+    expect(
+      graph.nodes.filter((node) => node.workflowStep?.jobId === "test").map((node) => node.name),
+    ).toEqual(["Install", "Lint", "Report", "Test"]);
     const ids = new Set(graph.nodes.map((node) => node.id));
     expect(graph.edges.every((edge) => ids.has(edge.source) && ids.has(edge.target))).toBe(true);
     expect(graph.edges.filter((edge) => edge.kind === "sequence")).toHaveLength(4);

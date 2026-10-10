@@ -60,7 +60,7 @@ export function WorkflowWorkspace({
   const id = useId();
   const yaml = useRef<HTMLTextAreaElement>(null);
   const [expandedJobs, setExpandedJobs] = useState<string[]>([]);
-  const [expandedTopologyJobs, setExpandedTopologyJobs] = useState<string[]>([]);
+  const [topologyExpansion, setTopologyExpansion] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (selection?.kind === "node")
       setExpandedJobs((current) =>
@@ -96,6 +96,28 @@ export function WorkflowWorkspace({
   } catch {
     // diagnostics-ignore: Incomplete draft YAML keeps its last valid graph and remains editable in the YAML view.
   }
+  const expandable = jobs
+    .filter((job) => Array.isArray(job.value.steps) && job.value.steps.length)
+    .map((job) => job.id);
+  const singleJob = jobs.length === 1 ? expandable[0] : undefined;
+  useEffect(() => {
+    if (singleJob)
+      setTopologyExpansion((current) =>
+        Object.hasOwn(current, singleJob) ? current : { ...current, [singleJob]: true },
+      );
+  }, [singleJob]);
+  const expandedTopologyJobs = expandable.filter((id) => topologyExpansion[id] ?? id === singleJob);
+  const allExpanded = expandable.every((id) =>
+    (view === "topology" ? expandedTopologyJobs : expandedJobs).includes(id),
+  );
+  const toggleAll = () => {
+    if (view === "topology")
+      setTopologyExpansion(Object.fromEntries(expandable.map((id) => [id, !allExpanded])));
+    else {
+      setExpandedJobs(allExpanded ? [] : expandable);
+      if (allExpanded) onSelect(null);
+    }
+  };
   return (
     <section
       className="flex h-[440px] min-w-0 flex-col overflow-hidden rounded-2xl bg-card @min-[960px]:h-auto @min-[960px]:min-h-0"
@@ -120,6 +142,12 @@ export function WorkflowWorkspace({
           className="border-0"
         />
         <div className="flex items-center gap-1 pb-1">
+          {view !== "yaml" && expandable.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={toggleAll}>
+              <Icon name={allExpanded ? "chevron-up" : "chevron-down"} />
+              {allExpanded ? e.collapseAll : e.expandAll}
+            </Button>
+          )}
           <Button
             size="icon"
             variant="ghost"
@@ -172,9 +200,10 @@ export function WorkflowWorkspace({
                 jobs,
                 expandedJobs: expandedTopologyJobs,
                 onToggleJob: (id) =>
-                  setExpandedTopologyJobs((current) =>
-                    current.includes(id) ? current.filter((job) => job !== id) : [...current, id],
-                  ),
+                  setTopologyExpansion((current) => ({
+                    ...current,
+                    [id]: !expandedTopologyJobs.includes(id),
+                  })),
                 onSelectStep: onSelectStepNode,
                 selectedStep: stepToReveal,
               }}

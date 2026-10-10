@@ -274,7 +274,7 @@
     "addJob": "Adicionar tarefa",
     "undo": "Desfazer",
     "redo": "Refazer",
-    "canvasHint": "Expanda uma tarefa para ver suas etapas. Conecte tarefas para definir dependências.",
+    "canvasHint": "Selecione uma tarefa ou etapa para editar. Conecte tarefas para definir dependências.",
     "draftHint": "As alterações ficam no rascunho até você salvar. Os workflows em execução não são afetados.",
     "backToWorkflow": "Configurações do workflow",
     "runsOn": "Rótulos do runner",
@@ -325,6 +325,8 @@
     "jobImageHint": "Qualquer imagem Linux compatível. Inclua as ferramentas necessárias para suas etapas e ações.",
     "expandJob": "Mostrar etapas",
     "collapseJob": "Ocultar etapas",
+    "expandAll": "Expandir tudo",
+    "collapseAll": "Recolher tudo",
     "editStep": "Editar etapa"
   },
   "runnerSetup": {

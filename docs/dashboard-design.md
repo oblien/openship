@@ -83,11 +83,15 @@ foreground tokens. Workflow nodes are compact neutral rows with a status icon,
 job name and runner label, without service-card footers. A muted info accent on the
 draft's play icon and selected outline gives identity without tinting the node fill.
 They reuse the shared canvas with their own node renderer and compact layout dimensions.
-A job expands into separate step cards in a two-column grid below its header.
+A job expands into separate step cards below its compact job node, without an enclosing
+box. Choose the grid columns from the available canvas width and height, reserving space
+for neighboring jobs through the shared layout. A single-job workflow shows its steps
+immediately; the editor toolbar offers Expand all / Collapse all for larger workflows.
 Directional arrows follow YAML execution order across each row and down to the next;
-job dependencies remain connected to the header. Selecting a child node reveals its
-shared step editor. The canvas reserves the group's width and height, keeps neighboring
-jobs clear and moves the children with their job. Each job expands independently.
+job dependencies remain connected to the job. Selecting a step node reveals its
+shared step editor. Each card remains independently movable and each job can still
+expand independently. Reflow when the canvas size changes; preserve manual positions
+while editing fields or selecting nodes.
 The List view is a vertical job outline with expandable steps and explicit dependency
 labels; its rail does not imply execution order or completed progress. Reserve other
 color for run status, errors and repository differences; plus buttons, sections and

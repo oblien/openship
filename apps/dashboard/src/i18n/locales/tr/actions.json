@@ -274,7 +274,7 @@
     "addJob": "İş ekle",
     "undo": "Geri al",
     "redo": "Yinele",
-    "canvasHint": "Adımlarını görmek için işi genişletin. Bağımlılıkları belirlemek için işleri bağlayın.",
+    "canvasHint": "Düzenlemek için bir iş veya adım seçin. Bağımlılıkları belirlemek için işleri bağlayın.",
     "draftHint": "Değişiklikler kaydedilene kadar taslakta kalır. Çalışan iş akışları etkilenmez.",
     "backToWorkflow": "İş akışı ayarları",
     "runsOn": "Çalıştırıcı etiketleri",
@@ -325,6 +325,8 @@
     "jobImageHint": "Uyumlu herhangi bir Linux imajı. Adımların ve eylemlerin ihtiyaç duyduğu araçları ekleyin.",
     "expandJob": "Adımları göster",
     "collapseJob": "Adımları gizle",
+    "expandAll": "Tümünü genişlet",
+    "collapseAll": "Tümünü daralt",
     "editStep": "Adımı düzenle"
   },
   "runnerSetup": {

@@ -274,7 +274,7 @@
     "addJob": "Job hinzufügen",
     "undo": "Rückgängig",
     "redo": "Wiederholen",
-    "canvasHint": "Klappe einen Job auf, um seine Schritte zu sehen. Verbinde Jobs, um Abhängigkeiten festzulegen.",
+    "canvasHint": "Wähle einen Job oder Schritt zum Bearbeiten. Verbinde Jobs, um Abhängigkeiten festzulegen.",
     "draftHint": "Änderungen bleiben bis zum Speichern im Entwurf. Laufende Workflows bleiben unverändert.",
     "backToWorkflow": "Workflow-Einstellungen",
     "runsOn": "Runner-Labels",
@@ -325,6 +325,8 @@
     "jobImageHint": "Jedes kompatible Linux-Image. Die benötigten Werkzeuge für Schritte und Actions müssen enthalten sein.",
     "expandJob": "Schritte anzeigen",
     "collapseJob": "Schritte ausblenden",
+    "expandAll": "Alle aufklappen",
+    "collapseAll": "Alle zuklappen",
     "editStep": "Schritt bearbeiten"
   },
   "runnerSetup": {

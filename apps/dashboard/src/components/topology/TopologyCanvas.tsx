@@ -374,15 +374,17 @@ function Canvas({
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
-      const resized = graph.nodes.some((resource) => {
+      const rearranged = graph.nodes.some((resource) => {
         const previous = byId.get(resource.id)?.data.resource;
         return (
           previous &&
           (previous.layoutHeight !== resource.layoutHeight ||
-            previous.layoutWidth !== resource.layoutWidth)
+            previous.layoutWidth !== resource.layoutWidth ||
+            previous.layoutPosition?.x !== resource.layoutPosition?.x ||
+            previous.layoutPosition?.y !== resource.layoutPosition?.y)
         );
       });
-      const occupied = (resized ? [] : current)
+      const occupied = (rearranged ? [] : current)
         .filter((node) => !node.parentId && graph.nodes.some((resource) => resource.id === node.id))
         .map((node) => ({
           ...node.position,
@@ -394,7 +396,7 @@ function Canvas({
         const height = resource.layoutHeight ?? nodeLayout.height;
         const width = resource.layoutWidth ?? nodeLayout.width;
         let position =
-          resource.parentId || resized
+          resource.parentId || rearranged
             ? positions[resource.id]
             : (existing?.position ?? storedPositions.current?.[resource.id]);
         if (!position) {
@@ -437,7 +439,7 @@ function Canvas({
     const ids = graph.nodes
       .map(
         (node) =>
-          `${node.id}:${node.layoutWidth ?? nodeLayout.width}:${node.layoutHeight ?? nodeLayout.height}`,
+          `${node.id}:${node.layoutWidth ?? nodeLayout.width}:${node.layoutHeight ?? nodeLayout.height}:${node.layoutPosition?.x ?? ""}:${node.layoutPosition?.y ?? ""}`,
       )
       .sort()
       .join("|");
@@ -460,6 +462,7 @@ function Canvas({
           label: relation.label,
           showLabel: relation.kind === "binding",
           enabled: !relation.pending && relation.enabled !== false,
+          targetGutter: relation.targetGutter,
         },
         ariaLabel: `${relation.kind}: ${relation.label || relation.description}`,
       })),

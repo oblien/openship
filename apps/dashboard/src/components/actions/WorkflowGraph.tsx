@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import dynamic from "next/dynamic";
 import type { ActionPlanView, ActionRunView } from "@repo/contracts";
@@ -54,6 +54,25 @@ export function WorkflowGraph({
   className?: string;
 }) {
   const { t } = useI18n();
+  const container = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 900, height: 640 });
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const measure = () => {
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+      if (width && height)
+        setViewport((current) =>
+          current.width === width && current.height === height ? current : { width, height },
+        );
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const details = useMemo(
     () =>
       jobDetails
@@ -77,6 +96,7 @@ export function WorkflowGraph({
           jobDetails.jobs,
           jobDetails.expandedJobs,
           t.actions.editor.command,
+          viewport,
         )
       : graph;
   }, [
@@ -86,6 +106,7 @@ export function WorkflowGraph({
     t.actions.controller.reusable,
     t.actions.editor.command,
     jobDetails,
+    viewport,
   ]);
   const selectedNode = run?.jobs.find((job) => job.id === selected)?.jobKey;
   const step = jobDetails?.selectedStep;
@@ -154,6 +175,7 @@ export function WorkflowGraph({
   };
   return (
     <div
+      ref={container}
       className={className ?? "h-[380px] min-w-0 overflow-hidden rounded-2xl bg-card sm:h-[440px]"}
       data-testid="workflow-graph"
     >

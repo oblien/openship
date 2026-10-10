@@ -45,20 +45,24 @@ vi.mock("./WorkflowGraph", () => ({
   WorkflowGraph: ({
     plan,
     editor,
+    jobDetails,
   }: {
     plan: { jobs: Array<{ id: string; name: string }> };
     editor: { onSelect: (value: { kind: "node"; id: string }) => void };
+    jobDetails: { expandedJobs: string[] };
   }) => (
     <div>
       Workflow topology
       {plan.jobs.map((job) => (
-        <button
-          key={job.id}
-          aria-label={`Edit job: ${job.name}`}
-          onClick={() => editor.onSelect({ kind: "node", id: job.id })}
-        >
-          {job.name}
-        </button>
+        <div key={job.id}>
+          <button
+            aria-label={`Edit job: ${job.name}`}
+            onClick={() => editor.onSelect({ kind: "node", id: job.id })}
+          >
+            {job.name}
+          </button>
+          {jobDetails.expandedJobs.includes(job.id) && <span data-visible-steps={job.id} />}
+        </div>
       ))}
     </div>
   ),
@@ -172,6 +176,53 @@ afterEach(async () => {
 });
 
 describe("shared workflow setup", () => {
+  it("shows a single job's steps immediately and honors an explicit collapse across views", async () => {
+    await render("ci");
+    expect(host.querySelector('[data-visible-steps="test"]')).not.toBeNull();
+    await click("Collapse all");
+    expect(host.querySelector("[data-visible-steps]")).toBeNull();
+    await click("YAML");
+    await click("Topology");
+    await preview();
+    expect(host.querySelector("[data-visible-steps]")).toBeNull();
+    await click("Expand all");
+    expect(host.querySelector('[data-visible-steps="test"]')).not.toBeNull();
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps the initial job's steps open when another job is added", async () => {
+    await render("ci");
+    expect(host.querySelector('[data-visible-steps="test"]')).not.toBeNull();
+    await click("Add job");
+    await preview();
+    expect(host.querySelector('[data-visible-steps="test"]')).not.toBeNull();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it("expands and collapses every job from the toolbar in topology and list views", async () => {
+    const multiple =
+      source + "  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo docs\n";
+    h.source.mockResolvedValue({ source: multiple, sha: "original-file-sha", plan, error: null });
+    await render("ci");
+    expect(host.querySelector("[data-visible-steps]")).toBeNull();
+    await click("Expand all");
+    expect(
+      [...host.querySelectorAll("[data-visible-steps]")].map((node) =>
+        node.getAttribute("data-visible-steps"),
+      ),
+    ).toEqual(["test", "docs"]);
+    await click("Collapse all");
+    expect(host.querySelector("[data-visible-steps]")).toBeNull();
+    await click("List");
+    await click("Expand all");
+    expect(host.querySelectorAll('[data-testid="workflow-steps"]')).toHaveLength(2);
+    await click("Collapse all");
+    expect(host.querySelectorAll('[data-testid="workflow-steps"]')).toHaveLength(0);
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
   async function repositoryWorkflow(controller = "github") {
     const path = ".github/workflows/ci.yml";
     h.get.mockResolvedValue({ ...(await h.get()), path, controller, githubWorkflowId: "42" });

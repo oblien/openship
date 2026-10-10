@@ -5,7 +5,7 @@ import { Handle, Position } from "@xyflow/react";
 import { Icon } from "@repo/ui/icons";
 import type { TopologyNodeProps } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
-import { WORKFLOW_NODE_LAYOUT, WORKFLOW_STEP_LAYOUT, workflowStepPosition } from "./workflow-graph";
+import { WORKFLOW_NODE_LAYOUT, WORKFLOW_STEP_LAYOUT } from "./workflow-graph";
 
 export const WorkflowNodeDetails = createContext<{
   steps: ReadonlyMap<string, unknown[]>;
@@ -13,7 +13,7 @@ export const WorkflowNodeDetails = createContext<{
   onToggleJob: (id: string) => void;
 } | null>(null);
 
-/** Both jobs and their steps are canvas nodes; the job owns the child grid. */
+/** Jobs and steps are separate cards on the same canvas. */
 export const WorkflowJobNode = memo(function WorkflowJobNode(props: TopologyNodeProps) {
   return props.data.resource.workflowStep ? (
     <WorkflowStepNode {...props} />
@@ -43,11 +43,11 @@ function JobNode({ data }: TopologyNodeProps) {
           : "text-muted-foreground";
   return (
     <article
-      className={`relative rounded-lg border text-start transition-colors ${expanded ? "bg-muted/20" : ""} ${action?.selected ? "border-info/50 ring-2 ring-info/10" : "border-border/80 hover:border-foreground/30"}`}
+      className={`relative rounded-lg border text-start transition-colors ${action?.selected ? "border-info/50 ring-2 ring-info/10" : "border-border/80 hover:border-foreground/30"}`}
       style={{
         width: resource.layoutWidth ?? WORKFLOW_NODE_LAYOUT.width,
         height: resource.layoutHeight ?? WORKFLOW_NODE_LAYOUT.height,
-        ...(!expanded ? { background: "var(--th-card-on-page)" } : {}),
+        background: "var(--th-card-on-page)",
       }}
       data-workflow-state={resource.state}
       data-picked={action?.selected || undefined}
@@ -60,10 +60,7 @@ function JobNode({ data }: TopologyNodeProps) {
         style={{ top: WORKFLOW_NODE_LAYOUT.height / 2 }}
         isConnectable={!!action?.connectable}
       />
-      <div
-        className={`flex items-center gap-2.5 px-3 ${expanded ? "rounded-t-lg border-b border-border/60" : "rounded-lg"}`}
-        style={{ height: WORKFLOW_NODE_LAYOUT.height - 2, background: "var(--th-card-on-page)" }}
-      >
+      <div className="flex h-full items-center gap-2.5 rounded-lg px-3">
         <span className={`flex shrink-0 ${tone}`} title={action?.statusLabel}>
           <Icon
             name={
@@ -127,11 +124,6 @@ function JobNode({ data }: TopologyNodeProps) {
           type="source"
           position={Position.Bottom}
           className="!pointer-events-none !size-1 !border-0 !opacity-0"
-          style={{
-            top: WORKFLOW_NODE_LAYOUT.height,
-            bottom: "auto",
-            left: workflowStepPosition(steps.length, 0).x + WORKFLOW_STEP_LAYOUT.width / 2,
-          }}
           isConnectable={false}
         />
       )}

@@ -274,7 +274,7 @@
     "addJob": "Añadir tarea",
     "undo": "Deshacer",
     "redo": "Rehacer",
-    "canvasHint": "Expande una tarea para ver sus pasos. Conecta tareas para establecer dependencias.",
+    "canvasHint": "Selecciona una tarea o un paso para editarlo. Conecta tareas para establecer dependencias.",
     "draftHint": "Los cambios permanecen en el borrador hasta que los guardes. Los workflows en curso no se modifican.",
     "backToWorkflow": "Configuración del workflow",
     "runsOn": "Etiquetas del runner",
@@ -325,6 +325,8 @@
     "jobImageHint": "Cualquier imagen Linux compatible. Incluye las herramientas que necesitan tus pasos y acciones.",
     "expandJob": "Mostrar pasos",
     "collapseJob": "Ocultar pasos",
+    "expandAll": "Expandir todo",
+    "collapseAll": "Contraer todo",
     "editStep": "Editar paso"
   },
   "runnerSetup": {
