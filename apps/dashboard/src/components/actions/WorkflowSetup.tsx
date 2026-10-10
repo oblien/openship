@@ -2,7 +2,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
-import type { ActionWorkflowView, ActionRunnerView, ActionProjectView } from "@repo/contracts";
+import type {
+  ActionWorkflowView,
+  ActionRunnerView,
+  ActionProjectView,
+  ActionPlanView,
+} from "@repo/contracts";
 import { actionsApi } from "@/lib/api/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,14 +24,24 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
 import { ActionField } from "./ActionField";
-import { WorkflowGraph } from "./WorkflowGraph";
-import { ActionsIllustration } from "./ActionsIllustration";
+import type { TopologySelection } from "@/components/topology/TopologyCanvas";
+import { WorkflowWorkspace } from "./WorkflowWorkspace";
+import { WorkflowJobInspector } from "./WorkflowJobInspector";
+import {
+  WorkflowEditError,
+  addWorkflowJob,
+  editWorkflowDependency,
+  workflowJobs,
+} from "./workflow-editor";
+import { useWorkflowDraft } from "./useWorkflowDraft";
 import { ActionValues, type ActionValue } from "./ActionValues";
 import { WorkflowTriggers } from "./WorkflowTriggers";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
 
 export interface WorkflowSetupProps {
   id?: string;
+  fullHeight?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   initial?: { owner?: string; repo?: string; ref?: string; projectId?: string; path?: string };
   onSaved: (workflow: ActionWorkflowView) => void;
   onCancel: () => void;
@@ -35,9 +50,22 @@ export interface WorkflowSetupProps {
 /** Project and deployment entry points open the same full-width setup. */
 export function WorkflowSetupDialog(props: WorkflowSetupProps) {
   const { t } = useI18n();
-  const { dialog, onKeyDown } = useDialogFocus(props.onCancel);
+  const [busy, setBusy] = useState(false);
+  const close = () => {
+    if (!busy) props.onCancel();
+  };
+  const { dialog, onKeyDown } = useDialogFocus(close);
   return (
-    <Modal isOpen onClose={props.onCancel} showCloseButton={false} width="1240px" maxWidth="96vw">
+    <Modal
+      isOpen
+      onClose={close}
+      closable={!busy}
+      showCloseButton={false}
+      width="calc(100vw - 32px)"
+      maxWidth="calc(100vw - 32px)"
+      height="calc(100dvh - 32px)"
+      maxHeight="calc(100dvh - 32px)"
+    >
       <div
         ref={dialog}
         role="dialog"
@@ -45,9 +73,9 @@ export function WorkflowSetupDialog(props: WorkflowSetupProps) {
         aria-label={t.actions.newWorkflow}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="p-5 outline-none"
+        className="h-full min-h-0 p-3 outline-none sm:p-5"
       >
-        <WorkflowSetup {...props} />
+        <WorkflowSetup {...props} onCancel={close} onBusyChange={setBusy} fullHeight />
       </div>
     </Modal>
   );
@@ -68,6 +96,8 @@ function SetupForm({
   initial,
   onSaved,
   onCancel,
+  fullHeight,
+  onBusyChange,
 }: WorkflowSetupProps & {
   workflow?: ActionWorkflowView;
   runners: ActionRunnerView[];
@@ -77,9 +107,13 @@ function SetupForm({
   const { t } = useI18n(),
     { selfHosted } = usePlatform();
   const a = t.actions,
-    c = a.integration;
+    c = a.integration,
+    e = a.editor;
   const mutation = useActionMutation(),
     prefix = useId();
+  useEffect(() => {
+    onBusyChange?.(mutation.busy);
+  }, [mutation.busy, onBusyChange]);
   const [step, setStep] = useState<"workflow" | "rules">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
   const [repository, setRepository] = useState(
@@ -94,7 +128,10 @@ function SetupForm({
   const [mode, setMode] = useState<"repository" | "inline">(
     workflow?.source ? "inline" : "repository",
   );
-  const [source, setSource] = useState(workflow?.source ?? "");
+  const draft = useWorkflowDraft(workflow?.source ?? "");
+  const { source, change: setSource } = draft;
+  const [selection, setSelection] = useState<TopologySelection>(null);
+  const [yamlRequest, setYamlRequest] = useState<{ id: string; key: number } | null>(null);
   const [original, setOriginal] = useState<{
     source: string;
     sha: string;
@@ -115,45 +152,58 @@ function SetupForm({
     (workflow?.secretNames ?? []).map((name) => ({ id: name, name, value: "", saved: true })),
   );
   const [picker, setPicker] = useState(false),
-    [review, setReview] = useState(false),
-    [yamlOpen, setYamlOpen] = useState(false);
+    [review, setReview] = useState<SourceReviewSnapshot | null>(null);
   const [owner, repo] = repository.trim().split("/");
   const repositoryValid = /^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim());
   const files = useActionResource(
     useCallback(
       () =>
-        !standalone && mode === "repository" && repositoryValid
+        !standalone && repositoryValid
           ? actionsApi.discover(owner!, repo!, ref)
           : Promise.resolve([]),
-      [standalone, mode, repositoryValid, owner, repo, ref],
+      [standalone, repositoryValid, owner, repo, ref],
     ),
   );
   useEffect(() => {
-    if (files.data?.length && !files.data.some((file) => file.path === path))
+    if (
+      !workflow &&
+      !initial?.path &&
+      mode === "repository" &&
+      files.data?.length &&
+      !files.data.some((file) => file.path === path)
+    )
       setPath(files.data[0]!.path);
-  }, [files.data, path]);
+  }, [files.data, path, mode, workflow, initial?.path]);
   const identity = `${owner}/${repo}:${ref}:${path}`;
   const file = useActionResource(
     useCallback(
       () =>
         !standalone &&
-        mode === "repository" &&
         repositoryValid &&
-        files.data?.some((file) => file.path === path)
+        (files.data?.some((file) => file.path === path) || (!!workflow && !!files.data))
           ? actionsApi
               .repositorySource({ owner: owner!, repo: repo!, ref, path })
               .then((data) => ({ ...data, identity }))
           : Promise.resolve(null),
-      [standalone, mode, repositoryValid, owner, repo, ref, path, identity, files.data],
+      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow],
     ),
   );
+  const loaded = useRef<{ identity: string; source: string; file: unknown } | null>(null);
   useEffect(() => {
-    if (file.data && file.data.identity !== original?.identity) {
-      setSource(file.data.source);
-      setOriginal(file.data);
-      if (!name && file.data.plan?.name) setName(file.data.plan.name);
-    }
-  }, [file.data, original?.identity, name]);
+    const value = file.data;
+    if (!value || value.identity !== identity || loaded.current?.file === value) return;
+    const previous = loaded.current;
+    const first = previous?.identity !== identity;
+    const savedIdentity = workflow?.owner
+      ? `${workflow.owner}/${workflow.repo}:${workflow.ref}:${workflow.path}`
+      : null;
+    const keepSaved = !previous && !!workflow?.source && identity === savedIdentity;
+    const untouched = previous?.source === source && mode === "repository" && !review;
+    if ((first && !keepSaved) || (!first && untouched)) draft.reset(value.source);
+    loaded.current = { identity, source: value.source, file: value };
+    setOriginal(value);
+    if (!name && value.plan?.name) setName(value.plan.name);
+  }, [file.data, identity, workflow, source, mode, review, draft.reset, name]);
   // One shared preview validates both imported YAML and edits to its trigger controls.
   const [debounced, setDebounced] = useState(source);
   useEffect(() => {
@@ -166,6 +216,10 @@ function SetupForm({
       [debounced, path],
     ),
   );
+  const [lastPlan, setLastPlan] = useState<{ identity: string; plan: ActionPlanView } | null>(null);
+  useEffect(() => {
+    if (preview.data && source === debounced) setLastPlan({ identity, plan: preview.data });
+  }, [preview.data, source, debounced, identity]);
   const readySource =
     !!source.trim() &&
     source === debounced &&
@@ -176,20 +230,23 @@ function SetupForm({
   const hasIsolated = runners.some(
     (r) => r.kind === "cloud" && r.enabled && runnerIds.includes(r.id),
   );
-  const dirty =
-    mode === "repository" && original?.identity === identity && original.source !== source;
+  const differsFromRepository = original?.identity === identity && original.source !== source;
+  const dirty = !standalone && differsFromRepository;
   const canSave = readySource && !!name.trim() && !!runnerIds.length && !mutation.busy;
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
-    setSource(value ? STANDALONE : STARTER);
+    draft.reset(value ? STANDALONE : STARTER);
+    loaded.current = null;
+    setSelection(null);
     setMode("inline");
     setOriginal(null);
     if (!value && repositoryValid) setMode("repository");
     if (value) setPath(".openship/workflows/automation.yml");
   };
-  const save = async (commit: boolean) => {
-    if (!canSave) return;
+  const save = async (commit: boolean, snapshot?: SourceReviewSnapshot) => {
+    if (!canSave || (snapshot && (snapshot.source !== source || snapshot.identity !== identity)))
+      return;
     if (
       [variables, secrets].some(
         (rows) =>
@@ -207,7 +264,7 @@ function SetupForm({
           repo: repo!,
           ref,
           path,
-          sha: original.sha,
+          sha: snapshot?.sha ?? original.sha,
           source,
         });
         setOriginal({ source, sha: written.sha, identity });
@@ -238,357 +295,455 @@ function SetupForm({
     });
     if (saved) onSaved(saved);
   };
+  const edit = (operation: () => string) => {
+    try {
+      setSource(operation());
+      mutation.setError(null);
+    } catch (error) {
+      // diagnostics-ignore: YAML edits are local validation; never report draft commands or secrets.
+      mutation.setError(error instanceof WorkflowEditError ? e.errors[error.code] : c.fixYaml);
+    }
+  };
+  useEffect(() => {
+    if (!selection) return;
+    try {
+      const jobs = workflowJobs(source);
+      if (selection.kind === "node" && !jobs.some((job) => job.id === selection.id))
+        setSelection(null);
+      if (selection.kind === "edge") {
+        const [from, to] = selection.id.split(":");
+        const value = jobs.find((job) => job.id === to)?.value.needs;
+        if (!(Array.isArray(value) ? value.includes(from) : value === from)) setSelection(null);
+      }
+    } catch {
+      // diagnostics-ignore: Keep the selected inspector while its YAML draft is incomplete.
+    }
+  }, [source, selection]);
+  const reviewSource = (kind: "save" | "incoming") => {
+    if (!original || original.identity !== identity) return;
+    setReview({ kind, source, previous: original.source, sha: original.sha, identity });
+  };
+  const plan =
+    !standalone && mode === "repository" && original?.identity !== identity
+      ? null
+      : preview.data && source === debounced
+        ? preview.data
+        : lastPlan?.identity === identity
+          ? lastPlan.plan
+          : null;
   return (
-    <div className="@container space-y-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-medium tracking-tight text-foreground">
-            {workflow ? workflow.name : a.newWorkflow}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{c.setupHint}</p>
-        </div>
-        <Button variant="ghost" onClick={onCancel}>
-          {a.cancel}
-        </Button>
-      </header>
-      <ActionError message={mutation.error} />
-      <div className="grid items-start gap-6 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-5">
-          {step === "workflow" ? (
-            <>
-              <section className="space-y-4 rounded-2xl bg-card p-5">
-                <Tabs
-                  tabs={[
-                    { key: "repository", label: a.repository, icon: "github" },
-                    { key: "standalone", label: c.standalone, icon: "terminal" },
-                  ]}
-                  value={standalone ? "standalone" : "repository"}
-                  onChange={(value) => chooseStandalone(value === "standalone")}
-                  idPrefix={prefix}
-                />
-                <div
-                  role="tabpanel"
-                  id={`${prefix}-panel-${standalone ? "standalone" : "repository"}`}
-                  aria-labelledby={`${prefix}-tab-${standalone ? "standalone" : "repository"}`}
-                  className="space-y-4"
-                >
-                  {standalone ? (
-                    <p className="text-sm text-muted-foreground">{c.standaloneHint}</p>
-                  ) : (
-                    <>
-                      <div className="flex flex-wrap items-end gap-3">
-                        <div className="min-w-0 flex-1">
-                          <ActionField label={a.repository}>
-                            <Input
-                              variant="filled"
-                              value={repository}
-                              onChange={(e) => {
-                                setRepository(e.target.value);
-                                setOriginal(null);
-                              }}
-                              placeholder={a.repositoryHint}
-                            />
-                          </ActionField>
-                        </div>
-                        <Button variant="secondary" onClick={() => setPicker(true)}>
-                          {c.chooseRepo}
-                        </Button>
-                      </div>
-                      {repositoryValid && (
-                        <div className="grid gap-4 @min-[620px]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                          <ActionField label={a.ref}>
-                            <RepositoryBranchSelect
-                              owner={owner!}
-                              repo={repo!}
-                              value={ref}
-                              onChange={setRef}
-                            />
-                          </ActionField>
-                          <ActionField label={a.workflowFile}>
-                            {mode === "repository" && files.data?.length ? (
-                              <CustomSelect
-                                variant="filled"
-                                triggerClassName="bg-muted/60 hover:bg-muted"
-                                value={path}
-                                onChange={setPath}
-                                options={files.data.map((file) => ({
-                                  value: file.path,
-                                  label: file.name,
-                                  description: file.path,
-                                }))}
-                              />
-                            ) : (
-                              <Input
-                                variant="filled"
-                                value={path}
-                                onChange={(e) => setPath(e.target.value)}
-                              />
-                            )}
-                          </ActionField>
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <label className="flex items-center gap-2 text-xs">
-                          <Checkbox
-                            checked={mode === "inline"}
-                            onCheckedChange={(value) => {
-                              setMode(value ? "inline" : "repository");
-                              if (value && !source) setSource(STARTER);
-                            }}
-                          />
-                          {c.useCopy}
-                        </label>
-                        {mode === "repository" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={files.refresh}
-                            disabled={files.loading}
-                          >
-                            {files.loading ? c.loading : a.discover}
-                          </Button>
-                        )}
-                      </div>
-                      <ActionError
-                        message={files.error ?? file.error}
-                        onRetry={() => {
-                          files.refresh();
-                          file.refresh();
-                        }}
-                      />
-                      {mode === "repository" &&
-                        repositoryValid &&
-                        files.data?.length === 0 &&
-                        !files.loading &&
-                        !files.error && (
-                          <p className="text-xs text-muted-foreground">{c.noFiles}</p>
-                        )}
-                    </>
-                  )}
-                  {(mode === "inline" || source) && (
-                    <details
-                      open={yamlOpen || standalone}
-                      onToggle={(e) => setYamlOpen(e.currentTarget.open)}
-                      className="group"
-                    >
-                      <summary className="flex cursor-pointer list-none items-center gap-2 py-1 text-sm font-medium">
-                        <Icon
-                          name="chevron-right"
-                          className="size-4 transition-transform group-open:rotate-90"
-                        />
-                        {a.source}
-                      </summary>
-                      <textarea
-                        aria-label={a.source}
-                        dir="ltr"
-                        value={source}
-                        onChange={(e) => setSource(e.target.value)}
-                        spellCheck={false}
-                        className="mt-3 min-h-64 w-full resize-y rounded-xl bg-background p-4 font-mono text-xs leading-6 focus-visible:outline-2 focus-visible:outline-ring"
-                      />
-                    </details>
-                  )}
-                </div>
-              </section>
-              <ActionError message={preview.error ?? file.data?.error} />
-              {readySource && preview.data ? (
-                <WorkflowGraph plan={preview.data} />
-              ) : (
-                <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl bg-card p-6 text-center">
-                  <ActionsIllustration className="mb-4 h-32 w-56" />
-                  <p className="text-sm text-muted-foreground">
-                    {(source && source !== debounced) || (file.loading && repositoryValid)
-                      ? c.loading
-                      : c.previewHint}
-                  </p>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <WorkflowTriggers source={source} onChange={setSource} standalone={standalone} />
-              <section className="space-y-4 rounded-2xl bg-card p-5">
-                <h2 className="text-sm font-semibold">{c.projects}</h2>
-                <p className="text-xs text-muted-foreground">{c.projectsHint}</p>
-                {projects.length ? (
-                  <div className="grid gap-2 @min-[600px]:grid-cols-2">
-                    {projects.map((project) => (
-                      <label
-                        key={project.id}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm ${optionCardSurface(projectIds.includes(project.id))}`}
-                      >
-                        <Checkbox
-                          checked={projectIds.includes(project.id)}
-                          onCheckedChange={(checked) =>
-                            setProjectIds((ids) =>
-                              checked
-                                ? [...ids, project.id]
-                                : ids.filter((id) => id !== project.id),
-                            )
-                          }
-                        />
-                        <span className="min-w-0 truncate">{project.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {initial?.owner ? c.linkOnCreate : c.noProjects}
-                  </p>
-                )}
-              </section>
-              <section className="rounded-2xl bg-card p-5">
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold">
-                    <Icon name="chevron-right" className="size-4 group-open:rotate-90" />
-                    {c.environment}
-                  </summary>
-                  <div className="mt-5 space-y-5">
-                    <div>
-                      <h3 className="mb-3 text-sm font-medium">{a.variables}</h3>
-                      <ActionValues values={variables} onChange={setVariables} />
-                    </div>
-                    <div>
-                      <h3 className="mb-1 text-sm font-medium">{a.secrets}</h3>
-                      <p className="mb-3 text-xs text-muted-foreground">{a.secretsHint}</p>
-                      <ActionValues secret values={secrets} onChange={setSecrets} />
-                    </div>
-                    <ActionField label={a.storage} hint={a.storageHint}>
-                      <BackupDestinationSelect
-                        label={a.storage}
-                        value={storage}
-                        onChange={setStorage}
-                        kinds={selfHosted ? storageKinds : cloudStorageKinds}
-                      />
-                    </ActionField>
-                  </div>
-                </details>
-              </section>
+    <div className={`@container ${fullHeight ? "h-full" : ""}`}>
+      <div
+        className={`flex flex-col gap-4 @min-[960px]:min-h-0 ${fullHeight ? "@min-[960px]:h-full" : "@min-[960px]:h-[calc(100dvh-164px)] @min-[960px]:min-h-[560px]"}`}
+      >
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-medium tracking-tight text-foreground">
+              {workflow ? workflow.name : a.newWorkflow}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">{e.setupHint}</p>
+          </div>
+          <Button variant="ghost" onClick={onCancel} disabled={mutation.busy}>
+            {a.cancel}
+          </Button>
+        </header>
+        <div
+          className="grid gap-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:grid-cols-[minmax(0,1fr)_360px]"
+          inert={mutation.busy}
+          aria-busy={mutation.busy}
+        >
+          <WorkflowWorkspace
+            plan={plan}
+            draft={draft}
+            yamlRequest={yamlRequest}
+            selection={selection}
+            onSelect={setSelection}
+            onConnect={({ source: from, target: to }) =>
+              edit(() => editWorkflowDependency(source, from, to, true))
+            }
+            onAdd={() =>
+              edit(() => {
+                const added = addWorkflowJob(source);
+                setSelection({ kind: "node", id: added.id });
+                return added.source;
+              })
+            }
+            loading={preview.loading || file.loading || source !== debounced}
+            invalid={!!preview.error}
+          />
+          <aside className="flex min-h-0 flex-col rounded-2xl bg-card">
+            <div className="@container space-y-5 p-4 @min-[960px]:min-h-0 @min-[960px]:flex-1 @min-[960px]:overflow-y-auto">
+              <ActionError message={mutation.error} />
               <ActionError message={preview.error} />
-            </>
-          )}
-        </div>
-        <aside className="space-y-4 @min-[960px]:sticky @min-[960px]:top-5">
-          <section className="space-y-5 rounded-2xl bg-card p-5">
-            <ol className="flex items-center gap-3 text-sm" aria-label={a.newWorkflow}>
-              {(["workflow", "rules"] as const).map((value, index) => (
-                <li key={value} className="flex flex-1 items-center gap-2">
-                  <span
-                    className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium ${step === value ? "bg-foreground text-background" : "bg-muted text-muted-foreground"}`}
+              {selection ? (
+                <WorkflowJobInspector
+                  source={source}
+                  selection={selection}
+                  edit={edit}
+                  onClose={() => setSelection(null)}
+                  onEditYaml={() => {
+                    if (selection.kind === "node")
+                      setYamlRequest((previous) => ({
+                        id: selection.id,
+                        key: (previous?.key ?? 0) + 1,
+                      }));
+                  }}
+                />
+              ) : (
+                <>
+                  <Tabs
+                    tabs={[
+                      { key: "workflow", label: c.workflowStep },
+                      { key: "rules", label: c.rulesStep },
+                    ]}
+                    value={step}
+                    onChange={setStep}
+                    idPrefix={`${prefix}-settings`}
+                    fullWidth
+                    size="sm"
+                  />
+                  <div
+                    role="tabpanel"
+                    id={`${prefix}-settings-panel-${step}`}
+                    aria-labelledby={`${prefix}-settings-tab-${step}`}
+                    className="space-y-5"
                   >
-                    {index + 1}
-                  </span>
-                  <span className={step === value ? "font-medium" : "text-muted-foreground"}>
-                    {value === "workflow" ? c.workflowStep : c.rulesStep}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <ActionField label={a.name}>
-              <Input
-                variant="filled"
-                value={name}
-                maxLength={100}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="CI"
-              />
-            </ActionField>
-            {step === "workflow" ? (
-              <>
-                <p className="text-xs leading-relaxed text-muted-foreground">{c.previewHint}</p>
-                <Button className="w-full" disabled={!readySource} onClick={() => setStep("rules")}>
+                    {step === "workflow" ? (
+                      <>
+                        <ActionField label={a.name}>
+                          <Input
+                            variant="filled"
+                            value={name}
+                            maxLength={100}
+                            onChange={(event) => setName(event.target.value)}
+                            placeholder="CI"
+                          />
+                        </ActionField>
+                        <Tabs
+                          tabs={[
+                            { key: "repository", label: a.repository, icon: "github" },
+                            { key: "standalone", label: c.standalone, icon: "terminal" },
+                          ]}
+                          value={standalone ? "standalone" : "repository"}
+                          onChange={(value) => chooseStandalone(value === "standalone")}
+                          idPrefix={prefix}
+                          size="sm"
+                          fullWidth
+                        />
+                        <div
+                          role="tabpanel"
+                          id={`${prefix}-panel-${standalone ? "standalone" : "repository"}`}
+                          aria-labelledby={`${prefix}-tab-${standalone ? "standalone" : "repository"}`}
+                          className="space-y-4"
+                        >
+                          {standalone ? (
+                            <p className="text-xs leading-relaxed text-muted-foreground">
+                              {c.standaloneHint}
+                            </p>
+                          ) : (
+                            <>
+                              <ActionField label={a.repository}>
+                                <Input
+                                  variant="filled"
+                                  value={repository}
+                                  onChange={(event) => {
+                                    setRepository(event.target.value);
+                                    setOriginal(null);
+                                  }}
+                                  placeholder={a.repositoryHint}
+                                />
+                              </ActionField>
+                              <div className="flex items-center justify-between gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => setPicker(true)}
+                                >
+                                  <Icon name="github" />
+                                  {c.chooseRepo}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    files.refresh();
+                                    file.refresh();
+                                  }}
+                                  disabled={files.loading || file.loading}
+                                  aria-label={e.checkUpdates}
+                                  title={e.checkUpdates}
+                                >
+                                  <Icon name="refresh" />
+                                </Button>
+                              </div>
+                              {repositoryValid && (
+                                <>
+                                  <ActionField label={a.ref}>
+                                    <RepositoryBranchSelect
+                                      owner={owner!}
+                                      repo={repo!}
+                                      value={ref}
+                                      onChange={setRef}
+                                    />
+                                  </ActionField>
+                                  <ActionField label={a.workflowFile}>
+                                    {files.data?.length ? (
+                                      <CustomSelect
+                                        variant="filled"
+                                        triggerClassName="bg-muted/60 hover:bg-muted"
+                                        value={path}
+                                        onChange={setPath}
+                                        options={files.data.map((file) => ({
+                                          value: file.path,
+                                          label: file.name,
+                                          description: file.path,
+                                        }))}
+                                      />
+                                    ) : (
+                                      <Input
+                                        variant="filled"
+                                        value={path}
+                                        onChange={(event) => setPath(event.target.value)}
+                                      />
+                                    )}
+                                  </ActionField>
+                                </>
+                              )}
+                              <ActionError
+                                message={files.error ?? file.error ?? file.data?.error}
+                                onRetry={() => {
+                                  files.refresh();
+                                  file.refresh();
+                                }}
+                              />
+                              {repositoryValid &&
+                                files.data?.length === 0 &&
+                                !files.loading &&
+                                !files.error && (
+                                  <p className="text-xs text-muted-foreground">{c.noFiles}</p>
+                                )}
+                              <div className="space-y-2">
+                                <h2 className="text-sm font-medium">{e.updates}</h2>
+                                <Tabs
+                                  tabs={[
+                                    { key: "repository", label: e.automatic },
+                                    { key: "inline", label: e.review },
+                                  ]}
+                                  value={mode}
+                                  onChange={(mode) => {
+                                    setMode(mode);
+                                    if (mode === "inline" && !source) setSource(STARTER);
+                                  }}
+                                  columns={2}
+                                  idPrefix={`${prefix}-updates`}
+                                  size="sm"
+                                />
+                                <p
+                                  role="tabpanel"
+                                  id={`${prefix}-updates-panel-${mode}`}
+                                  aria-labelledby={`${prefix}-updates-tab-${mode}`}
+                                  className="text-xs leading-relaxed text-muted-foreground"
+                                >
+                                  {mode === "repository" ? e.automaticHint : e.reviewHint}
+                                </p>
+                              </div>
+                              {differsFromRepository && (
+                                <div className="space-y-2 rounded-xl bg-warning-bg p-3">
+                                  <p className="text-xs leading-relaxed text-warning">
+                                    {e.repoDifferent}
+                                  </p>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="-ms-2"
+                                    onClick={() => reviewSource("incoming")}
+                                  >
+                                    {e.compare}
+                                  </Button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <WorkflowTriggers
+                          source={source}
+                          onChange={setSource}
+                          standalone={standalone}
+                          embedded
+                        />
+                        <div className="space-y-3">
+                          <h2 className="text-sm font-semibold">{a.destinations}</h2>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            {a.destinationsHint}
+                          </p>
+                          <div className="space-y-2">
+                            {runners.map((runner) => (
+                              <label
+                                key={runner.id}
+                                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${optionCardSurface(runnerIds.includes(runner.id))}`}
+                              >
+                                <Checkbox
+                                  checked={runnerIds.includes(runner.id)}
+                                  disabled={!runner.enabled && !runnerIds.includes(runner.id)}
+                                  onCheckedChange={(checked) =>
+                                    setRunnerIds((ids) =>
+                                      checked
+                                        ? [...ids, runner.id]
+                                        : ids.filter((id) => id !== runner.id),
+                                    )
+                                  }
+                                />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-medium">
+                                    {runner.name}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                                    {runner.labels.join(" · ")}
+                                  </span>
+                                </span>
+                              </label>
+                            ))}
+                            <div className="flex items-center justify-between gap-2">
+                              <Button variant="ghost" size="sm" asChild>
+                                <Link
+                                  href="/actions/runners/new"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <Icon name="plus" />
+                                  {a.newRunner}
+                                </Link>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={refresh}
+                                aria-label={a.refresh}
+                              >
+                                <Icon name="refresh" />
+                              </Button>
+                            </div>
+                            {!selfHosted && !runners.some((runner) => runner.kind === "cloud") && (
+                              <Button asChild variant="secondary" className="w-full">
+                                <Link
+                                  href="/actions/billing"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {a.setup.prepareCloud}
+                                </Link>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <h2 className="text-sm font-semibold">{c.projects}</h2>
+                          {projects.length ? (
+                            <div className="space-y-2">
+                              {projects.map((project) => (
+                                <label
+                                  key={project.id}
+                                  className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm ${optionCardSurface(projectIds.includes(project.id))}`}
+                                >
+                                  <Checkbox
+                                    checked={projectIds.includes(project.id)}
+                                    onCheckedChange={(checked) =>
+                                      setProjectIds((ids) =>
+                                        checked
+                                          ? [...ids, project.id]
+                                          : ids.filter((id) => id !== project.id),
+                                      )
+                                    }
+                                  />
+                                  <span className="min-w-0 truncate">{project.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {initial?.owner ? c.linkOnCreate : c.noProjects}
+                            </p>
+                          )}
+                        </div>
+                        <details className="group">
+                          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
+                            {c.environment}
+                            <Icon name="chevron-down" className="size-4 group-open:rotate-180" />
+                          </summary>
+                          <div className="mt-4 space-y-5">
+                            <div>
+                              <h3 className="mb-3 text-sm font-medium">{a.variables}</h3>
+                              <ActionValues values={variables} onChange={setVariables} />
+                            </div>
+                            <div>
+                              <h3 className="mb-1 text-sm font-medium">{a.secrets}</h3>
+                              <p className="mb-3 text-xs text-muted-foreground">{a.secretsHint}</p>
+                              <ActionValues secret values={secrets} onChange={setSecrets} />
+                            </div>
+                            <ActionField label={a.storage} hint={a.storageHint}>
+                              <BackupDestinationSelect
+                                label={a.storage}
+                                value={storage}
+                                onChange={setStorage}
+                                kinds={selfHosted ? storageKinds : cloudStorageKinds}
+                              />
+                            </ActionField>
+                          </div>
+                        </details>
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox checked={enabled} onCheckedChange={setEnabled} />
+                          {a.enabled}
+                        </label>
+                        {!standalone && (
+                          <label className="flex items-start gap-2 text-sm">
+                            <Checkbox
+                              checked={allowForks && hasIsolated}
+                              disabled={!hasIsolated}
+                              onCheckedChange={setAllowForks}
+                            />
+                            <span>
+                              {a.forks}
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                {a.forksHint}
+                              </span>
+                            </span>
+                          </label>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="shrink-0 space-y-3 p-4 pt-3">
+              <p className="text-xs leading-relaxed text-muted-foreground">{e.draftHint}</p>
+              {step === "workflow" && !runnerIds.length ? (
+                <Button
+                  className="w-full"
+                  disabled={!readySource}
+                  onClick={() => {
+                    setSelection(null);
+                    setStep("rules");
+                  }}
+                >
                   {c.continue}
                   <Icon name="arrow-right" className="rtl:rotate-180" />
                 </Button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <h2 className="text-sm font-semibold">{a.destinations}</h2>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {a.destinationsHint}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  {runners.map((runner) => (
-                    <label
-                      key={runner.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${optionCardSurface(runnerIds.includes(runner.id))}`}
-                    >
-                      <Checkbox
-                        checked={runnerIds.includes(runner.id)}
-                        disabled={!runner.enabled && !runnerIds.includes(runner.id)}
-                        onCheckedChange={(checked) =>
-                          setRunnerIds((ids) =>
-                            checked ? [...ids, runner.id] : ids.filter((id) => id !== runner.id),
-                          )
-                        }
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">{runner.name}</span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {runner.labels.join(" · ")}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                  <div className="flex items-center justify-between gap-2">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href="/actions/runners/new" target="_blank" rel="noopener noreferrer">
-                        <Icon name="plus" />
-                        {a.newRunner}
-                      </Link>
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={refresh} aria-label={a.refresh}>
-                      <Icon name="refresh" />
-                    </Button>
-                  </div>
-                  {!selfHosted && !runners.some((runner) => runner.kind === "cloud") && (
-                    <Button asChild variant="secondary" className="w-full">
-                      <Link href="/actions/billing" target="_blank" rel="noopener noreferrer">
-                        {a.setup.prepareCloud}
-                      </Link>
-                    </Button>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={enabled} onCheckedChange={setEnabled} />
-                  {a.enabled}
-                </label>
-                {!standalone && (
-                  <label className="flex items-start gap-2 text-sm">
-                    <Checkbox
-                      checked={allowForks && hasIsolated}
-                      disabled={!hasIsolated}
-                      onCheckedChange={setAllowForks}
-                    />
-                    <span>
-                      {a.forks}
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {a.forksHint}
-                      </span>
-                    </span>
-                  </label>
-                )}
-                <div className="grid grid-cols-[auto_1fr] gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setStep("workflow")}
-                    aria-label={c.previous}
-                  >
-                    <Icon name="arrow-left" className="rtl:rotate-180" />
-                  </Button>
-                  <Button
-                    disabled={!canSave}
-                    onClick={() => (dirty ? setReview(true) : void save(false))}
-                  >
-                    {mutation.busy ? a.saving : a.save}
-                  </Button>
-                </div>
-              </>
-            )}
-          </section>
-        </aside>
+              ) : (
+                <Button
+                  className="w-full"
+                  disabled={!canSave}
+                  onClick={() => (dirty ? reviewSource("save") : void save(false))}
+                >
+                  {mutation.busy ? a.saving : a.save}
+                </Button>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
       {picker && (
         <RepositoryPicker
@@ -598,44 +753,59 @@ function SetupForm({
             setRef(repository.default_branch || "main");
             setMode("repository");
             setOriginal(null);
-            setSource("");
+            loaded.current = null;
+            draft.reset("");
+            setSelection(null);
             setPicker(false);
           }}
         />
       )}
       {review && (
         <SourceReview
-          source={source}
-          previous={original?.source ?? ""}
-          onClose={() => setReview(false)}
+          snapshot={review}
+          onClose={() => setReview(null)}
           busy={mutation.busy}
           error={mutation.error}
-          onCommit={() => void save(true)}
-          onCopy={() => void save(false)}
+          onCommit={() => void save(true, review)}
+          onCopy={() => void save(false, review)}
+          onApply={() => {
+            setSource(review.previous);
+            setReview(null);
+          }}
         />
       )}
     </div>
   );
 }
+interface SourceReviewSnapshot {
+  kind: "save" | "incoming";
+  source: string;
+  previous: string;
+  sha: string;
+  identity: string;
+}
+
 function SourceReview({
-  source,
-  previous,
+  snapshot,
   onClose,
   onCommit,
   onCopy,
+  onApply,
   busy,
   error,
 }: {
-  source: string;
-  previous: string;
+  snapshot: SourceReviewSnapshot;
   onClose: () => void;
   onCommit: () => void;
   onCopy: () => void;
+  onApply: () => void;
   busy: boolean;
   error: string | null;
 }) {
   const { t } = useI18n();
   const c = t.actions.integration;
+  const e = t.actions.editor;
+  const { source, previous, kind } = snapshot;
   const id = useId();
   const { dialog, onKeyDown } = useDialogFocus(() => {
     if (!busy) onClose();
@@ -659,14 +829,16 @@ function SourceReview({
         className="space-y-4 p-5 outline-none"
       >
         <h2 className="text-lg font-medium" id={id}>
-          {c.reviewChanges}
+          {kind === "incoming" ? e.reviewRepository : c.reviewChanges}
         </h2>
-        <p className="text-sm text-muted-foreground">{c.commitHint}</p>
+        <p className="text-sm text-muted-foreground">
+          {kind === "incoming" ? e.reviewRepositoryHint : e.saveReviewHint}
+        </p>
         <ActionError message={error} />
         <div className="grid gap-4 sm:grid-cols-2">
           {[
-            [c.before, previous],
-            [c.after, source],
+            [e.repositoryVersion, previous],
+            [e.yourDraft, source],
           ].map(([label, value]) => (
             <div className="min-w-0" key={label}>
               <h3 className="mb-2 text-xs font-medium">{label}</h3>
@@ -683,12 +855,20 @@ function SourceReview({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             {t.actions.cancel}
           </Button>
-          <Button variant="secondary" onClick={onCopy} disabled={busy}>
-            {c.saveCopy}
-          </Button>
-          <Button onClick={onCommit} disabled={busy}>
-            {c.commitSave}
-          </Button>
+          {kind === "incoming" ? (
+            <Button onClick={onApply} disabled={busy}>
+              {e.applyRepository}
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={onCopy} disabled={busy}>
+                {c.saveCopy}
+              </Button>
+              <Button onClick={onCommit} disabled={busy}>
+                {c.commitSave}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </Modal>

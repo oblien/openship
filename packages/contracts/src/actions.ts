@@ -89,6 +89,7 @@ export const ActionWorkflowInput = Type.Object(
     repo: nullable(repo),
     path,
     ref,
+    /** Null applies repository updates automatically; a string pins the reviewed YAML. */
     source: Type.Optional(
       Type.Union([
         Type.String({ minLength: 1, maxLength: ACTIONS_MAX_WORKFLOW_BYTES }),

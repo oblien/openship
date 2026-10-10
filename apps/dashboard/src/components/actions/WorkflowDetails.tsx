@@ -139,6 +139,22 @@ function Detail({ id }: { id: string }) {
             </div>
             <aside className="space-y-4">
               <Dispatch key={data.workflow.id} workflow={data.workflow} />
+              {data.workflow.owner && (
+                <section className="space-y-3 rounded-2xl bg-card p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-semibold">{a.editor.updates}</h2>
+                    <span className="rounded-md bg-muted px-2 py-1 text-xs">
+                      {data.workflow.source ? a.editor.review : a.editor.automatic}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {data.workflow.source ? a.editor.reviewHint : a.editor.automaticHint}
+                  </p>
+                  <Button asChild size="sm" variant="secondary">
+                    <Link href={`/actions/workflows/${id}/edit`}>{a.editor.checkUpdates}</Link>
+                  </Button>
+                </section>
+              )}
               <section className="space-y-3 rounded-2xl bg-card p-5">
                 <h2 className="text-sm font-semibold">{a.integration.triggers}</h2>
                 <div className="flex flex-wrap gap-2">

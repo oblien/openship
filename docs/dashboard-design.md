@@ -58,14 +58,22 @@ records; after a run exists, show the current overview and latest run. Keep Clou
 funding and Desktop availability guidance in that column. Use the same loaded
 data for the list and guidance, and keep fetch failures distinct from empty
 accounts. Stack the sidebar below the list on narrow containers.
-Use the same two-step workflow setup from Actions, Project → Actions and the
-deployment wizard: repository discovery or standalone YAML with the dependency
-graph first, then triggers, project links and run settings. Keep progress, runner
-selection and Save in the 340px sidebar. Trigger controls edit the original YAML
-without replacing jobs or expressions. Review repository changes before committing;
-offer an Openship copy in the same review. Keep variables, secrets and artifact
-storage in one disclosure. The wizard preserves deployment fields while this setup
-is open and links selected workflows when the project is saved.
+Use the same workflow editor from Actions, Project → Actions and the deployment
+wizard. The dialog uses the available viewport, with a persistent canvas on the left
+and a scrollable 360px inspector on the right. Topology is the default; List and YAML
+are peer views of the same draft. Source and Run settings stay in the inspector, and
+selecting a job or dependency replaces those controls with its editor. Keep Save
+visible beneath the inspector. Stack the canvas and controls on narrow screens.
+Node, step, connection and trigger edits update the original YAML while preserving
+unrelated fields and comments. Reject dependency cycles and dangling job-output
+references; undo/redo affects the same draft across views. Review repository changes
+before committing, using the reviewed file SHA. Offer Automatic repository updates
+or Review first; the latter stores the existing inline YAML snapshot and continues
+using it until an explicit review and save. Loading a newer repository file must not
+overwrite that snapshot or an edited draft. No second sync engine or runner path is
+needed. Keep variables, secrets and artifact storage in one disclosure. The wizard
+preserves deployment fields while the editor is open and links selected workflows
+when the project is saved.
 Project Actions owns one deployment policy: Manual, Push, or After required Actions
 pass. Its Workflows, Runs and Deployment automation tabs keep the existing project
 sidebar; do not add a second settings rail inside the project content column.

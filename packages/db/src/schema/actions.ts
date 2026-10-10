@@ -99,7 +99,7 @@ export const actionWorkflow = pgTable(
     repo: text("repo"),
     path: text("path").notNull(),
     ref: text("ref").notNull(),
-    /** Null follows the repository file. Inline workflows are explicitly configured by an administrator. */
+    /** Null follows the repository commit. Saved YAML is reviewed explicitly before replacement. */
     source: text("source"),
     definition: jsonb("definition").$type<ActionWorkflowPlan>().notNull(),
     lastError: text("last_error"),

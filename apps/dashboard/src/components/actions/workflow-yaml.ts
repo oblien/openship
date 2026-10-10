@@ -13,7 +13,7 @@ const object = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
-function document(source: string) {
+export function workflowDocument(source: string) {
   const doc = parseDocument(source, { version: "1.2", uniqueKeys: true });
   if (doc.errors.length) throw new Error(doc.errors[0]!.message);
   // Bound aliases before conversion, including user-pasted documents.
@@ -21,7 +21,7 @@ function document(source: string) {
   return doc;
 }
 export function workflowTriggers(source: string): Record<string, unknown> {
-  const value = object(document(source).toJS({ maxAliasCount: 50 })).on;
+  const value = object(workflowDocument(source).toJS({ maxAliasCount: 50 })).on;
   return typeof value === "string"
     ? { [value]: {} }
     : Array.isArray(value)
@@ -35,7 +35,7 @@ export function editWorkflowTrigger(
   event: WorkflowEvent,
   value: unknown | undefined,
 ): string {
-  const doc = document(source);
+  const doc = workflowDocument(source);
   const current = workflowTriggers(source);
   if (value === undefined) delete current[event];
   else current[event] = value;

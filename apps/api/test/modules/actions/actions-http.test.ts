@@ -16,6 +16,7 @@ import {
 } from "../jobs/_harness";
 
 const traffic = vi.hoisted(() => ({
+  source: null as string | null,
   requests: [] as Array<{ url: string; method?: string; params?: Record<string, unknown> }>,
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", async (original) => ({
@@ -55,8 +56,8 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
         ? { content: { sha: "d".repeat(40) }, commit: { sha: "c".repeat(40) } }
         : {
             sha: "b".repeat(40),
-            size: source.length,
-            content: Buffer.from(source).toString("base64"),
+            size: (traffic.source ?? source).length,
+            content: Buffer.from(traffic.source ?? source).toString("base64"),
             download_url: null,
           };
     if (url.includes("/git/matching-refs/heads/")) return [{ ref: "refs/heads/main" }];
@@ -484,19 +485,17 @@ async function projectFor(owner: SeededOwner) {
   await db
     .insert(schema.projectGroup)
     .values({ id: groupId, organizationId: owner.orgId, name: "App", slug: groupId });
-  await db
-    .insert(schema.project)
-    .values({
-      id,
-      groupId,
-      organizationId: owner.orgId,
-      name: "App",
-      slug: id,
-      gitOwner: "acme",
-      gitRepo: "app",
-      gitBranch: "main",
-      gitUrl: "https://github.com/acme/app.git",
-    });
+  await db.insert(schema.project).values({
+    id,
+    groupId,
+    organizationId: owner.orgId,
+    name: "App",
+    slug: id,
+    gitOwner: "acme",
+    gitRepo: "app",
+    gitBranch: "main",
+    gitUrl: "https://github.com/acme/app.git",
+  });
   return id;
 }
 
@@ -601,15 +600,13 @@ describe("Actions project, repository and Jobs integration", () => {
   it("validates required push checks and changes deployment policy atomically", async () => {
     const f = await fixture(),
       projectId = await projectFor(f.owner);
-    await db
-      .insert(schema.gitInstallation)
-      .values({
-        id: generateId("git"),
-        userId: f.owner.userId,
-        organizationId: f.owner.orgId,
-        owner: "acme",
-        installationId: 912399,
-      });
+    await db.insert(schema.gitInstallation).values({
+      id: generateId("git"),
+      userId: f.owner.userId,
+      organizationId: f.owner.orgId,
+      owner: "acme",
+      installationId: 912399,
+    });
     const policy = {
       projectId,
       mode: "actions" as const,
@@ -640,6 +637,37 @@ describe("Actions project, repository and Jobs integration", () => {
     expect(
       await f.remote.updateProjectPolicy({ ...policy, mode: "manual", requiredWorkflowIds: [] }),
     ).toMatchObject({ mode: "manual", requiredWorkflowIds: [] });
+  });
+
+  it("keeps reviewed YAML unchanged across repository updates and follows new code only in automatic mode", async () => {
+    const f = await fixture();
+    const incoming = source.replace("echo done", "echo repository-v2");
+    try {
+      traffic.source = incoming;
+      const repository = await f.remote.repositorySource({
+        owner: "acme",
+        repo: "app",
+        path: f.input.path,
+        ref: "main",
+      });
+      expect(repository.source).toBe(incoming);
+      const approved = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "reviewed-v1" });
+      expect((await repos.actions.run(f.owner.orgId, approved.id))?.source).toBe(source);
+      await f.remote.update(f.workflow.id, { ...f.input, source: incoming });
+      const reviewed = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "reviewed-v2" });
+      expect((await repos.actions.run(f.owner.orgId, reviewed.id))?.source).toBe(incoming);
+      traffic.source = source.replace("echo done", "echo repository-v3");
+      const stillReviewed = await f.remote.dispatch(f.workflow.id, {
+        idempotencyKey: "still-reviewed-v2",
+      });
+      expect((await repos.actions.run(f.owner.orgId, stillReviewed.id))?.source).toBe(incoming);
+      await f.remote.update(f.workflow.id, { ...f.input, source: null });
+      const automatic = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "automatic-v3" });
+      expect((await repos.actions.run(f.owner.orgId, automatic.id))?.source).toBe(traffic.source);
+      expect((await repos.actions.run(f.owner.orgId, approved.id))?.source).toBe(source);
+    } finally {
+      traffic.source = null;
+    }
   });
 
   it("edits a repository file with its expected SHA and requires repository write permission", async () => {

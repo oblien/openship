@@ -32,18 +32,33 @@ the deployment wizard. These entry points share the same setup:
 
 1. Select a repository and branch. Openship discovers files in `.github/workflows/`
    and `.openship/workflows/` and previews their job dependencies as a topology.
-2. Choose **Continue** to configure triggers, allowed runners and linked projects.
-   Variables, secrets and artifact storage are available in the same step.
-3. Save the workflow. Trigger edits update the YAML while preserving jobs and
+2. The canvas stays visible while you edit. Select a job to change its name, runner
+   labels and steps, or connect jobs to set dependencies. Select a connection to
+   remove it. **List** and **YAML** show the same draft; undo and redo work across
+   views. **Job YAML** exposes matrix, services, conditions, permissions and step
+   inputs. Dependency cycles and deletion of referenced job outputs are rejected.
+3. Use **Run settings** on the right for triggers, allowed runners and linked
+   projects. Variables, secrets and artifact storage are in the same panel.
+4. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
    **Commit and save** or **Save Openship copy**. A changed file on GitHub rejects
    the commit instead of overwriting someone else's changes.
 
 Choose **Standalone** for YAML without a repository. It supports manual runs,
 schedules and authenticated webhooks without GitHub credentials. `actions/checkout`
-in a standalone workflow needs an explicit `with.repository`. **Keep YAML in
-Openship** also works for a repository-linked workflow when you want to keep its
-definition outside Git.
+in a standalone workflow needs an explicit `with.repository`.
+
+**Repository updates** controls which definition future runs use:
+
+- **Automatic:** use the workflow from the run's repository commit. Changes in Git
+  apply automatically.
+- **Review first:** keep the YAML saved in Openship. **Check repository** loads the
+  latest file without replacing your saved definition or edited draft. Review the
+  differences, choose **Use repository version**, then save to approve it. Until
+  then, runs continue using the previously saved YAML.
+
+Saving an Openship copy selects **Review first**. Changing the definition affects
+future runs; existing runs retain their immutable snapshots.
 
 ```yaml
 name: CI

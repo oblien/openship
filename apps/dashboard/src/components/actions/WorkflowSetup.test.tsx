@@ -41,7 +41,28 @@ vi.mock("@/components/github/RepositoryBranchSelect", () => ({
 vi.mock("@/components/backup/BackupDestinationSelect", () => ({
   BackupDestinationSelect: () => null,
 }));
-vi.mock("./WorkflowGraph", () => ({ WorkflowGraph: () => <div>Workflow topology</div> }));
+vi.mock("./WorkflowGraph", () => ({
+  WorkflowGraph: ({
+    plan,
+    editor,
+  }: {
+    plan: { jobs: Array<{ id: string; name: string }> };
+    editor: { onSelect: (value: { kind: "node"; id: string }) => void };
+  }) => (
+    <div>
+      Workflow topology
+      {plan.jobs.map((job) => (
+        <button
+          key={job.id}
+          aria-label={`Edit job: ${job.name}`}
+          onClick={() => editor.onSelect({ kind: "node", id: job.id })}
+        >
+          {job.name}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 
 const source =
   "# keep this comment\nname: CI\non: [push, workflow_dispatch]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo tested\n";
@@ -50,7 +71,7 @@ const plan = {
   triggers: ["push", "workflow_dispatch"],
   triggerRules: { push: {}, workflow_dispatch: {} },
   inputs: [],
-  jobs: [],
+  jobs: [{ id: "test", name: "test", needs: [], runsOn: "ubuntu-latest", requiresDocker: false }],
 };
 let root: Root;
 let host: HTMLDivElement;
@@ -120,7 +141,22 @@ beforeEach(() => {
   h.projects.mockResolvedValue([{ id: "project", name: "Storefront" }]);
   h.discover.mockResolvedValue([{ path: workflow.path, name: "ci.yml" }]);
   h.source.mockResolvedValue({ source, sha: "original-file-sha", plan, error: null });
-  h.preview.mockResolvedValue(plan);
+  h.preview.mockImplementation(async (yaml) => {
+    const value = parse(yaml);
+    return {
+      ...plan,
+      jobs: Object.entries(value.jobs).map(([id, raw]) => {
+        const job = raw as Record<string, unknown>;
+        return {
+          id,
+          name: job.name || id,
+          needs: typeof job.needs === "string" ? [job.needs] : (job.needs ?? []),
+          runsOn: job["runs-on"],
+          requiresDocker: false,
+        };
+      }),
+    };
+  });
   h.write.mockResolvedValue({ sha: "new-file-sha", commit: "commit" });
   h.save.mockImplementation(async (input, id) => ({ ...workflow, ...input, id: id ?? "created" }));
   host = document.createElement("div");
@@ -137,7 +173,7 @@ describe("shared workflow setup", () => {
   async function editTrigger() {
     await render("ci");
     expect(host.textContent).toContain("Workflow topology");
-    await click("Continue");
+    await click("Run settings");
     await act(async () => checkbox("Webhook").click());
     await fill("Event types (comma separated)", "release, publish");
     await preview();
@@ -176,6 +212,72 @@ describe("shared workflow setup", () => {
     expect(h.save).toHaveBeenCalledWith(expect.objectContaining({ source: null }), "ci");
     expect(h.onSaved).toHaveBeenCalledOnce();
   });
+  it("edits a selected job and preserves its draft when switching topology, list and YAML", async () => {
+    await render("ci");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Edit job: test"]')!.click(),
+    );
+    await fill("Name", "Unit checks");
+    await preview();
+    await click("List");
+    expect(host.textContent).toContain("Unit checks");
+    await click("YAML");
+    expect(
+      document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!.value,
+    ).toContain("Unit checks");
+    await click("Topology");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Undo"]')!.click(),
+    );
+    await preview();
+    expect(host.textContent).not.toContain("Unit checks");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Redo"]')!.click(),
+    );
+    await preview();
+    await click("Save workflow");
+    expect(h.write).not.toHaveBeenCalled();
+    await click("Save Openship copy");
+    expect(parse(h.save.mock.calls[0]![0].source).jobs.test.name).toBe("Unit checks");
+  });
+
+  it("keeps a reviewed workflow pinned when its repository changes, then explicitly accepts the update", async () => {
+    h.get.mockResolvedValue({ ...(await h.get()), source });
+    const incoming = source.replace("echo tested", "echo new-repository-code");
+    h.source.mockResolvedValue({ source: incoming, sha: "latest-file-sha", plan, error: null });
+    await render("ci");
+    await click("YAML");
+    expect(document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!.value).toBe(
+      source,
+    );
+    expect(host.textContent).toContain("Your draft differs from the repository version.");
+    await click("Review differences");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "echo new-repository-code",
+    );
+    expect(h.save).not.toHaveBeenCalled();
+    await click("Use repository version");
+    await preview();
+    expect(document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!.value).toBe(
+      incoming,
+    );
+    expect(h.save).not.toHaveBeenCalled();
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(expect.objectContaining({ source: incoming }), "ci");
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it("persists the automatic versus reviewed repository policy through the existing source contract", async () => {
+    await render("ci");
+    await click("Review first");
+    await click("Save workflow");
+    expect(h.save).toHaveBeenLastCalledWith(expect.objectContaining({ source }), "ci");
+    await click("Automatic");
+    await click("Save workflow");
+    expect(h.save).toHaveBeenLastCalledWith(expect.objectContaining({ source: null }), "ci");
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
   it("creates a standalone workflow without any GitHub request", async () => {
     await render();
     await click("Standalone");

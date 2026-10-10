@@ -47,6 +47,8 @@ export interface TopologyNodeAction {
   hint?: string;
   statusLabel?: string;
   readOnly?: boolean;
+  /** Unsaved editors may expose dependency handles without changing runtime resources. */
+  connectable?: boolean;
 }
 type ResourceFlowNode = Node<
   { resource: TopologyResource; onOpen: (id: string) => void; action?: TopologyNodeAction },
@@ -89,12 +91,12 @@ export function TopologyResourceIcon({
     resource.kind === "workflow-job"
       ? "terminal"
       : resource.kind === "edge"
-      ? "globe"
-      : resource.kind === "linked"
-        ? "database"
-        : resource.kind === "environment" || resource.kind === "traffic"
-          ? "layers"
-          : "window";
+        ? "globe"
+        : resource.kind === "linked"
+          ? "database"
+          : resource.kind === "environment" || resource.kind === "traffic"
+            ? "layers"
+            : "window";
   return <UiIcon name={Icon} className={className} />;
 }
 
@@ -125,9 +127,13 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
       data-pending={resource.pending}
       data-picked={action?.selected || undefined}
       data-unavailable={action?.disabled || undefined}
-      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : action?.statusLabel ?? stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
+      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : (action?.statusLabel ?? stateLabels[resource.state])}${resource.pending ? ", pending changes" : ""}`}
     >
-      <Handle type="target" position={Position.Left} isConnectable={isService && !action} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={(isService && !action) || action?.connectable === true}
+      />
       <div className="flex items-center gap-3 p-4 pb-3">
         <span className="topology-node-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
           <TopologyResourceIcon resource={resource} />
@@ -182,7 +188,9 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
             }
           >
             <span className="flex min-w-0 items-center gap-2 truncate">
-              {action && action.kind !== "open" && <Checkbox asButton={false} checked={action.selected} />}
+              {action && action.kind !== "open" && (
+                <Checkbox asButton={false} checked={action.selected} />
+              )}
               {action
                 ? action.label
                 : canInspectInstance
@@ -207,12 +215,18 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
               ) : (
                 <TopologyStatus state={resource.state} />
               )}
-              {(!action || action.kind === "open") && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
+              {(!action || action.kind === "open") && (
+                <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />
+              )}
             </span>
           </button>
         </div>
       )}
-      <Handle type="source" position={Position.Right} isConnectable={isService && !action} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        isConnectable={(isService && !action) || action?.connectable === true}
+      />
     </article>
   );
 });
@@ -394,7 +408,7 @@ function Canvas({
           showLabel: relation.kind === "binding",
           enabled: !relation.pending && relation.enabled !== false,
         },
-        ariaLabel: `${relation.kind}: ${relation.label}`,
+        ariaLabel: `${relation.kind}: ${relation.label || relation.description}`,
       })),
     [graph.edges, selection],
   );

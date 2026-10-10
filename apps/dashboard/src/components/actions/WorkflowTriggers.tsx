@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { DraftInput, DraftTextarea } from "./DraftText";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -21,10 +22,12 @@ export function WorkflowTriggers({
   source,
   onChange,
   standalone,
+  embedded = false,
 }: {
   source: string;
   onChange: (source: string) => void;
   standalone: boolean;
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   const a = t.actions,
@@ -68,7 +71,9 @@ export function WorkflowTriggers({
     { event: "repository_dispatch", label: c.webhook, hint: c.webhookHint },
   ];
   return (
-    <section className="space-y-4 rounded-2xl bg-card p-5">
+    <section
+      className={embedded ? "@container space-y-4" : "@container space-y-4 rounded-2xl bg-card p-5"}
+    >
       <h2 className="text-sm font-semibold">{c.triggers}</h2>
       <ActionError message={error} />
       <div className="divide-y divide-border/50">
@@ -315,50 +320,4 @@ function AddInput({ onAdd, existing }: { onAdd: (name: string) => void; existing
       </Button>
     </div>
   );
-}
-
-/** Preserve partially typed separators while the YAML model receives normalized values. */
-function useDraftText(
-  value: string,
-  change: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void,
-) {
-  const [text, setText] = useState(value);
-  const focused = useRef(false);
-  useEffect(() => {
-    if (!focused.current) setText(value);
-  }, [value]);
-  return {
-    value: text,
-    onFocus: () => {
-      focused.current = true;
-    },
-    onBlur: () => {
-      focused.current = false;
-      setText(value);
-    },
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setText(event.target.value);
-      change(event);
-    },
-  };
-}
-function DraftTextarea({
-  value,
-  onChange,
-  ...props
-}: Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
-  value: string;
-  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-}) {
-  return <textarea {...props} {...useDraftText(value, onChange)} />;
-}
-function DraftInput({
-  value,
-  onChange,
-  ...props
-}: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & {
-  value: string;
-  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-}) {
-  return <Input {...props} {...useDraftText(value, onChange)} />;
 }
