@@ -21,11 +21,13 @@ export function WorkflowEditor({ id }: { id?: string }) {
         onCancel={() =>
           router.push(projectId ? `/projects/${encodeURIComponent(projectId)}/actions` : "/actions")
         }
-        onSaved={(workflow) =>
+        onSaved={(workflow, saved = [workflow]) =>
           router.push(
             projectId
               ? `/projects/${encodeURIComponent(projectId)}/actions`
-              : `/actions/workflows/${workflow.id}`,
+              : saved.length > 1
+                ? "/actions"
+                : `/actions/workflows/${workflow.id}`,
           )
         }
       />

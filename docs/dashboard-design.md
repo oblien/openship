@@ -114,6 +114,17 @@ overwrite that snapshot or an edited draft. No second sync engine or runner path
 needed. Keep variables, secrets and artifact storage in one disclosure. The wizard
 preserves deployment fields while the editor is open and links selected workflows
 when the project is saved.
+Repository setup offers a compact file checklist with Select all. Keep a separate
+draft and undo history for each file while previewing them on the same canvas.
+Runner destinations, enabled state and project links apply to the selected files;
+trigger edits belong to the previewed file. Review every changed file before a
+repository commit. Import files and links in one transaction; a retry reuses saved
+workflows and preserves their configuration.
+Run settings uses compact trigger rows with shared switches and expandable controls.
+Branches, paths, tags and event types use filled add/remove chips; keep commas inside
+glob patterns literal. Include/exclude choices replace the opposite YAML filter.
+Schedules have individual UTC inputs, and additional YAML-only events remain visible.
+Keep the Workflow / Run settings tabs and save action visible while the inspector scrolls.
 Project Actions owns one deployment policy: Manual, Push, or After required Actions
 pass. Its Workflows, Runs and Deployment automation tabs keep the existing project
 sidebar; do not add a second settings rail inside the project content column.

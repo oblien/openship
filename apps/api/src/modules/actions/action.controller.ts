@@ -16,6 +16,14 @@ export async function create(c: Context) {
     data: await operationData(c, actions().create(operationContext(c), await c.req.json())),
   });
 }
+export async function importWorkflows(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      actions().importWorkflows(operationContext(c), await c.req.json()),
+    ),
+  });
+}
 export async function listRuns(c: Context) {
   return c.json({
     data: await operationData(

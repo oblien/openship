@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **489 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **490 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -40,6 +40,7 @@ The current API has **489 unique tools**. Permission tags below describe the rou
 | `post_actions_runs_by_id_rerun`<br />`POST /api/actions/runs/:id/rerun` | Retry the same immutable workflow and commit as a new attempt. | `job:write` |
 | `post_actions_workflows`<br />`POST /api/actions/workflows` | Configure an Actions workflow and its authorized runner destinations. Secrets are encrypted and never returned. | `job:write` |
 | `post_actions_workflows_by_id_dispatch`<br />`POST /api/actions/workflows/:id/dispatch` | Dispatch a workflow using an idempotency key and an immutable resolved commit. | `job:write` |
+| `post_actions_workflows_import`<br />`POST /api/actions/workflows/import` | Import repository workflows together, reusing existing workflows and linking authorized projects. | `job:write` |
 | `put_actions_project`<br />`PUT /api/actions/project` | Configure required workflow checks before automatic project deployment. | `job:write` |
 | `put_actions_repository_source`<br />`PUT /api/actions/repository-source` | Commit reviewed workflow YAML to its branch using the expected file SHA. | `job:write` |
 

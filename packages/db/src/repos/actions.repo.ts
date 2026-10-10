@@ -35,6 +35,13 @@ export type ActionDelivery = typeof actionDelivery.$inferSelect;
 type NewRun = typeof actionRun.$inferInsert;
 type NewWorkflow = typeof actionWorkflow.$inferInsert;
 type NewRunner = typeof actionRunner.$inferInsert;
+type WorkflowWrite = {
+  value: NewWorkflow;
+  projectIds?: string[];
+  expectedProjectIds?: string[];
+  /** Repository imports attach existing records without replacing their settings. */
+  createOnly?: boolean;
+};
 
 /** All public lookups include organizationId. Only the dispatcher scans across owners. */
 export function createActionsRepo(db: Database) {
@@ -48,6 +55,180 @@ export function createActionsRepo(db: Database) {
     and(eq(actionWorkflow.organizationId, org), eq(actionWorkflow.id, id));
   const deliveryWhere = (org: string, id: string) =>
     and(eq(actionDelivery.organizationId, org), eq(actionDelivery.id, id));
+  const writeWorkflow = async (
+    tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+    { value, projectIds, expectedProjectIds, createOnly }: WorkflowWrite,
+  ) => {
+    const { id, organizationId, createdAt, nextNumber, ...changes } = value;
+    if (createOnly) {
+      const [inserted] = await tx
+        .insert(actionWorkflow)
+        .values(value)
+        .onConflictDoNothing({ target: actionWorkflow.id })
+        .returning();
+      const workflow =
+        inserted ??
+        (
+          await tx
+            .select()
+            .from(actionWorkflow)
+            .where(workflowWhere(organizationId, id))
+            .for("update")
+        )[0];
+      if (!workflow) throw new AppError("Workflow not found", 404, "ACTIONS_WORKFLOW_NOT_FOUND");
+      // A concurrent import or edit may have changed the destinations after the
+      // caller authorized this file. Never attach a project to unchecked access.
+      if (
+        !inserted &&
+        (workflow.controller !== (value.controller ?? "openship") ||
+          workflow.owner !== (value.owner ?? null) ||
+          workflow.repo !== (value.repo ?? null) ||
+          workflow.ref !== (value.ref ?? "main") ||
+          workflow.path !== value.path ||
+          !isDeepStrictEqual(workflow.runnerIds, value.runnerIds ?? []))
+      )
+        throw new AppError(
+          "Workflow access changed during import. Reload the workflows before trying again.",
+          409,
+          "ACTIONS_WORKFLOW_CHANGED",
+        );
+      if (projectIds?.length)
+        await tx
+          .insert(actionProject)
+          .values(
+            projectIds.map((projectId) => ({
+              organizationId,
+              workflowId: id,
+              projectId,
+              required: false,
+            })),
+          )
+          .onConflictDoNothing();
+      return workflow;
+    }
+    const [previous] = await tx
+      .select()
+      .from(actionWorkflow)
+      .where(workflowWhere(organizationId, id))
+      .for("update");
+    if (
+      previous &&
+      (previous.controller !== (value.controller ?? previous.controller) ||
+        previous.owner !== value.owner ||
+        previous.repo !== value.repo ||
+        previous.path !== value.path ||
+        !isDeepStrictEqual(previous.runnerIds, value.runnerIds))
+    ) {
+      const [run] = await tx
+        .select({ id: actionRun.id })
+        .from(actionRun)
+        .where(
+          and(
+            eq(actionRun.workflowId, id),
+            eq(actionRun.organizationId, organizationId),
+            isNull(actionRun.settledAt),
+          ),
+        )
+        .limit(1);
+      const [session] = await tx
+        .select({ id: actionRunnerSession.id })
+        .from(actionRunnerSession)
+        .where(
+          and(
+            eq(actionRunnerSession.workflowId, id),
+            eq(actionRunnerSession.organizationId, organizationId),
+            isNull(actionRunnerSession.cleanedAt),
+          ),
+        )
+        .limit(1);
+      if (run || session)
+        throw new AppError(
+          "Finish this workflow's runs before changing its controller, repository or runners",
+          409,
+          "ACTIONS_WORKFLOW_BUSY",
+        );
+    }
+    const currentLinks = await tx
+      .select()
+      .from(actionProject)
+      .where(
+        and(eq(actionProject.organizationId, organizationId), eq(actionProject.workflowId, id)),
+      );
+    if (
+      projectIds &&
+      expectedProjectIds &&
+      (currentLinks.length !== expectedProjectIds.length ||
+        currentLinks.some((link) => !expectedProjectIds.includes(link.projectId)))
+    )
+      throw new AppError(
+        "Linked projects changed. Reload the workflow before saving.",
+        409,
+        "ACTIONS_PROJECT_LINKS_CHANGED",
+      );
+    if (
+      projectIds &&
+      currentLinks.some((link) => link.required && !projectIds.includes(link.projectId))
+    )
+      throw new AppError(
+        "Remove this workflow from the project's required checks before unlinking it",
+        409,
+        "ACTIONS_WORKFLOW_REQUIRED",
+      );
+    const [workflow] = await tx
+      .insert(actionWorkflow)
+      .values(value)
+      .onConflictDoUpdate({
+        target: actionWorkflow.id,
+        set: { ...changes, updatedAt: new Date() },
+        setWhere: eq(actionWorkflow.organizationId, organizationId),
+      })
+      .returning();
+    if (!workflow) throw new AppError("Workflow not found", 404, "ACTIONS_WORKFLOW_NOT_FOUND");
+    if (projectIds) {
+      await tx
+        .delete(actionProject)
+        .where(
+          and(eq(actionProject.organizationId, organizationId), eq(actionProject.workflowId, id)),
+        );
+      if (projectIds.length)
+        await tx.insert(actionProject).values(
+          projectIds.map((projectId) => ({
+            organizationId,
+            workflowId: id,
+            projectId,
+            required: currentLinks.some((link) => link.projectId === projectId && link.required),
+          })),
+        );
+    }
+    return workflow;
+  };
+  const saveWorkflows = async (entries: WorkflowWrite[]) => {
+    if (!entries.length) return [];
+    const org = entries[0]!.value.organizationId;
+    if (entries.some((entry) => entry.value.organizationId !== org))
+      throw new AppError(
+        "Workflows must belong to one organization",
+        400,
+        "ACTIONS_ORGANIZATION_MISMATCH",
+      );
+    const saved = await withProjectWorkAdmission(
+      db,
+      entries.flatMap((entry) => [
+        ...(entry.projectIds ?? []),
+        ...(entry.expectedProjectIds ?? []),
+      ]),
+      org,
+      async (tx) => {
+        const rows = new Map<string, ActionWorkflow>();
+        // Stable row order also serializes concurrent imports and normal edits.
+        for (const entry of [...entries].sort((a, b) => a.value.id.localeCompare(b.value.id)))
+          rows.set(entry.value.id, await writeWorkflow(tx, entry));
+        return entries.map((entry) => rows.get(entry.value.id)!);
+      },
+    );
+    if (!saved) throw new AppError("A linked project is unavailable", 409, "PROJECT_UNAVAILABLE");
+    return saved;
+  };
   return {
     ...createActionProjectRepo(db),
     ...createActionGitHubRepo(db),
@@ -274,121 +455,9 @@ export function createActionsRepo(db: Database) {
     async workflow(org: string, id: string) {
       return (await db.select().from(actionWorkflow).where(workflowWhere(org, id)).limit(1))[0];
     },
+    saveWorkflows,
     async saveWorkflow(value: NewWorkflow, projectIds?: string[], expectedProjectIds?: string[]) {
-      const { id, organizationId, createdAt, nextNumber, ...changes } = value;
-      const saved = await withProjectWorkAdmission(
-        db,
-        projectIds ? [...new Set([...projectIds, ...(expectedProjectIds ?? [])])] : undefined,
-        organizationId,
-        async (tx) => {
-          const [previous] = await tx
-            .select()
-            .from(actionWorkflow)
-            .where(workflowWhere(organizationId, id))
-            .for("update");
-          if (
-            previous &&
-            (previous.controller !== (value.controller ?? previous.controller) ||
-              previous.owner !== value.owner ||
-              previous.repo !== value.repo ||
-              previous.path !== value.path ||
-              !isDeepStrictEqual(previous.runnerIds, value.runnerIds))
-          ) {
-            const [run] = await tx
-              .select({ id: actionRun.id })
-              .from(actionRun)
-              .where(
-                and(
-                  eq(actionRun.workflowId, id),
-                  eq(actionRun.organizationId, organizationId),
-                  isNull(actionRun.settledAt),
-                ),
-              )
-              .limit(1);
-            const [session] = await tx
-              .select({ id: actionRunnerSession.id })
-              .from(actionRunnerSession)
-              .where(
-                and(
-                  eq(actionRunnerSession.workflowId, id),
-                  eq(actionRunnerSession.organizationId, organizationId),
-                  isNull(actionRunnerSession.cleanedAt),
-                ),
-              )
-              .limit(1);
-            if (run || session)
-              throw new AppError(
-                "Finish this workflow's runs before changing its controller, repository or runners",
-                409,
-                "ACTIONS_WORKFLOW_BUSY",
-              );
-          }
-          const currentLinks = await tx
-            .select()
-            .from(actionProject)
-            .where(
-              and(
-                eq(actionProject.organizationId, organizationId),
-                eq(actionProject.workflowId, id),
-              ),
-            );
-          if (
-            projectIds &&
-            expectedProjectIds &&
-            (currentLinks.length !== expectedProjectIds.length ||
-              currentLinks.some((link) => !expectedProjectIds.includes(link.projectId)))
-          )
-            throw new AppError(
-              "Linked projects changed. Reload the workflow before saving.",
-              409,
-              "ACTIONS_PROJECT_LINKS_CHANGED",
-            );
-          if (
-            projectIds &&
-            currentLinks.some((link) => link.required && !projectIds.includes(link.projectId))
-          )
-            throw new AppError(
-              "Remove this workflow from the project's required checks before unlinking it",
-              409,
-              "ACTIONS_WORKFLOW_REQUIRED",
-            );
-          const [workflow] = await tx
-            .insert(actionWorkflow)
-            .values(value)
-            .onConflictDoUpdate({
-              target: actionWorkflow.id,
-              set: { ...changes, updatedAt: new Date() },
-              setWhere: eq(actionWorkflow.organizationId, organizationId),
-            })
-            .returning();
-          if (!workflow)
-            throw new AppError("Workflow not found", 404, "ACTIONS_WORKFLOW_NOT_FOUND");
-          if (projectIds) {
-            await tx
-              .delete(actionProject)
-              .where(
-                and(
-                  eq(actionProject.organizationId, organizationId),
-                  eq(actionProject.workflowId, id),
-                ),
-              );
-            if (projectIds.length)
-              await tx.insert(actionProject).values(
-                projectIds.map((projectId) => ({
-                  organizationId,
-                  workflowId: id,
-                  projectId,
-                  required: currentLinks.some(
-                    (link) => link.projectId === projectId && link.required,
-                  ),
-                })),
-              );
-          }
-          return workflow;
-        },
-      );
-      if (!saved) throw new AppError("A linked project is unavailable", 409, "PROJECT_UNAVAILABLE");
-      return saved;
+      return (await saveWorkflows([{ value, projectIds, expectedProjectIds }]))[0]!;
     },
     async workflowError(org: string, id: string, error: string | null) {
       await db.update(actionWorkflow).set({ lastError: error }).where(workflowWhere(org, id));

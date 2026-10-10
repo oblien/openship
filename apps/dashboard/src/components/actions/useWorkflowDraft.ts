@@ -2,12 +2,22 @@
 import { useCallback, useState } from "react";
 
 /** Canvas, list, YAML and trigger controls share one reversible draft. */
-export function useWorkflowDraft(initial: string) {
-  const [history, setHistory] = useState({
-    source: initial,
-    past: [] as string[],
-    future: [] as string[],
-  });
+type History = { source: string; past: string[]; future: string[] };
+export function useWorkflowDraft(initial: string, key = "workflow") {
+  const [histories, setHistories] = useState<Record<string, History>>({});
+  const history = histories[key] ?? { source: initial, past: [], future: [] };
+  const setHistory = useCallback(
+    (update: History | ((current: History) => History)) => {
+      setHistories((all) => ({
+        ...all,
+        [key]:
+          typeof update === "function"
+            ? update(all[key] ?? { source: initial, past: [], future: [] })
+            : update,
+      }));
+    },
+    [key, initial],
+  );
   const change = useCallback(
     (source: string) =>
       setHistory((current) =>
@@ -19,9 +29,13 @@ export function useWorkflowDraft(initial: string) {
               future: [],
             },
       ),
-    [],
+    [setHistory],
   );
-  const reset = useCallback((source: string) => setHistory({ source, past: [], future: [] }), []);
+  const reset = useCallback(
+    (source: string, targetKey = key) =>
+      setHistories((current) => ({ ...current, [targetKey]: { source, past: [], future: [] } })),
+    [key],
+  );
   const undo = () =>
     setHistory((current) =>
       !current.past.length
@@ -44,6 +58,8 @@ export function useWorkflowDraft(initial: string) {
     );
   return {
     source: history.source,
+    initialized: Object.hasOwn(histories, key),
+    sourceFor: (key: string) => histories[key]?.source,
     change,
     reset,
     undo,

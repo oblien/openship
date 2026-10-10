@@ -114,6 +114,20 @@ r.get(
   },
   ctrl.discover,
 );
+r.post(
+  "/workflows/import",
+  {
+    authorizationHandledByOperation: true,
+    tag: "job:write",
+    auditHandledByOperation: true,
+    body: C.importWorkflows.input,
+    mcp: {
+      description:
+        "Import repository workflows together, reusing existing workflows and linking authorized projects.",
+    },
+  },
+  ctrl.importWorkflows,
+);
 r.get(
   "/workflows/:id",
   {

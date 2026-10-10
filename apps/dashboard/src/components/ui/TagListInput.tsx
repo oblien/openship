@@ -36,6 +36,9 @@ export function TagListInput({
   maxLength,
   ariaLabel,
   removeLabel,
+  variant = "default",
+  splitCommas = true,
+  addLabel,
 }: {
   tags: string[];
   draft: string;
@@ -46,13 +49,22 @@ export function TagListInput({
   maxLength?: number;
   ariaLabel?: string;
   removeLabel: string;
+  variant?: "default" | "filled";
+  /** Patterns such as src/{app,lib}/** contain meaningful commas. */
+  splitCommas?: boolean;
+  addLabel?: string;
 }) {
   const atCap = maxItems != null && tags.length >= maxItems;
 
   /** Fold the draft into the chip list, mirroring the old splitList (split on
    *  newline/comma, trim, drop empties) so pasted "a,b" still yields two chips. */
   const commit = () => {
-    const pieces = splitDraft(draft);
+    const pieces = splitCommas
+      ? splitDraft(draft)
+      : draft
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean);
     if (pieces.length === 0) {
       if (draft) onDraftChange("");
       return;
@@ -67,7 +79,9 @@ export function TagListInput({
   };
 
   return (
-    <div className="flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl border border-border/50 bg-muted/20 px-2 py-1.5 transition-colors focus-within:border-primary/40">
+    <div
+      className={`flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl px-2 py-1.5 transition-colors ${variant === "filled" ? "bg-background focus-within:ring-2 focus-within:ring-ring" : "border border-border/50 bg-muted/20 focus-within:border-primary/40"}`}
+    >
       {tags.map((tag, index) => (
         <span
           key={`${tag}-${index}`}
@@ -77,7 +91,7 @@ export function TagListInput({
           <button
             type="button"
             onClick={() => onTagsChange(tags.filter((_, i) => i !== index))}
-            aria-label={removeLabel}
+            aria-label={`${removeLabel}: ${tag}`}
             className="shrink-0 rounded-sm text-muted-foreground/50 transition-colors hover:text-danger"
           >
             <UiIcon name="close" className="size-3" />
@@ -87,10 +101,15 @@ export function TagListInput({
       <input
         value={draft}
         onChange={(event) =>
-          onDraftChange(maxLength != null ? event.target.value.slice(0, maxLength) : event.target.value)
+          onDraftChange(
+            maxLength != null ? event.target.value.slice(0, maxLength) : event.target.value,
+          )
         }
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === ",") {
+          if (
+            !event.nativeEvent.isComposing &&
+            (event.key === "Enter" || (splitCommas && event.key === ","))
+          ) {
             event.preventDefault();
             commit();
           } else if (event.key === "Backspace" && draft === "" && tags.length > 0) {
@@ -103,6 +122,19 @@ export function TagListInput({
         disabled={atCap}
         className="min-w-[8ch] flex-1 bg-transparent px-1 py-1 font-mono text-sm text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground/50 disabled:cursor-not-allowed"
       />
+      {addLabel && (
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={commit}
+          disabled={!draft.trim() || atCap}
+          aria-label={addLabel}
+          title={addLabel}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-30"
+        >
+          <UiIcon name="plus" className="size-4" />
+        </button>
+      )}
     </div>
   );
 }

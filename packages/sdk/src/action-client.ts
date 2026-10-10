@@ -14,6 +14,11 @@ export function createRemoteActionOperations(http: HttpClient): ActionOperations
     ...createRemoteScopedOperations(http, ActionCollectionSchemas, {
       list: { method: "GET", path: () => "/actions/workflows", envelope: "data" },
       create: { method: "POST", path: () => "/actions/workflows", envelope: "data" },
+      importWorkflows: {
+        method: "POST",
+        path: () => "/actions/workflows/import",
+        envelope: "data",
+      },
       listRuns: { method: "GET", path: () => "/actions/runs", envelope: "data" },
       runners: { method: "GET", path: () => "/actions/runners", envelope: "data" },
       enableEmulation: {

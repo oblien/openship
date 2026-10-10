@@ -10,7 +10,7 @@ import {
   inferActionWorkflowController,
 } from "@repo/core";
 import { repos, type ActionRun, type ActionWorkflow } from "@repo/db";
-import type { CreateActionWorkflow } from "@repo/contracts";
+import type { ActionOperations, CreateActionWorkflow } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { captureExecutionAuthority } from "../../lib/execution-authority";
 import { encrypt } from "../../lib/encryption";
@@ -48,11 +48,11 @@ export async function requireActionRun(
   return row;
 }
 
-export async function saveActionWorkflow(
+async function prepareActionWorkflow(
   ctx: ExecutionContext,
   input: CreateActionWorkflow,
   id?: string,
-): Promise<ActionWorkflow> {
+): Promise<Parameters<typeof repos.actions.saveWorkflows>[0][number]> {
   const existing = id ? await requireActionWorkflow(ctx, id, true) : undefined;
   const controller =
     input.controller ?? inferActionWorkflowController(input.path, !!input.owner && !!input.repo);
@@ -161,8 +161,8 @@ export async function saveActionWorkflow(
       );
     if (value) secrets[key] = encrypt(value);
   }
-  return repos.actions.saveWorkflow(
-    {
+  return {
+    value: {
       id: existing?.id ?? generateId("awf"),
       organizationId: ctx.organizationId,
       name: input.name.trim(),
@@ -185,9 +185,81 @@ export async function saveActionWorkflow(
         controller === "github" ? false : (input.allowForks ?? existing?.allowForks ?? false),
       storageDestinationId,
     },
-    input.projectIds,
-    previousProjectIds,
+    projectIds: input.projectIds,
+    expectedProjectIds: previousProjectIds,
+  };
+}
+
+export async function saveActionWorkflow(
+  ctx: ExecutionContext,
+  input: CreateActionWorkflow,
+  id?: string,
+) {
+  const prepared = await prepareActionWorkflow(ctx, input, id);
+  return repos.actions.saveWorkflow(
+    prepared.value,
+    prepared.projectIds,
+    prepared.expectedProjectIds,
   );
+}
+
+/** Validate every file before one database transaction. Importing again reuses it. */
+export async function importActionWorkflows(
+  ctx: ExecutionContext,
+  input: Parameters<ActionOperations["importWorkflows"]>[0],
+) {
+  const first = input.workflows[0]!;
+  const identity = (value: Pick<CreateActionWorkflow, "owner" | "repo" | "path" | "ref">) =>
+    JSON.stringify([value.owner?.toLowerCase(), value.repo?.toLowerCase(), value.ref, value.path]);
+  if (
+    !first.owner ||
+    !first.repo ||
+    input.workflows.some(
+      (item) =>
+        item.owner?.toLowerCase() !== first.owner!.toLowerCase() ||
+        item.repo?.toLowerCase() !== first.repo!.toLowerCase() ||
+        item.ref !== first.ref,
+    )
+  )
+    throw new ValidationError("Select workflow files from one repository and branch");
+  if (new Set(input.workflows.map(identity)).size !== input.workflows.length)
+    throw new ValidationError("Select each workflow file only once");
+  const existing = await repos.actions.listWorkflows(ctx.organizationId);
+  const entries: Parameters<typeof repos.actions.saveWorkflows>[0] = [];
+  for (const item of input.workflows) {
+    const row = existing.find((value) => identity(value) === identity(item));
+    if (row) {
+      await authorizeActionWorkflow(ctx, row, true);
+      if (item.projectIds?.length)
+        await (
+          await import("./project.service")
+        ).authorizeActionProjects(ctx, item.projectIds, true);
+      entries.push({ value: row, projectIds: item.projectIds, createOnly: true });
+    } else {
+      let prepared: Awaited<ReturnType<typeof prepareActionWorkflow>>;
+      try {
+        prepared = await prepareActionWorkflow(ctx, item);
+      } catch (error) {
+        // The shared API error boundary reports this once; identify the failed file.
+        if (error instanceof AppError && error.statusCode < 500) {
+          const failure = new AppError(
+            `${item.path}: ${error.message}`,
+            error.statusCode,
+            error.code,
+          );
+          failure.cause = error;
+          throw failure;
+        }
+        throw error;
+      }
+      prepared.value.id = `awf_${createHash("sha256")
+        .update(JSON.stringify([ctx.organizationId, identity(item)]))
+        .digest("hex")
+        .slice(0, 32)}`;
+      entries.push({ ...prepared, createOnly: true });
+    }
+  }
+  return repos.actions.saveWorkflows(entries);
 }
 
 function validateStandaloneWorkflow(

@@ -103,6 +103,8 @@ the deployment wizard. These entry points share the same setup:
 
 1. Select a repository and branch. Openship discovers files in `.github/workflows/`
    and `.openship/workflows/` and previews their job dependencies as a topology.
+   Check several files or choose **Select all** to add them together. Select a
+   filename to preview it; each file keeps its own draft and undo history.
 2. The canvas stays visible while you edit. Select a job to open its settings in the
    right panel. Expand its canvas node to reveal a grid of step cards connected by
    execution-order arrows; selecting a step opens its editor. **List** edits those
@@ -115,11 +117,20 @@ the deployment wizard. These entry points share the same setup:
 3. Use **Run settings** on the right for triggers, allowed runners and linked
    projects. Independent workflows also configure variables, secrets and artifact
    storage here; GitHub workflows use their repository settings.
+   Runner destinations, enabled state and project links apply to the selected
+   files. Trigger edits apply to the file being previewed.
 4. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
    **Commit and save**. `.openship/workflows` also offers **Save Openship copy**.
    `.github/workflows` always runs committed YAML. A changed file on GitHub rejects
    the commit instead of overwriting someone else's changes.
+
+All selected files are validated before their workflow records and project links
+are saved in one transaction. Retrying an import reuses existing records, retains
+their settings and adds any new project links; it does not duplicate workflows or
+start a run. Edit an already connected workflow from its Actions page to change
+its saved configuration. Reviewed repository commits can trigger the repository's
+normal automation, and are separate from the database transaction.
 
 Choose **Standalone** for YAML without a repository. It supports manual runs,
 schedules and authenticated webhooks without GitHub credentials. `actions/checkout`
@@ -179,8 +190,12 @@ GitHub owns the Check IDs and conclusions; Openship does not publish duplicate C
 
 **When to run** edits the workflow's own `on` rules. It supports manual inputs,
 push and pull-request branch/path filters, UTC Cron schedules and authenticated
-webhooks. Existing exclusions, tags and pull-request event types stay in the YAML;
-edit the YAML to change those advanced rules.
+webhooks. Expand a trigger to configure it. Branches and paths use removable
+patterns: type a pattern and press **Enter** or **+** to add it. Choose **Only
+matching** or **Except matching**; Openship preserves commas inside glob patterns.
+**Paths & more filters** includes tags and pull-request event types. Each Cron
+schedule has its own UTC input. Other events, including `workflow_call`, remain
+visible and open the YAML editor without changing their definitions.
 
 **Manual & Jobs** enables `workflow_dispatch`. Add string, number, boolean or choice
 inputs with defaults and required values. The manual-run form and **Jobs → Run

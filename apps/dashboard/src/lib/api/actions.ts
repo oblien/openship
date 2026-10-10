@@ -17,6 +17,8 @@ export const actionsApi = {
   get: (id: string) => data<"get">(api.get(p.workflow(id))),
   save: (input: CreateActionWorkflow, id?: string) =>
     data<"create">(id ? api.patch(p.workflow(id), input) : api.post(p.workflows, input)),
+  importWorkflows: (workflows: CreateActionWorkflow[]) =>
+    data<"importWorkflows">(api.post(`${p.workflows}/import`, { workflows })),
   disable: (id: string) => api.delete(p.workflow(id)),
   runs: (workflowId?: string, projectId?: string) =>
     data<"listRuns">(

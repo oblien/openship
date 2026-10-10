@@ -104,11 +104,13 @@ export function DeployActions() {
             path: workflows.data?.files[0]?.path,
           }}
           onCancel={() => setOpen(false)}
-          onSaved={(workflow) => {
+          onSaved={(workflow, saved = [workflow]) => {
             updateConfig({
               actions: {
                 mode: value?.mode ?? "manual",
-                workflowIds: [...new Set([...(value?.workflowIds ?? []), workflow.id])],
+                workflowIds: [
+                  ...new Set([...(value?.workflowIds ?? []), ...saved.map((item) => item.id)]),
+                ],
                 requiredWorkflowIds: value?.requiredWorkflowIds ?? [],
               },
             });

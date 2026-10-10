@@ -43,6 +43,12 @@ provided encrypted entries; `removeSecrets` explicitly removes named entries.
 `storageDestinationId` selects an authorized backup destination for artifacts and
 cache. Reads return secret names, never their values.
 
+`importWorkflows({ workflows })` accepts up to 50 complete configurations from one
+repository and branch. It validates all new files, then saves workflows and project
+links in one transaction. Repeating the import reuses each file's existing record,
+preserves its settings and adds new authorized project links. Use `update` to change
+an already imported workflow. Importing does not commit repository changes or start runs.
+
 For a standalone workflow, omit `owner` and `repo` and provide `source`. It can run
 manually, on a schedule, from an authenticated webhook, or through a Job without
 GitHub credentials. `actions/checkout` needs an explicit `with.repository` in this mode.
@@ -65,9 +71,10 @@ its repository or allowed runners. This confirms that matching repository jobs c
 execute on those destinations. GitHub manages secrets, variables, artifacts and
 Checks; omit Openship secrets, variables and storage settings in this mode.
 
-`preview`, `repositorySource` and `updateRepositorySource` accept the same
-`controller` so the shared editor validates the correct workflow mode. The default
-for API callers remains independent `openship`.
+`preview`, `repositorySource` and `updateRepositorySource` infer the controller from
+the file path: `.github/workflows/` uses GitHub, while `.openship/workflows/` and
+standalone YAML use the independent controller. API callers may also provide an
+explicit `controller`.
 
 GitHub mode dispatches `workflow_dispatch` through GitHub and mirrors the exact
 returned run ID and attempt. It delegates reruns and cancellation to GitHub. Reuse
@@ -117,6 +124,7 @@ Preserve both paths when configuring an external reverse proxy.
 | Disable a workflow without deleting its run history. | `actions.remove(id)` | `DELETE /api/actions/workflows/:id`<br />`job:write` |
 | Validate YAML and inspect logical job dependencies without executing the workflow. | `actions.preview(input)` | `POST /api/actions/preview`<br />`job:read` |
 | List workflow files at an authorized repository revision. | `actions.discover(input)` | `GET /api/actions/discover`<br />`job:read` |
+| Import up to 50 files from one repository and branch in one transaction. Reuses existing workflows without replacing their settings and adds authorized project links. | `actions.importWorkflows(input)` | `POST /api/actions/workflows/import`<br />`job:write` |
 
 ### Runners
 

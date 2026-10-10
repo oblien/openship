@@ -75,6 +75,11 @@ export const actionDependencies: ActionDependencies = {
       record(ctx, row.id, "create");
       return presentWorkflow(ctx, row);
     },
+    async importWorkflows(ctx, input) {
+      const rows = await service.importActionWorkflows(ctx, input);
+      for (const row of rows) record(ctx, row.id, "import");
+      return Promise.all(rows.map((row) => presentWorkflow(ctx, row)));
+    },
     async listRuns(ctx, input = {}) {
       if (input.workflowId) await service.requireActionWorkflow(ctx, input.workflowId);
       if (input.projectId) await requireActionProject(ctx, input.projectId);

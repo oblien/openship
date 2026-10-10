@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   preview: vi.fn(),
   write: vi.fn(),
   save: vi.fn(),
+  importWorkflows: vi.fn(),
   onSaved: vi.fn(),
 }));
 vi.mock("@/lib/api/actions", () => ({
@@ -27,6 +28,7 @@ vi.mock("@/lib/api/actions", () => ({
     preview: h.preview,
     updateRepositorySource: h.write,
     save: h.save,
+    importWorkflows: h.importWorkflows,
   },
 }));
 vi.mock("@/lib/auth-client", () => ({
@@ -85,13 +87,16 @@ const button = (name: string) =>
   )!;
 const click = (name: string) => act(async () => button(name).click());
 const checkbox = (name: string) =>
+  document.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${name}"]`) ??
   [...document.querySelectorAll<HTMLLabelElement>("label")]
     .find((label) => label.textContent?.startsWith(name))!
     .querySelector<HTMLButtonElement>('[role="checkbox"]')!;
 async function fill(label: string, text: string) {
-  const input = [...document.querySelectorAll<HTMLLabelElement>("label")]
-    .find((row) => !row.closest("[hidden]") && row.firstElementChild?.textContent === label)!
-    .querySelector<HTMLInputElement>("input")!;
+  const input =
+    document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`) ??
+    [...document.querySelectorAll<HTMLLabelElement>("label")]
+      .find((row) => !row.closest("[hidden]") && row.firstElementChild?.textContent === label)!
+      .querySelector<HTMLInputElement>("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -101,6 +106,17 @@ const preview = () =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(350);
   });
+async function editYaml(value: string) {
+  const input = document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      value,
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await preview();
+}
 async function render(id?: string) {
   await act(async () =>
     root.render(
@@ -165,6 +181,13 @@ beforeEach(() => {
   });
   h.write.mockResolvedValue({ sha: "new-file-sha", commit: "commit" });
   h.save.mockImplementation(async (input, id) => ({ ...workflow, ...input, id: id ?? "created" }));
+  h.importWorkflows.mockImplementation(async (inputs) =>
+    inputs.map((input: object, index: number) => ({
+      ...workflow,
+      ...input,
+      id: `imported-${index}`,
+    })),
+  );
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -176,6 +199,174 @@ afterEach(async () => {
 });
 
 describe("shared workflow setup", () => {
+  async function selectFiles(directory = ".github/workflows") {
+    const files = ["build", "test"].map((name) => ({
+      path: `${directory}/${name}.yml`,
+      name: `${name}.yml`,
+    }));
+    h.discover.mockResolvedValue(files);
+    await render();
+    await fill("Repository", "acme/app");
+    await preview();
+    await click("Select all");
+    await click("Continue");
+    await act(async () => checkbox("Linux runner").click());
+    if (directory === ".github/workflows")
+      await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Workflow");
+    return files;
+  }
+
+  it("keeps each file's automatic or reviewed update policy while importing together", async () => {
+    const files = await selectFiles(".openship/workflows");
+    await click("Review first");
+    await click("test.yml");
+    await preview();
+    expect(button("Automatic").getAttribute("aria-selected")).toBe("true");
+    await click("build.yml");
+    await preview();
+    expect(button("Review first").getAttribute("aria-selected")).toBe("true");
+    await click("Save 2 workflows");
+    expect(h.importWorkflows).toHaveBeenCalledWith([
+      expect.objectContaining({ path: files[0]!.path, source }),
+      expect.objectContaining({ path: files[1]!.path, source: null }),
+    ]);
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it("validates offscreen drafts before committing any selected file", async () => {
+    const files = await selectFiles();
+    await click("YAML");
+    await editYaml("jobs: [");
+    await click("test.yml");
+    await preview();
+    await editYaml(source.replace("echo tested", "echo valid-change"));
+    await click("Save 2 workflows");
+    expect(host.textContent).toContain(files[0]!.path);
+    expect(h.write).not.toHaveBeenCalled();
+    expect(h.importWorkflows).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("retries a partly committed import without committing successful files twice", async () => {
+    const files = await selectFiles();
+    await click("YAML");
+    await editYaml(source.replace("echo tested", "echo build-updated"));
+    await click("test.yml");
+    await preview();
+    await editYaml(source.replace("echo tested", "echo test-updated"));
+    h.write.mockResolvedValueOnce({ sha: "build-updated-sha", commit: "build-commit" });
+    h.write.mockRejectedValueOnce(new Error("Temporary repository failure"));
+    await click("Save 2 workflows");
+    await click("Commit and save");
+    expect(h.importWorkflows).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Temporary repository failure",
+    );
+    await click("Commit and save");
+    expect(h.write.mock.calls.map(([input]) => input.path)).toEqual([
+      files[0]!.path,
+      files[1]!.path,
+      files[1]!.path,
+    ]);
+    expect(h.importWorkflows).toHaveBeenCalledOnce();
+    expect(h.onSaved.mock.calls[0]![1]).toHaveLength(2);
+  });
+
+  it("selects all repository files, preserves each draft and saves every project link together", async () => {
+    const files = ["build", "test"].map((name) => ({
+      path: `.github/workflows/${name}.yml`,
+      name: `${name}.yml`,
+    }));
+    h.discover.mockResolvedValue(files);
+    h.source.mockImplementation(async ({ path }) => {
+      const name = path.includes("build") ? "Build" : "Test";
+      return {
+        source: source.replace("name: CI", `name: ${name}`),
+        sha: `${name}-sha`,
+        plan: { ...plan, name },
+        error: null,
+      };
+    });
+    await render();
+    await fill("Repository", "acme/app");
+    await preview();
+    await click("Select all");
+    await click("Continue");
+    await act(async () => checkbox("Linux runner").click());
+    await act(async () => checkbox("Storefront").click());
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Git push");
+    await fill("Branches", "release/**");
+    const branch = document.querySelector<HTMLInputElement>('input[aria-label="Branches"]')!;
+    await act(async () =>
+      branch.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    await preview();
+    await click("Workflow");
+    await click("test.yml");
+    await preview();
+    await fill("Name", "Tests on our runners");
+    await click("build.yml");
+    await preview();
+    await click("Run settings");
+    await click("Git push");
+    expect(host.textContent).toContain("release/**");
+    await click("Save 2 workflows");
+    expect(h.write).not.toHaveBeenCalled();
+    await click("Commit and save");
+    expect(h.write).toHaveBeenCalledOnce();
+    expect(parse(h.write.mock.calls[0]![0].source).on.push.branches).toEqual(["release/**"]);
+    expect(h.importWorkflows).toHaveBeenCalledOnce();
+    expect(h.importWorkflows.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({
+        path: files[0]!.path,
+        name: "Build",
+        projectIds: ["project"],
+        runnerIds: ["linux"],
+        source: null,
+      }),
+      expect.objectContaining({
+        path: files[1]!.path,
+        name: "Tests on our runners",
+        projectIds: ["project"],
+        runnerIds: ["linux"],
+        source: null,
+      }),
+    ]);
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.onSaved.mock.calls[0]![1]).toHaveLength(2);
+  });
+
+  it("keeps pattern commas and removes chips without changing jobs or other trigger filters", async () => {
+    h.source.mockResolvedValue({
+      source: source.replace(
+        "on: [push, workflow_dispatch]",
+        "on:\n  push:\n    branches-ignore: [draft/**]\n    tags: [v*]\n  workflow_dispatch: {}",
+      ),
+      sha: "original-file-sha",
+      plan,
+      error: null,
+    });
+    await render("ci");
+    await click("Run settings");
+    await click("Git push");
+    await fill("Branches", "feature/{a,b}/**");
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Branches"]')!;
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Remove: draft/**"]')!.click(),
+    );
+    await preview();
+    await click("Save workflow");
+    await click("Save Openship copy");
+    const yaml = parse(h.save.mock.calls[0]![0].source);
+    expect(yaml.on.push).toEqual({ "branches-ignore": ["feature/{a,b}/**"], tags: ["v*"] });
+    expect(yaml.jobs).toEqual(parse(source).jobs);
+  });
+
   it("shows a single job's steps immediately and honors an explicit collapse across views", async () => {
     await render("ci");
     expect(host.querySelector('[data-visible-steps="test"]')).not.toBeNull();
@@ -233,7 +424,14 @@ describe("shared workflow setup", () => {
     expect(host.textContent).toContain("Workflow topology");
     await click("Run settings");
     await act(async () => checkbox("Webhook").click());
-    await fill("Event types (comma separated)", "release, publish");
+    for (const value of ["release", "publish"]) {
+      await fill("Event types", value);
+      await act(async () =>
+        document
+          .querySelector<HTMLInputElement>('input[aria-label="Event types"]')!
+          .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+      );
+    }
     await preview();
     await click("Save workflow");
   }
@@ -287,14 +485,13 @@ describe("shared workflow setup", () => {
     expect(button("Save workflow").disabled).toBe(true);
     await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Save workflow");
-    expect(h.save).toHaveBeenCalledWith(
+    expect(h.importWorkflows).toHaveBeenCalledWith([
       expect.objectContaining({
         path: ".github/workflows/ci.yml",
         source: null,
         repositoryRunnerConsent: true,
       }),
-      undefined,
-    );
+    ]);
     expect(h.write).not.toHaveBeenCalled();
   });
   it("discovers reusable repository workflows even when the saved controller was independent", async () => {

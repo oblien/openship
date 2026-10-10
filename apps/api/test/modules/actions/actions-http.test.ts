@@ -197,6 +197,59 @@ async function fixture() {
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
+  it("imports repository files through HTTP and native SDK with stable identities", async () => {
+    const f = await fixture();
+    const workflows = ["build", "test"].map((name) => ({
+      ...f.input,
+      name,
+      path: `.openship/workflows/${name}.yml`,
+    }));
+    const first = await f.remote.importWorkflows({ workflows });
+    const again = await f.native.importWorkflows({ workflows });
+    expect(first.map((row) => row.id)).toEqual(again.map((row) => row.id));
+    expect(first.map((row) => row.name)).toEqual(["build", "test"]);
+    expect(await f.remote.list()).toHaveLength(3);
+    await f.remote.update(first[0]!.id, { ...workflows[0]!, name: "Kept name", enabled: false });
+    const replay = await f.remote.importWorkflows({ workflows });
+    expect(replay[0]).toMatchObject({ name: "Kept name", enabled: false });
+    expect(replay[0]).not.toHaveProperty("secrets");
+  });
+
+  it("does not save any file when another selected file is invalid or unauthorized", async () => {
+    const f = await fixture(),
+      other = await fixture();
+    const first = { ...f.input, path: ".openship/workflows/build.yml" };
+    await expect(
+      f.remote.importWorkflows({
+        workflows: [
+          first,
+          {
+            ...f.input,
+            path: ".openship/workflows/invalid.yml",
+            source: "jobs: [not a workflow",
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+    await expect(
+      f.remote.importWorkflows({
+        workflows: [
+          first,
+          {
+            ...f.input,
+            path: ".openship/workflows/other.yml",
+            runnerIds: [other.runner.id],
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+    expect(await f.remote.list()).toHaveLength(1);
+    expect(await other.remote.list()).toHaveLength(1);
+    await expect(f.remote.importWorkflows({ workflows: [first, first] })).rejects.toThrow(
+      "only once",
+    );
+  });
+
   const repositoryPath = ".github/workflows/ci.yml";
   const reusableSource =
     "name: CI\non: [push, workflow_dispatch]\njobs:\n  gate:\n    uses: ./.github/workflows/shared.yml\n    secrets: inherit\n  release:\n    needs: gate\n    runs-on: [self-hosted, openship, macos]\n    environment: production\n    permissions:\n      contents: write\n      id-token: write\n    steps:\n      - run: echo release\n";

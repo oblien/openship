@@ -331,6 +331,16 @@ export const ActionCollectionSchemas = {
     input: Type.Object({ owner, repo, ref }),
     output: Type.Array(Type.Object({ path: Type.String(), name: Type.String() })),
   },
+  importWorkflows: {
+    action: "write",
+    input: Type.Object(
+      {
+        workflows: Type.Array(ActionWorkflowInput, { minItems: 1, maxItems: 50 }),
+      },
+      { additionalProperties: false },
+    ),
+    output: Type.Array(ActionWorkflowSchema),
+  },
   repositorySource: {
     action: "read",
     input: Type.Object({

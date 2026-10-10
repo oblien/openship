@@ -3416,6 +3416,12 @@
       "description": "List workflow files at an authorized repository revision.",
       "route": "GET /api/actions/discover"
     },
+    "actions.importWorkflows": {
+      "page": "actions",
+      "section": "Workflows",
+      "description": "Import up to 50 files from one repository and branch in one transaction. Reuses existing workflows without replacing their settings and adds authorized project links.",
+      "route": "POST /api/actions/workflows/import"
+    },
     "actions.runners": {
       "page": "actions",
       "section": "Runners",
