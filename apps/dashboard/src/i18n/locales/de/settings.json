@@ -479,6 +479,12 @@
     "deployLocal": "Deploye direkt von deiner lokalen Instanz in die Cloud.",
     "waitingSignIn": "Warten auf Anmeldung…",
     "connectButton": "Mit Openship Cloud verbinden",
+    "selfHost": {
+      "urlLabel": "Instanz-Adresse",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Self-Hosting verbinden",
+      "hint": "Der Browser öffnet sich. Nach der Anmeldung erscheinen die Projekte in dieser App."
+    },
     "confirmDisconnect": "Verbindung zu Openship Cloud trennen? Cloud-Deployments funktionieren erst wieder, wenn du dich erneut verbindest.",
     "toast": {
       "disconnected": "Verbindung zu Openship Cloud getrennt",

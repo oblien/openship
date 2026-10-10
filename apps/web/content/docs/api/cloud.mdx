@@ -332,7 +332,7 @@ from the dashboard.
 
 | Operation | REST API |
 | --- | --- |
-| The connected cloud account (name, email, avatar). | `GET /api/cloud/account`<br />`cloud:read` |
+| The connected cloud account (name, email, avatar). | `GET /api/cloud/account`<br />`Handler authentication` / `cloud:read` |
 | Proxy Oblien analytics for a hostname in the caller's namespace. | `POST /api/cloud/analytics`<br />`cloud:write` |
 | Capture optional hosted dashboard product events with exact-origin and verified cookie identity checks. | `POST /api/cloud/telemetry`<br />`Handler authentication` |
 | Consent page mints a one-time handoff code (cookie session checked inline). | `POST /api/cloud/connect-authorize`<br />`Handler authentication` |

@@ -6,7 +6,8 @@
  *   - Self-hosted settings: connect-callback stores cloud token for deploys
  *   - Cloud mode (SaaS): desktop-handoff generates one-time codes
  *
- * All external auth happens on app.openship.io - this module only handles
+ * Official desktop auth exchanges with api.openship.io. A self-hosted
+ * desktop link passes that instance's origin instead. This module handles
  * the local side (mirroring users, creating sessions, managing codes).
  */
 
@@ -15,6 +16,7 @@ import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypt
 import { db, schema, repos, eq } from "@repo/db";
 import { storeCloudSession } from "@repo/platform/engine/lib/cloud/session";
 import { fetchCloudConnection } from "@repo/platform/engine/lib/cloud/connection";
+import { parseAllowedCloudOrigin } from "@repo/platform/engine/lib/cloud/origin";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 import { cloudRuntimeTarget, env } from "@repo/platform/engine/config/env";
 import { safeErrorMessage } from "@repo/core";
@@ -256,13 +258,16 @@ async function exchangeHandoffCode(
 async function exchangeCodeWithCloud(
   code: string,
   codeVerifier?: string,
+  apiUrl?: string,
 ): Promise<{ user: CloudUser; sessionToken: string } | null> {
-  const url = `${cloudRuntimeTarget.api}/api/cloud/exchange-code`;
+  const origin = apiUrl ? parseAllowedCloudOrigin(apiUrl) : parseAllowedCloudOrigin(cloudRuntimeTarget.api);
+  if (!origin) return null;
+  const url = `${origin}/api/cloud/exchange-code`;
   const res = await fetchCloudConnection("/api/cloud/exchange-code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, code_verifier: codeVerifier }),
-  });
+  }, origin);
   if (!res.ok) {
     errorDiagnostics.error("api/lib/cloud-auth-proxy",
       `[cloud-auth] exchange-code returned ${res.status} from ${url}`,
@@ -301,7 +306,14 @@ async function exchangeCodeWithCloud(
  * After the system browser completes /cloud-callback, the session token
  * is stored against that nonce. Electron polls to pick it up.
  */
-let pendingNonce: { value: string; state: string; codeVerifier: string; connectUserId?: string; registeredAt: number } | null = null;
+let pendingNonce: {
+  value: string;
+  state: string;
+  codeVerifier: string;
+  connectUserId?: string;
+  apiUrl?: string;
+  registeredAt: number;
+} | null = null;
 let resolvedAuth: { nonce: string; claimCode: string } | null = null;
 let pendingClaim: { code: string; token: string; expiresAt: number; createdAt: number } | null = null;
 /** Nonce value preserved after validateDesktopState consumes pendingNonce, used by pollDesktopAuth */
@@ -312,9 +324,15 @@ let failedNonce: string | null = null;
 
 const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function registerDesktopNonce(nonce: string, state: string, codeVerifier: string, connectUserId?: string): void {
+function registerDesktopNonce(
+  nonce: string,
+  state: string,
+  codeVerifier: string,
+  connectUserId?: string,
+  apiUrl?: string,
+): void {
   console.log(`[desktop-auth] register nonce=${nonce.slice(0, 8)}… state=${state.slice(0, 8)}…`);
-  pendingNonce = { value: nonce, state, codeVerifier, connectUserId, registeredAt: Date.now() };
+  pendingNonce = { value: nonce, state, codeVerifier, connectUserId, apiUrl, registeredAt: Date.now() };
   resolvedAuth = null;
   pendingClaim = null;
   activeNonce = nonce;
@@ -343,7 +361,7 @@ function resolveDesktopAuth(nonce: string, token: string, expiresAt: Date): void
  * Returns the code_verifier and nonce if state matches, null otherwise.
  * Consumes the nonce atomically - prevents replay attacks.
  */
-function validateDesktopState(state: string): { codeVerifier: string; nonce: string; connectUserId?: string } | null {
+function validateDesktopState(state: string): { codeVerifier: string; nonce: string; connectUserId?: string; apiUrl?: string } | null {
   if (!pendingNonce) {
     console.log(`[desktop-auth] validateState: no pendingNonce`);
     return null;
@@ -363,7 +381,12 @@ function validateDesktopState(state: string): { codeVerifier: string; nonce: str
     pendingNonce = null;
     return null;
   }
-  const result = { codeVerifier: pendingNonce.codeVerifier, nonce: pendingNonce.value, connectUserId: pendingNonce.connectUserId };
+  const result = {
+    codeVerifier: pendingNonce.codeVerifier,
+    nonce: pendingNonce.value,
+    connectUserId: pendingNonce.connectUserId,
+    apiUrl: pendingNonce.apiUrl,
+  };
   pendingNonce = null; // consume - one-time use
   return result;
 }

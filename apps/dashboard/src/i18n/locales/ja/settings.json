@@ -479,6 +479,12 @@
     "deployLocal": "ローカルインスタンスから直接クラウドにデプロイします。",
     "waitingSignIn": "サインインを待機中…",
     "connectButton": "Openship Cloud に接続",
+    "selfHost": {
+      "urlLabel": "インスタンスの URL",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "セルフホストに接続",
+      "hint": "ブラウザでログインします。その後、プロジェクトがこのアプリに戻ります。"
+    },
     "confirmDisconnect": "Openship Cloud から切断しますか？再接続するまでクラウドデプロイは機能しなくなります。",
     "toast": {
       "disconnected": "Openship Cloud から切断しました",

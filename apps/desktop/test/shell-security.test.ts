@@ -3,10 +3,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   classifyFrameNavigation,
+  classifySelfHostNavigation,
   isAllowedFrameUrl,
   isAllowedUpdateAssetUrl,
   isRendererConfigKey,
   isSafeExternalUrl,
+  buildDesktopCloudAuthorizeUrl,
+  parseSelfHostedDashboardUrl,
+  resolveDesktopCloudTarget,
 } from "../src/main/security";
 
 /**
@@ -121,7 +125,15 @@ describe("isRendererConfigKey", () => {
   });
 
   it("refuses credential-bearing and origin keys", () => {
-    for (const key of ["system", "tunnel", "apiUrl", "dashboardUrl", "onboardingComplete"]) {
+    for (const key of [
+      "system",
+      "tunnel",
+      "apiUrl",
+      "dashboardUrl",
+      "onboardingComplete",
+      "selfHostedDashboardUrl",
+      "selfHostedActive",
+    ]) {
       expect(isRendererConfigKey(key), key).toBe(false);
     }
   });
@@ -153,12 +165,76 @@ describe("isAllowedUpdateAssetUrl", () => {
   });
 });
 
+describe("parseSelfHostedDashboardUrl", () => {
+  it("accepts an https instance and keeps the path on that origin", () => {
+    expect(parseSelfHostedDashboardUrl("https://ops.example.com")).toEqual({
+      origin: "https://ops.example.com",
+      href: "https://ops.example.com/",
+    });
+    expect(parseSelfHostedDashboardUrl("  ops.example.com/login  ")).toEqual({
+      origin: "https://ops.example.com",
+      href: "https://ops.example.com/login",
+    });
+  });
+
+  it("allows http only for loopback", () => {
+    expect(parseSelfHostedDashboardUrl("http://127.0.0.1:63794/projects")).toEqual({
+      origin: "http://127.0.0.1:63794",
+      href: "http://127.0.0.1:63794/projects",
+    });
+    expect(parseSelfHostedDashboardUrl("localhost:3001")).toEqual({
+      origin: "http://localhost:3001",
+      href: "http://localhost:3001/",
+    });
+    expect(parseSelfHostedDashboardUrl("http://[::1]:3001/")).toEqual({
+      origin: "http://[::1]:3001",
+      href: "http://[::1]:3001/",
+    });
+    expect(parseSelfHostedDashboardUrl("http://ops.example.com")).toBeNull();
+    expect(parseSelfHostedDashboardUrl("http://8.8.8.8")).toBeNull();
+  });
+
+  it("rejects userinfo, non-web schemes, and empty input", () => {
+    expect(parseSelfHostedDashboardUrl("https://user:pass@ops.example.com")).toBeNull();
+    expect(parseSelfHostedDashboardUrl("javascript:alert(1)")).toBeNull();
+    expect(parseSelfHostedDashboardUrl("file:///etc/passwd")).toBeNull();
+    expect(parseSelfHostedDashboardUrl("")).toBeNull();
+    expect(parseSelfHostedDashboardUrl("   ")).toBeNull();
+  });
+});
+
+describe("classifySelfHostNavigation", () => {
+  const origin = "https://ops.example.com";
+
+  it("keeps the configured origin in the remote window", () => {
+    expect(classifySelfHostNavigation("https://ops.example.com/login", origin)).toBe("allow");
+    expect(classifySelfHostNavigation("https://ops.example.com/projects?x=1", origin)).toBe("allow");
+  });
+
+  it("sends other websites out and blocks non-web schemes", () => {
+    expect(classifySelfHostNavigation("https://app.openship.io/login", origin)).toBe("external");
+    expect(classifySelfHostNavigation("https://github.com/oblien/openship", origin)).toBe("external");
+    expect(classifySelfHostNavigation("file:///etc/passwd", origin)).toBe("block");
+    expect(classifySelfHostNavigation("javascript:alert(1)", origin)).toBe("block");
+    expect(classifySelfHostNavigation("http://ops.example.com/", origin)).toBe("external");
+  });
+
+  it("does not allow a lookalike host", () => {
+    expect(classifySelfHostNavigation("https://ops.example.com.attacker.tld/", origin)).toBe(
+      "external",
+    );
+  });
+});
+
 /* ── Static scan: the dangerous surface stays gone ───────────────────────── */
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const main = read("../src/main/index.ts");
 const preload = read("../src/preload/index.ts");
 const updateWindow = read("../src/main/update-window.ts");
+const selfhost = read("../src/main/selfhost-window.ts");
+const menu = read("../src/main/menu.ts");
+const promptPreload = read("../src/preload/selfhost-prompt.ts");
 
 describe("main process navigation containment", () => {
   it("guards main-frame navigation with both will-navigate and will-redirect", () => {
@@ -172,6 +248,40 @@ describe("main process navigation containment", () => {
     // handler would defeat the allowlist above.
     expect(main).not.toMatch(/ipcMain\.handle\(\s*["']navigate["']/);
     expect(preload).not.toMatch(/ipcRenderer\.invoke\(\s*["']navigate["']/);
+  });
+
+  it("does not load a self-hosted origin in the preloaded main frame", () => {
+    expect(main).toContain("beginDesktopCloudConnect");
+    expect(main).toContain("shell.openExternal(cloudAuthUrl)");
+    expect(main).not.toContain("shell.openExternal(target.href)");
+    expect(main).not.toContain("openSelfHostedDashboard");
+    expect(main).toContain("parseSelfHostedDashboardUrl");
+    expect(main).not.toMatch(/mainWindow\.loadURL\(\s*(target|origin|raw)/);
+    expect(menu).toContain("Connect self-hosted instance…");
+    expect(menu).toContain("Use local instance");
+  });
+
+  it("keeps official cloud connect on the compiled host", () => {
+    expect(resolveDesktopCloudTarget(undefined, "https://app.openship.io")).toEqual({
+      dashboardOrigin: "https://app.openship.io",
+    });
+    expect(resolveDesktopCloudTarget("https://ops.example.com/login", "https://app.openship.io")).toEqual({
+      dashboardOrigin: "https://ops.example.com",
+      apiOrigin: "https://ops.example.com/api/proxy",
+    });
+    expect(resolveDesktopCloudTarget("http://evil.example", "https://app.openship.io")).toEqual({
+      error: "invalid_selfhost_url",
+    });
+    const url = buildDesktopCloudAuthorizeUrl({
+      dashboardOrigin: "https://ops.example.com",
+      callbackUrl: "http://127.0.0.1:4010/api/auth/cloud-callback",
+      state: "state",
+      codeChallenge: "challenge",
+      machine: "mac",
+    });
+    expect(url.startsWith("https://ops.example.com/authorize?")).toBe(true);
+    expect(url).toContain("flow=desktop-cloud");
+    expect(url).not.toContain("app.openship.io");
   });
 
   it("guards the update window too", () => {
@@ -205,6 +315,24 @@ describe("credential surface is off the bridge", () => {
 
   it("validates every config key crossing the bridge", () => {
     expect(main).toContain("isRendererConfigKey");
+  });
+});
+
+describe("self-hosted window stays off the preload bridge", () => {
+  it("keeps the connect prompt on a local page and blocks navigation", () => {
+    expect(selfhost).toMatch(/\.on\(\s*["']will-navigate["']/);
+    expect(selfhost).toMatch(/\.on\(\s*["']will-redirect["']/);
+    expect(selfhost).toContain("sandbox: true");
+    expect(selfhost).not.toContain("sandbox: false");
+    expect(selfhost).toContain("data:text/html");
+    expect(selfhost).not.toContain("loadURL(target");
+  });
+
+  it("gives the connect prompt only the self-host channels", () => {
+    expect(promptPreload).toContain('exposeInMainWorld("selfhostPrompt"');
+    expect(promptPreload).not.toContain("config:get");
+    expect(promptPreload).not.toContain("onboarding:complete");
+    expect(promptPreload).not.toContain("system:get-settings");
   });
 });
 

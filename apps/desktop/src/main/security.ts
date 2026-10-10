@@ -73,6 +73,111 @@ export function classifyFrameNavigation(
   return "block";
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+export type SelfHostedDashboardTarget = {
+  /** Origin kept as the remote window's navigation allowlist. */
+  origin: string;
+  /** First URL to load. Same origin as `origin`. */
+  href: string;
+};
+
+/**
+ * Normalize a user-entered self-hosted dashboard URL.
+ *
+ * https is allowed for any host. http is allowed only for loopback, so a
+ * pasted `http://public-host` cannot silently downgrade. Userinfo is rejected.
+ * The returned href is rebuilt from the parsed origin, so the remote window
+ * never loads a different host than the one we allowlist.
+ */
+export function parseSelfHostedDashboardUrl(input: string): SelfHostedDashboardTarget | null {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > 2048 || /[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  // `localhost:3001` matches a naive "has a colon" scheme check. Require `://`
+  // before treating the prefix as a scheme, and keep scheme-only forms
+  // (`javascript:`) so they fail closed below.
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : /^(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(trimmed)
+      ? `http://${trimmed}`
+      : /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`;
+  const parsed = parse(withScheme);
+  if (!parsed || parsed.username || parsed.password || !parsed.hostname) return null;
+  if (parsed.protocol === "https:") {
+    // Any https host. The remote window is sandboxed and has no preload.
+  } else if (parsed.protocol === "http:") {
+    // Bun keeps brackets on IPv6 hostnames (`[::1]`); Node strips them.
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!LOOPBACK_HOSTS.has(host)) return null;
+  } else {
+    return null;
+  }
+  return {
+    origin: parsed.origin,
+    href: `${parsed.origin}${parsed.pathname}${parsed.search}${parsed.hash}`,
+  };
+}
+
+/**
+ * Official cloud connect leaves `rawUrl` empty and stays on the compiled
+ * cloud dashboard. A self-hosted connect passes one dashboard URL. The API
+ * base is that origin plus `/api/proxy`, because the shipping dashboard
+ * forwards `/api/proxy/*` to the API. No URL means "do not send api_url",
+ * so the exchange stays on the official cloud API.
+ */
+export function resolveDesktopCloudTarget(
+  rawUrl: string | undefined,
+  officialDashboardOrigin: string,
+): { dashboardOrigin: string; apiOrigin?: string } | { error: "invalid_selfhost_url" } {
+  if (!rawUrl?.trim()) return { dashboardOrigin: officialDashboardOrigin };
+  const parsed = parseSelfHostedDashboardUrl(rawUrl);
+  if (!parsed) return { error: "invalid_selfhost_url" };
+  return { dashboardOrigin: parsed.origin, apiOrigin: `${parsed.origin}/api/proxy` };
+}
+
+/** Browser URL for the desktop PKCE handoff. The page lives on the dashboard. */
+export function buildDesktopCloudAuthorizeUrl(input: {
+  dashboardOrigin: string;
+  callbackUrl: string;
+  state: string;
+  codeChallenge: string;
+  machine: string;
+  appName?: string;
+}): string {
+  const params = new URLSearchParams({
+    callback: input.callbackUrl,
+    app: input.appName ?? "Openship Desktop",
+    machine: input.machine,
+    state: input.state,
+    code_challenge: input.codeChallenge,
+    flow: "desktop-cloud",
+  });
+  return `${input.dashboardOrigin}/authorize?${params.toString()}`;
+}
+
+/**
+ * Navigation policy for the self-hosted window.
+ *
+ * That window has no preload, but it still must not wander into `file:` or
+ * other OS handlers. Same-origin pages stay in the window. Other http(s)
+ * links go to the system browser.
+ */
+export function classifySelfHostNavigation(
+  url: string,
+  dashboardOrigin: string,
+): FrameNavigationVerdict {
+  const allowed = parseSelfHostedDashboardUrl(dashboardOrigin);
+  const target = parse(url);
+  if (!target || !HTTP_SCHEMES.has(target.protocol) || target.username || target.password) {
+    return "block";
+  }
+  if (allowed && target.origin === allowed.origin) return "allow";
+  if (isSafeExternalUrl(url)) return "external";
+  return "block";
+}
+
 /**
  * Config keys the renderer may read and write — update preferences, and nothing
  * else. The same store holds `system` (SSH host/user/password/passphrase) and

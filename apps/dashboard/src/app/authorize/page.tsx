@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-import { buildAuthPageHref, getCloudDesktopHandoffUrl } from "@/lib/cloud-auth";
+import { buildAuthPageHref, getCloudDesktopHandoffUrl, selfHostedDesktopApiUrl } from "@/lib/cloud-auth";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -44,12 +44,12 @@ function AuthorizePageInner() {
   const state = searchParams.get("state");
   const codeChallenge = searchParams.get("code_challenge");
 
-  // Build handoff URL with state + PKCE challenge
   const handoffUrl = callback
     ? getCloudDesktopHandoffUrl({
         callbackUrl: callback,
         state,
         codeChallenge,
+        cloudApiUrl: typeof window === "undefined" ? undefined : selfHostedDesktopApiUrl(window.location),
       })
     : null;
 

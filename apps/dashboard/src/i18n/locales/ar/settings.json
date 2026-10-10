@@ -479,6 +479,12 @@
     "deployLocal": "انشر إلى السحابة مباشرةً من نسختك المحلية.",
     "waitingSignIn": "في انتظار تسجيل الدخول…",
     "connectButton": "الاتصال بـ Openship Cloud",
+    "selfHost": {
+      "urlLabel": "عنوان النسخة",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "الاتصال بنسخة ذاتية الاستضافة",
+      "hint": "يفتح المتصفح. بعد تسجيل الدخول، تعود المشاريع إلى هذا التطبيق."
+    },
     "confirmDisconnect": "قطع الاتصال بـ Openship Cloud؟ ستتوقف عمليات النشر السحابية عن العمل حتى تعيد الاتصال.",
     "toast": {
       "disconnected": "تم قطع الاتصال بـ Openship Cloud",

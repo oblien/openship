@@ -8,9 +8,25 @@ vi.mock("@/lib/api/urls", () => ({
 import {
   buildAuthPageHref,
   computePkceChallenge,
+  getCloudDesktopHandoffUrl,
   getPostAuthRedirect,
+  selfHostedDesktopApiUrl,
   validateReturnTo,
 } from "./cloud-auth";
+
+describe("selfHostedDesktopApiUrl", () => {
+  it("keeps the official cloud API and points every other host at itself", () => {
+    expect(selfHostedDesktopApiUrl({ hostname: "app.openship.io", origin: "https://app.openship.io" })).toBeUndefined();
+    expect(selfHostedDesktopApiUrl({ hostname: "ops.example.com", origin: "https://ops.example.com" })).toBe(
+      "https://ops.example.com/api/proxy",
+    );
+    const handoff = getCloudDesktopHandoffUrl({
+      callbackUrl: "http://127.0.0.1:4010/api/auth/cloud-callback",
+      cloudApiUrl: "https://ops.example.com/api/proxy",
+    });
+    expect(handoff.startsWith("https://ops.example.com/api/proxy/api/cloud/desktop-handoff?")).toBe(true);
+  });
+});
 
 describe("computePkceChallenge", () => {
   it("computes the RFC 7636 S256 example without Web Crypto", async () => {

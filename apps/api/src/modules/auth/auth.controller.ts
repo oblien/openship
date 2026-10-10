@@ -259,7 +259,7 @@ export async function cloudCallback(c: Context) {
       return c.html(desktopResultPage("Invalid or expired session", "The authorization request has expired. Please return to Openship and try again."));
     }
 
-    const data = await exchangeCodeWithCloud(code, validated.codeVerifier);
+    const data = await exchangeCodeWithCloud(code, validated.codeVerifier, validated.apiUrl);
     if (!data) {
       failDesktopAuth(validated.nonce);
       return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
@@ -271,7 +271,7 @@ export async function cloudCallback(c: Context) {
     // Cloud:connect flow — link to the CURRENTLY logged-in user when
     // present; otherwise store against the mirrored cloud user.
     const targetUserId = validated.connectUserId || mirroredUserId;
-    await storeCloudSession(targetUserId, data.sessionToken);
+    await storeCloudSession(targetUserId, data.sessionToken, validated.apiUrl);
 
     const session = await mintSession({
       purpose: "local-cookie",
@@ -326,6 +326,17 @@ export async function desktopAuthStart(c: Context) {
     return c.json({ error: "missing nonce, state, or code_verifier" }, 400);
   }
 
+  let apiUrl: string | undefined;
+  if (body?.api_url != null && body.api_url !== "") {
+    if (typeof body.api_url !== "string") {
+      return c.json({ error: "invalid api_url" }, 400);
+    }
+    const { parseAllowedCloudOrigin } = await import("@repo/platform/engine/lib/cloud/origin");
+    const parsed = parseAllowedCloudOrigin(body.api_url);
+    if (!parsed) return c.json({ error: "invalid api_url" }, 400);
+    apiUrl = parsed;
+  }
+
   let connectUserId: string | undefined;
   try {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -336,7 +347,7 @@ export async function desktopAuthStart(c: Context) {
   }
 
   const { registerDesktopNonce } = await import("../../lib/cloud-auth-proxy");
-  registerDesktopNonce(nonce, state, codeVerifier, connectUserId);
+  registerDesktopNonce(nonce, state, codeVerifier, connectUserId, apiUrl);
   return c.json({ ok: true });
 }
 

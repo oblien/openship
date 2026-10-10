@@ -2,15 +2,26 @@ import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { AppError } from "@repo/core";
 import { cloudRuntimeTarget } from "../../config/env";
 import { readCloudJson } from "./transport";
+import { parseAllowedCloudOrigin } from "./origin";
 import type { CloudAccount } from "./types";
 
 /** The pre-connection exchange has no stored credential yet. Bound its whole
- * response, including the body, and never redirect a login code or bearer. */
-export async function fetchCloudConnection(path: string, init?: RequestInit): Promise<Response> {
+ * response, including the body, and never redirect a login code or bearer.
+ * `baseUrl` defaults to the official cloud API. A self-hosted desktop passes
+ * the instance origin it just verified. */
+export async function fetchCloudConnection(
+  path: string,
+  init?: RequestInit,
+  baseUrl?: string,
+): Promise<Response> {
+  const origin = parseAllowedCloudOrigin(baseUrl ?? cloudRuntimeTarget.api);
+  if (!origin) {
+    throw new AppError("Cloud API origin was rejected.", 400, "CLOUD_ORIGIN_REJECTED");
+  }
   const timeout = AbortSignal.timeout(15_000);
   let response: Response;
   try {
-    response = await fetch(`${cloudRuntimeTarget.api}${path}`, {
+    response = await fetch(`${origin}${path}`, {
       ...init,
       redirect: "error",
       signal: init?.signal ? AbortSignal.any([timeout, init.signal]) : timeout,

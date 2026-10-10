@@ -641,6 +641,12 @@
     "deployLocal": "Deploy to cloud directly from your local instance.",
     "waitingSignIn": "Waiting for sign in…",
     "connectButton": "Connect to Openship Cloud",
+    "selfHost": {
+      "urlLabel": "Instance URL",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Connect self-hosted instance",
+      "hint": "Opens the browser. After you sign in, projects come back to this app."
+    },
     "confirmDisconnect": "Disconnect from Openship Cloud? Cloud deployments will stop working until you reconnect.",
     "toast": {
       "disconnected": "Disconnected from Openship Cloud",

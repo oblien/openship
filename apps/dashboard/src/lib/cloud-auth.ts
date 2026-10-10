@@ -116,6 +116,15 @@ export async function preparePkceFlow(): Promise<{ state: string; codeChallenge:
   return { state: flowId, codeChallenge };
 }
 
+/**
+ * Official cloud keeps the API on api.openship.io. A self-hosted dashboard
+ * publishes its API through the same-origin `/api/proxy` forwarder.
+ */
+export function selfHostedDesktopApiUrl(location: { hostname: string; origin: string }): string | undefined {
+  if (location.hostname === "app.openship.io") return undefined;
+  return `${location.origin}/api/proxy`;
+}
+
 export function getCloudDesktopHandoffUrl(options: {
   callbackUrl: string;
   state?: string | null;
@@ -128,7 +137,10 @@ export function getCloudDesktopHandoffUrl(options: {
     ...(options.codeChallenge ? { code_challenge: options.codeChallenge } : {}),
   });
 
-  return `${getCloudApiOrigin(options.cloudApiUrl)}/api/cloud/desktop-handoff?${params.toString()}`;
+  // getCloudApiOrigin() strips any path. A self-hosted base already includes
+  // `/api/proxy`, so keep that prefix and do not run it through originOf.
+  const apiRoot = options.cloudApiUrl?.replace(/\/$/, "") || getCloudApiOrigin();
+  return `${apiRoot}/api/cloud/desktop-handoff?${params.toString()}`;
 }
 
 export function buildAuthPageHref(

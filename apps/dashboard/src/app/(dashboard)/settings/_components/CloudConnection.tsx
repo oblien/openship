@@ -3,7 +3,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cloudApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -22,10 +22,16 @@ export function CloudConnection() {
     loading: cloudLoading,
     connecting,
     startConnect,
+    startSelfHostConnect,
     refresh,
   } = useCloud();
   const { showToast } = useToast();
   const [disconnecting, setDisconnecting] = useState(false);
+  const [selfHostUrl, setSelfHostUrl] = useState("");
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    setIsDesktop(Boolean((window as { desktop?: { isDesktop?: boolean } }).desktop?.isDesktop));
+  }, []);
 
   const pitch = t.settings.cloud.pitch;
   /* Lead with the free domain — it is the perk that lands without any commitment,
@@ -170,6 +176,38 @@ export function CloudConnection() {
           </div>
 
           <p className="mt-3.5 text-xs text-muted-foreground/70">{pitch.noLockIn}</p>
+
+          {isDesktop && (
+            <form
+              className="mt-4 flex w-full max-w-md flex-col gap-2 text-start"
+              onSubmit={(event) => {
+                event.preventDefault();
+                startSelfHostConnect(selfHostUrl);
+              }}
+            >
+              <label htmlFor="selfhost-url" className="text-xs font-medium text-muted-foreground">
+                {t.settings.cloud.selfHost.urlLabel}
+              </label>
+              <input
+                id="selfhost-url"
+                type="url"
+                value={selfHostUrl}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(event) => setSelfHostUrl(event.target.value)}
+                placeholder={t.settings.cloud.selfHost.urlPlaceholder}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+              />
+              <button
+                type="submit"
+                disabled={connecting || !selfHostUrl.trim()}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                {t.settings.cloud.selfHost.connectButton}
+              </button>
+              <p className="text-xs text-muted-foreground/70">{t.settings.cloud.selfHost.hint}</p>
+            </form>
+          )}
         </div>
       )}
     </div>

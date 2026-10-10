@@ -73,6 +73,8 @@ interface CloudState {
   ) => Promise<boolean>;
   /** Start the cloud connect flow (desktop IPC or browser popup) */
   startConnect: () => void;
+  /** Desktop only. Same handoff as startConnect, aimed at a self-hosted origin. */
+  startSelfHostConnect: (dashboardUrl: string) => void;
   /** Force a status re-check (e.g. after connecting) */
   refresh: () => Promise<void>;
   /** Manually set connected (used by settings callback) */
@@ -322,13 +324,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, [callbackUrl, cloudApiUrl]);
 
   /** Desktop IPC connect flow with PKCE + nonce polling */
-  const startDesktopConnect = useCallback(async () => {
+  const startDesktopConnect = useCallback(async (dashboardUrl?: string) => {
     const desktop = (window as any).desktop;
     if (!desktop?.cloud?.connect) return;
 
     setConnecting(true);
     try {
-      const result = await desktop.cloud.connect();
+      const result = await desktop.cloud.connect(dashboardUrl);
       if (contextRef.current !== contextKey) return;
       if (!result?.ok) {
         setConnecting(false);
@@ -410,9 +412,17 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
   }, [canConnectCloud, startDesktopConnect, startBrowserConnect]);
 
+  const startSelfHostConnect = useCallback((dashboardUrl: string) => {
+    const desktop = (window as { desktop?: { isDesktop?: boolean; cloud?: { connect?: unknown } } }).desktop;
+    if (!canConnectCloud || !desktop?.isDesktop || !desktop.cloud?.connect) return;
+    const url = dashboardUrl.trim();
+    if (!url) return;
+    void startDesktopConnect(url);
+  }, [canConnectCloud, startDesktopConnect]);
+
   return (
     <CloudContext.Provider
-      value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: async () => { await checkStatus(); }, setConnected }}
+      value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, startSelfHostConnect, refresh: async () => { await checkStatus(); }, setConnected }}
     >
       <CloudResourceContext.Provider value={resourceKey}>{children}</CloudResourceContext.Provider>
 

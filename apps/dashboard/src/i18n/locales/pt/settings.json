@@ -479,6 +479,12 @@
     "deployLocal": "Implante na nuvem diretamente da sua instância local.",
     "waitingSignIn": "Aguardando login…",
     "connectButton": "Conectar ao Openship Cloud",
+    "selfHost": {
+      "urlLabel": "Endereço da instância",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Conectar instância própria",
+      "hint": "Abre o navegador. Depois do login, os projetos voltam para este app."
+    },
     "confirmDisconnect": "Desconectar do Openship Cloud? As implantações em nuvem deixarão de funcionar até que você reconecte.",
     "toast": {
       "disconnected": "Desconectado do Openship Cloud",

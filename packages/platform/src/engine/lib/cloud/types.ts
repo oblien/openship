@@ -16,12 +16,14 @@ export interface CloudAccount {
   image?: string | null;
 }
 
-/** Encrypted together so a credential cannot be reused with another target or tenant. */
+/** Encrypted together so a credential cannot be reused with another target or tenant.
+ * `selfHosted` is set only when `apiUrl` is not the configured Openship Cloud API. */
 export interface StoredCloudSession {
   token: string;
   apiUrl: string;
   userId: string;
   organizationId: string;
+  selfHosted?: true;
 }
 
 /** Cached Oblien namespace token (the `oblien-ns-tokens` cacheStore). */

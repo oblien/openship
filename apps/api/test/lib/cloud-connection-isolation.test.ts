@@ -61,6 +61,26 @@ describe("pinned Cloud identity", () => {
     expect(await readCloudSession("local-owner")).toEqual(first);
   });
 
+  it("sends a self-hosted session to its stored origin", async () => {
+    h.api.api = "https://api.openship.io";
+    await storeCloudSession("local-owner", "self-token", "https://ops.example.test/api/proxy");
+    expect(JSON.parse(decrypt(h.sessions.get("local-owner")!))).toMatchObject({
+      apiUrl: "https://ops.example.test/api/proxy",
+      selfHosted: true,
+      token: "self-token",
+    });
+    expect(h.fetch).toHaveBeenCalledWith(
+      "https://ops.example.test/api/proxy/api/cloud/account",
+      expect.objectContaining({ redirect: "error" }),
+    );
+    h.fetch.mockClear();
+    const response = await cloudFetch("local-owner", "/api/projects/home");
+    expect(response?.ok).toBe(true);
+    expect(String(h.fetch.mock.calls[0]?.[0])).toBe(
+      "https://ops.example.test/api/proxy/api/projects/home",
+    );
+  });
+
   it("pins authorization headers and refuses a different configured Cloud endpoint", async () => {
     await cloudFetchAsOrgOwner("local-org", "/api/system/servers", {
       headers: { Authorization: "Bearer forged", "X-Organization-Id": "foreign-org", "X-Openship-Scope": "resource" },

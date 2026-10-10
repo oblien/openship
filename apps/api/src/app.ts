@@ -365,6 +365,10 @@ if (env.CLOUD_MODE) {
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
 
+  /** Desktop handoff issuer. Same three routes as cloud, without CLOUD_MODE. */
+  const { cloudIssuerRoutes } = await import("./modules/cloud/cloud-issuer.routes");
+  app.route("/api/cloud", cloudIssuerRoutes);
+
   /** Private support uses the caller's personal Cloud connection. */
   const { cloudSupportLocalRoutes } =
     await import("./modules/cloud-support/cloud-support-local.routes");

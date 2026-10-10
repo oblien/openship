@@ -19,6 +19,25 @@ import { BRAND_LINKS } from "@repo/core";
 
 const isMac = process.platform === "darwin";
 
+export type AppMenuActions = {
+  /** Open the self-hosted dashboard URL prompt. */
+  connectSelfHosted?: () => void;
+  /** Close the self-hosted window and return to the local dashboard. */
+  useLocalInstance?: () => void;
+};
+
+const selfHostItems = (actions: AppMenuActions): MenuItemConstructorOptions[] => [
+  {
+    label: "Connect self-hosted instance…",
+    accelerator: "CommandOrControl+Shift+K",
+    click: () => actions.connectSelfHosted?.(),
+  },
+  {
+    label: "Use local instance",
+    click: () => actions.useLocalInstance?.(),
+  },
+];
+
 /** Help entries, shared with the dashboard's in-app menu via BRAND_LINKS. */
 const helpItems: MenuItemConstructorOptions[] = [
   { label: "Documentation", click: () => void shell.openExternal(BRAND_LINKS.docs) },
@@ -31,7 +50,10 @@ const helpItems: MenuItemConstructorOptions[] = [
   { label: "Openship on X", click: () => void shell.openExternal(BRAND_LINKS.x) },
 ];
 
-export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
+export function buildAppMenu(
+  getWindow: () => BrowserWindow | null,
+  actions: AppMenuActions = {},
+): void {
   const template: MenuItemConstructorOptions[] = [
     // macOS puts the app menu first; on Windows/Linux there is no equivalent, so
     // quit lives under File.
@@ -41,6 +63,8 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
             label: app.name,
             submenu: [
               { role: "about" },
+              { type: "separator" },
+              ...selfHostItems(actions),
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -52,7 +76,12 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
             ],
           },
         ] as MenuItemConstructorOptions[])
-      : ([{ label: "File", submenu: [{ role: "quit" }] }] as MenuItemConstructorOptions[])),
+      : ([
+          {
+            label: "File",
+            submenu: [...selfHostItems(actions), { type: "separator" }, { role: "quit" }],
+          },
+        ] as MenuItemConstructorOptions[])),
 
     // Edit is not optional even in an app with no text editor: without it, the
     // OS-level Cut/Copy/Paste accelerators do not reach input fields on macOS.

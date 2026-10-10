@@ -88,10 +88,22 @@ contextBridge.exposeInMainWorld("desktop", {
     browseFile: () => ipcRenderer.invoke("system:browse-file"),
   },
 
+  /**
+   * Self-hosted control plane. `connect` starts the same browser handoff as
+   * Cloud connect, aimed at the given origin. It does not point this frame
+   * at the remote origin.
+   */
+  selfHost: {
+    connect: (url: string) => ipcRenderer.invoke("selfhost:connect", url),
+    disconnect: () => ipcRenderer.invoke("selfhost:disconnect"),
+    status: () => ipcRenderer.invoke("selfhost:status"),
+    openPrompt: () => ipcRenderer.invoke("selfhost:open-prompt"),
+  },
+
   /** Cloud connection from settings (reconnect without onboarding side-effects) */
   cloud: {
-    /** Start cloud connect flow - opens system browser with PKCE */
-    connect: () => ipcRenderer.invoke("cloud:connect"),
+    /** Start cloud connect. Omit the URL for Openship Cloud. */
+    connect: (dashboardUrl?: string) => ipcRenderer.invoke("cloud:connect", dashboardUrl),
     /** Poll for connect completion */
     connectPoll: (nonce: string) => ipcRenderer.invoke("cloud:connect-poll", nonce),
   },

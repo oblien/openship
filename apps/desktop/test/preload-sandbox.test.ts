@@ -24,7 +24,7 @@ describe("sandboxed desktop preload", () => {
     expect(bridge.utils.validateServerAddress("server.example.test")).toBeNull();
   });
   it("enables the sandbox in both windows", () => {
-    for (const file of ["index.ts", "update-window.ts"]) {
+    for (const file of ["index.ts", "update-window.ts", "selfhost-window.ts"]) {
       const code = readFileSync(new URL(`../src/main/${file}`, import.meta.url), "utf8");
       expect(code).toContain("sandbox: true");
       expect(code).not.toContain("sandbox: false");

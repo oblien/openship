@@ -479,6 +479,12 @@
     "deployLocal": "Despliega en la nube directamente desde tu instancia local.",
     "waitingSignIn": "Esperando inicio de sesión…",
     "connectButton": "Conectar a Openship Cloud",
+    "selfHost": {
+      "urlLabel": "Dirección de la instancia",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Conectar instancia propia",
+      "hint": "Abre el navegador. Tras iniciar sesión, los proyectos vuelven a esta app."
+    },
     "confirmDisconnect": "¿Desconectar de Openship Cloud? Los despliegues en la nube dejarán de funcionar hasta que vuelvas a conectar.",
     "toast": {
       "disconnected": "Desconectado de Openship Cloud",

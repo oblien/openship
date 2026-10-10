@@ -1,8 +1,9 @@
 /**
- * Cloud transport — the authenticated wire from a self-hosted instance to
- * api.openship.io. Auth is fully server-side: the user's Openship Cloud
- * session lives (encrypted) in `user_settings.cloud_session_token`; this layer
- * reads it, presents it as a Bearer, and forwards the call.
+ * Cloud transport — the authenticated wire from a self-hosted instance to the
+ * API stored with the session. Official links use api.openship.io. A
+ * self-hosted link uses that instance's origin. Auth is fully server-side:
+ * the session lives (encrypted) in `user_settings.cloud_session_token`; this
+ * layer reads it, presents it as a Bearer, and forwards the call.
  *
  * Two scopes, and everything resolves to the first:
  *   - cloudFetch(userId)          → call AS that user. This is the primitive:
@@ -21,6 +22,7 @@ import { SDK_SCOPE_HEADER } from "@repo/contracts";
 import { createHash } from "node:crypto";
 import { cloudRuntimeTarget, cloudRuntimeTargetId, env } from "../../config/env";
 import { decrypt } from "../encryption";
+import { parseAllowedCloudOrigin } from "./origin";
 import type { StoredCloudSession } from "./types";
 import {
   APP_VERSION,
@@ -39,17 +41,21 @@ export function sameCloudIdentity(left: CloudIdentity, right: CloudIdentity): bo
     left.organizationId === right.organizationId;
 }
 
-/** Only credentials verified at connect time are usable. Changing the configured
- * Cloud API or linking another account requires a new, explicitly verified link. */
+/** Only credentials verified at connect time are usable. An official link
+ * must still name the configured Cloud API, so changing that API drops it.
+ * A self-hosted link is marked `selfHosted` and is sent only to its own origin. */
 export async function readCloudSession(userId: string): Promise<StoredCloudSession | null> {
   const settings = await repos.settings.findByUser(userId);
   if (!settings?.cloudSessionToken) return null;
   try {
     const session = JSON.parse(decrypt(settings.cloudSessionToken)) as StoredCloudSession;
-    if (!session || session.apiUrl !== cloudRuntimeTarget.api ||
+    const apiUrl = parseAllowedCloudOrigin(session?.apiUrl);
+    if (!session || !apiUrl || apiUrl !== session.apiUrl ||
       typeof session.token !== "string" || !session.token ||
       typeof session.userId !== "string" || !session.userId ||
       typeof session.organizationId !== "string" || !session.organizationId) return null;
+    const official = apiUrl === cloudRuntimeTarget.api;
+    if (!official && session.selfHosted !== true) return null;
     return session;
   } catch {
     return null;
@@ -82,7 +88,7 @@ export async function cloudFetch(
   if (!session || (expectedIdentity && !sameCloudIdentity(session, expectedIdentity))) return null;
   if (!path.startsWith("/api/") || path.includes("#")) throw new Error("Invalid Cloud API path");
 
-  const targetUrl = `${cloudRuntimeTarget.api}${path}`;
+  const targetUrl = `${session.apiUrl}${path}`;
   const method = (init?.method ?? "GET").toUpperCase();
   console.log(`[cloud-client] → ${method} ${targetUrl}  (cloudRuntimeTargetId=${cloudRuntimeTargetId})`);
   // Deadline on getting response HEADERS, cleared the moment fetch() resolves —

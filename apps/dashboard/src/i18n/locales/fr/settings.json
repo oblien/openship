@@ -503,6 +503,12 @@
     "deployLocal": "Déployez vers le cloud directement depuis votre instance locale.",
     "waitingSignIn": "En attente de connexion…",
     "connectButton": "Se connecter à Openship Cloud",
+    "selfHost": {
+      "urlLabel": "Adresse de l'instance",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Connecter une instance auto-hébergée",
+      "hint": "Ouvre le navigateur. Après la connexion, les projets reviennent dans cette application."
+    },
     "confirmDisconnect": "Se déconnecter d'Openship Cloud ? Les déploiements cloud cesseront de fonctionner jusqu'à ce que vous vous reconnectiez.",
     "toast": {
       "disconnected": "Déconnecté d'Openship Cloud",

@@ -18,7 +18,7 @@ import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostic
 import { installNodeErrorReporting } from "@repo/core/diagnostics/node";
 import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme } from "electron";
 import { observeIpcHandler } from "./ipc-errors";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { hostname } from "node:os";
@@ -48,11 +48,15 @@ import {
 import { closeUpdateWindow, openUpdateWindow } from "./update-window";
 import { buildAppMenu } from "./menu";
 import { buildLoadingScreen, type LoadingStage } from "./loading-screen";
+import { closeSelfHostPrompt, openSelfHostPrompt } from "./selfhost-window";
 import {
   classifyFrameNavigation,
   isAllowedFrameUrl,
   isRendererConfigKey,
   isSafeExternalUrl,
+  buildDesktopCloudAuthorizeUrl,
+  parseSelfHostedDashboardUrl,
+  resolveDesktopCloudTarget,
   type RendererConfigKey,
 } from "./security";
 import { InstanceLinkInbox, registerInstanceLinks } from "./instance-links";
@@ -92,6 +96,10 @@ interface AppConfig {
   lastSeenVersion?: string;
   /** Advisory ids the user dismissed (non-critical only). */
   dismissedAdvisoryIds?: string[];
+  /** Origin of a self-hosted dashboard opened in a sandboxed window. */
+  selfHostedDashboardUrl?: string;
+  /** Reopen that dashboard on the next launch. */
+  selfHostedActive?: boolean;
 }
 
 const defaults: AppConfig = {
@@ -142,6 +150,14 @@ class ConfigStore {
   }
 }
 
+// Opt-in profile split. Unpackaged `electron .` otherwise shares the installed
+// app's userData, including its Postgres cluster.
+function applyUserDataOverride() {
+  const override = process.env.OPENSHIP_USER_DATA_DIR?.trim();
+  if (!override) return;
+  app.setPath("userData", resolve(override));
+}
+applyUserDataOverride();
 installNodeErrorReporting("desktop");
 const store = new ConfigStore();
 
@@ -469,6 +485,27 @@ function routeInitialView() {
   }
 }
 
+async function connectSelfHosted(raw: unknown): Promise<{ ok: true; origin: string } | { ok: false; error: string }> {
+  if (typeof raw !== "string") return { ok: false, error: "Enter the instance URL." };
+  const target = parseSelfHostedDashboardUrl(raw);
+  if (!target) {
+    return { ok: false, error: "Use https. http is only allowed for localhost or 127.0.0.1." };
+  }
+  store.set("selfHostedDashboardUrl", target.origin);
+  const started = await beginDesktopCloudConnect(target.origin);
+  if (!started.ok) {
+    const message =
+      started.error === "api_unavailable"
+        ? "The local API is not running, so sign-in cannot finish."
+        : started.error === "nonce_registration_failed"
+          ? "The local API did not accept this sign-in."
+          : "Connection failed";
+    return { ok: false, error: message };
+  }
+  closeSelfHostPrompt();
+  return { ok: true, origin: target.origin };
+}
+
 function loadOnboarding() {
   if (!mainWindow) return;
   // Load the dashboard onboarding page - unified UI shared by desktop, CLI, and browser
@@ -503,7 +540,20 @@ app.whenReady().then(async () => {
   // Native menu: Reload / Developer Tools / Help. Registered on every platform —
   // Windows/Linux are frameless so no menu bar renders, but the accelerators
   // (Ctrl+R, Ctrl+Shift+I) still install, and the titlebar keeps a ⋯ there.
-  buildAppMenu(() => mainWindow);
+  buildAppMenu(() => mainWindow, {
+    connectSelfHosted: () => {
+      openSelfHostPrompt(store.get("selfHostedDashboardUrl") || "");
+    },
+    useLocalInstance: () => {
+      store.set("selfHostedActive", false);
+      closeSelfHostPrompt();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        loadDashboard();
+      }
+    },
+  });
 
   // In a packaged build there are no external dev servers — boot the bundled
   // API + dashboard ourselves before routing to the real view. In dev the
@@ -985,21 +1035,21 @@ handleIpc("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
  * The cloud-callback endpoint stores the cloud session token server-side.
  * After polling resolves, the renderer just refreshes cloudApi.status().
  */
-handleIpc("cloud:connect", async () => {
+async function beginDesktopCloudConnect(rawUrl?: string): Promise<
+  { ok: true; cloudAuthUrl: string; nonce: string } | { ok: false; error: string }
+> {
   if (!mainWindow) return { ok: false, error: "No window" };
+  const target = resolveDesktopCloudTarget(rawUrl, CLOUD_DASHBOARD_URL);
+  if ("error" in target) return { ok: false, error: target.error };
 
   const apiReady = await waitForApi(getLocalApiUrl());
-  if (!apiReady) {
-    return { ok: false, error: "api_unavailable" };
-  }
+  if (!apiReady) return { ok: false, error: "api_unavailable" };
 
-  // Generate nonce, state (CSRF), and PKCE pair
   const nonce = randomBytes(16).toString("hex");
   const state = randomBytes(16).toString("hex");
   const codeVerifier = randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
 
-  // Register with API
   try {
     const res = await net.fetch(`${getLocalApiUrl()}/api/auth/desktop-auth-start`, {
       method: "POST",
@@ -1007,7 +1057,12 @@ handleIpc("cloud:connect", async () => {
         "Content-Type": "application/json",
         "X-Internal-Token": internalToken,
       },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
+      body: JSON.stringify({
+        nonce,
+        state,
+        code_verifier: codeVerifier,
+        ...(target.apiOrigin ? { api_url: target.apiOrigin } : {}),
+      }),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
@@ -1016,12 +1071,19 @@ handleIpc("cloud:connect", async () => {
     return { ok: false, error: "nonce_registration_failed" };
   }
 
-  const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
-  const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
+  const cloudAuthUrl = buildDesktopCloudAuthorizeUrl({
+    dashboardOrigin: target.dashboardOrigin,
+    callbackUrl: `${getLocalApiUrl()}/api/auth/cloud-callback`,
+    state,
+    codeChallenge,
+    machine: hostname(),
+  });
   shell.openExternal(cloudAuthUrl);
-
   return { ok: true, cloudAuthUrl, nonce };
+}
+
+handleIpc("cloud:connect", async (_event, rawUrl?: unknown) => {
+  return beginDesktopCloudConnect(typeof rawUrl === "string" ? rawUrl : undefined);
 });
 
 /**
@@ -1118,6 +1180,30 @@ handleIpc("system:browse-file", async () => {
 // pushes it to the API server-side.
 
 // ─── IPC: Reset (for settings → re-onboard) ─────────────────────────────────
+
+handleIpc("selfhost:connect", (_event, raw: unknown) => connectSelfHosted(raw));
+
+handleIpc("selfhost:disconnect", () => {
+  store.set("selfHostedActive", false);
+  closeSelfHostPrompt();
+  return { ok: true };
+});
+
+handleIpc("selfhost:status", () => ({
+  active: store.get("selfHostedActive") === true,
+  origin: store.get("selfHostedDashboardUrl") ?? "",
+  open: false,
+}));
+
+handleIpc("selfhost:open-prompt", () => {
+  openSelfHostPrompt(store.get("selfHostedDashboardUrl") || "");
+  return { ok: true };
+});
+
+handleIpc("selfhost:cancel-prompt", () => {
+  closeSelfHostPrompt();
+  return { ok: true };
+});
 
 handleIpc("app:reset", () => {
   store.set("onboardingComplete", false);

@@ -479,6 +479,12 @@
     "deployLocal": "直接从你的本地实例部署到云。",
     "waitingSignIn": "正在等待登录…",
     "connectButton": "连接到 Openship Cloud",
+    "selfHost": {
+      "urlLabel": "自建实例地址",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "连接自建实例",
+      "hint": "在浏览器里登录。登录后，项目回到这个应用。"
+    },
     "confirmDisconnect": "断开与 Openship Cloud 的连接？在你重新连接之前，云部署将停止工作。",
     "toast": {
       "disconnected": "已断开与 Openship Cloud 的连接",

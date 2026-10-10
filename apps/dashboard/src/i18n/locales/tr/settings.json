@@ -554,6 +554,12 @@
     "deployLocal": "Yerel kurulumunuzdan doğrudan buluta dağıtım yapın.",
     "waitingSignIn": "Giriş yapılması bekleniyor…",
     "connectButton": "Openship Bulut'a Bağlan",
+    "selfHost": {
+      "urlLabel": "Örnek adresi",
+      "urlPlaceholder": "https://ops.example.com",
+      "connectButton": "Kendi sunucuna bağlan",
+      "hint": "Tarayıcı açılır. Girişten sonra projeler bu uygulamaya döner."
+    },
     "confirmDisconnect": "Openship Bulut bağlantısı kesilsin mi? Tekrar bağlanana kadar bulut dağıtımları çalışmayacaktır.",
     "toast": {
       "disconnected": "Openship Bulut bağlantısı kesildi",

@@ -17,20 +17,26 @@ import { cacheStore } from "../cache-store/index";
 import { requestMemo } from "../request-store";
 import { cloudFetch, resolveOrgCloudUserId, readCloudSession, cloudSessionCacheKey, sameCloudIdentity } from "./transport";
 import { fetchCloudConnection, readVerifiedCloudAccount } from "./connection";
+import { parseAllowedCloudOrigin } from "./origin";
 import type { CloudAccount, TokenCache, StoredCloudSession } from "./types";
 
-/** Verify before replacing a connection; token and identity are sealed together. */
-export async function storeCloudSession(userId: string, token: string): Promise<void> {
+/** Verify before replacing a connection; token and identity are sealed together.
+ * `apiUrl` defaults to the official cloud API. A self-hosted link passes the
+ * dashboard origin plus `/api/proxy`. The token is sent only to that base. */
+export async function storeCloudSession(userId: string, token: string, apiUrl?: string): Promise<void> {
+  const origin = parseAllowedCloudOrigin(apiUrl ?? cloudRuntimeTarget.api);
+  if (!origin) throw new AppError("Cloud API origin was rejected.", 400, "CLOUD_ORIGIN_REJECTED");
   const request = (path: string) => fetchCloudConnection(path, {
     headers: { Authorization: `Bearer ${token}` },
-  });
+  }, origin);
   const response = await request("/api/cloud/account");
   const account = response.ok ? await readVerifiedCloudAccount(response, request) : null;
   if (!account)
     throw new AppError("Could not verify the Cloud account and organization. Reconnect to Openship Cloud.", 401, "CLOUD_IDENTITY_UNVERIFIED");
   const session: StoredCloudSession = {
-    token, apiUrl: cloudRuntimeTarget.api,
+    token, apiUrl: origin,
     userId: account.id, organizationId: account.organizationId,
+    ...(origin === cloudRuntimeTarget.api ? {} : { selfHosted: true as const }),
   };
   await repos.settings.setCloudSession(userId, encrypt(JSON.stringify(session)));
   await invalidateCloudCaches(userId);
