@@ -18,14 +18,14 @@ function buildHtml(info: UpdateInfo): string {
   // `</script` regardless of JS string context, so unescaped notes containing
   // `</script>` would break out into markup in a window that carries the full
   // preload bridge.
-  const title = info.announcement?.title || "Update available";
+  const title = info.announcement?.title || "Доступно обновление";
   const payload = JSON.stringify({
     version: info.version,
     title,
     announcement: (info.announcement?.message || "").trim(),
     notes:
       (info.notes || "").trim() ||
-      "Release details are available in the full changelog.",
+      "Подробности выпуска доступны в полном списке изменений.",
     changelogUrl: changelogUrl(`v${info.version}`),
   }).replace(/</g, "\\u003c");
   // Colors mirror the dashboard theme tokens (apps/dashboard styles/theme.css)
@@ -73,14 +73,14 @@ function buildHtml(info: UpdateInfo): string {
     <h1 id="title"></h1>
     <p class="sub" id="sub"></p>
     <p class="announcement" id="announcement"></p>
-    <p class="notes-label">What&rsquo;s new</p>
+    <p class="notes-label">Что нового</p>
     <pre id="notes"></pre>
-    <p class="status" id="status">Downloading…</p>
+    <p class="status" id="status">Загрузка…</p>
     <div class="row" id="actions">
-      <button class="changelog" id="changelog">View full changelog</button>
+      <button class="changelog" id="changelog">Полный список изменений</button>
       <div class="buttons">
-        <button class="later" id="later">Later</button>
-        <button class="go" id="go">Update now</button>
+        <button class="later" id="later">Позже</button>
+        <button class="go" id="go">Обновить сейчас</button>
       </div>
     </div>
   </div><script>
@@ -88,7 +88,7 @@ function buildHtml(info: UpdateInfo): string {
     const u = window.desktop && window.desktop.updates;
     document.getElementById("title").textContent = INFO.title;
     document.getElementById("sub").textContent =
-      "Openship " + INFO.version + " is ready to install.";
+      "Openship " + INFO.version + " готов к установке.";
     document.getElementById("announcement").textContent = INFO.announcement;
     document.getElementById("notes").textContent = INFO.notes;
     const status = document.getElementById("status");
@@ -100,7 +100,7 @@ function buildHtml(info: UpdateInfo): string {
     document.getElementById("go").onclick = () => {
       actions.style.display = "none";
       status.style.display = "block";
-      status.textContent = "Starting update…";
+      status.textContent = "Запуск обновления…";
       // Progress lives in the app's top-of-page update bar from here — the main
       // process closes this modal as soon as the download begins.
       if (u) u.start();
@@ -128,7 +128,7 @@ export function openUpdateWindow(
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    title: "Openship Update",
+    title: "Обновление Openship",
     parent: parent ?? undefined,
     show: false,
     // Match the app's page background per OS theme so there's no wrong-theme

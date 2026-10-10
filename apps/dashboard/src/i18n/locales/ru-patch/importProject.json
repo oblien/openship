@@ -1,0 +1,35 @@
+{
+  "_delete": [
+    "composeDeployment.running",
+    "composeDeployment.buildingSuffix",
+    "composeDeployment.failedSuffix"
+  ],
+  "environmentVariables": {
+    "emptyHintEditing": "Вставьте блок .env в любое место этого поля или перетащите сюда файл .env."
+  },
+  "composeServices": {
+    "config": {
+      "statefulWarnPart2": ". Перед заменой рабочего пространства явно создайте резервную копию данных и восстановите её.",
+      "volumeCloudNote": "Постоянные монтирования томов не поддерживаются в Openship Cloud. Для нагрузок, которым нужны тома, выберите собственный сервер."
+    }
+  },
+  "composeServiceTally": {
+    "running": "запущено",
+    "builtSuffix": "· собрано: {count}",
+    "buildingSuffix": "· собирается: {count}",
+    "failedSuffix": "· с ошибкой: {count}"
+  },
+  "composeSidebar": {
+    "rowTarget": "Цель",
+    "rowBuild": "Сборка"
+  },
+  "configDiagnostics": {
+    "title": "Часть openship.json из этого репозитория не была применена",
+    "description": "Поля ниже были пропущены; остальная часть файла применена. Развертывание всё равно продолжится.",
+    "titleWholeFile": "openship.json из этого репозитория был проигнорирован",
+    "descriptionWholeFile": "Ни одно его поле не было применено. Развертывание всё равно продолжится с настройками, которые определил Openship.",
+    "refused": "Отклонено",
+    "unrecognized": "Не распознано",
+    "hint": "Перед следующим развертыванием выполните в репозитории `openship config validate`, чтобы проверить файл."
+  }
+}

@@ -2,10 +2,9 @@
  * The native application menu.
  *
  * Everything that used to be crammed into the titlebar's ⋯ button lives here
- * instead — Reload, Developer Tools, and the Help links. That is where a desktop
- * user looks for them, and Electron's built-in `role`s bring correct labels,
- * platform-appropriate accelerators and OS localization for free, which a
- * hand-rolled dropdown never gets right.
+ * instead — Reload, Developer Tools, and the Help links. Electron roles keep
+ * platform-appropriate accelerators while explicit menu labels are localized for
+ * the Russian fork.
  *
  * Registered on EVERY platform, deliberately, even though only macOS renders a
  * menu bar: Windows/Linux run `frame: false`, which hides the menu bar entirely.
@@ -21,14 +20,14 @@ const isMac = process.platform === "darwin";
 
 /** Help entries, shared with the dashboard's in-app menu via BRAND_LINKS. */
 const helpItems: MenuItemConstructorOptions[] = [
-  { label: "Documentation", click: () => void shell.openExternal(BRAND_LINKS.docs) },
-  { label: "Contact Support", click: () => void shell.openExternal(BRAND_LINKS.support) },
-  { label: "Report an Issue", click: () => void shell.openExternal(BRAND_LINKS.issues) },
-  { label: "Send Feedback", click: () => void shell.openExternal(BRAND_LINKS.contact) },
+  { label: "Документация", click: () => void shell.openExternal(BRAND_LINKS.docs) },
+  { label: "Поддержка", click: () => void shell.openExternal(BRAND_LINKS.support) },
+  { label: "Сообщить о проблеме", click: () => void shell.openExternal(BRAND_LINKS.issues) },
+  { label: "Отправить отзыв", click: () => void shell.openExternal(BRAND_LINKS.contact) },
   { type: "separator" },
-  { label: "Community (Discord)", click: () => void shell.openExternal(BRAND_LINKS.community) },
-  { label: "Openship on GitHub", click: () => void shell.openExternal(BRAND_LINKS.github) },
-  { label: "Openship on X", click: () => void shell.openExternal(BRAND_LINKS.x) },
+  { label: "Сообщество (Discord)", click: () => void shell.openExternal(BRAND_LINKS.community) },
+  { label: "Openship на GitHub", click: () => void shell.openExternal(BRAND_LINKS.github) },
+  { label: "Openship в X", click: () => void shell.openExternal(BRAND_LINKS.x) },
 ];
 
 export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
@@ -52,12 +51,12 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
             ],
           },
         ] as MenuItemConstructorOptions[])
-      : ([{ label: "File", submenu: [{ role: "quit" }] }] as MenuItemConstructorOptions[])),
+      : ([{ label: "Файл", submenu: [{ role: "quit" }] }] as MenuItemConstructorOptions[])),
 
     // Edit is not optional even in an app with no text editor: without it, the
     // OS-level Cut/Copy/Paste accelerators do not reach input fields on macOS.
     {
-      label: "Edit",
+      label: "Правка",
       submenu: [
         { role: "undo" },
         { role: "redo" },
@@ -72,7 +71,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
     },
 
     {
-      label: "View",
+      label: "Вид",
       submenu: [
         // Reload moved here from the titlebar. `role` wires Cmd/Ctrl+R for us.
         { role: "reload" },
@@ -88,7 +87,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
     },
 
     {
-      label: "Window",
+      label: "Окно",
       submenu: [
         { role: "minimize" },
         { role: "zoom" },
