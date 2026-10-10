@@ -30,6 +30,7 @@ export const CATEGORY_GROUPS = [
   { id: "app_health", label: "App health" },
   { id: "backups", label: "Backups" },
   { id: "jobs", label: "Jobs" },
+  { id: "actions", label: "Actions" },
   { id: "domains", label: "Domains & SSL" },
   { id: "members", label: "Members" },
   // Self-hosted-only, and dropped from `listCategories` under CLOUD_MODE — the mirror
@@ -176,6 +177,28 @@ export const CATEGORIES: readonly NotificationCategory[] = [
   },
 
   {
+    id: "action.run.failed",
+    group: "actions",
+    label: "Workflow failed",
+    description: "An Actions workflow failed or timed out. Open the run to review its checks and logs.",
+    defaultEnabled: false,
+  },
+  {
+    id: "action.run.succeeded",
+    group: "actions",
+    label: "Workflow succeeded",
+    description: "An Actions workflow completed successfully.",
+    defaultEnabled: false,
+  },
+  {
+    id: "action.run.cancelled",
+    group: "actions",
+    label: "Workflow cancelled",
+    description: "An Actions workflow was cancelled.",
+    defaultEnabled: false,
+  },
+
+  {
     id: "domain.expiring",
     group: "domains",
     label: "SSL cert expiring",
@@ -302,6 +325,9 @@ const EVENT_TYPE_TO_CATEGORY: Record<string, string> = {
   "job_run.failed": "job.run.failed",
   "job_run.succeeded": "job.run.succeeded",
   "job_run.started": "job.run.started",
+  "action_run.failed": "action.run.failed",
+  "action_run.succeeded": "action.run.succeeded",
+  "action_run.cancelled": "action.run.cancelled",
 
   // Domains / SSL
   "domain.expiring": "domain.expiring",

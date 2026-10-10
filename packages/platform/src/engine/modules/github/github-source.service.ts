@@ -414,13 +414,16 @@ export async function beginGitHubManifestFlow(
         active: true,
       },
       default_permissions: {
+        actions: "write",
+        administration: "write",
         checks: "write",
-        contents: "read",
+        contents: "write",
+        workflows: "write",
         metadata: "read",
         pull_requests: "read",
         statuses: "write",
       },
-      default_events: ["check_run", "pull_request", "push"],
+      default_events: ["check_run", "pull_request", "push", "workflow_job", "workflow_run"],
     },
   };
 }

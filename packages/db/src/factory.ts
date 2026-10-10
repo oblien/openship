@@ -1,5 +1,5 @@
 /** Passive native composition entry. No environment loading or default database. */
-export { sql } from "drizzle-orm";
+export { sql, and, eq, gt } from "drizzle-orm";
 export { createDatabase, type DatabaseConnection, type DatabaseOptions, type Database, type DatabaseTransaction, type Driver } from "./connection";
 export { createRepositories, type Repositories } from "./repos/factory";
 export { createBillingPlanGrantRepo, type BillingPlanGrant, type BillingPlanGrantRepo } from "./repos/billing-plan-grant.repo";

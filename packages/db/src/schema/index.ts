@@ -32,7 +32,13 @@ export { edgeTargetVerification } from "./edge-target-verification";
 export { serviceIncident, INCIDENT_KINDS, type IncidentKind } from "./service-incident";
 export { cloudWebhookBinding } from "./cloud-webhook-binding";
 export { cloudDockerWorkspace } from "./cloud-docker-workspace";
-export { cloudWorkspace, cloudServerDeletion, type CloudWorkspaceOperation, type CloudWorkspaceActivity, type LinkedCloudServer } from "./cloud-workspace";
+export {
+  cloudWorkspace,
+  cloudServerDeletion,
+  type CloudWorkspaceOperation,
+  type CloudWorkspaceActivity,
+  type LinkedCloudServer,
+} from "./cloud-workspace";
 export { projectConnection } from "./project-connection";
 export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
@@ -88,6 +94,24 @@ export { computeCluster, computeClusterMember } from "./compute-cluster";
 export { clusterRuntime } from "./cluster-runtime";
 export { clusterStorage } from "./cluster-storage";
 export { clusterDatabase } from "./cluster-database";
-export { cloudAnalyticsEvent, cloudAnalyticsCheckout, cloudAnalyticsWorkspace } from "./cloud-analytics";
+export {
+  cloudAnalyticsEvent,
+  cloudAnalyticsCheckout,
+  cloudAnalyticsWorkspace,
+} from "./cloud-analytics";
 export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
 export { instanceController, instanceHandoff } from "./instance-controller";
+export {
+  actionRunner,
+  actionWorkflow,
+  actionProject,
+  actionDeployment,
+  actionRun,
+  actionJob,
+  actionEvent,
+  actionDelivery,
+  actionRunnerSession,
+  actionCommand,
+} from "./actions";
+export { actionStorageObject, actionStorageChunk } from "./action-storage";
+export { actionBudget, actionCreditPurchase } from "./action-billing";

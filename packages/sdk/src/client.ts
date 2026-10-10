@@ -1,4 +1,6 @@
-import { isCreateDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
+import { createRemoteActionOperations } from "./action-client";
+import type { ActionOperations } from "@repo/contracts";
+import { isCreateDeploymentResult, isAcceptedDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
 import { ApiError } from "./errors";
 import { HttpClient, type HttpClientOptions } from "./http";
 import { snapshotSourceInput, type DeploySourceInput, type SourceDeploymentResult } from "./source-input";
@@ -100,6 +102,7 @@ export class OpenshipClient {
   readonly issues: IssueOperations;
   readonly analytics: AnalyticsOperations;
   readonly jobs: JobOperations;
+  readonly actions: ActionOperations;
   readonly http: HttpClient;
   private readonly options: Readonly<OpenshipClientOptions>;
 
@@ -134,6 +137,7 @@ export class OpenshipClient {
     this.issues = createRemoteIssueOperations(http);
     this.analytics = createRemoteAnalyticsOperations(http);
     this.jobs = createRemoteJobOperations(http);
+    this.actions = createRemoteActionOperations(http);
     this.deployments = Object.freeze({
       ...createRemoteDeploymentResources(http),
       async prepare(value) {
@@ -143,7 +147,7 @@ export class OpenshipClient {
       },
       async buildAccess(value) {
         const response = await http.request("/deployments/build/access", { method: "POST", body: JSON.stringify(parseInput(BuildAccessBody, value)) });
-        if (!isCreateDeploymentResult(response)) throw new ApiError("Invalid build response", 502, response);
+        if (!isAcceptedDeploymentResult(response)) throw new ApiError("Invalid build response", 502, response);
         return response;
       },
       async start(value) {
@@ -154,7 +158,7 @@ export class OpenshipClient {
           if (event.event !== "started") continue;
           let response: unknown;
           try { response = JSON.parse(event.data); } catch { throw new ApiError("Invalid build response", 502, null); }
-          if (!isCreateDeploymentResult(response)) throw new ApiError("Invalid build response", 502, response);
+          if (!isAcceptedDeploymentResult(response)) throw new ApiError("Invalid build response", 502, response);
           return response;
         }
         throw new ApiError("Build start did not return a deployment", 502, null);

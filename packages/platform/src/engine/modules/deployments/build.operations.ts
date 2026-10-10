@@ -1,7 +1,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { assertCloudProxyScope } from "../../lib/cloud/scope";
 import { AppError, NotFoundError, ValidationError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
-import { isCreateDeploymentResult, type PrepareDeploymentInput } from "@repo/contracts";
+import { isAcceptedDeploymentResult, type PrepareDeploymentInput } from "@repo/contracts";
 import type { BuildDependencies } from "../../../builds";
 import type { ExecutionContext } from "../../../context";
 import type { Source } from "./prepare.service";
@@ -53,7 +53,7 @@ export const buildDependencies: BuildDependencies = {
       if (!response) throw new AppError("Openship Cloud is unreachable", 503, CLOUD_UNREACHABLE_CODE);
       const body = await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.operations"); return null; }) as Record<string, unknown> | null;
       if (!response.ok) throw new AppError(typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "Cloud deployment failed", response.status, typeof body?.code === "string" ? body.code : undefined);
-      if (!isCreateDeploymentResult(body)) throw new AppError("Invalid cloud build response", 502, "INVALID_CLOUD_RESPONSE");
+      if (!isAcceptedDeploymentResult(body)) throw new AppError("Invalid cloud build response", 502, "INVALID_CLOUD_RESPONSE");
       return body;
     }
     const service = await import("./build.service");

@@ -1,6 +1,6 @@
 import type { Static } from "@sinclair/typebox";
 import { PrepareDeployBody, type TBuildAccessBody } from "./deployment-inputs";
-import type { CreateDeploymentResult } from "./deployments";
+import type { AcceptedDeploymentResult } from "./deployments";
 
 export type PrepareDeploymentInput = Static<typeof PrepareDeployBody>;
 export type BuildAccessInput = TBuildAccessBody;
@@ -15,6 +15,6 @@ export interface PreparedProject {
 }
 export interface BuildOperations {
   prepare(input: PrepareDeploymentInput): Promise<PreparedProject>;
-  buildAccess(input: BuildAccessInput): Promise<CreateDeploymentResult>;
-  start(id: string): Promise<CreateDeploymentResult>;
+  buildAccess(input: BuildAccessInput): Promise<AcceptedDeploymentResult>;
+  start(id: string): Promise<AcceptedDeploymentResult>;
 }

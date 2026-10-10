@@ -1,0 +1,275 @@
+"use client";
+import { useEffect, useId, useRef, useState } from "react";
+import type { Connection } from "@xyflow/react";
+import type { ActionPlanView } from "@repo/contracts";
+import { Icon } from "@repo/ui/icons";
+import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/Tabs";
+import type { TopologySelection } from "@/components/topology/TopologyCanvas";
+import { useI18n } from "@/components/i18n-provider";
+import { WorkflowGraph } from "./WorkflowGraph";
+import { WorkflowJobList } from "./WorkflowJobList";
+import { TopologySkeleton } from "@/components/topology/TopologySkeleton";
+import { workflowJobs, workflowJobOffset, type WorkflowEdit } from "./workflow-editor";
+import type { useWorkflowDraft } from "./useWorkflowDraft";
+import type { WorkflowExpandedSteps, WorkflowStepTarget } from "./WorkflowSteps";
+
+export type WorkflowWorkspaceView = "topology" | "list" | "yaml";
+
+export function WorkflowWorkspace({
+  plan,
+  draft,
+  selection,
+  onSelect,
+  onConnect,
+  onAdd,
+  onChooseSource,
+  loading,
+  invalid,
+  yamlRequest,
+  view,
+  onViewChange,
+  edit,
+  expandedSteps,
+  onExpandedStepsChange,
+  onSelectStepNode,
+  stepToReveal,
+  onEditYaml,
+}: {
+  plan: ActionPlanView | null;
+  draft: ReturnType<typeof useWorkflowDraft>;
+  selection: TopologySelection;
+  onSelect: (selection: TopologySelection) => void;
+  onConnect: (connection: Connection) => void;
+  onAdd: () => void;
+  onChooseSource: () => void;
+  loading: boolean;
+  invalid: boolean;
+  yamlRequest: { id: string; key: number } | null;
+  view: WorkflowWorkspaceView;
+  onViewChange: (view: WorkflowWorkspaceView) => void;
+  edit: WorkflowEdit;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
+  onSelectStepNode: (jobId: string, index: number) => void;
+  stepToReveal: WorkflowStepTarget | null;
+  onEditYaml: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const e = t.actions.editor;
+  const id = useId();
+  const yaml = useRef<HTMLTextAreaElement>(null);
+  const [expandedJobs, setExpandedJobs] = useState<string[]>([]);
+  const [topologyExpansion, setTopologyExpansion] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (selection?.kind === "node")
+      setExpandedJobs((current) =>
+        current.includes(selection.id) ? current : [...current, selection.id],
+      );
+  }, [selection]);
+  const toggleJob = (id: string) => {
+    const expanded = expandedJobs.includes(id);
+    setExpandedJobs((current) =>
+      expanded ? current.filter((job) => job !== id) : [...current, id],
+    );
+    if (!expanded) onSelect({ kind: "node", id });
+    else if (selection?.kind === "node" && selection.id === id) onSelect(null);
+  };
+  useEffect(() => {
+    if (yamlRequest) onViewChange("yaml");
+  }, [yamlRequest, onViewChange]);
+  useEffect(() => {
+    if (view !== "yaml" || !yamlRequest || !yaml.current) return;
+    try {
+      const input = yaml.current;
+      const offset = workflowJobOffset(input.value, yamlRequest.id);
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(offset, offset);
+      input.scrollTop = Math.max(0, (input.value.slice(0, offset).split("\n").length - 4) * 24);
+    } catch {
+      // diagnostics-ignore: A job removed or renamed in raw YAML has no current editor position.
+    }
+  }, [view, yamlRequest]);
+  let jobs: ReturnType<typeof workflowJobs> = [];
+  try {
+    if (draft.source) jobs = workflowJobs(draft.source);
+  } catch {
+    // diagnostics-ignore: Incomplete draft YAML keeps its last valid graph and remains editable in the YAML view.
+  }
+  const expandable = jobs
+    .filter((job) => Array.isArray(job.value.steps) && job.value.steps.length)
+    .map((job) => job.id);
+  const singleJob = jobs.length === 1 ? expandable[0] : undefined;
+  useEffect(() => {
+    if (singleJob)
+      setTopologyExpansion((current) =>
+        Object.hasOwn(current, singleJob) ? current : { ...current, [singleJob]: true },
+      );
+  }, [singleJob]);
+  const expandedTopologyJobs = expandable.filter((id) => topologyExpansion[id] ?? id === singleJob);
+  const allExpanded = expandable.every((id) =>
+    (view === "topology" ? expandedTopologyJobs : expandedJobs).includes(id),
+  );
+  const toggleAll = () => {
+    if (view === "topology")
+      setTopologyExpansion(Object.fromEntries(expandable.map((id) => [id, !allExpanded])));
+    else {
+      setExpandedJobs(allExpanded ? [] : expandable);
+      if (allExpanded) onSelect(null);
+    }
+  };
+  return (
+    <section
+      className="flex h-[440px] min-w-0 flex-col overflow-hidden rounded-2xl bg-card @min-[960px]:h-auto @min-[960px]:min-h-0"
+      data-testid="workflow-workspace"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pt-2">
+        <Tabs
+          tabs={[
+            {
+              key: "topology",
+              label: e.topology,
+              leading: <Icon name="topology" className="size-4" />,
+            },
+            { key: "list", label: e.list, icon: "list" },
+            { key: "yaml", label: e.yaml, icon: "code" },
+          ]}
+          value={view}
+          onChange={onViewChange}
+          idPrefix={id}
+          ariaLabel={e.view}
+          size="sm"
+          className="border-0"
+        />
+        <div className="flex items-center gap-1 pb-1">
+          {view !== "yaml" && expandable.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={toggleAll}>
+              <Icon name={allExpanded ? "chevron-up" : "chevron-down"} />
+              {allExpanded ? e.collapseAll : e.expandAll}
+            </Button>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={!draft.canUndo}
+            onClick={draft.undo}
+            aria-label={e.undo}
+            title={e.undo}
+          >
+            <Icon name="arrow-left" className="rtl:rotate-180" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={!draft.canRedo}
+            onClick={draft.redo}
+            aria-label={e.redo}
+            title={e.redo}
+          >
+            <Icon name="arrow-right" className="rtl:rotate-180" />
+          </Button>
+          <Button size="sm" variant="secondary" disabled={!jobs.length} onClick={onAdd}>
+            <Icon name="plus" />
+            {e.addJob}
+          </Button>
+        </div>
+      </div>
+      <div
+        role="tabpanel"
+        id={`${id}-panel-${view}`}
+        aria-labelledby={`${id}-tab-${view}`}
+        className="relative min-h-0 flex-1"
+      >
+        {view === "yaml" ? (
+          <textarea
+            ref={yaml}
+            aria-label={t.actions.source}
+            dir="ltr"
+            spellCheck={false}
+            value={draft.source}
+            onChange={(event) => draft.change(event.target.value)}
+            className="absolute inset-0 h-full w-full resize-none bg-background/50 p-5 font-mono text-xs leading-6 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        ) : plan ? (
+          view === "topology" ? (
+            <WorkflowGraph
+              plan={plan}
+              className="absolute inset-0 min-w-0 overflow-hidden"
+              editor={{ selection, onSelect, onConnect }}
+              jobDetails={{
+                jobs,
+                expandedJobs: expandedTopologyJobs,
+                onToggleJob: (id) =>
+                  setTopologyExpansion((current) => ({
+                    ...current,
+                    [id]: !expandedTopologyJobs.includes(id),
+                  })),
+                onSelectStep: onSelectStepNode,
+                selectedStep: stepToReveal,
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 overflow-y-auto">
+              <WorkflowJobList
+                plan={plan}
+                jobs={jobs}
+                expandedJobs={expandedJobs}
+                onToggleJob={toggleJob}
+                source={draft.source}
+                edit={edit}
+                expandedSteps={expandedSteps}
+                onExpandedStepsChange={onExpandedStepsChange}
+                onEditYaml={onEditYaml}
+              />
+            </div>
+          )
+        ) : loading ? (
+          <TopologySkeleton variant="workflow" />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center bg-[var(--th-card-on-page)] p-6"
+            style={{
+              backgroundImage: "radial-gradient(var(--th-on-10) 1px, transparent 1px)",
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => (invalid ? onViewChange("yaml") : onChooseSource())}
+              className="flex min-h-16 w-60 max-w-full items-center gap-2.5 rounded-lg border border-border/80 bg-[var(--th-card-on-page)] px-3 py-2 text-start transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <Icon
+                name={invalid ? "code" : "play-circle"}
+                className="size-5 shrink-0 text-info/80"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-foreground">
+                  {invalid ? t.actions.source : t.actions.newWorkflow}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {invalid ? t.actions.integration.fixYaml : t.actions.integration.chooseRepo}
+                </span>
+              </span>
+              <Icon
+                name="chevron-right"
+                className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180"
+              />
+            </button>
+          </div>
+        )}
+      </div>
+      <div
+        className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"
+        role="status"
+      >
+        <Icon
+          name={invalid ? "alert-circle" : "cursor"}
+          className={`size-3.5 shrink-0 ${invalid ? "text-warning" : ""}`}
+        />
+        <span>
+          {invalid ? t.actions.integration.fixYaml : view === "list" ? e.listHint : e.canvasHint}
+        </span>
+      </div>
+    </section>
+  );
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -7,6 +8,7 @@ import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useCloud } from "@/context/CloudContext";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { useGitHub } from "@/context/GitHubContext";
@@ -16,7 +18,7 @@ import { deployApi, projectsApi } from "@/lib/api";
 import { randomUUID } from "@/lib/random-uuid";
 import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getActiveOrganizationId, getApiErrorMessage } from "@/lib/api/client";
 import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
 import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
 import type { DeploymentConfig, DeploymentState, DeploymentStatus, ServiceDeployStatus } from "./types";
@@ -236,6 +238,7 @@ export function useDeploymentBuild(
   // "connecting is the missing step" from "we already think we're connected and the
   // server still said no" — the two cases requireCloud's return value conflates.
   const { requireCloud, connected: cloudConnected } = useCloud();
+  const cloudScope = useCloudResourceKey();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { showModal, hideModal } = useModal();
   const openGithubConnect = useServerGitHubConnectModal();
@@ -259,6 +262,7 @@ export function useDeploymentBuild(
   const settledBuildStatusRef = useRef<string | null>(null);
   const redeployRequestRef = useRef(false);
   const buildViewGenerationRef = useRef(0);
+  const ensuredDraftRef = useRef<{ key: string; id: string } | null>(null);
   /**
    * Deployment ids whose terminal state has already dropped the project cache.
    *
@@ -731,7 +735,13 @@ export function useDeploymentBuild(
     // freshly-ensured project id — for first deploys, config.projectId is
     // still null at this point, which would disable the "Add a project
     // clone token" option.
-    let ensuredProjectId: string | null = overrides?.projectId ?? config.projectId ?? null;
+    // Keep the same draft after a setup/preflight error, even when retrying with
+    // the regular Deploy button. Never carry it into a different source or scope.
+    const draftKey = JSON.stringify([cloudScope, getActiveOrganizationId(), config.deployTarget,
+      config.serverId, config.owner, config.repo, config.branch, config.projectName,
+      config.localPath, config.uploadSessionId, config.isApp]);
+    let ensuredProjectId: string | null = overrides?.projectId ?? config.projectId ??
+      (ensuredDraftRef.current?.key === draftKey ? ensuredDraftRef.current.id : null);
 
     try {
       // ── Save-only (Edit from the Runtime page): the project ALREADY exists,
@@ -756,6 +766,7 @@ export function useDeploymentBuild(
             buildCommand: config.options.buildCommand,
             startCommand: config.options.startCommand,
             releaseCommands: config.releaseCommands,
+            githubChecks: config.githubChecks,
             outputDirectory: config.options.outputDirectory,
             productionPaths: config.options.productionPaths,
             rootDirectory: config.options.rootDirectory,
@@ -774,6 +785,7 @@ export function useDeploymentBuild(
               : {}),
           });
           await persistProjectEnvDiff(projectId, envPlan.merge);
+          if (config.actions) await actionsApi.updateProjectPolicy({ ...config.actions, projectId });
           showToast("Configuration saved", "success", "Saved");
           return projectId;
         } catch (err) {
@@ -866,6 +878,7 @@ export function useDeploymentBuild(
         // Deploy-time readiness gate. Omitted when the Health section was left
         // alone, which is the default — the backend then runs no post-start probe.
         readiness: config.readiness ?? undefined,
+        githubChecks: config.githubChecks,
         releaseCommands: config.releaseCommands,
       });
 
@@ -878,6 +891,10 @@ export function useDeploymentBuild(
       // Capture for the catch block — buildAccess may throw preflight
       // errors but the project row already exists at this point.
       ensuredProjectId = projectData.project_id;
+      ensuredDraftRef.current = { key: draftKey, id: projectData.project_id };
+      // Configure automation before any build is started. A failed setup keeps
+      // the draft project recoverable through the existing deployment error path.
+      if (config.actions) await actionsApi.updateProjectPolicy({ ...config.actions, projectId: projectData.project_id! });
 
       let resolvedEnvPlan = envPlan;
       if (!config.projectId && projectData.created !== true) {
@@ -1038,7 +1055,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showModal, showToast]);
+  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only

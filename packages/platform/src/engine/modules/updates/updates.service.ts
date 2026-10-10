@@ -39,7 +39,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { ValidationError, digestSha, withTimeout } from "@repo/core";
+import { AppError, ValidationError, digestSha, withTimeout } from "@repo/core";
 import { repos, type NewUpdateStatus, type Project, type UpdateStatus } from "@repo/db";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -597,6 +597,7 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
       serviceIds,
       strictServiceScope: true,
     });
+    if (!deployment) throw new AppError("Deployment is waiting for Actions", 409, "ACTIONS_CHECKS_PENDING");
     return { success: true, deployment_id: deployment.id, project_id: projectId };
   }
   return redeployBuildSession(ctx, active.id, {

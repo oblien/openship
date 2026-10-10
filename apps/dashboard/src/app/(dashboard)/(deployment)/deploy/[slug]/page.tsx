@@ -1,4 +1,6 @@
 "use client";
+import { DeployActions } from "@/components/actions/DeployActions";
+import { DeployGitHubChecks } from "@/components/import-project/DeployGitHubChecks";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -317,6 +319,8 @@ const DeployRepository: React.FC = () => {
                 onChange={(next) => updateConfig({ readiness: next ?? null })}
             />
             <ProjectName />
+            <DeployActions />
+            <DeployGitHubChecks />
             {(config.projectType === "app" || isMonorepoFlow) && <RoutingSection />}
         </>
     );

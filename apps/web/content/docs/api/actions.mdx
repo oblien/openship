@@ -1,0 +1,198 @@
+---
+title: Actions
+description: Configure GitHub-compatible workflows, select runners, and inspect durable execution.
+---
+
+`ship.actions` uses the same operations as the dashboard and REST API. All user
+operations require the selected organization and `job` permissions. Workflow
+access also checks the originating user's repository, runner and storage access.
+Configuring a runner requires administration access to its server.
+
+See [Openship Actions](/docs/guides/actions) for supported syntax, destination
+requirements, fork restrictions and compatibility limits.
+
+## Configure and dispatch
+
+Select runner IDs from `actions.runners()`. Saving an existing repository file
+does not execute it; dispatch resolves a commit and saves an immutable snapshot.
+
+```ts
+const workflow = await ship.actions.create({
+  controller: "openship",
+  name: "CI",
+  owner: "your-organization",
+  repo: "your-app",
+  ref: "main",
+  path: ".openship/workflows/ci.yml",
+  runnerIds: ["runner_123"],
+});
+
+const run = await ship.actions.dispatch(workflow.id, {
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Reuse the original idempotency key after a timeout or lost response. A new key
+requests a new run. `rerun(runId, { idempotencyKey })` uses the saved revision,
+definition and configuration as a new attempt.
+
+`create` and `update` accept the same complete workflow configuration. Optional
+`source` contains inline YAML; otherwise Openship reads the repository file.
+`variables` are plain environment values. `secrets` adds or replaces only the
+provided encrypted entries; `removeSecrets` explicitly removes named entries.
+`storageDestinationId` selects an authorized backup destination for artifacts and
+cache. Reads return secret names, never their values.
+
+`importWorkflows({ workflows })` accepts up to 50 complete configurations from one
+repository and branch. It validates all new files, then saves workflows and project
+links in one transaction. Repeating the import reuses each file's existing record,
+preserves its settings and adds new authorized project links. Use `update` to change
+an already imported workflow. Importing does not commit repository changes or start runs.
+
+For a standalone workflow, omit `owner` and `repo` and provide `source`. It can run
+manually, on a schedule, from an authenticated webhook, or through a Job without
+GitHub credentials. `actions/checkout` needs an explicit `with.repository` in this mode.
+
+Optional `projectIds` associates a workflow with projects the caller can edit.
+`actions.projectPolicy(projectId)` reads linked workflows and pending deployment requests;
+`actions.updateProjectPolicy(projectId, input)` selects manual, push, or required-check
+deployment. Required workflows must cover every push to the project's branch without
+path filters. Linking workflows alone does not enable automatic deployment.
+
+`dispatch` accepts either declared manual `inputs` or an `eventType` and optional
+`clientPayload` for `repository_dispatch`. Both use normal API authentication and the
+caller's selected organization. See the [webhook example](/docs/guides/actions#triggers-and-jobs).
+
+## GitHub-controlled workflows
+
+Use `controller: "github"`, `source: null` and a committed `.github/workflows/*.yml`
+file. Set `repositoryRunnerConsent: true` when creating the connection or changing
+its repository or allowed runners. This confirms that matching repository jobs can
+execute on those destinations. GitHub manages secrets, variables, artifacts and
+Checks; omit Openship secrets, variables and storage settings in this mode.
+
+`preview`, `repositorySource` and `updateRepositorySource` infer the controller from
+the file path: `.github/workflows/` uses GitHub, while `.openship/workflows/` and
+standalone YAML use the independent controller. API callers may also provide an
+explicit `controller`.
+
+GitHub mode dispatches `workflow_dispatch` through GitHub and mirrors the exact
+returned run ID and attempt. It delegates reruns and cancellation to GitHub. Reuse
+request keys: an uncertain GitHub POST is never automatically replayed. An accepted
+command whose run is not visible yet will appear through reconciliation. Send
+`repository_dispatch` and other GitHub events to GitHub's own API.
+
+Run and job views include `externalUrl`. GitHub live logs open at that URL;
+`jobEvents` provides the completed log preview with the same cursor contract.
+`settledAt` also waits for Openship's runner cleanup. Native GitHub Check IDs and
+conclusions are preserved without creating duplicate Checks.
+
+## Observe and cancel
+
+```ts
+const current = await ship.actions.getRun("run_123");
+for (const job of current.jobs) {
+  const output = await ship.actions.jobEvents(job.id, { after: 0 });
+  console.log(output.events);
+  // Save output.next and use it as after when polling or reconnecting.
+}
+await ship.actions.cancel(current.id);
+```
+
+Cancellation is a durable request. Job `cleanedAt` confirms destination cleanup;
+run `settledAt` confirms all jobs and GitHub Checks have settled. A disconnected
+controller resumes inspection of the original worker rather than replaying it.
+
+Artifact download links expire after 60 seconds. The runtime protocol endpoints
+below authenticate scoped job capabilities and recheck their saved authority.
+They do not accept a user session as an upload grant. `/twirp` is also exposed at
+the API origin because the official cache client resolves that absolute path.
+Preserve both paths when configuring an external reverse proxy.
+
+## Operations
+
+{/* api-operations:start */}
+
+### Workflows
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List authorized workflows. | `actions.list(input?)` | `GET /api/actions/workflows`<br />`job:read` |
+| Configure a workflow and its allowed runners. Encrypts secrets without returning their values. | `actions.create(input)` | `POST /api/actions/workflows`<br />`job:write` |
+| Read a workflow definition, runner selection and secret names. | `actions.get(id)` | `GET /api/actions/workflows/:id`<br />`job:read` |
+| Replace workflow configuration while preserving secret values omitted from the update. | `actions.update(id, input)` | `PATCH /api/actions/workflows/:id`<br />`job:write` |
+| Disable a workflow without deleting its run history. | `actions.remove(id)` | `DELETE /api/actions/workflows/:id`<br />`job:write` |
+| Validate YAML and inspect logical job dependencies without executing the workflow. | `actions.preview(input)` | `POST /api/actions/preview`<br />`job:read` |
+| List workflow files at an authorized repository revision. | `actions.discover(input)` | `GET /api/actions/discover`<br />`job:read` |
+| Import up to 50 files from one repository and branch in one transaction. Reuses existing workflows without replacing their settings and adds authorized project links. | `actions.importWorkflows(input)` | `POST /api/actions/workflows/import`<br />`job:write` |
+
+### Runners
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List authorized runners and their verified capabilities. | `actions.runners()` | `GET /api/actions/runners`<br />`job:read` |
+| Enable a runner on a connected server. Requires server administration access. | `actions.addRunner(input)` | `POST /api/actions/runners`<br />`job:admin` |
+| Inspect OS, architecture, Git, Node and Docker on an authorized server. | `actions.inspectDestination(input)` | `POST /api/actions/runners/inspect`<br />`job:admin` |
+| Enable and verify Docker CPU emulation. Requires administration of the selected server. | `actions.enableEmulation(input)` | `POST /api/actions/runners/emulation`<br />`job:admin` |
+| Update an idle runner; active execution settings cannot be changed. | `actions.updateRunner(id, input)` | `PATCH /api/actions/runners/:id`<br />`job:admin` |
+| Disable a runner for new jobs while retaining active work and history. | `actions.removeRunner(id)` | `DELETE /api/actions/runners/:id`<br />`job:admin` |
+| Refresh a runner’s verified capabilities. | `actions.probeRunner(id)` | `POST /api/actions/runners/:id/probe`<br />`job:admin` |
+
+### Runs
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Dispatch a manual or authenticated webhook event with an idempotency key and immutable source. | `actions.dispatch(id, input)` | `POST /api/actions/workflows/:id/dispatch`<br />`job:write` |
+| List recent runs, optionally filtered by workflow or linked project. | `actions.listRuns(input?)` | `GET /api/actions/runs`<br />`job:read` |
+| Read durable run, job, matrix and step state. | `actions.getRun(id)` | `GET /api/actions/runs/:id`<br />`job:read` |
+| Request cancellation; runner capacity remains held until cleanup is confirmed. | `actions.cancel(id)` | `POST /api/actions/runs/:id/cancel`<br />`job:write` |
+| Approve an untrusted fork run on disposable runners without secrets or write tokens. | `actions.approve(id)` | `POST /api/actions/runs/:id/approve`<br />`job:admin` |
+| Create a new attempt of the saved workflow and commit using an idempotency key. | `actions.rerun(id, input)` | `POST /api/actions/runs/:id/rerun`<br />`job:write` |
+
+### Output
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read masked job events after a durable sequence cursor. | `actions.jobEvents(id, input?)` | `GET /api/actions/jobs/:id/events`<br />`job:read` |
+| List retained artifacts belonging to an authorized run. | `actions.artifacts(id)` | `GET /api/actions/runs/:id/artifacts`<br />`job:read` |
+| Create a short-lived link for one authorized run artifact. | `actions.artifactDownload(id, input)` | `POST /api/actions/runs/:id/artifacts/download`<br />`job:read` |
+
+### Project integration
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read an authorized workflow file and its GitHub content SHA for review. | `actions.repositorySource(input)` | `GET /api/actions/repository-source`<br />`job:read` |
+| Commit a reviewed workflow change to a branch, guarded by the original content SHA and repository write access. | `actions.updateRepositorySource(input)` | `PUT /api/actions/repository-source`<br />`job:write` |
+| List projects available for workflow associations. | `actions.projects()` | `GET /api/actions/projects`<br />`job:read` |
+| Read linked workflows, required checks and pending deployment requests for a project. | `actions.projectPolicy(input)` | `GET /api/actions/project`<br />`job:read` |
+| Choose manual, push or required-check deployments and link existing workflows. | `actions.updateProjectPolicy(input)` | `PUT /api/actions/project`<br />`job:write` |
+| Retry or cancel an unaccepted required-check deployment request without duplicating deployment. | `actions.updateDeploymentRequest(input)` | `POST /api/actions/project/requests`<br />`job:write` |
+
+### Job runtime protocols
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Resolve a legacy cache entry. Requires a purpose-bound job capability. | HTTP only | `GET /api/actions/runtime/_apis/artifactcache/cache`<br />`Handler authentication` |
+| Reserve a legacy cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/_apis/artifactcache/caches`<br />`Handler authentication` |
+| Upload a legacy cache byte range. Requires a purpose-bound job capability. | HTTP only | `PATCH /api/actions/runtime/_apis/artifactcache/caches/:id`<br />`Handler authentication` |
+| Finalize a legacy cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/_apis/artifactcache/caches/:id`<br />`Handler authentication` |
+| Read an object or byte range. Requires a purpose-bound job capability. | HTTP only | `GET /api/actions/runtime/objects/:id`<br />`Handler authentication` |
+| Upload an authorized object or block. Requires a purpose-bound job capability. | HTTP only | `PUT /api/actions/runtime/objects/:id`<br />`Handler authentication` |
+| Reserve an artifact upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact`<br />`Handler authentication` |
+| Remove an artifact owned by this job. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact`<br />`Handler authentication` |
+| Finalize a completed artifact upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact`<br />`Handler authentication` |
+| Obtain a short-lived artifact URL. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL`<br />`Handler authentication` |
+| List artifacts available to this job. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts`<br />`Handler authentication` |
+| Reserve a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry`<br />`Handler authentication` |
+| Finalize a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload`<br />`Handler authentication` |
+| Resolve a compatible cache entry. Requires a purpose-bound job capability. | HTTP only | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL`<br />`Handler authentication` |
+| Reserve an artifact upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact`<br />`Handler authentication` |
+| Remove an artifact owned by this job. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact`<br />`Handler authentication` |
+| Finalize a completed artifact upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact`<br />`Handler authentication` |
+| Obtain a short-lived artifact URL. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL`<br />`Handler authentication` |
+| List artifacts available to this job. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts`<br />`Handler authentication` |
+| Reserve a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry`<br />`Handler authentication` |
+| Finalize a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload`<br />`Handler authentication` |
+| Resolve a compatible cache entry. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL`<br />`Handler authentication` |
+
+{/* api-operations:end */}

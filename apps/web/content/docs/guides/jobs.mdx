@@ -3,8 +3,8 @@ title: Scheduled jobs
 description: Run commands on connected or managed servers, with schedules, retries, logs and notifications.
 ---
 
-Jobs run commands on your servers, on a **schedule**, once, on demand, or after
-an event. Find them under **Jobs** in self-hosted Openship and Openship Cloud.
+Jobs run commands or saved Actions workflows on a **schedule**, once, on demand,
+or after an event. Find them under **Jobs** in self-hosted Openship and Openship Cloud.
 
 Every run is recorded — when it last ran, whether it succeeded, how long it took,
 and its output.
@@ -39,6 +39,22 @@ job:
 
 While a job runs you can watch its **live output**, and every run is kept in
 history with its result.
+
+### Run a workflow
+
+Choose **Run workflow** in the new-job form, or **Schedule with Jobs** from an
+Actions workflow. Select an enabled workflow with `workflow_dispatch`, fill its
+declared inputs, and choose a schedule or event. Runner selection, secrets and
+storage remain on the workflow; Jobs controls when it starts.
+
+History and notifications use the original Actions run. Open that execution to
+see its dependency graph, step logs and cancellation controls. Success dependencies
+fire after the workflow completes and its worker cleanup finishes. Replayed timer
+or dependency deliveries reuse their execution identity. Disabling or revoking
+access to the workflow prevents new authorized execution.
+
+See [Openship Actions](/docs/guides/actions) for runner setup, triggers and project
+deployment rules.
 
 ### Choosing a Cloud server
 
@@ -110,7 +126,7 @@ job, pass `--schedule once --at <ISO-timestamp>`. For manual execution only, pas
 `--schedule manual`. Recurring jobs use `--cron`.
 
 Both `create` and `update` accept `--file <path>` containing a JSON Jobs API body.
-Use it for `env`, `secrets`, `serverIds`, `retry`, `timeoutMs`, `dependsOn`,
+Use it for `workflowId` and `inputs`, or `env`, `secrets`, `serverIds`, `retry`, `timeoutMs`, `dependsOn`,
 `triggerEvents`, or `notifyConfig`, or to supply the entire job configuration.
 Explicit flags override file values. Updates send only supplied fields. Keep
 files containing secrets private. The API encrypts secrets at rest.

@@ -86,7 +86,8 @@
     },
     "apps": "应用",
     "jobs": "任务",
-    "workspaces": "工作区"
+    "workspaces": "工作区",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "展开侧边栏",

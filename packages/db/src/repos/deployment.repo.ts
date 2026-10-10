@@ -5,7 +5,9 @@ import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { deployment, buildSession, project, service } from "../schema";
+import { actionDeployment, actionProject, actionRun, actionWorkflow } from "../schema/actions";
 import { detailOf } from "./storable-detail";
+import { queueDeploymentChecks } from "./deployment-check.repo";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite, withProjectWorkAdmission } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -230,6 +232,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     async create(
       data: Omit<NewDeployment, "id"> & { id?: string },
       resourceChanges?: DeploymentResourceChanges,
+      actionLeaseOwner?: string,
     ): Promise<Deployment | undefined> {
       // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
       // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
@@ -237,6 +240,38 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("dep");
       return withProjectWorkAdmission(db, rest.projectId, rest.organizationId, async (tx) => {
+        if (rest.trigger === "webhook" && !rest.actionRequestId) {
+          const [target] = await tx.select().from(project).where(eq(project.id, rest.projectId));
+          const [required] = await tx.select({ id: actionProject.workflowId }).from(actionProject)
+            .where(and(eq(actionProject.projectId, rest.projectId), eq(actionProject.required, true))).limit(1);
+          if (target?.autoDeploy && required)
+            throw new AppError("Deployment automation changed. Refresh the project's Actions tab.", 409, "ACTIONS_DEPLOYMENT_CHANGED");
+        }
+        if (rest.actionRequestId) {
+          const [receipt] = await tx.select().from(actionDeployment).where(and(
+            eq(actionDeployment.id, rest.actionRequestId), eq(actionDeployment.projectId, rest.projectId),
+            eq(actionDeployment.organizationId, rest.organizationId),
+          )).for("update");
+          const [target] = await tx.select().from(project).where(eq(project.id, rest.projectId));
+          if (!receipt || !actionLeaseOwner || receipt.leaseOwner !== actionLeaseOwner ||
+            !receipt.leaseUntil || receipt.leaseUntil <= new Date() || receipt.status !== "deploying" ||
+            receipt.revision !== rest.commitSha || receipt.ref !== `refs/heads/${rest.branch}` ||
+            !target?.autoDeploy || target.disabledAt || (target.gitBranch && target.gitBranch !== rest.branch))
+            throw new AppError("The required-check deployment request changed. Refresh the project's Actions tab.", 409, "ACTIONS_DEPLOYMENT_CHANGED");
+          const requirements = await tx.select({ id: actionWorkflow.id, version: actionWorkflow.updatedAt, enabled: actionWorkflow.enabled, owner: actionWorkflow.owner, repo: actionWorkflow.repo })
+            .from(actionProject).innerJoin(actionWorkflow, eq(actionWorkflow.id, actionProject.workflowId))
+            .where(and(eq(actionProject.projectId, rest.projectId), eq(actionProject.organizationId, rest.organizationId), eq(actionProject.required, true))).for("share");
+          if (!requirements.length || requirements.length !== Object.keys(receipt.requirements).length || requirements.some(row =>
+            !row.enabled || row.version.toISOString() !== receipt.requirements[row.id] ||
+            row.owner !== target.gitOwner?.toLowerCase() || row.repo !== target.gitRepo?.toLowerCase()))
+            throw new AppError("Required workflow configuration changed before deployment", 409, "ACTIONS_DEPLOYMENT_CHANGED");
+          const runs = await tx.selectDistinctOn([actionRun.workflowId]).from(actionRun).where(and(
+            eq(actionRun.organizationId, rest.organizationId), inArray(actionRun.workflowId, requirements.map(row => row.id)),
+            eq(actionRun.revision, receipt.revision), eq(actionRun.ref, receipt.ref), eq(actionRun.untrusted, false), eq(actionRun.eventName, "push"),
+          )).orderBy(asc(actionRun.workflowId), desc(actionRun.createdAt), desc(actionRun.attempt), desc(actionRun.id));
+          if (runs.length !== requirements.length || runs.some(run => run.status !== "success" || run.configuration.workflowVersion !== receipt.requirements[run.workflowId]))
+            throw new AppError("Required checks have not passed for this commit", 409, "ACTIONS_CHECKS_PENDING");
+        }
         // A terminal-looking deployment can still have a worker unwinding after
         // cancellation. The partial unique status index no longer covers that
         // row, so refuse its replacement until the worker's outermost finally
@@ -260,6 +295,18 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           .values(codec.sealDeployment({ id, ...rest }))
           .onConflictDoNothing()
           .returning();
+        if (inserted) await queueDeploymentChecks(tx, codec.openDeployment(inserted));
+        if (inserted?.actionRequestId) await tx.update(actionDeployment).set({
+          // Keep the admission retryable until kickoff is acknowledged. A crash
+          // between this commit and queue submission must resume this same row.
+          status: "deploying", deploymentId: inserted.id, error: null, updatedAt: new Date(),
+        }).where(and(eq(actionDeployment.id, inserted.actionRequestId), eq(actionDeployment.organizationId, inserted.organizationId)));
+        // A deliberate deployment also supersedes pending automatic approvals.
+        // It must not be replaced later by a previously queued green commit.
+        if (inserted && !inserted.actionRequestId) await tx.update(actionDeployment).set({
+          status: "superseded", error: "A newer deployment was started for this project.", updatedAt: new Date(),
+        }).where(and(eq(actionDeployment.projectId, inserted.projectId), eq(actionDeployment.organizationId, inserted.organizationId),
+          isNull(actionDeployment.deploymentId), inArray(actionDeployment.status, ["waiting", "blocked", "deploying"])));
         if (inserted && resourceChanges) {
           const [owner] = await tx.select().from(project).where(eq(project.id, rest.projectId));
           if (owner?.activeDeploymentId !== resourceChanges.expectedActiveDeploymentId ||

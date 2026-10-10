@@ -12,6 +12,7 @@ const {
   getLatestCommit,
   requireClusterDeploymentTarget,
   kickoffBuild,
+  queueActionDeployment,
   repos,
   resolveProjectInfo,
   resolveProjectSourceEnv,
@@ -30,7 +31,9 @@ const {
   getLatestCommit: vi.fn(),
   requireClusterDeploymentTarget: vi.fn(),
   kickoffBuild: vi.fn(),
+  queueActionDeployment: vi.fn(),
   repos: {
+    actions: { deploymentForActionRequest: vi.fn() },
     projectConnection: { listByTarget: vi.fn(async () => []) },
     project: {
       findById: vi.fn(),
@@ -87,6 +90,8 @@ vi.mock("@repo/db", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   repos,
 }));
+
+vi.mock("@repo/platform/engine/modules/actions/deployment-gate", () => ({ queueActionDeployment }));
 
 vi.mock("@repo/platform/engine/modules/deployments/preflight", () => ({
   runPreflightChecks,
@@ -614,6 +619,8 @@ describe("buildConfigSnapshot — release commands", () => {
 describe("triggerDeployment", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queueActionDeployment.mockReset().mockResolvedValue(undefined);
+    repos.actions.deploymentForActionRequest.mockReset().mockResolvedValue(undefined);
     repos.deployment.listInFlightByProject.mockResolvedValue([]);
 
     repos.project.findById.mockResolvedValue(baseProject());
@@ -654,6 +661,33 @@ describe("triggerDeployment", () => {
     });
     runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
     kickoffBuild.mockResolvedValue("session-1");
+  });
+
+  it("returns a required-check receipt without starting a deployment or reconciling configuration", async () => {
+    queueActionDeployment.mockResolvedValue({ id: "receipt-1", status: "waiting" });
+    const result = await triggerDeployment(ctx, { projectId: "project-1", trigger: "webhook", branch: "main", commitSha: "a".repeat(40) });
+    expect(result).toMatchObject({ awaitingActions: { id: "receipt-1" }, skipped: true });
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(resolveProjectInfo).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
+  it("uses the checked commit for Compose and lifecycle reads before the normal deployment pipeline", async () => {
+    const sha = "a".repeat(40);
+    repos.project.findById.mockResolvedValue(baseProject({ gitOwner: "acme", gitRepo: "app", gitUrl: "https://github.com/acme/app", gitProvider: "github", localPath: null }));
+    await triggerDeployment(ctx, { projectId: "project-1", trigger: "actions", branch: "main", commitSha: sha, actionRequestId: "receipt-1", actionLeaseOwner: "controller-1" });
+    expect(resolveProjectInfo).toHaveBeenCalledWith(expect.objectContaining({ branch: sha }));
+    expect(repos.deployment.create).toHaveBeenCalledWith(expect.objectContaining({ branch: "main", commitSha: sha, actionRequestId: "receipt-1" }), undefined, "controller-1");
+    expect(kickoffBuild).toHaveBeenCalledOnce();
+  });
+
+  it("recovers queue submission for an accepted Actions deployment without creating another one", async () => {
+    const existing = { id: "dep-accepted", projectId: "project-1", status: "queued" };
+    repos.actions.deploymentForActionRequest.mockResolvedValue(existing);
+    const result = await triggerDeployment(ctx, { projectId: "project-1", trigger: "actions", actionRequestId: "receipt-1", actionLeaseOwner: "controller-2" });
+    expect(result.deployment).toEqual(existing);
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), existing);
   });
 
   it.each(["trigger", "refresh", "build-access"])(

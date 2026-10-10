@@ -50,6 +50,9 @@ export interface NotificationEmitInput {
   auditEventId?: string;
   resourceType?: string;
   resourceId?: string;
+  /** Explicit, previously authorized channel references. Delivery still rechecks
+   * channel ownership, membership and resource access. */
+  destinations?: { channelIds: string[]; includeSubscriptions?: boolean };
   /** Free-form payload — channel workers render this with their own
    *  template (subject + body for email, JSON for webhook, etc.). */
   payload?: Record<string, unknown>;
@@ -88,6 +91,11 @@ async function dispatch(input: NotificationEmitInput, prepared?: PendingDelivery
     else if (input.idempotencyKey) await source.notificationDelivery.createOnce(input.idempotencyKey, data);
     else await source.notificationDelivery.create(data);
   };
+  for (const channelId of new Set(input.destinations?.channelIds ?? [])) await tolerate(async () => {
+    const channel = await source.notificationChannel.findById(channelId);
+    if (channel?.enabled && channel.verified) await enqueue(channel.userId, channel);
+  });
+  if (input.destinations && !input.destinations.includeSubscriptions) return;
   const subs = await read(source.notificationSubscription.listEnabledForDispatch(org, category), []);
   for (const sub of subs) await tolerate(async () => {
     const channel = await source.notificationChannel.findById(sub.channelId);

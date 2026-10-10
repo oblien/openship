@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import {
   CreateDeploymentSchema,
   isCreateDeploymentResult,
+  isAcceptedDeploymentResult,
   parseCreateDeploymentInput,
 } from "../src";
 import { deploymentFixture } from "./fixtures";
@@ -37,6 +38,9 @@ describe("deployment contract", () => {
         rollbackStrategy: "git",
         forcePullImages: true,
         handoverImages: [],
+        actionRequestId: "private-receipt",
+        actionLeaseOwner: "private-controller",
+        trigger: "actions",
       }),
     ).toEqual({ projectId: "p1" });
   });
@@ -47,6 +51,14 @@ describe("deployment contract", () => {
     expect(
       isCreateDeploymentResult({ ...ids, deployment: deploymentFixture(), skipped: true }),
     ).toBe(true);
+  });
+
+  it("distinguishes pending checks from manual build admission", () => {
+    const waiting = { project_id: "project-a", awaiting_actions: true, action_request_id: "adep-a" };
+    expect(isCreateDeploymentResult(waiting)).toBe(true);
+    expect(isAcceptedDeploymentResult(waiting)).toBe(false);
+    expect(isAcceptedDeploymentResult({ project_id: "project-a", deployment_id: "dep-a" })).toBe(true);
+    expect(isCreateDeploymentResult({ ...waiting, deployment_id: "dep-a" })).toBe(false);
   });
 
   it.each([

@@ -996,5 +996,20 @@
     "server": "Servidor gerenciado",
     "serverDescription": "Sirva arquivos de um contêiner nginx no seu servidor gerenciado.",
     "nextDeploy": "As alterações salvas serão aplicadas na próxima implantação."
+  },
+  "deploymentChecks": {
+    "title": "Verificações de implantação no GitHub",
+    "description": "Publique os resultados da implantação e dos serviços no commit implantado.",
+    "customize": "Personalizar verificações",
+    "deployment": "Resultado da implantação",
+    "services": "Todos os serviços, incluindo os novos",
+    "selectedServices": "Escolher serviços",
+    "includeErrors": "Incluir detalhes do erro",
+    "errorsHint": "Resumos de erros, sem dados sensíveis, são compartilhados com quem pode ler este repositório.",
+    "emptySelection": "Escolha pelo menos uma verificação ou desative os relatórios.",
+    "connectionHint": "Requer um GitHub App com permissão de escrita em Checks.",
+    "connection": "Conexão com o GitHub",
+    "deliveryFailed": "Não foi possível enviar as verificações",
+    "saveFailed": "Não foi possível salvar as configurações das verificações do GitHub."
   }
 }

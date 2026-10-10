@@ -142,6 +142,8 @@ interface EnvironmentData {
 }
 
 interface GitData {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks;
+  githubChecksDelivery?: { error: string | null; pending: string | null; updatedAt: string } | null;
   repository: any;
   branch: string;
   recentCommits: any[];
@@ -745,6 +747,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
           isLoading: false,
           error: null,
           autoDeployEnabled: response.auto_deploy,
+          githubChecks: response.github_checks,
+          githubChecksDelivery: response.github_checks_delivery,
           webhookActive: response.webhook_active,
           webhookStrategy: response.webhook_strategy,
           webhookDomain: response.webhook_domain,
@@ -1059,6 +1063,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       { id: "services", label: tl.services, icon: "layers" },
       { id: "domains", label: tl.domains, icon: "globe" },
       { id: "deployments", label: tl.deployments, icon: "rocket" },
+      { id: "actions", label: t.actions.title, icon: "play-circle" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via
       // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography

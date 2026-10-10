@@ -1,12 +1,12 @@
 ---
 title: Projects
-description: The Projects list and the nine-tab project detail screen — where you find every app you've deployed and manage its domains, deploys, config, logs, and backups.
+description: Find deployed apps and manage their domains, deployments, workflows, configuration, logs, and backups.
 ---
 
 A **project** is one app Openship knows how to build and run. This is where you find every app
 you've deployed and go into any one of them to change how it runs. There are two screens: the
-**Projects list** (everything at a glance) and the **project detail** screen (one project, nine
-tabs).
+**Projects list** (everything at a glance) and the **project detail** screen (one project and
+its management tabs).
 
 ## The Projects list
 
@@ -65,7 +65,7 @@ Send Feedback, Documentation, Join Community. The actions that change a project 
 delete it) live on the **Advanced** tab, described below.
 </Callout>
 
-## The nine tabs
+## Project tabs
 
 Each tab has its own URL under `/projects/{id}/…`, so you can link straight to one. A
 **services-only** project (multiple compose services, no single app) hides the **Configuration**
@@ -96,11 +96,25 @@ API](/docs/api/domains).
 controls to **redeploy** the latest or **roll back** to an earlier one. See [Rollback &
 redeploy](/docs/guides/rollback-redeploy).
 
+### Actions
+
+`…/actions` — workflows linked to this project, their runs, and its deployment rules.
+Add a workflow using the same setup as **Actions → New workflow**: select a repository
+file or standalone YAML, preview the job topology, then choose runners and triggers.
+
+Choose **Manual**, **On push**, or **After Actions pass** for automatic deployment.
+The last option waits for all selected required workflows to pass for the exact commit
+and deployment branch. Failed checks remain visible here with retry and cancel controls;
+a manual deployment remains available in **Deployments**. Repository push rules need
+a reachable control plane, and required checks need its connected GitHub App.
+See [Openship Actions](/docs/guides/actions) for inputs, schedules and authenticated webhooks.
+
 ### Source
 
 `…/source` — the connected git repository: which repo and branch it deploys from, recent commits,
-and the **Auto-deploy** switch that rebuilds on every push. Upload/local projects show a "connect
-a repository" prompt here instead. See [Auto-deploy on push](/docs/guides/auto-deploy).
+and automatic deployment settings. Open **Actions** to select workflows that must pass before
+a push deploys. Upload/local projects show a "connect a repository" prompt here instead.
+See [Auto-deploy on push](/docs/guides/auto-deploy).
 
 ### Configuration
 

@@ -6,6 +6,7 @@ import * as billingController from "./billing.controller";
 import { oblienWebhook } from "./oblien-webhook.controller";
 import { billingPlanChangeRoutes } from "./billing-plan-change.routes";
 import { billingCheckoutRoutes } from "./billing-checkout.routes";
+import { actionsBillingRoutes } from "./actions-billing.routes";
 
 /**
  * Plan info — no Stripe required, works on ALL instances.
@@ -38,7 +39,7 @@ plansR.public(
  * regardless of mount order. The secureRouter permission middleware
  * runs AFTER authMiddleware on every route, layered automatically.
  */
-export const billingSaasRoutes = new Hono().route("/", billingPlanChangeRoutes).route("/", billingCheckoutRoutes);
+export const billingSaasRoutes = new Hono().route("/", billingPlanChangeRoutes).route("/", billingCheckoutRoutes).route("/", actionsBillingRoutes);
 const r = secureRouter(billingSaasRoutes, {
   module: "billing",
   basePath: "/api/billing",

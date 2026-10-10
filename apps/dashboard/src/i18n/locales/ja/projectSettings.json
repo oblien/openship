@@ -996,5 +996,20 @@
     "server": "マネージドサーバー",
     "serverDescription": "マネージドサーバー上の nginx コンテナからファイルを配信します。",
     "nextDeploy": "保存した設定は次回のデプロイから適用されます。"
+  },
+  "deploymentChecks": {
+    "title": "GitHub デプロイチェック",
+    "description": "デプロイしたコミットにデプロイとサービスの結果を表示します。",
+    "customize": "チェックをカスタマイズ",
+    "deployment": "デプロイ結果",
+    "services": "新しいサービスを含むすべてのサービス",
+    "selectedServices": "サービスを選択",
+    "includeErrors": "エラーの詳細を含める",
+    "errorsHint": "機密情報を除いたエラー概要は、このリポジトリを閲覧できる人に共有されます。",
+    "emptySelection": "チェックを1つ以上選択するか、結果の送信をオフにしてください。",
+    "connectionHint": "Checks の書き込み権限を持つ GitHub App が必要です。",
+    "connection": "GitHub 接続",
+    "deliveryFailed": "チェックを送信できませんでした",
+    "saveFailed": "GitHub チェックの設定を保存できませんでした。"
   }
 }

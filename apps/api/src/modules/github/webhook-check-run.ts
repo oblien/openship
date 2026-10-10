@@ -2,7 +2,6 @@
  * GitHub webhook check_run events.
  */
 
-import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import { webhookActorCtx } from "./webhook-shared";
@@ -12,19 +11,9 @@ import type { GitHubCheckRunPayload } from "@repo/contracts";
 
 // ─── check_run events ────────────────────────────────────────────────────────
 
-/**
- * Handle a GitHub `check_run` event.
- *
- * The only action we actively service is `rerequested` — when a user
- * hits "Re-run" on a service-level check in the GitHub PR UI we look
- * up the originating service_deployment row, recover its
- * (project, branch, commit, service) tuple, and trigger a fresh deploy
- * for that one service at the same commit_sha (git-strategy rollback
- * style — rebuild from source).
- *
- * `requested_action` (custom action buttons) is out of scope until we
- * register any. Everything else is acked.
- */
+/** Re-run the recorded deployment (or just its service) at the same commit.
+ * A signed delivery must still match its stored repository and revision: a
+ * webhook secret for another repository never authorizes a cross-project run. */
 export async function handleCheckRun(
   payload: GitHubCheckRunPayload,
 ): Promise<WebhookHandlerResult> {
@@ -41,34 +30,36 @@ export async function handleCheckRun(
     return { success: true, event: "check_run", message: "Missing check_run.id" };
   }
 
-  const sd = await repos.serviceDeployment.findByCheckRunId(checkRunId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-check-run"); return null; });
-  if (!sd) {
-    return {
-      success: true,
-      event: "check_run",
-      message: `No service_deployment found for check_run ${checkRunId}`,
-    };
+  const check = await repos.deploymentCheck.findByCheckRunId(checkRunId);
+  // Existing service checks keep their re-run action; new reports all use the
+  // shared mirror. Both resolve into the same deployment admission below.
+  const sd = check?.serviceDeploymentId
+    ? await repos.serviceDeployment.findById(check.serviceDeploymentId)
+    : !check ? await repos.serviceDeployment.findByCheckRunId(checkRunId) : undefined;
+  const deploymentId = check?.deploymentId ?? sd?.deploymentId;
+  if (!deploymentId) return { success: true, event: "check_run", message: "No matching deployment Check" };
+  const dep = await repos.deployment.findById(deploymentId);
+  if (!dep) return { success: true, event: "check_run", message: "Deployment no longer exists" };
+  const origin = check?.source ?? (check
+    ? (await repos.deploymentCheck.list(dep.id)).find(row => row.kind === "rollup")?.source
+    : null);
+  const project = await repos.project.findById(dep.projectId);
+  const repoMatches = (owner: string | null, repo: string | null) =>
+    owner?.toLowerCase() === payload.repository?.owner?.login?.toLowerCase() &&
+    repo?.toLowerCase() === payload.repository?.name?.toLowerCase();
+  if (!project || project.organizationId !== dep.organizationId || project.gitProvider !== "github" || project.deletedAt || project.deletionInProgress ||
+      project.githubChecks?.enabled === false || !repoMatches(project.gitOwner, project.gitRepo) ||
+      !dep.commitSha || dep.commitSha !== payload.check_run.head_sha ||
+      (check && (!origin || !repoMatches(origin.owner, origin.repo))))
+    return { success: true, event: "check_run", message: "Check does not match the active project source" };
+  let serviceId = sd?.serviceId;
+  if (check?.kind === "service" && !serviceId) {
+    serviceId = (await repos.service.listByProject(project.id)).find(service =>
+      service.name === check.serviceName && service.enabled)?.id;
+    if (!serviceId) return { success: true, event: "check_run", message: "Service no longer exists" };
   }
 
-  const dep = await repos.deployment.findById(sd.deploymentId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-check-run"); return null; });
-  if (!dep) {
-    return {
-      success: true,
-      event: "check_run",
-      message: `No deployment found for service_deployment ${sd.id}`,
-    };
-  }
-
-  const project = await repos.project.findById(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-check-run"); return null; });
-  if (!project) {
-    return {
-      success: true,
-      event: "check_run",
-      message: `No project found for deployment ${dep.id}`,
-    };
-  }
-
-  const owner = await resolveOrgOwner(project.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-check-run"); return null; });
+  const owner = await resolveOrgOwner(project.organizationId);
   if (!owner) {
     return {
       success: true,
@@ -94,20 +85,15 @@ export async function handleCheckRun(
       // "check-run" (not "webhook") so it bypasses the push commit-sha dedup —
       // a deliberate re-run at the current commit.
       trigger: "check-run",
-      serviceIds: [sd.serviceId],
-      forceAll: false,
+      serviceIds: serviceId ? [serviceId] : undefined,
+      forceAll: !serviceId,
       commitShaBefore: dep.commitShaBefore ?? undefined,
     },
-  ).catch((err) => {
-    errorDiagnostics.error("api/modules/github/webhook-check-run",
-      `[GitHub Webhook] check_run rerequested for sd=${sd.id} failed:`,
-      err,
-    );
-  });
+  ); // The dispatcher records a failed admission so redelivery can retry it.
 
   return {
     success: true,
     event: "check_run",
-    message: `Re-deploying service ${sd.serviceName} from check_run ${checkRunId}`,
+    message: `Re-deploying ${serviceId ? "service" : "project"} from check_run ${checkRunId}`,
   };
 }

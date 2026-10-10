@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { getTableColumns } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { clusterRuntimePlanFixture } from "../../contracts/test/cluster-runtime-fixtures";
 
@@ -148,12 +148,16 @@ async function seedOneRowPerTable(): Promise<Map<string, Record<string, unknown>
       }
 
       if (col.notNull && !col.hasDefault) row[field] = sampleValue(col, spec.sqlName);
-      else if (field === "id") row[field] = `${spec.sqlName}_1`;
+      else if (field === "id") row[field] = col.dataType === "number" ? 37 : `${spec.sqlName}_1`;
     }
 
     // A project chooses exactly one execution target. Other instance parents
     // still get their own rows and are independently round-tripped.
     if (spec.sqlName === "project") { row.clusterId = null; }
+    // A standalone workflow has nullable repository fields but must carry its YAML.
+    if (spec.sqlName === "action_workflow") {
+      row.source = "name: Automation\non: workflow_dispatch\njobs:\n  run:\n    runs-on: self-hosted\n    steps:\n      - run: echo restored\n";
+    }
     await db.insert(spec.table).values(row as never);
 
     const bySqlColumn: Record<string, unknown> = {};
@@ -220,6 +224,18 @@ describe("whole-instance dump → restore round trip", () => {
     )) as Array<Record<string, unknown>>;
     expect(domain?.serviceId).toBe(seeded.get("domain")?.serviceId);
     expect(domain?.serviceId).toBeTruthy();
+  });
+
+  it("advances generated artifact IDs after importing explicit IDs", async () => {
+    const spec = topoOrderedTables().find((table) => table.sqlName === "action_storage_object")!;
+    const dump = JSON.parse(JSON.stringify(await dumpSubgraph({ kind: "instance" })));
+    await restoreSubgraph(dump, { mode: "wipe" });
+    const [saved] = await db.select().from(spec.table);
+    const { id, ...copy } = saved!;
+    const [created] = await db.insert(spec.table).values(copy as never).returning();
+    expect(created!.id).toBeGreaterThan(Number(id));
+    // Keep the one-row-per-table fixture intact for later restore assertions.
+    await db.execute(sql`DELETE FROM ${sql.identifier(spec.sqlName)} WHERE id = ${created!.id}`);
   });
 
   it("lets callers include follow-up work in the same atomic restore transaction", async () => {

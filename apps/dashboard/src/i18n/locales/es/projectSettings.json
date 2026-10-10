@@ -996,5 +996,20 @@
     "server": "Servidor administrado",
     "serverDescription": "Sirve archivos desde un contenedor nginx en tu servidor administrado.",
     "nextDeploy": "Los cambios guardados se aplican en el próximo despliegue."
+  },
+  "deploymentChecks": {
+    "title": "Comprobaciones de despliegue en GitHub",
+    "description": "Publica los resultados del despliegue y los servicios en el commit desplegado.",
+    "customize": "Personalizar comprobaciones",
+    "deployment": "Resultado del despliegue",
+    "services": "Todos los servicios, incluidos los nuevos",
+    "selectedServices": "Elegir servicios",
+    "includeErrors": "Incluir detalles del error",
+    "errorsHint": "Los resúmenes de errores, sin datos sensibles, se comparten con quienes pueden leer este repositorio.",
+    "emptySelection": "Elige al menos una comprobación o desactiva los informes.",
+    "connectionHint": "Requiere una aplicación de GitHub con permiso de escritura en Checks.",
+    "connection": "Conexión de GitHub",
+    "deliveryFailed": "No se pudieron enviar las comprobaciones",
+    "saveFailed": "No se pudo guardar la configuración de comprobaciones de GitHub."
   }
 }

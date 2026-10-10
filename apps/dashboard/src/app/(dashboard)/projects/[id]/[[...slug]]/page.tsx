@@ -1,4 +1,5 @@
 "use client";
+import { ProjectActions } from "@/components/actions/ProjectActions";
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -867,6 +868,8 @@ const ProjectSettingsContent = () => {
         return <ServicesTab />;
       case "domains":
         return <DomainSettings />;
+      case "actions":
+        return <ProjectActions projectId={id} />;
       case "deployments":
         return <Deployments />;
       case "health":
@@ -986,7 +989,7 @@ const ProjectSettingsContent = () => {
     (status === "deleting" && !projectData.activeDeploymentId);
   // Configured drafts can inspect their services in Topology before deploying.
   // Other draft tabs keep the focused setup screen, including stale runtime links.
-  if (isNeverDeployed && activeTab !== "topology") {
+  if (isNeverDeployed && activeTab !== "topology" && activeTab !== "actions") {
     return (
       <PageContainer className="@container/project-draft">
         <DraftProjectView onDeleteProject={() => handleDeleteProject()} />

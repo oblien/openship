@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -29,16 +29,21 @@ import { TrafficEdge, type ScaleFlowEdge } from "@/components/scale/TrafficEdge"
 import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
   topologyPositions,
+  DEFAULT_TOPOLOGY_NODE_LAYOUT,
+  type TopologyNodeLayout,
   type ProjectTopologyGraph,
   type TopologyResource,
   type TopologyState,
 } from "./model";
 import { readTopologyPositions, saveTopologyPositions } from "./layout";
 import "@xyflow/react/dist/style.css";
+import "@/components/scale/scale.css";
+import "./topology.css";
 
 export type TopologySelection = { kind: "node" | "edge"; id: string } | null;
 /** An optional selection action for unsaved resources, such as an import scan. */
 export interface TopologyNodeAction {
+  kind?: "select" | "open";
   label: string;
   ariaLabel: string;
   selected: boolean;
@@ -46,11 +51,14 @@ export interface TopologyNodeAction {
   hint?: string;
   statusLabel?: string;
   readOnly?: boolean;
+  /** Unsaved editors may expose dependency handles without changing runtime resources. */
+  connectable?: boolean;
 }
 type ResourceFlowNode = Node<
   { resource: TopologyResource; onOpen: (id: string) => void; action?: TopologyNodeAction },
   "resource"
 >;
+export type TopologyNodeProps = NodeProps<ResourceFlowNode>;
 const stateLabels: Record<TopologyState, string> = {
   running: "Running",
   starting: "Starting",
@@ -61,6 +69,9 @@ const stateLabels: Record<TopologyState, string> = {
   disabled: "Disabled",
   configured: "Configured",
   pending: "Pending",
+  succeeded: "Succeeded",
+  cancelled: "Cancelled",
+  skipped: "Skipped",
 };
 
 export function TopologyResourceIcon({
@@ -82,13 +93,15 @@ export function TopologyResourceIcon({
     return <ResourceIcon kind={resource.tone} className={className} />;
   }
   const Icon =
-    resource.kind === "edge"
-      ? "globe"
-      : resource.kind === "linked"
-        ? "database"
-        : resource.kind === "environment" || resource.kind === "traffic"
-          ? "layers"
-          : "window";
+    resource.kind === "workflow-job"
+      ? "terminal"
+      : resource.kind === "edge"
+        ? "globe"
+        : resource.kind === "linked"
+          ? "database"
+          : resource.kind === "environment" || resource.kind === "traffic"
+            ? "layers"
+            : "window";
   return <UiIcon name={Icon} className={className} />;
 }
 
@@ -119,9 +132,14 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
       data-pending={resource.pending}
       data-picked={action?.selected || undefined}
       data-unavailable={action?.disabled || undefined}
-      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : stateLabels[resource.state]}${resource.pending ? ", pending changes" : ""}`}
+      aria-label={`${resource.name}, ${applicationRelease ? `deployed ${resource.version}` : (action?.statusLabel ?? stateLabels[resource.state])}${resource.pending ? ", pending changes" : ""}`}
     >
-      <Handle type="target" position={Position.Left} isConnectable={isService && !action} />
+      <Handle
+        className="topology-port"
+        type="target"
+        position={Position.Left}
+        isConnectable={(isService && !action) || action?.connectable === true}
+      />
       <div className="flex items-center gap-3 p-4 pb-3">
         <span className="topology-node-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
           <TopologyResourceIcon resource={resource} />
@@ -157,8 +175,8 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
           <button
             type="button"
             className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            role={action ? "checkbox" : undefined}
-            aria-checked={action?.selected}
+            role={action && action.kind !== "open" ? "checkbox" : undefined}
+            aria-checked={action && action.kind !== "open" ? action.selected : undefined}
             disabled={action?.disabled}
             title={action?.hint}
             onClick={(event) => {
@@ -176,7 +194,9 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
             }
           >
             <span className="flex min-w-0 items-center gap-2 truncate">
-              {action && <Checkbox asButton={false} checked={action.selected} />}
+              {action && action.kind !== "open" && (
+                <Checkbox asButton={false} checked={action.selected} />
+              )}
               {action
                 ? action.label
                 : canInspectInstance
@@ -201,12 +221,19 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
               ) : (
                 <TopologyStatus state={resource.state} />
               )}
-              {!action && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
+              {(!action || action.kind === "open") && (
+                <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />
+              )}
             </span>
           </button>
         </div>
       )}
-      <Handle type="source" position={Position.Right} isConnectable={isService && !action} />
+      <Handle
+        className="topology-port"
+        type="source"
+        position={Position.Right}
+        isConnectable={(isService && !action) || action?.connectable === true}
+      />
     </article>
   );
 });
@@ -310,6 +337,9 @@ interface TopologyCanvasProps {
   onOpen: (id: string) => void;
   onConnect?: (connection: Connection) => void;
   nodeActions?: Readonly<Record<string, TopologyNodeAction>>;
+  /** Render workflow jobs or other resources without duplicating canvas behavior. */
+  nodeComponent?: ComponentType<TopologyNodeProps>;
+  nodeLayout?: TopologyNodeLayout;
   ariaLabel?: string;
   nodeDescription?: string;
 }
@@ -324,11 +354,17 @@ function Canvas({
   onOpen,
   onConnect,
   nodeActions,
+  nodeComponent,
+  nodeLayout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
   ariaLabel = "Project topology",
   nodeDescription,
 }: TopologyCanvasProps) {
   const fitOptions = nodeActions ? selectionFitViewOptions : fitViewOptions;
-  const positions = useMemo(() => topologyPositions(graph), [graph]);
+  const positions = useMemo(() => topologyPositions(graph, nodeLayout), [graph, nodeLayout]);
+  const renderedNodeTypes = useMemo(
+    () => (nodeComponent ? { resource: nodeComponent } : nodeTypes),
+    [nodeComponent],
+  );
   const storedPositions = useRef<ReturnType<typeof readTopologyPositions> | null>(null);
   if (storedPositions.current === null)
     storedPositions.current = layoutKey ? readTopologyPositions(layoutKey) : {};
@@ -338,12 +374,31 @@ function Canvas({
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
-      const occupied = current
-        .filter((node) => graph.nodes.some((resource) => resource.id === node.id))
-        .map((node) => node.position);
+      const rearranged = graph.nodes.some((resource) => {
+        const previous = byId.get(resource.id)?.data.resource;
+        return (
+          previous &&
+          (previous.layoutHeight !== resource.layoutHeight ||
+            previous.layoutWidth !== resource.layoutWidth ||
+            previous.layoutPosition?.x !== resource.layoutPosition?.x ||
+            previous.layoutPosition?.y !== resource.layoutPosition?.y)
+        );
+      });
+      const occupied = (rearranged ? [] : current)
+        .filter((node) => !node.parentId && graph.nodes.some((resource) => resource.id === node.id))
+        .map((node) => ({
+          ...node.position,
+          width: node.data.resource.layoutWidth ?? nodeLayout.width,
+          height: node.data.resource.layoutHeight ?? nodeLayout.height,
+        }));
       return graph.nodes.map((resource) => {
         const existing = byId.get(resource.id);
-        let position = existing?.position ?? storedPositions.current?.[resource.id];
+        const height = resource.layoutHeight ?? nodeLayout.height;
+        const width = resource.layoutWidth ?? nodeLayout.width;
+        let position =
+          resource.parentId || rearranged
+            ? positions[resource.id]
+            : (existing?.position ?? storedPositions.current?.[resource.id]);
         if (!position) {
           position = { ...positions[resource.id] };
           // New nodes must not cover a service whose position was preserved
@@ -351,11 +406,14 @@ function Canvas({
           while (
             occupied.some(
               (other) =>
-                Math.abs(other.x - position!.x) < 270 && Math.abs(other.y - position!.y) < 180,
+                position!.x < other.x + other.width + 20 &&
+                other.x < position!.x + width + 20 &&
+                position!.y < other.y + other.height + 20 &&
+                other.y < position!.y + height + 20,
             )
           )
-            position.y += 200;
-          occupied.push(position);
+            position.y += height + nodeLayout.gapY;
+          occupied.push({ ...position, width, height });
         }
         return {
           // Keep measured dimensions so selection and refresh do not hide existing nodes.
@@ -363,32 +421,50 @@ function Canvas({
           id: resource.id,
           type: "resource" as const,
           position,
+          parentId: resource.parentId,
+          extent: resource.parentId ? ("parent" as const) : undefined,
+          draggable: resource.parentId ? false : undefined,
+          width: resource.layoutWidth,
+          height: resource.layoutHeight,
+          style: { width: resource.layoutWidth, height: resource.layoutHeight },
+          ...(existing?.measured &&
+          (existing.data.resource.layoutHeight !== resource.layoutHeight ||
+            existing.data.resource.layoutWidth !== resource.layoutWidth)
+            ? { measured: { ...existing.measured, width, height } }
+            : {}),
           data: { resource, onOpen, action: nodeActions?.[resource.id] },
         };
       });
     });
     const ids = graph.nodes
-      .map((node) => node.id)
+      .map(
+        (node) =>
+          `${node.id}:${node.layoutWidth ?? nodeLayout.width}:${node.layoutHeight ?? nodeLayout.height}:${node.layoutPosition?.x ?? ""}:${node.layoutPosition?.y ?? ""}`,
+      )
       .sort()
       .join("|");
     if (previousIds.current && previousIds.current !== ids)
       setFitRevision((revision) => revision + 1);
     previousIds.current = ids;
-  }, [graph, positions, onOpen, nodeActions]);
+  }, [graph, positions, onOpen, nodeActions, nodeLayout]);
   const edges = useMemo<ScaleFlowEdge[]>(
     () =>
       graph.edges.map((relation) => ({
         id: relation.id,
         source: relation.source,
         target: relation.target,
+        sourceHandle: relation.sourceHandle,
+        targetHandle: relation.targetHandle,
+        focusable: !relation.readOnly,
         type: "traffic",
         selected: selection?.kind === "edge" && selection.id === relation.id,
         data: {
           label: relation.label,
           showLabel: relation.kind === "binding",
           enabled: !relation.pending && relation.enabled !== false,
+          targetGutter: relation.targetGutter,
         },
-        ariaLabel: `${relation.kind}: ${relation.label}`,
+        ariaLabel: `${relation.kind}: ${relation.label || relation.description}`,
       })),
     [graph.edges, selection],
   );
@@ -404,6 +480,11 @@ function Canvas({
           return;
         const id = target.getAttribute("data-id");
         if (!id || nodeActions?.[id]?.disabled || nodeActions?.[id]?.readOnly) return;
+        if (
+          target.classList.contains("react-flow__edge") &&
+          graph.edges.find((edge) => edge.id === id)?.readOnly
+        )
+          return;
         event.preventDefault();
         onSelect({ kind: target.classList.contains("react-flow__node") ? "node" : "edge", id });
       }}
@@ -411,7 +492,7 @@ function Canvas({
       <ReactFlow<ResourceFlowNode, ScaleFlowEdge>
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={renderedNodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         onNodesChange={(changes) => setNodes((current) => applyNodeChanges(changes, current))}
@@ -427,6 +508,7 @@ function Canvas({
           onSelect({ kind: "node", id: node.id });
         }}
         onEdgeClick={(event, edge) => {
+          if (graph.edges.find((relation) => relation.id === edge.id)?.readOnly) return;
           (event.currentTarget as SVGElement).focus({ preventScroll: true });
           onSelect({ kind: "edge", id: edge.id });
         }}

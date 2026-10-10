@@ -1,3 +1,4 @@
+import { ActionCollectionSchemas, ActionResourceSchemas } from "@repo/contracts";
 /** Node worker entry, never imported by the public host facade. No HTTP application or listener. */
 import { observedAllSettled, reportCaughtError as observeCaughtError, reportError, errorReporter, diagnosticId, type ErrorContext } from "@repo/core/diagnostics";
 import { installNodeErrorReporting, withErrorContext } from "@repo/core/diagnostics/node";
@@ -101,6 +102,7 @@ try {
         const { reconcileAllSchedules } = await import("./engine/modules/backups/triggers/cron");
         await reconcileAllSchedules();
         await reconcileJobs();
+        (await import("./engine/modules/actions/lifecycle")).startActionController();
         const { scheduleBillingAnniversary } = await import("./engine/modules/billing/billing-anniversary.cron");
         await scheduleBillingAnniversary();
         const { startNotificationRunner } = await import("./engine/lib/notification-workers");
@@ -117,6 +119,7 @@ try {
       const { stopNotificationRunner } = await import("./engine/lib/notification-workers");
       await stopNotificationRunner();
       const { shutdownJobRunner } = await import("./engine/lib/job-runner");
+      await (await import("./engine/modules/actions/lifecycle")).stopActionController();
       await shutdownJobRunner(Infinity);
       const { stopAllContainerEventWatchers } = await import("./engine/modules/monitoring/container-events");
       await stopAllContainerEventWatchers({ closing: true });
@@ -178,6 +181,7 @@ try {
       ...Object.entries({ ...AppCollectionSchemas, ...AppResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `apps.${name}`),
       ...Object.entries({ ...BackupDestinationCollectionSchemas, ...BackupDestinationResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `backupDestinations.${name}`),
       ...Object.entries({ ...BackupProjectSchemas, ...BackupPolicySchemas, ...BackupRunSchemas, ...BackupRestoreSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `backups.${name}`),
+      ...Object.entries({ ...ActionCollectionSchemas, ...ActionResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `actions.${name}`),
       ...Object.entries({ ...JobCollectionSchemas, ...JobResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `jobs.${name}`),
       ...Object.entries({ ...AnalyticsProjectSchemas, ...AnalyticsServerSchemas, ...AnalyticsCollectionSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `analytics.${name}`),
       ...Object.entries({ ...IssueCollectionSchemas, ...IssueJobSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `issues.${name}`),
@@ -336,7 +340,7 @@ try {
         return runWithOperationSource((args[0] as ExecutionContext).source ?? "api", () => fn(...args));
       }
     }
-    for (const [prefix, operations] of Object.entries({ domains: kernel.domains, dns: kernel.dns, credentials: kernel.credentials, servers: kernel.servers, system: kernel.system, apps: kernel.apps, backupDestinations: kernel.backupDestinations, backups: kernel.backups, billing: kernel.billing, notices: kernel.notices, github: kernel.github, permissions: kernel.permissions, tokens: kernel.tokens, webhooks: kernel.webhooks, updates: kernel.updates, audit: kernel.audit, settings: kernel.settings, notifications: kernel.notifications, issues: kernel.issues, analytics: kernel.analytics, jobs: kernel.jobs })) {
+    for (const [prefix, operations] of Object.entries({ domains: kernel.domains, dns: kernel.dns, credentials: kernel.credentials, servers: kernel.servers, system: kernel.system, apps: kernel.apps, backupDestinations: kernel.backupDestinations, backups: kernel.backups, billing: kernel.billing, notices: kernel.notices, github: kernel.github, permissions: kernel.permissions, tokens: kernel.tokens, webhooks: kernel.webhooks, updates: kernel.updates, audit: kernel.audit, settings: kernel.settings, notifications: kernel.notifications, issues: kernel.issues, analytics: kernel.analytics, jobs: kernel.jobs, actions: kernel.actions })) {
       if (!operation.startsWith(`${prefix}.`)) continue;
       const key = operation.slice(prefix.length + 1);
       if (key !== "verifyStream" && Object.hasOwn(operations, key)) {

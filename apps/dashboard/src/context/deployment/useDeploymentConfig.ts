@@ -64,6 +64,8 @@ interface PreparedConfigArgs {
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
+  /** Source rescans keep settings owned by the operator, not the source tree. */
+  preserveDraftSettings?: boolean;
 }
 
 interface LoadedProjectState {
@@ -865,6 +867,7 @@ export function useDeploymentConfig() {
           readiness: projectId
             ? (project?.readiness ?? undefined)
             : (response.readiness ?? undefined),
+          githubChecks: args.preserveDraftSettings ? prev.githubChecks : project?.githubChecks ?? undefined,
           // A saved empty list is an explicit opt-out; a rescan must not enable
           // database-changing commands that the operator already disabled.
           releaseCommands: projectId
@@ -1033,6 +1036,7 @@ export function useDeploymentConfig() {
                     name: project?.name,
                     runtimeMode: project?.runtimeMode,
                     readiness: project?.readiness,
+                    githubChecks: project?.githubChecks,
                     releaseCommands: project?.releaseCommands,
                     routingConfig: project?.routingConfig,
                   }
@@ -1044,6 +1048,7 @@ export function useDeploymentConfig() {
               branchPage: 1,
               branchesHasMore: Boolean(response.repository.branches_has_more),
               projectId: context?.projectId,
+              preserveDraftSettings: context?.preserveEnvState,
             },
           ),
         );
@@ -1117,6 +1122,7 @@ export function useDeploymentConfig() {
             branchPage: 1,
             branchesHasMore: Boolean(response.repository.branches_has_more),
             projectId: config.projectId,
+            preserveDraftSettings: true,
           });
           const requiresDocker =
             prepared.projectType === "services" || prepared.projectType === "docker";
@@ -1497,6 +1503,7 @@ export function useDeploymentConfig() {
               ...prev,
               projectId,
               releaseCommands: project.releaseCommands ?? undefined,
+              githubChecks: project.githubChecks ?? undefined,
               // The successful env read is authoritative even when empty. Keeping
               // stale rows here would turn a later save into unintended upserts.
               envVars: envState.rows,

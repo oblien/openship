@@ -30,7 +30,149 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 [CustomSelect](../apps/dashboard/src/components/ui/CustomSelect.tsx), and
 [Button](../apps/dashboard/src/components/ui/button.tsx) instead of copying their implementations.
 
+## Actions
+
+Actions reuses the shared topology canvas, server selector, page layout and filled
+controls. Keep workflow configuration, runner setup and execution history in one
+module. Jobs schedules commands or invokes a saved workflow; workflow jobs link to
+the original Actions run and its logs. Draw one node
+per logical workflow job, with matrix executions in the selectable job list.
+Show persisted step state and resumable logs together. GitHub mode uses the same
+step presentation, with a direct link to live GitHub logs and completed logs in
+Openship. Preserve GitHub-owned Checks instead of publishing duplicate status. Refreshing or switching
+views must not discard a running job's state. Only confirm cancellation after the
+worker stops, and show cleanup while its destination remains occupied.
+Expected cancellation uses its status badge; keep engine cancellation details in
+the logs rather than displaying them as a second error alert.
+
+Key remote data by instance, user and organization. Clear private results on a
+scope switch while loading the new scope; stale requests must not populate it.
+Preserve already loaded logs while polling. Surface capability mismatches beside
+the selected destination instead of offering runtimes that cannot execute there.
+Native-runner setup explicitly describes access as the connected server user.
+Cloud Actions funding is separate from application-server billing and must remain
+clearly scoped in the UI.
+Actions page titles match Projects: 24px, medium weight, and explicit foreground
+color. Use the normal 340px sidebar on the Actions home page, with a themed SVG
+workflow illustration for empty workflows, runners and run history. The sidebar
+guides first use through runner, workflow and first run, based on the loaded
+records; after a run exists, show the current overview and latest run. Keep Cloud
+funding and Desktop availability guidance in that column. Use the same loaded
+data for the list and guidance, and keep fetch failures distinct from empty
+accounts. Stack the sidebar below the list on narrow containers.
+Use the same workflow editor from Actions, Project → Actions and the deployment
+wizard. The dialog uses the available viewport, with a persistent canvas on the left
+and a scrollable 400–420px inspector on the right. Topology is the default; List and YAML
+are peer views of the same draft. Source and Run settings stay in the inspector.
+Use the shared canvas skeleton with compact workflow nodes while editor data,
+repository discovery or the canvas code loads. Keep the current graph visible
+while validating edits. An empty canvas starts with one actionable workflow node;
+reserve the large illustration for the Actions home empty state.
+In Topology, selecting a job or dependency replaces those controls with its editor.
+In List, expand jobs and edit steps independently on the left; keep workflow controls
+on the right. Reuse the same job-and-step editor in both locations without rendering
+a duplicate. Job settings open by default when selecting a topology node and remain
+a compact disclosure in List. Expanded steps stay in shared state across views;
+opening an item never closes another. Keep Save
+visible beneath the inspector. Stack the canvas and controls on narrow screens.
+Use the shared PNG `play-circle` icon for Actions in navigation, workflow cards and
+the editor. The large editor uses the shared modal's translucent frosted surface;
+its inspector uses `bg-popover/60` with backdrop blur. Apply translucency to surfaces,
+not text or controls; keep filled fields distinct using the theme's background and
+foreground tokens. Workflow nodes are compact neutral rows with a status icon,
+job name and runner label, without service-card footers. A muted info accent on the
+draft's play icon and selected outline gives identity without tinting the node fill.
+They reuse the shared canvas with their own node renderer and compact layout dimensions.
+A job expands into separate step cards below its compact job node, without an enclosing
+box. Choose the grid columns from the available canvas width and height, reserving space
+for neighboring jobs through the shared layout. A single-job workflow shows its steps
+immediately; the editor toolbar offers Expand all / Collapse all for larger workflows.
+Directional arrows follow YAML execution order across each row and down to the next;
+job dependencies remain connected to the job. Selecting a step node reveals its
+shared step editor. Each card remains independently movable and each job can still
+expand independently. Reflow when the canvas size changes; preserve manual positions
+while editing fields or selecting nodes.
+The List view is a vertical job outline with expandable steps and explicit dependency
+labels; its rail does not imply execution order or completed progress. Reserve other
+color for run status, errors and repository differences; plus buttons, sections and
+configuration icons stay neutral. The canvas owns its required styles so direct navigation is
+consistent with navigation from a project.
+Node, step, connection and trigger edits update the original YAML while preserving
+unrelated fields and comments. Reject dependency cycles and dangling job-output
+references; undo/redo affects the same draft across views. Review repository changes
+before committing, using the reviewed file SHA. Repository discovery selects the
+integration from the file path; do not expose engine-selection tabs. Files in
+`.github/workflows` use GitHub's scheduler and the selected Openship runners;
+standalone YAML and `.openship/workflows` use the independent controller.
+Repository preview and saving follow the same rule, including existing drafts.
+GitHub workflows always commit changed YAML,
+use repository-managed credentials/storage, and explain the explicit
+`self-hosted, openship` routing labels and repository-wide runner trust. Independent
+workflows offer Automatic repository updates or Review first; the latter stores the existing inline YAML snapshot and continues
+using it until an explicit review and save. Loading a newer repository file must not
+overwrite that snapshot or an edited draft. No second sync engine or runner path is
+needed. Keep variables, secrets and artifact storage in one disclosure. The wizard
+preserves deployment fields while the editor is open and links selected workflows
+when the project is saved.
+Repository setup offers a compact file checklist with Select all. Keep a separate
+draft and undo history for each file while previewing them on the same canvas.
+Runner destinations, enabled state and project links apply to the selected files;
+trigger edits belong to the previewed file. Review every changed file before a
+repository commit. Import files and links in one transaction; a retry reuses saved
+workflows and preserves their configuration.
+Run settings uses compact trigger rows with shared switches and expandable controls.
+Branches, paths, tags and event types use filled add/remove chips; keep commas inside
+glob patterns literal. Include/exclude choices replace the opposite YAML filter.
+Schedules have individual UTC inputs, and additional YAML-only events remain visible.
+Keep the Workflow / Run settings / Checks tabs and save action visible while the inspector scrolls.
+Project and deployment entry points keep their project association implicit; the generic
+editor puts additional project links in a closed disclosure and preserves links when untouched.
+Run settings leads with the required runner destination. Selecting an empty runner field
+opens the shared runner form in a modal; saving returns to the same workflow draft and selects
+the new runner. Existing runners use a compact picker. Cloud funding opens the shared budget
+in a dialog; only hosted payment opens separately so the draft survives.
+Checks describes the existing automatic GitHub integration and offers optional workflow
+notifications through verified account channels. Keep outcomes and channel logos compact.
+Account-wide subscriptions and workflow choices share one durable delivery identity per run
+and channel; changing notification choices affects future runs, not runs already in progress.
+Project Actions owns one deployment policy: Manual, Push, or After required Actions
+pass. Its Workflows, Runs and Deployment automation tabs keep the existing project
+sidebar; do not add a second settings rail inside the project content column.
+Open workflow creation in the same full-width setup dialog used by the deployment
+wizard. Show the persisted pending request, exact commit and retry/cancel controls
+alongside workflow runs. Required checks cover every push to the project branch;
+optional workflows can filter paths. Keep policy failures visible and retryable,
+and never start the wizard's deployment before saving its selected rules.
+Use **Actions → Budget** for live usage rates, estimated VM minutes, provider
+balance and deposit history. Keep the comparison beside a standard 340px funding
+column. State that estimates assume full CPU and RAM before transfer or disk I/O;
+CPU time, measured memory and transfer consume one balance. Never imply guaranteed
+minutes or a separate included transfer allowance. Payment returns reconcile the
+saved purchase, then distinguish confirmed funds from runner setup. Preserve page
+state and show an unavailable balance as unknown, not zero. Connected Macs default
+to native execution and clear incompatible labels when the destination changes.
+Runner setup starts with the shared server picker and a compact environment summary.
+Browse catalog opens visual Ubuntu, native macOS/Linux and custom-image presets using
+the shared logos and option cards. Only offer presets compatible with the inspected
+server. Presets fill the existing runner configuration and keep resource limits; they
+do not create another execution path. Keep image, labels and resource overrides under
+Advanced settings, with the current configuration and matched labels in the sidebar.
+Retain saved runner settings on inspection, and make missing-tool checks retryable.
+The default environment is a convenience, not a limit on job images. Job settings
+can choose a Linux container image and one CPU architecture using standard YAML.
+Show verified native/emulated architecture badges on container runners. Offer explicit
+CPU emulation setup only for a Docker-capable server; keep the destination locked while
+it runs and recheck capabilities before displaying the result. Native Macs continue to
+use their installed tools and physical CPU.
+
 ## Layout and density
+
+GitHub deployment reporting uses the same compact settings card in Project → Source
+and the shared deploy wizard. Lead with one enabled toggle and a short description;
+keep overall/per-service selection and failure-detail sharing under Customize checks.
+Retain selections when reporting is disabled, a branch is rescanned, or the wizard is
+reopened. Delivery failures belong beside these preferences, with the GitHub connection
+link, and must not replace deployment status or appear as a build failure.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the

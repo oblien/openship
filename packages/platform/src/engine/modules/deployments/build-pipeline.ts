@@ -93,8 +93,6 @@ import { resolveEdgeProviderOptions } from "../../lib/edge-provider-options";
 import { pinnedEdgeImage } from "../../lib/edge-image";
 import {
   preCreateServiceDeployments,
-  emitServiceCheckRun,
-  emitInitialServiceChecks,
   rollupDeploymentStatus,
 } from "./service-checks";
 import { firePreDeployBackups } from "../backups/triggers/pre-deploy";
@@ -593,7 +591,7 @@ export async function finalizeComposeDeploy(opts: {
 }): Promise<void> {
   const { project, dep, logger } = opts;
 
-  // Rollup + per-service Checks. Failures here must not roll back the deploy.
+  // Roll up the runtime outcome; the durable GitHub reporter observes it later.
   try {
     const finalDep = await repos.deployment.findById(dep.id);
     if (finalDep && finalDep.status === "ready") {
@@ -638,35 +636,10 @@ export async function finalizeComposeDeploy(opts: {
         // at-least-one success — but guard defensively.
         await setDeploymentStatus(dep.id, "failed");
       }
-
-      // Per-service Checks API events.
-      for (const sd of perService) {
-        if (!sd.serviceName) continue;
-        if (sd.status === "skipped") continue; // already emitted up front
-        const conclusion =
-          sd.status === "success" || sd.status === "running"
-            ? "success"
-            : sd.status === "cancelled"
-              ? "cancelled"
-              : "failure";
-        await emitServiceCheckRun({
-          project,
-          dep,
-          serviceDeploymentId: sd.id,
-          serviceName: sd.serviceName,
-          conclusion,
-          output: {
-            title: `${sd.serviceName} ${conclusion}`,
-            summary: sd.errorMessage ?? sd.error ?? "",
-          },
-        }).catch((diagnosticFailure) => {
-          observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline");
-        });
-      }
     }
   } catch (err) {
     // Rollup failures must not roll back the deploy.
-    errorDiagnostics.warn("platform/engine/modules/deployments/build-pipeline", `[build] rollup/Checks emission failed for ${dep.id}:`, err);
+    errorDiagnostics.warn("platform/engine/modules/deployments/build-pipeline", `[build] service rollup failed for ${dep.id}:`, err);
   }
 
   // Archive the predecessor only after this deployment reaches a success state.
@@ -877,28 +850,16 @@ async function executeBuildAndDeploy(
     });
     await setDeploymentStatus(dep.id, "building");
 
-    // Pre-create service_deployment rows so the dashboard sees a
-    // complete fan-out even before any service starts building. Rows
-    // for targeted services start as `pending`; everyone else is
-    // marked `skipped` up front. The composeBuild pipeline patches
-    // status as it goes; we roll up at the end.
-    //
-    // Done UP FRONT so a downstream crash still leaves a coherent
-    // (deployment, services[]) shape behind.
-    const serviceFanOut = await preCreateServiceDeployments(dep.id, project.id, {
+    // Record unchanged services up front. The service pipeline owns progress
+    // rows for targeted services; GitHub observes the persisted attempt.
+    await preCreateServiceDeployments(dep.id, project.id, {
       targetServiceIds: snapshot.targetServiceIds,
       forceAll: dep.forceAll ?? false,
     }).catch((err) => {
       // Best-effort: fan-out is a dashboard concern. A crash here must
       // not block the main build.
       errorDiagnostics.warn("platform/engine/modules/deployments/build-pipeline", `[build] preCreateServiceDeployments crashed for ${dep.id}:`, err);
-      return new Map<
-        string,
-        { id: string; serviceId: string; serviceName: string; targeted: boolean }
-      >();
     });
-
-    await emitInitialServiceChecks(serviceFanOut, project, dep);
 
     // Both server types use the host's available capacity unless the project
     // sets a limit. Managed builds get measured headroom below.

@@ -83,6 +83,15 @@ describe("openship job", () => {
     expect((await runCommand(command, ["create", "--file", file])).code).toBe(1);
     expect(fetchStub.calls).toHaveLength(0);
   });
+  it("creates a workflow job from the shared input contract without a command target", async () => {
+    const file = join(dir, "workflow.json");
+    const body = { label: "Nightly CI", workflowId: "awf_ci", inputs: { environment: "staging" }, scheduleType: "recurring", cronExpression: "0 3 * * *" };
+    writeFileSync(file, JSON.stringify(body));
+    fetchStub = stubFetch(() => ({ json: { data: { ...job, actionType: "workflow", actionConfig: { workflowId: body.workflowId, inputs: body.inputs } } } }));
+    const result = await runCommand(command, ["create", "--file", file]);
+    expect(result.code).toBe(0);
+    expect(fetchStub.calls[0].body).toEqual(body);
+  });
   it("replaces a legacy file target when --server is supplied", async () => {
     const file = join(dir, "job.json");
     writeFileSync(file, JSON.stringify({ label: "sync", command: "true", serverId: "old-server" }));
@@ -169,6 +178,16 @@ describe("openship job", () => {
     expect(out).toContain("previous"); expect(out).toContain("live");
     if (status === "failed") expect(err).toContain("exit 1");
     expect(fetchStub.calls[1].url).toBe("http://api.test/api/jobs/runs/r1/stream");
+  });
+  it.each([false, true])("identifies workflow output in Actions when follow=%s", async (follow) => {
+    const run = { ...jobRun, id: "arun_ci", kind: "workflow", output: null, serverId: null };
+    fetchStub = stubFetch(() => follow
+      ? { text: [{ type: "snapshot", run }, { type: "complete", status: "success" }].map(event => `data: ${JSON.stringify(event)}\n\n`).join("") }
+      : { json: { data: run } });
+    const result = await runCommand(command, ["logs", run.id, ...(follow ? ["--follow"] : [])]);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Actions run arun_ci");
+    expect(result.out).toContain("job and step output");
   });
   it("streams structured completion events for finished runs", async () => {
     (await import("../../src/lib/output")).setJsonMode(true);

@@ -236,6 +236,12 @@ export function createProjectGitOperations(
           url: c.url,
         })),
         auto_deploy: info.autoDeploy ?? false,
+        github_checks: info.githubChecks,
+        github_checks_delivery: info.githubChecksDelivery ? {
+          error: info.githubChecksDelivery.error,
+          updatedAt: info.githubChecksDelivery.updatedAt.toISOString(),
+          pending: info.githubChecksDelivery.pending?.toISOString() ?? null,
+        } : null,
         webhook_strategy: strategy,
         webhook_active: webhookActive,
         webhook_domain: info.webhookDomain ?? null,

@@ -3,7 +3,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { formatCpuCores, formatMemoryMb } from "@repo/core";
 import {
@@ -25,6 +25,12 @@ import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { Button } from "@/components/ui/button";
 import { scopedBillingHref } from "@/lib/billing-links";
 import { parseDotenv } from "@/lib/dotenv";
+import { actionsApi } from "@/lib/api/actions";
+import { useActionResource, useActionScope } from "@/components/actions/useActions";
+import { ActionError } from "@/components/actions/ActionStatus";
+import { WorkflowInputs, workflowInputDefaults } from "@/components/actions/WorkflowInputs";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Tabs } from "@/components/ui/Tabs";
 
 type KV = { key: string; value: string };
 const NOTIFY_STATES: JobRunState[] = ["running", "success", "failed"];
@@ -47,12 +53,14 @@ const mergeEnv = (existing: KV[], parsed: KV[]): KV[] => {
 };
 
 /** Full-page create/edit form for a custom job. `job` present → edit. */
-export function JobForm({
+function JobFormContent({
   job,
+  initialWorkflowId,
   onSaved,
   onCancel,
 }: {
   job?: JobView;
+  initialWorkflowId?: string;
   onSaved: (saved: JobView) => void;
   onCancel: () => void;
 }) {
@@ -63,6 +71,14 @@ export function JobForm({
   const { selfHosted } = usePlatform();
   const editing = !!job;
   const cfg = job?.actionConfig ?? undefined;
+  const integration = t.actions.integration;
+  const [mode, setMode] = useState<"command" | "workflow">(job?.actionType === "workflow" || initialWorkflowId ? "workflow" : "command");
+  const [workflowId, setWorkflowId] = useState(cfg?.workflowId ?? initialWorkflowId ?? "");
+  const [workflowInputs, setWorkflowInputs] = useState<Record<string, string>>(cfg?.inputs ?? {});
+  const workflowFetcher = useCallback(() => mode === "workflow" ? actionsApi.list() : Promise.resolve([]), [mode]);
+  const workflows = useActionResource(workflowFetcher);
+  const selectedWorkflow = workflows.data?.find((workflow) => workflow.id === workflowId);
+  const dispatchable = !!selectedWorkflow?.enabled && selectedWorkflow.plan.triggers.includes("workflow_dispatch");
 
   const [label, setLabel] = useState(job?.label ?? "");
   const [command, setCommand] = useState(cfg?.command ?? "");
@@ -119,12 +135,18 @@ export function JobForm({
   }, [job?.key, destinations.organizationId]);
 
   const canSave = useMemo(() => {
-    if (!label.trim() || !command.trim() || serverIds.length === 0 || saving || destinations.loading || destinations.error) return false;
-    if (serverIds.some(id => !servers.some(server => server.id === id && server.managed?.state !== "deleting"))) return false;
+    if (!label.trim() || saving) return false;
+    if (mode === "workflow") {
+      if (!dispatchable || workflows.loading || workflows.error) return false;
+      if (selectedWorkflow?.plan.inputs.some((input) => input.required && !(workflowInputs[input.name] ?? input.default).trim())) return false;
+    } else {
+      if (!command.trim() || serverIds.length === 0 || destinations.loading || destinations.error) return false;
+      if (serverIds.some(id => !servers.some(server => server.id === id && server.managed?.state !== "deleting"))) return false;
+    }
     if (scheduleType === "recurring" && !cron.trim()) return false;
     if (scheduleType === "once" && !runAt) return false;
     return true;
-  }, [label, command, serverIds, saving, scheduleType, cron, runAt, destinations.loading, destinations.error, servers]);
+  }, [label, mode, dispatchable, workflows.loading, workflows.error, selectedWorkflow, workflowInputs, command, serverIds, saving, scheduleType, cron, runAt, destinations.loading, destinations.error, servers]);
 
   const submit = async () => {
     if (!canSave) return;
@@ -132,20 +154,21 @@ export function JobForm({
     try {
       const payload = {
         label: label.trim(),
-        command: command.trim(),
         scheduleType,
-        serverIds,
-        ...(scheduleType === "recurring" ? { cronExpression: cron.trim() } : {}),
-        ...(scheduleType === "once" ? { runAt: new Date(runAt).toISOString() } : {}),
+        ...(mode === "workflow" ? { workflowId, inputs: { ...workflowInputDefaults(selectedWorkflow!.plan.inputs), ...workflowInputs } } : {
+        command: command.trim(), serverIds,
         ...(timeoutSec.trim() ? { timeoutMs: Math.max(1, parseInt(timeoutSec, 10)) * 1000 } : {}),
         ...(parseInt(maxAttempts, 10) > 1
           ? { retry: { maxAttempts: parseInt(maxAttempts, 10), backoffSeconds: Math.max(0, parseInt(backoffSec, 10) || 0) } }
           : {}),
         env: rowsToMap(envRows),
         ...(editSecrets ? { secrets: rowsToMap(secretRows) } : {}),
+        }),
+        ...(scheduleType === "recurring" ? { cronExpression: cron.trim() } : {}),
+        ...(scheduleType === "once" ? { runAt: new Date(runAt).toISOString() } : {}),
         dependsOn,
         triggerEvents: triggerIds,
-        ...(notifyChannels.length ? { notifyConfig: { channels: notifyChannels, states: notifyStates } } : {}),
+        ...(notifyChannels.length ? { notifyConfig: { channels: notifyChannels, states: mode === "workflow" ? notifyStates.filter((state) => state !== "running") : notifyStates } } : {}),
       };
       const res = editing
         ? await jobsApi.update(job!.key, { ...payload, notifyConfig: payload.notifyConfig ?? null })
@@ -183,7 +206,7 @@ export function JobForm({
       : c.summary.retryOff;
 
   return (
-    <div className="grid grid-cols-1 gap-6 pb-24 lg:grid-cols-[1fr_360px]">
+    <div className="@container"><div className="grid grid-cols-1 items-start gap-6 pb-16 @min-[960px]:grid-cols-[minmax(0,1fr)_340px]">
       {/* ── Left: form ── */}
       <div className="min-w-0 space-y-5">
         {/* Basics */}
@@ -191,11 +214,31 @@ export function JobForm({
           <Field label={c.name}>
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={c.namePlaceholder} className={inputCls} autoFocus />
           </Field>
-          <Field label={c.command}>
+          {!editing && <Tabs value={mode} onChange={setMode} tabs={[{ key: "command", label: integration.jobCommand }, { key: "workflow", label: integration.jobWorkflow }]} />}
+          {mode === "workflow" ? <div className="space-y-4">
+            <ActionError message={workflows.error} onRetry={workflows.refresh} />
+            <Field label={integration.workflowStep}>
+              <CustomSelect variant="filled" triggerClassName="bg-muted/60 hover:bg-muted" value={workflowId}
+                placeholder={integration.workflowStep}
+                options={(workflows.data ?? []).filter((workflow) => workflow.enabled && workflow.plan.triggers.includes("workflow_dispatch")).map((workflow) => ({ value: workflow.id, label: workflow.name }))}
+                onChange={(id) => {
+                  setWorkflowId(id);
+                  const workflow = workflows.data?.find((entry) => entry.id === id);
+                  setWorkflowInputs(workflow ? workflowInputDefaults(workflow.plan.inputs) : {});
+                  if (workflow && !label.trim()) setLabel(workflow.name);
+                }} />
+            </Field>
+            <p className="text-xs leading-relaxed text-muted-foreground">{integration.jobHint}</p>
+            {selectedWorkflow && <><WorkflowInputs definitions={selectedWorkflow.plan.inputs} values={{ ...workflowInputDefaults(selectedWorkflow.plan.inputs), ...workflowInputs }} onChange={setWorkflowInputs} />
+              {!dispatchable && <p role="alert" className="text-sm text-warning">{t.actions.manualHint}</p>}
+              <Link href={`/actions/workflows/${workflowId}`} className="inline-flex items-center gap-2 text-sm font-medium hover:underline"><UiIcon name="git-branch" className="size-4" />{selectedWorkflow.name}<UiIcon name="arrow-right" className="size-4 rtl:rotate-180" /></Link>
+            </>}
+            {!selectedWorkflow && !workflows.loading && <Button asChild size="sm" variant="secondary"><Link href="/actions/new">{t.actions.newWorkflow}</Link></Button>}
+          </div> : <Field label={c.command}>
             <textarea value={command} onChange={(e) => setCommand(e.target.value)} placeholder={c.commandPlaceholder} rows={3} spellCheck={false}
               className={`${inputCls} resize-y font-mono text-sm`} />
             <p className="mt-1.5 text-xs text-muted-foreground/60">{c.commandHint}</p>
-          </Field>
+          </Field>}
         </Section>
 
         {/* Schedule */}
@@ -220,6 +263,7 @@ export function JobForm({
           {scheduleType === "manual" && <p className="text-sm text-muted-foreground/70">{c.manualHint}</p>}
         </Section>
 
+        {mode === "command" && <>
         {/* Environment + secrets (right after Schedule) */}
         <Section title={c.sections.environment} icon={"key"} tone={SECTION_TONES.environment}>
           <div>
@@ -304,6 +348,7 @@ export function JobForm({
           </div>
         </Section>
 
+        </>}
         {/* Dependencies + triggers */}
         <Section title={c.sections.triggers} icon={"git-branch"} tone={SECTION_TONES.triggers}>
           {otherJobs.length > 0 && (
@@ -357,7 +402,7 @@ export function JobForm({
               </div>
               {notifyChannels.length > 0 && (
                 <div className="mt-3 flex gap-4">
-                  {NOTIFY_STATES.map((s) => (
+                  {NOTIFY_STATES.filter((state) => mode !== "workflow" || state !== "running").map((s) => (
                     <button key={s} type="button" onClick={() => toggle(notifyStates, s, setNotifyStates)}
                       aria-pressed={notifyStates.includes(s)}
                       className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
@@ -391,11 +436,13 @@ export function JobForm({
             <h3 className="text-[14px] font-medium text-foreground">{c.summary.title}</h3>
           </div>
           <div className="space-y-2.5">
-            <SummaryRow label={c.summary.command} value={label.trim() || command.trim() || c.summary.none} mono={!label.trim() && !!command.trim()} />
+            <SummaryRow label={mode === "workflow" ? integration.workflowStep : c.summary.command} value={mode === "workflow" ? selectedWorkflow?.name ?? c.summary.none : label.trim() || command.trim() || c.summary.none} mono={mode === "command" && !label.trim() && !!command.trim()} />
             <SummaryRow label={c.summary.schedule} value={scheduleRecap} mono={scheduleType === "recurring"} />
+            {mode === "command" && <>
             <SummaryRow label={c.summary.targets} value={String(serverIds.length)} />
             <SummaryRow label={c.summary.retry} value={retryRecap} />
             <SummaryRow label={c.summary.timeout} value={timeoutSec.trim() ? `${timeoutSec}s` : c.summary.none} />
+            </>}
             <SummaryRow label={c.summary.notify} value={notifyChannels.length ? String(notifyChannels.length) : c.summary.none} />
           </div>
         </div>
@@ -411,8 +458,13 @@ export function JobForm({
           <UiIcon name="arrow-right" className="size-4 shrink-0 text-muted-foreground/40" />
         </a>
       </div>
-    </div>
+    </div></div>
   );
+}
+
+export function JobForm(props: Parameters<typeof JobFormContent>[0]) {
+  const scope = useActionScope();
+  return <JobFormContent key={`${scope}:${props.job?.key ?? "new"}`} {...props} />;
 }
 
 function SummaryRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

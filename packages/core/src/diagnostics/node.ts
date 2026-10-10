@@ -1,12 +1,29 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { writeSync } from "node:fs";
 import type { Writable } from "node:stream";
-import { errorReporter, diagnosticContext, diagnosticId, mergeDiagnosticContext } from "./reporter";
+import {
+  errorReporter,
+  diagnosticContext,
+  diagnosticId,
+  mergeDiagnosticContext,
+  setDiagnosticOutputGuard,
+} from "./reporter";
 import type { ErrorContext, ErrorSink } from "./types";
 
 const contexts = new AsyncLocalStorage<ErrorContext>();
 const observedOutputs = new WeakSet<Writable>();
 errorReporter.setContextProvider(() => contexts.getStore() ?? {});
+setDiagnosticOutputGuard(() => {
+  // console.error ignores Writable backpressure. Keep the emergency destination
+  // bounded when Node's stderr stalls, including before reporting is enabled.
+  const output = process.stderr;
+  return (
+    !output.destroyed &&
+    output.writable !== false &&
+    !output.writableNeedDrain &&
+    output.writableLength < 65_536
+  );
+});
 
 export function currentErrorContext(): ErrorContext {
   return { ...contexts.getStore() };

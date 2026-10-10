@@ -1,4 +1,6 @@
 export * from "./types";
+export * from "./actions";
+export * from "./action-capabilities";
 export * from "./stacks";
 export * from "./package-manager-version";
 export * from "./volumes";
@@ -107,3 +109,8 @@ export * from "./instance-handoff";
 export * from "./instance-environment";
 export { nodeImageForEngine } from "./node-runtime-version";
 export * from "./diagnostics/index";
+
+export * from "./github-installation-scope";
+
+export * from "./pricing/actions";
+export * from "./deployment-checks";

@@ -86,7 +86,8 @@
     },
     "apps": "アプリ",
     "jobs": "ジョブ",
-    "workspaces": "ワークスペース"
+    "workspaces": "ワークスペース",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "サイドバーを展開",

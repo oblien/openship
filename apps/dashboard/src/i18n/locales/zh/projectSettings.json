@@ -996,5 +996,20 @@
     "server": "托管服务器",
     "serverDescription": "通过托管服务器上的 nginx 容器提供文件。",
     "nextDeploy": "保存的托管更改将在下次部署时生效。"
+  },
+  "deploymentChecks": {
+    "title": "GitHub 部署检查",
+    "description": "在已部署的提交上显示部署和服务的结果。",
+    "customize": "自定义检查",
+    "deployment": "部署结果",
+    "services": "所有服务，包括新服务",
+    "selectedServices": "选择服务",
+    "includeErrors": "包含失败详情",
+    "errorsHint": "隐去敏感信息后的错误摘要将与有权读取此仓库的人共享。",
+    "emptySelection": "请至少选择一项检查，或关闭结果报告。",
+    "connectionHint": "需要具有 Checks 写入权限的 GitHub App。",
+    "connection": "GitHub 连接",
+    "deliveryFailed": "无法发送检查结果",
+    "saveFailed": "无法保存 GitHub 检查设置。"
   }
 }

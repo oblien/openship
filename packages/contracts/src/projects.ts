@@ -43,6 +43,7 @@ export const ProjectSchema = Type.Object({
   hasServer: Type.Optional(Type.Boolean()),
   hasBuild: Type.Optional(Type.Boolean()),
   autoDeploy: Type.Optional(Type.Boolean()),
+  githubChecks: EnsureProjectBody.properties.githubChecks,
   port: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 }, { additionalProperties: true });
 

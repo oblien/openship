@@ -52,6 +52,8 @@ const nextConfig = {
         },
         { source: "/api/auth/:path*", destination: "/api/proxy/api/auth/:path*" },
         { source: "/api/mcp", destination: "/api/proxy/api/mcp" },
+        { source: "/api/actions/runtime/:path*", destination: "/api/proxy/api/actions/runtime/:path*" },
+        { source: "/twirp/:path*", destination: "/api/proxy/twirp/:path*" },
       ],
     };
   },

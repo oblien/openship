@@ -13,6 +13,20 @@ const allowance = amount.nonnegative().nullable();
 const date = z.string().refine((value) => Number.isFinite(Date.parse(value))).nullable();
 const namespace = z.string().min(1).max(128);
 const timestamp = (value: string | null) => value === null ? null : Date.parse(value);
+// The live credit meter, distinct from proposed rate cards or monthly capacity.
+// Actions offers sell 100 credits per dollar; reject a changed conversion rather
+// than silently quote a different purchasing power.
+export const oblienMeteredPricingSchema = z.object({
+  success: z.literal(true),
+  credits_per_dollar: z.literal(100),
+  rate_card_id: z.string().min(1),
+  rates: z.object({
+    cpu_per_min: amount.positive(),
+    memory_per_gb_min: amount.positive(),
+    disk_per_gb: amount.nonnegative(),
+    network_per_gb: amount.nonnegative(),
+  }),
+});
 // These validation refusals occur before a checkout is opened. Use the original
 // provider status: an operator's funding or eligibility error is presented as 503.
 const REJECTED_CHECKOUT_CODES = new Set([
@@ -286,12 +300,13 @@ export class OblienBillingApi {
   }
 
   private async request<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
-    if (!path.startsWith("/billing/")) throw new Error("Billing transport only accepts billing routes");
+    const meteredPricing = method === "GET" && path === "/pricing/calculator";
+    if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
-    const publicRead = method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog");
+    const publicRead = meteredPricing || (method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog"));
     const headers: Record<string, string> = { Accept: "application/json" };
     if (!publicRead) {
       if (!this.options.clientId || !this.options.clientSecret) {
@@ -405,6 +420,12 @@ export class OblienBillingApi {
 
   getCapacityCatalog() {
     return this.validate(this.billing.capacityCatalog(), oblienCapacityCatalogSchema);
+  }
+
+  /** This public endpoint is not yet exposed by the SDK. Keep it on the same
+   * validated, bounded transport as the SDK's billing calls. */
+  getMeteredPricing() {
+    return this.validate(this.request({ method: "GET", path: "/pricing/calculator" }), oblienMeteredPricingSchema);
   }
 
   /** Sales check only. Existing contracts and renewal keep their saved tariff. */

@@ -11,9 +11,12 @@ export const CreateDeploymentSchema = Type.Object({
   ),
   branch: Type.Optional(Type.String()),
   commitSha: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")], {
-    description: "Variable set within the target project (default production). Preview values require a non-production project; projectId selects the runtime.",
-  })),
+  environment: Type.Optional(
+    Type.Union([Type.Literal("production"), Type.Literal("preview")], {
+      description:
+        "Variable set within the target project (default production). Preview values require a non-production project; projectId selects the runtime.",
+    }),
+  ),
   forceAll: Type.Optional(Type.Boolean({ description: "Rebuild every enabled service." })),
   serviceIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   smartRoute: Type.Optional(
@@ -94,15 +97,28 @@ export const DeploymentSchema = Type.Object({
 
 export type Deployment = Static<typeof DeploymentSchema>;
 
-export const CreateDeploymentResultSchema = Type.Object({
-  deployment_id: Type.String({ minLength: 1 }),
-  project_id: Type.String({ minLength: 1 }),
-  /** Compatibility with ID-only responses; when supplied, the complete record is required. */
-  deployment: Type.Optional(DeploymentSchema),
-  skipped: Type.Optional(Type.Boolean()),
-});
+export const CreateDeploymentResultSchema = Type.Union([
+  Type.Object({
+    deployment_id: Type.String({ minLength: 1 }),
+    project_id: Type.String({ minLength: 1 }),
+    /** Compatibility with ID-only responses; when supplied, the complete record is required. */
+    deployment: Type.Optional(DeploymentSchema),
+    skipped: Type.Optional(Type.Boolean()),
+    awaiting_actions: Type.Optional(Type.Literal(false)),
+    action_request_id: Type.Optional(Type.Never()),
+  }),
+  Type.Object({
+    awaiting_actions: Type.Literal(true),
+    action_request_id: Type.String({ minLength: 1 }),
+    project_id: Type.String({ minLength: 1 }),
+    deployment_id: Type.Optional(Type.Never()),
+    deployment: Type.Optional(Type.Never()),
+    skipped: Type.Optional(Type.Boolean()),
+  }),
+]);
 
 export type CreateDeploymentResult = Static<typeof CreateDeploymentResultSchema>;
+export type AcceptedDeploymentResult = Extract<CreateDeploymentResult, { deployment_id: string }>;
 
 export function isDeployment(value: unknown): value is Deployment {
   return Value.Check(DeploymentSchema, value);
@@ -113,9 +129,13 @@ export function isCreateDeploymentResult(value: unknown): value is CreateDeploym
   if (!Value.Check(CreateDeploymentResultSchema, value)) return false;
   return (
     !value.deployment ||
-    (value.deployment.id === value.deployment_id &&
-      value.deployment.projectId === value.project_id)
+    (value.deployment.id === value.deployment_id && value.deployment.projectId === value.project_id)
   );
+}
+
+/** Manual build admission/start always returns a deployment, never a pending push policy. */
+export function isAcceptedDeploymentResult(value: unknown): value is AcceptedDeploymentResult {
+  return isCreateDeploymentResult(value) && !value.awaiting_actions;
 }
 
 export interface DeploymentOperations extends DeploymentResourceOperations, BuildOperations {

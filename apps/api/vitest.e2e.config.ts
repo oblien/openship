@@ -23,6 +23,7 @@ import { sharedTestOptions, testAlias } from "./vitest.config";
  */
 const HEAVY = "test/e2e/rollback-build-restore.e2e.test.ts";
 // Three real K3s nodes, registry and Edge; has its own CI/release job.
+const ACTIONS = "test/e2e/actions-runner.e2e.test.ts";
 const SCALING = "test/e2e/scaling-*.e2e.test.ts";
 const SCALING_JOURNEYS = {
   "scaling-application": "test/e2e/scaling-full-cycle.e2e.test.ts",
@@ -40,11 +41,13 @@ const UPDATE = "test/e2e/update-from-previous-release.e2e.test.ts";
 const scope = process.env.E2E_SCOPE;
 if (
   scope &&
-  !["fast", "heavy", "update", "scaling", ...Object.keys(SCALING_JOURNEYS)].includes(scope)
+  !["fast", "heavy", "update", "scaling", "actions", ...Object.keys(SCALING_JOURNEYS)].includes(scope)
 )
   throw new Error(`Unknown E2E_SCOPE: ${scope}`);
 const include =
-  scope === "heavy"
+  scope === "actions"
+    ? [ACTIONS]
+    : scope === "heavy"
     ? [HEAVY]
     : scope === "update"
       ? [UPDATE]
@@ -85,7 +88,7 @@ export default defineConfig({
     },
     exclude: [
       ...configDefaults.exclude,
-      ...(scope === "fast" ? [HEAVY, SCALING] : []),
+      ...(scope === "fast" ? [HEAVY, SCALING, ACTIONS] : []),
       // Opt-in only: `E2E_SCOPE=update` is the sole way to run it (see UPDATE above).
       ...(scope === "update" ? [] : [UPDATE]),
     ],

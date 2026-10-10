@@ -1002,5 +1002,20 @@
     "server": "Verwalteter Server",
     "serverDescription": "Dateien aus einem nginx-Container auf deinem verwalteten Server ausliefern.",
     "nextDeploy": "Gespeicherte Hosting-Änderungen gelten ab dem nächsten Deployment."
+  },
+  "deploymentChecks": {
+    "title": "GitHub-Deployment-Checks",
+    "description": "Ergebnisse von Deployment und Diensten am bereitgestellten Commit anzeigen.",
+    "customize": "Checks anpassen",
+    "deployment": "Deployment-Ergebnis",
+    "services": "Alle Dienste, auch neue",
+    "selectedServices": "Dienste auswählen",
+    "includeErrors": "Fehlerdetails einschließen",
+    "errorsHint": "Bereinigte Fehlerzusammenfassungen werden für Personen mit Lesezugriff auf dieses Repository sichtbar.",
+    "emptySelection": "Mindestens einen Check auswählen oder die Berichterstattung ausschalten.",
+    "connectionHint": "Erfordert eine GitHub App mit Schreibzugriff auf Checks.",
+    "connection": "GitHub-Verbindung",
+    "deliveryFailed": "Checks konnten nicht übermittelt werden",
+    "saveFailed": "GitHub-Check-Einstellungen konnten nicht gespeichert werden."
   }
 }

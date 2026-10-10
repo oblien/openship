@@ -1,4 +1,4 @@
-import { BillingOperationSchemas, OperationError, isRecord, normalizeBillingCreditPacks, type CloudWorkspaceSummary } from "@repo/contracts";
+import { ActionBillingOperationSchemas, BillingOperationSchemas, OperationError, isRecord, normalizeBillingCreditPacks, type CloudWorkspaceSummary } from "@repo/contracts";
 import { createPublicBillingOperations, type BillingDependencies } from "../../../billing";
 import type { ExecutionContext } from "../../../context";
 import type { ScopedServices } from "../../../resource-operations";
@@ -14,6 +14,10 @@ import { repos } from "@repo/db";
 import { assertCloudProxyScope } from "../../lib/cloud/scope";
 
 const routes = {
+  getActionsBudget: ["GET", "/actions"],
+  getActionsPurchase: ["GET", "/actions/purchase"],
+  createActionsCheckout: ["POST", "/actions/checkout"],
+  resumeActionsCheckout: ["POST", "/actions/checkout/resume"],
   quoteCustomPlan: ["GET", "/subscription/quote"],
   previewSubscriptionChange: ["POST", "/subscription/change/preview"],
   confirmSubscriptionChange: ["POST", "/subscription/change"],
@@ -51,7 +55,7 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
     }
     // Account-wide recovery follows Cloud inventory access. Scoped automation
     // must use its explicitly granted local server link instead.
-    if (name === "listCheckouts" && !workspaceId) assertCloudProxyScope(ctx);
+    if ((name === "listCheckouts" && !workspaceId) || name in ActionBillingOperationSchemas) assertCloudProxyScope(ctx);
     if (linked && (name === "previewSubscriptionChange" || name === "confirmSubscriptionChange")) {
       const server = await requireWorkspaceServer(ctx.organizationId, linked.id);
       await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });

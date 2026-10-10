@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { startWorkflowJob, workflowJobRuns } from "./job-workflow";
+import { workflowJobConfig } from "./job.types";
 /**
  * Custom (command) job execution.
  *
@@ -264,7 +267,7 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
     error: lastError ? boundedStorableText(lastError, MAX_ERROR) : undefined,
     output: chunks.join("\n"),
   });
-  if (finalStatus === "success" && organizationId) await fireDependents(row.key, organizationId);
+  if (finalStatus === "success" && organizationId) await fireDependents(row.key, organizationId, run.id);
 }
 
 type FinishData = {
@@ -329,12 +332,16 @@ export async function runCommandJobTick(key: string): Promise<void> {
 export async function startCommandRun(
   row: Job,
   trigger: "manual" | "dependency" | "event" | "once" = "manual",
+  identity?: string,
 ): Promise<string> {
   assertNativeJobs();
   const cfg = (row.actionConfig ?? {}) as CommandConfig;
   if (trigger === "manual") await assertCommandTargetsReady(cfg);
   const single = primaryServerId(cfg);
-  const run = await repos.jobRun.start({ jobId: row.key, kind: "custom", trigger, serverId: single, serverIds: resolveServerIds(cfg) });
+  const input = { jobId: row.key, kind: "custom", trigger, serverId: single, serverIds: resolveServerIds(cfg) };
+  const receipt = identity ? `jrun_${createHash("sha256").update(`${row.key}:${row.updatedAt.toISOString()}:${identity}`).digest("hex")}` : undefined;
+  const run = receipt ? await repos.jobRun.startOnce(input, receipt) : await repos.jobRun.start(input);
+  if (!run) return receipt!;
   void deferBackgroundWork(() => runLoop(row, run)).catch((err) =>
       errorDiagnostics.error("platform/engine/modules/jobs/job-command", `[job] ${row.key} run failed:`, safeErrorMessage(err), err),
   );
@@ -348,9 +355,10 @@ export async function runDueOnceJobs(): Promise<{ fired: number }> {
   const jobs = await repos.job.listAll();
   let fired = 0;
   for (const job of jobs) {
-    if (job.scheduleType !== "once" || !job.enabled || job.actionType !== "command") continue;
+    if (job.scheduleType !== "once" || !job.enabled || !["command", "workflow"].includes(job.actionType)) continue;
     if (!job.runAt || job.runAt.getTime() > now) continue;
-    await startCommandRun(job, "once");
+    if (job.actionType === "workflow") await startWorkflowJob(job, "once");
+    else await startCommandRun(job, "once");
     await repos.job.update(job.key, { enabled: false, runAt: null });
     fired++;
   }
@@ -380,8 +388,8 @@ function extractLogExcerpt(output?: string): string | undefined {
 
 /** Notify on a run state. Per-job `notifyConfig` (if present) OVERRIDES the
  *  global Settings subscriptions — its channels/states win, no double-fire. */
-async function emitJobRun(
-  row: Job,
+export async function emitJobRun(
+  row: Pick<Job, "key" | "label" | "notifyConfig">,
   runId: string,
   status: JobRunState,
   organizationId: string | null,
@@ -447,26 +455,29 @@ async function emitJobRun(
 /** On a job's success, fire any enabled job that depends on it — but only once
  *  ALL of that dependent's dependencies are currently green. Cycles are
  *  rejected at create/update time, so this terminates. */
-async function fireDependents(jobKey: string, organizationId: string): Promise<void> {
-  try {
-    const jobs = await repos.job.listAll();
-    const ids = new Map(jobs.map(job => [job.key, resolveServerIds((job.actionConfig ?? {}) as CommandConfig)]));
-    const servers = await repos.server.getMany([...new Set([...ids.values()].flat())]);
-    for (const dep of jobs) {
-      if (!dep.enabled || dep.actionType !== "command") continue;
-      if (jobTargetsOrganization(ids.get(dep.key)!, servers) !== organizationId) continue;
-      const deps = dep.dependsOn ?? [];
-      if (!deps.includes(jobKey)) continue;
-      const greens = await Promise.all(
-        deps.map(async (k) => {
-          if (jobTargetsOrganization(ids.get(k) ?? [], servers) !== organizationId) return false;
-          const [last] = await repos.jobRun.listRecent({ jobId: k, limit: 1 });
-          return last?.status === "success";
-        }),
-      );
-      if (greens.every(Boolean)) await startCommandRun(dep, "dependency");
+export async function fireDependents(jobKey: string, organizationId: string, sourceRunId?: string): Promise<void> {
+  // The calling controller owns reporting and recovery. A dispatch failure must
+  // keep an Actions run unsettled; retries reuse each dependent's run identity.
+  const jobs = await repos.job.listAll();
+  const ids = new Map(jobs.map(job => [job.key, resolveServerIds((job.actionConfig ?? {}) as CommandConfig)]));
+  const servers = await repos.server.getMany([...new Set([...ids.values()].flat())]);
+  const owner = (row: Job) => workflowJobConfig(row)?.authority.organizationId ?? jobTargetsOrganization(ids.get(row.key) ?? [], servers);
+  for (const dep of jobs) {
+    if (!dep.enabled || !["command", "workflow"].includes(dep.actionType)) continue;
+    if (owner(dep) !== organizationId) continue;
+    const deps = dep.dependsOn ?? [];
+    if (!deps.includes(jobKey)) continue;
+    const greens = await Promise.all(
+      deps.map(async (k) => {
+        const dependency = jobs.find(row => row.key === k);
+        if (!dependency || owner(dependency) !== organizationId) return false;
+        const [last] = dependency.actionType === "workflow" ? await workflowJobRuns(dependency, 1) : await repos.jobRun.listRecent({ jobId: k, limit: 1 });
+        return last?.status === "success";
+      }),
+    );
+    if (greens.every(Boolean)) {
+      if (dep.actionType === "workflow") await startWorkflowJob(dep, "dependency", sourceRunId);
+      else await startCommandRun(dep, "dependency", sourceRunId);
     }
-  } catch (err) {
-    errorDiagnostics.warn("platform/engine/modules/jobs/job-command", `[job] dependency dispatch failed for ${jobKey}: ${safeErrorMessage(err)}`, err);
   }
 }

@@ -461,6 +461,7 @@ export type DestinationCapability =
   | "streamingGet"
   | "multipart"
   | "presignedGet"
+  | "rangedGet"
   | "presignedPut"
   | "quota"
   | "serverSideCopy";
@@ -550,7 +551,8 @@ export interface BackupDestination {
   preflight(): Promise<{ ok: true } | { ok: false; reason: string }>;
 
   put(key: string, body: Readable, opts: PutOpts): Promise<PutResult>;
-  get(key: string): Promise<Readable>;
+  /** Ranges require the rangedGet capability; offsets are inclusive. */
+  get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable>;
   head(key: string): Promise<HeadInfo | null>;
   list(prefix: string, opts?: ListOpts): Promise<ListPage>;
   delete(key: string): Promise<void>;

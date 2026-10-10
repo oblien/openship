@@ -1,0 +1,10 @@
+{
+  "name": "@repo/actions-runner",
+  "version": "0.8.2",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test.mjs",
+    "lint": "node test.mjs --vet"
+  }
+}

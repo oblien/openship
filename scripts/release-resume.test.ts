@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -61,6 +61,18 @@ const job = {
 };
 
 describe("release continuation", () => {
+  it("binds both Actions checks to their own execution scope", () => {
+    const source = readFileSync(new URL("../.github/workflows/actions-e2e.yml", import.meta.url), "utf8");
+    for (const target of ["linux", "macos"]) {
+      expect(() => assertResumeBinding(source, ".github/workflows/actions-e2e.yml", target)).not.toThrow();
+      expect(() => assertResumeBinding(source.replace(`scope: actions-${target}`, "scope: unit"), ".github/workflows/actions-e2e.yml", target)).toThrow();
+      expect(affectsScope("packages/actions-runner/worker.go", `actions-${target}`)).toBe(true);
+      expect(affectsScope("apps/api/test/e2e/rollback-full-cycle.e2e.test.ts", `actions-${target}`)).toBe(false);
+    }
+    expect(affectsScope("apps/api/test/e2e/actions-runner.e2e.test.ts", "actions-linux")).toBe(true);
+    expect(affectsScope("apps/api/test/helpers/workspace-runtime.ts", "actions-linux")).toBe(true);
+    expect(affectsScope("apps/api/test/e2e/actions-runner.e2e.test.ts", "fast")).toBe(false);
+  });
   it("has an explicit wizard command without requesting a version bump or force", () => {
     expect(buildWizardArgs({ mode: "continue", dryRun: false, forceBranch: false })).toEqual([
       "continue",

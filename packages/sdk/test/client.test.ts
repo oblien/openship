@@ -20,6 +20,18 @@ const scopedFetch = () =>
   );
 
 describe("remote SDK", () => {
+  it.each(["buildAccess", "start"] as const)("rejects a pending-check response from %s without inventing a deployment ID", async method => {
+    const waiting = { project_id: "project-a", awaiting_actions: true, action_request_id: "adep-a" };
+    const client = new OpenshipClient({
+      baseUrl: "https://ship.example.test",
+      fetch: async () => method === "start"
+        ? new Response(`event: started\ndata: ${JSON.stringify(waiting)}\n\n`, { headers: { "content-type": "text/event-stream" } })
+        : Response.json(waiting),
+    });
+    await expect(method === "start" ? client.deployments.start("dep-a") : client.deployments.buildAccess({ projectId: "project-a" }))
+      .rejects.toMatchObject({ status: 502, message: "Invalid build response" });
+  });
+
   it.each([
     "https://ship.example.test",
     "https://ship.example.test/",

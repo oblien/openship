@@ -19,6 +19,7 @@
     "---Operate---",
     "logs-monitoring",
     "jobs",
+    "actions",
     "backups-restore",
     "custom-servers",
     "mcp-clusters-and-scaling",

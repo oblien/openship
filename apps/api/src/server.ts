@@ -228,7 +228,10 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
   try {
     // Budget must leave room for closeDb() inside the takeover grace; a dev
     // reload abandons in-flight jobs rather than the database.
-    await shutdownJobRunner(fastReload ? 500 : 20_000);
+    await Promise.all([
+      (await import("@repo/platform/engine/modules/actions/lifecycle")).stopActionController(fastReload ? 500 : 20_000),
+      shutdownJobRunner(fastReload ? 500 : 20_000),
+    ]);
   } catch (err) {
     errorDiagnostics.warn("api/server", "[shutdown] job runner close failed:", err);
   }

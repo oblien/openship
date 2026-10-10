@@ -1,3 +1,4 @@
+import { actionDependencies } from "../modules/actions/action.operations";
 /** Application composition shared by the HTTP process and each owned native worker. */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { AppError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
@@ -83,6 +84,7 @@ export function getPlatformKernel(): PlatformKernel {
     issues: issuesDependencies,
     analytics: analyticsDependencies,
     jobs: jobDependencies,
+    actions: actionDependencies,
     resources: {
       ssl: deploymentSslOperations,
       controls: {

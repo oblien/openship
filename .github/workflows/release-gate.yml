@@ -34,6 +34,10 @@ permissions:
   actions: read
 
 jobs:
+  actions-runner:
+    name: Actions execution
+    uses: ./.github/workflows/actions-e2e.yml
+
   scaling:
     name: Scaling E2E
     uses: ./.github/workflows/scaling-e2e.yml
@@ -107,6 +111,10 @@ jobs:
         if: steps.resume.outputs.reused != 'true'
         run: bun install --frozen-lockfile
 
+      - name: Prepare installed Actions worker assets
+        if: steps.resume.outputs.reused != 'true'
+        uses: ./.github/actions/actions-runner
+
       # Covers packages/* too: they resolve to source, so an error in @repo/db surfaces
       # here. This is the only typecheck between a tag and a published image.
       - name: Typecheck apps/api
@@ -164,6 +172,8 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
+        if: steps.resume.outputs.reused != 'true'
+      - uses: ./.github/actions/actions-runner
         if: steps.resume.outputs.reused != 'true'
       - run: bun run --cwd packages/openship build
         if: steps.resume.outputs.reused != 'true'

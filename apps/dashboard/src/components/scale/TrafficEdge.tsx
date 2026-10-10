@@ -10,7 +10,7 @@ import {
 } from "@xyflow/react";
 
 export type ScaleFlowEdge = Edge<
-  { label: string; showLabel?: boolean; enabled?: boolean },
+  { label: string; showLabel?: boolean; enabled?: boolean; targetGutter?: number },
   "traffic"
 >;
 
@@ -33,6 +33,10 @@ export const TrafficEdge = memo(function TrafficEdge({
     targetY,
     sourcePosition,
     targetPosition,
+    centerX:
+      data?.targetGutter !== undefined && targetX > sourceX
+        ? Math.max(sourceX, targetX - data.targetGutter)
+        : undefined,
     borderRadius: 18,
   });
   return (

@@ -7,7 +7,8 @@ import { authorization } from "../../lib/authorization";
 import { assertJobWritable, assertJobRunnable, assertJobServersWritable, assertJobReferences, canReadJob, canReadRun, requireReadableJob, requireReadableRun } from "./job-access";
 import { jobRunBus, type JobRunEvent } from "./job-run.sse";
 import { JOB_TRIGGER_EVENTS } from "./job-events";
-import { resolveServerIds } from "./job.types";
+import { configureWorkflowJob, workflowJobRuns } from "./job-workflow";
+import { workflowJobConfig, resolveServerIds } from "./job.types";
 import * as service from "./job.service";
 
 function record(ctx: ExecutionContext, key: string, operation: string, after: object = {}) {
@@ -29,9 +30,10 @@ export const jobDependencies: JobDependencies = {
       return visible;
     },
     async create(ctx, input) {
-      await assertJobServersWritable(ctx, resolveServerIds(input));
+      const config = input.workflowId ? await configureWorkflowJob(ctx, { workflowId: input.workflowId, inputs: input.inputs }) : undefined;
+      if (!config) await assertJobServersWritable(ctx, resolveServerIds(input));
       await assertJobReferences(ctx, input);
-      const job = await service.createCustomJob({ ...input, createdBy: ctx.userId });
+      const job = await service.createCustomJob({ ...input, createdBy: ctx.userId }, config);
       record(ctx, job.key, "create");
       return present(ctx, await service.getJob(job.key));
     },
@@ -52,7 +54,10 @@ export const jobDependencies: JobDependencies = {
     async update(ctx, key, input) {
       await assertJobWritable(ctx, key, input, { allowMissingRegisteredSystem: true });
       await assertJobReferences(ctx, input);
-      await service.updateJob(key, input);
+      const row = await repos.job.findByKey(key);
+      const current = row && workflowJobConfig(row);
+      const config = current ? await configureWorkflowJob(ctx, { workflowId: input.workflowId ?? current.workflowId, inputs: input.inputs ?? current.inputs }) : undefined;
+      await service.updateJob(key, input, config);
       record(ctx, key, "update", { fields: Object.keys(input) });
       return present(ctx, await service.getJob(key));
     },
@@ -69,9 +74,10 @@ export const jobDependencies: JobDependencies = {
       return result;
     },
     async listRuns(ctx, key, input = {}) {
-      await requireReadableJob(ctx, key);
+      const row = await requireReadableJob(ctx, key);
       const visible = [];
-      for (const run of await repos.jobRun.listRecent({ jobId: key, limit: input.limit ?? 50 })) {
+      const runs = row.actionType === "workflow" ? await workflowJobRuns(row, input.limit ?? 50) : await repos.jobRun.listRecent({ jobId: key, limit: input.limit ?? 50 });
+      for (const run of runs) {
         // A job may have been moved to new targets since an older run was recorded.
         if (await canReadRun(ctx, run)) visible.push(run);
       }
@@ -82,6 +88,7 @@ export const jobDependencies: JobDependencies = {
   async openRunStream(ctx, id, signal) {
     await requireReadableRun(ctx, id);
     return runEvents<JobRunEvent, Awaited<ReturnType<typeof requireReadableRun>>>({
+      reconcile: { everyMs: 3000, isTransient: event => event.type === "log" },
       bus: jobRunBus, id, signal, load: () => requireReadableRun(ctx, id),
       snapshot: run => ({ type: "snapshot", run }),
       complete: run => run.status === "success" || run.status === "failed" ? { type: "complete", status: run.status, error: run.error } : null,

@@ -13,31 +13,22 @@ import { jobRun } from "../schema/job-run";
 export type JobRun = typeof jobRun.$inferSelect;
 export type NewJobRun = typeof jobRun.$inferInsert;
 
+type RunStart = { jobId: string; kind?: string; trigger?: string; serverId?: string | null; serverIds?: string[]; attempt?: number };
+
 export function createJobRunRepo(db: Database) {
+  async function insertRun(data: RunStart, id: string): Promise<JobRun | undefined> {
+    return (await db.insert(jobRun).values({ id, jobId: data.jobId, kind: data.kind ?? "system",
+      trigger: data.trigger ?? "schedule", status: "running", serverId: data.serverId ?? null,
+      serverIds: data.serverIds ?? null, attempt: data.attempt ?? 1,
+    }).onConflictDoNothing().returning())[0];
+  }
   return {
     /** Open a running row for a job tick. */
-    async start(data: {
-      jobId: string;
-      kind?: string;
-      trigger?: string;
-      serverId?: string | null;
-      serverIds?: string[];
-      attempt?: number;
-    }): Promise<JobRun> {
-      const id = generateId("jrun");
-      const row: NewJobRun = {
-        id,
-        jobId: data.jobId,
-        kind: data.kind ?? "system",
-        trigger: data.trigger ?? "schedule",
-        status: "running",
-        serverId: data.serverId ?? null,
-        serverIds: data.serverIds ?? null,
-        attempt: data.attempt ?? 1,
-      };
-      await db.insert(jobRun).values(row);
-      return { ...row, startedAt: new Date(), createdAt: new Date() } as JobRun;
+    async start(data: RunStart): Promise<JobRun> {
+      return (await insertRun(data, generateId("jrun")))!;
     },
+    /** Dependency re-delivery must not execute an accepted command twice. */
+    startOnce: insertRun,
 
     /** Close a run row with its outcome. */
     async finish(

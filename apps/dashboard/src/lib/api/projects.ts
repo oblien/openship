@@ -64,6 +64,7 @@ export type RollbackCapacityUI = RollbackCapacity;
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
 export interface ProjectOptionsBody {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
   gitBranch?: string;
   framework?: string;
   packageManager?: string;
@@ -248,6 +249,7 @@ export const projectsApi = {
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
+    githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
     projectId?: string;
     serverId?: string;
     name: string;

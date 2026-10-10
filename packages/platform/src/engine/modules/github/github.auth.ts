@@ -21,7 +21,8 @@ import { mayUseInstanceGitIdentity } from "./github-instance-access";
 import crypto from "crypto";
 import { repos, db, schema, eq, and } from "@repo/db";
 import { APIError } from "better-auth/api";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage, validateGitHubInstallationScope, matchesGitHubInstallationScope } from "@repo/core";
+import { assertGitHubRepoAccess } from "./github-access";
 import { env, localGitHubAppConfiguration } from "../../config/env";
 import { auth } from "../../lib/auth";
 import { cacheStore } from "../../lib/cache-store/index";
@@ -369,9 +370,19 @@ export async function getInstallationToken(
      * always pass it.
      */
     repositories?: string[];
+    /** Actions jobs receive only explicitly requested repository permissions. */
+    permissions?: Record<string, "read" | "write">;
+    /** One-use job credentials must not reuse a token issued to another attempt. */
+    noCache?: boolean;
   } = {},
 ): Promise<string | null> {
   const organizationId = ctx.organizationId;
+  const scope = opts.permissions ? validateGitHubInstallationScope(opts.repositories, opts.permissions) : null;
+  if (scope) {
+    const access = Object.values(scope.permissions).includes("write") ? "write" : "read";
+    for (const repo of scope.repositories) await assertGitHubRepoAccess(ctx, { owner, repo }, access);
+    opts = { ...opts, ...scope, noCache: true };
+  }
 
   // Resolve a workspace-owned source before consulting the legacy mode. Custom
   // Apps are per owner; their presence elsewhere in the workspace must not turn
@@ -401,14 +412,23 @@ export async function getInstallationToken(
   // from the narrow key would silently over-grant, and a narrow token served from
   // the broad key would break unrelated callers. Sorted + lowercased so the same
   // repo set always produces the same key.
-  const repoScope = opts.repositories?.length
+  const repoScope = (opts.repositories?.length
     ? `:repos:${[...opts.repositories]
         .map((r) => r.toLowerCase())
         .sort()
         .join(",")}`
-    : "";
+    : "") + (opts.permissions ? `:permissions:${JSON.stringify(Object.fromEntries(Object.entries(opts.permissions).sort(([a], [b]) => a.localeCompare(b))))}` : "");
 
   if (mode === "cloud-app") {
+    if (opts.permissions) {
+      // A broad legacy mint response must never stand in for a narrowed job token.
+      await assertCloudTenantScope(ctx);
+      const { cloudClient } = await import("../../lib/cloud/client");
+      const minted = await cloudClient({ organizationId }).github.installationToken(owner, opts.repositories, opts.permissions);
+      if (!minted) return null;
+      if (!matchesGitHubInstallationScope(scope!, minted.scope)) throw new AppError("Update the Cloud connection before running Actions: it did not confirm the requested repository token scope", 502, "ACTIONS_TOKEN_SCOPE_INVALID");
+      return minted.token;
+    }
     await assertCloudTenantScope(ctx);
     // Proxy through cloud. ctx.organizationId is the only source of
     // truth — no more memberships[0] fallback that could leak tokens
@@ -471,7 +491,7 @@ export async function getInstallationToken(
   const sourceKey = custom?.source.id ?? "legacy";
   const cacheKey = `instToken:local:org:${organizationId}:${sourceKey}:${owner}:${installationId}${repoScope}`;
   const store = await cacheStore<string>(GH_TOKEN_NS, { maxSize: 5_000 });
-  const cachedRaw = await store.get(cacheKey);
+  const cachedRaw = opts.noCache ? null : await store.get(cacheKey);
   if (cachedRaw) {
     const cached = decodeTokenEnvelope(cachedRaw);
     if (cached && isCachedTokenStillFresh(cached)) return cached.token;
@@ -480,18 +500,23 @@ export async function getInstallationToken(
   try {
     const request = {
       method: "POST",
-      ...(opts.repositories?.length ? { body: { repositories: opts.repositories } } : {}),
+      ...((opts.repositories?.length || opts.permissions) ? { body: {
+        ...(opts.repositories?.length ? { repositories: opts.repositories } : {}),
+        ...(opts.permissions ? { permissions: opts.permissions } : {}),
+      } } : {}),
     };
     const data = custom
-      ? await githubAppFetch<{ token: string; expires_at: string }>(
+      ? await githubAppFetch<{ token: string; expires_at: string; permissions?: Record<string, "read" | "write">; repositories?: Array<{ name: string }> }>(
           custom.credentials,
           `/app/installations/${installationId}/access_tokens`,
           request,
         )
-      : await appFetch<{ token: string; expires_at: string }>(
+      : await appFetch<{ token: string; expires_at: string; permissions?: Record<string, "read" | "write">; repositories?: Array<{ name: string }> }>(
           `https://api.github.com/app/installations/${installationId}/access_tokens`,
           request,
         );
+    if (scope && !matchesGitHubInstallationScope(scope, { repositories: data.repositories?.map(repo => repo.name), permissions: data.permissions }))
+      throw new AppError("GitHub did not confirm the requested repository token scope", 502, "ACTIONS_TOKEN_SCOPE_INVALID");
     const envelope: CachedInstallationToken = {
       token: data.token,
       // GitHub's `expires_at` is the SOURCE OF TRUTH for token lifetime.
@@ -500,7 +525,7 @@ export async function getInstallationToken(
       // GitHub Enterprise variants and test fixtures).
       expiresAt: data.expires_at ?? new Date(Date.now() + 55 * 60 * 1000).toISOString(),
     };
-    await store.set(cacheKey, encodeTokenEnvelope(envelope), GITHUB_TOKEN_CACHE_TTL_SECONDS);
+    if (!opts.noCache) await store.set(cacheKey, encodeTokenEnvelope(envelope), GITHUB_TOKEN_CACHE_TTL_SECONDS);
     return envelope.token;
   } catch (err) {
     // Cascade MEDIUM — when GitHub returns 404 on /app/installations/:id
@@ -629,6 +654,7 @@ export interface GitHubFetchOptions {
   installationId?: number;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
+  response?: "json" | "redirect";
 }
 
 /**
@@ -670,6 +696,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
       try {
         return await ghFetch<T>(ghToken, {
           url: opts.url, method, params: opts.params, headers: opts.headers,
+          response: opts.response,
         });
       } catch (error) {
         if (!rejectedCredential(error)) throw error;
@@ -707,6 +734,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     try {
       return await ghFetch<T>(result.token, {
         url, method, params: opts.params, headers: opts.headers,
+        response: opts.response,
       });
     } catch (error) {
       // Never replay mutations, rate limits, outages, or ordinary not-found
@@ -719,7 +747,8 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
 
   // Public github.com reads also work when a saved credential was revoked.
   // Enterprise sources must never resolve a same-named public GitHub repo.
-  if (readOnly && !customApiBase && opts.url.startsWith("https://api.github.com/")) {
+  if (readOnly && (!opts.response || opts.response === "json") &&
+      !customApiBase && opts.url.startsWith("https://api.github.com/")) {
     const publicData = await ghFetchPublic<T>({
       url: opts.url, params: opts.params, headers: opts.headers,
     });

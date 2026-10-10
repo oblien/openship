@@ -395,6 +395,7 @@ export async function mintOrgInstallationToken(
   organizationId: string,
   owner: string,
   repos_?: string[],
+  permissions?: Record<string, "read" | "write">,
 ): Promise<
   | { kind: "ok"; token: string; expiresAt: string }
   | { kind: "not-found"; owner: string }
@@ -424,7 +425,7 @@ export async function mintOrgInstallationToken(
       // for a token scoped to one repo and got an installation-wide one back — the
       // "authorized for repo A, credential reaches repo B" shape of
       // GHSA-hp2g-hw7g-f3vm, one layer down in the proxy.
-      { repositories: repos_ },
+      { repositories: repos_, ...(permissions ? { permissions, noCache: true } : {}) },
     )
     .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/cloud/cloud-github.service"); return null; });
   if (!token) {

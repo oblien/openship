@@ -244,6 +244,7 @@ async function deployProjectFromPush(
       commitMessage: input.commitMessage,
       trigger: "webhook",
       serviceIds,
+      actionEvent: input.payload as unknown as Record<string, unknown> | undefined,
       forceAll,
       // Let the compose-drift reconciler skip its repo scan when this push
       // didn't touch a compose file. Truncated → pass null (unknown → reconcile).

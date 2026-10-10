@@ -27,6 +27,26 @@ Shared Docker placement uses host measurements for live usage. Provider
 namespace allocation is its purchased host capacity, not project storage use.
 Resize that host through `servers.previewResize` and `servers.resize`.
 
+### Actions budget
+
+`billing.getActionsBudget()` reads the organization's separate prepaid workflow
+budget. It has no `workspaceId` selector and cannot spend a managed server's
+monthly allowance. The response includes dollar conversion units, available and
+used provider credits, live usage rates, estimated VM minutes, runner readiness,
+and recent deposits. CPU, measured memory and transfer consume the same balance.
+Amounts retain sub-cent precision; divide by `unitsPerDollar` for display. An
+unavailable balance or estimate is `null`, not zero.
+
+`getActionsPurchase({ purchaseId })` verifies the saved payment with the provider.
+Verified fulfillment updates deposit history; Oblien owns the spendable balance
+and usage debits. Payment recovery enables the Cloud runner profiles separately;
+confirmed deposits remain visible while setup retries. Workflow permissions do
+not grant access to these billing reads or writes. Responses exclude provider
+credentials and payment URLs; checkout URLs are returned only by explicit purchase
+operations. Purchases require Cloud billing configuration and valid live rates;
+check `purchasesAvailable` before offering checkout. See
+[Cloud Actions funding](/docs/guides/actions#cloud-actions-funding).
+
 ## List plans
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -421,6 +441,15 @@ closure and resource cleanup.
 | Create a billing portal session. | `billing.createPortal(input?)` | `POST /api/billing/portal`<br />`billing:admin` |
 | Read billable usage for the requested period. | `billing.getUsage(input?)` | `GET /api/billing/usage`<br />`billing:read` |
 | Read detailed allowance allocation and consumption. | `billing.listAllowanceDetail(input?)` | `GET /api/billing/allowances`<br />`billing:read` |
+
+### Actions budget
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the separate prepaid Actions balance, runner rates and recent deposits. Amounts use unitsPerDollar; no namespace or checkout is created. | `billing.getActionsBudget()` | `GET /api/billing/actions`<br />`billing:read` |
+| Reconcile an owned Actions purchase with its verified provider receipt. Returns payment state without a payment URL. | `billing.getActionsPurchase(input)` | `GET /api/billing/actions/purchase`<br />`billing:read` |
+| Start a prepaid Actions checkout with an approved deposit and idempotency key. Requires configured Cloud billing and valid live usage rates. | `billing.createActionsCheckout(input)` | `POST /api/billing/actions/checkout`<br />`billing:write` |
+| Resume the original Actions checkout without creating another payment. Requires configured Cloud billing and valid live usage rates. | `billing.resumeActionsCheckout(input)` | `POST /api/billing/actions/checkout/resume`<br />`billing:write` |
 
 ### HTTP endpoints
 

@@ -19,7 +19,8 @@ import { policyOrganizationId } from "@repo/platform/engine/modules/backups/back
 import { SYSTEM_JOB_DEFS, SYSTEM_JOB_BY_KEY } from "@repo/platform/engine/modules/jobs/job.registry";
 import { runCommandJobTick, startCommandRun } from "@repo/platform/engine/modules/jobs/job-command";
 import { JOB_TRIGGER_EVENT_IDS, refreshTriggerArm } from "@repo/platform/engine/modules/jobs/job-events";
-import { resolveServerIds, type CommandConfig, type JobNotifyConfig } from "@repo/platform/engine/modules/jobs/job.types";
+import { resolveServerIds, type CommandConfig, type JobNotifyConfig, type WorkflowJobConfig } from "@repo/platform/engine/modules/jobs/job.types";
+import { startWorkflowJob, workflowJobRuns } from "./job-workflow";
 import type { TCreateJobBody, TUpdateJobBody } from "@repo/contracts";
 
 /** Built-in actions are registry-owned; commands use the shared job executor. */
@@ -81,7 +82,7 @@ async function syncJob(row: Job): Promise<boolean> {
     await SYSTEM_JOB_BY_KEY.get(row.key)?.onDisabled?.();
     return false;
   }
-  if (row.actionType !== "command" && !resolveRun(row)) {
+  if (row.actionType !== "command" && row.actionType !== "workflow" && !resolveRun(row)) {
     await runner.removeRecurring(row.key);
     return false;
   }
@@ -101,7 +102,9 @@ export async function runScheduledJob(key: string): Promise<void> {
   const row = await repos.job.findByKey(key);
   if (!row?.enabled || row.scheduleType !== "recurring" || !row.cronExpression ||
       !validateCronExpression(row.cronExpression).valid || systemJobAvailability(key) === "unavailable") return;
-  if (row.actionType === "command") {
+  if (row.actionType === "workflow") {
+    await startWorkflowJob(row, "schedule");
+  } else if (row.actionType === "command") {
     await runCommandJobTick(key);
   } else {
     const run = resolveRun(row);
@@ -162,13 +165,14 @@ function computeNextRun(row: Job): Date | null {
  *  (masked values) so the editor can show which secrets exist. */
 function redactConfig(cfg: unknown): unknown {
   if (!cfg || typeof cfg !== "object") return cfg;
-  const c = cfg as CommandConfig;
-  if (!c.secrets) return cfg;
+  const { authority: _authority, ...safe } = cfg as CommandConfig & { authority?: unknown };
+  const c = safe;
+  if (!c.secrets) return safe;
   return { ...c, secrets: Object.fromEntries(Object.keys(c.secrets).map((k) => [k, ""])) };
 }
 
 async function toView(row: Job, limit = 5): Promise<JobView> {
-  const recentRuns = await repos.jobRun.listRecent({ jobId: row.key, limit });
+  const recentRuns = row.actionType === "workflow" ? await workflowJobRuns(row, limit) : await repos.jobRun.listRecent({ jobId: row.key, limit });
   return {
     ...row,
     actionConfig: redactConfig(row.actionConfig),
@@ -366,7 +370,7 @@ function buildActionConfig(
 
 /** Update a job. System jobs accept only cron/enabled; custom jobs accept the
  *  full config. Re-syncs the runner registration afterwards. */
-export async function updateJob(key: string, patch: TUpdateJobBody): Promise<Job> {
+export async function updateJob(key: string, patch: TUpdateJobBody, workflowConfig?: WorkflowJobConfig): Promise<Job> {
   let row = await repos.job.findByKey(key);
   const advancedKeys = Object.keys(patch).filter(
     (k) => !["cronExpression", "enabled", "label"].includes(k),
@@ -441,7 +445,12 @@ export async function updateJob(key: string, patch: TUpdateJobBody): Promise<Job
       patch.retry !== undefined ||
       patch.env !== undefined ||
       patch.secrets !== undefined;
-    if (touchesConfig) {
+    if (row.actionType === "workflow") {
+      if (touchesConfig) throw new ValidationError("Workflow jobs use the workflow’s runners and configuration");
+      if (workflowConfig) set.actionConfig = workflowConfig;
+    } else if (patch.workflowId !== undefined || patch.inputs !== undefined) {
+      throw new ValidationError("Create a workflow job to run Actions; an existing command job keeps its action type");
+    } else if (touchesConfig) {
       set.actionConfig = buildActionConfig(patch, (row.actionConfig ?? {}) as CommandConfig);
     }
   }
@@ -468,6 +477,7 @@ export async function runJobNow(
   if (systemJobAvailability(key) === "unavailable") {
     throw new NotFoundError("Job", key);
   }
+  if (row.actionType === "workflow") return { key, runId: await startWorkflowJob(row, "manual") };
   if (row.actionType === "command") {
     const runId = await startCommandRun(row);
     return { key, runId };
@@ -482,9 +492,12 @@ export async function runJobNow(
  *  runAt, or manual-only; Run Now available anytime. */
 export async function createCustomJob(
   input: TCreateJobBody & { createdBy?: string | null },
+  workflowConfig?: WorkflowJobConfig,
 ): Promise<Job> {
   if (!input.label.trim()) throw new ValidationError("A job name is required");
-  if (!input.command.trim()) throw new ValidationError("A command is required");
+  if (!workflowConfig && !input.command?.trim()) throw new ValidationError("A command or workflow is required");
+  if (workflowConfig && (input.command || input.serverId || input.serverIds?.length || input.env || input.secrets || input.retry || input.timeoutMs))
+    throw new ValidationError("Workflow jobs use their workflow’s runners, inputs and secrets");
 
   const scheduleType = input.scheduleType ?? "recurring";
   validateSchedule(scheduleType, input.cronExpression, input.runAt);
@@ -493,7 +506,7 @@ export async function createCustomJob(
   const key = `custom:${generateId()}`;
   if (input.dependsOn?.length) await assertDependencyGraphOk(key, input.dependsOn);
 
-  const actionConfig = buildActionConfig(input);
+  const actionConfig = workflowConfig ?? buildActionConfig(input);
 
   const row = await repos.job.create({
     key,
@@ -503,7 +516,7 @@ export async function createCustomJob(
     cronExpression: scheduleType === "recurring" ? input.cronExpression : null,
     runAt: scheduleType === "once" && input.runAt ? new Date(input.runAt) : null,
     enabled: true,
-    actionType: "command",
+    actionType: workflowConfig ? "workflow" : "command",
     actionConfig,
     dependsOn: input.dependsOn ?? null,
     triggerEvents: input.triggerEvents ?? null,

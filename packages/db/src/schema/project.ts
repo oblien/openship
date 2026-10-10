@@ -19,6 +19,7 @@ import type {
   ProjectObjectStorage,
   OpenshipReadiness,
   ClusterWorkloadConfig,
+  GitHubDeploymentChecks,
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
@@ -148,6 +149,8 @@ export const project = pgTable(
     gitUrl: text("git_url"),
     /** Installation ID for GitHub App access */
     installationId: integer("installation_id"),
+    /** Null uses the shared default: deployment and per-service GitHub Checks. */
+    githubChecks: jsonb("github_checks").$type<GitHubDeploymentChecks | null>(),
     /**
      * Per-project clone-token override (encrypted via lib/encryption).
      * When set, this is the first credential `resolveCloneToken` returns -
@@ -503,6 +506,7 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("project_owner_unique").on(table.id, table.organizationId),
     check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`),
     foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),
     foreignKey({ columns: [table.serverId, table.workspaceId, table.organizationId], foreignColumns: [servers.id, servers.workspaceId, servers.organizationId], name: "project_server_workspace_fk" }).onDelete("restrict"),

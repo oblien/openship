@@ -18,6 +18,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageActionRunnerAssets } from "../../../packages/actions-runner/assets.mjs";
 
 const CLI_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = join(CLI_DIR, "..", "..");
@@ -78,6 +79,7 @@ cpSync(engineSrc, join(OUT, "engine"), {
 // openresty-lua.ts resolves LUA_SRC_DIR relative to its own bundled module path
 // (dist/server/index.js after bundling), i.e. it expects dist/server/lua/*.lua.
 cpSync(join(REPO_ROOT, "packages/adapters/src/infra/lua"), join(OUT, "lua"), { recursive: true });
+stageActionRunnerAssets(join(OUT, "assets/actions-runner"));
 
 const mb = (statSync(join(OUT, "index.js")).size / 1024 / 1024).toFixed(1);
 console.log(`[stage-server] staged API bundle → dist/server (${mb} MB) + pglite + migrations + engine + lua`);

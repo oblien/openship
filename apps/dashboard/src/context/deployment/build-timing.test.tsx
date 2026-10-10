@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   respond: vi.fn(),
   toast: vi.fn(),
   ensure: vi.fn(), buildAccess: vi.fn(), getEnv: vi.fn(), pricing: vi.fn(),
+  policy: vi.fn(), setOptions: vi.fn(),
   callbacks: {} as Record<string, (...args: any[]) => void>,
   stream: { isConnected: true, connect: vi.fn(), disconnect: vi.fn() },
 }));
@@ -35,8 +36,9 @@ vi.mock("@/lib/api", () => ({
     buildAccess: api.buildAccess,
     buildRespond: api.respond,
   },
-  projectsApi: { ensure: api.ensure, getEnv: api.getEnv },
+  projectsApi: { ensure: api.ensure, getEnv: api.getEnv, setOptions: api.setOptions },
 }));
+vi.mock("@/lib/api/actions", () => ({ actionsApi: { updateProjectPolicy: api.policy } }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: api.toast }) }));
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => api.pricing }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: vi.fn() }));
@@ -117,6 +119,8 @@ beforeEach(() => {
   api.stream.isConnected = true;
   api.status.mockResolvedValue(snapshot());
   api.pricing.mockReturnValue(false);
+  api.policy.mockReset().mockResolvedValue({});
+  api.setOptions.mockResolvedValue({ success: true });
 });
 
 afterEach(async () => {
@@ -226,6 +230,38 @@ it("retries capacity admission using the draft already created by the deployment
   expect(api.ensure.mock.calls[1]![0]).toMatchObject({ projectId: "original-draft" });
   expect(api.buildAccess.mock.calls.map(call => call[0].projectId)).toEqual(["original-draft", "original-draft"]);
   expect(navigate).toHaveBeenCalledWith("/build/recovered-deploy");
+});
+
+describe("workflow rules in the shared deployment wizard", () => {
+  const actions = { mode: "actions" as const, workflowIds: ["ci"], requiredWorkflowIds: ["ci"] };
+  const config: Partial<DeploymentConfig> = { owner: "acme", repo: "app", branch: "main", framework: "node", actions };
+
+  it("saves rules for the ensured project before allowing deployment and preserves that draft on retry", async () => {
+    api.ensure.mockResolvedValue({ success: true, project_id: "draft", created: true });
+    api.getEnv.mockResolvedValue({ data: [] });
+    api.buildAccess.mockResolvedValue({ success: true, project_id: "draft", deployment_id: "deployment" });
+    api.policy.mockRejectedValueOnce(new ApiError(403, "Connect the repository's GitHub App first", { code: "ACTIONS_GITHUB_APP_REQUIRED" }));
+    vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    await mount(config);
+    await act(async () => { expect(await build.startDeployment()).toBeNull(); });
+    expect(api.policy).toHaveBeenCalledWith({ ...actions, projectId: "draft" });
+    expect(api.buildAccess).not.toHaveBeenCalled();
+    expect(api.toast).toHaveBeenCalledWith(expect.stringContaining("GitHub App"), "error", "Error");
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure.mock.calls[1]![0]).toMatchObject({ projectId: "draft" });
+    expect(api.policy).toHaveBeenCalledTimes(2);
+    expect(api.policy.mock.invocationCallOrder[1]).toBeLessThan(api.buildAccess.mock.invocationCallOrder[0]!);
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+  });
+
+  it("saves workflow rules with configuration-only changes without creating a deployment", async () => {
+    await mount({ ...config, projectId: "existing", projectEnvBaseline: [] });
+    await act(async () => { expect(await build.startDeployment({ saveConfigOnly: true })).toBe("existing"); });
+    expect(api.setOptions).toHaveBeenCalledOnce();
+    expect(api.policy).toHaveBeenCalledWith({ ...actions, projectId: "existing" });
+    expect(api.ensure).not.toHaveBeenCalled();
+    expect(api.buildAccess).not.toHaveBeenCalled();
+  });
 });
 
 describe("deployment counter (#919)", () => {

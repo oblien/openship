@@ -86,7 +86,8 @@
     },
     "apps": "Apps",
     "jobs": "Tarefas",
-    "workspaces": "Espaços de trabalho"
+    "workspaces": "Espaços de trabalho",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",

@@ -17,7 +17,7 @@ vi.mock("@repo/platform/engine/config/env", async () => ({
   env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
 }));
 
-import { decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
+import { closeEncryption, decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
 import { encryptSecretField, decryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 import {
   sealSecretBundle,
@@ -31,6 +31,7 @@ import {
 } from "../../src/modules/system/data-transfer/secret-codec";
 import {
   SECRET_COLUMNS,
+  stripTransferSecrets,
   type SecretColumn,
 } from "../../src/modules/system/data-transfer/secret-registry";
 import {
@@ -633,6 +634,31 @@ describe("two-factor account transfer", () => {
 });
 
 describe("secret-codec round-trips (extract → seal → decrypt)", () => {
+  it("redacts runner registration tokens and re-encrypts them for another instance", async () => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const registered = SECRET_COLUMNS.find(
+      (entry) => entry.sqlName === "action_runner_session" && entry.column === "registration",
+    )!;
+    const token = "temporary-github-runner-registration";
+    const stored = encrypt(token);
+    const entry = await extractPlaintext(registered, "session", stored);
+    const tables = { action_runner_session: [{ id: "session", registration: stored }] };
+    stripTransferSecrets(tables);
+    expect(tables.action_runner_session[0]!.registration).toBeNull();
+    expect(entry?.value).toBe(token);
+    let restored: string;
+    try {
+      env.BETTER_AUTH_SECRET = "destination-runner-registration-key-123456789";
+      closeEncryption();
+      restored = await sealForInstance(registered, entry!) as string;
+      expect(decrypt(restored)).toBe(token);
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+      closeEncryption();
+    }
+    expect(() => decrypt(restored)).toThrow();
+  });
+
   it("protects repository grants during transfer with the same cipher as their writer", async () => {
     const registered = SECRET_COLUMNS.find((entry) => entry.sqlName === "user_settings" && entry.column === "githubAuthorizationEncrypted")!;
     const grant = JSON.stringify({ accessToken: "repository-access", refreshToken: "repository-refresh", accessExpiresAt: null, refreshExpiresAt: null });

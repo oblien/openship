@@ -59,6 +59,26 @@ describe("structured error reporting", () => {
     }
   });
 
+  it("writes local diagnostics without accessing Node streams in a browser or Edge runtime", () => {
+    const output = vi.spyOn(process, "stderr", "get").mockImplementation(() => {
+      throw new Error("Node streams are unavailable in Edge");
+    });
+    const local = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const reporter = new ErrorReporter({ enabled: false });
+      reporter.log("warn", "dashboard", "Portable diagnostic");
+      expect(output).not.toHaveBeenCalled();
+      expect(local).toHaveBeenCalledOnce();
+      expect(JSON.parse(local.mock.calls[0]![0])).toMatchObject({
+        error: { message: "Portable diagnostic" },
+        context: { component: "dashboard" },
+      });
+    } finally {
+      output.mockRestore();
+      local.mockRestore();
+    }
+  });
+
   it("discards pending events and their identities when disabled", async () => {
     const { reporter, events } = recorder();
     const error = new Error("same object");

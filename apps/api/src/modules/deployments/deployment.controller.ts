@@ -259,6 +259,7 @@ export async function buildRedeploy(c: Context) {
 export async function buildStart(c: Context) {
   const result = await getPlatformKernel().deployments.start(operationContext(c), param(c, "id"));
   applyOperationContext(c, result.context);
+  if (result.data.awaiting_actions) return c.json({ success: true, ...result.data }, 202);
   return streamBuildSession(c, result.data.deployment_id, {
     event: "started", data: JSON.stringify({ type: "started", ...result.data }),
   });

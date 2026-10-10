@@ -49,6 +49,7 @@ if (manifest.version !== cliManifest.version) throw new Error("SDK and CLI relea
 for (const file of [
   "node-entry.js", "node-bootstrap.js", "index.js", "server/index.js", "native/engine-worker.mjs",
   "server/pglite/pglite.wasm", "server/pglite/pglite.data", "server/migrations/meta/_journal.json",
+  "server/assets/actions-runner/manifest.json", "server/assets/actions-runner/THIRD_PARTY_NOTICES.txt",
   ...["index", "native", "client"].flatMap((name) => ["js", "cjs", "d.ts", "d.cts"].map((ext) => `sdk/${name}.${ext}`)),
 ]) if (!existsSync(join(dist, file))) throw new Error(`Missing public package artifact: dist/${file}. Run bun run build.`);
 
