@@ -347,7 +347,7 @@ openship project env [options] [command]
 | Subcommand | Purpose |
 | --- | --- |
 | [`get [options] <id>`](/docs/cli/reference/project#openship-project-env-get) | List env vars (secret values are masked by the API) |
-| [`set [options] <id>`](/docs/cli/reference/project#openship-project-env-set) | Merge env vars: upsert KEY=VALUE pairs and/or delete keys |
+| [`set [options] <id> [pairs...]`](/docs/cli/reference/project#openship-project-env-set) | Merge env vars: upsert KEY=VALUE pairs and/or delete keys |
 
 ## openship project env get
 
@@ -370,19 +370,20 @@ openship project env get [options] <id>
 Merge env vars: upsert KEY=VALUE pairs and/or delete keys
 
 ```text
-openship project env set [options] <id>
+openship project env set [options] <id> [pairs...]
 ```
 
 | Argument | Meaning |
 | --- | --- |
 | `id` | Project ID |
+| `pairs` | KEY=VALUE pairs to upsert (same as --set) |
 
 | Option | Meaning |
 | --- | --- |
 | `--environment <env>` | Target environment (default: "production") |
 | `--set <pair>` | KEY=VALUE to upsert (repeatable) (default: []) |
 | `--unset <key>` | KEY to delete (repeatable) (default: []) |
-| `--secret` | Mark every --set value as a secret |
+| `--secret` | Mark every upserted value as a secret |
 
 ## openship project environment
 

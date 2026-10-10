@@ -15,7 +15,8 @@ export const apiCommand = new Command("api")
   .option("-q, --query <kv...>", "Query parameter key=value (repeatable)")
   .action(async (path: string, opts) => {
     const method = (opts.method || (opts.data ? "POST" : "GET")).toUpperCase();
-    let url = path.startsWith("/") ? path : `/${path}`;
+    // The client already prefixes /api, so accept full route paths (/api/projects) too.
+    let url = (path.startsWith("/") ? path : `/${path}`).replace(/^\/api(?=\/|$)/, "");
     if (opts.query?.length) {
       const sp = new URLSearchParams();
       for (const kv of opts.query as string[]) {

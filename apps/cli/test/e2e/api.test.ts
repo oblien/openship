@@ -21,6 +21,18 @@ describe("openship api (raw passthrough)", () => {
     expect(JSON.parse(out)).toEqual({ hello: "world" });
   });
 
+  it("does not double the /api prefix when the path already has it (#1023)", async () => {
+    fetchStub = stubFetch(() => ({ json: {} }));
+    await runCommand(apiCommand, ["/api/projects/x"]);
+    await runCommand(apiCommand, ["api/projects/x"]);
+    await runCommand(apiCommand, ["/apis"]);
+    expect(fetchStub.calls.map((call) => call.url)).toEqual([
+      "http://api.test/api/projects/x",
+      "http://api.test/api/projects/x",
+      "http://api.test/api/apis",
+    ]);
+  });
+
   it("defaults to POST when --data is given and forwards the raw body", async () => {
     fetchStub = stubFetch(() => ({ json: { ok: true } }));
     const { code } = await runCommand(apiCommand, ["/projects", "--data", '{"name":"x"}']);
