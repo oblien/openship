@@ -412,4 +412,178 @@ describe("parseOpenshipConfig", () => {
       expect(config?.services?.[0]?.healthcheck?.test).toBe("pg_isready");
     });
   });
+
+  describe("roles (#935)", () => {
+    it("parses a valid worker role with health and replicas", () => {
+      const { config, errors } = parseOpenshipConfig({
+        roles: [
+          {
+            name: "jobs",
+            kind: "worker",
+            command: "bin/jobs",
+            replicas: 2,
+            health: { kind: "process" },
+          },
+        ],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles).toEqual([
+        { name: "jobs", kind: "worker", command: "bin/jobs", replicas: 2, health: { kind: "process" } },
+      ]);
+    });
+
+    it("an absent `roles` field parses byte-identical to a config with none declared", () => {
+      const withoutRoles = parseOpenshipConfig({ framework: "rails" });
+      expect(withoutRoles.config).not.toHaveProperty("roles");
+      expect(withoutRoles.errors).toEqual([]);
+    });
+
+    it("roles: [] is a valid explicit opt-out", () => {
+      const { config, errors } = parseOpenshipConfig({ roles: [] });
+      expect(errors).toEqual([]);
+      expect(config?.roles).toEqual([]);
+    });
+
+    it("rejects a role with kind: web - web is derived from startCommand", () => {
+      const { errors, config } = parseOpenshipConfig({
+        roles: [{ name: "web", kind: "web", command: "bin/rails server" }],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].kind"))).toBe(true);
+      expect(config?.roles).toEqual([]);
+    });
+
+    it("rejects a role with an empty or missing name", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ kind: "worker", command: "bin/jobs" }, { name: "", kind: "worker", command: "bin/jobs" }],
+      });
+      expect(errors.filter((e) => e.includes("requires a non-empty `name`")).length).toBe(2);
+    });
+
+    it("rejects duplicate role names", () => {
+      const { errors, config } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "worker", command: "bin/jobs" },
+          { name: "jobs", kind: "worker", command: "bin/other" },
+        ],
+      });
+      expect(errors.some((e) => e.includes('duplicates role "jobs"'))).toBe(true);
+      expect(config?.roles).toEqual([{ name: "jobs", kind: "worker", command: "bin/jobs" }]);
+    });
+
+    it("rejects a missing or empty command", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "" }],
+      });
+      expect(errors.some((e) => e.includes("requires a non-empty `command`"))).toBe(true);
+    });
+
+    it("rejects a non-integer or sub-1 replicas count", () => {
+      const { errors: e1 } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 1.5 }],
+      });
+      expect(e1.some((e) => e.includes("roles[0].replicas"))).toBe(true);
+
+      const { errors: e2 } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 0 }],
+      });
+      expect(e2.some((e) => e.includes("roles[0].replicas"))).toBe(true);
+    });
+
+    it("rejects replicas > 1 on a scheduler role instead of capping it", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "cron", kind: "scheduler", command: "bin/cron", replicas: 3 }],
+      });
+      expect(errors.some((e) => e.includes("roles[0].replicas") && e.includes("scheduler"))).toBe(true);
+    });
+
+    it("rejects replicas > 1 on a singleton worker, accepts replicas: 1", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", singleton: true, replicas: 2 }],
+      });
+      expect(errors.some((e) => e.includes("roles[0].replicas") && e.includes("singleton"))).toBe(true);
+
+      const { errors: ok, config } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", singleton: true, replicas: 1 }],
+      });
+      expect(ok).toEqual([]);
+      expect(config?.roles?.[0]?.replicas).toBe(1);
+    });
+
+    it("rejects health.kind http for roles and accepts process and exec", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", health: { kind: "http", path: "/up" } }],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].health.kind") && e.includes("portless"))).toBe(true);
+
+      const { errors: ok } = parseOpenshipConfig({
+        roles: [
+          { name: "a", kind: "worker", command: "x", health: { kind: "process" } },
+          { name: "b", kind: "worker", command: "y", health: { kind: "exec", command: "true" } },
+        ],
+      });
+      expect(ok).toEqual([]);
+    });
+
+    it("accepts SIG names and positive integers for stopSignal", () => {
+      for (const stopSignal of ["SIGTERM", "SIGQUIT", "SIGUSR1", "3"]) {
+        const { errors, config } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopSignal }],
+        });
+        expect(errors).toEqual([]);
+        expect(config?.roles?.[0]?.stopSignal).toBe(stopSignal);
+      }
+    });
+
+    it("rejects an invalid stopSignal", () => {
+      for (const stopSignal of ["", "term", "SIG", "SIG TERM", "0", "-1", "1.5", 9]) {
+        const { errors } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopSignal }],
+        });
+        expect(errors.some((e) => e.includes("roles[0].stopSignal"))).toBe(true);
+      }
+    });
+
+    it("accepts compose durations and bare seconds for stopGracePeriod", () => {
+      for (const stopGracePeriod of ["90", "1.5", "90s", "10m", "1m30s", "500ms", "2h", "100us", "100µs", "5ns"]) {
+        const { errors, config } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopGracePeriod }],
+        });
+        expect(errors).toEqual([]);
+        expect(config?.roles?.[0]?.stopGracePeriod).toBe(stopGracePeriod);
+      }
+    });
+
+    it("rejects a stopGracePeriod that would parse to nothing", () => {
+      for (const stopGracePeriod of ["", "soon", "10x", "s", "1m30", "10 m", "-5s", 30]) {
+        const { errors } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopGracePeriod }],
+        });
+        expect(errors.some((e) => e.includes("roles[0].stopGracePeriod"))).toBe(true);
+      }
+    });
+
+    it("forces singleton true for a scheduler role regardless of what was declared", () => {
+      const { config, errors } = parseOpenshipConfig({
+        roles: [{ name: "cron", kind: "scheduler", command: "bin/cron", singleton: false }],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles?.[0]?.singleton).toBe(true);
+    });
+
+    it("rejects an unknown role kind and an unknown health kind", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "batch", command: "bin/jobs" },
+          { name: "cron", kind: "scheduler", command: "bin/cron", health: { kind: "tcp" } },
+        ],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].kind"))).toBe(true);
+      expect(errors.some((e) => e.startsWith("roles[1].health.kind"))).toBe(true);
+    });
+
+    it("rejects `roles` that isn't an array", () => {
+      const { errors } = parseOpenshipConfig({ roles: { name: "jobs" } });
+      expect(errors.some((e) => e.startsWith("roles:"))).toBe(true);
+    });
+  });
 });
