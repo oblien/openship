@@ -36,6 +36,7 @@ import {
   normalizeFramework,
   isServicesFramework,
   resolveWorkload,
+  resolveGitHubDeploymentChecks,
   toWorkloadType,
   type ReleaseSource,
   type UpdatableIdentity,
@@ -710,6 +711,7 @@ function buildProductionProjectInput(
     releaseSource: source.releaseSource,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
+    githubChecks: data.githubChecks,
     framework: normalizeFramework(data.framework),
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
@@ -2074,6 +2076,7 @@ export async function createProjectEnvironment(
     gitBranch,
     gitUrl: app?.gitUrl ?? base.gitUrl,
     installationId: app?.installationId ?? base.installationId,
+    githubChecks: base.githubChecks,
     releaseSource: base.releaseSource,
     framework: base.framework,
     packageManager: base.packageManager,
@@ -2566,6 +2569,8 @@ export async function getGitInfo(projectId: string, organizationId: string) {
     webhookDomain: p.webhookDomain,
     autoDeploy: p.autoDeploy,
     defaultRollbackStrategy: p.defaultRollbackStrategy,
+    githubChecks: resolveGitHubDeploymentChecks(p.githubChecks),
+    githubChecksDelivery: await repos.deploymentCheck.latestForProject(projectId, organizationId),
     deployTarget,
   };
 }
@@ -2655,6 +2660,7 @@ export async function updateOptions(
     }
     update.gitBranch = options.gitBranch.trim();
   }
+  if (options.githubChecks !== undefined) update.githubChecks = options.githubChecks;
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;

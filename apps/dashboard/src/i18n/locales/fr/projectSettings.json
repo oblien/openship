@@ -1065,5 +1065,20 @@
     "server": "Serveur géré",
     "serverDescription": "Servez les fichiers depuis un conteneur nginx sur votre serveur géré.",
     "nextDeploy": "Les modifications enregistrées prennent effet au prochain déploiement."
+  },
+  "deploymentChecks": {
+    "title": "Vérifications de déploiement GitHub",
+    "description": "Publiez les résultats du déploiement et des services sur le commit déployé.",
+    "customize": "Personnaliser les vérifications",
+    "deployment": "Résultat du déploiement",
+    "services": "Tous les services, y compris les nouveaux",
+    "selectedServices": "Choisir les services",
+    "includeErrors": "Inclure les détails des erreurs",
+    "errorsHint": "Les résumés des erreurs, après masquage des données sensibles, sont visibles par les personnes ayant accès en lecture à ce dépôt.",
+    "emptySelection": "Choisissez au moins une vérification ou désactivez les rapports.",
+    "connectionHint": "Nécessite une application GitHub autorisée à écrire des Checks.",
+    "connection": "Connexion GitHub",
+    "deliveryFailed": "Impossible de transmettre les vérifications",
+    "saveFailed": "Impossible d’enregistrer les paramètres des vérifications GitHub."
   }
 }

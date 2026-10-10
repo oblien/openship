@@ -1206,5 +1206,20 @@
     "server": "Managed server",
     "serverDescription": "Serve files from an nginx container on your managed server.",
     "nextDeploy": "Saved hosting changes apply on the next deployment."
+  },
+  "deploymentChecks": {
+    "title": "GitHub deployment checks",
+    "description": "Report deployment and service results on the deployed commit.",
+    "customize": "Customize checks",
+    "deployment": "Deployment result",
+    "services": "All services, including new ones",
+    "selectedServices": "Choose services",
+    "includeErrors": "Include failure details",
+    "errorsHint": "Redacted error summaries are shared with people who can read this repository.",
+    "emptySelection": "Choose at least one check, or turn reporting off.",
+    "connectionHint": "Requires a GitHub App with Checks write access.",
+    "connection": "GitHub connection",
+    "deliveryFailed": "Checks could not be delivered",
+    "saveFailed": "Could not save GitHub check settings."
   }
 }

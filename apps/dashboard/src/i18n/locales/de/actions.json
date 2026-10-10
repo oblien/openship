@@ -405,7 +405,7 @@
     "runnerDisabled": "Deaktiviert",
     "useRunners": "Ausgewählte Runner nutzen",
     "backToSetup": "Zurück zum Workflow",
-    "githubChecks": "GitHub Checks",
+    "githubChecks": "GitHub-Prüfungen",
     "runResults": "Laufergebnisse",
     "automatic": "Automatisch",
     "githubChecksHint": "Die ausgewählten Runner führen deine Jobs aus. GitHub veröffentlicht ihre Checks für Commits und Pull Requests; Openship zeigt dieselben Ergebnisse.",

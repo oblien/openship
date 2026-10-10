@@ -7,6 +7,7 @@ import { createConfigurationSecrets, type ConfigurationEncryption } from "../con
 import { deployment, buildSession, project, service } from "../schema";
 import { actionDeployment, actionProject, actionRun, actionWorkflow } from "../schema/actions";
 import { detailOf } from "./storable-detail";
+import { queueDeploymentChecks } from "./deployment-check.repo";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite, withProjectWorkAdmission } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -294,6 +295,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           .values(codec.sealDeployment({ id, ...rest }))
           .onConflictDoNothing()
           .returning();
+        if (inserted) await queueDeploymentChecks(tx, codec.openDeployment(inserted));
         if (inserted?.actionRequestId) await tx.update(actionDeployment).set({
           // Keep the admission retryable until kickoff is acknowledged. A crash
           // between this commit and queue submission must resume this same row.

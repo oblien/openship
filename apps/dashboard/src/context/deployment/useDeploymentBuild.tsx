@@ -766,6 +766,7 @@ export function useDeploymentBuild(
             buildCommand: config.options.buildCommand,
             startCommand: config.options.startCommand,
             releaseCommands: config.releaseCommands,
+            githubChecks: config.githubChecks,
             outputDirectory: config.options.outputDirectory,
             productionPaths: config.options.productionPaths,
             rootDirectory: config.options.rootDirectory,
@@ -877,6 +878,7 @@ export function useDeploymentBuild(
         // Deploy-time readiness gate. Omitted when the Health section was left
         // alone, which is the default — the backend then runs no post-start probe.
         readiness: config.readiness ?? undefined,
+        githubChecks: config.githubChecks,
         releaseCommands: config.releaseCommands,
       });
 

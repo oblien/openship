@@ -108,6 +108,35 @@ GitHub**, turn on auto-deploy:
 Open your project → **Source** tab → switch on **Auto-deploy**. From now on, every `git push` to your
 deploy branch rebuilds and ships automatically.
 
+## GitHub deployment Checks
+
+GitHub-backed projects report their deployment result and individual service results on the
+deployed commit by default, on both self-hosted Openship and Openship Cloud. This requires a
+connected GitHub App with **Checks: Read and write** access to the repository. A clone token
+alone does not enable this integration.
+
+Open **Project → Source → GitHub deployment checks**, or use the same control in the deployment
+wizard. Turn reporting off, or expand **Customize checks** to select the overall result,
+all services, specific services, and whether to include failure details. These settings apply
+to new deployment attempts. Turning reporting off also closes pending Checks from an active attempt.
+
+Checks show queued, running and completed outcomes, including failed builds, cancellations and
+partial service failures. Each links to its deployment in Openship. Failure details are redacted
+summaries visible to people who can read the repository; full build logs are not attached.
+Delivery retries in the background if GitHub is unavailable and never blocks the deployment.
+Connection problems appear beside these settings.
+
+Check names include the project and environment: `Openship / <project> / <environment>`.
+Service Checks append ` / <service>`. If a GitHub repository rule requires an older
+`build:<service>` Check, select the new name after its first report.
+
+GitHub's **Re-run** action retries the recorded commit. A service Check retries that service;
+the overall Check retries the project. The instance must be reachable by GitHub webhooks to
+receive this action. Reporting results itself only needs an outbound GitHub connection.
+
+These deployment results are separate from workflow Checks required before deployment. Configure
+those in [Project Actions](/docs/guides/actions).
+
 ## CLI
 
 Everything above works from the CLI too:

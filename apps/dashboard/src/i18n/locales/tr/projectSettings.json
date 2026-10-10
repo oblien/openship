@@ -1172,5 +1172,20 @@
     "server": "Yönetilen sunucu",
     "serverDescription": "Dosyaları yönetilen sunucunuzdaki bir nginx konteynerinden sunun.",
     "nextDeploy": "Kaydedilen barındırma değişiklikleri bir sonraki dağıtımda uygulanır."
+  },
+  "deploymentChecks": {
+    "title": "GitHub dağıtım kontrolleri",
+    "description": "Dağıtım ve hizmet sonuçlarını dağıtılan commit üzerinde gösterin.",
+    "customize": "Kontrolleri özelleştir",
+    "deployment": "Dağıtım sonucu",
+    "services": "Yeniler dahil tüm hizmetler",
+    "selectedServices": "Hizmetleri seç",
+    "includeErrors": "Hata ayrıntılarını dahil et",
+    "errorsHint": "Hassas veriler gizlenmiş hata özetleri, bu depoyu okuyabilen kişilerle paylaşılır.",
+    "emptySelection": "En az bir kontrol seçin veya raporlamayı kapatın.",
+    "connectionHint": "Checks yazma iznine sahip bir GitHub App gerektirir.",
+    "connection": "GitHub bağlantısı",
+    "deliveryFailed": "Kontroller iletilemedi",
+    "saveFailed": "GitHub kontrol ayarları kaydedilemedi."
   }
 }

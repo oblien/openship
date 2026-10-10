@@ -142,6 +142,8 @@ interface EnvironmentData {
 }
 
 interface GitData {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks;
+  githubChecksDelivery?: { error: string | null; pending: string | null; updatedAt: string } | null;
   repository: any;
   branch: string;
   recentCommits: any[];
@@ -745,6 +747,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
           isLoading: false,
           error: null,
           autoDeployEnabled: response.auto_deploy,
+          githubChecks: response.github_checks,
+          githubChecksDelivery: response.github_checks_delivery,
           webhookActive: response.webhook_active,
           webhookStrategy: response.webhook_strategy,
           webhookDomain: response.webhook_domain,

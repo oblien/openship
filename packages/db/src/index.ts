@@ -282,3 +282,5 @@ export {
   createClusterDatabaseRepo,
   type ClusterDatabaseRecord,
 } from "./repos/cluster-database.repo";
+
+export { createDeploymentCheckRepo, type DeploymentCheck } from "./repos/deployment-check.repo";

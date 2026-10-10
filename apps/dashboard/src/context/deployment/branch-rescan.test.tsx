@@ -243,6 +243,30 @@ afterEach(async () => {
 });
 
 describe("deploy branch detection", () => {
+  it.each([true, false])("preserves saved GitHub reporting through hydration, branch scan, save and deploy (self-hosted: %s)", async selfHosted => {
+    api.selfHosted = selfHosted;
+    const githubChecks = { enabled: false, deployment: true, services: ["web"], includeErrors: false };
+    const response = await api.getInfo();
+    api.getInfo.mockResolvedValue({ data: { project: { ...response.data.project, githubChecks } } });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => current.updateConfig({ branches: ["main", "openship"] }));
+    await selectBranch("openship");
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => button(baseDictionary.deploy.sidebar.saveChanges).click());
+    expect(api.setOptions).toHaveBeenCalledWith("project-1", expect.objectContaining({ githubChecks }));
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ githubChecks }));
+  });
+
+  it("keeps a new project's reporting opt-out while scanning a different Compose file", async () => {
+    await act(async () => { await current.initializeFromRepo("example", "fresh"); });
+    const githubChecks = { enabled: false, deployment: true, services: "all" as const, includeErrors: false };
+    await act(async () => current.updateConfig({ githubChecks }));
+    await act(async () => { await current.rescanWithComposePath("infra/compose.yml"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+  });
+
   it.each([{ commands: ["migrate"] }, { commands: [] }])(
     "preserves explicit release settings through rescan, save and deploy: $commands",
     async ({ commands }) => {

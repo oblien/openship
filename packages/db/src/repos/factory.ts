@@ -306,6 +306,8 @@ import { createGitSourceRepo } from "./git-source.repo";
 import { createProjectGroupRepo } from "./project-group.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
+import { createDeploymentCheckRepo } from "./deployment-check.repo";
+export { createDeploymentCheckRepo, type DeploymentCheck } from "./deployment-check.repo";
 import { createDomainRepo } from "./domain.repo";
 import { createDomainDnsChallengeRepo } from "./domain-dns-challenge.repo";
 import { createDnsCredentialRepo } from "./dns-credential.repo";
@@ -393,6 +395,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     projectGroup: createProjectGroupRepo(db),
     project: createProjectRepo(db, encryption),
     deployment: createDeploymentRepo(db, encryption),
+    deploymentCheck: createDeploymentCheckRepo(db),
     domain: createDomainRepo(db),
     domainDnsChallenge: createDomainDnsChallengeRepo(db),
     dnsCredential: createDnsCredentialRepo(db),

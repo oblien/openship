@@ -71,6 +71,12 @@ const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
+    key: "github:deployment-checks",
+    label: "GitHub deployment Checks",
+    defaultCron: "*/10 * * * * *",
+    run: async () => (await import("../deployments/deployment-checks")).runDeploymentChecksSweep(),
+  },
+  {
     key: "cloud:workspace-recovery",
     label: "Cloud workspace operations",
     defaultCron: "* * * * *",

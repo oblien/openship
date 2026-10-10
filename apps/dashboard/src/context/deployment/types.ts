@@ -469,6 +469,7 @@ export interface DeploymentConfig {
    * and nothing post-start can delay or veto it.
    */
   readiness?: OpenshipReadiness | null;
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
   /** Ordered commands required before activating a single-app release. */
   releaseCommands?: string[] | null;
   /**

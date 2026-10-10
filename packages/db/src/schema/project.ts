@@ -19,6 +19,7 @@ import type {
   ProjectObjectStorage,
   OpenshipReadiness,
   ClusterWorkloadConfig,
+  GitHubDeploymentChecks,
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
@@ -148,6 +149,8 @@ export const project = pgTable(
     gitUrl: text("git_url"),
     /** Installation ID for GitHub App access */
     installationId: integer("installation_id"),
+    /** Null uses the shared default: deployment and per-service GitHub Checks. */
+    githubChecks: jsonb("github_checks").$type<GitHubDeploymentChecks | null>(),
     /**
      * Per-project clone-token override (encrypted via lib/encryption).
      * When set, this is the first credential `resolveCloneToken` returns -

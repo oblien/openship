@@ -167,6 +167,13 @@ use their installed tools and physical CPU.
 
 ## Layout and density
 
+GitHub deployment reporting uses the same compact settings card in Project → Source
+and the shared deploy wizard. Lead with one enabled toggle and a short description;
+keep overall/per-service selection and failure-detail sharing under Customize checks.
+Retain selections when reporting is disabled, a branch is rescanned, or the wizard is
+reopened. Delivery failures belong beside these preferences, with the GitHub connection
+link, and must not replace deployment status or appear as a build failure.
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress

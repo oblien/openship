@@ -5,6 +5,7 @@
  */
 
 import { Type, type Static, type TLiteral } from "@sinclair/typebox";
+import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
   STACK_IDS,
   ALL_PACKAGE_MANAGERS,
@@ -340,6 +341,7 @@ export const SetReleaseSourceBody = Type.Object({
 });
 
 export const CreateProjectBody = Type.Object({
+  githubChecks: Type.Optional(Type.Union([GitHubDeploymentChecksSchema, Type.Null()])),
   name: Type.String({ minLength: 1, maxLength: 100 }),
   /**
    * Durable deploy-target binding for a newly created project. The generic
@@ -665,6 +667,7 @@ export const SetSleepModeBody = Type.Object({
  */
 export const SetOptionsBody = Type.Object(
   {
+    githubChecks: CreateProjectBody.properties.githubChecks,
     /** Save a scanned source ref and its build settings in the same update. */
     gitBranch: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
     buildCommand: Type.Optional(Type.String()),
