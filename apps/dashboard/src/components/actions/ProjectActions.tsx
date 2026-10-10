@@ -214,10 +214,12 @@ function ProjectContent({ projectId }: { projectId: string }) {
           value={tab}
           onChange={setTab}
         />
-        <Button onClick={() => setEditing(true)} disabled={!value}>
-          <Icon name="plus" />
-          {a.newWorkflow}
-        </Button>
+        {value && (tab !== "workflows" || linked.length > 0) && (
+          <Button onClick={() => setEditing(true)}>
+            <Icon name="plus" />
+            {a.newWorkflow}
+          </Button>
+        )}
       </div>
       <ActionError message={data.error} onRetry={data.refresh} />
       <ActionError message={mutation.error} />
