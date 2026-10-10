@@ -361,13 +361,13 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
     // The subdir service builds from ITS directory — the root `.dockerignore`'s `api`
     // rule is not its file and must not have deleted the tree it needs.
     expect(dockerfiles.get("api")).toBe("Dockerfile");
-    expect(packed.get("api")).toEqual(["Dockerfile", "requirements.txt"]);
+    expect(packed.get("api")).toEqual([".", "Dockerfile", "requirements.txt"]);
 
     // And the ROOT service still gets the root `.dockerignore` applied — the prune was
     // skipped for the shared tree, so it has to arrive as a pack-time filter instead.
     // Losing this half is the silent hole: secrets and ignored dirs into the image.
     expect(dockerfiles.get("web")).toBe("Dockerfile");
-    expect(packed.get("web")).toEqual([".dockerignore", "Dockerfile", "web", "web/index.html"]);
+    expect(packed.get("web")).toEqual([".", ".dockerignore", "Dockerfile", "web", "web/index.html"]);
     expect(buildArgs.get("web")).toMatchObject({ APP_PACKAGE: "@myorg/web" });
     expect(buildArgs.get("api")).toMatchObject({ APP_PACKAGE: "@myorg/api" });
   });
@@ -412,7 +412,7 @@ describe("dockerode docker build — declared build context (#634)", () => {
     expect(options.dockerfile).toBe("Dockerfile.api");
     // Exactly the service directory — nothing from above it. A context that reached
     // one directory too high is the COPY failure in #634.
-    expect(tar).toEqual(["Dockerfile.api", "requirements.txt"]);
+    expect(tar).toEqual([".", "Dockerfile.api", "requirements.txt"]);
   });
 
   it("leaves the default builder selected for a plain Dockerfile", async () => {
