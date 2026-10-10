@@ -37,7 +37,8 @@ function action(fn: (...args: any[]) => Promise<void>) {
       await fn(...args);
     } catch (e) {
       rethrowCommandExit(e);
-      if (e instanceof ApiError) err(`  ${e.message}`);
+      // A bare 401 ("Unauthorized") means no token or a rejected one; say how to fix it.
+      if (e instanceof ApiError) err(`  ${e.message}${e.status === 401 ? "\n  Run `openship login` first." : ""}`);
       else err(`  ${e instanceof Error ? e.message : String(e)}`);
       process.exitCode = 1;
     }
@@ -308,6 +309,7 @@ envCmd
   .command("set")
   .description("Merge env vars: upsert KEY=VALUE pairs and/or delete keys")
   .argument("<id>", "Project ID")
+  .argument("[pairs...]", "KEY=VALUE pairs to upsert (same as --set)")
   .option("--environment <env>", "Target environment", "production")
   .option(
     "--set <pair>",
@@ -321,14 +323,14 @@ envCmd
     collect,
     [] as string[],
   )
-  .option("--secret", "Mark every --set value as a secret")
+  .option("--secret", "Mark every upserted value as a secret")
   .action(
-    action(async (id: string, opts) => {
+    action(async (id: string, pairs: string[], opts) => {
       const environment = parseOptionalEnvironmentScope(opts.environment) ?? "production";
-      const upserts = Object.entries(parsePairs(opts.set)).map(([key, value]) => ({ key, value, isSecret: !!opts.secret }));
+      const upserts = Object.entries(parsePairs([...pairs, ...opts.set])).map(([key, value]) => ({ key, value, isSecret: !!opts.secret }));
       const deletes = opts.unset as string[];
       if (upserts.length === 0 && deletes.length === 0) {
-        err("  Nothing to do — pass --set and/or --unset.");
+        err("  Nothing to do — pass KEY=VALUE pairs, --set and/or --unset.");
         process.exitCode = 1;
         return;
       }
