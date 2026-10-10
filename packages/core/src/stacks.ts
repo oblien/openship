@@ -172,6 +172,46 @@ export interface StackDetection {
   contentPatterns?: Readonly<Record<string, string>>;
 }
 
+// ─── Stack runtime roles (issue #935) ────────────────────────────────────────
+
+/** "web" is derived from `defaultStartCommand`, never declared as a role. */
+export type RoleKind = "web" | "worker" | "scheduler";
+export const ROLE_KINDS: readonly RoleKind[] = ["web", "worker", "scheduler"];
+
+export interface RoleHealth {
+  kind: "http" | "exec" | "process";
+  /** Path to probe. Only meaningful when `kind` is "http". */
+  path?: string;
+  /** Command to run. Only meaningful when `kind` is "exec". */
+  command?: string;
+}
+export const ROLE_HEALTH_KINDS: readonly RoleHealth["kind"][] = ["http", "exec", "process"];
+
+export interface StackRole {
+  name: string;
+  kind: RoleKind;
+  command: string;
+  /** Process count. Omit for the runtime default (1). */
+  replicas?: number;
+  /** Exactly one instance; incompatible with `replicas` > 1. Always true for "scheduler". */
+  singleton?: boolean;
+  /** Signal sent on stop (e.g. "SIGQUIT"). Absent means the runtime default (SIGTERM). */
+  stopSignal?: string;
+  /** Wait after the stop signal before SIGKILL, compose duration (e.g. "90s", "10m"). */
+  stopGracePeriod?: string;
+  health?: RoleHealth;
+  /** Preset gating only: every signal must match. Ignored for openship.json roles. */
+  when?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
+  /** Preset gating only: ANY signal here excludes the preset. */
+  unless?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
+}
+
 export interface StackDefinition {
   /** Human-readable display name */
   name: string;
@@ -233,6 +273,8 @@ export interface StackDefinition {
    * `stack-detector.ts` and `project-root-detector.ts`. See {@link StackDetection}.
    */
   detection?: StackDetection;
+  /** Non-web role presets, gated by `when` in `resolveStackRoles`. */
+  defaultRoles?: readonly StackRole[];
 }
 
 // ─── The registry ────────────────────────────────────────────────────────────
@@ -710,6 +752,34 @@ export const STACKS = {
       // The conjunction is encoded as an override in stack-detector.
       rootMarkers: ["Gemfile", "bin/rails", "config/routes.rb"],
     },
+    // Commands use `exec` so the worker replaces the `sh -c` wrapper as PID 1
+    // and receives SIGTERM.
+    // Only one queue backend is registered per app in practice, but a repo can
+    // carry both gems mid-migration - resolveStackRoles drops the worker role
+    // entirely when that happens rather than guessing which one runs.
+    //
+    // The two grace periods differ because the workers' own shutdown timeouts
+    // do: Solid Queue's `shutdown_timeout` defaults to 5s and Sidekiq's
+    // `timeout` to 25s, each measured to exit ~0.5s after it (solid_queue
+    // 1.7.0, sidekiq 8.1.7). Sidekiq under Docker's 10s default is SIGKILLed
+    // mid-drain and the in-flight job is lost, not requeued. Raising either
+    // worker's own timeout means raising its grace period with it.
+    defaultRoles: [
+      {
+        name: "jobs",
+        kind: "worker",
+        command: "exec bin/jobs",
+        stopGracePeriod: "10s",
+        when: { deps: ["solid_queue"], files: ["bin/jobs"] },
+      },
+      {
+        name: "sidekiq",
+        kind: "worker",
+        command: "exec bundle exec sidekiq",
+        stopGracePeriod: "30s",
+        when: { deps: ["sidekiq"] },
+      },
+    ],
   },
   sinatra: {
     name: "Sinatra",
@@ -754,6 +824,51 @@ export const STACKS = {
       rootMarkers: ["artisan", "composer.json"],
       deps: ["laravel/framework"],
     },
+    // queue and scheduler ship with laravel/framework, so they need no gate.
+    // Horizon replaces the plain worker: `queue` steps aside via `unless`
+    // and `horizon` takes over via `when`, so exactly one worker resolves.
+    // The scheduler sets `singleton: true` itself, because the parser's
+    // scheduler-forces-singleton rule never runs over stack presets.
+    //
+    // Commands use `exec` so PHP replaces the `sh -c` wrapper as PID 1 and
+    // receives SIGTERM. Without it, `queue:work` and `schedule:work` were
+    // killed after the grace period (Laravel 13.33.0, see #935). Horizon's
+    // shutdown was not measured separately.
+    //
+    // `deps` merges `require` and `require-dev`, so a dev-only
+    // laravel/horizon still selects `horizon`. Callers that need
+    // production-only matching must read `require` from composer.json.
+    //
+    // Explicit shutdown budgets for the later runtime slice. 90s exceeds the
+    // default 60s queue and Horizon supervisor timeouts, so size these to the
+    // application's own configured timeouts. Horizon's internal settings still
+    // govern worker draining, and scheduler grace is provisional because
+    // shutdown behaviour depends on the Laravel version. An explicit
+    // openship.json `roles` array replaces all presets, so declare grace
+    // periods there to keep these values.
+    defaultRoles: [
+      {
+        name: "queue",
+        kind: "worker",
+        command: "exec php artisan queue:work",
+        stopGracePeriod: "90s",
+        unless: { deps: ["laravel/horizon"] },
+      },
+      {
+        name: "horizon",
+        kind: "worker",
+        command: "exec php artisan horizon",
+        stopGracePeriod: "90s",
+        when: { deps: ["laravel/horizon"] },
+      },
+      {
+        name: "scheduler",
+        kind: "scheduler",
+        command: "exec php artisan schedule:work",
+        stopGracePeriod: "90s",
+        singleton: true,
+      },
+    ],
   },
   symfony: {
     name: "Symfony",

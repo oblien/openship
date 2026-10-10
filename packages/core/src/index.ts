@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./stacks";
 export * from "./package-manager-version";
+export * from "./stack-roles";
 export * from "./volumes";
 export * from "./compose-namespace";
 export * from "./compose-spec";
