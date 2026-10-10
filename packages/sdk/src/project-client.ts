@@ -1,5 +1,6 @@
 import {
   CreateProjectBody,
+  CreateExternalProjectBody,
   EnsureProjectBody,
   UpdateProjectBody,
   ResourceIdSchema,
@@ -266,6 +267,11 @@ export function createRemoteProjectOperations(
       disable: { method: "POST", path: (id) => path(id) + "/disable" },
       retryRouting: { method: "POST", path: (id) => path(id) + "/routing/retry" },
       runtimeLogs: { method: "GET", path: (id) => path(id) + "/logs", envelope: "data" },
+      listExternalContainers: {
+        method: "GET",
+        path: (id) => path(id) + "/external/containers",
+        envelope: "data",
+      },
       getCloneToken: { method: "GET", path: (id) => path(id) + "/clone-token" },
       updateCloneToken: { method: "PATCH", path: (id) => path(id) + "/clone-token" },
       deletionPreview: {
@@ -317,6 +323,8 @@ export function createRemoteProjectOperations(
       yield* http.events(url.href, { signal: options.signal });
     },
     create: async (input) => data("/projects", "POST", parseInput(CreateProjectBody, input)),
+    createExternal: async (input) =>
+      data("/projects/external", "POST", parseInput(CreateExternalProjectBody, input)),
     importLocal: async (input) =>
       data("/projects/import", "POST", parseInput(ImportLocalProjectBody, input)),
     async scanLocal(input) {

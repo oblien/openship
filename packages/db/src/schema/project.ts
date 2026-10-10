@@ -16,6 +16,7 @@ import type {
   RoutingConfig,
   ProjectCompositeRoute,
   ReleaseSource,
+  ExternalProjectConfig,
   ProjectObjectStorage,
   OpenshipReadiness,
   ClusterWorkloadConfig,
@@ -166,6 +167,8 @@ export const project = pgTable(
      * auto-deploy. See ReleaseSource in @repo/core.
      */
     releaseSource: jsonb("release_source").$type<ReleaseSource | null>(),
+    /** Observe-only config (only when gitProvider === "external"). See ExternalProjectConfig in @repo/core. */
+    externalConfig: jsonb("external_config").$type<ExternalProjectConfig | null>(),
 
     /* ── Build configuration ────────────────────────────────────────────── */
     /** Detected framework (nextjs, vite, node, static, etc.) */

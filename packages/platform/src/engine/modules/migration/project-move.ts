@@ -32,7 +32,7 @@ import { deriveProjectDeployTarget } from "@repo/core";
 import { repos } from "@repo/db";
 
 import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
-import { isControlPlaneProject } from "../../lib/resource-access";
+import { assertNotExternal, isControlPlaneProject } from "../../lib/resource-access";
 import { discoverServerStack } from "./docker-inspect.service";
 import type { AdoptResult } from "./migrate.service";
 import type { DiscoveredService } from "./docker-reconcile";
@@ -313,6 +313,7 @@ export async function loadProjectMoveWorkload(
   if (!project) {
     throw new ProjectMoveRefused("not_server_hosted", "That project no longer exists.");
   }
+  assertNotExternal(project);
 
   // Checked before the scan: the refusals that need no host round trip should not cost one.
   // `planProjectMove` re-checks them (it is the single decision), this just fails faster.

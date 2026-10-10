@@ -56,4 +56,24 @@ describe("remote project integrations", () => {
     expect(await client.projects.importLocal({ name: "Imported", localPath: "/srv/source" })).toEqual(project);
     expect(await client.projects.listLocal()).toEqual({ success: true, projects: [project] });
   });
+
+  it("validates matchers before posting an external project to its collection route", async () => {
+    const project = projectFixture("external", "Shop");
+    const command = {
+      name: "Shop",
+      serverId: "srv-1",
+      matchers: [{ labels: { service: "shop" } }],
+    };
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe("https://ship.test/api/projects/external");
+      expect(JSON.parse(init!.body as string)).toEqual(command);
+      return Response.json({ data: project });
+    });
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    await expect(
+      client.projects.createExternal({ ...command, matchers: [] }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await client.projects.createExternal(command)).toEqual(project);
+  });
 });

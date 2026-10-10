@@ -93,6 +93,7 @@ import {
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { type PortCheckResult } from "../../lib/deployment-runtime";
 import { requireOrgServer } from "../../lib/server-target";
+import { assertNotExternal, assertNotExternalById } from "../../lib/resource-access";
 import * as sessionManager from "./session-manager";
 import {
   requestDeploymentCancellation,
@@ -1347,6 +1348,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   changedPaths?: string[] | null;
   changedPathsTruncated?: boolean;
 }) {
+  await assertNotExternalById(opts.projectId);
   // Persist the smart-deploy serviceIds onto the snapshot so the
   // executor can find them without re-resolving from request scope.
   let meta: DeploymentConfigSnapshot = opts.meta;
@@ -1586,6 +1588,7 @@ export async function requestBuildAccess(
     throw new NotFoundError("Project", projectId);
   }
   if (project.organizationId !== ctx.organizationId) throw new NotFoundError("Project", projectId);
+  assertNotExternal(project);
   const deployEnvironment = resolveDeploymentEnvironment(project, environment);
   const resolvedTarget = await resolveSnapshotTarget(project, { deployTarget, serverId, runtimeMode });
   if (resolvedTarget.deployTarget === "cloud" && buildStrategy === "local")
@@ -2332,6 +2335,7 @@ export async function redeployBuildSession(
   opts?: { useExistingCommit?: boolean; trigger?: string },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
+  assertNotExternal(project);
   resolveDeploymentEnvironment(project, oldDep.environment);
   // The Openship control plane updates itself via the CLI — never a redeploy.
   // The apply-update endpoint (updates.service) reaches redeploy directly, and
@@ -2663,6 +2667,7 @@ export async function triggerDeployment(
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
   }
+  assertNotExternal(project);
   const environment = resolveDeploymentEnvironment(project, data.environment);
   if (data.serverId) await requireOrgServer(data.serverId, ctx.organizationId);
   // The Openship control plane IS the running host service, not a redeployable

@@ -467,5 +467,6 @@ vi.mock("@repo/platform/engine/lib/platform-config", () => ({
 
 vi.mock("@repo/platform/engine/lib/resource-access", () => ({
   assertResourceInOrg: () => {},
+  assertNotExternal: () => {},
   platform: () => ({ runtime: { name: "docker" } }),
 }));

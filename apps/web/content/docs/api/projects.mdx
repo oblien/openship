@@ -444,6 +444,12 @@ For an uncertain start response, reuse `options.idempotencyKey` (the `idempotenc
 over HTTP) so a repeated request also rejoins a completed, retained session. Use a new key only
 when intentionally starting another repair.
 
+## Observe an externally deployed app
+
+`POST /api/projects/external` links containers that another tool deploys, matched by name or labels
+on one server. Openship only reads them. Project logs show one container: a running match first,
+then the first by name. A log stream must reconnect after that container is replaced.
+
 ## Errors
 
 <Callout title="400 — validation failed" type="warn">
@@ -503,6 +509,7 @@ IDs.
 | Select the default Git branch. | `projects.setBranch(id, input)` | `POST /api/projects/:id/branch`<br />`project:write` |
 | Scan an allowed local source directory. | `projects.scanLocal(input)` | `POST /api/projects/scan`<br />`project:write` · Self-hosted |
 | Import an allowed local project. | `projects.importLocal(input)` | `POST /api/projects/import`<br />`project:write` · Self-hosted |
+| Link an externally deployed app as an observe-only project. | `projects.createExternal(input)` | `POST /api/projects/external`<br />`project:write` |
 | List discoverable local projects. | `projects.listLocal()` | `GET /api/projects/local`<br />`project:list` · Self-hosted |
 
 ### Cluster scaling
@@ -564,6 +571,7 @@ IDs.
 | Repair project routing and verify pending domains and HTTPS. | `projects.retryRouting(id)` | `POST /api/projects/:id/routing/retry`<br />`project:write` |
 | Repair routing with live logs and a terminal success or failure event. | `projects.retryRoutingStream(id, options?)` | `POST /api/projects/:id/routing/retry/stream`<br />`project:write` |
 | Read recent runtime log entries. | `projects.runtimeLogs(id, input?)` | `GET /api/projects/:id/logs`<br />`project:read` |
+| List the containers an external project observes. | `projects.listExternalContainers(id)` | `GET /api/projects/:id/external/containers`<br />`project:read` |
 | List the project’s edge route rules. | `projects.listRouteRules(id)` | `GET /api/projects/:id/route-rules`<br />`project:read` · Self-hosted |
 | Add an edge route rule. | `projects.createRouteRule(id, input)` | `POST /api/projects/:id/route-rules`<br />`project:write` · Self-hosted |
 | Update an edge route rule using its typed input. | `projects.updateRouteRule(id, input)` | `PATCH /api/projects/:id/route-rules/:ruleId`<br />`project:write` · Self-hosted |

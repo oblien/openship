@@ -33,7 +33,7 @@
 
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos, type Project } from "@repo/db";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, isExternalProject, safeErrorMessage } from "@repo/core";
 import {
   collectProjectManifest,
   disposeManifestRuntimes,
@@ -363,7 +363,9 @@ async function teardownProjectLocked(
     // the Openship record. NEVER honored for a cloud project — its resources
     // live on Oblien and must be reclaimed; this is the security boundary, not
     // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
-    const recordOnly = !!opts.recordOnly && !project.workspaceId && !env.CLOUD_MODE;
+    // External projects own nothing on the server, so they always take this path.
+    const recordOnly =
+      isExternalProject(project) || (!!opts.recordOnly && !project.workspaceId && !env.CLOUD_MODE);
 
     // ── Step 1: Cancel in-flight work (force=true or forceOrphan). ───────
     // Cancellation only requests/records the stop here. Runtime cleanup happens

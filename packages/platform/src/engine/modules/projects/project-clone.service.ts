@@ -36,6 +36,7 @@ import type { AdoptResult } from "../migration/migrate.service";
 import type { DiscoveredService } from "../migration/docker-reconcile";
 import { assertProjectQuota, uniqueProjectSlug, withProjectCreationLock } from "./project-crud.service";
 import { requireOrgServer } from "../../lib/server-target";
+import { assertNotExternal } from "../../lib/resource-access";
 
 /**
  * Project columns the clone must NOT copy verbatim, each with the reason it is here. Anything
@@ -140,6 +141,7 @@ export async function cloneProjectToServer(input: {
     input.organizationId,
   );
   if (!source) throw new NotFoundError("Project", input.sourceProjectId);
+  assertNotExternal(source);
   const target = await requireOrgServer(input.targetServerId, input.organizationId);
 
   const desiredName = input.name?.trim() || `${source.name} copy`;

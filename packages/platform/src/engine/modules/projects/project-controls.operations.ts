@@ -144,6 +144,10 @@ export function createProjectControls(
     async runtimeLogs(ctx, id, input) {
       return (await service()).getRuntimeLogs(id, ctx.organizationId, input?.tail);
     },
+    async listExternalContainers(ctx, id) {
+      const { listExternalContainers } = await import("./external-project.service");
+      return listExternalContainers(id, ctx.organizationId);
+    },
     async getCloneToken(ctx, id) {
       const project = await (await service()).getProject(id, ctx.organizationId);
       return {

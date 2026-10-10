@@ -18,7 +18,12 @@ import {
   withDeploymentRuntime,
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
-import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
+import {
+  assertNotControlPlane,
+  assertProjectMutable,
+  assertProjectMutableById,
+  assertResourceInOrg,
+} from "../../lib/resource-access";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { maskDeploymentEnv } from "../../lib/secret-env";
@@ -145,7 +150,7 @@ async function deleteDeploymentLocked(deploymentId: string, organizationId: stri
   const dep = await getDeployment(deploymentId, organizationId);
 
   const project = await repos.project.findById(dep.projectId);
-  assertNotControlPlane(project);
+  assertProjectMutable(project);
 
   if (
     ["queued", "building", "deploying"].includes(dep.status) ||
@@ -186,7 +191,7 @@ async function deleteDeploymentLocked(deploymentId: string, organizationId: stri
 export async function rollbackDeployment(deploymentId: string, organizationId: string) {
   // Existence + org-scope check (throws if deployment isn't in this org).
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertProjectMutableById(dep.projectId);
   await rollback(deploymentId);
   // Return the post-rollback deployment row (now with any updated container id).
   return (await repos.deployment.findById(dep.id)) ?? dep;
@@ -201,7 +206,7 @@ export async function rollbackDeployment(deploymentId: string, organizationId: s
  */
 export async function previewRestore(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertProjectMutableById(dep.projectId);
   const { target, project, plan } = await resolveRestorePlan(deploymentId);
   const consequences =
     plan.mode === "ineligible"
@@ -321,7 +326,7 @@ export async function setDeploymentPin(
   pinned: boolean,
 ) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertProjectMutableById(dep.projectId);
   await setPin(deploymentId, pinned);
   return (await repos.deployment.findById(dep.id)) ?? dep;
 }
@@ -537,7 +542,7 @@ export async function getDeploymentLogs(
 
 export async function restartDeployment(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertProjectMutableById(dep.projectId);
 
   if (dep.status !== "ready") {
     throw new ForbiddenError("Can only restart a running deployment");

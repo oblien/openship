@@ -558,6 +558,18 @@ describe("teardownProject — record-only delete touches nothing on the server",
     expect(h.removeProjectFromServerManifests).toHaveBeenCalled();
   });
 
+  it("always takes the record-only path for an external project", async () => {
+    h.project = projectFixture({ gitProvider: "external" });
+
+    const res = await teardownProject(ctx, "p1", { force: false, recordOnly: false });
+
+    expect(res.rowDeleted).toBe(true);
+    expect(h.collectProjectManifest).not.toHaveBeenCalled();
+    expect(h.executeCleanup).not.toHaveBeenCalled();
+    expect(h.removeProjectFromServerManifests).not.toHaveBeenCalled();
+    expect(h.orphanCreate).not.toHaveBeenCalled();
+  });
+
   it("tears down normally when recordOnly is not requested", async () => {
     // One reachable resource so the cleanup executor actually runs — proof the
     // skips above come from recordOnly, not from an empty manifest.

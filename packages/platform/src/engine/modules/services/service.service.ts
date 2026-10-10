@@ -57,7 +57,12 @@ import {
   unmaskEnv,
   unmaskBuildArgs,
 } from "../../lib/secret-env";
-import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
+import {
+  assertNotExternal,
+  assertProjectMutable,
+  assertProjectMutableById,
+  assertResourceInOrg,
+} from "../../lib/resource-access";
 import { platform } from "../../lib/platform-config";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -593,6 +598,7 @@ export async function createService(
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  assertNotExternal(project);
 
   const name = data.name.trim();
   if (!name) {
@@ -1317,7 +1323,7 @@ export async function deleteService(ctx: RequestContext, projectId: string, serv
   const { project } = await assertServiceAccess(ctx, projectId, serviceId);
   // The self-app project's services ARE the Openship stack (api, dashboard, edge,
   // postgres, redis), linked so the dashboard can show their state, logs and shell.
-  assertNotControlPlane(project);
+  assertProjectMutable(project);
 
   const deleted = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
     // Re-read the service under the shared teardown lock. Authorization above is
@@ -1327,7 +1333,7 @@ export async function deleteService(ctx: RequestContext, projectId: string, serv
     if (!liveService || liveService.projectId !== projectId) {
       throw new Error("service-not-found");
     }
-    assertNotControlPlane(liveProject);
+    assertProjectMutable(liveProject);
     await assertServiceNotShared(serviceId);
     await deleteLiveService(liveProject, liveService);
     return true;
@@ -1459,6 +1465,7 @@ export async function syncComposeServices(
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  assertNotExternal(project);
 
   // #336: env is masked on read, so the client may echo the mask sentinel back.
   // Restore each service's masked values from its stored row (matched by name)
@@ -2302,7 +2309,7 @@ export async function startServiceContainer(
 }
 
 async function startServiceContainerUnlocked(ctx: RequestContext, projectId: string, serviceId: string) {
-  await assertNotControlPlaneById(projectId);
+  await assertProjectMutableById(projectId);
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
   const existing = await prepareServiceStart(ctx, projectId, serviceId, true);
@@ -2333,7 +2340,7 @@ export async function stopServiceContainer(
 }
 
 async function stopServiceContainerUnlocked(ctx: RequestContext, projectId: string, serviceId: string) {
-  await assertNotControlPlaneById(projectId);
+  await assertProjectMutableById(projectId);
   const { runtime, containerId, row } = await resolveServiceContainer(ctx, projectId, serviceId);
   try {
     await runtime.stop(containerId);
@@ -2378,7 +2385,7 @@ export async function restartServiceContainer(
 async function restartServiceContainerUnlocked(
   ctx: RequestContext, projectId: string, serviceId: string, opts?: { force?: boolean },
 ) {
-  await assertNotControlPlaneById(projectId);
+  await assertProjectMutableById(projectId);
 
   // Match the Environment tab's actual value comparison. A timestamp alone
   // mistakes secret-visibility edits for runtime changes and misses deletions.
@@ -2476,6 +2483,9 @@ export async function execInServiceContainer(
   serviceId: string,
   opts: { command: string; cwd?: string; timeoutMs?: number; maxOutputBytes?: number },
 ) {
+  const project = await repos.project.findById(projectId);
+  assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  assertNotExternal(project);
   const { runtime, containerId } = await resolveServiceContainer(ctx, projectId, serviceId);
   try {
     if (!runtime.supports("isolatedExec") || !runtime.inContainerExecutor) {

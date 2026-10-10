@@ -29,8 +29,9 @@ import {
   wwwSiblingHostname,
   SYSTEM,
   DOMAIN_VERIFY_GRACE_MS,
+  isExternalProject,
 } from "@repo/core";
-import { assertResourceInOrg } from "../../lib/resource-access";
+import { assertNotExternal, assertResourceInOrg } from "../../lib/resource-access";
 import { platform } from "../../lib/platform-config";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { trackBackgroundWork } from "../../lib/background-work";
@@ -122,6 +123,7 @@ export async function setPrimaryDomain(ctx: RequestContext, domainId: string) {
   if (!domain.projectId) throw new NotFoundError("Domain", domainId); // primary is a project-domain concept
   const project = await repos.project.findById(domain.projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, domain.projectId);
+  assertNotExternal(project);
   if (isWildcardHostname(domain.hostname)) throw new ValidationError("Choose a concrete hostname as the primary domain. A wildcard cannot be opened as a site URL.");
   await repos.domain.setPrimary(domain.projectId, domainId);
   return { ...domain, isPrimary: true };
@@ -167,6 +169,7 @@ export async function addDomain(
 ): Promise<AddDomainResult> {
   const project = await repos.project.findById(data.projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, data.projectId);
+  assertNotExternal(project);
 
   // Reject obviously-bogus shapes before they ever reach the DB.
   const hostname = normalizeCustomHostname(data.hostname);
@@ -858,7 +861,7 @@ export async function verifyDomain(
   domainId: string,
   opts: DomainVerifyOptions = {},
 ) {
-  const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { domain, project } = await getMutableDomainWithAuth(domainId, ctx.organizationId);
   try {
     return await checkDomain(ctx, domainId, domain, project, opts);
   } catch (error) {
@@ -1318,7 +1321,7 @@ async function resolveRemainingServiceRouting(
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
 export async function renewDomainSsl(ctx: RequestContext, domainId: string) {
-  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { domain } = await getMutableDomainWithAuth(domainId, ctx.organizationId);
 
   // A manual cert can't be ACME-renewed — the operator must upload a fresh one.
   if (domain.manualSsl) {
@@ -1350,7 +1353,7 @@ export async function renewDomainSsl(ctx: RequestContext, domainId: string) {
  * means a transient read failure leaves an "active" domain untouched.
  */
 export async function verifyDomainSsl(ctx: RequestContext, domainId: string) {
-  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { domain } = await getMutableDomainWithAuth(domainId, ctx.organizationId);
 
   const result = await manageDomainSsl(domain.hostname, {
     action: "verify",
@@ -1383,7 +1386,7 @@ export async function verifyDomainSsl(ctx: RequestContext, domainId: string) {
  * externalIngress domain (Cloudflare Full-strict) a real cert at origin.
  */
 export async function uploadDomainCert(ctx: RequestContext, domainId: string, cert: ManualCert) {
-  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { domain } = await getMutableDomainWithAuth(domainId, ctx.organizationId);
 
   const result = await installDomainCert(domain.hostname, cert, {
     projectId: domain.projectId ?? undefined,
@@ -1545,7 +1548,7 @@ export async function verifyPendingDomains(opts?: {
               organizationId: project.organizationId,
               label: "domains:verify-pending",
             });
-        if (!context) return;
+        if (!context || isExternalProject(project)) return;
         result.total++;
 
         try {
@@ -1592,7 +1595,7 @@ export async function renewOrgCerts(ctx: RequestContext, contextFor?: DomainBatc
   for (let page = 1; ; page++) {
     const projects = await repos.project.listByOrganization(ctx.organizationId, { page, perPage: 1000 });
     for (const p of projects.rows) {
-      if (p.organizationId !== ctx.organizationId) continue;
+      if (p.organizationId !== ctx.organizationId || isExternalProject(p)) continue;
       const domains = await repos.domain.listByProject(p.id);
       for (const d of domains) {
         if ((d.sslStatus !== "active" && d.sslStatus !== "error") || !d.sslExpiresAt) continue;
@@ -1629,6 +1632,12 @@ async function getDomainWithAuth(
   assertResourceInOrg(project, "Domain", organizationId, domainId);
 
   return { domain, project: project as Project };
+}
+
+async function getMutableDomainWithAuth(domainId: string, organizationId: string) {
+  const resolved = await getDomainWithAuth(domainId, organizationId);
+  assertNotExternal(resolved.project);
+  return resolved;
 }
 
 // ── DNS resolution (Google DNS-over-HTTPS → node:dns fallback) ───────────────

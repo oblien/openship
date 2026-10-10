@@ -31,6 +31,7 @@ const h = vi.hoisted(() => ({
     activeDeploymentId: "dep_1",
     disabledAt: null as Date | null,
     appTemplateId: null as string | null,
+    gitProvider: "github" as string | null,
     // A server project by default; the static cases flip `hasServer` off, which is
     // the same signal resolveDeployRouting reads to pick "static-file-serve".
     hasServer: true,
@@ -218,6 +219,7 @@ describe("project pause / resume", () => {
   beforeEach(() => {
     h.project.disabledAt = null;
     h.project.appTemplateId = null;
+    h.project.gitProvider = "github";
     h.project.hasServer = true;
     h.project.workspaceId = null;
     h.containerId = "app-container";
@@ -379,5 +381,15 @@ describe("project pause / resume", () => {
 
     await expect(disableProject("proj_1", "org_1")).rejects.toThrow(/control plane/i);
     expect(h.stopped).toEqual([]);
+  });
+
+  it("refuses to pause or resume an external project", async () => {
+    h.project.gitProvider = "external";
+    const { disableProject, enableProject } = await load();
+
+    await expect(disableProject("proj_1", "org_1")).rejects.toThrow(/deployed by another tool/);
+    await expect(enableProject("proj_1", "org_1")).rejects.toThrow(/deployed by another tool/);
+    expect(h.stopped).toEqual([]);
+    expect(h.started).toEqual([]);
   });
 });

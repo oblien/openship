@@ -277,7 +277,9 @@ describe("migration chain applies to an existing, populated database", () => {
       // Schema-backed reads must include the fields startup and recovery require.
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
-      expect((await client.query("SELECT * FROM project")).rows).toEqual(projects);
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(
+        projects.map((project) => ({ ...project, external_config: null })),
+      );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
           0,
@@ -479,6 +481,7 @@ describe("migration chain applies to an existing, populated database", () => {
           ...previous,
           cloud_promotion: null,
           cloud_static_hosting: "pages",
+          external_config: null,
           server_id: previous.workspace_id
             ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
             : previous.server_id,
