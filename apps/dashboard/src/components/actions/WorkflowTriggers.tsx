@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Icon } from "@repo/ui/icons";
+import { Icon, type IconName } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { DraftInput, DraftTextarea } from "./DraftText";
@@ -55,35 +55,56 @@ export function WorkflowTriggers({
     else config[key] = value;
     change(event, config);
   };
-  const events: Array<{ event: WorkflowEvent; label: string; hint: string }> = [
-    { event: "workflow_dispatch", label: c.manual, hint: c.manualHint },
+  const events: Array<{ event: WorkflowEvent; label: string; hint: string; icon: IconName }> = [
+    { event: "workflow_dispatch", label: c.manual, hint: c.manualHint, icon: "play" },
     ...(!standalone
       ? [
-          { event: "push" as const, label: c.push, hint: c.pushHint },
-          { event: "pull_request" as const, label: c.pullRequest, hint: c.pullRequestHint },
+          { event: "push" as const, label: c.push, hint: c.pushHint, icon: "git-commit" as const },
+          {
+            event: "pull_request" as const,
+            label: c.pullRequest,
+            hint: c.pullRequestHint,
+            icon: "git-fork" as const,
+          },
         ]
       : []),
     {
       event: "schedule",
       label: c.schedule,
       hint: standalone ? c.standaloneScheduleHint : c.scheduleHint,
+      icon: "clock",
     },
-    { event: "repository_dispatch", label: c.webhook, hint: c.webhookHint },
+    { event: "repository_dispatch", label: c.webhook, hint: c.webhookHint, icon: "webhook" },
   ];
   return (
     <section
       className={embedded ? "@container space-y-4" : "@container space-y-4 rounded-2xl bg-card p-5"}
     >
-      <h2 className="text-sm font-semibold">{c.triggers}</h2>
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <Icon name="bolt" className="size-4 text-info" />
+        {c.triggers}
+      </h2>
       <ActionError message={error} />
       <div className="divide-y divide-border/50">
-        {events.map(({ event, label, hint }) => {
+        {events.map(({ event, label, hint, icon }) => {
           const enabled = Object.hasOwn(triggers, event),
             config = object(triggers[event]);
           return (
             <div className="py-4 first:pt-0 last:pb-0" key={event}>
               <label className="flex cursor-pointer items-start gap-3">
+                <span
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${enabled ? "bg-info-bg text-info" : "bg-muted text-muted-foreground"}`}
+                >
+                  <Icon name={icon} className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1 text-sm font-medium">
+                  {label}
+                  <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
+                    {hint}
+                  </span>
+                </span>
                 <Checkbox
+                  className="mt-1"
                   checked={enabled}
                   onCheckedChange={(checked) =>
                     change(
@@ -92,12 +113,6 @@ export function WorkflowTriggers({
                     )
                   }
                 />
-                <span className="min-w-0 text-sm font-medium">
-                  {label}
-                  <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
-                    {hint}
-                  </span>
-                </span>
               </label>
               {enabled && (event === "push" || event === "pull_request") && (
                 <div className="mt-4 grid gap-4 @min-[600px]:grid-cols-2">

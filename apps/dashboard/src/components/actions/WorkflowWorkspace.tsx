@@ -5,6 +5,7 @@ import type { ActionPlanView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/Tabs";
+import { optionCardSurface } from "@/components/shared/OptionCard";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { WorkflowGraph } from "./WorkflowGraph";
@@ -68,7 +69,16 @@ export function WorkflowWorkspace({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pt-2">
         <Tabs
           tabs={[
-            { key: "topology", label: e.topology, icon: "topology" },
+            {
+              key: "topology",
+              label: e.topology,
+              leading: (
+                <Icon
+                  name="topology"
+                  className={`size-4 ${view === "topology" ? "text-success" : "text-muted-foreground"}`}
+                />
+              ),
+            },
             { key: "list", label: e.list, icon: "list" },
             { key: "yaml", label: e.yaml, icon: "code" },
           ]}
@@ -101,7 +111,7 @@ export function WorkflowWorkspace({
             <Icon name="arrow-right" className="rtl:rotate-180" />
           </Button>
           <Button size="sm" variant="secondary" disabled={!jobs.length} onClick={onAdd}>
-            <Icon name="plus" />
+            <Icon name="plus" className="text-success" />
             {e.addJob}
           </Button>
         </div>
@@ -143,9 +153,9 @@ export function WorkflowWorkspace({
                       aria-label={`${e.editJob}: ${job.name}`}
                       aria-pressed={selected}
                       onClick={() => onSelect({ kind: "node", id: job.id })}
-                      className={`flex w-full items-start gap-3 rounded-xl p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${selected ? "bg-muted ring-1 ring-foreground/20" : "bg-background/50 hover:bg-muted/70"}`}
+                      className={`flex w-full items-start gap-3 rounded-xl border p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${optionCardSurface(selected)}`}
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-success-bg text-success">
                         <Icon name="terminal" className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -163,7 +173,8 @@ export function WorkflowWorkspace({
                               : "runs-on"}
                         </span>
                         {!!job.needs.length && (
-                          <span className="mt-2 block text-xs text-muted-foreground">
+                          <span className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Icon name="git-branch" className="size-3.5 shrink-0 text-info" />
                             {e.dependsOn}: {job.needs.join(", ")}
                           </span>
                         )}
@@ -172,9 +183,22 @@ export function WorkflowWorkspace({
                             {steps.map((value, index) => {
                               const step = object(value);
                               return (
-                                <span className="max-w-full truncate" key={index}>
-                                  {index + 1}.{" "}
-                                  {String(step.name || step.uses || step.run || "").split("\n")[0]}
+                                <span
+                                  className="inline-flex max-w-full items-center gap-1.5"
+                                  key={index}
+                                >
+                                  <Icon
+                                    name={Object.hasOwn(step, "uses") ? "bolt" : "terminal"}
+                                    className={`size-3.5 shrink-0 ${Object.hasOwn(step, "uses") ? "text-info" : "text-success"}`}
+                                  />
+                                  <span className="truncate">
+                                    {index + 1}.{" "}
+                                    {
+                                      String(step.name || step.uses || step.run || "").split(
+                                        "\n",
+                                      )[0]
+                                    }
+                                  </span>
                                 </span>
                               );
                             })}
@@ -204,7 +228,10 @@ export function WorkflowWorkspace({
         className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"
         role="status"
       >
-        <Icon name={invalid ? "alert-circle" : "cursor"} className="size-3.5 shrink-0" />
+        <Icon
+          name={invalid ? "alert-circle" : "cursor"}
+          className={`size-3.5 shrink-0 ${invalid ? "text-warning" : "text-info"}`}
+        />
         <span>{invalid ? t.actions.integration.fixYaml : e.canvasHint}</span>
       </div>
     </section>

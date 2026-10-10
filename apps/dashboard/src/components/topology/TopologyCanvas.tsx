@@ -35,6 +35,8 @@ import {
 } from "./model";
 import { readTopologyPositions, saveTopologyPositions } from "./layout";
 import "@xyflow/react/dist/style.css";
+import "@/components/scale/scale.css";
+import "./topology.css";
 
 export type TopologySelection = { kind: "node" | "edge"; id: string } | null;
 /** An optional selection action for unsaved resources, such as an import scan. */

@@ -64,6 +64,12 @@ and a scrollable 360px inspector on the right. Topology is the default; List and
 are peer views of the same draft. Source and Run settings stay in the inspector, and
 selecting a job or dependency replaces those controls with its editor. Keep Save
 visible beneath the inspector. Stack the canvas and controls on narrow screens.
+Use the shared modal's frosted surface for the large editor, with the themed scrim
+and backdrop blur; keep fields and content cards readable. The topology canvas owns
+its shared color styles so direct navigation has the same resource colors as a
+project. Carry its service accent into job icons and use the info accent for action
+steps, triggers and runner controls. Keep labels and backgrounds neutral, with the
+shared selection treatment; colors supplement the icons and text.
 Node, step, connection and trigger edits update the original YAML while preserving
 unrelated fields and comments. Reject dependency cycles and dangling job-output
 references; undo/redo affects the same draft across views. Review repository changes

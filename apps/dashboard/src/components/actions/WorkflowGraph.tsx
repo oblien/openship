@@ -7,7 +7,6 @@ import type { ActionPlanView, ActionRunView } from "@repo/contracts";
 import type { Connection } from "@xyflow/react";
 import type { TopologyNodeAction, TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
-import "@/components/topology/topology.css";
 import { workflowGraph, workflowGroupStatus } from "./workflow-graph";
 
 const Canvas = dynamic(

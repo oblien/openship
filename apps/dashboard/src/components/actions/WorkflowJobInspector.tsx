@@ -56,12 +56,17 @@ export function WorkflowJobInspector({
     return (
       <div className="space-y-5">
         <InspectorBack onClose={onClose} />
-        <h2 className="text-base font-medium">{e.connection}</h2>
+        <h2 className="flex items-center gap-3 text-base font-medium">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
+            <Icon name="git-branch" className="size-5" />
+          </span>
+          {e.connection}
+        </h2>
         <div className="space-y-3 rounded-xl bg-background p-4 text-sm">
           <p className="break-words font-medium">
             {(jobs.find((job) => job.id === from)?.value.name as string) || from}
           </p>
-          <Icon name="arrow-down" className="size-4 text-muted-foreground" />
+          <Icon name="arrow-down" className="size-4 text-info" />
           <p className="break-words font-medium">
             {(jobs.find((job) => job.id === to)?.value.name as string) || to}
           </p>
@@ -90,7 +95,7 @@ export function WorkflowJobInspector({
     <div className="space-y-5" data-testid="workflow-job-inspector">
       <InspectorBack onClose={onClose} />
       <div className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-muted">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success-bg text-success">
           <Icon name="terminal" className="size-5" />
         </span>
         <div className="min-w-0">
@@ -133,7 +138,8 @@ export function WorkflowJobInspector({
       </ActionField>
       <details className="group" open={needs.length > 0 || undefined}>
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
-          <span>
+          <span className="flex items-center gap-2">
+            <Icon name="git-branch" className="size-4 text-info" />
             {e.dependencies}
             {needs.length ? ` · ${needs.length}` : ""}
           </span>
@@ -163,7 +169,8 @@ export function WorkflowJobInspector({
         </div>
       </details>
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <Icon name="list-check" className="size-4 text-success" />
           {e.steps} <span className="ms-1 text-muted-foreground">{steps.length}</span>
         </h3>
         {steps.map((raw, index) => {
@@ -174,10 +181,15 @@ export function WorkflowJobInspector({
           return (
             <details className="group rounded-xl bg-background/60" key={index}>
               <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
-                <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+                <span
+                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${isAction ? "bg-info-bg text-info" : "bg-success-bg text-success"}`}
+                >
+                  <Icon name={isAction ? "bolt" : "terminal"} className="size-3.5" />
+                </span>
                 <span className="min-w-0 flex-1 truncate">
                   {text(step.name) || text(step.uses) || text(step.run).split("\n")[0]}
                 </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                 <Icon
                   name="chevron-down"
                   className="size-3.5 shrink-0 text-muted-foreground group-open:rotate-180"
@@ -270,14 +282,14 @@ export function WorkflowJobInspector({
           className="w-full"
           onClick={() => edit(() => changeWorkflowSteps(source, id, 0, "add"))}
         >
-          <Icon name="plus" />
+          <Icon name="plus" className="text-success" />
           {e.addStep}
         </Button>
       </div>
       <div className="space-y-2">
         <p className="text-xs leading-relaxed text-muted-foreground">{e.jobYamlHint}</p>
         <Button variant="secondary" size="sm" className="w-full" onClick={onEditYaml}>
-          <Icon name="code" />
+          <Icon name="code" className="text-info" />
           {e.editJobYaml}
         </Button>
       </div>

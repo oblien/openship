@@ -61,6 +61,7 @@ export function WorkflowSetupDialog(props: WorkflowSetupProps) {
       onClose={close}
       closable={!busy}
       showCloseButton={false}
+      surface="frosted"
       width="calc(100vw - 32px)"
       maxWidth="calc(100vw - 32px)"
       height="calc(100dvh - 32px)"
@@ -337,11 +338,16 @@ function SetupForm({
         className={`flex flex-col gap-4 @min-[960px]:min-h-0 ${fullHeight ? "@min-[960px]:h-full" : "@min-[960px]:h-[calc(100dvh-164px)] @min-[960px]:min-h-[560px]"}`}
       >
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-medium tracking-tight text-foreground">
-              {workflow ? workflow.name : a.newWorkflow}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">{e.setupHint}</p>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success-bg text-success">
+              <Icon name="workflow" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-medium tracking-tight text-foreground">
+                {workflow ? workflow.name : a.newWorkflow}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">{e.setupHint}</p>
+            </div>
           </div>
           <Button variant="ghost" onClick={onCancel} disabled={mutation.busy}>
             {a.cancel}
@@ -393,8 +399,26 @@ function SetupForm({
                 <>
                   <Tabs
                     tabs={[
-                      { key: "workflow", label: c.workflowStep },
-                      { key: "rules", label: c.rulesStep },
+                      {
+                        key: "workflow",
+                        label: c.workflowStep,
+                        leading: (
+                          <Icon
+                            name="workflow"
+                            className={`size-4 ${step === "workflow" ? "text-success" : "text-muted-foreground"}`}
+                          />
+                        ),
+                      },
+                      {
+                        key: "rules",
+                        label: c.rulesStep,
+                        leading: (
+                          <Icon
+                            name="settings"
+                            className={`size-4 ${step === "rules" ? "text-info" : "text-muted-foreground"}`}
+                          />
+                        ),
+                      },
                     ]}
                     value={step}
                     onChange={setStep}
@@ -526,8 +550,26 @@ function SetupForm({
                                 <h2 className="text-sm font-medium">{e.updates}</h2>
                                 <Tabs
                                   tabs={[
-                                    { key: "repository", label: e.automatic },
-                                    { key: "inline", label: e.review },
+                                    {
+                                      key: "repository",
+                                      label: e.automatic,
+                                      leading: (
+                                        <Icon
+                                          name="refresh"
+                                          className={`size-3.5 ${mode === "repository" ? "text-info" : "text-muted-foreground"}`}
+                                        />
+                                      ),
+                                    },
+                                    {
+                                      key: "inline",
+                                      label: e.review,
+                                      leading: (
+                                        <Icon
+                                          name="shield-check"
+                                          className={`size-3.5 ${mode === "inline" ? "text-warning" : "text-muted-foreground"}`}
+                                        />
+                                      ),
+                                    },
                                   ]}
                                   value={mode}
                                   onChange={(mode) => {
@@ -549,7 +591,8 @@ function SetupForm({
                               </div>
                               {differsFromRepository && (
                                 <div className="space-y-2 rounded-xl bg-warning-bg p-3">
-                                  <p className="text-xs leading-relaxed text-warning">
+                                  <p className="flex items-start gap-2 text-xs leading-relaxed text-warning">
+                                    <Icon name="git-branch" className="mt-0.5 size-4 shrink-0" />
                                     {e.repoDifferent}
                                   </p>
                                   <Button
@@ -575,7 +618,10 @@ function SetupForm({
                           embedded
                         />
                         <div className="space-y-3">
-                          <h2 className="text-sm font-semibold">{a.destinations}</h2>
+                          <h2 className="flex items-center gap-2 text-sm font-semibold">
+                            <Icon name="server" className="size-4 text-info" />
+                            {a.destinations}
+                          </h2>
                           <p className="text-xs leading-relaxed text-muted-foreground">
                             {a.destinationsHint}
                           </p>
@@ -596,6 +642,12 @@ function SetupForm({
                                     )
                                   }
                                 />
+                                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-bg text-info">
+                                  <Icon
+                                    name={runner.kind === "cloud" ? "cloud" : "server"}
+                                    className="size-4"
+                                  />
+                                </span>
                                 <span className="min-w-0">
                                   <span className="block truncate text-sm font-medium">
                                     {runner.name}
@@ -640,7 +692,10 @@ function SetupForm({
                           </div>
                         </div>
                         <div className="space-y-3">
-                          <h2 className="text-sm font-semibold">{c.projects}</h2>
+                          <h2 className="flex items-center gap-2 text-sm font-semibold">
+                            <Icon name="project" className="size-4 text-warning" />
+                            {c.projects}
+                          </h2>
                           {projects.length ? (
                             <div className="space-y-2">
                               {projects.map((project) => (
@@ -670,7 +725,10 @@ function SetupForm({
                         </div>
                         <details className="group">
                           <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
-                            {c.environment}
+                            <span className="flex items-center gap-2">
+                              <Icon name="layers" className="size-4 text-info" />
+                              {c.environment}
+                            </span>
                             <Icon name="chevron-down" className="size-4 group-open:rotate-180" />
                           </summary>
                           <div className="mt-4 space-y-5">
