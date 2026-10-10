@@ -274,7 +274,7 @@
     "selectAll": "Seleccionar todos",
     "includeFile": "Incluir flujo",
     "selectedFiles": "{count} seleccionados · Los flujos ya añadidos conservan su configuración.",
-    "sharedSettings": "Los ejecutores y proyectos se aplican a todos los archivos seleccionados. Los activadores pertenecen al archivo de la izquierda.",
+    "sharedSettings": "Los ajustes de ejecutores y notificaciones se aplican a todos los archivos seleccionados. Los activadores pertenecen al archivo de la izquierda.",
     "saveWorkflows": "Guardar {count} flujos",
     "fileLimit": "Selecciona hasta 50 archivos por importación."
   },
@@ -394,5 +394,38 @@
     "reusable": "Flujo reutilizable",
     "openGitHub": "Abrir en GitHub",
     "liveLogs": "Consulta los registros en directo en GitHub. Los registros completados aparecerán aquí."
+  },
+  "completion": {
+    "checksStep": "Comprobaciones",
+    "required": "Obligatorio",
+    "optional": "Opcional",
+    "chooseRunners": "Elegir ejecutores",
+    "selectedRunners": "{count} ejecutores seleccionados",
+    "runnerHint": "Elige dónde se ejecuta este flujo.",
+    "runnerDisabled": "Desactivado",
+    "useRunners": "Usar ejecutores seleccionados",
+    "backToSetup": "Volver al flujo",
+    "githubChecks": "Comprobaciones de GitHub",
+    "runResults": "Resultados de ejecución",
+    "automatic": "Automático",
+    "githubChecksHint": "Los ejecutores seleccionados ejecutan tus tareas. GitHub publica sus comprobaciones en commits y pull requests; Openship muestra los mismos resultados.",
+    "appChecksHint": "Openship publica cada tarea como una comprobación de GitHub cuando una GitHub App está conectada a este repositorio.",
+    "standaloneChecksHint": "Los resultados de tareas y pasos se guardan en Openship. Los flujos independientes no publican comprobaciones en repositorios.",
+    "requiredChecksHint": "Elige qué flujos deben aprobarse en la pestaña de automatización del despliegue del proyecto.",
+    "notifications": "Notificaciones",
+    "notificationsHint": "Envía los resultados de este flujo a tus canales de notificación.",
+    "notifyWhen": "Notificar cuando",
+    "events": {
+      "failure": "Falle",
+      "success": "Se complete",
+      "cancelled": "Se cancele"
+    },
+    "channels": "Canales de notificación",
+    "channelDisabled": "Desactivado",
+    "verifyChannel": "Verifica este canal en los ajustes de notificaciones",
+    "noChannels": "Añade y verifica un canal de notificación para recibir los resultados.",
+    "teamChannels": "Se conservan {count} canales configurados por otro miembro.",
+    "manageChannels": "Gestionar canales",
+    "accountPreferences": "También se aplican las notificaciones de Actions de la cuenta. Las reglas coincidentes comparten la misma notificación."
   }
 }

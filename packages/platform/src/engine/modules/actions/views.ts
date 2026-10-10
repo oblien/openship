@@ -73,6 +73,7 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
     ref,
     source,
     runnerIds,
+    notifications: workflow.notifications ?? null,
     storageDestinationId: workflow.storageDestinationId,
     variables,
     plan: actionPlanView(workflow.definition),

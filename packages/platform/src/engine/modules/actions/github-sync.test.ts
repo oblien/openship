@@ -23,7 +23,7 @@ vi.mock("../github/github.service", () => ({ getFileContent: h.source }));
 vi.mock("./github-api", () => ({ GitHubActionsApi: class {} }));
 vi.mock("./access", () => ({ authorizeActionWorkflow: async () => {} }));
 vi.mock("../../lib/execution-authority", () => ({ resolveExecutionAuthority: vi.fn() }));
-vi.mock("../jobs/job-workflow", () => ({ workflowJobCompleted: h.completed }));
+vi.mock("./notifications", () => ({ completeActionRun: h.completed }));
 import { synchronizeGitHubRun, resolveGitHubRunRef } from "./github-sync";
 let connection: DatabaseConnection;
 beforeAll(async () => {
@@ -84,34 +84,32 @@ async function fixture() {
     repository: { id: 1, full_name: "owner/test", default_branch: "main" },
     head_repository: { id: 1, full_name: "owner/test" },
   };
-  const jobs = vi
-    .fn()
-    .mockResolvedValue([
-      {
-        id: 20,
-        run_id: 10,
-        run_attempt: 1,
-        name: "build",
-        status: "completed",
-        conclusion: "success",
-        head_sha: remote.head_sha,
-        html_url: "https://github.com/owner/test/actions/runs/10/job/20",
-        check_run_url: "https://api.github.com/repos/owner/test/check-runs/30",
-        started_at: now,
-        completed_at: now,
-        runner_id: 40,
-        runner_name: "openship-worker",
-        labels: ["self-hosted", "openship", "macos"],
-        steps: [
-          {
-            number: 1,
-            name: "Conditional Docker action",
-            status: "completed",
-            conclusion: "skipped",
-          },
-        ],
-      },
-    ]);
+  const jobs = vi.fn().mockResolvedValue([
+    {
+      id: 20,
+      run_id: 10,
+      run_attempt: 1,
+      name: "build",
+      status: "completed",
+      conclusion: "success",
+      head_sha: remote.head_sha,
+      html_url: "https://github.com/owner/test/actions/runs/10/job/20",
+      check_run_url: "https://api.github.com/repos/owner/test/check-runs/30",
+      started_at: now,
+      completed_at: now,
+      runner_id: 40,
+      runner_name: "openship-worker",
+      labels: ["self-hosted", "openship", "macos"],
+      steps: [
+        {
+          number: 1,
+          name: "Conditional Docker action",
+          status: "completed",
+          conclusion: "skipped",
+        },
+      ],
+    },
+  ]);
   const api = {
     jobs,
     matchingRefs: vi.fn().mockResolvedValue(["refs/heads/main"]),
@@ -128,7 +126,7 @@ describe("authoritative GitHub results", () => {
     expect(job.checkRunId).toBe("30");
     expect(job.spec.requiresDocker).toBe(false);
     expect(job.github.steps[0].conclusion).toBe("skipped");
-    expect(h.completed).not.toHaveBeenCalled();
+    expect(h.completed).toHaveBeenCalledWith(expect.objectContaining({ id: run.id }), true);
   });
   it("rejects another repository, attempt or commit before storing success", async () => {
     const f = await fixture();
@@ -146,6 +144,27 @@ describe("authoritative GitHub results", () => {
       code: "ACTIONS_GITHUB_IDENTITY_MISMATCH",
     });
     expect(await h.repo.runs(f.org)).toHaveLength(0);
+  });
+  it("retries completion after an outbox failure and does not notify imported history", async () => {
+    const f = await fixture();
+    h.completed.mockRejectedValueOnce(new Error("notification queue unavailable"));
+    await expect(synchronizeGitHubRun(f.ctx, f.workflow, f.remote, f.api)).rejects.toThrow(
+      "notification queue unavailable",
+    );
+    const [pending] = await h.repo.runs(f.org);
+    expect(pending.settledAt).toBeNull();
+    const saved = await synchronizeGitHubRun(f.ctx, f.workflow, f.remote, f.api);
+    expect(saved.settledAt).toBeTruthy();
+    await synchronizeGitHubRun(f.ctx, f.workflow, f.remote, f.api);
+    expect(h.completed).toHaveBeenCalledTimes(2);
+    const history = await fixture();
+    await synchronizeGitHubRun(
+      history.ctx,
+      history.workflow,
+      { ...history.remote, created_at: new Date(0).toISOString() },
+      history.api,
+    );
+    expect(h.completed).toHaveBeenLastCalledWith(expect.anything(), false);
   });
   it("does not treat ambiguous branch/tag names or pull requests as branch approvals", async () => {
     const f = await fixture();

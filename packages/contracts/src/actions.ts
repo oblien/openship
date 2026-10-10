@@ -93,6 +93,16 @@ export const ActionRunnerSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const ActionWorkflowNotificationsSchema = Type.Object(
+  {
+    channels: Type.Array(id, { maxItems: 20, uniqueItems: true }),
+    events: Type.Array(
+      Type.Union([Type.Literal("failure"), Type.Literal("success"), Type.Literal("cancelled")]),
+      { maxItems: 3, uniqueItems: true },
+    ),
+  },
+  { additionalProperties: false },
+);
 export const ActionWorkflowInput = Type.Object(
   {
     controller: Type.Optional(ActionControllerSchema),
@@ -110,6 +120,7 @@ export const ActionWorkflowInput = Type.Object(
       ]),
     ),
     runnerIds: Type.Array(id, { minItems: 1, maxItems: 20, uniqueItems: true }),
+    notifications: Type.Optional(Type.Union([ActionWorkflowNotificationsSchema, Type.Null()])),
     storageDestinationId: Type.Optional(nullable(id)),
     variables: Type.Optional(strings),
     secrets: Type.Optional(strings),
@@ -159,6 +170,7 @@ export const ActionWorkflowSchema = Type.Object(
     ref,
     source: nullable(Type.String()),
     runnerIds: Type.Array(Type.String()),
+    notifications: Type.Optional(Type.Union([ActionWorkflowNotificationsSchema, Type.Null()])),
     storageDestinationId: nullable(id),
     variables: strings,
     plan: ActionPlanSchema,

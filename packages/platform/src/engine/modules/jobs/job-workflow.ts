@@ -120,14 +120,7 @@ export async function workflowJobRuns(row: Job, limit = 50): Promise<JobRun[]> {
 export async function workflowJobCompleted(run: ActionRun) {
   const source = run.configuration.sourceJob;
   if (!source) return;
-  const { emitJobRun, fireDependents } = await import("./job-command");
-  const row = { key: source.key, label: source.label, notifyConfig: source.notifyConfig } as Job;
-  await emitJobRun(
-    row,
-    run.id,
-    run.status === "success" ? "success" : "failed",
-    run.organizationId,
-    { durationMs: workflowJobRunView(run).durationMs ?? undefined, error: run.error ?? undefined },
-  );
+  // Actions queues workflow and Job notifications together before this hook.
+  const { fireDependents } = await import("./job-command");
   if (run.status === "success") await fireDependents(source.key, run.organizationId, run.id);
 }

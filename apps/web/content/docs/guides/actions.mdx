@@ -114,12 +114,20 @@ the deployment wizard. These entry points share the same setup:
    and select a connection to remove it. **List** and **YAML** show the same draft; undo and redo work across
    views. **Job YAML** exposes matrix, services, conditions, permissions and step
    inputs. Dependency cycles and deletion of referenced job outputs are rejected.
-3. Use **Run settings** on the right for triggers, allowed runners and linked
-   projects. Independent workflows also configure variables, secrets and artifact
+3. Use **Run settings** on the right to choose the required runners and configure
+   triggers. If no runner exists, the selector opens runner setup in a modal;
+   saving selects the new runner without leaving your draft. The current project
+   is linked automatically. The generic editor keeps extra project links under a
+   disclosure. Independent workflows also configure variables, secrets and artifact
    storage here; GitHub workflows use their repository settings.
    Runner destinations, enabled state and project links apply to the selected
    files. Trigger edits apply to the file being previewed.
-4. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
+4. In **Checks**, review the automatic GitHub Checks integration and optionally
+   select verified notification channels for failures, successes or cancellations.
+   GitHub-owned workflows retain their original Checks; independent repository
+   workflows publish Checks through a connected GitHub App. Choose required workflows
+   in the project's **Deployment automation** tab.
+5. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
    **Commit and save**. `.openship/workflows` also offers **Save Openship copy**.
    `.github/workflows` always runs committed YAML. A changed file on GitHub rejects
@@ -131,6 +139,14 @@ their settings and adds any new project links; it does not duplicate workflows o
 start a run. Edit an already connected workflow from its Actions page to change
 its saved configuration. Reviewed repository commits can trigger the repository's
 normal automation, and are separate from the database transaction.
+
+Workflow notifications use the existing notification queue, alongside account-wide
+Actions subscriptions. A channel selected by both rules gets one queued notification
+per run. Jobs that invoke a workflow share that identity. Failed enqueues are retried
+before completion is settled, and delivery rechecks channel verification and resource
+access. Notification choices are captured when the run is created; importing old GitHub
+history does not send a backlog of alerts. No workflow commands, secrets or raw logs
+are included in these notifications.
 
 Choose **Standalone** for YAML without a repository. It supports manual runs,
 schedules and authenticated webhooks without GitHub credentials. `actions/checkout`

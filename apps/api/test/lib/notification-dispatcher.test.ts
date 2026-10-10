@@ -85,6 +85,24 @@ beforeEach(() => {
 });
 
 describe("notification dispatcher", () => {
+  it("merges explicit workflow channels with subscriptions without duplicate recipients", async () => {
+    h.channelsById = { c_mail: ch("c_mail", "u1", "email"), c_denied: ch("c_denied", "u2", "email"), c_unverified: ch("c_unverified", "u1", "slack", { verified: false }) };
+    h.enabledSubs = [{ id: "s1", userId: "u1", channelId: "c_mail" }];
+    h.deniedUsers.add("u2");
+    const queue = await notification.prepare({ organizationId: "org", eventType: "action_run.failed", idempotencyKey: "action:run1", destinations: { channelIds: ["c_mail", "c_mail", "c_denied", "c_unverified"], includeSubscriptions: true } });
+    expect(h.durable).toHaveLength(0);
+    await queue({} as never);
+    expect(h.durable).toEqual([expect.objectContaining({ key: "action:run1", channelId: "c_mail" })]);
+  });
+
+  it("respects explicit empty job destinations without falling back to subscriptions", async () => {
+    h.channelsById = { c_mail: ch("c_mail", "u1", "email") };
+    h.enabledSubs = [{ id: "s1", userId: "u1", channelId: "c_mail" }];
+    const queue = await notification.prepare({ organizationId: "org", eventType: "job_run.failed", idempotencyKey: "action:run1", destinations: { channelIds: [] } });
+    await queue({} as never);
+    expect(h.durable).toEqual([]);
+  });
+
   it("carries the event organization into command-job dispatch", async () => {
     await notification.emitSync({
       organizationId: "org-source",

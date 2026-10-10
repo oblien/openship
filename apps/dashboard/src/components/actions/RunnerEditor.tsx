@@ -16,6 +16,8 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import ServerSelector from "@/components/shared/ServerSelector";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
@@ -30,14 +32,28 @@ import {
   type RunnerPreset,
 } from "./RunnerCatalog";
 
-function Form({ runner }: { runner?: ActionRunnerView }) {
+function Form({
+  runner,
+  onSaved,
+  onCancel,
+  onBusyChange,
+  embedded = false,
+}: {
+  runner?: ActionRunnerView;
+  onSaved: (runner: ActionRunnerView) => void;
+  onCancel: () => void;
+  onBusyChange?: (busy: boolean) => void;
+  embedded?: boolean;
+}) {
   const { t } = useI18n();
   const a = t.actions;
   const c = a.runnerSetup;
-  const router = useRouter();
   const mutation = useActionMutation();
   const emulation = useActionMutation();
   const busy = mutation.busy || emulation.busy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
   const [serverId, setServerId] = useState<string | null>(runner?.serverId ?? null);
   const [name, setName] = useState(runner?.name ?? "");
   const [config, setConfig] = useState<ActionRunnerConfig>(
@@ -123,24 +139,26 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
         const result = await mutation.execute(() =>
           actionsApi.saveRunner({ serverId, name, enabled, config: effectiveConfig }, runner?.id),
         );
-        if (result) router.push("/actions");
+        if (result) onSaved(result);
       }}
     >
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Button asChild size="sm" variant="ghost" className="mb-2 -ms-3">
-            <Link href="/actions">
-              <Icon name="arrow-left" className="rtl:rotate-180" />
-              {a.back}
-            </Link>
-          </Button>
+          {!embedded && (
+            <Button asChild size="sm" variant="ghost" className="mb-2 -ms-3">
+              <Link href="/actions">
+                <Icon name="arrow-left" className="rtl:rotate-180" />
+                {a.back}
+              </Link>
+            </Button>
+          )}
           <h1 className="text-2xl font-medium tracking-tight text-foreground">
             {runner?.name ?? a.newRunner}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{c.subtitle}</p>
         </div>
-        <Button asChild variant="ghost">
-          <Link href="/actions">{a.cancel}</Link>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+          {a.cancel}
         </Button>
       </header>
       <ActionError message={mutation.error} />
@@ -450,6 +468,7 @@ function Form({ runner }: { runner?: ActionRunnerView }) {
 }
 
 function Loader({ id }: { id?: string }) {
+  const router = useRouter();
   const fetcher = useCallback(
     () =>
       id
@@ -466,7 +485,11 @@ function Loader({ id }: { id?: string }) {
     <PageContainer>
       <ActionError message={resource.error} onRetry={resource.refresh} />
       {resource.data ? (
-        <Form runner={resource.data.runner} />
+        <Form
+          runner={resource.data.runner}
+          onSaved={() => router.push("/actions")}
+          onCancel={() => router.push("/actions")}
+        />
       ) : resource.loading ? (
         <div className="h-72 animate-pulse rounded-2xl bg-card" />
       ) : null}
@@ -476,4 +499,45 @@ function Loader({ id }: { id?: string }) {
 export function RunnerEditor({ id }: { id?: string }) {
   const scope = useActionScope();
   return <Loader key={`${scope}:${id ?? "new"}`} id={id} />;
+}
+
+/** The destination form is shared with its page; no navigation loses workflow drafts. */
+export function RunnerSetupDialog({
+  onSaved,
+  onCancel,
+}: {
+  onSaved: (runner: ActionRunnerView) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const scope = useActionScope();
+  const [busy, setBusy] = useState(false);
+  const close = () => {
+    if (!busy) onCancel();
+  };
+  const { dialog, onKeyDown } = useDialogFocus(close);
+  return (
+    <Modal
+      isOpen
+      onClose={close}
+      closable={!busy}
+      showCloseButton={false}
+      surface="frosted"
+      width="1040px"
+      maxWidth="calc(100vw - 32px)"
+      maxHeight="calc(100dvh - 32px)"
+    >
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.actions.newRunner}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="p-4 outline-none sm:p-5"
+      >
+        <Form key={scope} embedded onSaved={onSaved} onCancel={close} onBusyChange={setBusy} />
+      </div>
+    </Modal>
+  );
 }

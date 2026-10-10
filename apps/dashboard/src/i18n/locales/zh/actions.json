@@ -274,7 +274,7 @@
     "selectAll": "全选",
     "includeFile": "包含工作流",
     "selectedFiles": "已选择 {count} 个 · 已添加的工作流保留原有设置。",
-    "sharedSettings": "运行器和项目关联应用于所有所选文件。触发器设置仅属于左侧显示的文件。",
+    "sharedSettings": "运行器和通知设置适用于所有选定文件。触发器仅适用于左侧显示的文件。",
     "saveWorkflows": "保存 {count} 个工作流",
     "fileLimit": "每次最多选择 50 个文件。"
   },
@@ -394,5 +394,38 @@
     "reusable": "可复用工作流",
     "openGitHub": "在 GitHub 中打开",
     "liveLogs": "在 GitHub 查看实时日志，完成后的日志将在此显示。"
+  },
+  "completion": {
+    "checksStep": "检查",
+    "required": "必填",
+    "optional": "可选",
+    "chooseRunners": "选择运行器",
+    "selectedRunners": "已选择 {count} 个运行器",
+    "runnerHint": "选择此工作流的运行位置。",
+    "runnerDisabled": "已禁用",
+    "useRunners": "使用所选运行器",
+    "backToSetup": "返回工作流",
+    "githubChecks": "GitHub 检查",
+    "runResults": "运行结果",
+    "automatic": "自动",
+    "githubChecksHint": "所选运行器执行任务。GitHub 在提交和拉取请求上发布检查，Openship 显示相同结果。",
+    "appChecksHint": "此仓库连接 GitHub App 后，Openship 会将每个任务发布为 GitHub 检查。",
+    "standaloneChecksHint": "任务和步骤结果保存在 Openship 中。独立工作流不会发布仓库检查。",
+    "requiredChecksHint": "在项目的部署自动化选项卡中选择必须通过的工作流。",
+    "notifications": "通知",
+    "notificationsHint": "将此工作流的结果发送到你的通知渠道。",
+    "notifyWhen": "通知时机",
+    "events": {
+      "failure": "失败",
+      "success": "成功",
+      "cancelled": "已取消"
+    },
+    "channels": "通知渠道",
+    "channelDisabled": "已禁用",
+    "verifyChannel": "请在通知设置中验证此渠道",
+    "noChannels": "添加并验证通知渠道以接收工作流结果。",
+    "teamChannels": "保留其他成员配置的 {count} 个渠道。",
+    "manageChannels": "管理渠道",
+    "accountPreferences": "账户级 Actions 通知设置仍然生效。重叠的规则会合并为同一条通知。"
   }
 }

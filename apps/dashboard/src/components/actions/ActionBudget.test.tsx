@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PRICING, actionCreditUnits } from "@repo/core";
 import type { ActionBudget as Budget, ActionCreditPurchase } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
-import { ActionBudget } from "./ActionBudget";
+import { ActionBudget, ActionBudgetDialog } from "./ActionBudget";
 
 const h = vi.hoisted(() => ({
   org: "org-a",
@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   checkout: vi.fn(),
   resume: vi.fn(),
   navigate: vi.fn(),
+  begin: vi.fn(),
+  closeTab: vi.fn(),
+  closeDialog: vi.fn(),
 }));
 vi.mock("@/lib/api/billing", () => ({
   billingApi: {
@@ -25,7 +28,10 @@ vi.mock("@/lib/api/billing", () => ({
   },
 }));
 vi.mock("@/lib/checkout-navigation", () => ({
-  beginCheckoutNavigation: () => ({ navigate: h.navigate }),
+  beginCheckoutNavigation: (preserve: boolean) => {
+    h.begin(preserve);
+    return { navigate: h.navigate, close: h.closeTab };
+  },
 }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(h.query) }));
 vi.mock("@/lib/auth-client", () => ({
@@ -67,16 +73,16 @@ const initial = (): Budget => ({
 });
 let root: Root;
 let host: HTMLDivElement;
-const render = () =>
+const render = (dialog = false) =>
   act(async () =>
     root.render(
       <I18nProvider>
-        <ActionBudget />
+        {dialog ? <ActionBudgetDialog onClose={h.closeDialog} /> : <ActionBudget />}
       </I18nProvider>,
     ),
   );
 const button = (text: string) =>
-  [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
+  [...document.querySelectorAll("button")].find((node) => node.textContent === text)!;
 beforeEach(() => {
   (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
@@ -93,6 +99,33 @@ afterEach(async () => {
 });
 
 describe("Actions funding UI", () => {
+  it("keeps workflow setup open during hosted payment and retains a manual checkout link", async () => {
+    h.budget.mockResolvedValue({ ...initial(), purchasesAvailable: true });
+    h.checkout.mockResolvedValue({ purchaseId: "acredit_one", checkoutUrl: "https://checkout.stripe.com/saved" });
+    h.navigate.mockImplementation((url: string) => url);
+    await render(true);
+    await act(async () => button("Add $5").click());
+    expect(h.begin).toHaveBeenCalledWith(true);
+    expect(h.begin.mock.invocationCallOrder[0]).toBeLessThan(h.checkout.mock.invocationCallOrder[0]!);
+    expect(document.querySelector('a[href="https://checkout.stripe.com/saved"]')?.getAttribute("target")).toBe("_blank");
+    expect(h.closeDialog).not.toHaveBeenCalled();
+    await act(async () => button("Back to workflow").click());
+    expect(h.closeDialog).toHaveBeenCalledOnce();
+  });
+
+  it("closes an unused payment tab on failure and does not expose an invalid payment link", async () => {
+    h.budget.mockResolvedValue({ ...initial(), purchasesAvailable: true });
+    h.checkout.mockRejectedValueOnce(new Error("Provider unavailable"));
+    await render(true);
+    await act(async () => button("Add $5").click());
+    expect(h.closeTab).toHaveBeenCalledOnce();
+    h.checkout.mockResolvedValue({ checkoutUrl: "javascript:invalid" });
+    h.navigate.mockImplementationOnce(() => { throw new Error("Invalid checkout URL"); });
+    await act(async () => button("Add $5").click());
+    expect(document.querySelector('a[href="javascript:invalid"]')).toBeNull();
+    expect(h.closeTab).toHaveBeenCalledTimes(2);
+  });
+
   it("shows live VM estimates and one usage balance without a separate transfer allowance", async () => {
     h.budget.mockResolvedValue({
       ...initial(),

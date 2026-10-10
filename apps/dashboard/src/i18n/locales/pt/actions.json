@@ -274,7 +274,7 @@
     "selectAll": "Selecionar todos",
     "includeFile": "Incluir workflow",
     "selectedFiles": "{count} selecionados · Workflows já adicionados mantêm suas configurações.",
-    "sharedSettings": "Runners e projetos vinculados se aplicam a todos os arquivos selecionados. Os gatilhos pertencem ao arquivo à esquerda.",
+    "sharedSettings": "As configurações de runners e notificações aplicam-se a todos os ficheiros selecionados. Os gatilhos pertencem ao ficheiro à esquerda.",
     "saveWorkflows": "Salvar {count} workflows",
     "fileLimit": "Selecione até 50 arquivos por importação."
   },
@@ -394,5 +394,38 @@
     "reusable": "Fluxo reutilizável",
     "openGitHub": "Abrir no GitHub",
     "liveLogs": "Veja os registos em direto no GitHub. Os registos concluídos aparecem aqui."
+  },
+  "completion": {
+    "checksStep": "Verificações",
+    "required": "Obrigatório",
+    "optional": "Opcional",
+    "chooseRunners": "Escolher runners",
+    "selectedRunners": "{count} runners selecionados",
+    "runnerHint": "Escolha onde este fluxo é executado.",
+    "runnerDisabled": "Desativado",
+    "useRunners": "Usar runners selecionados",
+    "backToSetup": "Voltar ao fluxo",
+    "githubChecks": "Verificações do GitHub",
+    "runResults": "Resultados da execução",
+    "automatic": "Automático",
+    "githubChecksHint": "Os runners selecionados executam as tarefas. O GitHub publica as verificações nos commits e pull requests; o Openship mostra os mesmos resultados.",
+    "appChecksHint": "O Openship publica cada tarefa como uma verificação do GitHub quando uma GitHub App está ligada a este repositório.",
+    "standaloneChecksHint": "Os resultados das tarefas e etapas são guardados no Openship. Fluxos independentes não publicam verificações no repositório.",
+    "requiredChecksHint": "Escolha os fluxos que precisam passar na aba de automação da implantação do projeto.",
+    "notifications": "Notificações",
+    "notificationsHint": "Envie os resultados deste fluxo para os seus canais de notificação.",
+    "notifyWhen": "Notificar em caso de",
+    "events": {
+      "failure": "Falha",
+      "success": "Sucesso",
+      "cancelled": "Cancelamento"
+    },
+    "channels": "Canais de notificação",
+    "channelDisabled": "Desativado",
+    "verifyChannel": "Verifique este canal nas configurações de notificações",
+    "noChannels": "Adicione e verifique um canal de notificação para receber os resultados.",
+    "teamChannels": "Os {count} canais configurados por outro membro serão mantidos.",
+    "manageChannels": "Gerir canais",
+    "accountPreferences": "As notificações de Actions da conta também se aplicam. Regras sobrepostas partilham a mesma notificação."
   }
 }

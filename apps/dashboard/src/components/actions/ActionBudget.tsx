@@ -10,6 +10,8 @@ import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
 import { randomUUID } from "@/lib/random-uuid";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/Modal";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { optionCardSurface } from "@/components/shared/OptionCard";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError } from "./ActionStatus";
@@ -21,7 +23,7 @@ const paymentInterval = (purchase: ActionCreditPurchase | null) =>
 const budgetInterval = (data: BudgetData) =>
   data.balance.fundedUnits > 0 && !data.runnersReady ? 5000 : 30_000;
 
-function Budget() {
+function Budget({ onClose }: { onClose?: () => void }) {
   const { t, locale } = useI18n();
   const copy = t.actions.budget;
   const params = useSearchParams();
@@ -37,6 +39,7 @@ function Budget() {
   const receipt = useActionResource(loadPayment, paymentInterval);
   const mutation = useActionMutation();
   const [selected, setSelected] = useState<number | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const attempts = useRef(new Map<number, string>());
   const data = budget.data;
   const deposit = selected ?? data?.pricing.depositsCents[0] ?? 0;
@@ -69,6 +72,8 @@ function Budget() {
 
   async function checkout(id?: string) {
     if (!data?.purchasesAvailable || mutation.busy) return;
+    const navigation = beginCheckoutNavigation(!!onClose);
+    setCheckoutUrl(null);
     if (!attempts.current.has(deposit)) attempts.current.set(deposit, randomUUID());
     const result = await mutation.execute(() =>
       id
@@ -80,32 +85,49 @@ function Budget() {
     );
     if (result?.checkoutUrl) {
       const url = result.checkoutUrl;
-      await mutation.execute(async () => beginCheckoutNavigation(false).navigate(url));
+      const destination = await mutation.execute(async () => navigation.navigate(url));
+      if (destination) setCheckoutUrl(destination);
+      else navigation.close();
     } else if (result && !id) {
       // A completed/expired intent is no longer a new deposit. A subsequent
       // explicit purchase gets its own key; uncertain responses keep this one.
       attempts.current.delete(deposit);
     }
+    if (!result?.checkoutUrl) navigation.close();
     budget.refresh();
   }
 
+  const Container = onClose ? "div" : PageContainer;
   return (
-    <PageContainer className="@container space-y-5">
+    <Container className="@container space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium tracking-tight text-foreground">{copy.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/actions">
-            <Icon name="arrow-left" className="rtl:rotate-180" />
-            {t.actions.back}
-          </Link>
-        </Button>
+        {onClose ? (
+          <Button variant="ghost" onClick={onClose}>
+            {t.actions.completion.backToSetup}
+          </Button>
+        ) : (
+          <Button asChild variant="secondary">
+            <Link href="/actions">
+              <Icon name="arrow-left" className="rtl:rotate-180" />
+              {t.actions.back}
+            </Link>
+          </Button>
+        )}
       </header>
       <ActionError message={budget.error} onRetry={budget.refresh} />
       <ActionError message={receipt.error} onRetry={receipt.refresh} />
       <ActionError message={mutation.error} />
+      {onClose && checkoutUrl && (
+        <Button asChild variant="secondary">
+          <a href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+            {copy.resume}
+          </a>
+        </Button>
+      )}
       {receipt.data && (
         <div
           role="status"
@@ -312,11 +334,17 @@ function Budget() {
                     {data.runnerSetupFailed ? copy.setupRetrying : copy.preparing}
                   </p>
                 )}
-                {data.runnersReady && !data.balance.blocking && (
-                  <Button asChild variant="secondary" className="w-full">
-                    <Link href="/actions/new">{copy.runWorkflow}</Link>
-                  </Button>
-                )}
+                {data.runnersReady &&
+                  !data.balance.blocking &&
+                  (onClose ? (
+                    <Button variant="secondary" className="w-full" onClick={onClose}>
+                      {t.actions.completion.backToSetup}
+                    </Button>
+                  ) : (
+                    <Button asChild variant="secondary" className="w-full">
+                      <Link href="/actions/new">{copy.runWorkflow}</Link>
+                    </Button>
+                  ))}
               </div>
             </section>
             <section className="rounded-2xl bg-card p-5">
@@ -354,11 +382,40 @@ function Budget() {
           </aside>
         </div>
       )}
-    </PageContainer>
+    </Container>
   );
 }
 
 export function ActionBudget() {
   const scope = useActionScope();
   return <Budget key={scope} />;
+}
+
+export function ActionBudgetDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const scope = useActionScope();
+  const { dialog, onKeyDown } = useDialogFocus(onClose);
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      showCloseButton={false}
+      surface="frosted"
+      width="1040px"
+      maxWidth="calc(100vw - 32px)"
+      maxHeight="calc(100dvh - 32px)"
+    >
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.actions.budget.title}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="p-4 outline-none sm:p-5"
+      >
+        <Budget key={scope} onClose={onClose} />
+      </div>
+    </Modal>
+  );
 }

@@ -17,6 +17,9 @@ const h = vi.hoisted(() => ({
   save: vi.fn(),
   importWorkflows: vi.fn(),
   onSaved: vi.fn(),
+  channels: vi.fn(),
+  saveRunner: vi.fn(),
+  inspect: vi.fn(),
 }));
 vi.mock("@/lib/api/actions", () => ({
   actionsApi: {
@@ -29,7 +32,21 @@ vi.mock("@/lib/api/actions", () => ({
     updateRepositorySource: h.write,
     save: h.save,
     importWorkflows: h.importWorkflows,
+    saveRunner: h.saveRunner,
+    inspectDestination: h.inspect,
   },
+}));
+vi.mock("@/lib/api/notifications", () => ({ notificationsApi: { listChannels: h.channels } }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+vi.mock("@/components/shared/ServerSelector", () => ({
+  default: ({ onSelect }: { onSelect: (server: { id: string; name: string }) => void }) => (
+    <button type="button" onClick={() => onSelect({ id: "build-server", name: "Build server" })}>
+      Use build server
+    </button>
+  ),
 }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: "org" } } }),
@@ -83,9 +100,14 @@ let root: Root;
 let host: HTMLDivElement;
 const button = (name: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (b) => b.textContent?.trim() === name,
+    (b) => b.getAttribute("aria-label") === name || b.textContent?.trim() === name,
   )!;
 const click = (name: string) => act(async () => button(name).click());
+async function selectRunner(name = "Linux runner") {
+  await click("Allowed runners");
+  await act(async () => checkbox(name).click());
+  await click("Use selected runners");
+}
 const checkbox = (name: string) =>
   document.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${name}"]`) ??
   [...document.querySelectorAll<HTMLLabelElement>("label")]
@@ -160,6 +182,23 @@ beforeEach(() => {
     },
   ]);
   h.projects.mockResolvedValue([{ id: "project", name: "Storefront" }]);
+  h.channels.mockResolvedValue({
+    channels: [{ id: "ops", label: "Ops email", kind: "email", verified: true, enabled: true }],
+  });
+  h.inspect.mockResolvedValue({
+    os: "linux",
+    architecture: "x64",
+    docker: true,
+    git: true,
+    node: true,
+  });
+  h.saveRunner.mockImplementation(async (input) => ({
+    ...input,
+    id: "new-runner",
+    kind: "server",
+    capabilities: await h.inspect(),
+    labels: ["self-hosted", "linux"],
+  }));
   h.discover.mockResolvedValue([{ path: workflow.path, name: "ci.yml" }]);
   h.source.mockResolvedValue({ source, sha: "original-file-sha", plan, error: null });
   h.preview.mockImplementation(async (yaml) => {
@@ -199,6 +238,100 @@ afterEach(async () => {
 });
 
 describe("shared workflow setup", () => {
+  it("keeps the current project implicit and creates a required runner without leaving the draft", async () => {
+    h.runners.mockResolvedValue([]);
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <WorkflowSetup
+            initial={{ projectId: "project" }}
+            onSaved={h.onSaved}
+            onCancel={() => {}}
+          />
+        </I18nProvider>,
+      ),
+    );
+    await click("Standalone");
+    await fill("Name", "Project checks");
+    await preview();
+    await click("Continue");
+    expect(host.textContent).not.toContain("Linked projects");
+    expect(h.projects).not.toHaveBeenCalled();
+    expect(button("Continue").disabled).toBe(true);
+    await click("Allowed runners");
+    expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
+      "Add runner",
+    );
+    await click("Use build server");
+    await click("Verify and save runner");
+    expect(h.saveRunner).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(host.textContent).toContain("Build server");
+    await click("Continue");
+    await act(async () => checkbox("Ops email").click());
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Project checks",
+        projectIds: ["project"],
+        runnerIds: ["new-runner"],
+        notifications: { channels: ["ops"], events: ["failure"] },
+      }),
+      undefined,
+    );
+  });
+
+  it("preserves hidden project links on existing workflows and saves notification choices", async () => {
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <WorkflowSetup
+            id="ci"
+            initial={{ projectId: "project" }}
+            onSaved={h.onSaved}
+            onCancel={() => {}}
+          />
+        </I18nProvider>,
+      ),
+    );
+    await preview();
+    await click("Run settings");
+    expect(host.textContent).not.toContain("Linked projects");
+    await click("Checks");
+    expect(host.textContent).toContain("GitHub App");
+    await act(async () => checkbox("Succeeded").click());
+    await act(async () => checkbox("Ops email").click());
+    await click("Save workflow");
+    expect(h.save.mock.calls[0]![0]).not.toHaveProperty("projectIds");
+    expect(h.save.mock.calls[0]![0].notifications).toEqual({
+      channels: ["ops"],
+      events: ["failure", "success"],
+    });
+  });
+
+  it("keeps the draft when runner setup is cancelled and requires a destination", async () => {
+    h.runners.mockResolvedValue([]);
+    await render();
+    await click("Standalone");
+    await fill("Name", "Keep this draft");
+    await preview();
+    await click("Continue");
+    await click("Allowed runners");
+    const cancel = [
+      ...document.querySelector('[role="dialog"]')!.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Cancel")!;
+    await act(async () => cancel.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(button("Continue").disabled).toBe(true);
+    await click("Workflow");
+    expect(
+      [...document.querySelectorAll<HTMLInputElement>("input")].some(
+        (input) => input.value === "Keep this draft",
+      ),
+    ).toBe(true);
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
   async function selectFiles(directory = ".github/workflows") {
     const files = ["build", "test"].map((name) => ({
       path: `${directory}/${name}.yml`,
@@ -210,9 +343,10 @@ describe("shared workflow setup", () => {
     await preview();
     await click("Select all");
     await click("Continue");
-    await act(async () => checkbox("Linux runner").click());
+    await selectRunner();
     if (directory === ".github/workflows")
       await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Checks");
     await click("Workflow");
     return files;
   }
@@ -293,7 +427,7 @@ describe("shared workflow setup", () => {
     await preview();
     await click("Select all");
     await click("Continue");
-    await act(async () => checkbox("Linux runner").click());
+    await selectRunner();
     await act(async () => checkbox("Storefront").click());
     await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Git push");
@@ -312,6 +446,7 @@ describe("shared workflow setup", () => {
     await click("Run settings");
     await click("Git push");
     expect(host.textContent).toContain("release/**");
+    await click("Continue");
     await click("Save 2 workflows");
     expect(h.write).not.toHaveBeenCalled();
     await click("Commit and save");
@@ -446,7 +581,8 @@ describe("shared workflow setup", () => {
     expect(h.write).not.toHaveBeenCalled();
     const [saved, id] = h.save.mock.calls[0]!;
     expect(id).toBe("ci");
-    expect(saved).toMatchObject({ runnerIds: ["linux"], projectIds: ["project"] });
+    expect(saved).toMatchObject({ runnerIds: ["linux"] });
+    expect(saved).not.toHaveProperty("projectIds");
     expect(parse(saved.source).on.repository_dispatch.types).toEqual(["release", "publish"]);
     expect(parse(saved.source).jobs).toEqual(parse(source).jobs);
     expect(saved.source).toContain("# keep this comment");
@@ -481,9 +617,10 @@ describe("shared workflow setup", () => {
     expect(button("GitHub Actions")).toBeUndefined();
     expect(button("Openship Actions")).toBeUndefined();
     await click("Continue");
-    await act(async () => checkbox("Linux runner").click());
-    expect(button("Save workflow").disabled).toBe(true);
+    await selectRunner();
+    expect(button("Continue").disabled).toBe(true);
     await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Continue");
     await click("Save workflow");
     expect(h.importWorkflows).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -530,8 +667,8 @@ describe("shared workflow setup", () => {
     await preview();
     expect(h.preview).toHaveBeenLastCalledWith(source, ".github/workflows/ci.yml");
     await click("Continue");
-    await act(async () => checkbox("Linux runner").click());
-    expect(button("Save workflow").disabled).toBe(true);
+    await selectRunner();
+    expect(button("Continue").disabled).toBe(true);
   });
   it("requires renewed consent when the selected repository or runners change", async () => {
     await repositoryWorkflow();
@@ -543,8 +680,10 @@ describe("shared workflow setup", () => {
     expect(button("Save workflow").disabled).toBe(true);
     await act(async () => checkbox("Allow workflows in this repository").click());
     expect(button("Save workflow").disabled).toBe(false);
+    await click("Allowed runners");
     await act(async () => checkbox("Linux runner").click());
     await act(async () => checkbox("Linux runner").click());
+    await click("Use selected runners");
     expect(button("Save workflow").disabled).toBe(true);
   });
   it("preserves edits after a concurrent GitHub change and never saves a false repository reference", async () => {
@@ -746,7 +885,8 @@ describe("shared workflow setup", () => {
     await fill("Name", "Nightly cleanup");
     await preview();
     await click("Continue");
-    await act(async () => checkbox("Linux runner").click());
+    await selectRunner();
+    await click("Continue");
     await click("Save workflow");
     expect(h.discover).not.toHaveBeenCalled();
     expect(h.source).not.toHaveBeenCalled();

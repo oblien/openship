@@ -274,7 +274,7 @@
     "selectAll": "Tümünü seç",
     "includeFile": "İş akışını dahil et",
     "selectedFiles": "{count} seçildi · Eklenmiş iş akışları ayarlarını korur.",
-    "sharedSettings": "Çalıştırıcılar ve proje bağlantıları seçilen tüm dosyalara uygulanır. Tetikleyiciler solda gösterilen dosyaya aittir.",
+    "sharedSettings": "Çalıştırıcı ve bildirim ayarları seçili tüm dosyalara uygulanır. Tetikleyiciler solda gösterilen dosyaya aittir.",
     "saveWorkflows": "{count} iş akışını kaydet",
     "fileLimit": "Her içe aktarmada en fazla 50 dosya seçin."
   },
@@ -394,5 +394,38 @@
     "reusable": "Yeniden kullanılabilir iş akışı",
     "openGitHub": "GitHub'da aç",
     "liveLogs": "Canlı günlükleri GitHub üzerinden izleyin. Tamamlanan günlükler burada görünür."
+  },
+  "completion": {
+    "checksStep": "Kontroller",
+    "required": "Gerekli",
+    "optional": "İsteğe bağlı",
+    "chooseRunners": "Çalıştırıcı seç",
+    "selectedRunners": "{count} çalıştırıcı seçildi",
+    "runnerHint": "Bu iş akışının nerede çalışacağını seçin.",
+    "runnerDisabled": "Devre dışı",
+    "useRunners": "Seçili çalıştırıcıları kullan",
+    "backToSetup": "İş akışına dön",
+    "githubChecks": "GitHub kontrolleri",
+    "runResults": "Çalıştırma sonuçları",
+    "automatic": "Otomatik",
+    "githubChecksHint": "Seçili çalıştırıcılar işlerinizi yürütür. GitHub, commit ve pull request kontrollerini yayımlar; Openship aynı sonuçları gösterir.",
+    "appChecksHint": "Bu depoya bir GitHub App bağlıysa Openship her işi GitHub kontrolü olarak yayımlar.",
+    "standaloneChecksHint": "İş ve adım sonuçları Openship’te kaydedilir. Bağımsız iş akışları depo kontrolleri yayımlamaz.",
+    "requiredChecksHint": "Projenin dağıtım otomasyonu sekmesinde başarılı olması gereken iş akışlarını seçin.",
+    "notifications": "Bildirimler",
+    "notificationsHint": "Bu iş akışının sonuçlarını bildirim kanallarınıza gönderin.",
+    "notifyWhen": "Şu durumda bildir",
+    "events": {
+      "failure": "Başarısız",
+      "success": "Başarılı",
+      "cancelled": "İptal edildi"
+    },
+    "channels": "Bildirim kanalları",
+    "channelDisabled": "Devre dışı",
+    "verifyChannel": "Bu kanalı bildirim ayarlarında doğrulayın",
+    "noChannels": "Sonuçları almak için bir bildirim kanalı ekleyip doğrulayın.",
+    "teamChannels": "Başka bir üyenin yapılandırdığı {count} kanal korunur.",
+    "manageChannels": "Kanalları yönet",
+    "accountPreferences": "Hesap genelindeki Actions bildirimleri de geçerlidir. Çakışan kurallar aynı bildirimi paylaşır."
   }
 }

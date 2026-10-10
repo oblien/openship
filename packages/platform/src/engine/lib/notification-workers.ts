@@ -63,6 +63,8 @@ function notificationContent(delivery: NotificationDelivery) {
   if (payload.jobName || payload.label) {
     fields.push({ label: "Job", value: String(payload.jobName ?? payload.label) });
   }
+  if (payload.workflowName) fields.push({ label: "Workflow", value: String(payload.workflowName) });
+  if (payload.runNumber) fields.push({ label: "Run", value: String(payload.runNumber) });
   if (payload.branch) fields.push({ label: "Branch", value: String(payload.branch) });
   if (payload.commitSha)
     fields.push({ label: "Commit", value: String(payload.commitSha).slice(0, 8) });

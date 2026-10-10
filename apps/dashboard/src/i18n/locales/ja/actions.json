@@ -274,7 +274,7 @@
     "selectAll": "すべて選択",
     "includeFile": "ワークフローを含める",
     "selectedFiles": "{count} 件選択 · 追加済みワークフローの設定は保持されます。",
-    "sharedSettings": "ランナーとプロジェクトの関連付けは選択した全ファイルに適用されます。トリガーは左側に表示中のファイルの設定です。",
+    "sharedSettings": "ランナーと通知の設定は選択したすべてのファイルに適用されます。トリガーは左側のファイルに適用されます。",
     "saveWorkflows": "{count} 件のワークフローを保存",
     "fileLimit": "1回につき最大50ファイルを選択できます。"
   },
@@ -394,5 +394,38 @@
     "reusable": "再利用可能なワークフロー",
     "openGitHub": "GitHubで開く",
     "liveLogs": "ライブログはGitHubで確認できます。完了後のログはここに表示されます。"
+  },
+  "completion": {
+    "checksStep": "チェック",
+    "required": "必須",
+    "optional": "任意",
+    "chooseRunners": "ランナーを選択",
+    "selectedRunners": "{count} 個のランナーを選択中",
+    "runnerHint": "ワークフローの実行先を選択します。",
+    "runnerDisabled": "無効",
+    "useRunners": "選択したランナーを使用",
+    "backToSetup": "ワークフローに戻る",
+    "githubChecks": "GitHub チェック",
+    "runResults": "実行結果",
+    "automatic": "自動",
+    "githubChecksHint": "選択したランナーがジョブを実行します。GitHub がコミットとプルリクエストにチェックを公開し、Openship にも同じ結果が表示されます。",
+    "appChecksHint": "このリポジトリに GitHub App が接続されている場合、Openship は各ジョブを GitHub チェックとして公開します。",
+    "standaloneChecksHint": "ジョブとステップの結果は Openship に記録されます。スタンドアロンワークフローはリポジトリのチェックを公開しません。",
+    "requiredChecksHint": "プロジェクトのデプロイ自動化タブで、成功が必須のワークフローを選択します。",
+    "notifications": "通知",
+    "notificationsHint": "このワークフローの結果を通知チャンネルに送信します。",
+    "notifyWhen": "通知する結果",
+    "events": {
+      "failure": "失敗",
+      "success": "成功",
+      "cancelled": "キャンセル"
+    },
+    "channels": "通知チャンネル",
+    "channelDisabled": "無効",
+    "verifyChannel": "通知設定でこのチャンネルを確認してください",
+    "noChannels": "結果を受け取るには、通知チャンネルを追加して確認してください。",
+    "teamChannels": "他のメンバーが設定した {count} 個のチャンネルは維持されます。",
+    "manageChannels": "チャンネルを管理",
+    "accountPreferences": "アカウント全体の Actions 通知設定も適用されます。重複するルールは同じ通知にまとめられます。"
   }
 }

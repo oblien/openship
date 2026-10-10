@@ -124,7 +124,17 @@ Run settings uses compact trigger rows with shared switches and expandable contr
 Branches, paths, tags and event types use filled add/remove chips; keep commas inside
 glob patterns literal. Include/exclude choices replace the opposite YAML filter.
 Schedules have individual UTC inputs, and additional YAML-only events remain visible.
-Keep the Workflow / Run settings tabs and save action visible while the inspector scrolls.
+Keep the Workflow / Run settings / Checks tabs and save action visible while the inspector scrolls.
+Project and deployment entry points keep their project association implicit; the generic
+editor puts additional project links in a closed disclosure and preserves links when untouched.
+Run settings leads with the required runner destination. Selecting an empty runner field
+opens the shared runner form in a modal; saving returns to the same workflow draft and selects
+the new runner. Existing runners use a compact picker. Cloud funding opens the shared budget
+in a dialog; only hosted payment opens separately so the draft survives.
+Checks describes the existing automatic GitHub integration and offers optional workflow
+notifications through verified account channels. Keep outcomes and channel logos compact.
+Account-wide subscriptions and workflow choices share one durable delivery identity per run
+and channel; changing notification choices affects future runs, not runs already in progress.
 Project Actions owns one deployment policy: Manual, Push, or After required Actions
 pass. Its Workflows, Runs and Deployment automation tabs keep the existing project
 sidebar; do not add a second settings rail inside the project content column.

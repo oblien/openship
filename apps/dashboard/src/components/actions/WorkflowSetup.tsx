@@ -1,8 +1,7 @@
 "use client";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
-import { inferActionWorkflowController } from "@repo/core";
+import { inferActionWorkflowController, type ActionWorkflowNotifications } from "@repo/core";
 import type {
   ActionWorkflowView,
   ActionRunnerView,
@@ -41,12 +40,16 @@ import { useWorkflowDraft } from "./useWorkflowDraft";
 import { ActionValues, type ActionValue } from "./ActionValues";
 import { WorkflowTriggers } from "./WorkflowTriggers";
 import { WorkflowFiles } from "./WorkflowFiles";
+import { WorkflowRunnerSelect } from "./WorkflowRunnerSelect";
+import { WorkflowChecks } from "./WorkflowChecks";
 import { Switch } from "@/components/ui/Switch";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
 
 export interface WorkflowSetupProps {
   id?: string;
   fullHeight?: boolean;
+  /** Project and deployment entry points own their association outside this editor. */
+  projectScoped?: boolean;
   onBusyChange?: (busy: boolean) => void;
   initial?: { owner?: string; repo?: string; ref?: string; projectId?: string; path?: string };
   onSaved: (workflow: ActionWorkflowView, workflows?: ActionWorkflowView[]) => void;
@@ -105,6 +108,7 @@ function SetupForm({
   onCancel,
   fullHeight,
   onBusyChange,
+  projectScoped = !!initial?.projectId,
 }: WorkflowSetupProps & {
   workflow?: ActionWorkflowView;
   runners: ActionRunnerView[];
@@ -122,7 +126,7 @@ function SetupForm({
     onBusyChange?.(mutation.busy);
   }, [mutation.busy, onBusyChange]);
   const [trusted, setTrusted] = useState(workflow?.controller === "github");
-  const [step, setStep] = useState<"workflow" | "rules">("workflow");
+  const [step, setStep] = useState<"workflow" | "rules" | "checks">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
   const [repository, setRepository] = useState(
     workflow?.owner
@@ -186,6 +190,16 @@ function SetupForm({
     >(),
   );
   const [runnerIds, setRunnerIds] = useState(workflow?.runnerIds ?? []);
+  const [createdRunners, setCreatedRunners] = useState<ActionRunnerView[]>([]);
+  const availableRunners = [
+    ...runners,
+    ...createdRunners.filter((runner) => !runners.some((saved) => saved.id === runner.id)),
+  ];
+  const [notifications, setNotifications] = useState<ActionWorkflowNotifications | null>(
+    workflow?.notifications ?? null,
+  );
+  const [projectsChanged, setProjectsChanged] = useState(false);
+  const [reviewedCompletion, setReviewedCompletion] = useState(!!workflow);
   const [projectIds, setProjectIds] = useState(
     workflow?.projectIds ?? (initial?.projectId ? [initial.projectId] : []),
   );
@@ -281,7 +295,7 @@ function SetupForm({
     !preview.error &&
     (standalone || repositoryValid) &&
     (mode === "inline" || original?.identity === identity);
-  const hasIsolated = runners.some(
+  const hasIsolated = availableRunners.some(
     (r) => r.kind === "cloud" && r.enabled && runnerIds.includes(r.id),
   );
   const differsFromRepository = original?.identity === identity && original.source !== source;
@@ -358,7 +372,8 @@ function SetupForm({
           ref: standalone ? "main" : ref,
           path: selectedPath,
           runnerIds,
-          projectIds,
+          notifications,
+          ...(!workflow || projectsChanged ? { projectIds } : {}),
           enabled,
           allowForks: !github && !standalone && hasIsolated && allowForks,
           storageDestinationId: github ? null : storage || null,
@@ -582,11 +597,17 @@ function SetupForm({
                         {
                           key: "rules",
                           label: c.rulesStep,
-                          leading: <Icon name="settings" className="size-4" />,
+                        },
+                        {
+                          key: "checks",
+                          label: a.completion.checksStep,
                         },
                       ]}
                       value={step}
-                      onChange={setStep}
+                      onChange={(next) => {
+                        setStep(next);
+                        if (next === "checks") setReviewedCompletion(true);
+                      }}
                       idPrefix={`${prefix}-settings`}
                       fullWidth
                       size="sm"
@@ -795,6 +816,14 @@ function SetupForm({
                           )}
                         </div>
                       </>
+                    ) : step === "checks" ? (
+                      <WorkflowChecks
+                        repository={!standalone}
+                        github={native}
+                        projectScoped={projectScoped}
+                        value={notifications}
+                        onChange={setNotifications}
+                      />
                     ) : (
                       <>
                         <div className="flex items-center justify-between gap-3">
@@ -811,6 +840,21 @@ function SetupForm({
                             {c.sharedSettings}
                           </p>
                         )}
+                        <WorkflowRunnerSelect
+                          runners={availableRunners}
+                          value={runnerIds}
+                          onChange={(ids) => {
+                            setTrusted(false);
+                            setRunnerIds(ids);
+                          }}
+                          onCreated={(runner) =>
+                            setCreatedRunners((current) => [...current, runner])
+                          }
+                          refresh={refresh}
+                        />
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          {hasNative ? a.controller.labelsHint : a.destinationsHint}
+                        </p>
                         <WorkflowTriggers
                           key={identity}
                           source={source}
@@ -819,113 +863,45 @@ function SetupForm({
                           embedded
                           onEditYaml={() => setView("yaml")}
                         />
-                        <div className="space-y-3">
-                          <h2 className="flex items-center gap-2 text-sm font-semibold">
-                            <Icon name="server" className="size-4 text-muted-foreground" />
-                            {a.destinations}
-                          </h2>
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            {native ? a.controller.labelsHint : a.destinationsHint}
-                          </p>
-                          <div className="space-y-2">
-                            {runners.map((runner) => (
-                              <label
-                                key={runner.id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${optionCardSurface(runnerIds.includes(runner.id))}`}
-                              >
-                                <Checkbox
-                                  checked={runnerIds.includes(runner.id)}
-                                  disabled={!runner.enabled && !runnerIds.includes(runner.id)}
-                                  onCheckedChange={(checked) => {
-                                    setTrusted(false);
-                                    setRunnerIds((ids) =>
-                                      checked
-                                        ? [...ids, runner.id]
-                                        : ids.filter((id) => id !== runner.id),
-                                    );
-                                  }}
-                                />
-                                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                                  <Icon
-                                    name={runner.kind === "cloud" ? "cloud" : "server"}
-                                    className="size-4"
-                                  />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium">
-                                    {runner.name}
-                                  </span>
-                                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                                    {runner.labels.join(" · ")}
-                                  </span>
-                                </span>
-                              </label>
-                            ))}
-                            <div className="flex items-center justify-between gap-2">
-                              <Button variant="ghost" size="sm" asChild>
-                                <Link
-                                  href="/actions/runners/new"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <Icon name="plus" />
-                                  {a.newRunner}
-                                </Link>
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={refresh}
-                                aria-label={a.refresh}
-                              >
-                                <Icon name="refresh" />
-                              </Button>
-                            </div>
-                            {!selfHosted && !runners.some((runner) => runner.kind === "cloud") && (
-                              <Button asChild variant="secondary" className="w-full">
-                                <Link
-                                  href="/actions/billing"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  {a.setup.prepareCloud}
-                                </Link>
-                              </Button>
+                        {!projectScoped && (
+                          <details className="group space-y-3">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
+                              <Icon name="project" className="size-4 text-muted-foreground" />
+                              {c.projects}
+                              <Icon
+                                name="chevron-down"
+                                className="ms-auto size-4 text-muted-foreground group-open:rotate-180"
+                              />
+                            </summary>
+                            {projects.length ? (
+                              <div className="space-y-2">
+                                {projects.map((project) => (
+                                  <label
+                                    key={project.id}
+                                    className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm ${optionCardSurface(projectIds.includes(project.id))}`}
+                                  >
+                                    <Checkbox
+                                      checked={projectIds.includes(project.id)}
+                                      onCheckedChange={(checked) => {
+                                        setProjectsChanged(true);
+                                        setProjectIds((ids) =>
+                                          checked
+                                            ? [...ids, project.id]
+                                            : ids.filter((id) => id !== project.id),
+                                        );
+                                      }}
+                                    />
+                                    <span className="min-w-0 truncate">{project.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                {initial?.owner ? c.linkOnCreate : c.noProjects}
+                              </p>
                             )}
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          <h2 className="flex items-center gap-2 text-sm font-semibold">
-                            <Icon name="project" className="size-4 text-muted-foreground" />
-                            {c.projects}
-                          </h2>
-                          {projects.length ? (
-                            <div className="space-y-2">
-                              {projects.map((project) => (
-                                <label
-                                  key={project.id}
-                                  className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm ${optionCardSurface(projectIds.includes(project.id))}`}
-                                >
-                                  <Checkbox
-                                    checked={projectIds.includes(project.id)}
-                                    onCheckedChange={(checked) =>
-                                      setProjectIds((ids) =>
-                                        checked
-                                          ? [...ids, project.id]
-                                          : ids.filter((id) => id !== project.id),
-                                      )
-                                    }
-                                  />
-                                  <span className="min-w-0 truncate">{project.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              {initial?.owner ? c.linkOnCreate : c.noProjects}
-                            </p>
-                          )}
-                        </div>
+                          </details>
+                        )}
                         {hasIndependent && (
                           <details className="group">
                             <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
@@ -989,13 +965,22 @@ function SetupForm({
             </div>
             <div className="shrink-0 space-y-3 p-4 pt-3">
               <p className="text-xs leading-relaxed text-muted-foreground">{e.draftHint}</p>
-              {step === "workflow" && (!runnerIds.length || (hasNative && !trusted)) ? (
+              {(step === "workflow" &&
+                (!reviewedCompletion || !runnerIds.length || (hasNative && !trusted))) ||
+              (step === "rules" && !reviewedCompletion) ? (
                 <Button
                   className="w-full"
-                  disabled={!readySource}
+                  disabled={
+                    !readySource ||
+                    (step === "rules" && (!runnerIds.length || (hasNative && !trusted)))
+                  }
                   onClick={() => {
                     setSelection(null);
-                    setStep("rules");
+                    if (step === "workflow") setStep("rules");
+                    else {
+                      setStep("checks");
+                      setReviewedCompletion(true);
+                    }
                   }}
                 >
                   {c.continue}
@@ -1172,10 +1157,12 @@ function SetupLoader(props: WorkflowSetupProps) {
       const [workflow, runners, projects] = await Promise.all([
         props.id ? actionsApi.get(props.id) : Promise.resolve(undefined),
         actionsApi.runners(),
-        actionsApi.projects(),
+        props.projectScoped || props.initial?.projectId
+          ? Promise.resolve([])
+          : actionsApi.projects(),
       ]);
       return { workflow, runners, projects };
-    }, [props.id]),
+    }, [props.id, props.projectScoped, props.initial?.projectId]),
   );
   return (
     <>

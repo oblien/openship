@@ -19,6 +19,7 @@ import type {
   ActionGitHubRun,
   ActionGitHubJob,
   ActionWorkflowController,
+  ActionWorkflowNotifications,
   ActionRunnerConfig,
   ActionStatus,
   ActionWorkerEvent,
@@ -81,6 +82,7 @@ export interface ActionRunConfiguration {
   storageDestinationId?: string | null;
   /** Configuration approved when this immutable run was dispatched. */
   workflowVersion?: string;
+  notifications?: ActionWorkflowNotifications | null;
   /** Jobs schedules dispatch into this queue; they do not copy the execution. */
   sourceJob?: {
     key: string;
@@ -112,6 +114,7 @@ export const actionWorkflow = pgTable(
     definition: jsonb("definition").$type<ActionWorkflowPlan>().notNull(),
     lastError: text("last_error"),
     runnerIds: jsonb("runner_ids").$type<string[]>().notNull(),
+    notifications: jsonb("notifications").$type<ActionWorkflowNotifications>(),
     variables: jsonb("variables").$type<Record<string, string>>().notNull().default({}),
     secrets: jsonb("secrets").$type<Record<string, string>>().notNull().default({}),
     storageDestinationId: text("storage_destination_id").references(() => backupDestination.id, {

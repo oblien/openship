@@ -274,7 +274,7 @@
     "selectAll": "Tout sélectionner",
     "includeFile": "Inclure le workflow",
     "selectedFiles": "{count} sélectionnés · Les workflows déjà ajoutés conservent leurs réglages.",
-    "sharedSettings": "Les runners et projets liés s’appliquent à tous les fichiers sélectionnés. Les déclencheurs concernent le fichier affiché à gauche.",
+    "sharedSettings": "Les paramètres des runners et des notifications s’appliquent à tous les fichiers sélectionnés. Les déclencheurs concernent le fichier affiché à gauche.",
     "saveWorkflows": "Enregistrer {count} workflows",
     "fileLimit": "Sélectionnez jusqu’à 50 fichiers par import."
   },
@@ -394,5 +394,38 @@
     "reusable": "Workflow réutilisable",
     "openGitHub": "Ouvrir dans GitHub",
     "liveLogs": "Consultez les journaux en direct dans GitHub. Les journaux terminés apparaîtront ici."
+  },
+  "completion": {
+    "checksStep": "Vérifications",
+    "required": "Requis",
+    "optional": "Facultatif",
+    "chooseRunners": "Choisir les runners",
+    "selectedRunners": "{count} runners sélectionnés",
+    "runnerHint": "Choisissez où ce workflow s’exécute.",
+    "runnerDisabled": "Désactivé",
+    "useRunners": "Utiliser ces runners",
+    "backToSetup": "Retour au workflow",
+    "githubChecks": "Vérifications GitHub",
+    "runResults": "Résultats d’exécution",
+    "automatic": "Automatique",
+    "githubChecksHint": "Les runners sélectionnés exécutent vos tâches. GitHub publie leurs vérifications sur les commits et pull requests ; Openship affiche les mêmes résultats.",
+    "appChecksHint": "Openship publie chaque tâche comme vérification GitHub lorsqu’une GitHub App est connectée à ce dépôt.",
+    "standaloneChecksHint": "Les résultats des tâches et étapes sont enregistrés dans Openship. Les workflows autonomes ne publient pas de vérifications de dépôt.",
+    "requiredChecksHint": "Choisissez les workflows requis dans l’onglet Automatisation du déploiement du projet.",
+    "notifications": "Notifications",
+    "notificationsHint": "Envoyez les résultats de ce workflow à vos canaux de notification.",
+    "notifyWhen": "Notifier en cas de",
+    "events": {
+      "failure": "Échec",
+      "success": "Réussite",
+      "cancelled": "Annulation"
+    },
+    "channels": "Canaux de notification",
+    "channelDisabled": "Désactivé",
+    "verifyChannel": "Vérifiez ce canal dans les paramètres de notification",
+    "noChannels": "Ajoutez et vérifiez un canal de notification pour recevoir les résultats.",
+    "teamChannels": "Les {count} canaux configurés par un autre membre sont conservés.",
+    "manageChannels": "Gérer les canaux",
+    "accountPreferences": "Les notifications Actions du compte s’appliquent également. Les règles qui se recoupent partagent la même notification."
   }
 }

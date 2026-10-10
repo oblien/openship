@@ -14,6 +14,7 @@ import { getFileContent } from "../github/github.service";
 import { authorizeActionWorkflow } from "./access";
 import { GitHubActionsApi, type GitHubWorkflowRun, type GitHubWorkflowJob } from "./github-api";
 import { parseActionWorkflow } from "./workflow";
+import { completeActionRun } from "./notifications";
 
 export function githubActionStatus(status: string, conclusion: string | null): ActionStatus {
   if (status !== "completed") {
@@ -143,8 +144,7 @@ export async function synchronizeGitHubRun(
     finishedAt &&
     remoteJobs.every((job) => job.status === "completed") &&
     !(await repos.actions.gitHubRunHasAllocations(workflow.organizationId, id));
-  const settledAt =
-    complete && !sourceJob ? finishedAt : !newlyLinkedJob ? (previous?.settledAt ?? null) : null;
+  const settledAt = !newlyLinkedJob ? (previous?.settledAt ?? null) : null;
   const saved = await repos.actions.upsertGitHubRun(
     workflow,
     {
@@ -176,6 +176,7 @@ export async function synchronizeGitHubRun(
         variables: {},
         secrets: {},
         sourceJob,
+        notifications: workflow.notifications,
         workflowVersion:
           new Date(remote.created_at) >= workflow.updatedAt
             ? workflow.updatedAt.toISOString()
@@ -195,12 +196,13 @@ export async function synchronizeGitHubRun(
     remoteJobs.map((job) => githubJobMirror(workflow, id, job)),
     previous?.updatedAt ?? null,
   );
-  if (complete && saved.finishedAt && !saved.settledAt && saved.configuration.sourceJob) {
+  if (complete && saved.finishedAt && !saved.settledAt) {
     const lease = `github-completion-${randomUUID()}`;
     const claimed = await repos.actions.claimRun(workflow.organizationId, id, lease);
     if (claimed) {
       try {
-        await (await import("../jobs/job-workflow")).workflowJobCompleted(claimed);
+        // Importing repository history must not send a backlog of old alerts.
+        await completeActionRun(claimed, claimed.createdAt >= workflow.createdAt);
         await repos.actions.updateRun(workflow.organizationId, id, lease, {
           settledAt: new Date(),
         });

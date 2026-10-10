@@ -96,6 +96,7 @@ export function DeployActions() {
       <ActionError message={workflows.error} onRetry={workflows.refresh} />
       {open && (
         <WorkflowSetupDialog
+          projectScoped
           initial={{
             owner: config.owner,
             repo: config.repo,

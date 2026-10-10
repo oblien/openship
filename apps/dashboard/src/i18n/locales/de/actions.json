@@ -274,7 +274,7 @@
     "selectAll": "Alle auswählen",
     "includeFile": "Workflow einschließen",
     "selectedFiles": "{count} ausgewählt · Vorhandene Workflows behalten ihre Einstellungen.",
-    "sharedSettings": "Runner und Projektverknüpfungen gelten für alle ausgewählten Dateien. Die Auslöser gehören zur links angezeigten Datei.",
+    "sharedSettings": "Runner- und Benachrichtigungseinstellungen gelten für alle ausgewählten Dateien. Auslöser gehören zur links angezeigten Datei.",
     "saveWorkflows": "{count} Workflows speichern",
     "fileLimit": "Bis zu 50 Dateien pro Import auswählen."
   },
@@ -394,5 +394,38 @@
     "reusable": "Wiederverwendbarer Workflow",
     "openGitHub": "In GitHub öffnen",
     "liveLogs": "Live-Logs in GitHub ansehen. Abgeschlossene Logs erscheinen hier."
+  },
+  "completion": {
+    "checksStep": "Checks",
+    "required": "Erforderlich",
+    "optional": "Optional",
+    "chooseRunners": "Runner auswählen",
+    "selectedRunners": "{count} Runner ausgewählt",
+    "runnerHint": "Wähle, wo dieser Workflow ausgeführt wird.",
+    "runnerDisabled": "Deaktiviert",
+    "useRunners": "Ausgewählte Runner nutzen",
+    "backToSetup": "Zurück zum Workflow",
+    "githubChecks": "GitHub Checks",
+    "runResults": "Laufergebnisse",
+    "automatic": "Automatisch",
+    "githubChecksHint": "Die ausgewählten Runner führen deine Jobs aus. GitHub veröffentlicht ihre Checks für Commits und Pull Requests; Openship zeigt dieselben Ergebnisse.",
+    "appChecksHint": "Openship veröffentlicht jeden Job als GitHub Check, wenn eine GitHub App mit diesem Repository verbunden ist.",
+    "standaloneChecksHint": "Job- und Schrittergebnisse werden in Openship gespeichert. Eigenständige Workflows veröffentlichen keine Repository-Checks.",
+    "requiredChecksHint": "Wähle im Tab Deployment-Automatisierung des Projekts, welche Workflows erfolgreich sein müssen.",
+    "notifications": "Benachrichtigungen",
+    "notificationsHint": "Sende die Ergebnisse dieses Workflows an deine Benachrichtigungskanäle.",
+    "notifyWhen": "Benachrichtigen bei",
+    "events": {
+      "failure": "Fehler",
+      "success": "Erfolg",
+      "cancelled": "Abbruch"
+    },
+    "channels": "Benachrichtigungskanäle",
+    "channelDisabled": "Deaktiviert",
+    "verifyChannel": "Bestätige diesen Kanal in den Benachrichtigungseinstellungen",
+    "noChannels": "Füge einen Benachrichtigungskanal hinzu und bestätige ihn, um Workflow-Ergebnisse zu erhalten.",
+    "teamChannels": "{count} von einem anderen Mitglied konfigurierte Kanäle bleiben erhalten.",
+    "manageChannels": "Kanäle verwalten",
+    "accountPreferences": "Die kontoweiten Actions-Benachrichtigungen gelten weiterhin. Überlappende Regeln teilen sich dieselbe Benachrichtigung."
   }
 }

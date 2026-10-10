@@ -26,6 +26,7 @@ import {
 } from "./access";
 import { actionConcurrency, parseActionWorkflow, record } from "./workflow";
 import { actionRuntimeUrl, authorizeActionStorage } from "./storage";
+import { validateActionNotifications } from "./notifications";
 
 export async function requireActionWorkflow(
   ctx: ExecutionContext,
@@ -91,6 +92,11 @@ async function prepareActionWorkflow(
       await import("./project.service")
     ).authorizeActionProjects(ctx, [...input.projectIds, ...previousProjectIds], true);
   await authorizeActionRunners(ctx, input.runnerIds, true);
+  const notifications = await validateActionNotifications(
+    ctx,
+    input.notifications,
+    existing?.notifications,
+  );
   if (controller === "openship" && (input.allowForks ?? existing?.allowForks)) {
     const runners = await Promise.all(
       input.runnerIds.map((runnerId) => repos.actions.runner(ctx.organizationId, runnerId)),
@@ -177,6 +183,7 @@ async function prepareActionWorkflow(
       definition,
       lastError: null,
       runnerIds: input.runnerIds,
+      notifications,
       variables: controller === "github" ? {} : (input.variables ?? existing?.variables ?? {}),
       secrets,
       authority: await captureExecutionAuthority(ctx),
@@ -561,6 +568,7 @@ export async function triggerActionWorkflow(
       path: workflow.path,
       defaultBranch,
       workflowVersion: workflow.updatedAt.toISOString(),
+      notifications: workflow.notifications,
       ...(trigger.sourceJob && { sourceJob: trigger.sourceJob }),
       runnerIds: workflow.runnerIds,
       variables: trigger.untrusted ? {} : workflow.variables,

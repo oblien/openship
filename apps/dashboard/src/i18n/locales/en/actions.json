@@ -274,7 +274,7 @@
     "selectAll": "Select all",
     "includeFile": "Include workflow",
     "selectedFiles": "{count} selected · Already added workflows keep their settings.",
-    "sharedSettings": "Runners and project links apply to all selected files. Triggers belong to the file shown on the left.",
+    "sharedSettings": "Runner and notification settings apply to all selected files. Triggers belong to the file shown on the left.",
     "saveWorkflows": "Save {count} workflows",
     "fileLimit": "Select up to 50 files per import."
   },
@@ -394,5 +394,38 @@
     "reusable": "Reusable workflow",
     "openGitHub": "Open in GitHub",
     "liveLogs": "Watch live logs in GitHub. Completed logs appear here."
+  },
+  "completion": {
+    "checksStep": "Checks",
+    "required": "Required",
+    "optional": "Optional",
+    "chooseRunners": "Choose runners",
+    "selectedRunners": "{count} runners selected",
+    "runnerHint": "Choose where this workflow runs.",
+    "runnerDisabled": "Disabled",
+    "useRunners": "Use selected runners",
+    "backToSetup": "Back to workflow",
+    "githubChecks": "GitHub Checks",
+    "runResults": "Run results",
+    "automatic": "Automatic",
+    "githubChecksHint": "The selected runners execute your jobs. GitHub publishes their Checks on commits and pull requests; Openship keeps the same results.",
+    "appChecksHint": "Openship publishes each job as a GitHub Check when a GitHub App is connected to this repository.",
+    "standaloneChecksHint": "Job and step results are recorded in Openship. Standalone workflows do not publish repository Checks.",
+    "requiredChecksHint": "Choose which workflows must pass in the project's Deployment automation tab.",
+    "notifications": "Notifications",
+    "notificationsHint": "Send this workflow’s results to your notification channels.",
+    "notifyWhen": "Notify when",
+    "events": {
+      "failure": "Failed",
+      "success": "Succeeded",
+      "cancelled": "Cancelled"
+    },
+    "channels": "Notification channels",
+    "channelDisabled": "Disabled",
+    "verifyChannel": "Verify this channel in notification settings",
+    "noChannels": "Add and verify a notification channel to receive workflow results.",
+    "teamChannels": "{count} channels configured by another member are preserved.",
+    "manageChannels": "Manage channels",
+    "accountPreferences": "Account-wide Actions notifications also apply. Overlapping rules share the same notification."
   }
 }

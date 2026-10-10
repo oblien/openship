@@ -118,6 +118,9 @@ import {
 } from "@repo/platform/engine/modules/actions/triggers";
 import { githubWebhookProvider } from "../../../src/modules/github/github.webhook";
 import { webhookRoutes } from "../../../src/modules/webhooks/webhook.routes";
+import { completeActionRun } from "@repo/platform/engine/modules/actions/notifications";
+import { canReadNotification } from "@repo/platform/engine/lib/notification-access";
+import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 
 const app = new Hono();
 // Match the connection context installed by the real API's proxy middleware.
@@ -197,6 +200,157 @@ async function fixture() {
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
+  async function channel(userId: string, verified = true) {
+    const [row] = await db
+      .insert(schema.notificationChannel)
+      .values({
+        id: generateId("nch"),
+        userId,
+        kind: "in_app",
+        label: "Workflow results",
+        verified,
+      })
+      .returning();
+    return row!;
+  }
+
+  it("validates notification channel ownership through HTTP and native SDK and snapshots choices", async () => {
+    const f = await fixture(),
+      other = await fixture();
+    const own = await channel(f.owner.userId),
+      foreign = await channel(other.owner.userId),
+      unverified = await channel(f.owner.userId, false);
+    for (const client of [f.remote, f.native]) {
+      await expect(
+        client.update(f.workflow.id, {
+          ...f.input,
+          notifications: { channels: [foreign.id], events: ["failure"] },
+        }),
+      ).rejects.toThrow("Notification channel not found");
+      await expect(
+        client.update(f.workflow.id, {
+          ...f.input,
+          notifications: { channels: [unverified.id], events: ["failure"] },
+        }),
+      ).rejects.toThrow("Verify and enable");
+    }
+    const notifications = { channels: [own.id], events: ["failure"] as const };
+    const saved = await f.remote.update(f.workflow.id, {
+      ...f.input,
+      notifications: { ...notifications, events: [...notifications.events] },
+    });
+    expect(saved.notifications).toEqual(notifications);
+    const run = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "notification-snapshot" });
+    await f.native.update(f.workflow.id, { ...f.input, notifications: null });
+    expect((await repos.actions.run(f.owner.orgId, run.id))!.configuration.notifications).toEqual(
+      notifications,
+    );
+    expect((await f.remote.get(f.workflow.id)).notifications).toBeNull();
+  });
+
+  it("queues one durable result per channel across retries and overlapping workflow and Job rules", async () => {
+    const f = await fixture();
+    const own = await channel(f.owner.userId);
+    await f.remote.update(f.workflow.id, {
+      ...f.input,
+      notifications: { channels: [own.id], events: ["failure"] },
+    });
+    const view = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "notification-once" });
+    const original = (await repos.actions.run(f.owner.orgId, view.id))!;
+    const [run] = await db
+      .update(schema.actionRun)
+      .set({
+        status: "timed_out",
+        finishedAt: new Date(),
+        error: "private-runtime-output",
+        configuration: {
+          ...original.configuration,
+          sourceJob: {
+            key: "scheduled-ci",
+            label: "Nightly CI",
+            trigger: "schedule",
+            notifyConfig: { channels: [own.id], states: ["failed"] },
+          },
+        },
+      })
+      .where(eq(schema.actionRun.id, view.id))
+      .returning();
+    const lookup = vi.spyOn(repos.notificationChannel, "findById");
+    lookup.mockRejectedValueOnce(new Error("Transient queue lookup failure"));
+    await expect(completeActionRun(run!)).rejects.toThrow("Transient queue lookup failure");
+    lookup.mockRestore();
+    await completeActionRun(run!);
+    await completeActionRun(run!);
+    const deliveries = await repos.notificationDelivery.listForUser(f.owner.userId, f.owner.orgId);
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      category: "action.run.failed",
+      status: "queued",
+      payload: { durable: true, resourceType: "action_run", runId: run!.id },
+    });
+    expect(JSON.stringify(deliveries)).not.toContain("private-runtime-output");
+    expect(JSON.stringify(deliveries)).not.toContain("private-workflow-value");
+    expect(
+      await canReadNotification(
+        buildBackgroundContext({
+          userId: f.owner.userId,
+          organizationId: f.owner.orgId,
+          role: "restricted",
+          label: "test",
+        }),
+        deliveries[0]!,
+      ),
+    ).toBe(true);
+    const other = await fixture();
+    expect(
+      await canReadNotification(
+        buildBackgroundContext({
+          userId: other.owner.userId,
+          organizationId: other.owner.orgId,
+          role: "restricted",
+          label: "test",
+        }),
+        deliveries[0]!,
+      ),
+    ).toBe(false);
+  });
+
+  it("filters result choices and rechecks disabled channels and revoked organization access", async () => {
+    const f = await fixture(),
+      other = await fixture();
+    const own = await channel(f.owner.userId),
+      foreign = await channel(other.owner.userId);
+    await f.remote.update(f.workflow.id, {
+      ...f.input,
+      notifications: { channels: [own.id], events: ["failure"] },
+    });
+    const view = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "notification-filter" });
+    const run = (await repos.actions.run(f.owner.orgId, view.id))!;
+    await completeActionRun({ ...run, status: "success", finishedAt: new Date() });
+    expect(
+      await repos.notificationDelivery.listForUser(f.owner.userId, f.owner.orgId),
+    ).toHaveLength(0);
+    await db
+      .update(schema.notificationChannel)
+      .set({ enabled: false })
+      .where(eq(schema.notificationChannel.id, own.id));
+    await completeActionRun({
+      ...run,
+      status: "failure",
+      finishedAt: new Date(),
+      configuration: {
+        ...run.configuration,
+        notifications: { channels: [own.id, foreign.id], events: ["failure"] },
+      },
+    });
+    expect(
+      await repos.notificationDelivery.listForUser(f.owner.userId, f.owner.orgId),
+    ).toHaveLength(0);
+    expect(
+      await repos.notificationDelivery.listForUser(other.owner.userId, f.owner.orgId),
+    ).toHaveLength(0);
+  });
+
   it("imports repository files through HTTP and native SDK with stable identities", async () => {
     const f = await fixture();
     const workflows = ["build", "test"].map((name) => ({

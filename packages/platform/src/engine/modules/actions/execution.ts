@@ -7,6 +7,7 @@ import { authorizeActionRun } from "./access";
 import { ActionController, type ActionControllerPorts } from "./controller";
 import { syncActionCheck } from "./github-checks";
 import { actionRuntimeEnvironment, authorizeActionStorage } from "./storage";
+import { completeActionRun } from "./notifications";
 
 export { actionWorkerAssets } from "./worker-execution";
 import { openActionWorker, removeActionWorker } from "./worker-execution";
@@ -51,10 +52,7 @@ export const actionControllerPorts: ActionControllerPorts = {
       repos.actions.updateJob(run.organizationId, job.id, owner, patch),
     ),
   check: syncActionCheck,
-  completed: (run) =>
-    run.configuration.sourceJob
-      ? import("../jobs/job-workflow").then((m) => m.workflowJobCompleted(run))
-      : Promise.resolve(),
+  completed: completeActionRun,
   reportError(error, context) {
     diagnostics.warn("actions/controller", "Workflow reconciliation failed", error, context);
   },

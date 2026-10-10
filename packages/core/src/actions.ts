@@ -9,6 +9,12 @@ export const ACTIONS_MAX_JOB_SECONDS = 6 * 60 * 60;
 /** Exactly one controller owns a workflow's scheduling and job results. */
 export type ActionWorkflowController = "openship" | "github";
 
+/** Additional workflow notifications; account-wide subscriptions still apply. */
+export interface ActionWorkflowNotifications {
+  channels: string[];
+  events: Array<"failure" | "success" | "cancelled">;
+}
+
 /** Repository location selects workflow semantics, never the execution destination. */
 export function inferActionWorkflowController(
   path = ".github/workflows/ci.yml",

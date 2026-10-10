@@ -9,7 +9,7 @@ import { findCategory } from "./notification-categories";
 const rooted = new Set(["project", "deployment", "service", "domain", "server", "mail_server", "backup_destination", "backup_policy", "backup_run", "backup_restore"]);
 const singleton = new Set(["billing", "audit", "analytics", "github", "permissions", "settings", "cloud", "notifications", "updates"]);
 const categoryResource: Record<string, ResourceType> = {
-  deployment: "project", app_health: "project", backups: "backup_destination", jobs: "job", domains: "project", members: "permissions", mail: "mail_server", billing: "billing",
+  deployment: "project", app_health: "project", backups: "backup_destination", jobs: "job", actions: "job", domains: "project", members: "permissions", mail: "mail_server", billing: "billing",
 };
 
 /** A stored subscription or delivery never keeps resource access after revocation. */
@@ -20,6 +20,14 @@ export async function canReadNotification(ctx: ExecutionContext, input: { catego
   const payload = isRecord(input.payload) ? input.payload : {};
   const type = typeof payload.resourceType === "string" ? payload.resourceType : undefined;
   const id = typeof payload.resourceId === "string" ? payload.resourceId : undefined;
+  if (type === "action_run" || input.category.startsWith("action.run.")) {
+    if (!(await read("job"))) return false;
+    const runId = typeof payload.runId === "string" ? payload.runId : id;
+    if (!runId) return false;
+    const { requireActionRun } = await import("../modules/actions/action.service");
+    try { await requireActionRun(context, runId); return true; }
+    catch (error) { if (error instanceof AppError && [401, 403, 404].includes(error.statusCode)) return false; throw error; }
+  }
   if (type === "job" || input.category.startsWith("job.run.")) {
     if (!(await read("job"))) return false;
     const { requireReadableRun, requireReadableJob } = await import("../modules/jobs/job-access");
