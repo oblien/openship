@@ -9,6 +9,14 @@ export const ACTIONS_MAX_JOB_SECONDS = 6 * 60 * 60;
 /** Exactly one controller owns a workflow's scheduling and job results. */
 export type ActionWorkflowController = "openship" | "github";
 
+/** Repository location selects workflow semantics, never the execution destination. */
+export function inferActionWorkflowController(
+  path = ".github/workflows/ci.yml",
+  repository = true,
+): ActionWorkflowController {
+  return repository && path.startsWith(".github/workflows/") ? "github" : "openship";
+}
+
 export interface ActionGitHubRun {
   id: string;
   workflowId: string;

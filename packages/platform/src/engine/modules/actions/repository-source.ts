@@ -1,4 +1,4 @@
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage, inferActionWorkflowController } from "@repo/core";
 import type { ActionOperations } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { githubFetch } from "../github/github.auth";
@@ -20,7 +20,13 @@ export async function readActionRepositorySource(
     return {
       source: file.content,
       sha: file.sha,
-      plan: actionPlanView(await parseActionWorkflow(file.content, input.path, input.controller)),
+      plan: actionPlanView(
+        await parseActionWorkflow(
+          file.content,
+          input.path,
+          input.controller ?? inferActionWorkflowController(input.path),
+        ),
+      ),
       error: null,
     };
   } catch (error) {
@@ -36,7 +42,11 @@ export async function updateActionRepositorySource(
 ) {
   await authorizeActionRepository(ctx, input.owner, input.repo);
   await assertGitHubRepoAccess(ctx, input, "write");
-  await parseActionWorkflow(input.source, input.path, input.controller);
+  await parseActionWorkflow(
+    input.source,
+    input.path,
+    input.controller ?? inferActionWorkflowController(input.path),
+  );
   const base = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}`;
   // Only named branches may be changed. GitHub's contents SHA rejects concurrent edits.
   const branch = input.ref.replace(/^refs\/heads\//, "");

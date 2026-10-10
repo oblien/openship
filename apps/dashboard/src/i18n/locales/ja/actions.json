@@ -372,10 +372,8 @@
     "defaultImageHint": "各ジョブで互換性のあるコンテナイメージを個別に選択できます。"
   },
   "controller": {
-    "label": "実行サービス",
-    "githubHint": "GitHubがワークフロー、チェック、シークレット、成果物を管理し、Openshipがランナーを管理します。変更はリポジトリへの保存が必要です。",
-    "openshipHint": "Openshipで独立して実行します。保存したYAMLや単独の自動化に対応します。一部の機能にはGitHub Actionsモードが必要です。",
-    "labelsHint": "これらの実行先には runs-on: [self-hosted, openship, linux]（またはmacos）を使用します。他のラベルはGitHubの動作を維持します。",
+    "githubHint": "Openship がランナーを提供し、GitHub がジョブ、チェック、シークレット、アーティファクトを管理します。ワークフローの変更はリポジトリにコミットされます。",
+    "labelsHint": "runs-on: [self-hosted, openship, linux]（または macos）でジョブをこれらのランナーに割り当てます。他のラベルを持つジョブは現在の実行先を維持します。",
     "trust": "このリポジトリのワークフローによるランナーの使用を許可します。ファイルを変更できるユーザーは、これらの実行先でコードを実行しActions予算を使用できます。",
     "reusable": "再利用可能なワークフロー",
     "openGitHub": "GitHubで開く",

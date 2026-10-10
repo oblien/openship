@@ -8,6 +8,7 @@ import type { workflowJobs } from "./workflow-editor";
 import type { WorkflowExpandedSteps } from "./WorkflowSteps";
 import { WorkflowJobEditor } from "./WorkflowJobEditor";
 import type { WorkflowEdit } from "./workflow-editor";
+import { workflowJobTargetLabel } from "./workflow-graph";
 
 /** A draft outline, not execution progress; dependencies remain explicit. */
 export function WorkflowJobList({
@@ -64,15 +65,13 @@ export function WorkflowJobList({
                 </span>
                 <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span className="truncate">
-                    {typeof job.runsOn === "string"
-                      ? job.runsOn
-                      : Array.isArray(job.runsOn)
-                        ? job.runsOn.join(" · ")
-                        : "runs-on"}
+                    {workflowJobTargetLabel(job, t.actions.controller.reusable)}
                   </span>
-                  <span>
-                    {e.steps} · {steps.length}
-                  </span>
+                  {!job.uses && (
+                    <span>
+                      {e.steps} · {steps.length}
+                    </span>
+                  )}
                 </span>
                 {!!job.needs.length && (
                   <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">

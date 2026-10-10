@@ -8,22 +8,21 @@ destinations. Workflows can be linked to projects or run independently. Jobs can
 schedule an application command or invoke a saved workflow, with the same Actions
 execution, topology and logs.
 
-## Choose who controls the workflow
+## Workflow sources
 
-The repository editor offers two modes with the same destinations, capacity
-limits, workflow canvas and run history:
+Select a repository and Openship discovers its workflows. The file's location
+selects its integration automatically; the editor, destinations, capacity limits
+and run history stay together.
 
-| Mode                 | Workflow behavior                                                                    | Credentials, artifacts and Checks                                                     |
-| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| **GitHub Actions**   | GitHub schedules the repository workflow; an unmodified official runner executes it. | GitHub manages job tokens, secrets, environments, OIDC, artifacts, caches and Checks. |
-| **Openship Actions** | Openship schedules repository or standalone YAML and executes jobs with act.         | Openship manages scoped credentials, configured storage and its own Checks.           |
+- **`.github/workflows/`:** GitHub coordinates the workflow and its Checks, secrets,
+  environments, artifacts and caches. Official runners on your selected Openship
+  destinations execute jobs routed to them. This supports reusable workflows,
+  releases, tags and protected environments.
+- **`.openship/workflows/` or Standalone:** Openship schedules the YAML and runs
+  jobs with act, using its scoped credentials and configured storage. The
+  compatibility limits below apply to these independent workflows.
 
-Use **GitHub Actions** for GitHub's workflow behavior, including reusable workflows,
-releases, tags and protected environments. Select **Openship Actions** for independent
-automation or a saved YAML override. The compatibility limits below apply to this
-independent controller; they do not restrict GitHub's workflow scheduler.
-
-GitHub mode requires repository runner-management access: a GitHub App with
+Repository workflows require runner-management access: a GitHub App with
 **Actions: write** and **Administration: write**, or a suitable repository token.
 Existing App installations may need to approve these permissions. Editing workflow
 files also needs **Contents: write** and **Workflows: write**; new Openship App
@@ -118,16 +117,16 @@ the deployment wizard. These entry points share the same setup:
    storage here; GitHub workflows use their repository settings.
 4. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
-   **Commit and save**. Independent mode also offers **Save Openship copy**.
-   GitHub mode always runs committed YAML. A changed file on GitHub rejects
+   **Commit and save**. `.openship/workflows` also offers **Save Openship copy**.
+   `.github/workflows` always runs committed YAML. A changed file on GitHub rejects
    the commit instead of overwriting someone else's changes.
 
 Choose **Standalone** for YAML without a repository. It supports manual runs,
 schedules and authenticated webhooks without GitHub credentials. `actions/checkout`
 in a standalone workflow needs an explicit `with.repository`.
 
-**Repository updates** in independent mode controls which definition future runs use.
-GitHub mode always uses the definition from GitHub for that run:
+**Repository updates** for `.openship/workflows` controls which definition future runs use.
+Files in `.github/workflows` always use the definition from GitHub for that run:
 
 - **Automatic:** use the workflow from the run's repository commit. Changes in Git
   apply automatically.
@@ -210,7 +209,7 @@ The workflow receives these values in `github.event.action` and
 `github.event.client_payload`. Keep the token in the caller's secret store and
 reuse the same idempotency key when retrying one delivery. This is Openship's
 authenticated dispatch API; it does not subscribe to GitHub App
-`repository_dispatch` deliveries. The caller must be able to reach the instance. In GitHub mode, send
+`repository_dispatch` deliveries. The caller must be able to reach the instance. For `.github/workflows`, send
 `repository_dispatch` events to GitHub's repository dispatch API instead. Openship's Run button and Jobs schedules use GitHub's `workflow_dispatch` endpoint.
 
 ## Project deployment rules
@@ -253,13 +252,12 @@ Independent scheduled workflows run while the controller is online, at intervals
 five minutes. Missed schedules are not replayed after downtime. For Desktop, keep
 it running or [move the control plane to a server](/docs/guides/migrate-control-plane).
 
-GitHub-mode schedules are managed by GitHub. Openship must be online to provision
+Schedules in `.github/workflows` are managed by GitHub. Openship must be online to provision
 and register its runners. Signed `workflow_run`/`workflow_job` events request a fresh
 API read; periodic reconciliation also recovers missed events. Event payloads alone
 cannot mark a run successful.
 
-When using independent mode, GitHub may also execute files in `.github/workflows/`. Use `.openship/workflows/`
-when you only want Openship execution. If a workflow script deploys the application
+Use `.openship/workflows/` when you want scheduling independent of GitHub. If a workflow script deploys the application
 itself, use manual project deployment mode to avoid also requesting an automatic
 deployment after its checks pass.
 
@@ -269,13 +267,13 @@ commit. They receive no stored secrets, write credential or shared cache access.
 Authorization is rechecked during execution; revoking the originating user's
 access prevents further authorized work.
 
-GitHub-mode fork approvals and protected-environment approvals follow GitHub
+Fork approvals and protected-environment approvals for `.github/workflows` follow GitHub
 repository policy. Review that policy before permitting untrusted pull requests
 on persistent self-hosted runners.
 
 ## Artifacts and cache
 
-GitHub mode uses GitHub's artifact/cache service, retention and storage billing.
+Files in `.github/workflows` use GitHub's artifact/cache service, retention and storage billing.
 Download links are fetched with repository authorization and returned as short-lived
 signed links; credentials are never forwarded to the download host.
 
@@ -305,8 +303,8 @@ to a 60-minute timeout and can request up to 360 minutes. Logs are bounded at
 8 MiB per job. Settled run history is retained for 30 days, with runs referenced
 by retained artifacts or retry attempts protected from early removal.
 
-Independent mode rejects reusable workflows, protected environments, OIDC and
-attestations where they can be determined before dispatch. GitHub mode delegates
+Independent workflows reject reusable workflows, protected environments, OIDC and
+attestations where they can be determined before dispatch. Repository integration delegates
 those features to GitHub and its official runner. Openship-managed destinations
 currently support Linux and macOS; Windows and GitHub Enterprise Server are not
 available. Official runner registrations execute one job and expire after six hours;

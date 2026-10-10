@@ -88,17 +88,10 @@ export function diagnosticContext(input: ErrorContext): ErrorContext {
 }
 
 let localOutputDropped = 0;
-function localOutputAvailable(): boolean {
-  // console.error ignores Writable backpressure. Do not let a stalled stderr
-  // move an otherwise bounded diagnostic queue into Node's unbounded buffer.
-  const output = typeof process === "undefined" ? undefined : process.stderr;
-  return (
-    !output ||
-    (!output.destroyed &&
-      output.writable !== false &&
-      !output.writableNeedDrain &&
-      output.writableLength < 65_536)
-  );
+let localOutputAvailable = () => true;
+/** Runtime adapters supply backpressure without importing Node into browser/Edge code. */
+export function setDiagnosticOutputGuard(available: () => boolean): void {
+  localOutputAvailable = available;
 }
 
 /** The emergency destination cannot call the reporter recursively. */

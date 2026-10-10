@@ -118,7 +118,7 @@ beforeEach(() => {
     owner: "acme",
     repo: "app",
     ref: "main",
-    path: ".github/workflows/ci.yml",
+    path: ".openship/workflows/ci.yml",
     source: null,
     plan,
     runnerIds: ["linux"],
@@ -153,6 +153,7 @@ beforeEach(() => {
           name: job.name || id,
           needs: typeof job.needs === "string" ? [job.needs] : (job.needs ?? []),
           runsOn: job["runs-on"],
+          uses: job.uses,
           requiresDocker: false,
         };
       }),
@@ -171,6 +172,11 @@ afterEach(async () => {
 });
 
 describe("shared workflow setup", () => {
+  async function repositoryWorkflow(controller = "github") {
+    const path = ".github/workflows/ci.yml";
+    h.get.mockResolvedValue({ ...(await h.get()), path, controller, githubWorkflowId: "42" });
+    h.discover.mockResolvedValue([{ path, name: "ci.yml" }]);
+  }
   async function editTrigger() {
     await render("ci");
     expect(host.textContent).toContain("Workflow topology");
@@ -197,17 +203,17 @@ describe("shared workflow setup", () => {
     expect(saved.source).toContain("# keep this comment");
   });
   it("requires a repository commit for GitHub-owned workflows and never saves an override", async () => {
-    h.get.mockResolvedValue({ ...(await h.get()), controller: "github", githubWorkflowId: "42" });
+    await repositoryWorkflow();
     await editTrigger();
     expect(button("Save Openship copy")).toBeUndefined();
     expect(h.save).not.toHaveBeenCalled();
     await click("Commit and save");
     expect(h.write).toHaveBeenCalledWith(
-      expect.objectContaining({ controller: "github", sha: "original-file-sha" }),
+      expect.objectContaining({ path: ".github/workflows/ci.yml", sha: "original-file-sha" }),
     );
     expect(h.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        controller: "github",
+        path: ".github/workflows/ci.yml",
         source: null,
         repositoryRunnerConsent: true,
         storageDestinationId: null,
@@ -219,10 +225,12 @@ describe("shared workflow setup", () => {
     expect(h.onSaved).toHaveBeenCalledOnce();
   });
   it("requires explicit repository-wide runner trust before linking a new GitHub workflow", async () => {
+    await repositoryWorkflow();
     await render();
     await fill("Repository", "acme/app");
     await preview();
-    expect(button("GitHub Actions").getAttribute("aria-selected")).toBe("true");
+    expect(button("GitHub Actions")).toBeUndefined();
+    expect(button("Openship Actions")).toBeUndefined();
     await click("Continue");
     await act(async () => checkbox("Linux runner").click());
     expect(button("Save workflow").disabled).toBe(true);
@@ -230,13 +238,66 @@ describe("shared workflow setup", () => {
     await click("Save workflow");
     expect(h.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        controller: "github",
+        path: ".github/workflows/ci.yml",
         source: null,
         repositoryRunnerConsent: true,
       }),
       undefined,
     );
     expect(h.write).not.toHaveBeenCalled();
+  });
+  it("discovers reusable repository workflows even when the saved controller was independent", async () => {
+    await repositoryWorkflow("openship");
+    const reusable =
+      "name: CI\non: [push, workflow_dispatch]\njobs:\n  gate:\n    uses: ./.github/workflows/shared.yml\n    secrets: inherit\n";
+    h.source.mockResolvedValue({ source: reusable, sha: "original-file-sha", plan, error: null });
+    await render("ci");
+    expect(h.source).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ".github/workflows/ci.yml" }),
+    );
+    expect(h.source.mock.calls.at(-1)![0]).not.toHaveProperty("controller");
+    expect(h.preview).toHaveBeenLastCalledWith(reusable, ".github/workflows/ci.yml");
+    expect(host.textContent).toContain("gate");
+    expect(button("GitHub Actions")).toBeUndefined();
+    await click("Continue");
+    expect(button("Save workflow").disabled).toBe(true);
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({ source: null, repositoryRunnerConsent: true }),
+      "ci",
+    );
+    expect(h.save.mock.calls[0]![0]).not.toHaveProperty("controller");
+    expect(h.write).not.toHaveBeenCalled();
+  });
+  it("restores repository discovery after switching back from standalone", async () => {
+    await repositoryWorkflow();
+    await render();
+    await fill("Repository", "acme/app");
+    await preview();
+    await click("Standalone");
+    await preview();
+    expect(h.preview.mock.calls.at(-1)![1]).toBe(".openship/workflows/automation.yml");
+    await click("Repository");
+    await preview();
+    expect(h.preview).toHaveBeenLastCalledWith(source, ".github/workflows/ci.yml");
+    await click("Continue");
+    await act(async () => checkbox("Linux runner").click());
+    expect(button("Save workflow").disabled).toBe(true);
+  });
+  it("requires renewed consent when the selected repository or runners change", async () => {
+    await repositoryWorkflow();
+    await render("ci");
+    expect(button("Save workflow").disabled).toBe(false);
+    await fill("Repository", "acme/other");
+    await preview();
+    await click("Continue");
+    expect(button("Save workflow").disabled).toBe(true);
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    expect(button("Save workflow").disabled).toBe(false);
+    await act(async () => checkbox("Linux runner").click());
+    await act(async () => checkbox("Linux runner").click());
+    expect(button("Save workflow").disabled).toBe(true);
   });
   it("preserves edits after a concurrent GitHub change and never saves a false repository reference", async () => {
     h.write.mockRejectedValueOnce(
@@ -451,6 +512,30 @@ describe("shared workflow setup", () => {
         source: expect.stringContaining("workflow_dispatch"),
       }),
       undefined,
+    );
+  });
+  it("keeps saved standalone YAML independent even if its old path used the repository directory", async () => {
+    const standalone =
+      "name: Cleanup\non: workflow_dispatch\njobs:\n  clean:\n    runs-on: [self-hosted, linux]\n    steps:\n      - run: echo clean\n";
+    h.get.mockResolvedValue({
+      ...(await h.get()),
+      owner: null,
+      repo: null,
+      path: ".github/workflows/ci.yml",
+      source: standalone,
+    });
+    await render("ci");
+    expect(h.source).not.toHaveBeenCalled();
+    expect(h.discover).not.toHaveBeenCalled();
+    expect(h.preview).toHaveBeenLastCalledWith(standalone, ".openship/workflows/automation.yml");
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: standalone,
+        owner: null,
+        path: ".openship/workflows/automation.yml",
+      }),
+      "ci",
     );
   });
 });

@@ -78,7 +78,7 @@ export function WorkflowGraph({
     [jobDetails],
   );
   const graph = useMemo(() => {
-    const graph = workflowGraph(plan, run, t.actions.matrix);
+    const graph = workflowGraph(plan, run, t.actions.matrix, t.actions.controller.reusable);
     return jobDetails
       ? workflowDetailGraph(
           graph,
@@ -87,7 +87,14 @@ export function WorkflowGraph({
           t.actions.editor.command,
         )
       : graph;
-  }, [plan, run, t.actions.matrix, t.actions.editor.command, jobDetails]);
+  }, [
+    plan,
+    run,
+    t.actions.matrix,
+    t.actions.controller.reusable,
+    t.actions.editor.command,
+    jobDetails,
+  ]);
   const selectedNode = run?.jobs.find((job) => job.id === selected)?.jobKey;
   const step = jobDetails?.selectedStep;
   const selectedStepId = step && workflowStepNodeId(step.jobId, step.index);

@@ -11,7 +11,9 @@ export function actionPlanView(plan: ActionWorkflowPlan) {
       id,
       name,
       needs,
-      runsOn,
+      // Reusable jobs delegate their runner to the called workflow. Keep the
+      // required response field present after JSON serialization.
+      runsOn: runsOn ?? null,
       requiresDocker,
       ...(uses && { uses }),
     })),

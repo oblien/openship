@@ -25,7 +25,7 @@ export function record(value: unknown): Record<string, unknown> {
 }
 function unsupported(field: string): never {
   throw new ValidationError(
-    `${field} is not supported by OpenShip Actions yet. Remove it or run this workflow on GitHub; it will not be silently ignored.`,
+    `${field} requires a repository workflow in .github/workflows. Connect that file to use it with your Openship runners; standalone workflows do not support this feature.`,
   );
 }
 

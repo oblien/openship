@@ -372,10 +372,8 @@
     "defaultImageHint": "Cada job pode escolher sua própria imagem de contêiner compatível."
   },
   "controller": {
-    "label": "Executar com",
-    "githubHint": "O GitHub gere o fluxo, verificações, segredos e artefactos. O Openship gere os runners. As alterações devem ser guardadas no repositório.",
-    "openshipHint": "Execução independente com Openship. Suporta YAML guardado e automação autónoma; algumas funcionalidades exigem o modo GitHub Actions.",
-    "labelsHint": "Use runs-on: [self-hosted, openship, linux] (ou macos) para estes destinos. As outras etiquetas mantêm o comportamento do GitHub.",
+    "githubHint": "O Openship fornece os runners; o GitHub coordena tarefas, verificações, segredos e artefatos. As alterações do workflow são salvas no repositório.",
+    "labelsHint": "Direcione tarefas a estes runners com runs-on: [self-hosted, openship, linux] (ou macos). Tarefas com outros rótulos mantêm o destino atual.",
     "trust": "Permitir que os fluxos deste repositório usem estes runners. Quem puder editar os ficheiros poderá executar código nestes destinos e consumir o orçamento de Actions.",
     "reusable": "Fluxo reutilizável",
     "openGitHub": "Abrir no GitHub",

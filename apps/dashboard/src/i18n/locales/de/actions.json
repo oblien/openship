@@ -372,10 +372,8 @@
     "defaultImageHint": "Jeder Job kann ein eigenes kompatibles Container-Image wählen."
   },
   "controller": {
-    "label": "Ausführen mit",
-    "githubHint": "GitHub verwaltet Workflow, Checks, Geheimnisse und Artefakte. Openship verwaltet Ihre Runner. Änderungen müssen im Repository gespeichert werden.",
-    "openshipHint": "Unabhängig mit Openship ausführen. Unterstützt gespeichertes YAML und eigenständige Automatisierung; einige GitHub-Funktionen benötigen den GitHub-Actions-Modus.",
-    "labelsHint": "Verwenden Sie runs-on: [self-hosted, openship, linux] (oder macos) für diese Ziele. Andere Labels behalten ihr GitHub-Verhalten.",
+    "githubHint": "Openship stellt die Runner bereit; GitHub koordiniert Jobs, Checks, Secrets und Artefakte. Workflow-Änderungen werden im Repository gespeichert.",
+    "labelsHint": "Leite Jobs mit runs-on: [self-hosted, openship, linux] (oder macos) an diese Runner. Jobs mit anderen Labels behalten ihr bisheriges Ziel.",
     "trust": "Workflows dieses Repositorys dürfen diese Runner nutzen. Wer Workflow-Dateien ändern kann, kann auf diesen Zielen Code ausführen und deren Actions-Budget nutzen.",
     "reusable": "Wiederverwendbarer Workflow",
     "openGitHub": "In GitHub öffnen",

@@ -69,6 +69,15 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
   }) => {
     const { url, method } = input;
     traffic.requests.push(input);
+    if (url.endsWith("/actions/runners/downloads")) return [];
+    if (url.includes("/actions/workflows/"))
+      return {
+        id: 42,
+        path: ".github/workflows/ci.yml",
+        name: "CI",
+        state: "active",
+        html_url: "https://github.com/acme/app/actions/workflows/ci.yml",
+      };
     if (url.includes("/contents/"))
       return method === "PUT"
         ? { content: { sha: "d".repeat(40) }, commit: { sha: "c".repeat(40) } }
@@ -177,7 +186,7 @@ async function fixture() {
     name: "CI",
     owner: "acme",
     repo: "app",
-    path: ".github/workflows/ci.yml",
+    path: ".openship/workflows/ci.yml",
     ref: "main",
     source,
     runnerIds: [runner.id],
@@ -188,6 +197,111 @@ async function fixture() {
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
+  const repositoryPath = ".github/workflows/ci.yml";
+  const reusableSource =
+    "name: CI\non: [push, workflow_dispatch]\njobs:\n  gate:\n    uses: ./.github/workflows/shared.yml\n    secrets: inherit\n  release:\n    needs: gate\n    runs-on: [self-hosted, openship, macos]\n    environment: production\n    permissions:\n      contents: write\n      id-token: write\n    steps:\n      - run: echo release\n";
+
+  it("automatically previews and links reusable repository workflows through HTTP and the native SDK", async () => {
+    const f = await fixture();
+    const input = { ...f.input, path: repositoryPath, source: null, secrets: {} };
+    traffic.source = reusableSource;
+    try {
+      let linked: string | undefined;
+      for (const client of [f.native, f.remote]) {
+        const preview = await client.preview({ source: reusableSource, path: repositoryPath });
+        expect(preview.jobs[0]?.uses).toBe("./.github/workflows/shared.yml");
+        const read = await client.repositorySource({
+          owner: "acme",
+          repo: "app",
+          ref: "main",
+          path: repositoryPath,
+        });
+        expect(read.error).toBeNull();
+        expect(read.plan?.jobs[0]?.uses).toBe("./.github/workflows/shared.yml");
+        await expect(client.create(input)).rejects.toThrow(
+          "Confirm that workflows in this repository",
+        );
+        const approved = { ...input, repositoryRunnerConsent: true };
+        const created = linked
+          ? await client.update(linked, approved)
+          : await client.create(approved);
+        linked = created.id;
+        expect(created).toMatchObject({
+          controller: "github",
+          githubWorkflowId: "42",
+          source: null,
+        });
+        expect(
+          (await repos.actions.workflow(f.owner.orgId, created.id))?.definition.jobs[0]?.uses,
+        ).toBe("./.github/workflows/shared.yml");
+      }
+      const before = traffic.requests.length;
+      await f.remote.updateRepositorySource({
+        owner: "acme",
+        repo: "app",
+        ref: "main",
+        path: repositoryPath,
+        sha: "b".repeat(40),
+        source: reusableSource,
+      });
+      expect(
+        traffic.requests.slice(before).filter((request) => request.method === "PUT"),
+      ).toHaveLength(1);
+      await expect(
+        f.native.preview({ source: reusableSource, path: f.input.path }),
+      ).rejects.toThrow("requires a repository workflow");
+    } finally {
+      traffic.source = null;
+    }
+  });
+
+  it("replaces stale saved controller metadata only after runner consent and preserves tenant authorization", async () => {
+    const f = await fixture();
+    await db
+      .update(schema.actionWorkflow)
+      .set({ path: repositoryPath })
+      .where(eq(schema.actionWorkflow.id, f.workflow.id));
+    const input = { ...f.input, path: repositoryPath, source: null, secrets: {} };
+    traffic.source = reusableSource;
+    try {
+      await expect(f.remote.update(f.workflow.id, input)).rejects.toThrow(
+        "Confirm that workflows in this repository",
+      );
+      expect((await repos.actions.workflow(f.owner.orgId, f.workflow.id))?.controller).toBe(
+        "openship",
+      );
+      const other = await clients(await seedOwner());
+      await expect(
+        other.remote.create({ ...input, repositoryRunnerConsent: true }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(
+        await f.remote.update(f.workflow.id, { ...input, repositoryRunnerConsent: true }),
+      ).toMatchObject({ controller: "github", source: null, secretNames: [] });
+    } finally {
+      traffic.source = null;
+    }
+  });
+
+  it("does not change scheduling authority while a workflow run still owns its execution", async () => {
+    const f = await fixture();
+    const run = await f.remote.dispatch(f.workflow.id, {
+      idempotencyKey: "before-repository-link",
+    });
+    await expect(
+      f.remote.update(f.workflow.id, {
+        ...f.input,
+        path: repositoryPath,
+        source: null,
+        secrets: {},
+        repositoryRunnerConsent: true,
+      }),
+    ).rejects.toMatchObject({ code: "ACTIONS_CONTROLLER_BUSY" });
+    expect((await repos.actions.run(f.owner.orgId, run.id))?.controller).toBe("openship");
+    expect((await repos.actions.workflow(f.owner.orgId, f.workflow.id))?.controller).toBe(
+      "openship",
+    );
+  });
+
   it("passes the production route scanner and rejects anonymous API and runtime requests", async () => {
     expect(scanRoutes(app).errors).toEqual([]);
     for (const path of ["/api/actions/workflows", "/api/actions/runners", "/api/actions/runs"])
@@ -386,6 +500,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
     expect(await c.remote.runners()).toEqual([]);
     await expect(
       c.native.preview({
+        path: ".openship/workflows/ci.yml",
         source: source.replace(
           "runs-on: [self-hosted, macos]",
           "runs-on: [self-hosted, macos]\n    environment: production",

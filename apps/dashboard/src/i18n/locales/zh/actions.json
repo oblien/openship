@@ -372,10 +372,8 @@
     "defaultImageHint": "每个作业都可以选择自己的兼容容器镜像。"
   },
   "controller": {
-    "label": "运行方式",
-    "githubHint": "GitHub 管理工作流、检查、密钥和产物。Openship 管理运行器。更改必须保存到仓库。",
-    "openshipHint": "使用 Openship 独立运行，支持保存的 YAML 和独立自动化。部分功能需要 GitHub Actions 模式。",
-    "labelsHint": "使用 runs-on: [self-hosted, openship, linux]（或 macos）选择这些目标。其他标签保持 GitHub 的行为。",
+    "githubHint": "Openship 提供运行器；GitHub 协调作业、检查、密钥和构建产物。工作流更改会提交到仓库。",
+    "labelsHint": "使用 runs-on: [self-hosted, openship, linux]（或 macos）将作业分配到这些运行器。使用其他标签的作业保留当前执行目标。",
     "trust": "允许此仓库的工作流使用这些运行器。能够修改工作流文件的人可以在这些目标上执行代码并使用其 Actions 预算。",
     "reusable": "可复用工作流",
     "openGitHub": "在 GitHub 中打开",

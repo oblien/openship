@@ -24,6 +24,18 @@ export const WORKFLOW_STEP_LAYOUT = {
 };
 export const workflowStepNodeId = (jobId: string, index: number) => `${jobId}:step:${index}`;
 
+export function workflowJobTargetLabel(
+  job: Pick<ActionPlanView["jobs"][number], "runsOn" | "uses">,
+  reusableLabel: string,
+) {
+  if (job.uses) return reusableLabel;
+  return typeof job.runsOn === "string"
+    ? job.runsOn
+    : Array.isArray(job.runsOn)
+      ? job.runsOn.join(" · ")
+      : "runs-on";
+}
+
 export function workflowJobSize(count: number) {
   if (!count) return { width: WORKFLOW_NODE_LAYOUT.width, height: WORKFLOW_NODE_LAYOUT.height };
   const columns = Math.min(2, count);
@@ -146,6 +158,7 @@ export function workflowGraph(
   plan: ActionPlanView,
   run?: ActionRunView,
   matrixLabel = "Matrix",
+  reusableLabel = "Reusable workflow",
 ): ProjectTopologyGraph {
   const definitions = new Map(plan.jobs.map((job) => [job.id, job]));
   const depths = new Map<string, number>();
@@ -160,13 +173,7 @@ export function workflowGraph(
   const nodes = plan.jobs.map((definition) => {
     const jobs = run?.jobs.filter((job) => job.jobKey === definition.id) ?? [];
     const status = workflowGroupStatus(jobs);
-    const labels =
-      jobs[0]?.labels.join(" · ") ||
-      (typeof definition.runsOn === "string"
-        ? definition.runsOn
-        : Array.isArray(definition.runsOn)
-          ? definition.runsOn.join(" · ")
-          : "runs-on");
+    const labels = jobs[0]?.labels.join(" · ") || workflowJobTargetLabel(definition, reusableLabel);
     return {
       id: definition.id,
       kind: "workflow-job" as const,

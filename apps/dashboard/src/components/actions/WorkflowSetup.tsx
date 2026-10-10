@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
+import { inferActionWorkflowController } from "@repo/core";
 import type {
   ActionWorkflowView,
   ActionRunnerView,
@@ -84,7 +85,7 @@ export function WorkflowSetupDialog(props: WorkflowSetupProps) {
 }
 
 const STARTER =
-  "name: CI\non: [push, workflow_dispatch]\njobs:\n  check:\n    runs-on: [self-hosted, linux]\n    steps:\n      - uses: actions/checkout@v4\n      - run: echo 'Ready to build'\n";
+  "name: CI\non: [push, workflow_dispatch]\njobs:\n  check:\n    runs-on: [self-hosted, openship, linux]\n    steps:\n      - uses: actions/checkout@v4\n      - run: echo 'Ready to build'\n";
 const STANDALONE =
   "name: Automation\non: workflow_dispatch\njobs:\n  run:\n    runs-on: [self-hosted, linux]\n    steps:\n      - run: echo 'Ready to run'\n";
 const storageKinds = ["s3_compatible", "local"] as const,
@@ -116,13 +117,9 @@ function SetupForm({
   useEffect(() => {
     onBusyChange?.(mutation.busy);
   }, [mutation.busy, onBusyChange]);
-  const [controller, setController] = useState<"github" | "openship">(
-    workflow?.controller ?? "github",
-  );
   const [trusted, setTrusted] = useState(workflow?.controller === "github");
   const [step, setStep] = useState<"workflow" | "rules">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
-  const native = !standalone && controller === "github";
   const [repository, setRepository] = useState(
     workflow?.owner
       ? `${workflow.owner}/${workflow.repo}`
@@ -131,7 +128,12 @@ function SetupForm({
         : "",
   );
   const [ref, setRef] = useState(workflow?.ref ?? initial?.ref ?? "main");
-  const [path, setPath] = useState(workflow?.path ?? initial?.path ?? ".github/workflows/ci.yml");
+  const [path, setPath] = useState(
+    standalone
+      ? ".openship/workflows/automation.yml"
+      : (workflow?.path ?? initial?.path ?? ".github/workflows/ci.yml"),
+  );
+  const native = inferActionWorkflowController(path, !standalone) === "github";
   const [mode, setMode] = useState<"repository" | "inline">(
     workflow?.source ? "inline" : "repository",
   );
@@ -169,13 +171,9 @@ function SetupForm({
     useCallback(
       () =>
         !standalone && repositoryValid
-          ? actionsApi
-              .discover(owner!, repo!, ref)
-              .then((files) =>
-                native ? files.filter((file) => file.path.startsWith(".github/workflows/")) : files,
-              )
+          ? actionsApi.discover(owner!, repo!, ref)
           : Promise.resolve([]),
-      [standalone, repositoryValid, owner, repo, ref, native],
+      [standalone, repositoryValid, owner, repo, ref],
     ),
   );
   useEffect(() => {
@@ -201,11 +199,10 @@ function SetupForm({
                 repo: repo!,
                 ref,
                 path,
-                controller: native ? "github" : "openship",
               })
               .then((data) => ({ ...data, identity }))
           : Promise.resolve(null),
-      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow, native],
+      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow],
     ),
   );
   const loaded = useRef<{ identity: string; source: string; file: unknown } | null>(null);
@@ -232,11 +229,8 @@ function SetupForm({
   }, [source]);
   const preview = useActionResource(
     useCallback(
-      () =>
-        debounced.trim()
-          ? actionsApi.preview(debounced, path, native ? "github" : "openship")
-          : Promise.resolve(null),
-      [debounced, path, native],
+      () => (debounced.trim() ? actionsApi.preview(debounced, path) : Promise.resolve(null)),
+      [debounced, path],
     ),
   );
   const [lastPlan, setLastPlan] = useState<{ identity: string; plan: ActionPlanView } | null>(null);
@@ -260,13 +254,14 @@ function SetupForm({
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
+    setTrusted(false);
     draft.reset(value ? STANDALONE : STARTER);
     loaded.current = null;
     setSelection(null);
     setMode("inline");
     setOriginal(null);
     if (!value && repositoryValid) setMode("repository");
-    if (value) setPath(".openship/workflows/automation.yml");
+    setPath(value ? ".openship/workflows/automation.yml" : ".github/workflows/ci.yml");
   };
   const save = async (commit: boolean, snapshot?: SourceReviewSnapshot) => {
     if (!canSave || (snapshot && (snapshot.source !== source || snapshot.identity !== identity)))
@@ -290,14 +285,12 @@ function SetupForm({
           path,
           sha: snapshot?.sha ?? original.sha,
           source,
-          controller: native ? "github" : "openship",
         });
         setOriginal({ source, sha: written.sha, identity });
       }
       const result = await actionsApi.save(
         {
           name: name.trim(),
-          controller: native ? "github" : "openship",
           ...(native && { repositoryRunnerConsent: trusted }),
           owner: standalone ? null : owner!,
           repo: standalone ? null : repo!,
@@ -517,40 +510,13 @@ function SetupForm({
                             </p>
                           ) : (
                             <>
-                              <ActionField label={a.controller.label}>
-                                <Tabs
-                                  tabs={[
-                                    { key: "github", label: "GitHub Actions", icon: "github" },
-                                    {
-                                      key: "openship",
-                                      label: "Openship Actions",
-                                      icon: "play-circle",
-                                    },
-                                  ]}
-                                  value={controller}
-                                  onChange={(value) => {
-                                    setController(value);
-                                    if (value === "github") setMode("repository");
-                                  }}
-                                  columns={2}
-                                  size="sm"
-                                  idPrefix={`${prefix}-controller`}
-                                />
-                                <p
-                                  role="tabpanel"
-                                  id={`${prefix}-controller-panel-${controller}`}
-                                  aria-labelledby={`${prefix}-controller-tab-${controller}`}
-                                  className="mt-2 text-xs leading-relaxed text-muted-foreground"
-                                >
-                                  {native ? a.controller.githubHint : a.controller.openshipHint}
-                                </p>
-                              </ActionField>
                               <ActionField label={a.repository}>
                                 <Input
                                   variant="filled"
                                   value={repository}
                                   onChange={(event) => {
                                     setRepository(event.target.value);
+                                    setTrusted(false);
                                     setOriginal(null);
                                   }}
                                   placeholder={a.repositoryHint}
@@ -705,13 +671,14 @@ function SetupForm({
                                 <Checkbox
                                   checked={runnerIds.includes(runner.id)}
                                   disabled={!runner.enabled && !runnerIds.includes(runner.id)}
-                                  onCheckedChange={(checked) =>
+                                  onCheckedChange={(checked) => {
+                                    setTrusted(false);
                                     setRunnerIds((ids) =>
                                       checked
                                         ? [...ids, runner.id]
                                         : ids.filter((id) => id !== runner.id),
-                                    )
-                                  }
+                                    );
+                                  }}
                                 />
                                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                                   <Icon
@@ -861,7 +828,7 @@ function SetupForm({
             </div>
             <div className="shrink-0 space-y-3 p-4 pt-3">
               <p className="text-xs leading-relaxed text-muted-foreground">{e.draftHint}</p>
-              {step === "workflow" && !runnerIds.length ? (
+              {step === "workflow" && (!runnerIds.length || (native && !trusted)) ? (
                 <Button
                   className="w-full"
                   disabled={!readySource}
@@ -891,6 +858,7 @@ function SetupForm({
           onClose={() => setPicker(false)}
           onSelect={(owner, repository) => {
             setRepository(`${owner}/${repository.name}`);
+            setTrusted(false);
             setRef(repository.default_branch || "main");
             setMode("repository");
             setOriginal(null);

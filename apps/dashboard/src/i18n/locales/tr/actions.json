@@ -372,10 +372,8 @@
     "defaultImageHint": "Her iş kendi uyumlu konteyner imajını seçebilir."
   },
   "controller": {
-    "label": "Çalıştırma yöntemi",
-    "githubHint": "GitHub iş akışını, kontrolleri, gizli bilgileri ve çıktıları yönetir. Openship çalıştırıcıları yönetir. Değişiklikler depoya kaydedilmelidir.",
-    "openshipHint": "Openship ile bağımsız çalıştırın. Kayıtlı YAML ve bağımsız otomasyon desteklenir; bazı özellikler GitHub Actions modunu gerektirir.",
-    "labelsHint": "Bu hedefler için runs-on: [self-hosted, openship, linux] (veya macos) kullanın. Diğer etiketler GitHub davranışını korur.",
+    "githubHint": "Openship çalıştırıcıları sağlar; GitHub işleri, kontrolleri, gizli bilgileri ve çıktıları koordine eder. İş akışı değişiklikleri depoya kaydedilir.",
+    "labelsHint": "İşleri runs-on: [self-hosted, openship, linux] (veya macos) ile bu çalıştırıcılara yönlendirin. Diğer etiketlere sahip işler mevcut hedeflerini korur.",
     "trust": "Bu depodaki iş akışlarının çalıştırıcıları kullanmasına izin verin. Dosyaları değiştirebilen herkes bu hedeflerde kod çalıştırabilir ve Actions bütçesini kullanabilir.",
     "reusable": "Yeniden kullanılabilir iş akışı",
     "openGitHub": "GitHub'da aç",

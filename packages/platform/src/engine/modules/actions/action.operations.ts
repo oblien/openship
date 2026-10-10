@@ -1,4 +1,9 @@
-import { actionFinished, NotFoundError, ValidationError } from "@repo/core";
+import {
+  actionFinished,
+  inferActionWorkflowController,
+  NotFoundError,
+  ValidationError,
+} from "@repo/core";
 import { repos } from "@repo/db";
 import type { ActionDependencies } from "../../../actions";
 import type { ExecutionContext } from "../../../context";
@@ -99,7 +104,13 @@ export const actionDependencies: ActionDependencies = {
     inspectDestination: (ctx, input) => inspectActionDestination(ctx, input.serverId),
     enableEmulation: (ctx, input) => enableActionEmulation(ctx, input.serverId),
     async preview(_ctx, input) {
-      return actionPlanView(await parseActionWorkflow(input.source, input.path, input.controller));
+      return actionPlanView(
+        await parseActionWorkflow(
+          input.source,
+          input.path,
+          input.controller ?? inferActionWorkflowController(input.path),
+        ),
+      );
     },
     discover: (ctx, input) =>
       service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref),

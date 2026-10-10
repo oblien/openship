@@ -92,11 +92,15 @@ consistent with navigation from a project.
 Node, step, connection and trigger edits update the original YAML while preserving
 unrelated fields and comments. Reject dependency cycles and dangling job-output
 references; undo/redo affects the same draft across views. Review repository changes
-before committing, using the reviewed file SHA. The shared editor offers GitHub
-Actions or independent Openship Actions. GitHub mode always commits changed YAML,
-uses repository-managed credentials/storage, and explains the explicit
+before committing, using the reviewed file SHA. Repository discovery selects the
+integration from the file path; do not expose engine-selection tabs. Files in
+`.github/workflows` use GitHub's scheduler and the selected Openship runners;
+standalone YAML and `.openship/workflows` use the independent controller.
+Repository preview and saving follow the same rule, including existing drafts.
+GitHub workflows always commit changed YAML,
+use repository-managed credentials/storage, and explain the explicit
 `self-hosted, openship` routing labels and repository-wide runner trust. Independent
-mode offers Automatic repository updates or Review first; the latter stores the existing inline YAML snapshot and continues
+workflows offer Automatic repository updates or Review first; the latter stores the existing inline YAML snapshot and continues
 using it until an explicit review and save. Loading a newer repository file must not
 overwrite that snapshot or an edited draft. No second sync engine or runner path is
 needed. Keep variables, secrets and artifact storage in one disclosure. The wizard

@@ -44,8 +44,8 @@ export const actionsApi = {
   disableRunner: (id: string) => api.delete(p.runner(id)),
   probeRunner: (id: string) => data<"probeRunner">(api.post(`${p.runner(id)}/probe`)),
   events: (id: string, after = 0) => data<"jobEvents">(api.get(`${p.events(id)}?after=${after}`)),
-  preview: (source: string, path?: string, controller?: "openship" | "github") =>
-    data<"preview">(api.post(p.preview, { source, path, controller })),
+  preview: (source: string, path?: string) =>
+    data<"preview">(api.post(p.preview, { source, path })),
   projects: () => data<"projects">(api.get("actions/projects")),
   projectPolicy: (projectId: string) =>
     data<"projectPolicy">(api.get(`actions/project?${new URLSearchParams({ projectId })}`)),

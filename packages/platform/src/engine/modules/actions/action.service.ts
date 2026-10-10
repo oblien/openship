@@ -1,7 +1,14 @@
 import { assertRequiredPushWorkflow } from "./required-checks";
 import { createHash } from "node:crypto";
 import { parse } from "yaml";
-import { AppError, NotFoundError, ValidationError, generateId, isFullCommitSha } from "@repo/core";
+import {
+  AppError,
+  NotFoundError,
+  ValidationError,
+  generateId,
+  isFullCommitSha,
+  inferActionWorkflowController,
+} from "@repo/core";
 import { repos, type ActionRun, type ActionWorkflow } from "@repo/db";
 import type { CreateActionWorkflow } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
@@ -47,13 +54,14 @@ export async function saveActionWorkflow(
   id?: string,
 ): Promise<ActionWorkflow> {
   const existing = id ? await requireActionWorkflow(ctx, id, true) : undefined;
-  const controller = input.controller ?? existing?.controller ?? "openship";
+  const controller =
+    input.controller ?? inferActionWorkflowController(input.path, !!input.owner && !!input.repo);
   if (
     controller === "github" &&
     (!input.owner || !input.repo || input.source || !input.path.startsWith(".github/workflows/"))
   )
     throw new ValidationError(
-      "GitHub Actions runs a workflow saved in the repository's .github/workflows directory. Save your changes to the repository first, or choose Openship for a standalone definition.",
+      "Repository workflows in .github/workflows run from committed YAML. Save your changes to the repository first, or use a standalone workflow.",
     );
   if (
     existing &&
