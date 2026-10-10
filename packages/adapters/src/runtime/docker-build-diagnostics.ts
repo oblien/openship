@@ -210,3 +210,48 @@ export function startDockerBuildIdleMonitor(options: {
     },
   };
 }
+
+export const DOCKER_TAGGED_IMAGE_WATCH_INTERVAL_MS = 5_000;
+
+/**
+ * Docker Engine 29's classic `/build` response often stops after the first
+ * `FROM` line even though the daemon finishes the build and tags the image.
+ * `followProgress` then waits until the idle timeout and the deploy is marked
+ * failed. The tag is unique per build, so once it inspects, the image is the
+ * one this build just committed.
+ */
+export function startDockerTaggedImageWatch(options: {
+  intervalMs?: number;
+  inspect: () => Promise<unknown>;
+  onTagged: () => void;
+}): { stop(): void } {
+  let stopped = false;
+  let inFlight = false;
+  const intervalMs = options.intervalMs ?? DOCKER_TAGGED_IMAGE_WATCH_INTERVAL_MS;
+
+  const timer = setInterval(() => {
+    if (stopped || inFlight) return;
+    inFlight = true;
+    void options
+      .inspect()
+      .then(() => {
+        inFlight = false;
+        if (stopped) return;
+        stopped = true;
+        clearInterval(timer);
+        options.onTagged();
+      })
+      .catch(() => {
+        inFlight = false;
+      });
+  }, intervalMs);
+  timer.unref?.();
+
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}
