@@ -96,9 +96,9 @@ def inspect():
         raise RuntimeError('Control servers need at least 2 CPUs and 2 GB RAM; workers need at least 1 CPU and 1 GB RAM.')
     if shutil.disk_usage('/var/lib').free < 5 * 1024**3: raise RuntimeError('At least 5 GB of free disk space is required for the runtime.')
     cg = pathlib.Path('/sys/fs/cgroup/cgroup.controllers')
-    if cg.exists():
-        if not {'memory', 'pids'}.issubset(set(cg.read_text().split())): raise RuntimeError('Enable memory and process cgroup controllers before setup.')
-    elif not pathlib.Path('/sys/fs/cgroup/memory').is_dir(): raise RuntimeError('The memory cgroup controller is unavailable.')
+    # The kubelet refuses cgroup v1 hosts, so K3s would crash-loop after install.
+    if not cg.exists(): raise RuntimeError('This server boots with cgroup v1, which Kubernetes no longer supports. Set systemd.unified_cgroup_hierarchy=1 on the kernel command line (remove any =0 setting), reboot, then retry.')
+    if not {'memory', 'pids'}.issubset(set(cg.read_text().split())): raise RuntimeError('Enable memory and process cgroup controllers before setup.')
     nics = links()
     matched = [nic for nic in nics if any(addr.get('local') == C['host']['privateIp'] for addr in nic.get('addr_info', []))]
     if len(matched) != 1 or 'UP' not in matched[0].get('flags', []) or matched[0].get('mtu', 0) < 1280:
@@ -191,7 +191,10 @@ def configure():
     if host['role'] == 'server':
         config.update({'bind-address': host['privateIp'], 'advertise-address': host['privateIp'], 'tls-san': [host['privateIp']],
             'cluster-cidr': C['podCidr'], 'service-cidr': C['serviceCidr'], 'flannel-backend': 'vxlan',
-            'disable': ['traefik', 'servicelb', 'local-storage'], 'write-kubeconfig-mode': '0600', 'secrets-encryption': True})
+            'disable': ['traefik', 'servicelb', 'local-storage'], 'write-kubeconfig-mode': '0600', 'secrets-encryption': True,
+            # The agent tunnel dials the kubelet on loopback, which the private-address kubelet refuses
+            # (exec/logs on workers fail with "error dialing backend: EOF"). Peers reach 10250 directly.
+            'egress-selector-mode': 'disabled'})
     if C['bootstrap']:
         config['cluster-init'] = True
     else:
@@ -230,20 +233,26 @@ def configure():
 def kubectl(args, timeout=30):
     return run([str(BIN), 'kubectl', '--kubeconfig=/etc/rancher/k3s/k3s.yaml', '--server=https://' + C['host']['privateIp'] + ':6443', '--request-timeout=20s'] + args, timeout)
 
+def service_detail(unit):
+    # Fatal lines explain a crash loop; etcd/raft chatter in the last few lines does not.
+    status = run(['systemctl', 'show', unit, '--property=ActiveState,NRestarts', '--value']).split()
+    lines = run(['journalctl', '-u', unit, '-n', '400', '--no-pager', '-o', 'cat']).splitlines()
+    fatal = [line for line in lines if re.match(r'(Error: |F\d{4} |time=\S+ level=(fatal|error) )', line)]
+    detail = ' | '.join(fatal[-3:]) if fatal else ' '.join(lines[-12:])
+    return 'Service is ' + (status[0] if status else 'unknown') + ' after ' + (status[1] if len(status) > 1 else '?') + ' restarts. ' + detail
+
 def readiness():
     value = owner()
     if not value: raise RuntimeError('The owned runtime installation is missing.')
     unit = 'k3s' if C['host']['role'] == 'server' else 'k3s-agent'
     status = run(['systemctl', 'show', unit, '--property=ActiveState', '--value']).strip()
-    if status != 'active':
-        detail = run(['journalctl', '-u', unit, '-n', '12', '--no-pager', '-o', 'cat'])
-        return {'ready': False, 'message': ('Service is ' + status + '. ' + detail)[-2000:]}
+    if status != 'active': return {'ready': False, 'message': service_detail(unit)[-2000:]}
     if C['host']['role'] == 'server':
         try:
             kubectl(['get', '--raw=/readyz'])
             uid = json.loads(kubectl(['get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
             return {'ready': True, 'clusterUid': uid}
-        except Exception as error: return {'ready': False, 'message': str(error)[-2000:]}
+        except Exception as error: return {'ready': False, 'message': (str(error) + ' ' + service_detail(unit))[-2000:]}
     return {'ready': True}
 
 def assert_empty():

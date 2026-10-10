@@ -585,8 +585,13 @@ export const clusterRuntimeCollection = {
         );
       const hosts: ClusterRuntimeHost[] = [];
       const controls = cluster.serverIds.length >= 3 ? 3 : 1;
-      for (const [index, serverId] of [...cluster.serverIds].sort().entries()) {
-        const server = await authorizeMember(ctx, serverId);
+      const servers = [];
+      for (const serverId of [...cluster.serverIds].sort())
+        servers.push({ serverId, server: await authorizeMember(ctx, serverId) });
+      // The first control server is the API/build/Edge gateway, so the local server (the one
+      // with the public address) must lead; other members keep their sorted ID order.
+      servers.sort((a, b) => Number(!!b.server.isLocal) - Number(!!a.server.isLocal));
+      for (const [index, { serverId, server }] of servers.entries()) {
         const member = network.members.find((item) => item.serverId === serverId);
         if (!member)
           throw new AppError(
