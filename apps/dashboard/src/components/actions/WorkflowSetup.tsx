@@ -20,6 +20,7 @@ import { optionCardSurface } from "@/components/shared/OptionCard";
 import { RepositoryPicker } from "@/components/github/RepositoryPicker";
 import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import { BackupDestinationSelect } from "@/components/backup/BackupDestinationSelect";
+import { TopologySkeleton } from "@/components/topology/TopologySkeleton";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -408,6 +409,7 @@ function SetupForm({
             plan={plan}
             view={view}
             onViewChange={setView}
+            onChooseSource={() => setPicker(true)}
             edit={edit}
             expandedSteps={expandedSteps}
             onExpandedStepsChange={changeExpandedSteps}
@@ -428,7 +430,7 @@ function SetupForm({
                 return added.source;
               })
             }
-            loading={preview.loading || file.loading || source !== debounced}
+            loading={files.loading || preview.loading || file.loading || source !== debounced}
             invalid={!!preview.error}
           />
           <aside
@@ -1002,7 +1004,26 @@ function SetupLoader(props: WorkflowSetupProps) {
       {resource.data ? (
         <SetupForm {...props} {...resource.data} refresh={resource.refresh} />
       ) : resource.loading ? (
-        <div className="h-80 animate-pulse rounded-2xl bg-card" />
+        <div className="@container h-full">
+          <div className="grid h-full min-h-[440px] gap-4 @min-[960px]:grid-cols-[minmax(0,1fr)_400px] @min-[1200px]:grid-cols-[minmax(0,1fr)_420px]">
+            <TopologySkeleton variant="workflow" withHeader />
+            <div
+              aria-hidden
+              className="space-y-8 rounded-2xl bg-popover/60 p-4 backdrop-blur-2xl motion-safe:animate-pulse"
+            >
+              <div className="flex gap-8 py-3">
+                <div className="h-3 w-24 rounded bg-muted-foreground/15" />
+                <div className="h-3 w-24 rounded bg-muted-foreground/10" />
+              </div>
+              {[0, 1, 2].map((field) => (
+                <div key={field} className="space-y-3">
+                  <div className="h-3 w-20 rounded bg-muted-foreground/10" />
+                  <div className="h-11 rounded-xl bg-muted-foreground/5" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : null}
     </>
   );

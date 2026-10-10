@@ -187,7 +187,7 @@
     "chooseRepo": "リポジトリを選択",
     "connectRepo": "Git設定でGitHubを接続すると、リポジトリを参照できます。",
     "useCopy": "YAMLをOpenshipに保存",
-    "noFiles": "ワークフローファイルが見つかりません。YAMLをOpenshipに保存して作成できます。",
+    "noFiles": "ワークフローが見つかりません。別のリポジトリを選択するか、単独のワークフローを作成してください。",
     "loading": "ワークフローを読み込み中…",
     "previewHint": "トリガーとランナーを設定する前に、ジョブと依存関係を確認します。",
     "continue": "次へ",

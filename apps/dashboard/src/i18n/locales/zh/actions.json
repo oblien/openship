@@ -187,7 +187,7 @@
     "chooseRepo": "选择仓库",
     "connectRepo": "在 Git 设置中连接 GitHub，即可浏览仓库。",
     "useCopy": "将 YAML 保存在 Openship",
-    "noFiles": "未找到工作流文件。可将 YAML 保存在 Openship 中以创建工作流。",
+    "noFiles": "未找到工作流。请选择其他仓库或创建独立工作流。",
     "loading": "正在加载工作流…",
     "previewHint": "配置触发器和运行器前，先预览任务及其依赖关系。",
     "continue": "继续",

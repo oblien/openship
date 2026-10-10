@@ -187,7 +187,7 @@
     "chooseRepo": "Repository wählen",
     "connectRepo": "GitHub in den Git-Einstellungen verbinden, um Repositories anzuzeigen.",
     "useCopy": "YAML in Openship speichern",
-    "noFiles": "Keine Workflow-Dateien gefunden. YAML in Openship speichern, um einen Workflow anzulegen.",
+    "noFiles": "Keine Workflows gefunden. Wähle ein anderes Repository oder starte einen eigenständigen Workflow.",
     "loading": "Workflow wird geladen…",
     "previewHint": "Jobs und Abhängigkeiten vor der Einrichtung von Triggern und Runnern prüfen.",
     "continue": "Weiter",

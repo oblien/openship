@@ -64,6 +64,10 @@ Use the same workflow editor from Actions, Project → Actions and the deploymen
 wizard. The dialog uses the available viewport, with a persistent canvas on the left
 and a scrollable 400–420px inspector on the right. Topology is the default; List and YAML
 are peer views of the same draft. Source and Run settings stay in the inspector.
+Use the shared canvas skeleton with compact workflow nodes while editor data,
+repository discovery or the canvas code loads. Keep the current graph visible
+while validating edits. An empty canvas starts with one actionable workflow node;
+reserve the large illustration for the Actions home empty state.
 In Topology, selecting a job or dependency replaces those controls with its editor.
 In List, expand jobs and edit steps independently on the left; keep workflow controls
 on the right. Reuse the same job-and-step editor in both locations without rendering

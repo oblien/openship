@@ -9,7 +9,7 @@ import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { WorkflowJobList } from "./WorkflowJobList";
-import { ActionsIllustration } from "./ActionsIllustration";
+import { TopologySkeleton } from "@/components/topology/TopologySkeleton";
 import { workflowJobs, workflowJobOffset, type WorkflowEdit } from "./workflow-editor";
 import type { useWorkflowDraft } from "./useWorkflowDraft";
 import type { WorkflowExpandedSteps, WorkflowStepTarget } from "./WorkflowSteps";
@@ -23,6 +23,7 @@ export function WorkflowWorkspace({
   onSelect,
   onConnect,
   onAdd,
+  onChooseSource,
   loading,
   invalid,
   yamlRequest,
@@ -41,6 +42,7 @@ export function WorkflowWorkspace({
   onSelect: (selection: TopologySelection) => void;
   onConnect: (connection: Connection) => void;
   onAdd: () => void;
+  onChooseSource: () => void;
   loading: boolean;
   invalid: boolean;
   yamlRequest: { id: string; key: number } | null;
@@ -192,12 +194,38 @@ export function WorkflowWorkspace({
               />
             </div>
           )
+        ) : loading ? (
+          <TopologySkeleton variant="workflow" />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-            <ActionsIllustration className="mb-5 h-40 w-64 max-w-full" />
-            <p className="max-w-sm text-sm text-muted-foreground">
-              {loading ? t.actions.integration.loading : t.actions.integration.previewHint}
-            </p>
+          <div
+            className="absolute inset-0 flex items-center justify-center bg-[var(--th-card-on-page)] p-6"
+            style={{
+              backgroundImage: "radial-gradient(var(--th-on-10) 1px, transparent 1px)",
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => (invalid ? onViewChange("yaml") : onChooseSource())}
+              className="flex min-h-16 w-60 max-w-full items-center gap-2.5 rounded-lg border border-border/80 bg-[var(--th-card-on-page)] px-3 py-2 text-start transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <Icon
+                name={invalid ? "code" : "play-circle"}
+                className="size-5 shrink-0 text-info/80"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-foreground">
+                  {invalid ? t.actions.source : t.actions.newWorkflow}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {invalid ? t.actions.integration.fixYaml : t.actions.integration.chooseRepo}
+                </span>
+              </span>
+              <Icon
+                name="chevron-right"
+                className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180"
+              />
+            </button>
           </div>
         )}
       </div>

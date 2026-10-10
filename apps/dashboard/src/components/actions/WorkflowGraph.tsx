@@ -7,6 +7,7 @@ import type { ActionPlanView, ActionRunView } from "@repo/contracts";
 import type { Connection } from "@xyflow/react";
 import type { TopologyNodeAction, TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
+import { TopologySkeleton } from "@/components/topology/TopologySkeleton";
 import {
   workflowGraph,
   workflowDetailGraph,
@@ -23,16 +24,7 @@ const Canvas = dynamic(
   { ssr: false, loading: CanvasLoading },
 );
 function CanvasLoading() {
-  const { t } = useI18n();
-  return (
-    <div
-      className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
-      role="status"
-    >
-      <Icon name="spinner" className="size-4 animate-spin" />
-      {t.actions.integration.loading}
-    </div>
-  );
+  return <TopologySkeleton variant="workflow" />;
 }
 export function WorkflowGraph({
   plan,
