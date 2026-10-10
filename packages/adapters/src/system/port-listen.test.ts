@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildPortProbeCommand,
   parseListeningPorts,
+  parseLoopbackOnlyPorts,
   parsePortProbeOutput,
   probePortListeningOnce,
   waitForPortFree,
@@ -28,6 +29,18 @@ const HEADER6 =
 // IPv6-only LISTEN on :::8080 (0x1F90) — the case lsof's IPv4 filter misses.
 const IPV6_LISTEN_8080 =
   "   0: 00000000000000000000000000000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 33333 1 0000000000000000 100 0 0 10 0";
+
+// LISTEN on 127.0.0.1:3000 only. procfs prints each address word little-endian.
+const IPV4_LOOPBACK_LISTEN_3000 =
+  "   2: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 44444 1 0000000000000000 100 0 0 10 0";
+
+// LISTEN on [::1]:3000.
+const IPV6_LOOPBACK_LISTEN_3000 =
+  "   1: 00000000000000000000000001000000:0BB8 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 55555 1 0000000000000000 100 0 0 10 0";
+
+// LISTEN on [::ffff:127.0.0.1]:8080, a v4 loopback bind seen through tcp6.
+const IPV6_MAPPED_LOOPBACK_LISTEN_8080 =
+  "   2: 0000000000000000FFFF00000100007F:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 66666 1 0000000000000000 100 0 0 10 0";
 
 describe("parseListeningPorts", () => {
   test("finds an IPv4 LISTEN port", () => {
@@ -61,6 +74,30 @@ describe("parseListeningPorts", () => {
     expect(parseListeningPorts("\n\n   \n").size).toBe(0);
   });
 });
+describe("parseLoopbackOnlyPorts", () => {
+  test("finds a port bound only to 127.0.0.1", () => {
+    const ports = parseLoopbackOnlyPorts(`${HEADER}\n${IPV4_LOOPBACK_LISTEN_3000}\n`);
+    expect([...ports]).toEqual([3000]);
+  });
+
+  test("treats ::1 and IPv4-mapped 127.x in tcp6 as loopback", () => {
+    const combined = `${HEADER6}\n${IPV6_LOOPBACK_LISTEN_3000}\n${IPV6_MAPPED_LOOPBACK_LISTEN_8080}\n`;
+    expect([...parseLoopbackOnlyPorts(combined)].sort()).toEqual([3000, 8080]);
+  });
+
+  test("leaves out a port that also has a wildcard socket", () => {
+    // 127.0.0.1:3000 in tcp, but :::3000 would answer on every address.
+    const wildcard6 = IPV6_LISTEN_8080.replace(":1F90", ":0BB8");
+    const combined = `${HEADER}\n${IPV4_LOOPBACK_LISTEN_3000}\n${HEADER6}\n${wildcard6}\n`;
+    expect(parseLoopbackOnlyPorts(combined).size).toBe(0);
+  });
+
+  test("ignores wildcard and non-LISTEN sockets", () => {
+    const combined = `${HEADER}\n${IPV4_LISTEN_3000}\n${IPV4_ESTABLISHED_5432}\n`;
+    expect(parseLoopbackOnlyPorts(combined).size).toBe(0);
+  });
+});
+
 describe("parsePortProbeOutput", () => {
   test("parses only explicit probe results", () => {
     expect(parsePortProbeOutput("__OPENSHIP_PORT_LISTENING__\n")).toBe(true);
@@ -111,6 +148,15 @@ describe("waitForPortListening", () => {
     expect(await waitForPortListening(exec, 3000, { timeoutMs: 500, intervalMs: 50 })).toEqual({
       listening: true,
       checked: true,
+    });
+  });
+
+  test("adds loopbackOnly when procfs shows the port bound only to loopback", async () => {
+    const exec = stubExecutor(async () => `${HEADER}\n${IPV4_LOOPBACK_LISTEN_3000}\n`);
+    expect(await waitForPortListening(exec, 3000, { timeoutMs: 500, intervalMs: 50 })).toEqual({
+      listening: true,
+      checked: true,
+      loopbackOnly: true,
     });
   });
 
