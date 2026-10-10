@@ -15,7 +15,8 @@
   },
   "exports": {
     "./trpc": "./src/trpc/index.ts",
-    "./schemas": "./src/lib/schemas.ts"
+    "./schemas": "./src/lib/schemas.ts",
+    "./signatures": "./src/lib/signature.ts"
   },
   "dependencies": {
     "@hono/trpc-server": "^0.3.4",
