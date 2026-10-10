@@ -12,6 +12,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
+import { deploymentForcesImagePull, isMutableImageRef } from "../image-pull-policy";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
 import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
@@ -609,13 +610,8 @@ function resolveServiceResources(
   return resolveInheritedResources((service.advanced as ComposeAdvanced | null)?.resources, projectResources);
 }
 
-/** @internal Exported so the image-refresh contract can be tested without a Docker host. */
-export function deploymentForcesImagePull(
-  dep: Pick<Deployment, "trigger">,
-  forcePullImages?: boolean,
-): boolean {
-  return dep.trigger === "update" || forcePullImages === true;
-}
+/** @internal Re-exported so the image-refresh contract can be tested without a Docker host. */
+export { deploymentForcesImagePull, isMutableImageRef };
 
 /** @internal Recognize only a host directory explicitly produced/pinned for
  * this service by the build phase. An arbitrary absolute `service.image` is
@@ -717,10 +713,11 @@ export function createServiceRuntimeConfig(opts: {
     command: runtimeCommand,
     commandArgv,
     restart: service.restart ?? "unless-stopped",
-    // Explicit updates and incoming deploy hooks force a fresh pull so a moved
-    // mutable tag (:latest/:1) actually rolls forward. Ordinary redeploys stay
-    // pull-if-missing.
-    forcePull: !opts.imageAlreadyPrepared && deploymentForcesImagePull(dep, opts.forcePullImages),
+    // Explicit updates, incoming deploy hooks and manual deploys of a mutable tag
+    // force a fresh pull so a moved tag (:latest/:1) actually rolls forward.
+    // Webhook/rollback deploys of an already-present image stay pull-if-missing.
+    forcePull:
+      !opts.imageAlreadyPrepared && deploymentForcesImagePull(dep, opts.forcePullImages, image),
     imageAlreadyPrepared: opts.imageAlreadyPrepared,
     advanced: service.advanced ?? undefined,
     // Operator-chosen east-west alias (service.advanced.alias) resolving
@@ -1364,10 +1361,8 @@ async function deployComposeServicesUnlocked(
   // over successfully and service B can then fail its registry pull, producing
   // exactly the split rollout this webhook feature is intended to avoid. Docker
   // activation skips its own second force-pull after this cohort succeeds.
-  const forcePullBeforeCutover =
-    runtime instanceof DockerRuntime && deploymentForcesImagePull(dep, opts?.forcePullImages);
   const prePulledImageRefs = new Set<string>();
-  if (forcePullBeforeCutover) {
+  if (runtime instanceof DockerRuntime) {
     const pullRefs = new Set<string>();
     for (const service of ordered) {
       if (opts?.targetServiceIds && !opts.targetServiceIds.has(service.id)) continue;
@@ -1379,6 +1374,7 @@ async function deployComposeServicesUnlocked(
       });
       if (
         image &&
+        deploymentForcesImagePull(dep, opts?.forcePullImages, image) &&
         !isStaticHostArtifact(
           service.id,
           image,
@@ -1458,7 +1454,9 @@ async function deployComposeServicesUnlocked(
       .map((m) => m.serviceId as string),
   );
   const isExternalUnchanged = (svc: Service): boolean => {
-    if (deploymentForcesImagePull(dep, opts?.forcePullImages)) return false;
+    // A forced pull may have moved a mutable tag, so the running container is
+    // recreated from the fresh image rather than carried forward on ref equality.
+    if (deploymentForcesImagePull(dep, opts?.forcePullImages, svc.image ?? undefined)) return false;
     // A rollback REPLAYS a release: its frozen env (`frozenEnvWins` above) and its
     // pinned images only reach the container by recreating it. Carrying an
     // external forward instead applies neither, so the restore reports success

@@ -47,6 +47,24 @@ describe("compose mutable-image pull intent", () => {
     expect(config("update").forcePull).toBe(true);
   });
 
+  it("re-pulls a mutable tag on a manual deploy, but reuses a digest-pinned image", () => {
+    // Pull-if-missing shipped the cached `:edge` on every manual redeploy; the
+    // workaround was `docker pull` over SSH.
+    expect(config("manual").forcePull).toBe(true);
+    expect(deploymentForcesImagePull({ trigger: "manual" } as never, undefined, "ghcr.io/acme/api:edge")).toBe(true);
+    expect(
+      deploymentForcesImagePull(
+        { trigger: "manual" } as never,
+        undefined,
+        `ghcr.io/acme/api@sha256:${"a".repeat(64)}`,
+      ),
+    ).toBe(false);
+    // Rollbacks replay a release and never chase the tag.
+    expect(deploymentForcesImagePull({ trigger: "rollback" } as never, undefined, "ghcr.io/acme/api:edge")).toBe(false);
+    // Without a ref there is nothing mutable to refresh.
+    expect(deploymentForcesImagePull({ trigger: "manual" } as never)).toBe(false);
+  });
+
   it("does not contact the registry again after the cohort was pre-pulled", () => {
     expect(
       createServiceRuntimeConfig({
