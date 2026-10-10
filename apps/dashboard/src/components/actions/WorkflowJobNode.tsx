@@ -118,15 +118,15 @@ function JobNode({ data }: TopologyNodeProps) {
         style={{ top: WORKFLOW_NODE_LAYOUT.height / 2 }}
         isConnectable={!!action?.connectable}
       />
-      {expanded && (
-        <Handle
-          id="steps"
-          type="source"
-          position={Position.Bottom}
-          className="!pointer-events-none !size-1 !border-0 !opacity-0"
-          isConnectable={false}
-        />
-      )}
+      {/* React Flow measures handles with the node. Expansion keeps its size
+          unchanged, so this anchor must also exist while steps are collapsed. */}
+      <Handle
+        id="steps"
+        type="source"
+        position={Position.Bottom}
+        className="!pointer-events-none !size-1 !border-0 !opacity-0"
+        isConnectable={false}
+      />
     </article>
   );
 }
