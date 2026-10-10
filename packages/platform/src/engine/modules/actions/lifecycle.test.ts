@@ -4,11 +4,13 @@ const state = vi.hoisted(() => ({
   tick: vi.fn(),
   unsettled: vi.fn(),
   pending: vi.fn(),
+  sessions: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
     actions: {
       unsettledRunCount: state.unsettled,
+      runnerSessions: state.sessions,
       pendingActionDeploymentCount: state.pending,
       pruneDeliveries: async () => {},
       pruneRuns: async () => {},
@@ -21,6 +23,8 @@ vi.mock("../../lib/background-work", () => ({
 }));
 vi.mock("./deployment-gate", () => ({ actionDeploymentController: { tick: async () => {} } }));
 vi.mock("./execution", () => ({ actionController: { tick: state.tick } }));
+vi.mock("./github-sync", () => ({ reconcileGitHubWorkflows: async () => {} }));
+vi.mock("./github-runners", () => ({ reconcileGitHubRunners: async () => {} }));
 vi.mock("./cloud-runner", () => ({ ensureConfiguredActionPools: async () => {} }));
 vi.mock("./triggers", () => ({
   dispatchActionSchedules: async () => {},
@@ -31,6 +35,7 @@ vi.mock("./storage", () => ({ actionStorageProtocol: () => ({ sweep: async () =>
 beforeEach(async () => {
   vi.resetModules();
   vi.resetAllMocks();
+  state.sessions.mockResolvedValue([]);
   // Keep the cold module transform outside the fake-clock shutdown assertion.
   await import("./lifecycle");
   vi.useFakeTimers();
@@ -98,6 +103,11 @@ describe("Actions controller shutdown", () => {
       code: "ACTIONS_INSTANCE_MOVE_BUSY",
     });
     state.pending.mockResolvedValue(0);
+    state.sessions.mockResolvedValue([{ id: "github-session", state: "stopping" }]);
+    await expect(assertActionsTransferReady()).rejects.toMatchObject({
+      code: "ACTIONS_INSTANCE_MOVE_BUSY",
+    });
+    state.sessions.mockResolvedValue([]);
     await expect(assertActionsTransferReady()).resolves.toBeUndefined();
   });
 });

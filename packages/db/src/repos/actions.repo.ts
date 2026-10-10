@@ -19,10 +19,13 @@ import {
   actionRunner,
   actionWorkflow,
   actionProject,
+  actionRunnerSession,
 } from "../schema/actions";
 import { organization } from "../schema/organization";
 import { createActionProjectRepo } from "./action-project.repo";
 import { withProjectWorkAdmission } from "./project-work-admission";
+import { createActionGitHubRepo } from "./action-github.repo";
+import { actionRunnerAllocationCount } from "./action-runner-allocation";
 
 export type ActionRunner = typeof actionRunner.$inferSelect;
 export type ActionWorkflow = typeof actionWorkflow.$inferSelect;
@@ -47,6 +50,7 @@ export function createActionsRepo(db: Database) {
     and(eq(actionDelivery.organizationId, org), eq(actionDelivery.id, id));
   return {
     ...createActionProjectRepo(db),
+    ...createActionGitHubRepo(db),
     async enqueueDelivery(
       input: Pick<
         ActionDelivery,
@@ -207,18 +211,7 @@ export function createActionsRepo(db: Database) {
             current.cloudProfileId !== (value.cloudProfileId ?? null) ||
             !isDeepStrictEqual(current.config, value.config))
         ) {
-          const [busy] = await tx
-            .select({ id: actionJob.id })
-            .from(actionJob)
-            .where(
-              and(
-                eq(actionJob.organizationId, organizationId),
-                eq(actionJob.runnerId, id),
-                isNull(actionJob.cleanedAt),
-              ),
-            )
-            .limit(1);
-          if (busy)
+          if (await actionRunnerAllocationCount(tx, organizationId, { id, cloudPoolId: null }))
             throw new AppError(
               "Wait for this runner's jobs to finish before changing its configuration",
               409,
@@ -288,6 +281,48 @@ export function createActionsRepo(db: Database) {
         projectIds ? [...new Set([...projectIds, ...(expectedProjectIds ?? [])])] : undefined,
         organizationId,
         async (tx) => {
+          const [previous] = await tx
+            .select()
+            .from(actionWorkflow)
+            .where(workflowWhere(organizationId, id))
+            .for("update");
+          if (
+            previous &&
+            (previous.controller !== (value.controller ?? previous.controller) ||
+              previous.owner !== value.owner ||
+              previous.repo !== value.repo ||
+              previous.path !== value.path ||
+              !isDeepStrictEqual(previous.runnerIds, value.runnerIds))
+          ) {
+            const [run] = await tx
+              .select({ id: actionRun.id })
+              .from(actionRun)
+              .where(
+                and(
+                  eq(actionRun.workflowId, id),
+                  eq(actionRun.organizationId, organizationId),
+                  isNull(actionRun.settledAt),
+                ),
+              )
+              .limit(1);
+            const [session] = await tx
+              .select({ id: actionRunnerSession.id })
+              .from(actionRunnerSession)
+              .where(
+                and(
+                  eq(actionRunnerSession.workflowId, id),
+                  eq(actionRunnerSession.organizationId, organizationId),
+                  isNull(actionRunnerSession.cleanedAt),
+                ),
+              )
+              .limit(1);
+            if (run || session)
+              throw new AppError(
+                "Finish this workflow's runs before changing its controller, repository or runners",
+                409,
+                "ACTIONS_WORKFLOW_BUSY",
+              );
+          }
           const currentLinks = await tx
             .select()
             .from(actionProject)
@@ -338,18 +373,16 @@ export function createActionsRepo(db: Database) {
                 ),
               );
             if (projectIds.length)
-              await tx
-                .insert(actionProject)
-                .values(
-                  projectIds.map((projectId) => ({
-                    organizationId,
-                    workflowId: id,
-                    projectId,
-                    required: currentLinks.some(
-                      (link) => link.projectId === projectId && link.required,
-                    ),
-                  })),
-                );
+              await tx.insert(actionProject).values(
+                projectIds.map((projectId) => ({
+                  organizationId,
+                  workflowId: id,
+                  projectId,
+                  required: currentLinks.some(
+                    (link) => link.projectId === projectId && link.required,
+                  ),
+                })),
+              );
           }
           return workflow;
         },
@@ -392,19 +425,7 @@ export function createActionsRepo(db: Database) {
         );
     },
     async runnerBusy(org: string, id: string) {
-      return !!(
-        await db
-          .select({ id: actionJob.id })
-          .from(actionJob)
-          .where(
-            and(
-              eq(actionJob.organizationId, org),
-              eq(actionJob.runnerId, id),
-              isNull(actionJob.cleanedAt),
-            ),
-          )
-          .limit(1)
-      )[0];
+      return (await actionRunnerAllocationCount(db, org, { id, cloudPoolId: null })) > 0;
     },
     async runs(org: string, workflowId?: string, limit = 30, projectId?: string) {
       return db
@@ -435,6 +456,8 @@ export function createActionsRepo(db: Database) {
       )[0];
     },
     async createRun(value: Omit<NewRun, "number"> & { number?: number }): Promise<ActionRun> {
+      if (value.controller === "github")
+        throw new Error("GitHub runs must come from GitHub's authoritative run response");
       return db.transaction(async (tx) => {
         await tx
           .select({ id: organization.id })
@@ -544,6 +567,7 @@ export function createActionsRepo(db: Database) {
         .from(actionRun)
         .where(
           and(
+            eq(actionRun.controller, "openship"),
             isNull(actionRun.settledAt),
             or(isNull(actionRun.leaseUntil), lt(actionRun.leaseUntil, new Date())),
           ),
@@ -616,7 +640,13 @@ export function createActionsRepo(db: Database) {
             ),
           )
           .for("update");
-        if (!run || run.cancelRequestedAt || run.finishedAt || (run.untrusted && !run.approvedAt))
+        if (
+          !run ||
+          run.controller !== "openship" ||
+          run.cancelRequestedAt ||
+          run.finishedAt ||
+          (run.untrusted && !run.approvedAt)
+        )
           return false;
         if (run.startedAt) return true;
         if (run.concurrencyGroup) {
@@ -693,7 +723,7 @@ export function createActionsRepo(db: Database) {
             ),
           )
           .for("update");
-        if (!run || run.expandedJobs.includes(jobKey)) return;
+        if (!run || run.controller !== "openship" || run.expandedJobs.includes(jobKey)) return;
         const [total] = await tx
           .select({ value: count() })
           .from(actionJob)
@@ -811,7 +841,7 @@ export function createActionsRepo(db: Database) {
               gt(actionRun.leaseUntil, new Date()),
             ),
           );
-        if (!run || run.cancelRequestedAt) return false;
+        if (!run || run.controller !== "openship" || run.cancelRequestedAt) return false;
         if (job.runnerId) return job.runnerId === runnerId;
         const [runner] = await tx
           .select()
@@ -824,21 +854,8 @@ export function createActionsRepo(db: Database) {
           actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
         )
           return false;
-        const [allocated] = await tx
-          .select({ value: count() })
-          .from(actionJob)
-          .innerJoin(actionRunner, eq(actionRunner.id, actionJob.runnerId))
-          .where(
-            and(
-              eq(actionJob.organizationId, org),
-              eq(actionRunner.organizationId, org),
-              runner.cloudPoolId
-                ? eq(actionRunner.cloudPoolId, runner.cloudPoolId)
-                : eq(actionJob.runnerId, runnerId),
-              isNull(actionJob.cleanedAt),
-            ),
-          );
-        if ((allocated?.value ?? 0) >= runner.config.maxParallel) return false;
+        if ((await actionRunnerAllocationCount(tx, org, runner)) >= runner.config.maxParallel)
+          return false;
         const [siblings] = await tx
           .select({ value: count() })
           .from(actionJob)

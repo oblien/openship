@@ -12,6 +12,7 @@ import { jobProgress, type JobEvent } from "./job-progress";
 
 export function ActionLogs({ job }: { job: ActionJobView }) {
   const jobId = job.id;
+  const liveGitHub = !!job.externalUrl && !job.finishedAt;
   const { t } = useI18n();
   const a = t.actions;
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -21,6 +22,7 @@ export function ActionLogs({ job }: { job: ActionJobView }) {
   const container = useRef<HTMLDivElement>(null);
   const cursor = useRef(0);
   useEffect(() => {
+    if (liveGitHub) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -49,7 +51,7 @@ export function ActionLogs({ job }: { job: ActionJobView }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [jobId, revision]);
+  }, [jobId, revision, liveGitHub]);
   useEffect(() => {
     if (follow.current && container.current)
       container.current.scrollTop = container.current.scrollHeight;
@@ -94,39 +96,55 @@ export function ActionLogs({ job }: { job: ActionJobView }) {
         )}
       </div>
       <div className="min-w-0 space-y-3">
-        <ActionError message={error} onRetry={() => setRevision((value) => value + 1)} />
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">{a.logs}</h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-label={a.followLogs}
-            title={a.followLogs}
-            onClick={() => {
-              follow.current = true;
-              if (container.current) container.current.scrollTop = container.current.scrollHeight;
-            }}
-          >
-            <Icon name="arrow-down" />
-          </Button>
-        </div>
-        <div
-          ref={container}
-          onScroll={(event) => {
-            const element = event.currentTarget;
-            follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-          }}
-          className="h-[360px] min-w-0 overflow-auto rounded-xl bg-background px-4 py-3"
-          tabIndex={0}
-          role="region"
-          aria-label={a.logs}
-          dir="ltr"
-        >
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground/80">
-            {text || a.queuedLogs}
-          </pre>
-        </div>
+        {liveGitHub ? (
+          <div className="space-y-3 rounded-xl bg-background p-4">
+            <p className="text-sm text-muted-foreground">{a.controller.liveLogs}</p>
+            <Button asChild variant="secondary" size="sm">
+              <a href={job.externalUrl!} target="_blank" rel="noopener noreferrer">
+                {a.controller.openGitHub}
+                <Icon name="arrow-up-right" />
+              </a>
+            </Button>
+          </div>
+        ) : (
+          <>
+            <ActionError message={error} onRetry={() => setRevision((value) => value + 1)} />
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">{a.logs}</h3>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={a.followLogs}
+                title={a.followLogs}
+                onClick={() => {
+                  follow.current = true;
+                  if (container.current)
+                    container.current.scrollTop = container.current.scrollHeight;
+                }}
+              >
+                <Icon name="arrow-down" />
+              </Button>
+            </div>
+            <div
+              ref={container}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                follow.current =
+                  element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+              }}
+              className="h-[360px] min-w-0 overflow-auto rounded-xl bg-background px-4 py-3"
+              tabIndex={0}
+              role="region"
+              aria-label={a.logs}
+              dir="ltr"
+            >
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground/80">
+                {text || a.queuedLogs}
+              </pre>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

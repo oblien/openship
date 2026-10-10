@@ -127,6 +127,10 @@ export class ActionController {
     try {
       let run = await repo.claimRun(org, id, this.owner);
       if (!run) return;
+      if (run.controller === "github") {
+        await repo.releaseRun(org, id, this.owner);
+        return;
+      }
       timer = setInterval(() => {
         void repo
           .claimRun(org, id, this.owner)

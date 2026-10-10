@@ -72,6 +72,14 @@ function Detail({ id }: { id: string }) {
               </p>
             </div>
             <div className="flex gap-2">
+              {run.externalUrl && (
+                <Button asChild variant="secondary">
+                  <a href={run.externalUrl} target="_blank" rel="noopener noreferrer">
+                    <Icon name="github" />
+                    {a.controller.openGitHub}
+                  </a>
+                </Button>
+              )}
               {actionFinished(run.status) ? (
                 <Button
                   variant="secondary"
@@ -99,21 +107,24 @@ function Detail({ id }: { id: string }) {
             </div>
           </header>
           <ActionError message={run.error} />
-          {run.untrusted && !run.approvedAt && !actionFinished(run.status) && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-warning/5 p-4">
-              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                {a.approvalHint}
-              </p>
-              <Button
-                disabled={mutation.busy}
-                onClick={async () => {
-                  if (await mutation.execute(() => actionsApi.approve(id))) resource.refresh();
-                }}
-              >
-                {a.approve}
-              </Button>
-            </div>
-          )}
+          {run.controller !== "github" &&
+            run.untrusted &&
+            !run.approvedAt &&
+            !actionFinished(run.status) && (
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-warning/5 p-4">
+                <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                  {a.approvalHint}
+                </p>
+                <Button
+                  disabled={mutation.busy}
+                  onClick={async () => {
+                    if (await mutation.execute(() => actionsApi.approve(id))) resource.refresh();
+                  }}
+                >
+                  {a.approve}
+                </Button>
+              </div>
+            )}
           {run.cancelRequestedAt && !actionFinished(run.status) && (
             <p className="text-sm text-muted-foreground" role="status">
               {a.cancellingHint}

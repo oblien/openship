@@ -193,12 +193,26 @@ export interface TableSpec {
 
 const TABLES: ReadonlyArray<TableSpec> = [
   ...[
-    ["action_runner", schema.actionRunner], ["action_workflow", schema.actionWorkflow], ["action_project", schema.actionProject], ["action_deployment", schema.actionDeployment], ["action_delivery", schema.actionDelivery],
-    ["action_run", schema.actionRun], ["action_job", schema.actionJob], ["action_event", schema.actionEvent],
-    ["action_storage_object", schema.actionStorageObject], ["action_storage_chunk", schema.actionStorageChunk],
-    ["action_budget", schema.actionBudget], ["action_credit_purchase", schema.actionCreditPurchase],
-  ].map(([sqlName, table]) => ({ sqlName: sqlName as string, table: table as PgTable,
-    scopes: [{ in: "instance" as const, via: "all-rows" as const }], hasOrganizationId: true })),
+    ["action_runner", schema.actionRunner],
+    ["action_workflow", schema.actionWorkflow],
+    ["action_project", schema.actionProject],
+    ["action_deployment", schema.actionDeployment],
+    ["action_delivery", schema.actionDelivery],
+    ["action_command", schema.actionCommand],
+    ["action_runner_session", schema.actionRunnerSession],
+    ["action_run", schema.actionRun],
+    ["action_job", schema.actionJob],
+    ["action_event", schema.actionEvent],
+    ["action_storage_object", schema.actionStorageObject],
+    ["action_storage_chunk", schema.actionStorageChunk],
+    ["action_budget", schema.actionBudget],
+    ["action_credit_purchase", schema.actionCreditPurchase],
+  ].map(([sqlName, table]) => ({
+    sqlName: sqlName as string,
+    table: table as PgTable,
+    scopes: [{ in: "instance" as const, via: "all-rows" as const }],
+    hasOrganizationId: true,
+  })),
   {
     sqlName: "external_identity", table: schema.externalIdentity,
     scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
@@ -972,6 +986,7 @@ export interface EncryptedColumnSpec {
 export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "action_credit_purchase", column: "checkoutUrlEnc" },
   { table: "action_workflow", column: "secrets" },
+  { table: "action_runner_session", column: "registration" },
   { table: "action_run", column: "configuration", secretPaths: ["secrets"] },
   { table: "two_factor", column: "secret" },
   { table: "two_factor", column: "backupCodes" },

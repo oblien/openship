@@ -17,6 +17,9 @@ import (
 )
 
 func usesDocker(request jobRequest) bool {
+	if request.GitHub != nil {
+		return request.GitHub.Image != "" || request.DockerSocket
+	}
 	for _, image := range request.Platforms {
 		if image != "-self-hosted" {
 			return true
@@ -143,7 +146,7 @@ func cleanNativeProcesses(ctx context.Context, id string) error {
 				continue
 			}
 			values, err := processEnvironment(ctx, p)
-			if err != nil || !slices.Contains(values, marker) {
+			if err != nil || (!slices.Contains(values, marker) && !slices.Contains(values, "OPENSHIP_ACTION_WORKER_ID="+id)) {
 				continue
 			}
 			born, err := p.CreateTimeWithContext(ctx)

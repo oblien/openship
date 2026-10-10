@@ -7,12 +7,13 @@ export function actionPlanView(plan: ActionWorkflowPlan) {
     name: plan.name,
     triggers: Object.keys(plan.triggers),
     triggerRules: plan.triggers,
-    jobs: plan.jobs.map(({ id, name, needs, runsOn, requiresDocker }) => ({
+    jobs: plan.jobs.map(({ id, name, needs, runsOn, requiresDocker, uses }) => ({
       id,
       name,
       needs,
       runsOn,
       requiresDocker,
+      ...(uses && { uses }),
     })),
     inputs: Object.entries(record(record(plan.triggers.workflow_dispatch).inputs)).map(
       ([name, value]) => {
@@ -61,6 +62,8 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
   } = workflow;
   return {
     id,
+    controller: workflow.controller ?? "openship",
+    githubWorkflowId: workflow.githubWorkflowId ?? null,
     name,
     owner,
     repo,
@@ -82,6 +85,8 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
 export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
   return {
     id: run.id,
+    controller: run.controller ?? "openship",
+    externalUrl: run.github?.url ?? null,
     workflowId: run.workflowId,
     name: run.plan.name,
     number: run.number,
@@ -104,6 +109,7 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
     plan: actionPlanView(run.plan),
     jobs: jobs.map((job) => ({
       id: job.id,
+      externalUrl: job.github?.url ?? null,
       jobKey: job.jobKey,
       name: job.spec?.name ?? job.jobKey,
       matrixIndex: job.matrixIndex,
@@ -112,7 +118,7 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
       status: job.status,
       phase: actionFinished(job.status)
         ? ("finished" as const)
-        : job.workerStartedAt
+        : job.workerStartedAt || (job.github && job.status === "running")
           ? ("running" as const)
           : job.runnerId
             ? ("provisioning" as const)
@@ -127,7 +133,19 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
       logBytes: job.logBytes,
       lastEventSequence: job.lastEventSequence,
       outputs: job.result?.outputs ?? {},
-      steps: job.result?.steps ?? {},
+      steps: job.github
+        ? Object.fromEntries(
+            job.github.steps.map((step) => [
+              String(step.number),
+              {
+                name: step.name,
+                outcome: step.conclusion ?? (step.status === "in_progress" ? "running" : "queued"),
+                conclusion:
+                  step.conclusion ?? (step.status === "in_progress" ? "running" : "queued"),
+              },
+            ]),
+          )
+        : (job.result?.steps ?? {}),
     })),
   };
 }

@@ -24,13 +24,17 @@ export function jobProgress(events: JobEvent[], job: Pick<ActionJobView, "steps"
     });
   }
   for (const [id, step] of Object.entries(job.steps)) {
-    const status =
-      step.conclusion === "success"
-        ? "success"
-        : step.conclusion === "skipped"
-          ? "skipped"
-          : "failure";
-    steps.set(id, { id, name: steps.get(id)?.name ?? id, status });
+    const status: ActionStatus = [
+      "success",
+      "skipped",
+      "queued",
+      "running",
+      "cancelled",
+      "timed_out",
+    ].includes(step.conclusion)
+      ? (step.conclusion as ActionStatus)
+      : "failure";
+    steps.set(id, { id, name: step.name ?? steps.get(id)?.name ?? id, status });
   }
   return [...steps.values()].map((step) =>
     step.status === "running" && actionFinished(job.status)

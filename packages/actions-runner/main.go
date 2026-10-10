@@ -110,7 +110,12 @@ func executeFile(path string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	go watchCancellation(ctx, root, cancel)
-	result, err := runJob(ctx, request, events)
+	var result jobResult
+	if request.GitHub != nil {
+		result, err = runGitHubRunner(ctx, request, events)
+	} else {
+		result, err = runJob(ctx, request, events)
+	}
 	if err != nil {
 		result = jobResult{Conclusion: "failure", Outputs: map[string]string{}, Steps: map[string]stepResult{}, Error: events.redact(err.Error())}
 	}

@@ -116,8 +116,13 @@ function SetupForm({
   useEffect(() => {
     onBusyChange?.(mutation.busy);
   }, [mutation.busy, onBusyChange]);
+  const [controller, setController] = useState<"github" | "openship">(
+    workflow?.controller ?? "github",
+  );
+  const [trusted, setTrusted] = useState(workflow?.controller === "github");
   const [step, setStep] = useState<"workflow" | "rules">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
+  const native = !standalone && controller === "github";
   const [repository, setRepository] = useState(
     workflow?.owner
       ? `${workflow.owner}/${workflow.repo}`
@@ -164,9 +169,13 @@ function SetupForm({
     useCallback(
       () =>
         !standalone && repositoryValid
-          ? actionsApi.discover(owner!, repo!, ref)
+          ? actionsApi
+              .discover(owner!, repo!, ref)
+              .then((files) =>
+                native ? files.filter((file) => file.path.startsWith(".github/workflows/")) : files,
+              )
           : Promise.resolve([]),
-      [standalone, repositoryValid, owner, repo, ref],
+      [standalone, repositoryValid, owner, repo, ref, native],
     ),
   );
   useEffect(() => {
@@ -187,10 +196,16 @@ function SetupForm({
         repositoryValid &&
         (files.data?.some((file) => file.path === path) || (!!workflow && !!files.data))
           ? actionsApi
-              .repositorySource({ owner: owner!, repo: repo!, ref, path })
+              .repositorySource({
+                owner: owner!,
+                repo: repo!,
+                ref,
+                path,
+                controller: native ? "github" : "openship",
+              })
               .then((data) => ({ ...data, identity }))
           : Promise.resolve(null),
-      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow],
+      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow, native],
     ),
   );
   const loaded = useRef<{ identity: string; source: string; file: unknown } | null>(null);
@@ -217,8 +232,11 @@ function SetupForm({
   }, [source]);
   const preview = useActionResource(
     useCallback(
-      () => (debounced.trim() ? actionsApi.preview(debounced, path) : Promise.resolve(null)),
-      [debounced, path],
+      () =>
+        debounced.trim()
+          ? actionsApi.preview(debounced, path, native ? "github" : "openship")
+          : Promise.resolve(null),
+      [debounced, path, native],
     ),
   );
   const [lastPlan, setLastPlan] = useState<{ identity: string; plan: ActionPlanView } | null>(null);
@@ -237,7 +255,8 @@ function SetupForm({
   );
   const differsFromRepository = original?.identity === identity && original.source !== source;
   const dirty = !standalone && differsFromRepository;
-  const canSave = readySource && !!name.trim() && !!runnerIds.length && !mutation.busy;
+  const canSave =
+    readySource && !!name.trim() && !!runnerIds.length && (!native || trusted) && !mutation.busy;
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
@@ -271,24 +290,33 @@ function SetupForm({
           path,
           sha: snapshot?.sha ?? original.sha,
           source,
+          controller: native ? "github" : "openship",
         });
         setOriginal({ source, sha: written.sha, identity });
       }
       const result = await actionsApi.save(
         {
           name: name.trim(),
+          controller: native ? "github" : "openship",
+          ...(native && { repositoryRunnerConsent: trusted }),
           owner: standalone ? null : owner!,
           repo: standalone ? null : repo!,
           ref: standalone ? "main" : ref,
           path,
-          source: standalone || mode === "inline" || (dirty && !commit) ? source : null,
+          source: native
+            ? null
+            : standalone || mode === "inline" || (dirty && !commit)
+              ? source
+              : null,
           runnerIds,
           projectIds,
           enabled,
-          allowForks: !standalone && hasIsolated && allowForks,
-          storageDestinationId: storage || null,
-          variables: Object.fromEntries(variables.map((v) => [v.name, v.value])),
-          secrets: Object.fromEntries(secrets.filter((v) => v.value).map((v) => [v.name, v.value])),
+          allowForks: !native && !standalone && hasIsolated && allowForks,
+          storageDestinationId: native ? null : storage || null,
+          variables: native ? {} : Object.fromEntries(variables.map((v) => [v.name, v.value])),
+          secrets: native
+            ? {}
+            : Object.fromEntries(secrets.filter((v) => v.value).map((v) => [v.name, v.value])),
           removeSecrets: (workflow?.secretNames ?? []).filter(
             (name) => !secrets.some((v) => v.name === name),
           ),
@@ -489,6 +517,34 @@ function SetupForm({
                             </p>
                           ) : (
                             <>
+                              <ActionField label={a.controller.label}>
+                                <Tabs
+                                  tabs={[
+                                    { key: "github", label: "GitHub Actions", icon: "github" },
+                                    {
+                                      key: "openship",
+                                      label: "Openship Actions",
+                                      icon: "play-circle",
+                                    },
+                                  ]}
+                                  value={controller}
+                                  onChange={(value) => {
+                                    setController(value);
+                                    if (value === "github") setMode("repository");
+                                  }}
+                                  columns={2}
+                                  size="sm"
+                                  idPrefix={`${prefix}-controller`}
+                                />
+                                <p
+                                  role="tabpanel"
+                                  id={`${prefix}-controller-panel-${controller}`}
+                                  aria-labelledby={`${prefix}-controller-tab-${controller}`}
+                                  className="mt-2 text-xs leading-relaxed text-muted-foreground"
+                                >
+                                  {native ? a.controller.githubHint : a.controller.openshipHint}
+                                </p>
+                              </ActionField>
                               <ActionField label={a.repository}>
                                 <Input
                                   variant="filled"
@@ -569,39 +625,41 @@ function SetupForm({
                                 !files.error && (
                                   <p className="text-xs text-muted-foreground">{c.noFiles}</p>
                                 )}
-                              <div className="space-y-2">
-                                <h2 className="text-sm font-medium">{e.updates}</h2>
-                                <Tabs
-                                  tabs={[
-                                    {
-                                      key: "repository",
-                                      label: e.automatic,
-                                      leading: <Icon name="refresh" className="size-3.5" />,
-                                    },
-                                    {
-                                      key: "inline",
-                                      label: e.review,
-                                      leading: <Icon name="shield-check" className="size-3.5" />,
-                                    },
-                                  ]}
-                                  value={mode}
-                                  onChange={(mode) => {
-                                    setMode(mode);
-                                    if (mode === "inline" && !source) setSource(STARTER);
-                                  }}
-                                  columns={2}
-                                  idPrefix={`${prefix}-updates`}
-                                  size="sm"
-                                />
-                                <p
-                                  role="tabpanel"
-                                  id={`${prefix}-updates-panel-${mode}`}
-                                  aria-labelledby={`${prefix}-updates-tab-${mode}`}
-                                  className="text-xs leading-relaxed text-muted-foreground"
-                                >
-                                  {mode === "repository" ? e.automaticHint : e.reviewHint}
-                                </p>
-                              </div>
+                              {!native && (
+                                <div className="space-y-2">
+                                  <h2 className="text-sm font-medium">{e.updates}</h2>
+                                  <Tabs
+                                    tabs={[
+                                      {
+                                        key: "repository",
+                                        label: e.automatic,
+                                        leading: <Icon name="refresh" className="size-3.5" />,
+                                      },
+                                      {
+                                        key: "inline",
+                                        label: e.review,
+                                        leading: <Icon name="shield-check" className="size-3.5" />,
+                                      },
+                                    ]}
+                                    value={mode}
+                                    onChange={(mode) => {
+                                      setMode(mode);
+                                      if (mode === "inline" && !source) setSource(STARTER);
+                                    }}
+                                    columns={2}
+                                    idPrefix={`${prefix}-updates`}
+                                    size="sm"
+                                  />
+                                  <p
+                                    role="tabpanel"
+                                    id={`${prefix}-updates-panel-${mode}`}
+                                    aria-labelledby={`${prefix}-updates-tab-${mode}`}
+                                    className="text-xs leading-relaxed text-muted-foreground"
+                                  >
+                                    {mode === "repository" ? e.automaticHint : e.reviewHint}
+                                  </p>
+                                </div>
+                              )}
                               {differsFromRepository && (
                                 <div className="space-y-2 rounded-xl bg-warning-bg p-3">
                                   <p className="flex items-start gap-2 text-xs leading-relaxed text-warning">
@@ -636,7 +694,7 @@ function SetupForm({
                             {a.destinations}
                           </h2>
                           <p className="text-xs leading-relaxed text-muted-foreground">
-                            {a.destinationsHint}
+                            {native ? a.controller.labelsHint : a.destinationsHint}
                           </p>
                           <div className="space-y-2">
                             {runners.map((runner) => (
@@ -736,39 +794,51 @@ function SetupForm({
                             </p>
                           )}
                         </div>
-                        <details className="group">
-                          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
-                            <span className="flex items-center gap-2">
-                              <Icon name="layers" className="size-4 text-muted-foreground" />
-                              {c.environment}
+                        {!native && (
+                          <details className="group">
+                            <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
+                              <span className="flex items-center gap-2">
+                                <Icon name="layers" className="size-4 text-muted-foreground" />
+                                {c.environment}
+                              </span>
+                              <Icon name="chevron-down" className="size-4 group-open:rotate-180" />
+                            </summary>
+                            <div className="mt-4 space-y-5">
+                              <div>
+                                <h3 className="mb-3 text-sm font-medium">{a.variables}</h3>
+                                <ActionValues values={variables} onChange={setVariables} />
+                              </div>
+                              <div>
+                                <h3 className="mb-1 text-sm font-medium">{a.secrets}</h3>
+                                <p className="mb-3 text-xs text-muted-foreground">
+                                  {a.secretsHint}
+                                </p>
+                                <ActionValues secret values={secrets} onChange={setSecrets} />
+                              </div>
+                              <ActionField label={a.storage} hint={a.storageHint}>
+                                <BackupDestinationSelect
+                                  label={a.storage}
+                                  value={storage}
+                                  onChange={setStorage}
+                                  kinds={selfHosted ? storageKinds : cloudStorageKinds}
+                                />
+                              </ActionField>
+                            </div>
+                          </details>
+                        )}
+                        {native && (
+                          <label className="flex items-start gap-2 text-sm">
+                            <Checkbox checked={trusted} onCheckedChange={setTrusted} />
+                            <span className="text-xs leading-relaxed text-muted-foreground">
+                              {a.controller.trust}
                             </span>
-                            <Icon name="chevron-down" className="size-4 group-open:rotate-180" />
-                          </summary>
-                          <div className="mt-4 space-y-5">
-                            <div>
-                              <h3 className="mb-3 text-sm font-medium">{a.variables}</h3>
-                              <ActionValues values={variables} onChange={setVariables} />
-                            </div>
-                            <div>
-                              <h3 className="mb-1 text-sm font-medium">{a.secrets}</h3>
-                              <p className="mb-3 text-xs text-muted-foreground">{a.secretsHint}</p>
-                              <ActionValues secret values={secrets} onChange={setSecrets} />
-                            </div>
-                            <ActionField label={a.storage} hint={a.storageHint}>
-                              <BackupDestinationSelect
-                                label={a.storage}
-                                value={storage}
-                                onChange={setStorage}
-                                kinds={selfHosted ? storageKinds : cloudStorageKinds}
-                              />
-                            </ActionField>
-                          </div>
-                        </details>
+                          </label>
+                        )}
                         <label className="flex items-center gap-2 text-sm">
                           <Checkbox checked={enabled} onCheckedChange={setEnabled} />
                           {a.enabled}
                         </label>
-                        {!standalone && (
+                        {!standalone && !native && (
                           <label className="flex items-start gap-2 text-sm">
                             <Checkbox
                               checked={allowForks && hasIsolated}
@@ -838,7 +908,7 @@ function SetupForm({
           busy={mutation.busy}
           error={mutation.error}
           onCommit={() => void save(true, review)}
-          onCopy={() => void save(false, review)}
+          onCopy={native ? undefined : () => void save(false, review)}
           onApply={() => {
             setSource(review.previous);
             setReview(null);
@@ -868,7 +938,7 @@ function SourceReview({
   snapshot: SourceReviewSnapshot;
   onClose: () => void;
   onCommit: () => void;
-  onCopy: () => void;
+  onCopy?: () => void;
   onApply: () => void;
   busy: boolean;
   error: string | null;
@@ -932,9 +1002,11 @@ function SourceReview({
             </Button>
           ) : (
             <>
-              <Button variant="secondary" onClick={onCopy} disabled={busy}>
-                {c.saveCopy}
-              </Button>
+              {onCopy && (
+                <Button variant="secondary" onClick={onCopy} disabled={busy}>
+                  {c.saveCopy}
+                </Button>
+              )}
               <Button onClick={onCommit} disabled={busy}>
                 {c.commitSave}
               </Button>

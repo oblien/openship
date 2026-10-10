@@ -6,6 +6,33 @@ export const ACTIONS_MAX_WORKFLOW_BYTES = 256 * 1024;
 export const ACTIONS_MAX_LOG_BYTES = 8 * 1024 * 1024;
 export const ACTIONS_MAX_JOB_SECONDS = 6 * 60 * 60;
 
+/** Exactly one controller owns a workflow's scheduling and job results. */
+export type ActionWorkflowController = "openship" | "github";
+
+export interface ActionGitHubRun {
+  id: string;
+  workflowId: string;
+  url: string;
+  status: string;
+  conclusion: string | null;
+  updatedAt: string;
+}
+
+export interface ActionGitHubJob {
+  id: string;
+  url: string;
+  runnerId: string | null;
+  runnerName: string | null;
+  steps: Array<{
+    number: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>;
+}
+
 export type ActionConclusion = "success" | "failure" | "cancelled" | "skipped" | "timed_out";
 export type ActionStatus = "queued" | "waiting" | "running" | "cancelling" | ActionConclusion;
 export const ACTIONS_TERMINAL_STATUSES: readonly ActionStatus[] = [
@@ -64,6 +91,16 @@ export interface ActionJobResult {
 }
 
 export interface ActionWorkerRequest {
+  /** Official GitHub runner; workflow/job credentials come only from GitHub. */
+  github?: {
+    repository: string;
+    name: string;
+    token: string;
+    labels: string[];
+    downloadUrl: string;
+    sha256: string;
+    image: string;
+  };
   version: 1;
   id: string;
   workflow: string;
@@ -110,6 +147,8 @@ export interface ActionJobDefinition {
   name: string;
   needs: string[];
   runsOn: unknown;
+  /** GitHub resolves called workflows; the editor retains their original definition. */
+  uses?: string;
   condition?: string | boolean;
   matrix?: unknown;
   failFast: unknown;

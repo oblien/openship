@@ -58,6 +58,7 @@ export function WorkflowJobEditor({
   const [settings, setSettings] = useState(!inline);
   const prefix = useId();
   const { id, value } = job;
+  const reusable = typeof value.uses === "string";
   const runsOn = value["runs-on"];
   const runnerLabels = Array.isArray(runsOn) ? runsOn.join(", ") : text(runsOn);
   const complex =
@@ -87,7 +88,7 @@ export function WorkflowJobEditor({
           <span className={`block truncate ${inline ? "" : "text-sm font-medium text-foreground"}`}>
             {inline ? e.jobSettings : text(value.name) || id}
           </span>
-          {!inline && (
+          {!inline && !reusable && (
             <span className="mt-0.5 block truncate text-xs text-muted-foreground">
               {runnerLabels || id}
             </span>
@@ -109,84 +110,100 @@ export function WorkflowJobEditor({
               onChange={(event) => field("name", event.target.value)}
             />
           </ActionField>
-          <ActionField label={e.architecture}>
-            <CustomSelect
-              aria-label={e.architecture}
-              value={workflowJobArchitecture(runsOn)}
-              variant="filled"
-              triggerClassName="h-9 bg-muted/60 hover:bg-muted"
-              disabled={complex}
-              options={[
-                { value: "auto", label: e.automaticArchitecture },
-                { value: "x64", label: "x64" },
-                { value: "arm64", label: "ARM64" },
-              ]}
-              onChange={(architecture) =>
-                edit(() => editWorkflowJobArchitecture(source, id, architecture))
-              }
-            />
-          </ActionField>
+          {!reusable && (
+            <ActionField label={e.architecture}>
+              <CustomSelect
+                aria-label={e.architecture}
+                value={workflowJobArchitecture(runsOn)}
+                variant="filled"
+                triggerClassName="h-9 bg-muted/60 hover:bg-muted"
+                disabled={complex}
+                options={[
+                  { value: "auto", label: e.automaticArchitecture },
+                  { value: "x64", label: "x64" },
+                  { value: "arm64", label: "ARM64" },
+                ]}
+                onChange={(architecture) =>
+                  edit(() => editWorkflowJobArchitecture(source, id, architecture))
+                }
+              />
+            </ActionField>
+          )}
         </div>
-        <ActionField label={e.runsOn}>
-          <DraftInput
-            className="h-9"
-            variant="filled"
-            dir="ltr"
-            value={runnerLabels}
-            title={e.runsOnHint}
-            disabled={!!runsOn && typeof runsOn === "object" && !Array.isArray(runsOn)}
-            onChange={(event) => {
-              if (event.target.value.includes("${{")) {
-                field("runs-on", event.target.value);
-                return;
-              }
-              const labels = event.target.value
-                .split(",")
-                .map((label) => label.trim())
-                .filter(Boolean);
-              field("runs-on", labels.length === 1 ? labels[0] : labels);
-            }}
-          />
-        </ActionField>
-        <div className="space-y-2">
-          <ActionField label={e.jobImage}>
+        {reusable ? (
+          <ActionField label={t.actions.controller.reusable}>
             <DraftInput
-              className="h-9"
               variant="filled"
+              className="h-9"
               dir="ltr"
-              value={image}
-              placeholder={e.runnerDefault}
-              onChange={(event) =>
-                edit(() => editWorkflowContainerImage(source, id, event.target.value))
-              }
+              value={text(value.uses)}
+              onChange={(event) => field("uses", event.target.value)}
             />
           </ActionField>
-          <div className="flex flex-wrap gap-1.5">
-            {value.container !== undefined && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={() => field("container", undefined)}
-              >
-                {e.runnerDefault}
-              </Button>
-            )}
-            {["node:22", "node:24"].map((image) => (
-              <Button
-                key={image}
-                size="sm"
-                variant="secondary"
-                className="h-7 px-2 text-xs"
-                onClick={() => edit(() => editWorkflowContainerImage(source, id, image))}
-              >
-                <Icon name="docker" className="size-3.5" />
-                {image}
-              </Button>
-            ))}
-          </div>
-          <p className="text-xs leading-relaxed text-muted-foreground">{e.jobImageHint}</p>
-        </div>
+        ) : (
+          <>
+            <ActionField label={e.runsOn}>
+              <DraftInput
+                className="h-9"
+                variant="filled"
+                dir="ltr"
+                value={runnerLabels}
+                title={e.runsOnHint}
+                disabled={!!runsOn && typeof runsOn === "object" && !Array.isArray(runsOn)}
+                onChange={(event) => {
+                  if (event.target.value.includes("${{")) {
+                    field("runs-on", event.target.value);
+                    return;
+                  }
+                  const labels = event.target.value
+                    .split(",")
+                    .map((label) => label.trim())
+                    .filter(Boolean);
+                  field("runs-on", labels.length === 1 ? labels[0] : labels);
+                }}
+              />
+            </ActionField>
+            <div className="space-y-2">
+              <ActionField label={e.jobImage}>
+                <DraftInput
+                  className="h-9"
+                  variant="filled"
+                  dir="ltr"
+                  value={image}
+                  placeholder={e.runnerDefault}
+                  onChange={(event) =>
+                    edit(() => editWorkflowContainerImage(source, id, event.target.value))
+                  }
+                />
+              </ActionField>
+              <div className="flex flex-wrap gap-1.5">
+                {value.container !== undefined && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => field("container", undefined)}
+                  >
+                    {e.runnerDefault}
+                  </Button>
+                )}
+                {["node:22", "node:24"].map((image) => (
+                  <Button
+                    key={image}
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => edit(() => editWorkflowContainerImage(source, id, image))}
+                  >
+                    <Icon name="docker" className="size-3.5" />
+                    {image}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">{e.jobImageHint}</p>
+            </div>
+          </>
+        )}
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-1.5 text-xs font-medium">
             <span className="flex items-center gap-2">
@@ -222,21 +239,23 @@ export function WorkflowJobEditor({
           </div>
         </details>
       </div>
-      {!inline && (
+      {!inline && !reusable && (
         <h3 className="flex items-center justify-between text-xs font-medium text-muted-foreground">
           <span>{e.steps}</span>
           <span>{steps.length}</span>
         </h3>
       )}
-      <WorkflowSteps
-        source={source}
-        jobId={id}
-        steps={steps}
-        edit={edit}
-        expandedSteps={expandedSteps}
-        onExpandedStepsChange={onExpandedStepsChange}
-        reveal={stepToReveal}
-      />
+      {!reusable && (
+        <WorkflowSteps
+          source={source}
+          jobId={id}
+          steps={steps}
+          edit={edit}
+          expandedSteps={expandedSteps}
+          onExpandedStepsChange={onExpandedStepsChange}
+          reveal={stepToReveal}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
         <Button
           variant="ghost"

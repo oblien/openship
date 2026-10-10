@@ -14,6 +14,7 @@ import {
   type ActionJobSpec,
   type ActionNeedsResult,
   type ActionWorkflowPlan,
+  type ActionWorkflowController,
 } from "@repo/core";
 import { evaluateTemplate, type ActionExpressionContext } from "./expressions";
 
@@ -32,6 +33,7 @@ function unsupported(field: string): never {
 export async function parseActionWorkflow(
   source: string,
   path = ".github/workflows/ci.yml",
+  controller: ActionWorkflowController = "openship",
 ): Promise<ActionWorkflowPlan> {
   if (!source.trim() || Buffer.byteLength(source) > ACTIONS_MAX_WORKFLOW_BYTES)
     throw new ValidationError(
@@ -56,15 +58,20 @@ export async function parseActionWorkflow(
       : Array.isArray(raw.on)
         ? Object.fromEntries(raw.on.map((e) => [String(e), {}]))
         : record(raw.on);
+  // GitHub owns execution semantics in this mode. The shared parser and editor
+  // still validate YAML and show its jobs, but our independent controller's
+  // feature limits must never reject a workflow GitHub can run.
+  const independent = controller === "openship";
   for (const trigger of Object.keys(triggers)) {
     if (
+      independent &&
       !["push", "pull_request", "workflow_dispatch", "schedule", "repository_dispatch"].includes(
         trigger,
       )
     )
       unsupported(`on.${trigger}`);
   }
-  if (triggers.schedule !== undefined) {
+  if (independent && triggers.schedule !== undefined) {
     if (
       !Array.isArray(triggers.schedule) ||
       !triggers.schedule.length ||
@@ -92,17 +99,18 @@ export async function parseActionWorkflow(
         unsupported("on.schedule options other than cron");
     }
   }
-  if (record(raw.concurrency).queue) unsupported("concurrency.queue");
+  if (independent && record(raw.concurrency).queue) unsupported("concurrency.queue");
   const jobs = Object.entries(record(raw.jobs)).map(([id, value]): ActionJobDefinition => {
     const job = record(value);
-    if (job.uses) unsupported(`jobs.${id}.uses (reusable workflows)`);
-    if (job.environment) unsupported(`jobs.${id}.environment (protected environments)`);
-    if (record(job.concurrency).queue) unsupported(`jobs.${id}.concurrency.queue`);
-    if (job.snapshot) unsupported(`jobs.${id}.snapshot`);
+    if (independent && job.uses) unsupported(`jobs.${id}.uses (reusable workflows)`);
+    if (independent && job.environment)
+      unsupported(`jobs.${id}.environment (protected environments)`);
+    if (independent && record(job.concurrency).queue) unsupported(`jobs.${id}.concurrency.queue`);
+    if (independent && job.snapshot) unsupported(`jobs.${id}.snapshot`);
     const steps = Array.isArray(job.steps) ? job.steps.map(record) : [];
     for (const step of steps) {
       for (const key of ["background", "wait", "wait-all", "parallel", "cancel"])
-        if (key in step) unsupported(`jobs.${id}.steps.${key}`);
+        if (independent && key in step) unsupported(`jobs.${id}.steps.${key}`);
     }
     const strategy = record(job.strategy);
     return {
@@ -115,6 +123,7 @@ export async function parseActionWorkflow(
             ? job.needs.map(String)
             : [],
       runsOn: job["runs-on"],
+      ...(typeof job.uses === "string" && { uses: job.uses }),
       condition: job.if as string | boolean | undefined,
       matrix: strategy.matrix,
       failFast: strategy["fail-fast"] ?? true,
@@ -123,6 +132,7 @@ export async function parseActionWorkflow(
       continueOnError: job["continue-on-error"] ?? false,
       concurrency: job.concurrency,
       permissions: job.permissions,
+      environment: job.environment,
       requiresDocker:
         !!job.container ||
         Object.keys(record(job.services)).length > 0 ||
@@ -146,10 +156,12 @@ export async function parseActionWorkflow(
     visited.add(id);
   };
   jobs.forEach((j) => visit(j.id));
-  actionPermissions(raw.permissions);
-  jobs.forEach((job) => {
-    if (job.permissions !== undefined) actionPermissions(job.permissions);
-  });
+  if (independent) {
+    actionPermissions(raw.permissions);
+    jobs.forEach((job) => {
+      if (job.permissions !== undefined) actionPermissions(job.permissions);
+    });
+  }
   return {
     name: typeof raw.name === "string" ? raw.name : path,
     triggers,

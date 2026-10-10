@@ -21,6 +21,10 @@ const strings = Type.Record(
   Type.String({ maxLength: 65536 }),
   { maxProperties: 100 },
 );
+export const ActionControllerSchema = Type.Union([
+  Type.Literal("openship"),
+  Type.Literal("github"),
+]);
 export const ActionStatusSchema = Type.Union(
   (
     [
@@ -91,6 +95,8 @@ export const ActionRunnerSchema = Type.Object(
 );
 export const ActionWorkflowInput = Type.Object(
   {
+    controller: Type.Optional(ActionControllerSchema),
+    repositoryRunnerConsent: Type.Optional(Type.Boolean()),
     name: Type.String({ minLength: 1, maxLength: 100 }),
     owner: nullable(owner),
     repo: nullable(repo),
@@ -119,6 +125,7 @@ const plannedJob = Type.Object({
   name: Type.String(),
   needs: Type.Array(Type.String()),
   runsOn: Type.Unknown(),
+  uses: Type.Optional(Type.String()),
   requiresDocker: Type.Boolean(),
 });
 export const ActionPlanSchema = Type.Object(
@@ -143,6 +150,8 @@ export const ActionPlanSchema = Type.Object(
 export const ActionWorkflowSchema = Type.Object(
   {
     id,
+    controller: ActionControllerSchema,
+    githubWorkflowId: nullable(Type.String()),
     name: Type.String(),
     owner: nullable(owner),
     repo: nullable(repo),
@@ -166,6 +175,7 @@ export const ActionWorkflowSchema = Type.Object(
 export const ActionJobSchema = Type.Object(
   {
     id,
+    externalUrl: Type.Optional(nullable(Type.String())),
     jobKey: Type.String(),
     name: Type.String(),
     matrixIndex: Type.Number(),
@@ -190,7 +200,11 @@ export const ActionJobSchema = Type.Object(
     outputs: Type.Record(Type.String(), Type.String()),
     steps: Type.Record(
       Type.String(),
-      Type.Object({ outcome: Type.String(), conclusion: Type.String() }),
+      Type.Object({
+        name: Type.Optional(Type.String()),
+        outcome: Type.String(),
+        conclusion: Type.String(),
+      }),
     ),
   },
   { additionalProperties: false },
@@ -198,6 +212,8 @@ export const ActionJobSchema = Type.Object(
 export const ActionRunSchema = Type.Object(
   {
     id,
+    controller: ActionControllerSchema,
+    externalUrl: Type.Optional(nullable(Type.String())),
     workflowId: Type.String(),
     name: Type.String(),
     number: Type.Number(),
@@ -306,6 +322,7 @@ export const ActionCollectionSchemas = {
     input: Type.Object({
       source: Type.String({ maxLength: ACTIONS_MAX_WORKFLOW_BYTES }),
       path: Type.Optional(path),
+      controller: Type.Optional(ActionControllerSchema),
     }),
     output: ActionPlanSchema,
   },
@@ -316,7 +333,13 @@ export const ActionCollectionSchemas = {
   },
   repositorySource: {
     action: "read",
-    input: Type.Object({ owner, repo, ref, path }),
+    input: Type.Object({
+      owner,
+      repo,
+      ref,
+      path,
+      controller: Type.Optional(ActionControllerSchema),
+    }),
     output: Type.Object({
       source: Type.String(),
       sha: Type.String(),
@@ -333,6 +356,7 @@ export const ActionCollectionSchemas = {
       path,
       sha: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
       source: Type.String({ maxLength: ACTIONS_MAX_WORKFLOW_BYTES }),
+      controller: Type.Optional(ActionControllerSchema),
     }),
     output: Type.Object({ sha: Type.String(), commit: Type.String() }),
   },

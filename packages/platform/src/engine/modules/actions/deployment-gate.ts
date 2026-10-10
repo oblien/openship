@@ -270,6 +270,12 @@ export const actionDeploymentController = new ActionDeploymentController({
         `actions-required:${request.id}:${id}`,
       );
       const workflow = await requireActionWorkflow(ctx, id, true);
+      if (workflow.controller === "github") {
+        // GitHub already owns the push. Reconcile it; dispatching here would
+        // execute a second workflow with different GitHub event semantics.
+        await (await import("./github-sync")).synchronizeGitHubWorkflow(ctx, workflow);
+        continue;
+      }
       await triggerActionWorkflow(ctx, workflow, {
         eventName: "push",
         key: request.id,
@@ -394,14 +400,20 @@ export async function updateActionDeploymentRequest(
             run.configuration.workflowVersion === requirements[workflow.id],
         )
       )
-        await triggerActionWorkflow(ctx, workflow, {
-          eventName: "push",
-          key: request.id,
-          revision: request.revision,
-          ref: request.ref,
-          requiredBranch: branch,
-          event: request.intent.event,
-        });
+        if (workflow.controller === "github") {
+          // GitHub already owns the push. Reconcile it; dispatching here would
+          // execute a second workflow with different GitHub event semantics.
+          await (await import("./github-sync")).synchronizeGitHubWorkflow(ctx, workflow);
+          continue;
+        }
+      await triggerActionWorkflow(ctx, workflow, {
+        eventName: "push",
+        key: request.id,
+        revision: request.revision,
+        ref: request.ref,
+        requiredBranch: branch,
+        event: request.intent.event,
+      });
     }
     const reset = await repos.actions.resetActionDeployment(
       ctx.organizationId,

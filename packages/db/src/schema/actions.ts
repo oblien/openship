@@ -16,6 +16,9 @@ import type {
   ActionCapabilities,
   ActionJobResult,
   ActionJobSpec,
+  ActionGitHubRun,
+  ActionGitHubJob,
+  ActionWorkflowController,
   ActionRunnerConfig,
   ActionStatus,
   ActionWorkerEvent,
@@ -95,6 +98,11 @@ export const actionWorkflow = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    controller: text("controller").$type<ActionWorkflowController>().notNull().default("openship"),
+    githubWorkflowId: text("github_workflow_id"),
+    syncAfter: timestamp("sync_after").notNull().defaultNow(),
+    syncLeaseOwner: text("sync_lease_owner"),
+    syncLeaseUntil: timestamp("sync_lease_until"),
     owner: text("owner"),
     repo: text("repo"),
     path: text("path").notNull(),
@@ -121,6 +129,12 @@ export const actionWorkflow = pgTable(
     uniqueIndex("action_workflow_owner_unique").on(t.id, t.organizationId),
     uniqueIndex("action_workflow_repo_path_unique").on(t.organizationId, t.owner, t.repo, t.path),
     index("action_workflow_repo_idx").on(t.owner, t.repo),
+    index("action_workflow_sync_idx").on(t.controller, t.syncAfter, t.syncLeaseUntil),
+    check("action_workflow_controller_check", sql`${t.controller} IN ('openship', 'github')`),
+    check(
+      "action_workflow_github_check",
+      sql`${t.controller} <> 'github' OR (${t.owner} IS NOT NULL AND ${t.repo} IS NOT NULL AND ${t.source} IS NULL AND ${t.githubWorkflowId} IS NOT NULL)`,
+    ),
     check(
       "action_workflow_source_check",
       sql`(${t.owner} IS NOT NULL AND ${t.repo} IS NOT NULL) OR (${t.owner} IS NULL AND ${t.repo} IS NULL AND ${t.source} IS NOT NULL)`,
@@ -212,6 +226,8 @@ export const actionRun = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     workflowId: text("workflow_id").notNull(),
+    controller: text("controller").$type<ActionWorkflowController>().notNull().default("openship"),
+    github: jsonb("github").$type<ActionGitHubRun>(),
     number: integer("number").notNull(),
     attempt: integer("attempt").notNull().default(1),
     originalRunId: text("original_run_id"),
@@ -248,7 +264,12 @@ export const actionRun = pgTable(
   (t) => [
     uniqueIndex("action_run_owner_unique").on(t.id, t.organizationId),
     uniqueIndex("action_run_idempotency_unique").on(t.organizationId, t.idempotencyKey),
-    uniqueIndex("action_run_number_attempt_unique").on(t.workflowId, t.number, t.attempt),
+    uniqueIndex("action_run_number_attempt_unique").on(
+      t.workflowId,
+      t.controller,
+      t.number,
+      t.attempt,
+    ),
     foreignKey({
       columns: [t.workflowId, t.organizationId],
       foreignColumns: [actionWorkflow.id, actionWorkflow.organizationId],
@@ -257,6 +278,12 @@ export const actionRun = pgTable(
     index("action_run_workflow_created_idx").on(t.workflowId, t.createdAt),
     index("action_run_pending_idx").on(t.settledAt, t.leaseUntil),
     index("action_run_concurrency_idx").on(t.organizationId, t.concurrencyGroup, t.status),
+    check("action_run_controller_check", sql`${t.controller} IN ('openship', 'github')`),
+    uniqueIndex("action_run_github_unique").on(
+      t.organizationId,
+      sql`(${t.github}->>'id')`,
+      t.attempt,
+    ),
   ],
 );
 
@@ -269,6 +296,7 @@ export const actionJob = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
     jobKey: text("job_key").notNull(),
+    github: jsonb("github").$type<ActionGitHubJob>(),
     matrixIndex: integer("matrix_index").notNull(),
     spec: jsonb("spec").$type<ActionJobSpec>(),
     status: text("status").$type<ActionStatus>().notNull().default("queued"),
@@ -337,6 +365,94 @@ export const actionEvent = pgTable(
       name: "action_event_job_owner_fk",
     }).onDelete("cascade"),
     index("action_event_run_idx").on(t.runId, t.createdAt),
+  ],
+);
+
+/** GitHub assigns jobs to ephemeral runner registrations. A registration is a
+ * capacity lease, not a second workflow job or source of workflow results. */
+export const actionRunnerSession = pgTable(
+  "action_runner_session",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflowId: text("workflow_id").notNull(),
+    runnerId: text("runner_id").notNull(),
+    demandJobId: text("demand_job_id").notNull(),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    runnerName: text("runner_name").notNull(),
+    githubRunnerId: text("github_runner_id"),
+    registration: text("registration"),
+    registrationExpiresAt: timestamp("registration_expires_at"),
+    spec: jsonb("spec").$type<ActionJobSpec>().notNull(),
+    directory: text("directory"),
+    workerBinary: text("worker_binary"),
+    providerWorkspaceId: text("provider_workspace_id"),
+    providerRequestedAt: timestamp("provider_requested_at"),
+    workerStartedAt: timestamp("worker_started_at"),
+    lastEventSequence: integer("last_event_sequence").notNull().default(0),
+    state: text("state")
+      .$type<"preparing" | "listening" | "running" | "stopping" | "finished">()
+      .notNull()
+      .default("preparing"),
+    cancelRequestedAt: timestamp("cancel_requested_at"),
+    finishedAt: timestamp("finished_at"),
+    cleanedAt: timestamp("cleaned_at"),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.workflowId, t.organizationId],
+      foreignColumns: [actionWorkflow.id, actionWorkflow.organizationId],
+      name: "action_runner_session_workflow_owner_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [t.runnerId, t.organizationId],
+      foreignColumns: [actionRunner.id, actionRunner.organizationId],
+      name: "action_runner_session_runner_owner_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("action_runner_session_name_unique").on(t.runnerName),
+    uniqueIndex("action_runner_session_demand_unique")
+      .on(t.organizationId, t.demandJobId)
+      .where(sql`${t.cleanedAt} IS NULL`),
+    index("action_runner_session_pending_idx").on(t.cleanedAt, t.leaseUntil),
+  ],
+);
+
+/** Outbound commands have durable receipts because GitHub dispatch/rerun do
+ * not accept an idempotency key. An uncertain response is never replayed. */
+export const actionCommand = pgTable(
+  "action_command",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    workflowId: text("workflow_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    state: text("state")
+      .$type<"submitted" | "accepted" | "uncertain" | "rejected">()
+      .notNull()
+      .default("submitted"),
+    remoteRunId: text("remote_run_id"),
+    remoteAttempt: integer("remote_attempt"),
+    sourceJob: jsonb("source_job").$type<ActionRunConfiguration["sourceJob"]>(),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("action_command_key_unique").on(t.organizationId, t.idempotencyKey),
+    foreignKey({
+      columns: [t.workflowId, t.organizationId],
+      foreignColumns: [actionWorkflow.id, actionWorkflow.organizationId],
+      name: "action_command_workflow_owner_fk",
+    }).onDelete("cascade"),
   ],
 );
 

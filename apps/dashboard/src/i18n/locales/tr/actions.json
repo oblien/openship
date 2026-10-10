@@ -370,5 +370,15 @@
     "dockerAccess": "Docker erişimine izin ver",
     "dockerAccessHint": "İş konteynerlerinde imaj derlemeyi etkinleştirir. Bu sunucuda yalnızca güvenilir iş akışları çalıştırın.",
     "defaultImageHint": "Her iş kendi uyumlu konteyner imajını seçebilir."
+  },
+  "controller": {
+    "label": "Çalıştırma yöntemi",
+    "githubHint": "GitHub iş akışını, kontrolleri, gizli bilgileri ve çıktıları yönetir. Openship çalıştırıcıları yönetir. Değişiklikler depoya kaydedilmelidir.",
+    "openshipHint": "Openship ile bağımsız çalıştırın. Kayıtlı YAML ve bağımsız otomasyon desteklenir; bazı özellikler GitHub Actions modunu gerektirir.",
+    "labelsHint": "Bu hedefler için runs-on: [self-hosted, openship, linux] (veya macos) kullanın. Diğer etiketler GitHub davranışını korur.",
+    "trust": "Bu depodaki iş akışlarının çalıştırıcıları kullanmasına izin verin. Dosyaları değiştirebilen herkes bu hedeflerde kod çalıştırabilir ve Actions bütçesini kullanabilir.",
+    "reusable": "Yeniden kullanılabilir iş akışı",
+    "openGitHub": "GitHub'da aç",
+    "liveLogs": "Canlı günlükleri GitHub üzerinden izleyin. Tamamlanan günlükler burada görünür."
   }
 }

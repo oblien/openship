@@ -28,6 +28,12 @@ beforeEach(() => {
 });
 
 describe("Actions GitHub Checks delivery", () => {
+  it("never publishes an independent Check for a GitHub-owned run", async () => {
+    await syncActionCheck({ ...run, controller: "github" }, { ...job, checkRunId: "github-check" });
+    expect(h.resolve).not.toHaveBeenCalled();
+    expect(h.token).not.toHaveBeenCalled();
+    expect(h.request).not.toHaveBeenCalled();
+  });
   it("reconciles an accepted creation after the HTTP response was lost", async () => {
     const stored: { id: number; external_id: string }[] = [];
     h.request.mockImplementation(

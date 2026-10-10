@@ -21,7 +21,7 @@ export async function enqueueActionWebhook(
   if (
     !nativeJobsEnabled() ||
     !delivery ||
-    !["push", "pull_request", "check_run"].includes(eventName)
+    !["push", "pull_request", "check_run", "workflow_run", "workflow_job"].includes(eventName)
   )
     return;
   const event = record(value);
@@ -68,7 +68,7 @@ export async function dispatchActionWebhook(
   if (
     !nativeJobsEnabled() ||
     !delivery ||
-    !["push", "pull_request", "check_run"].includes(eventName)
+    !["push", "pull_request", "check_run", "workflow_run", "workflow_job"].includes(eventName)
   )
     return;
   const event = record(value);
@@ -90,6 +90,11 @@ export async function dispatchActionWebhook(
         workflow.authority,
         `actions-webhook:${workflow.id}`,
       );
+      if (workflow.controller === "github") {
+        await repos.actions.requestGitHubSync(workflow.organizationId, workflow.id);
+        continue;
+      }
+      if (eventName === "workflow_run" || eventName === "workflow_job") continue;
       if (eventName === "check_run") {
         const check = record(event.check_run);
         if (event.action !== "rerequested" || !Number.isSafeInteger(check.id)) continue;
@@ -247,6 +252,7 @@ export async function dispatchActionWebhook(
 export async function dispatchActionSchedules(now = new Date()): Promise<void> {
   if (!nativeJobsEnabled()) return;
   for (const workflow of await repos.actions.matchingWorkflows()) {
+    if (workflow.controller === "github") continue;
     const schedule = workflow.definition.triggers.schedule;
     if (!Array.isArray(schedule)) continue;
     for (const entry of schedule) {

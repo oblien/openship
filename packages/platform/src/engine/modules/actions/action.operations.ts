@@ -99,7 +99,7 @@ export const actionDependencies: ActionDependencies = {
     inspectDestination: (ctx, input) => inspectActionDestination(ctx, input.serverId),
     enableEmulation: (ctx, input) => enableActionEmulation(ctx, input.serverId),
     async preview(_ctx, input) {
-      return actionPlanView(await parseActionWorkflow(input.source, input.path));
+      return actionPlanView(await parseActionWorkflow(input.source, input.path, input.controller));
     },
     discover: (ctx, input) =>
       service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref),
@@ -161,14 +161,18 @@ export const actionDependencies: ActionDependencies = {
       return actionArtifactDownload(ctx, await service.requireActionRun(ctx, id), input.artifactId);
     },
     async cancel(ctx, id) {
-      await service.requireActionRun(ctx, id, true);
-      await repos.actions.requestCancel(ctx.organizationId, id);
+      const run = await service.requireActionRun(ctx, id, true);
+      if (run.controller === "github")
+        await (await import("./github-commands")).controlGitHubRun(ctx, run, "cancel");
+      else await repos.actions.requestCancel(ctx.organizationId, id);
       record(ctx, id, "cancel");
       return presentRun(ctx, id);
     },
     async approve(ctx, id) {
-      await service.requireActionRun(ctx, id, true);
-      await repos.actions.approve(ctx.organizationId, id, ctx.userId);
+      const run = await service.requireActionRun(ctx, id, true);
+      if (run.controller === "github")
+        await (await import("./github-commands")).controlGitHubRun(ctx, run, "approve");
+      else await repos.actions.approve(ctx.organizationId, id, ctx.userId);
       record(ctx, id, "approve");
       return presentRun(ctx, id);
     },
@@ -195,7 +199,9 @@ export const actionDependencies: ActionDependencies = {
     async jobEvents(ctx, id, input = {}) {
       const job = await repos.actions.job(ctx.organizationId, id);
       if (!job) throw new NotFoundError("Workflow job", id);
-      await service.requireActionRun(ctx, job.runId);
+      const run = await service.requireActionRun(ctx, job.runId);
+      if (run.controller === "github")
+        return (await import("./github-output")).gitHubJobEvents(ctx, run, job, input.after ?? 0);
       const rows = await repos.actions.events(ctx.organizationId, id, input.after);
       // The worker may advance past lines discarded by the log byte budget.
       // Once this page drains saved rows, acknowledge that durable cursor too.

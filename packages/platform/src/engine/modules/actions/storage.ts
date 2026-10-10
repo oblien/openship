@@ -148,6 +148,8 @@ export function actionStorageProtocol(): ActionStorageProtocol {
 
 export async function actionArtifacts(ctx: ExecutionContext, run: ActionRun) {
   await authorizeActionRun(ctx, run);
+  if (run.controller === "github")
+    return (await import("./github-output")).gitHubArtifacts(ctx, run);
   if (!run.configuration.storageDestinationId) return [];
   await authorizeActionStorage(ctx, run.configuration.storageDestinationId);
   return (await repos.actionStorage.artifacts(ctx.organizationId, run.id)).map((row) => ({
@@ -160,6 +162,8 @@ export async function actionArtifacts(ctx: ExecutionContext, run: ActionRun) {
 }
 
 export async function actionArtifactDownload(ctx: ExecutionContext, run: ActionRun, id: number) {
+  if (run.controller === "github")
+    return (await import("./github-output")).gitHubArtifactDownload(ctx, run, id);
   await actionArtifacts(ctx, run);
   const object = await repos.actionStorage.get(ctx.organizationId, id);
   if (

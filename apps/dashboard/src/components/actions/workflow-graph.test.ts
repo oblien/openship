@@ -87,6 +87,22 @@ describe("workflow presentation from durable state", () => {
       })[1]?.status,
     ).toBe("success");
   });
+  it("presents GitHub step names and live state without an independent log journal", () => {
+    expect(
+      jobProgress([], {
+        status: "running",
+        steps: {
+          "1": { name: "Check out repository", outcome: "success", conclusion: "success" },
+          "2": { name: "Build", outcome: "running", conclusion: "running" },
+          "3": { name: "Release", outcome: "queued", conclusion: "queued" },
+        },
+      }),
+    ).toEqual([
+      { id: "1", name: "Check out repository", status: "success" },
+      { id: "2", name: "Build", status: "running" },
+      { id: "3", name: "Release", status: "queued" },
+    ]);
+  });
 });
 
 describe("workflow step topology", () => {

@@ -8,6 +8,8 @@ import type { ExecutionContext } from "../../../context";
 import { captureExecutionAuthority } from "../../lib/execution-authority";
 import { encrypt } from "../../lib/encryption";
 import { githubFetch } from "../github/github.auth";
+import { assertGitHubRepoAccess } from "../github/github-access";
+import { GitHubActionsApi } from "./github-api";
 import { getFileContent, listFiles } from "../github/github.service";
 import {
   authorizeActionRunners,
@@ -45,6 +47,29 @@ export async function saveActionWorkflow(
   id?: string,
 ): Promise<ActionWorkflow> {
   const existing = id ? await requireActionWorkflow(ctx, id, true) : undefined;
+  const controller = input.controller ?? existing?.controller ?? "openship";
+  if (
+    controller === "github" &&
+    (!input.owner || !input.repo || input.source || !input.path.startsWith(".github/workflows/"))
+  )
+    throw new ValidationError(
+      "GitHub Actions runs a workflow saved in the repository's .github/workflows directory. Save your changes to the repository first, or choose Openship for a standalone definition.",
+    );
+  if (
+    existing &&
+    existing.controller !== controller &&
+    ((await repos.actions.runs(ctx.organizationId, existing.id, 100)).some(
+      (run) => !run.settledAt,
+    ) ||
+      (await repos.actions.runnerSessions(ctx.organizationId)).some(
+        (session) => session.workflowId === existing.id,
+      ))
+  )
+    throw new AppError(
+      "Finish active runs and runner cleanup before changing the workflow controller",
+      409,
+      "ACTIONS_CONTROLLER_BUSY",
+    );
   if (!!input.owner !== !!input.repo || (!input.owner && !input.source))
     throw new ValidationError("Choose a repository workflow or provide standalone YAML");
   const previousProjectIds =
@@ -58,7 +83,7 @@ export async function saveActionWorkflow(
       await import("./project.service")
     ).authorizeActionProjects(ctx, [...input.projectIds, ...previousProjectIds], true);
   await authorizeActionRunners(ctx, input.runnerIds, true);
-  if (input.allowForks ?? existing?.allowForks) {
+  if (controller === "openship" && (input.allowForks ?? existing?.allowForks)) {
     const runners = await Promise.all(
       input.runnerIds.map((runnerId) => repos.actions.runner(ctx.organizationId, runnerId)),
     );
@@ -70,22 +95,56 @@ export async function saveActionWorkflow(
     input.source ??
     (await getFileContent(ctx, input.owner!, input.repo!, input.path, { branch: input.ref }))
       .content;
-  const definition = await parseActionWorkflow(source, input.path);
+  const definition = await parseActionWorkflow(source, input.path, controller);
+  let githubWorkflowId: string | null = null;
+  if (controller === "github") {
+    if (
+      input.repositoryRunnerConsent !== true &&
+      (!existing ||
+        existing.controller !== "github" ||
+        existing.owner !== input.owner ||
+        existing.repo !== input.repo ||
+        JSON.stringify(existing.runnerIds) !== JSON.stringify(input.runnerIds))
+    )
+      throw new ValidationError(
+        "Confirm that workflows in this repository may execute on the selected runners. Repository workflow access grants code execution on these destinations.",
+      );
+    await assertGitHubRepoAccess(ctx, { owner: input.owner!, repo: input.repo! }, "write");
+    const api = new GitHubActionsApi(ctx, input.owner!, input.repo!);
+    const remote = await api.workflow(input.path);
+    if (remote.path !== input.path)
+      throw new ValidationError("GitHub returned a different workflow file");
+    githubWorkflowId = String(remote.id);
+    // These read endpoints verify runner-management permission before setup is
+    // saved. No runner registration or repository mutation happens here.
+    await api.downloads();
+    if (
+      Object.keys(input.secrets ?? {}).length ||
+      Object.keys(input.variables ?? {}).length ||
+      input.storageDestinationId
+    )
+      throw new ValidationError(
+        "GitHub manages secrets, variables and artifact storage for this workflow. Configure them in the repository settings.",
+      );
+  }
   if (!input.owner) validateStandaloneWorkflow(source, definition);
   const storageDestinationId =
-    input.storageDestinationId === undefined
-      ? (existing?.storageDestinationId ?? null)
-      : input.storageDestinationId;
+    controller === "github"
+      ? null
+      : input.storageDestinationId === undefined
+        ? (existing?.storageDestinationId ?? null)
+        : input.storageDestinationId;
   if (storageDestinationId) {
     actionRuntimeUrl();
     await authorizeActionStorage(ctx, storageDestinationId, true);
   }
   if (
+    controller === "openship" &&
     !storageDestinationId &&
     /uses:\s*['"]?actions\/(?:upload-artifact|download-artifact|cache)(?:\/|@)/i.test(source)
   )
     throw new ValidationError("Choose artifact and cache storage before enabling this workflow");
-  const secrets = { ...existing?.secrets };
+  const secrets = controller === "github" ? {} : { ...existing?.secrets };
   for (const key of input.removeSecrets ?? []) delete secrets[key];
   for (const [key, value] of Object.entries(input.secrets ?? {})) {
     if (/^(GITHUB_|ACTIONS_|RUNNER_|OPENSHIP_)/i.test(key))
@@ -99,6 +158,9 @@ export async function saveActionWorkflow(
       id: existing?.id ?? generateId("awf"),
       organizationId: ctx.organizationId,
       name: input.name.trim(),
+      controller,
+      githubWorkflowId,
+      syncAfter: new Date(0),
       owner: input.owner?.toLowerCase() ?? null,
       repo: input.repo?.toLowerCase() ?? null,
       path: input.path,
@@ -107,11 +169,12 @@ export async function saveActionWorkflow(
       definition,
       lastError: null,
       runnerIds: input.runnerIds,
-      variables: input.variables ?? existing?.variables ?? {},
+      variables: controller === "github" ? {} : (input.variables ?? existing?.variables ?? {}),
       secrets,
       authority: await captureExecutionAuthority(ctx),
       enabled: input.enabled ?? existing?.enabled ?? true,
-      allowForks: input.allowForks ?? existing?.allowForks ?? false,
+      allowForks:
+        controller === "github" ? false : (input.allowForks ?? existing?.allowForks ?? false),
       storageDestinationId,
     },
     input.projectIds,
@@ -313,6 +376,8 @@ export async function triggerActionWorkflow(
   trigger: ActionTrigger,
 ): Promise<ActionRun> {
   await authorizeActionWorkflow(ctx, workflow, true);
+  if (workflow.controller === "github")
+    return (await import("./github-commands")).dispatchGitHubWorkflow(ctx, workflow, trigger);
   // A required-check admission and the signed push inbox converge on the same run.
   const key =
     trigger.eventName === "push" && trigger.revision
@@ -433,6 +498,8 @@ export async function rerunActionWorkflow(
   const run = await requireActionRun(ctx, id, true);
   if (!run.finishedAt)
     throw new AppError("Cancel or finish this run before retrying it", 409, "ACTIONS_RUN_ACTIVE");
+  if (run.controller === "github")
+    return (await import("./github-commands")).rerunGitHubWorkflow(ctx, run, key);
   const { id: _id, createdAt, updatedAt, ...snapshot } = run;
   return repos.actions.createRun({
     ...snapshot,

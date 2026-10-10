@@ -71,6 +71,7 @@ export function actionRunnerLabels(
   const os = config.mode === "container" ? "linux" : capabilities.os;
   const labels = new Set([
     "self-hosted",
+    "openship",
     os,
     ...actionRunnerArchitectures(capabilities, config),
     ...config.labels.map((l) => l.toLowerCase()),

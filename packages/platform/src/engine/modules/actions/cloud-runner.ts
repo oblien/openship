@@ -18,6 +18,7 @@ import {
   safeErrorMessage,
 } from "@repo/core";
 import { repos, type ActionRun, type ActionJob, type ActionRunner } from "@repo/db";
+import type { ActionWorkerAllocation, UpdateActionAllocation } from "./worker-execution";
 import { env } from "../../config/env";
 import { getOblienClient, getOblienBillingApi } from "../../lib/oblien-client";
 import type { OblienBillingApi } from "../../lib/oblien-billing-api";
@@ -154,7 +155,7 @@ export async function ensureConfiguredActionPools(): Promise<void> {
     );
 }
 
-async function clientFor(run: ActionRun, runner: ActionRunner) {
+async function clientFor(run: Pick<ActionRun, "organizationId">, runner: ActionRunner) {
   if (!env.CLOUD_MODE || runner.organizationId !== run.organizationId || !runner.cloudPoolId)
     throw new AppError(
       "This Cloud Actions pool is not owned by the current organization",
@@ -171,7 +172,7 @@ async function clientFor(run: ActionRun, runner: ActionRunner) {
   return new Oblien({ token: result.token, baseUrl: env.OBLIEN_API_URL });
 }
 
-function workspaceInput(job: ActionJob, runner: ActionRunner) {
+function workspaceInput(job: ActionWorkerAllocation, runner: ActionRunner) {
   return {
     name: `Openship Actions ${job.id}`,
     // Job IDs are case-sensitive and can end in URL-safe punctuation. A hash
@@ -197,7 +198,7 @@ function workspaceInput(job: ActionJob, runner: ActionRunner) {
 
 function assertWorkspace(
   workspace: { id: string; namespace?: string | null; slug?: string | null },
-  job: ActionJob,
+  job: ActionWorkerAllocation,
   runner: ActionRunner,
 ) {
   if (
@@ -240,18 +241,21 @@ function assertFunded(balance: Awaited<ReturnType<OblienBillingApi["getBalance"]
 }
 
 export async function openCloudActionWorker(
-  run: ActionRun,
-  job: ActionJob,
+  run: Pick<ActionRun, "organizationId">,
+  job: ActionWorkerAllocation,
   runner: ActionRunner,
   owner: string,
   assets: string,
+  persist?: UpdateActionAllocation,
 ) {
+  const update =
+    persist ?? ((patch) => repos.actions.updateJob(run.organizationId, job.id, owner, patch));
   const client = await clientFor(run, runner);
   const firstRequest = !job.providerRequestedAt;
   if (!job.providerRequestedAt) {
     const balance = await getOblienBillingApi().getBalance(runner.cloudPoolId!);
     assertFunded(balance);
-    const saved = await repos.actions.updateJob(run.organizationId, job.id, owner, {
+    const saved = await update({
       providerRequestedAt: new Date(),
     });
     if (!saved) throw new Error("Actions lease changed before provisioning");
@@ -277,7 +281,7 @@ export async function openCloudActionWorker(
       // The SDK sends this create once (no automatic POST retry). A definitive
       // rejection of that first request creates nothing. After an uncertain
       // response, keep the intent and reconcile its original key instead.
-      await repos.actions.updateJob(run.organizationId, job.id, owner, {
+      await update({
         providerRequestedAt: null,
       });
       throw new AppError(safeErrorMessage(error), 409, "ACTIONS_PROVISIONING_REJECTED");
@@ -286,7 +290,7 @@ export async function openCloudActionWorker(
   }
   assertWorkspace(workspace, job, runner);
   if (!job.providerWorkspaceId) {
-    const saved = await repos.actions.updateJob(run.organizationId, job.id, owner, {
+    const saved = await update({
       providerWorkspaceId: workspace.id,
     });
     if (!saved) return null; // The next lease holder resolves the same idempotency key.
@@ -351,6 +355,7 @@ export async function openCloudActionWorker(
     const prepared = await worker.prepare(capabilities);
     return {
       worker,
+      capabilities,
       binary: prepared.binary,
       containerPlatform,
       directory: `${prepared.root}/jobs/${job.id}`,
@@ -363,11 +368,14 @@ export async function openCloudActionWorker(
 }
 
 export async function removeCloudActionWorker(
-  run: ActionRun,
-  job: ActionJob,
+  run: Pick<ActionRun, "organizationId">,
+  job: ActionWorkerAllocation,
   runner: ActionRunner,
   owner: string,
+  persist?: UpdateActionAllocation,
 ): Promise<boolean> {
+  const update =
+    persist ?? ((patch) => repos.actions.updateJob(run.organizationId, job.id, owner, patch));
   if (!job.providerRequestedAt && !job.providerWorkspaceId) return true;
   const client = await clientFor(run, runner);
   try {
@@ -378,7 +386,7 @@ export async function removeCloudActionWorker(
       : await client.workspaces.create(workspaceInput(job, runner));
     assertWorkspace(workspace, job, runner);
     if (!job.providerWorkspaceId) {
-      const saved = await repos.actions.updateJob(run.organizationId, job.id, owner, {
+      const saved = await update({
         providerWorkspaceId: workspace.id,
       });
       if (!saved) throw new Error("Actions lease changed before worker cleanup");

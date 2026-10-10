@@ -16,6 +16,7 @@ let retentionAt = 0;
 export async function assertActionsTransferReady(): Promise<void> {
   if (
     (await repos.actions.unsettledRunCount()) ||
+    (await repos.actions.runnerSessions()).length ||
     (await repos.actions.pendingActionDeploymentCount())
   )
     throw new AppError(
@@ -57,6 +58,10 @@ export function startActionController(): void {
         if (abort.signal.aborted) return;
         await (await import("./triggers")).actionWebhookInbox.tick();
         await actionController.tick(abort.signal);
+        if (!abort.signal.aborted)
+          await (await import("./github-sync")).reconcileGitHubWorkflows(abort.signal);
+        if (!abort.signal.aborted)
+          await (await import("./github-runners")).reconcileGitHubRunners(abort.signal);
         if (!abort.signal.aborted)
           await (await import("./deployment-gate")).actionDeploymentController.tick();
       })().catch((error) => diagnostics.warn("actions/controller", "Actions sweep failed", error)),

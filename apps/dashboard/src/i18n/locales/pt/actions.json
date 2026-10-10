@@ -370,5 +370,15 @@
     "dockerAccess": "Permitir acesso ao Docker",
     "dockerAccessHint": "Permite criar imagens dentro dos contêineres. Execute apenas workflows confiáveis neste servidor.",
     "defaultImageHint": "Cada job pode escolher sua própria imagem de contêiner compatível."
+  },
+  "controller": {
+    "label": "Executar com",
+    "githubHint": "O GitHub gere o fluxo, verificações, segredos e artefactos. O Openship gere os runners. As alterações devem ser guardadas no repositório.",
+    "openshipHint": "Execução independente com Openship. Suporta YAML guardado e automação autónoma; algumas funcionalidades exigem o modo GitHub Actions.",
+    "labelsHint": "Use runs-on: [self-hosted, openship, linux] (ou macos) para estes destinos. As outras etiquetas mantêm o comportamento do GitHub.",
+    "trust": "Permitir que os fluxos deste repositório usem estes runners. Quem puder editar os ficheiros poderá executar código nestes destinos e consumir o orçamento de Actions.",
+    "reusable": "Fluxo reutilizável",
+    "openGitHub": "Abrir no GitHub",
+    "liveLogs": "Veja os registos em direto no GitHub. Os registos concluídos aparecem aqui."
   }
 }

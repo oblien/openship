@@ -31,6 +31,7 @@ type dependency struct {
 }
 
 type jobRequest struct {
+	GitHub            *githubRequest         `json:"github,omitempty"`
 	Version           int                    `json:"version"`
 	ID                string                 `json:"id"`
 	Workflow          string                 `json:"workflow"`
@@ -147,7 +148,7 @@ func (f loggerFactory) WithJobLogger() *logrus.Logger {
 }
 
 func validateRequest(r jobRequest) error {
-	if r.Version != protocolVersion || r.ID == "" || r.Job == "" || r.Workflow == "" {
+	if r.Version != protocolVersion || r.ID == "" || (r.GitHub == nil && (r.Job == "" || r.Workflow == "")) {
 		return errors.New("invalid Actions worker request")
 	}
 	if !filepath.IsAbs(r.Directory) || r.Directory == string(filepath.Separator) {
@@ -165,6 +166,9 @@ func validateRequest(r jobRequest) error {
 				return errors.New("native jobs cannot override the host architecture")
 			}
 		}
+	}
+	if r.GitHub != nil {
+		return validateGitHubRequest(r)
 	}
 	if len(r.Platforms) == 0 {
 		return errors.New("job has no authorized execution platform")

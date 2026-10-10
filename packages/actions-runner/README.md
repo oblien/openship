@@ -1,9 +1,16 @@
 # Openship Actions worker
 
-This package wraps [act](https://github.com/nektos/act), pinned to **v0.2.89** (MIT).
+The independent controller wraps [act](https://github.com/nektos/act), pinned to **v0.2.89** (MIT).
 The Openship controller validates and schedules workflows; one worker executes one
 concrete job with act. The worker runs on the selected destination, never in the
 API process.
+
+The GitHub controller uses the same worker supervisor with the **official GitHub
+Actions runner**. It downloads an official release with a verified SHA-256 digest,
+registers it ephemerally for one repository job, and runs it unmodified. GitHub owns
+workflow scheduling, credentials and results; this adapter owns its destination
+process and cleanup. Both modes use `ActionsWorker` and the same provisioning and
+capacity accounting.
 
 ## Build and test
 
@@ -41,18 +48,27 @@ only after cleanup is confirmed.
 
 Persistent Docker and native runners execute code trusted by their administrator.
 Native macOS jobs run as the connected server user. Untrusted fork jobs require
-approval and disposable Cloud workers; they receive no stored secrets or write
+approval and disposable Cloud workers in independent mode; they receive no stored secrets or write
 token. Containers alone are not advertised as an isolation boundary for hostile
 code on a shared, persistent server.
 
+The official runner receives only a short-lived registration token, via private
+request/configuration input. Workflow tokens come from GitHub. They are not copied
+from the independent controller. A private Docker API socket adds the shared
+ownership label and per-container resource limits to GitHub's service/job containers.
+It is a cleanup mechanism, not a sandbox against privileged Docker code. The Cloud
+VM bounds the aggregate job capacity and is deleted before releasing its slot.
+
 ## Compatibility
 
-Openship reuses the upstream workflow parser and act executor. Supported workflows
+Independent Openship Actions reuses the upstream workflow parser and act executor. Supported workflows
 include shell, JavaScript and Docker actions, composite actions, service containers,
 matrices, dependencies, outputs, expressions and concurrency. Reusable workflows,
 protected environments, OIDC, attestations and Windows runners are rejected or
 unavailable rather than silently emulated. See the Actions user guide for the
-current compatibility limits.
+current compatibility limits. GitHub mode supports GitHub workflow behavior using
+its official runner, including reusable workflows and GitHub-owned Checks. Native
+Windows and GitHub Enterprise Server destinations are not implemented.
 
 CI exercises the worker over real Linux Docker/SSH destinations and runs the Go
 race suite on Linux and macOS. It covers service-port contexts, cancellation,

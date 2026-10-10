@@ -39,7 +39,13 @@ describe("Actions execution architectures", () => {
     const capabilities = { ...host, dockerPlatforms: ["linux/amd64", "linux/arm64"] as const };
     const verified = { ...capabilities, dockerPlatforms: [...capabilities.dockerPlatforms] };
     expect(actionRunnerMismatch(verified, runner, arm)).toBeNull();
-    expect(actionRunnerLabels(verified, runner)).toEqual(["self-hosted", "linux", "x64", "arm64"]);
+    expect(actionRunnerLabels(verified, runner)).toEqual([
+      "self-hosted",
+      "openship",
+      "linux",
+      "x64",
+      "arm64",
+    ]);
     expect(actionContainerPlatform(verified, runner, arm)).toBe("linux/arm64");
     expect(actionContainerPlatform(verified, runner, { labels: ["linux"] })).toBe("linux/amd64");
   });

@@ -18,6 +18,7 @@ does not execute it; dispatch resolves a commit and saves an immutable snapshot.
 
 ```ts
 const workflow = await ship.actions.create({
+  controller: "openship",
   name: "CI",
   owner: "your-organization",
   repo: "your-app",
@@ -55,6 +56,29 @@ path filters. Linking workflows alone does not enable automatic deployment.
 `dispatch` accepts either declared manual `inputs` or an `eventType` and optional
 `clientPayload` for `repository_dispatch`. Both use normal API authentication and the
 caller's selected organization. See the [webhook example](/docs/guides/actions#triggers-and-jobs).
+
+## GitHub-controlled workflows
+
+Use `controller: "github"`, `source: null` and a committed `.github/workflows/*.yml`
+file. Set `repositoryRunnerConsent: true` when creating the connection or changing
+its repository or allowed runners. This confirms that matching repository jobs can
+execute on those destinations. GitHub manages secrets, variables, artifacts and
+Checks; omit Openship secrets, variables and storage settings in this mode.
+
+`preview`, `repositorySource` and `updateRepositorySource` accept the same
+`controller` so the shared editor validates the correct workflow mode. The default
+for API callers remains independent `openship`.
+
+GitHub mode dispatches `workflow_dispatch` through GitHub and mirrors the exact
+returned run ID and attempt. It delegates reruns and cancellation to GitHub. Reuse
+request keys: an uncertain GitHub POST is never automatically replayed. An accepted
+command whose run is not visible yet will appear through reconciliation. Send
+`repository_dispatch` and other GitHub events to GitHub's own API.
+
+Run and job views include `externalUrl`. GitHub live logs open at that URL;
+`jobEvents` provides the completed log preview with the same cursor contract.
+`settledAt` also waits for Openship's runner cleanup. Native GitHub Check IDs and
+conclusions are preserved without creating duplicate Checks.
 
 ## Observe and cancel
 

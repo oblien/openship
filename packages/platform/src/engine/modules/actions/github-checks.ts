@@ -7,6 +7,7 @@ import { diagnostics } from "@repo/core/diagnostics";
 
 /** Checks use the controller's App identity independently of the job credential. */
 export async function syncActionCheck(run: ActionRun, job: ActionJob) {
+  if (run.controller === "github") return { id: job.checkRunId, error: null, unavailable: true };
   const { owner, repo } = run.configuration;
   if (!owner || !repo) return { id: null, error: null, unavailable: true };
   const name = `Openship / ${run.plan.name} / ${job.spec?.name ?? job.jobKey}`.slice(0, 255);

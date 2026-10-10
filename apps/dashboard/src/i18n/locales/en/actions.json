@@ -370,5 +370,15 @@
     "dockerAccess": "Allow Docker access",
     "dockerAccessHint": "Enable image builds inside job containers. Only run trusted workflows on this server.",
     "defaultImageHint": "Each job can choose its own compatible container image."
+  },
+  "controller": {
+    "label": "Run with",
+    "githubHint": "GitHub runs the workflow and owns its Checks, secrets and artifacts. Openship manages your runners. Changes must be saved to the repository.",
+    "openshipHint": "Run independently with Openship. Supports stored YAML and standalone automation; some GitHub features require GitHub Actions mode.",
+    "labelsHint": "Use runs-on: [self-hosted, openship, linux] (or macos) to run on these destinations. Other labels keep their GitHub behavior.",
+    "trust": "Allow workflows in this repository to use these runners. Anyone who can change its workflow files can execute code on these destinations and use their Actions budget.",
+    "reusable": "Reusable workflow",
+    "openGitHub": "Open in GitHub",
+    "liveLogs": "Watch live logs in GitHub. Completed logs appear here."
   }
 }

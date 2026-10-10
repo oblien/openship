@@ -1,11 +1,5 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ActionsWorker, probeActionCapabilities } from "@repo/adapters";
-import { AppError, actionContainerPlatform, actionRunnerMismatch } from "@repo/core";
 import { repos } from "@repo/db";
 import { diagnostics } from "@repo/core/diagnostics";
-import { acquireServerExecution } from "../../lib/server-execution";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { decrypt } from "../../lib/encryption";
 import { getInstallationToken } from "../github/github.auth";
@@ -14,26 +8,8 @@ import { ActionController, type ActionControllerPorts } from "./controller";
 import { syncActionCheck } from "./github-checks";
 import { actionRuntimeEnvironment, authorizeActionStorage } from "./storage";
 
-export function actionWorkerAssets(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    process.env.OPENSHIP_ACTIONS_RUNNER_DIR,
-    join(here, "assets/actions-runner"),
-    join(here, "../assets/actions-runner"),
-    join(here, "../server/assets/actions-runner"),
-    join(here, "../../../../../actions-runner/dist"),
-    join(process.cwd(), "packages/actions-runner/dist"),
-    join(process.cwd(), "../../packages/actions-runner/dist"),
-  ].filter((p): p is string => !!p);
-  const found = candidates.find((p) => existsSync(join(p, "manifest.json")));
-  if (!found)
-    throw new AppError(
-      "The Actions runner assets are missing. Build or install the Actions runner before starting workflows.",
-      503,
-      "ACTIONS_RUNNER_ASSET_MISSING",
-    );
-  return found;
-}
+export { actionWorkerAssets } from "./worker-execution";
+import { openActionWorker, removeActionWorker } from "./worker-execution";
 
 export const actionControllerPorts: ActionControllerPorts = {
   repo: repos.actions,
@@ -43,47 +19,10 @@ export const actionControllerPorts: ActionControllerPorts = {
     if (run.configuration.storageDestinationId)
       await authorizeActionStorage(ctx, run.configuration.storageDestinationId, true);
   },
-  async open(run, job, runner, owner) {
-    if (runner.cloudPoolId)
-      return (await import("./cloud-runner")).openCloudActionWorker(
-        run,
-        job,
-        runner,
-        owner,
-        actionWorkerAssets(),
-      );
-    if (!runner.serverId)
-      throw new AppError(
-        "Actions runner has no execution destination",
-        409,
-        "ACTIONS_RUNNER_UNAVAILABLE",
-      );
-    const connection = await acquireServerExecution(run.organizationId, runner.serverId);
-    try {
-      const worker = new ActionsWorker(connection.executor, actionWorkerAssets());
-      if (job.workerBinary && job.directory && job.workerStartedAt)
-        return {
-          worker,
-          binary: job.workerBinary,
-          directory: job.directory,
-          release: connection.release,
-        };
-      const capabilities = await connection.run(probeActionCapabilities);
-      const mismatch = actionRunnerMismatch(capabilities, runner.config, job.spec!);
-      if (mismatch) throw new AppError(mismatch, 409, "ACTIONS_RUNNER_UNSUPPORTED");
-      const prepared = await worker.prepare(capabilities);
-      return {
-        worker,
-        binary: prepared.binary,
-        containerPlatform: actionContainerPlatform(capabilities, runner.config, job.spec!),
-        directory: `${prepared.root}/jobs/${job.id}`,
-        release: connection.release,
-      };
-    } catch (error) {
-      await connection.release();
-      throw error;
-    }
-  },
+  open: (run, job, runner, owner) =>
+    openActionWorker(job, runner, owner, (patch) =>
+      repos.actions.updateJob(run.organizationId, job.id, owner, patch),
+    ),
   async secrets(run, job) {
     const secrets: Record<string, string> = {};
     if (!run.untrusted)
@@ -107,22 +46,10 @@ export const actionControllerPorts: ActionControllerPorts = {
     return secrets;
   },
   environment: actionRuntimeEnvironment,
-  async cleanup(run, job, runner, owner) {
-    if (runner.cloudPoolId)
-      return (await import("./cloud-runner")).removeCloudActionWorker(run, job, runner, owner);
-    else if (runner.serverId && job.workerBinary && job.directory && !job.workerStartedAt) {
-      const connection = await acquireServerExecution(run.organizationId, runner.serverId);
-      try {
-        await new ActionsWorker(connection.executor, actionWorkerAssets()).clean(
-          job.workerBinary,
-          job.directory,
-        );
-      } finally {
-        await connection.release();
-      }
-    }
-    return true;
-  },
+  cleanup: (run, job, runner, owner) =>
+    removeActionWorker(job, runner, owner, (patch) =>
+      repos.actions.updateJob(run.organizationId, job.id, owner, patch),
+    ),
   check: syncActionCheck,
   completed: (run) =>
     run.configuration.sourceJob

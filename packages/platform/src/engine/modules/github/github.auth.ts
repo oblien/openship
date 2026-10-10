@@ -654,6 +654,7 @@ export interface GitHubFetchOptions {
   installationId?: number;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
+  response?: "json" | "redirect";
 }
 
 /**
@@ -695,6 +696,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
       try {
         return await ghFetch<T>(ghToken, {
           url: opts.url, method, params: opts.params, headers: opts.headers,
+          response: opts.response,
         });
       } catch (error) {
         if (!rejectedCredential(error)) throw error;
@@ -732,6 +734,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     try {
       return await ghFetch<T>(result.token, {
         url, method, params: opts.params, headers: opts.headers,
+        response: opts.response,
       });
     } catch (error) {
       // Never replay mutations, rate limits, outages, or ordinary not-found
@@ -744,7 +747,8 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
 
   // Public github.com reads also work when a saved credential was revoked.
   // Enterprise sources must never resolve a same-named public GitHub repo.
-  if (readOnly && !customApiBase && opts.url.startsWith("https://api.github.com/")) {
+  if (readOnly && (!opts.response || opts.response === "json") &&
+      !customApiBase && opts.url.startsWith("https://api.github.com/")) {
     const publicData = await ghFetchPublic<T>({
       url: opts.url, params: opts.params, headers: opts.headers,
     });

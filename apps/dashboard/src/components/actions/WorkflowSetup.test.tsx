@@ -113,6 +113,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   const workflow = {
     id: "ci",
+    controller: "openship",
     name: "CI",
     owner: "acme",
     repo: "app",
@@ -194,6 +195,48 @@ describe("shared workflow setup", () => {
     expect(parse(saved.source).on.repository_dispatch.types).toEqual(["release", "publish"]);
     expect(parse(saved.source).jobs).toEqual(parse(source).jobs);
     expect(saved.source).toContain("# keep this comment");
+  });
+  it("requires a repository commit for GitHub-owned workflows and never saves an override", async () => {
+    h.get.mockResolvedValue({ ...(await h.get()), controller: "github", githubWorkflowId: "42" });
+    await editTrigger();
+    expect(button("Save Openship copy")).toBeUndefined();
+    expect(h.save).not.toHaveBeenCalled();
+    await click("Commit and save");
+    expect(h.write).toHaveBeenCalledWith(
+      expect.objectContaining({ controller: "github", sha: "original-file-sha" }),
+    );
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        controller: "github",
+        source: null,
+        repositoryRunnerConsent: true,
+        storageDestinationId: null,
+        variables: {},
+        secrets: {},
+      }),
+      "ci",
+    );
+    expect(h.onSaved).toHaveBeenCalledOnce();
+  });
+  it("requires explicit repository-wide runner trust before linking a new GitHub workflow", async () => {
+    await render();
+    await fill("Repository", "acme/app");
+    await preview();
+    expect(button("GitHub Actions").getAttribute("aria-selected")).toBe("true");
+    await click("Continue");
+    await act(async () => checkbox("Linux runner").click());
+    expect(button("Save workflow").disabled).toBe(true);
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        controller: "github",
+        source: null,
+        repositoryRunnerConsent: true,
+      }),
+      undefined,
+    );
+    expect(h.write).not.toHaveBeenCalled();
   });
   it("preserves edits after a concurrent GitHub change and never saves a false repository reference", async () => {
     h.write.mockRejectedValueOnce(

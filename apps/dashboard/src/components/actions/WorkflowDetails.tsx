@@ -148,7 +148,11 @@ function Detail({ id }: { id: string }) {
                     </span>
                   </div>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    {data.workflow.source ? a.editor.reviewHint : a.editor.automaticHint}
+                    {data.workflow.controller === "github"
+                      ? a.controller.githubHint
+                      : data.workflow.source
+                        ? a.editor.reviewHint
+                        : a.editor.automaticHint}
                   </p>
                   <Button asChild size="sm" variant="secondary">
                     <Link href={`/actions/workflows/${id}/edit`}>{a.editor.checkUpdates}</Link>
@@ -172,24 +176,25 @@ function Detail({ id }: { id: string }) {
                     </Link>
                   </Button>
                 )}
-                {data.workflow.plan.triggers.includes("repository_dispatch") && (
-                  <details className="text-sm">
-                    <summary className="cursor-pointer py-1 font-medium">
-                      {a.integration.webhookEndpoint}
-                    </summary>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                      {a.integration.tokenHint}
-                    </p>
-                    <pre
-                      dir="ltr"
-                      className="mt-3 overflow-x-auto rounded-xl bg-background p-3 text-xs"
-                    >{`POST ${getApiBaseUrl().replace(/\/$/, "")}/actions/workflows/${id}/dispatch
+                {data.workflow.controller !== "github" &&
+                  data.workflow.plan.triggers.includes("repository_dispatch") && (
+                    <details className="text-sm">
+                      <summary className="cursor-pointer py-1 font-medium">
+                        {a.integration.webhookEndpoint}
+                      </summary>
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                        {a.integration.tokenHint}
+                      </p>
+                      <pre
+                        dir="ltr"
+                        className="mt-3 overflow-x-auto rounded-xl bg-background p-3 text-xs"
+                      >{`POST ${getApiBaseUrl().replace(/\/$/, "")}/actions/workflows/${id}/dispatch
 Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 
 ${JSON.stringify({ eventType: (workflowEventConfig(data.workflow.plan.triggerRules?.repository_dispatch).types as string[] | undefined)?.[0] ?? "release", clientPayload: {}, idempotencyKey: "unique-event-id" }, null, 2)}`}</pre>
-                  </details>
-                )}
+                    </details>
+                  )}
               </section>
               {!!data.workflow.projectIds?.length && (
                 <section className="space-y-3 rounded-2xl bg-card p-5">

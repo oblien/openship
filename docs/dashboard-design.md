@@ -37,7 +37,9 @@ controls. Keep workflow configuration, runner setup and execution history in one
 module. Jobs schedules commands or invokes a saved workflow; workflow jobs link to
 the original Actions run and its logs. Draw one node
 per logical workflow job, with matrix executions in the selectable job list.
-Show persisted step state and resumable logs together. Refreshing or switching
+Show persisted step state and resumable logs together. GitHub mode uses the same
+step presentation, with a direct link to live GitHub logs and completed logs in
+Openship. Preserve GitHub-owned Checks instead of publishing duplicate status. Refreshing or switching
 views must not discard a running job's state. Only confirm cancellation after the
 worker stops, and show cleanup while its destination remains occupied.
 Expected cancellation uses its status badge; keep engine cancellation details in
@@ -90,8 +92,11 @@ consistent with navigation from a project.
 Node, step, connection and trigger edits update the original YAML while preserving
 unrelated fields and comments. Reject dependency cycles and dangling job-output
 references; undo/redo affects the same draft across views. Review repository changes
-before committing, using the reviewed file SHA. Offer Automatic repository updates
-or Review first; the latter stores the existing inline YAML snapshot and continues
+before committing, using the reviewed file SHA. The shared editor offers GitHub
+Actions or independent Openship Actions. GitHub mode always commits changed YAML,
+uses repository-managed credentials/storage, and explains the explicit
+`self-hosted, openship` routing labels and repository-wide runner trust. Independent
+mode offers Automatic repository updates or Review first; the latter stores the existing inline YAML snapshot and continues
 using it until an explicit review and save. Loading a newer repository file must not
 overwrite that snapshot or an edited draft. No second sync engine or runner path is
 needed. Keep variables, secrets and artifact storage in one disclosure. The wizard
