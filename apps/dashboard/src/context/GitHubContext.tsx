@@ -291,6 +291,28 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
     return () => window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
   }, [refresh]);
 
+  // Owners can grant access from another account or browser session while this
+  // dashboard keeps its initial empty account list. Revalidate on return through
+  // the shared event so the paginated Library also reloads when its owner stays
+  // the same. Coalesce the focus + visibility events from one tab switch.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onReturn = () => {
+      clearTimeout(timer);
+      if (document.visibilityState !== "visible") return;
+      timer = setTimeout(() => {
+        window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
+      }, 100);
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, []);
+
   /* ── Connect GitHub ─────────────────────────────────────────── */
   const connect = useCallback(
     async (source?: "oauth" | "cli", installation?: GitHubInstallationSelection) => {
