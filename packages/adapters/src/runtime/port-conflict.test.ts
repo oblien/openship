@@ -670,6 +670,46 @@ describe("ensurePortAvailable — systemd occupants keep working", () => {
     ).resolves.toBeUndefined();
     expect(host.seen.some((c) => c.includes(`systemctl stop '${UNIT}'`))).toBe(true);
   });
+
+  // #1038: a bare redeploy probes its ports while the release it replaces still binds
+  // them. Bare runs stop-first, so the pipeline stops that release in the next step.
+  test("the outgoing deployment's own unit holds the port: no prompt, nothing stopped", async () => {
+    const host = recordingHost(() => [
+      [`sport = :${PORT}`, `LISTEN 0 511 *:${PORT} *:* users:(("node",pid=702,fd=18))`],
+      ["-p 702 -o args=", "next-server (v16.3.1)"],
+      ["/proc/702/cgroup", "0::/system.slice/openship-dep_Old1.service"],
+      ["--property=Description", "Openship deployment dep_Old1"],
+    ]);
+    const { logger } = fakeLogger();
+    const spy = promptSpy("free_port");
+
+    await expect(
+      ensurePortAvailable(host.executor, PORT, logger, spy.promptUser, {
+        outgoingDeploymentId: "dep_Old1",
+      }),
+    ).resolves.toBeUndefined();
+    expect(spy.calls).toEqual([]);
+    expect(forbiddenCommands(host.seen)).toEqual([]);
+  });
+
+  test("another Openship deployment on the port is still prompted for", async () => {
+    const host = recordingHost(() => [
+      [`sport = :${PORT}`, `LISTEN 0 511 *:${PORT} *:* users:(("node",pid=703,fd=18))`],
+      ["-p 703 -o args=", "node /srv/other/server.js"],
+      ["/proc/703/cgroup", "0::/system.slice/openship-dep_Other.service"],
+      ["--property=Description", "Openship deployment dep_Other"],
+    ]);
+    const { logger } = fakeLogger();
+    const spy = promptSpy("abort");
+
+    await expect(
+      ensurePortAvailable(host.executor, PORT, logger, spy.promptUser, {
+        outgoingDeploymentId: "dep_Old1",
+      }),
+    ).rejects.toThrow(/Deploy aborted/);
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]!.details).toMatchObject({ deploymentId: "dep_Other" });
+  });
 });
 
 describe("container port-forwarder recognition", () => {

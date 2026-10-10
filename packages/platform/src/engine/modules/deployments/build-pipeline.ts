@@ -2048,8 +2048,13 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
                 .filter((port): port is number => Number.isFinite(port)),
             ),
           );
+          // As with the loopback pin above: the outgoing release still holds its
+          // ports at preflight, and bare can't overlap, so the pipeline stops it
+          // in the very next step. Prompting about it would stall every redeploy.
           for (const port of ports) {
-            await ensurePortAvailable(executor, port, logger, promptUser);
+            await ensurePortAvailable(executor, port, logger, promptUser, {
+              outgoingDeploymentId: prevDep?.id,
+            });
           }
         },
         activate: async (cfg, onLog) => {
