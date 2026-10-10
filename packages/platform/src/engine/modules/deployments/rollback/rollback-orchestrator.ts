@@ -63,6 +63,7 @@ import {
   ROLLBACK_ERROR_CODES,
   type RestorePlan,
 } from "./restore-plan";
+import { hasRedactedFrozenEnv, replaceRedactedFrozenEnv } from "../compose/redacted-frozen-env";
 
 export { ROLLBACK_ERROR_CODES, planNeedsRepository, shouldRetainArtifact } from "./restore-plan";
 export type { RestorePlan } from "./restore-plan";
@@ -304,6 +305,23 @@ async function restoreViaRedeploy(
   // branch reasserts the exact release ref selected from this same snapshot.
   const frozen = (target.meta ?? {}) as DeploymentConfigSnapshot;
   const meta = withoutPinnedArtifacts({ ...frozen });
+  // Releases frozen before the deployment-meta redaction fix hold `***` where a
+  // credential used to be, and "verbatim" would replay that: the compose services
+  // are written onto the live rows by `syncFromCompose`, so a `***` DSN would
+  // rebuild the very breakage the rollback was meant to undo. Take the live value
+  // for those keys — it is the one the last successful deploy ran with. Gated on
+  // the scan so the common case costs no query.
+  if (hasRedactedFrozenEnv(meta.composeServices)) {
+    const liveRows = await repos.service.listByProject(project.id);
+    meta.composeServices = replaceRedactedFrozenEnv(
+      meta.composeServices,
+      new Map(
+        liveRows
+          .filter((s) => s.kind === "compose" || s.kind === null)
+          .map((s) => [s.name, (s.environment ?? {}) as Record<string, string>]),
+      ),
+    ) as typeof meta.composeServices;
+  }
   if (plan.mode === "redeploy-pinned") {
     if (Object.keys(plan.handoverImages).length > 0) meta.handoverImages = plan.handoverImages;
     if (plan.handoverAppImage) meta.handoverAppImage = plan.handoverAppImage;

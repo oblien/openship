@@ -302,6 +302,44 @@ export function sanitizeStorableStringsExceptKeys<T>(
   return deepStorable(value, 0, preserveKeys, false) as T;
 }
 
+/**
+ * The deployment-meta fields whose values are OPERATIONAL RECORDS, not captured
+ * text — the same set `sealDeploymentMeta` encrypts (`DEPLOYMENT_SECRET_FIELDS`,
+ * `packages/db/src/configuration-secrets.ts`).
+ *
+ * Restated rather than imported: dozens of suites mock `@repo/db` wholesale, and
+ * a module-scope value read from it would be `undefined` in all of them. The
+ * pairing is still enforced — `deployment-meta-redaction.test.ts` asserts this
+ * set covers every field `DEPLOYMENT_SECRET_FIELDS` names, so the day one grows
+ * without the other the suite fails.
+ */
+const DEPLOYMENT_META_PRESERVED_KEYS: ReadonlySet<string> = new Set(["composeServices"]);
+
+/**
+ * `sanitizeStorableStrings` for a whole `deployment.meta` blob: storability is
+ * still enforced everywhere, but the already-encrypted secret fields are not
+ * credential-scrubbed.
+ *
+ * `deployment.meta` rides into jsonb through the BUILD-LOG scrubber, and that
+ * scrubber rewrites URL userinfo to `***@`. For a log line that is right. For
+ * `meta.composeServices[]` it is a break, in the same shape as the backup
+ * `restoreCommand` bug above: the field holds the frozen env of every compose
+ * service, `sealDeploymentMeta` encrypts it, and a rollback replays it verbatim
+ * through `syncFromCompose` onto the live service rows — which is what actually
+ * builds the container. So a `DATABASE_URL` of `postgresql://app:secret@db/app`
+ * was stored as `postgresql://***@db/app`, and rolling that release back
+ * reproduced the breakage: the app crash-looped on `no password supplied` while
+ * the rollback itself reported success. The value was ALSO already encrypted, so
+ * the redaction protected nothing that encryption was not protecting better.
+ *
+ * Storability stays mandatory and is why this is not a passthrough: Postgres
+ * refuses a NUL outright and a lone surrogate in jsonb, and this value shares its
+ * write with the deployment's terminal status.
+ */
+export function sanitizeDeploymentMeta<T>(value: T): T {
+  return sanitizeStorableStringsExceptKeys(value, DEPLOYMENT_META_PRESERVED_KEYS);
+}
+
 function deepStorable(
   value: unknown,
   depth: number,
