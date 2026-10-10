@@ -274,7 +274,7 @@
     "addJob": "添加任务",
     "undo": "撤销",
     "redo": "重做",
-    "canvasHint": "选择任务进行编辑。连接任务以设置依赖关系。",
+    "canvasHint": "展开任务以查看步骤。连接任务以设置依赖关系。",
     "draftHint": "保存之前，所有更改仅保留在草稿中。正在运行的工作流不受影响。",
     "backToWorkflow": "工作流设置",
     "runsOn": "运行器标签",
@@ -322,7 +322,10 @@
     "automaticArchitecture": "运行器默认值",
     "jobImage": "作业容器镜像",
     "runnerDefault": "使用运行器默认值",
-    "jobImageHint": "任何兼容的 Linux 镜像均可。请包含步骤和操作所需的工具。"
+    "jobImageHint": "任何兼容的 Linux 镜像均可。请包含步骤和操作所需的工具。",
+    "expandJob": "显示步骤",
+    "collapseJob": "隐藏步骤",
+    "editStep": "编辑步骤"
   },
   "runnerSetup": {
     "subtitle": "选择服务器和可直接使用的运行环境。",

@@ -1,5 +1,5 @@
 "use client";
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,15 @@ import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionField } from "./ActionField";
 import { workflowEventConfig as object } from "./workflow-yaml";
-import { changeWorkflowSteps, editWorkflowStep, type WorkflowEdit } from "./workflow-editor";
+import {
+  changeWorkflowSteps,
+  editWorkflowStep,
+  workflowStepTitle,
+  type WorkflowEdit,
+} from "./workflow-editor";
 
-export type WorkflowStepSelection = { jobId: string; index: number } | null;
+export type WorkflowExpandedSteps = Record<string, number[]>;
+export type WorkflowStepTarget = { jobId: string; index: number; request: number };
 const text = (value: unknown) =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean"
     ? String(value)
@@ -20,40 +26,58 @@ export function WorkflowSteps({
   source,
   jobId,
   steps,
-  selection,
-  onSelect,
+  expandedSteps,
+  onExpandedStepsChange,
+  reveal,
   edit,
 }: {
   source: string;
   jobId: string;
   steps: unknown[];
-  selection: WorkflowStepSelection;
-  onSelect: (selection: WorkflowStepSelection) => void;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
+  reveal?: WorkflowStepTarget | null;
   edit: WorkflowEdit;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
   const prefix = useId();
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (reveal?.jobId === jobId)
+      list.current
+        ?.querySelector<HTMLElement>(`[data-step-index="${reveal.index}"]`)
+        ?.scrollIntoView?.({ block: "nearest" });
+  }, [reveal, jobId]);
+  const expanded = expandedSteps[jobId] ?? [];
+  const expand = (indexes: number[]) =>
+    onExpandedStepsChange({ ...expandedSteps, [jobId]: indexes });
   const changeOrder = (index: number, action: "up" | "down" | "remove") =>
     edit(() => {
       const next = changeWorkflowSteps(source, jobId, index, action);
-      onSelect(action === "remove" ? null : { jobId, index: index + (action === "up" ? -1 : 1) });
+      const target = index + (action === "up" ? -1 : 1);
+      expand(
+        action === "remove"
+          ? expanded
+              .filter((open) => open !== index)
+              .map((open) => (open > index ? open - 1 : open))
+          : expanded.map((open) => (open === index ? target : open === target ? index : open)),
+      );
       return next;
     });
   return (
-    <div className="@container space-y-2" data-testid="workflow-steps">
+    <div ref={list} className="@container space-y-2" data-testid="workflow-steps">
       <ol aria-label={e.steps}>
         {steps.map((raw, index) => {
           const step = object(raw);
           const isAction = Object.hasOwn(step, "uses");
-          const selected = selection?.jobId === jobId && selection.index === index;
+          const selected = expanded.includes(index);
           const update = (patch: Record<string, unknown>) =>
             edit(() => editWorkflowStep(source, jobId, index, patch));
-          const title =
-            text(step.name) || text(step.uses) || text(step.run).split("\n")[0] || e.command;
+          const title = workflowStepTitle(step, e.command);
           const id = `${prefix}-${index}`;
           return (
-            <li key={index} className="relative pb-1 last:pb-0">
+            <li key={index} data-step-index={index} className="relative pb-1 last:pb-0">
               {index < steps.length - 1 && (
                 <span aria-hidden className="absolute bottom-0 start-[19px] top-8 w-px bg-border" />
               )}
@@ -61,7 +85,11 @@ export function WorkflowSteps({
                 type="button"
                 aria-expanded={selected}
                 aria-controls={id}
-                onClick={() => onSelect(selected ? null : { jobId, index })}
+                onClick={() =>
+                  expand(
+                    selected ? expanded.filter((open) => open !== index) : [...expanded, index],
+                  )
+                }
                 className={`relative flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-start text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${selected ? "bg-muted/60" : "hover:bg-muted/40"}`}
               >
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-card text-muted-foreground">
@@ -178,7 +206,7 @@ export function WorkflowSteps({
         onClick={() =>
           edit(() => {
             const next = changeWorkflowSteps(source, jobId, 0, "add");
-            onSelect({ jobId, index: steps.length });
+            expand([...expanded, steps.length]);
             return next;
           })
         }

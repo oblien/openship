@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { WorkflowJobEditor } from "./WorkflowJobEditor";
-import type { WorkflowStepSelection } from "./WorkflowSteps";
+import type { WorkflowExpandedSteps, WorkflowStepTarget } from "./WorkflowSteps";
 import { editWorkflowDependency, workflowJobs } from "./workflow-editor";
 
 type Edit = (operation: () => string) => void;
@@ -15,16 +15,18 @@ export function WorkflowJobInspector({
   edit,
   onClose,
   onEditYaml,
-  stepSelection,
-  onSelectStep,
+  expandedSteps,
+  onExpandedStepsChange,
+  stepToReveal,
 }: {
   source: string;
   selection: NonNullable<TopologySelection>;
   edit: Edit;
   onClose: () => void;
   onEditYaml: (id: string) => void;
-  stepSelection: WorkflowStepSelection;
-  onSelectStep: (selection: WorkflowStepSelection) => void;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
+  stepToReveal: WorkflowStepTarget | null;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
@@ -83,8 +85,9 @@ export function WorkflowJobInspector({
         job={job}
         jobs={jobs}
         edit={edit}
-        stepSelection={stepSelection}
-        onSelectStep={onSelectStep}
+        expandedSteps={expandedSteps}
+        onExpandedStepsChange={onExpandedStepsChange}
+        stepToReveal={stepToReveal}
         onEditYaml={onEditYaml}
       />
     </div>

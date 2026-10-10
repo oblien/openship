@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Connection } from "@xyflow/react";
 import type { ActionPlanView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -12,7 +12,7 @@ import { WorkflowJobList } from "./WorkflowJobList";
 import { ActionsIllustration } from "./ActionsIllustration";
 import { workflowJobs, workflowJobOffset, type WorkflowEdit } from "./workflow-editor";
 import type { useWorkflowDraft } from "./useWorkflowDraft";
-import type { WorkflowStepSelection } from "./WorkflowSteps";
+import type { WorkflowExpandedSteps, WorkflowStepTarget } from "./WorkflowSteps";
 
 export type WorkflowWorkspaceView = "topology" | "list" | "yaml";
 
@@ -29,8 +29,10 @@ export function WorkflowWorkspace({
   view,
   onViewChange,
   edit,
-  stepSelection,
-  onSelectStep,
+  expandedSteps,
+  onExpandedStepsChange,
+  onSelectStepNode,
+  stepToReveal,
   onEditYaml,
 }: {
   plan: ActionPlanView | null;
@@ -45,14 +47,32 @@ export function WorkflowWorkspace({
   view: WorkflowWorkspaceView;
   onViewChange: (view: WorkflowWorkspaceView) => void;
   edit: WorkflowEdit;
-  stepSelection: WorkflowStepSelection;
-  onSelectStep: (selection: WorkflowStepSelection) => void;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
+  onSelectStepNode: (jobId: string, index: number) => void;
+  stepToReveal: WorkflowStepTarget | null;
   onEditYaml: (id: string) => void;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
   const id = useId();
   const yaml = useRef<HTMLTextAreaElement>(null);
+  const [expandedJobs, setExpandedJobs] = useState<string[]>([]);
+  const [expandedTopologyJobs, setExpandedTopologyJobs] = useState<string[]>([]);
+  useEffect(() => {
+    if (selection?.kind === "node")
+      setExpandedJobs((current) =>
+        current.includes(selection.id) ? current : [...current, selection.id],
+      );
+  }, [selection]);
+  const toggleJob = (id: string) => {
+    const expanded = expandedJobs.includes(id);
+    setExpandedJobs((current) =>
+      expanded ? current.filter((job) => job !== id) : [...current, id],
+    );
+    if (!expanded) onSelect({ kind: "node", id });
+    else if (selection?.kind === "node" && selection.id === id) onSelect(null);
+  };
   useEffect(() => {
     if (yamlRequest) onViewChange("yaml");
   }, [yamlRequest, onViewChange]);
@@ -146,18 +166,28 @@ export function WorkflowWorkspace({
               plan={plan}
               className="absolute inset-0 min-w-0 overflow-hidden"
               editor={{ selection, onSelect, onConnect }}
+              jobDetails={{
+                jobs,
+                expandedJobs: expandedTopologyJobs,
+                onToggleJob: (id) =>
+                  setExpandedTopologyJobs((current) =>
+                    current.includes(id) ? current.filter((job) => job !== id) : [...current, id],
+                  ),
+                onSelectStep: onSelectStepNode,
+                selectedStep: stepToReveal,
+              }}
             />
           ) : (
             <div className="absolute inset-0 overflow-y-auto">
               <WorkflowJobList
                 plan={plan}
                 jobs={jobs}
-                selection={selection}
-                onSelect={onSelect}
+                expandedJobs={expandedJobs}
+                onToggleJob={toggleJob}
                 source={draft.source}
                 edit={edit}
-                stepSelection={stepSelection}
-                onSelectStep={onSelectStep}
+                expandedSteps={expandedSteps}
+                onExpandedStepsChange={onExpandedStepsChange}
                 onEditYaml={onEditYaml}
               />
             </div>

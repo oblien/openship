@@ -3,10 +3,9 @@
 import { useId } from "react";
 import type { ActionPlanView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
-import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import type { workflowJobs } from "./workflow-editor";
-import type { WorkflowStepSelection } from "./WorkflowSteps";
+import type { WorkflowExpandedSteps } from "./WorkflowSteps";
 import { WorkflowJobEditor } from "./WorkflowJobEditor";
 import type { WorkflowEdit } from "./workflow-editor";
 
@@ -14,22 +13,22 @@ import type { WorkflowEdit } from "./workflow-editor";
 export function WorkflowJobList({
   plan,
   jobs,
-  selection,
-  onSelect,
+  expandedJobs,
+  onToggleJob,
   source,
   edit,
-  stepSelection,
-  onSelectStep,
+  expandedSteps,
+  onExpandedStepsChange,
   onEditYaml,
 }: {
   plan: ActionPlanView;
   jobs: ReturnType<typeof workflowJobs>;
-  selection: TopologySelection;
-  onSelect: (selection: TopologySelection) => void;
+  expandedJobs: string[];
+  onToggleJob: (id: string) => void;
   source: string;
   edit: WorkflowEdit;
-  stepSelection: WorkflowStepSelection;
-  onSelectStep: (selection: WorkflowStepSelection) => void;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
   onEditYaml: (id: string) => void;
 }) {
   const { t } = useI18n();
@@ -41,7 +40,7 @@ export function WorkflowJobList({
         const draftJob = jobs.find((item) => item.id === job.id);
         const value = draftJob?.value;
         const steps = Array.isArray(value?.steps) ? value.steps : [];
-        const selected = selection?.kind === "node" && selection.id === job.id;
+        const expanded = expandedJobs.includes(job.id);
         const stepsId = `${prefix}-${job.id}-steps`;
         return (
           <li className="relative pb-3 last:pb-0" key={job.id}>
@@ -51,11 +50,10 @@ export function WorkflowJobList({
             <button
               type="button"
               aria-label={`${e.editJob}: ${job.name}`}
-              aria-pressed={selected}
-              aria-expanded={selected}
+              aria-expanded={expanded}
               aria-controls={stepsId}
-              onClick={() => onSelect(selected ? null : { kind: "node", id: job.id })}
-              className={`relative flex w-full items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${selected ? "bg-muted/60" : "hover:bg-muted/40"}`}
+              onClick={() => onToggleJob(job.id)}
+              className={`relative flex w-full items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring ${expanded ? "bg-muted/60" : "hover:bg-muted/40"}`}
             >
               <span className="relative flex size-7 shrink-0 items-center justify-center rounded-full bg-card text-info/80">
                 <Icon name="play-circle" className="size-5" />
@@ -93,22 +91,22 @@ export function WorkflowJobList({
               </span>
               <Icon
                 name="chevron-down"
-                className={`mt-1.5 size-3.5 shrink-0 text-muted-foreground ${selected ? "rotate-180" : ""}`}
+                className={`mt-1.5 size-3.5 shrink-0 text-muted-foreground ${expanded ? "rotate-180" : ""}`}
               />
             </button>
             <div
               id={stepsId}
-              hidden={!selected}
+              hidden={!expanded}
               className="ms-[25px] border-s border-border py-2 ps-4 pe-3"
             >
-              {selected && draftJob && (
+              {expanded && draftJob && (
                 <WorkflowJobEditor
                   source={source}
                   job={draftJob}
                   jobs={jobs}
                   edit={edit}
-                  stepSelection={stepSelection}
-                  onSelectStep={onSelectStep}
+                  expandedSteps={expandedSteps}
+                  onExpandedStepsChange={onExpandedStepsChange}
                   onEditYaml={onEditYaml}
                   inline
                 />

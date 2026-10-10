@@ -1,5 +1,122 @@
 import type { ActionJobView, ActionPlanView, ActionRunView } from "@repo/contracts";
-import type { ProjectTopologyGraph, TopologyState } from "@/components/topology/model";
+import type {
+  ProjectTopologyGraph,
+  TopologyState,
+  TopologyNodeLayout,
+  TopologyResource,
+} from "@/components/topology/model";
+import { workflowStepTitle, type workflowJobs } from "./workflow-editor";
+import { workflowEventConfig as object } from "./workflow-yaml";
+
+export const WORKFLOW_NODE_LAYOUT: TopologyNodeLayout = {
+  width: 240,
+  height: 64,
+  gapX: 72,
+  gapY: 40,
+};
+export const WORKFLOW_STEP_LAYOUT = {
+  width: 188,
+  height: 64,
+  gapX: 44,
+  gapY: 36,
+  padding: 20,
+  top: 88,
+};
+export const workflowStepNodeId = (jobId: string, index: number) => `${jobId}:step:${index}`;
+
+export function workflowJobSize(count: number) {
+  if (!count) return { width: WORKFLOW_NODE_LAYOUT.width, height: WORKFLOW_NODE_LAYOUT.height };
+  const columns = Math.min(2, count);
+  const rows = Math.ceil(count / columns);
+  return {
+    width: Math.max(
+      WORKFLOW_NODE_LAYOUT.width,
+      columns * WORKFLOW_STEP_LAYOUT.width +
+        (columns - 1) * WORKFLOW_STEP_LAYOUT.gapX +
+        2 * WORKFLOW_STEP_LAYOUT.padding,
+    ),
+    height:
+      WORKFLOW_STEP_LAYOUT.top +
+      rows * WORKFLOW_STEP_LAYOUT.height +
+      (rows - 1) * WORKFLOW_STEP_LAYOUT.gapY +
+      WORKFLOW_STEP_LAYOUT.padding,
+  };
+}
+
+export function workflowStepPosition(count: number, index: number) {
+  const columns = Math.max(1, Math.min(2, count));
+  const { width } = workflowJobSize(count);
+  const row = Math.floor(index / columns);
+  const column = row % 2 ? columns - 1 - (index % columns) : index % columns;
+  return {
+    x:
+      (width - columns * WORKFLOW_STEP_LAYOUT.width - (columns - 1) * WORKFLOW_STEP_LAYOUT.gapX) /
+        2 +
+      column * (WORKFLOW_STEP_LAYOUT.width + WORKFLOW_STEP_LAYOUT.gapX),
+    y: WORKFLOW_STEP_LAYOUT.top + row * (WORKFLOW_STEP_LAYOUT.height + WORKFLOW_STEP_LAYOUT.gapY),
+  };
+}
+
+/** Step order is projected from YAML; only job-to-job dependencies are editable edges. */
+export function workflowDetailGraph(
+  graph: ProjectTopologyGraph,
+  jobs: ReturnType<typeof workflowJobs>,
+  expanded: readonly string[],
+  fallback: string,
+): ProjectTopologyGraph {
+  const definitions = new Map(jobs.map((job) => [job.id, job.value]));
+  const children: TopologyResource[] = [];
+  const edges = [...graph.edges];
+  const nodes = graph.nodes.map((node) => {
+    const value = definitions.get(node.id)?.steps;
+    const steps = Array.isArray(value) ? value : [];
+    if (!expanded.includes(node.id) || !steps.length) return node;
+    const size = workflowJobSize(steps.length);
+    steps.forEach((raw, index) => {
+      const id = workflowStepNodeId(node.id, index);
+      const position = workflowStepPosition(steps.length, index);
+      children.push({
+        id,
+        parentId: node.id,
+        kind: "workflow-step",
+        projectId: node.projectId,
+        name: workflowStepTitle(raw, fallback),
+        description: "",
+        tone: "service",
+        state: "configured",
+        layoutPosition: position,
+        layoutWidth: WORKFLOW_STEP_LAYOUT.width,
+        layoutHeight: WORKFLOW_STEP_LAYOUT.height,
+        workflowStep: {
+          jobId: node.id,
+          index,
+          kind: Object.hasOwn(object(raw), "uses") ? "action" : "command",
+        },
+      });
+      const previous = index ? workflowStepPosition(steps.length, index - 1) : null;
+      const direction =
+        previous && previous.y === position.y
+          ? previous.x < position.x
+            ? "right"
+            : "left"
+          : "bottom";
+      const target = direction === "right" ? "left" : direction === "left" ? "right" : "top";
+      edges.push({
+        id: `${node.id}:step-order:${index}`,
+        source: index ? workflowStepNodeId(node.id, index - 1) : node.id,
+        target: id,
+        sourceHandle: index ? `${direction}-out` : "steps",
+        targetHandle: `${target}-in`,
+        kind: "sequence",
+        readOnly: true,
+        label: "",
+        description: `${node.name} · ${index + 1}`,
+      });
+    });
+    return { ...node, layoutWidth: size.width, layoutHeight: size.height };
+  });
+  return { nodes: [...nodes, ...children], edges };
+}
 
 const states: Record<string, TopologyState> = {
   queued: "pending",

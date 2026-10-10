@@ -67,10 +67,12 @@ the deployment wizard. These entry points share the same setup:
 
 1. Select a repository and branch. Openship discovers files in `.github/workflows/`
    and `.openship/workflows/` and previews their job dependencies as a topology.
-2. The canvas stays visible while you edit. Select a job to edit its steps in the
-   right panel; expand **Job settings** for its name, runner labels, CPU architecture,
-   container image and dependencies. **List** edits the same steps inline on the
-   left, without duplicating them in the right panel. Connect jobs to set dependencies
+2. The canvas stays visible while you edit. Select a job to open its settings in the
+   right panel. Expand its canvas node to reveal a grid of step cards connected by
+   execution-order arrows; selecting a step opens its editor. **List** edits those
+   same steps inline on the left, without
+   duplicating them in the right panel. Jobs and steps expand independently, and
+   open steps stay open when switching views. Connect jobs to set dependencies
    and select a connection to remove it. **List** and **YAML** show the same draft; undo and redo work across
    views. **Job YAML** exposes matrix, services, conditions, permissions and step
    inputs. Dependency cycles and deletion of referenced job outputs are rejected.

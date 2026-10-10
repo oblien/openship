@@ -274,7 +274,7 @@
     "addJob": "Añadir tarea",
     "undo": "Deshacer",
     "redo": "Rehacer",
-    "canvasHint": "Selecciona una tarea para editarla. Conecta tareas para definir dependencias.",
+    "canvasHint": "Expande una tarea para ver sus pasos. Conecta tareas para establecer dependencias.",
     "draftHint": "Los cambios permanecen en el borrador hasta que los guardes. Los workflows en curso no se modifican.",
     "backToWorkflow": "Configuración del workflow",
     "runsOn": "Etiquetas del runner",
@@ -322,7 +322,10 @@
     "automaticArchitecture": "Predeterminada del ejecutor",
     "jobImage": "Imagen del contenedor del trabajo",
     "runnerDefault": "Usar imagen del ejecutor",
-    "jobImageHint": "Cualquier imagen Linux compatible. Incluye las herramientas que necesitan tus pasos y acciones."
+    "jobImageHint": "Cualquier imagen Linux compatible. Incluye las herramientas que necesitan tus pasos y acciones.",
+    "expandJob": "Mostrar pasos",
+    "collapseJob": "Ocultar pasos",
+    "editStep": "Editar paso"
   },
   "runnerSetup": {
     "subtitle": "Elige un servidor y un entorno listo para usar.",

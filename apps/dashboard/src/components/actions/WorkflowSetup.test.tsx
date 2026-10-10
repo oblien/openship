@@ -217,9 +217,9 @@ describe("shared workflow setup", () => {
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Edit job: test"]')!.click(),
     );
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Job settings"]')!.click(),
-    );
+    expect(
+      document.querySelector('[aria-label="Job settings"]')!.getAttribute("aria-expanded"),
+    ).toBe("true");
     await fill("Name", "Unit checks");
     await preview();
     await click("List");
@@ -278,11 +278,75 @@ describe("shared workflow setup", () => {
     );
     expect(
       inspector.querySelector('[aria-label="Job settings"]')!.getAttribute("aria-expanded"),
-    ).toBe("false");
+    ).toBe("true");
     await click("YAML");
     expect(
       document.querySelector<HTMLTextAreaElement>('[aria-label="Workflow YAML"]')!.value,
     ).toContain("echo updated");
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps jobs and steps independently expanded through reordering, removal and view switches", async () => {
+    const expandedSource =
+      source.replace(
+        "      - run: echo tested",
+        "      - run: echo first\n      - run: echo middle\n      - run: echo last",
+      ) + "  other:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo other\n";
+    h.source.mockResolvedValue({
+      source: expandedSource,
+      sha: "original-file-sha",
+      plan,
+      error: null,
+    });
+    await render("ci");
+    await click("List");
+    const jobButton = (name: string) =>
+      host.querySelector<HTMLButtonElement>(`[aria-label="Edit job: ${name}"]`)!;
+    await act(async () => jobButton("test").click());
+    await act(async () => jobButton("other").click());
+    expect(jobButton("test").getAttribute("aria-expanded")).toBe("true");
+    expect(jobButton("other").getAttribute("aria-expanded")).toBe("true");
+    const workspace = host.querySelector('[data-testid="workflow-workspace"]')!;
+    const lists = () => workspace.querySelectorAll('[data-testid="workflow-steps"]');
+    const step = (list: number, index: number) =>
+      lists()[list].querySelector<HTMLElement>(`[data-step-index="${index}"]`)!;
+    const toggle = (list: number, index: number) =>
+      act(async () => step(list, index).querySelector<HTMLButtonElement>("button")!.click());
+    await toggle(0, 0);
+    await toggle(0, 2);
+    await toggle(1, 0);
+    const commands = (list: number) =>
+      [...lists()[list].querySelectorAll<HTMLTextAreaElement>('[aria-label="Command"]')].map(
+        (input) => input.value,
+      );
+    expect(commands(0)).toEqual(["echo first", "echo last"]);
+    expect(commands(1)).toEqual(["echo other"]);
+    await act(async () =>
+      step(0, 2).querySelector<HTMLButtonElement>('[aria-label="Move step up"]')!.click(),
+    );
+    await preview();
+    expect(commands(0)).toEqual(["echo first", "echo last"]);
+    expect(step(0, 1).querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+    expect(step(0, 2).querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+    await act(async () =>
+      [...step(0, 0).querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Remove")!
+        .click(),
+    );
+    await preview();
+    expect(commands(0)).toEqual(["echo last"]);
+    expect(commands(1)).toEqual(["echo other"]);
+    await click("Topology");
+    await act(async () => jobButton("test").click());
+    expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Command"]')!.value).toBe(
+      "echo last",
+    );
+    await click("List");
+    expect(jobButton("test").getAttribute("aria-expanded")).toBe("true");
+    expect(jobButton("other").getAttribute("aria-expanded")).toBe("true");
+    expect(commands(0)).toEqual(["echo last"]);
+    expect(commands(1)).toEqual(["echo other"]);
     expect(h.save).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
   });

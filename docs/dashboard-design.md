@@ -63,10 +63,11 @@ wizard. The dialog uses the available viewport, with a persistent canvas on the 
 and a scrollable 400–420px inspector on the right. Topology is the default; List and YAML
 are peer views of the same draft. Source and Run settings stay in the inspector.
 In Topology, selecting a job or dependency replaces those controls with its editor.
-In List, expand the selected job and edit its steps inline on the left; keep workflow
-controls on the right. Reuse the same job-and-step editor in both locations without
-rendering a duplicate. Keep job metadata in one compact disclosure and step selection
-in shared state so switching views preserves the edit. Keep Save
+In List, expand jobs and edit steps independently on the left; keep workflow controls
+on the right. Reuse the same job-and-step editor in both locations without rendering
+a duplicate. Job settings open by default when selecting a topology node and remain
+a compact disclosure in List. Expanded steps stay in shared state across views;
+opening an item never closes another. Keep Save
 visible beneath the inspector. Stack the canvas and controls on narrow screens.
 Use the shared PNG `play-circle` icon for Actions in navigation, workflow cards and
 the editor. The large editor uses the shared modal's translucent frosted surface;
@@ -76,6 +77,11 @@ foreground tokens. Workflow nodes are compact neutral rows with a status icon,
 job name and runner label, without service-card footers. A muted info accent on the
 draft's play icon and selected outline gives identity without tinting the node fill.
 They reuse the shared canvas with their own node renderer and compact layout dimensions.
+A job expands into separate step cards in a two-column grid below its header.
+Directional arrows follow YAML execution order across each row and down to the next;
+job dependencies remain connected to the header. Selecting a child node reveals its
+shared step editor. The canvas reserves the group's width and height, keeps neighboring
+jobs clear and moves the children with their job. Each job expands independently.
 The List view is a vertical job outline with expandable steps and explicit dependency
 labels; its rail does not imply execution order or completed progress. Reserve other
 color for run status, errors and repository differences; plus buttons, sections and

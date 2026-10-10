@@ -62,7 +62,8 @@ export interface TopologyResource {
     | "traffic"
     | "database"
     | "volume"
-    | "workflow-job";
+    | "workflow-job"
+    | "workflow-step";
   name: string;
   description: string;
   tone: TopologyTone;
@@ -84,13 +85,23 @@ export interface TopologyResource {
   isNew?: boolean;
   /** Optional dependency depth for non-infrastructure graphs. */
   layoutColumn?: number;
+  /** Expanded node content reserves its actual size in the shared layout. */
+  layoutHeight?: number;
+  layoutWidth?: number;
+  /** Child nodes move with their parent and use parent-relative positions. */
+  parentId?: string;
+  layoutPosition?: { x: number; y: number };
+  workflowStep?: { jobId: string; index: number; kind: "action" | "command" };
 }
 
 export interface TopologyRelation {
   id: string;
   source: string;
   target: string;
-  kind: "route" | "dependency" | "binding";
+  kind: "route" | "dependency" | "binding" | "sequence";
+  sourceHandle?: string;
+  targetHandle?: string;
+  readOnly?: boolean;
   /** A runtime service route is not an editable public domain. */
   scope?: "instances" | "database" | "storage";
   databaseId?: string;
@@ -546,7 +557,12 @@ export function topologyPositions(
   layout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
 ): Record<string, { x: number; y: number }> {
   const columns = new Map<number, TopologyResource[]>();
+  const positions: Record<string, { x: number; y: number }> = {};
   for (const node of graph.nodes) {
+    if (node.parentId) {
+      positions[node.id] = node.layoutPosition ?? { x: 0, y: 0 };
+      continue;
+    }
     const column =
       node.layoutColumn ??
       (node.kind === "edge" || node.kind === "traffic"
@@ -558,13 +574,25 @@ export function topologyPositions(
             : 1);
     columns.set(column, [...(columns.get(column) ?? []), node]);
   }
-  const positions: Record<string, { x: number; y: number }> = {};
+  const widths = new Map(
+    [...columns].map(([column, nodes]) => [
+      column,
+      Math.max(layout.width, ...nodes.map((node) => node.layoutWidth ?? layout.width)),
+    ]),
+  );
   for (const [column, nodes] of columns) {
-    for (const [row, node] of nodes.entries()) {
-      positions[node.id] = {
-        x: column * (layout.width + layout.gapX),
-        y: (row - (nodes.length - 1) / 2) * (layout.height + layout.gapY),
-      };
+    const totalHeight =
+      nodes.reduce((height, node) => height + (node.layoutHeight ?? layout.height), 0) +
+      Math.max(0, nodes.length - 1) * layout.gapY;
+    const x =
+      column * (layout.width + layout.gapX) +
+      [...widths]
+        .filter(([other]) => other < column)
+        .reduce((extra, [, width]) => extra + width - layout.width, 0);
+    let y = (layout.height - totalHeight) / 2;
+    for (const node of nodes) {
+      positions[node.id] = { x, y };
+      y += (node.layoutHeight ?? layout.height) + layout.gapY;
     }
   }
   return positions;

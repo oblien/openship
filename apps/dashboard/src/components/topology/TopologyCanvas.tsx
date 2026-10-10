@@ -374,12 +374,29 @@ function Canvas({
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
-      const occupied = current
-        .filter((node) => graph.nodes.some((resource) => resource.id === node.id))
-        .map((node) => node.position);
+      const resized = graph.nodes.some((resource) => {
+        const previous = byId.get(resource.id)?.data.resource;
+        return (
+          previous &&
+          (previous.layoutHeight !== resource.layoutHeight ||
+            previous.layoutWidth !== resource.layoutWidth)
+        );
+      });
+      const occupied = (resized ? [] : current)
+        .filter((node) => !node.parentId && graph.nodes.some((resource) => resource.id === node.id))
+        .map((node) => ({
+          ...node.position,
+          width: node.data.resource.layoutWidth ?? nodeLayout.width,
+          height: node.data.resource.layoutHeight ?? nodeLayout.height,
+        }));
       return graph.nodes.map((resource) => {
         const existing = byId.get(resource.id);
-        let position = existing?.position ?? storedPositions.current?.[resource.id];
+        const height = resource.layoutHeight ?? nodeLayout.height;
+        const width = resource.layoutWidth ?? nodeLayout.width;
+        let position =
+          resource.parentId || resized
+            ? positions[resource.id]
+            : (existing?.position ?? storedPositions.current?.[resource.id]);
         if (!position) {
           position = { ...positions[resource.id] };
           // New nodes must not cover a service whose position was preserved
@@ -387,12 +404,14 @@ function Canvas({
           while (
             occupied.some(
               (other) =>
-                Math.abs(other.x - position!.x) < nodeLayout.width + 20 &&
-                Math.abs(other.y - position!.y) < nodeLayout.height + 20,
+                position!.x < other.x + other.width + 20 &&
+                other.x < position!.x + width + 20 &&
+                position!.y < other.y + other.height + 20 &&
+                other.y < position!.y + height + 20,
             )
           )
-            position.y += nodeLayout.height + nodeLayout.gapY;
-          occupied.push(position);
+            position.y += height + nodeLayout.gapY;
+          occupied.push({ ...position, width, height });
         }
         return {
           // Keep measured dimensions so selection and refresh do not hide existing nodes.
@@ -400,12 +419,26 @@ function Canvas({
           id: resource.id,
           type: "resource" as const,
           position,
+          parentId: resource.parentId,
+          extent: resource.parentId ? ("parent" as const) : undefined,
+          draggable: resource.parentId ? false : undefined,
+          width: resource.layoutWidth,
+          height: resource.layoutHeight,
+          style: { width: resource.layoutWidth, height: resource.layoutHeight },
+          ...(existing?.measured &&
+          (existing.data.resource.layoutHeight !== resource.layoutHeight ||
+            existing.data.resource.layoutWidth !== resource.layoutWidth)
+            ? { measured: { ...existing.measured, width, height } }
+            : {}),
           data: { resource, onOpen, action: nodeActions?.[resource.id] },
         };
       });
     });
     const ids = graph.nodes
-      .map((node) => node.id)
+      .map(
+        (node) =>
+          `${node.id}:${node.layoutWidth ?? nodeLayout.width}:${node.layoutHeight ?? nodeLayout.height}`,
+      )
       .sort()
       .join("|");
     if (previousIds.current && previousIds.current !== ids)
@@ -418,6 +451,9 @@ function Canvas({
         id: relation.id,
         source: relation.source,
         target: relation.target,
+        sourceHandle: relation.sourceHandle,
+        targetHandle: relation.targetHandle,
+        focusable: !relation.readOnly,
         type: "traffic",
         selected: selection?.kind === "edge" && selection.id === relation.id,
         data: {
@@ -441,6 +477,11 @@ function Canvas({
           return;
         const id = target.getAttribute("data-id");
         if (!id || nodeActions?.[id]?.disabled || nodeActions?.[id]?.readOnly) return;
+        if (
+          target.classList.contains("react-flow__edge") &&
+          graph.edges.find((edge) => edge.id === id)?.readOnly
+        )
+          return;
         event.preventDefault();
         onSelect({ kind: target.classList.contains("react-flow__node") ? "node" : "edge", id });
       }}
@@ -464,6 +505,7 @@ function Canvas({
           onSelect({ kind: "node", id: node.id });
         }}
         onEdgeClick={(event, edge) => {
+          if (graph.edges.find((relation) => relation.id === edge.id)?.readOnly) return;
           (event.currentTarget as SVGElement).focus({ preventScroll: true });
           onSelect({ kind: "edge", id: edge.id });
         }}

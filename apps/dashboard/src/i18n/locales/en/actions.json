@@ -274,7 +274,7 @@
     "addJob": "Add job",
     "undo": "Undo",
     "redo": "Redo",
-    "canvasHint": "Select a job to edit it. Connect jobs to set dependencies.",
+    "canvasHint": "Expand a job to see its steps. Connect jobs to set dependencies.",
     "draftHint": "Changes stay in this draft until you save. Running workflows are unaffected.",
     "backToWorkflow": "Workflow settings",
     "runsOn": "Runner labels",
@@ -322,7 +322,10 @@
     "automaticArchitecture": "Runner default",
     "jobImage": "Job container image",
     "runnerDefault": "Use runner default",
-    "jobImageHint": "Any compatible Linux image. Include the tools your steps and actions need."
+    "jobImageHint": "Any compatible Linux image. Include the tools your steps and actions need.",
+    "expandJob": "Show steps",
+    "collapseJob": "Hide steps",
+    "editStep": "Edit step"
   },
   "runnerSetup": {
     "subtitle": "Choose a server and a ready-to-use environment.",

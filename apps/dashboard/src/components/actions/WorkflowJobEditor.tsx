@@ -8,7 +8,11 @@ import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionField } from "./ActionField";
 import { DraftInput } from "./DraftText";
-import { WorkflowSteps, type WorkflowStepSelection } from "./WorkflowSteps";
+import {
+  WorkflowSteps,
+  type WorkflowExpandedSteps,
+  type WorkflowStepTarget,
+} from "./WorkflowSteps";
 import { workflowEventConfig as object } from "./workflow-yaml";
 import {
   editWorkflowContainerImage,
@@ -33,8 +37,9 @@ export function WorkflowJobEditor({
   job,
   jobs,
   edit,
-  stepSelection,
-  onSelectStep,
+  expandedSteps,
+  onExpandedStepsChange,
+  stepToReveal,
   onEditYaml,
   inline = false,
 }: {
@@ -42,14 +47,15 @@ export function WorkflowJobEditor({
   job: Job;
   jobs: Job[];
   edit: WorkflowEdit;
-  stepSelection: WorkflowStepSelection;
-  onSelectStep: (selection: WorkflowStepSelection) => void;
+  expandedSteps: WorkflowExpandedSteps;
+  onExpandedStepsChange: (expanded: WorkflowExpandedSteps) => void;
+  stepToReveal?: WorkflowStepTarget | null;
   onEditYaml: (id: string) => void;
   inline?: boolean;
 }) {
   const { t } = useI18n();
   const e = t.actions.editor;
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState(!inline);
   const prefix = useId();
   const { id, value } = job;
   const runsOn = value["runs-on"];
@@ -227,8 +233,9 @@ export function WorkflowJobEditor({
         jobId={id}
         steps={steps}
         edit={edit}
-        selection={stepSelection}
-        onSelect={onSelectStep}
+        expandedSteps={expandedSteps}
+        onExpandedStepsChange={onExpandedStepsChange}
+        reveal={stepToReveal}
       />
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
         <Button

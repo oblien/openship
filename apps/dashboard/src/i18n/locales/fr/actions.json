@@ -274,7 +274,7 @@
     "addJob": "Ajouter une tâche",
     "undo": "Annuler",
     "redo": "Rétablir",
-    "canvasHint": "Sélectionnez une tâche pour la modifier. Reliez les tâches pour définir leurs dépendances.",
+    "canvasHint": "Développez une tâche pour voir ses étapes. Reliez les tâches pour définir leurs dépendances.",
     "draftHint": "Les modifications restent dans le brouillon jusqu’à leur enregistrement. Les exécutions en cours ne changent pas.",
     "backToWorkflow": "Paramètres du workflow",
     "runsOn": "Étiquettes du runner",
@@ -322,7 +322,10 @@
     "automaticArchitecture": "Par défaut du runner",
     "jobImage": "Image du conteneur du job",
     "runnerDefault": "Utiliser le choix du runner",
-    "jobImageHint": "Toute image Linux compatible. Incluez les outils nécessaires aux étapes et aux actions."
+    "jobImageHint": "Toute image Linux compatible. Incluez les outils nécessaires aux étapes et aux actions.",
+    "expandJob": "Afficher les étapes",
+    "collapseJob": "Masquer les étapes",
+    "editStep": "Modifier l’étape"
   },
   "runnerSetup": {
     "subtitle": "Choisissez un serveur et un environnement prêt à l’emploi.",

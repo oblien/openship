@@ -27,7 +27,7 @@ import { ActionField } from "./ActionField";
 import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { WorkflowWorkspace, type WorkflowWorkspaceView } from "./WorkflowWorkspace";
 import { WorkflowJobInspector } from "./WorkflowJobInspector";
-import type { WorkflowStepSelection } from "./WorkflowSteps";
+import type { WorkflowExpandedSteps, WorkflowStepTarget } from "./WorkflowSteps";
 import {
   WorkflowEditError,
   addWorkflowJob,
@@ -134,7 +134,8 @@ function SetupForm({
   const { source, change: setSource } = draft;
   const [selection, setSelection] = useState<TopologySelection>(null);
   const [view, setView] = useState<WorkflowWorkspaceView>("topology");
-  const [stepSelection, setStepSelection] = useState<WorkflowStepSelection>(null);
+  const [expandedSteps, setExpandedSteps] = useState<WorkflowExpandedSteps>({});
+  const [stepToReveal, setStepToReveal] = useState<WorkflowStepTarget | null>(null);
   const [yamlRequest, setYamlRequest] = useState<{ id: string; key: number } | null>(null);
   const [original, setOriginal] = useState<{
     source: string;
@@ -323,9 +324,26 @@ function SetupForm({
       // diagnostics-ignore: Keep the selected inspector while its YAML draft is incomplete.
     }
   }, [source, selection]);
+  const selectWorkflowItem = (selection: TopologySelection) => {
+    setSelection(selection);
+    setStepToReveal(null);
+  };
+  const changeExpandedSteps = (expanded: WorkflowExpandedSteps) => {
+    setExpandedSteps(expanded);
+    // An inline reorder/removal must not leave a different step highlighted on the canvas.
+    setStepToReveal(null);
+  };
   const editJobYaml = (id: string) => {
-    setSelection({ kind: "node", id });
+    selectWorkflowItem({ kind: "node", id });
     setYamlRequest((previous) => ({ id, key: (previous?.key ?? 0) + 1 }));
+  };
+  const selectStepNode = (jobId: string, index: number) => {
+    setSelection({ kind: "node", id: jobId });
+    setExpandedSteps((current) => {
+      const steps = current[jobId] ?? [];
+      return steps.includes(index) ? current : { ...current, [jobId]: [...steps, index] };
+    });
+    setStepToReveal((current) => ({ jobId, index, request: (current?.request ?? 0) + 1 }));
   };
   const reviewSource = (kind: "save" | "incoming") => {
     if (!original || original.identity !== identity) return;
@@ -370,20 +388,22 @@ function SetupForm({
             view={view}
             onViewChange={setView}
             edit={edit}
-            stepSelection={stepSelection}
-            onSelectStep={setStepSelection}
+            expandedSteps={expandedSteps}
+            onExpandedStepsChange={changeExpandedSteps}
+            onSelectStepNode={selectStepNode}
+            stepToReveal={stepToReveal}
             onEditYaml={editJobYaml}
             draft={draft}
             yamlRequest={yamlRequest}
             selection={selection}
-            onSelect={setSelection}
+            onSelect={selectWorkflowItem}
             onConnect={({ source: from, target: to }) =>
               edit(() => editWorkflowDependency(source, from, to, true))
             }
             onAdd={() =>
               edit(() => {
                 const added = addWorkflowJob(source);
-                setSelection({ kind: "node", id: added.id });
+                selectWorkflowItem({ kind: "node", id: added.id });
                 return added.source;
               })
             }
@@ -402,10 +422,11 @@ function SetupForm({
                   source={source}
                   selection={selection}
                   edit={edit}
-                  onClose={() => setSelection(null)}
+                  onClose={() => selectWorkflowItem(null)}
                   onEditYaml={editJobYaml}
-                  stepSelection={stepSelection}
-                  onSelectStep={setStepSelection}
+                  expandedSteps={expandedSteps}
+                  onExpandedStepsChange={changeExpandedSteps}
+                  stepToReveal={stepToReveal}
                 />
               ) : (
                 <>

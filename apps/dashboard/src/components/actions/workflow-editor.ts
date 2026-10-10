@@ -17,6 +17,12 @@ export function workflowJobs(source: string) {
   return Object.entries(object(values.jobs)).map(([id, value]) => ({ id, value: object(value) }));
 }
 
+export function workflowStepTitle(value: unknown, fallback: string): string {
+  const step = object(value);
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return text(step.name) || text(step.uses) || text(step.run).split("\n")[0] || fallback;
+}
+
 function jobDocument(source: string, id: string) {
   const doc = workflowDocument(source);
   if (!isMap(doc.getIn(["jobs", id], true))) throw new WorkflowEditError("missingJob");
