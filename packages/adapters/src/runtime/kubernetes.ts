@@ -1001,7 +1001,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       AbortSignal.timeout(30_000),
     ]);
     const status = await this.status(ref, signal);
-    const perPodTail = Math.max(1, Math.min(Math.ceil(tail / Math.max(status.pods.length, 1)), 2000));
+    const maxPerPod = Math.min(Math.max(tail, 1), 2000);
+    const perPodTail = Math.max(1, Math.min(Math.ceil(tail / Math.max(status.pods.length, 1)), maxPerPod));
     const readPodLogs = async (pod: { name: string }, tailLines: number) => {
       const entries: LogEntry[] = [];
       try {
@@ -1020,34 +1021,38 @@ export class KubernetesRuntime implements RuntimeAdapter {
       return entries;
     };
     const entriesByPod = new Map<string, LogEntry[]>();
+    const requestedByPod = new Map<string, number>();
     for (let index = 0; index < status.pods.length; index += 4) {
       await Promise.all(
         status.pods.slice(index, index + 4).map(async (pod) => {
+          requestedByPod.set(pod.name, perPodTail);
           entriesByPod.set(pod.name, await readPodLogs(pod, perPodTail));
         }),
       );
     }
     const sorted = () => [...entriesByPod.values()].flat().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const initial = sorted();
-    if (perPodTail < tail) {
-      const cutoff = initial.length >= tail ? initial[initial.length - tail].timestamp : undefined;
+    let current = sorted();
+    while (true) {
+      const cutoff = current.length >= tail ? current[current.length - tail].timestamp : undefined;
       const additional = status.pods.filter((pod) => {
         const entries = entriesByPod.get(pod.name) ?? [];
-        return entries.length >= perPodTail && (!cutoff || entries[0].timestamp >= cutoff);
-      }).sort((a, b) => {
-        const aEntries = entriesByPod.get(a.name) ?? [];
-        const bEntries = entriesByPod.get(b.name) ?? [];
-        return bEntries[bEntries.length - 1].timestamp.localeCompare(aEntries[aEntries.length - 1].timestamp);
-      }).slice(0, Math.max(1, Math.floor(tail / Math.min(tail, 2000))));
+        const requested = requestedByPod.get(pod.name) ?? perPodTail;
+        return entries.length >= requested && requested < maxPerPod && (!cutoff || entries[0].timestamp > cutoff);
+      });
+      if (additional.length === 0) break;
       for (let index = 0; index < additional.length; index += 4) {
         await Promise.all(
           additional.slice(index, index + 4).map(async (pod) => {
-            entriesByPod.set(pod.name, await readPodLogs(pod, Math.min(tail, 2000)));
+            const requested = requestedByPod.get(pod.name) ?? perPodTail;
+            const nextRequested = Math.min(maxPerPod, Math.max(requested + 1, requested * 2));
+            requestedByPod.set(pod.name, nextRequested);
+            entriesByPod.set(pod.name, await readPodLogs(pod, nextRequested));
           }),
         );
       }
+      current = sorted();
     }
-    return sorted().slice(-tail);
+    return current.slice(-tail);
   }
   async streamRuntimeLogs(
     ref: string,
@@ -1061,6 +1066,16 @@ export class KubernetesRuntime implements RuntimeAdapter {
       this.lifetime.signal,
       ...(opts?.signal ? [opts.signal] : []),
     ]);
+    let ended = false;
+    const finish = (error?: unknown) => {
+      if (ended) return;
+      ended = true;
+      try {
+        opts?.onEnd?.(error instanceof Error ? error : error ? new Error(String(error)) : undefined);
+      } finally {
+        controller.abort();
+      }
+    };
     const historyCutoff = new Date();
     const historyCutoffIso = historyCutoff.toISOString();
     const overlap = new Map<string, number>();
@@ -1140,6 +1155,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
                   level: "warn",
                   message: `Live logs unavailable for ${name}: ${error.message}`,
                 });
+                finish(error);
                 return;
               }
             }
@@ -1172,18 +1188,23 @@ export class KubernetesRuntime implements RuntimeAdapter {
       controller.abort();
       throw error;
     }
-    if (tail > 0) {
-      for (const entry of await this.getRuntimeLogs(ref, tail, signal)) {
-        onLog(entry);
-        if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
-          const key = entryKey(entry);
-          overlap.set(key, (overlap.get(key) ?? 0) + 1);
+    try {
+      if (tail > 0) {
+        for (const entry of await this.getRuntimeLogs(ref, tail, signal)) {
+          onLog(entry);
+          if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
+            const key = entryKey(entry);
+            overlap.set(key, (overlap.get(key) ?? 0) + 1);
+          }
         }
       }
+      historyReady = true;
+      for (const entry of handoff) emitLive(entry);
+      handoff.length = 0;
+    } catch (error) {
+      controller.abort();
+      throw error;
     }
-    historyReady = true;
-    for (const entry of handoff) emitLive(entry);
-    handoff.length = 0;
     void (async () => {
       while (!signal.aborted) {
         try {
@@ -1214,13 +1235,14 @@ export class KubernetesRuntime implements RuntimeAdapter {
       }
     })().catch((error) => {
       observeCaughtError(error, "adapters/runtime/kubernetes");
-      if (!signal.aborted)
+      if (!signal.aborted) {
         emit({
           timestamp: new Date().toISOString(),
           level: "warn",
           message: `Cluster log stream stopped: ${error instanceof Error ? error.message : String(error)}`,
         });
-      controller.abort();
+        finish(error);
+      }
     });
     return () => controller.abort();
   }

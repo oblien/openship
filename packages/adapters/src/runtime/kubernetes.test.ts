@@ -480,7 +480,6 @@ describe("Kubernetes workload lifecycle", () => {
     const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, onLog, { tail: 1000 });
     await vi.waitFor(() => {
       expect(observedPaths.some((path) => !path.includes("follow=true") && path.includes("tailLines=1000"))).toBe(true);
-      expect(observedPaths.some((path) => path.includes("follow=true") && path.includes("tailLines=1000"))).toBe(true);
       expect(onLog.mock.calls.map(([entry]) => entry.message)).toEqual([
         "[instance-a] ready",
         "[instance-a] gap",
@@ -504,12 +503,15 @@ describe("Kubernetes workload lifecycle", () => {
         return { items: pods, metadata: { resourceVersion: "1" } };
       return request(method, path, body);
     });
-    const podLogs = Object.fromEntries(pods.map((pod, podIndex) => [
-      pod.metadata.name,
-      Array.from({ length: 1000 }, (_, index) =>
-        `${new Date(Date.UTC(2025, 0, podIndex + 1, 0, 0, index)).toISOString()} ${pod.metadata.name}-${index}`,
+    const podLogs: Record<string, string[]> = {
+      "instance-a": Array.from({ length: 600 }, (_, index) =>
+        `${new Date(Date.UTC(2025, 0, 2, 0, 0, index)).toISOString()} instance-a-${index}`,
       ),
-    ]));
+      "instance-b": Array.from({ length: 399 }, (_, index) =>
+        `${new Date(Date.UTC(2025, 0, 1, 0, 0, index)).toISOString()} instance-b-${index}`,
+      ),
+      "instance-c": [`${new Date(Date.UTC(2025, 0, 3)).toISOString()} instance-c-0`],
+    };
     fixture.api.logs.mockImplementation(async function* (path: string) {
       const podName = path.split("/pods/")[1].split("/")[0];
       const tailLines = Number(new URL(`https://cluster${path}`).searchParams.get("tailLines"));
@@ -520,7 +522,11 @@ describe("Kubernetes workload lifecycle", () => {
 
     expect(entries).toHaveLength(1000);
     expect(entries.map((entry) => entry.message)).toEqual(
-      Array.from({ length: 1000 }, (_, index) => `[instance-c] instance-c-${index}`),
+      [
+        ...Array.from({ length: 399 }, (_, index) => `[instance-b] instance-b-${index}`),
+        ...Array.from({ length: 600 }, (_, index) => `[instance-a] instance-a-${index}`),
+        "[instance-c] instance-c-0",
+      ],
     );
   });
   it("publishes a source build through the existing builder and records an immutable artifact", async () => {

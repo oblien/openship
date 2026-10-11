@@ -61,7 +61,6 @@ export function useTerminalFollow(terminal: Terminal | null) {
 
   const pauseForInspection = useCallback(() => {
     const activeTerminal = terminalRef.current;
-    explicitlyPausedRef.current = false;
     pausedViewportRef.current = activeTerminal?.buffer.active.viewportY ?? 0;
     updateFollowing(false);
   }, [updateFollowing]);
