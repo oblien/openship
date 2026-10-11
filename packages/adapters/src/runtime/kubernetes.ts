@@ -1102,7 +1102,6 @@ export class KubernetesRuntime implements RuntimeAdapter {
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
     );
     const path = `${this.core}/pods?labelSelector=${selector}`;
-    const tailLines = Math.max(0, Math.min(tail, 2000));
     const streams = new Map<string, AbortController>();
     const lastEntriesByPod = new Map<string, { timestamp: string; keys: Set<string> }>();
     const pods = new Map<string, KubernetesObject>();
@@ -1136,13 +1135,13 @@ export class KubernetesRuntime implements RuntimeAdapter {
         streams.set(name, follower);
         const followSignal = AbortSignal.any([signal, follower.signal]);
         void (async () => {
-          const previous = lastEntriesByPod.get(name);
-          let since = previous?.timestamp ?? historyCutoffIso;
-          let replaying = previous !== undefined;
           while (!followSignal.aborted) {
+            const previous = lastEntriesByPod.get(name);
+            let since = previous?.timestamp ?? historyCutoffIso;
+            let replaying = previous !== undefined;
             try {
               for await (const line of this.options.api.logs(
-                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=${historyReady ? tailLines : 0}`,
+                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=0`,
                 followSignal,
               )) {
                 const entry = this.logEntry(line, name);
