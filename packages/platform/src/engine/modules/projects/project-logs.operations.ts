@@ -208,7 +208,13 @@ export const projectLogOperations = { getServerLogStreamToken: serverLogStreamTo
 export const subscribeProjectLogs: NonNullable<ProjectDependencies["subscribeLogs"]> = (ctx, id, input, options) => async (write) => {
   const stream = await projectService.streamRuntimeLogs(id, ctx.organizationId, entry => {
     write("log", JSON.stringify({ type: "log", data: entry.rawData, message: entry.message, timestamp: entry.timestamp, level: entry.level }));
-  }, { ...input, signal: options?.signal });
+  }, {
+    ...input,
+    signal: options?.signal,
+    onEnd: (error) => write("end", JSON.stringify(error
+      ? { error: safeErrorMessage(error) }
+      : { message: "Log stream ended" })),
+  });
   if (stream.serverId) sshManager.retain(stream.serverId);
   let closed = false;
   return {

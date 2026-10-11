@@ -423,8 +423,15 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             onLog: (message, rawText, rawBytes) => {
                 if (rawText) {
                     const logText = rawText.replace(/\r?\n$/, '');
-                    // ONLY save to context - let the effect above handle terminal writing
                     addTerminalLog(logText);
+                    if (terminalReady && xtermInstanceRef.current?.xterm) {
+                        try {
+                            xtermInstanceRef.current.xterm.write(logText + '\r\n');
+                            lastLogSequenceRef.current += 1;
+                        } catch (err) {
+                            errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error writing log to terminal:', err);
+                        }
+                    }
                 }
             },
             onError: (message) => {

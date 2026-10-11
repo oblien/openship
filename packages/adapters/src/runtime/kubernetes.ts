@@ -1034,7 +1034,11 @@ export class KubernetesRuntime implements RuntimeAdapter {
       const additional = status.pods.filter((pod) => {
         const entries = entriesByPod.get(pod.name) ?? [];
         return entries.length >= perPodTail && (!cutoff || entries[0].timestamp >= cutoff);
-      });
+      }).sort((a, b) => {
+        const aEntries = entriesByPod.get(a.name) ?? [];
+        const bEntries = entriesByPod.get(b.name) ?? [];
+        return bEntries[bEntries.length - 1].timestamp.localeCompare(aEntries[aEntries.length - 1].timestamp);
+      }).slice(0, Math.max(1, Math.floor(tail / Math.min(tail, 2000))));
       for (let index = 0; index < additional.length; index += 4) {
         await Promise.all(
           additional.slice(index, index + 4).map(async (pod) => {
@@ -1061,15 +1065,22 @@ export class KubernetesRuntime implements RuntimeAdapter {
     const historyCutoffIso = historyCutoff.toISOString();
     const overlap = new Map<string, number>();
     const entryKey = (entry: LogEntry) => `${entry.timestamp}\u0000${entry.message}`;
-    if (tail > 0) {
-      for (const entry of await this.getRuntimeLogs(ref, tail, signal)) {
-        onLog(entry);
-        if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
-          const key = entryKey(entry);
-          overlap.set(key, (overlap.get(key) ?? 0) + 1);
-        }
+    let historyReady = false;
+    const handoff: LogEntry[] = [];
+    const emit = (entry: LogEntry) => {
+      if (historyReady) onLog(entry);
+      else handoff.push(entry);
+    };
+    const emitLive = (entry: LogEntry) => {
+      const key = entryKey(entry);
+      const count = overlap.get(key) ?? 0;
+      if (count > 0) {
+        if (count === 1) overlap.delete(key);
+        else overlap.set(key, count - 1);
+        return;
       }
-    }
+      onLog(entry);
+    };
     const deployment = await this.owned(`${this.base}/${this.refName(ref)}`, signal);
     const selector = encodeURIComponent(
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
@@ -1094,7 +1105,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
         }
       if (pods.size > 6 && !warned) {
         warned = true;
-        onLog({
+        emit({
           timestamp: new Date().toISOString(),
           level: "info",
           message:
@@ -1112,25 +1123,19 @@ export class KubernetesRuntime implements RuntimeAdapter {
           while (!followSignal.aborted) {
             try {
               for await (const line of this.options.api.logs(
-                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=${tailLines}`,
+                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=${historyReady ? tailLines : 0}`,
                 followSignal,
               )) {
                 const entry = this.logEntry(line, name);
                 since = entry.timestamp;
-                const key = entryKey(entry);
-                const count = overlap.get(key) ?? 0;
-                if (count > 0) {
-                  if (count === 1) overlap.delete(key);
-                  else overlap.set(key, count - 1);
-                  continue;
-                }
-                onLog(entry);
+                if (historyReady) emitLive(entry);
+                else handoff.push(entry);
               }
             } catch (error) {
               observeCaughtError(error, "adapters/runtime/kubernetes");
               if (isMissing(error) || followSignal.aborted) return;
               if (error instanceof KubernetesApiError && [401, 403].includes(error.statusCode)) {
-                onLog({
+                emit({
                   timestamp: new Date().toISOString(),
                   level: "warn",
                   message: `Live logs unavailable for ${name}: ${error.message}`,
@@ -1167,6 +1172,18 @@ export class KubernetesRuntime implements RuntimeAdapter {
       controller.abort();
       throw error;
     }
+    if (tail > 0) {
+      for (const entry of await this.getRuntimeLogs(ref, tail, signal)) {
+        onLog(entry);
+        if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
+          const key = entryKey(entry);
+          overlap.set(key, (overlap.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    historyReady = true;
+    for (const entry of handoff) emitLive(entry);
+    handoff.length = 0;
     void (async () => {
       while (!signal.aborted) {
         try {
@@ -1198,7 +1215,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
     })().catch((error) => {
       observeCaughtError(error, "adapters/runtime/kubernetes");
       if (!signal.aborted)
-        onLog({
+        emit({
           timestamp: new Date().toISOString(),
           level: "warn",
           message: `Cluster log stream stopped: ${error instanceof Error ? error.message : String(error)}`,
