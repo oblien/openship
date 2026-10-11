@@ -995,6 +995,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
     };
   }
   async getRuntimeLogs(ref: string, tail = 100, requestSignal?: AbortSignal): Promise<LogEntry[]> {
+    if (tail <= 0) return [];
     const signal = AbortSignal.any([
       this.lifetime.signal,
       ...(requestSignal ? [requestSignal] : []),
@@ -1103,6 +1104,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
     const path = `${this.core}/pods?labelSelector=${selector}`;
     const tailLines = Math.max(0, Math.min(tail, 2000));
     const streams = new Map<string, AbortController>();
+    const lastEntriesByPod = new Map<string, { timestamp: string; keys: Set<string> }>();
     const pods = new Map<string, KubernetesObject>();
     let warned = false;
     const synchronize = () => {
@@ -1134,7 +1136,9 @@ export class KubernetesRuntime implements RuntimeAdapter {
         streams.set(name, follower);
         const followSignal = AbortSignal.any([signal, follower.signal]);
         void (async () => {
-          let since = historyCutoffIso;
+          const previous = lastEntriesByPod.get(name);
+          let since = previous?.timestamp ?? historyCutoffIso;
+          let replaying = previous !== undefined;
           while (!followSignal.aborted) {
             try {
               for await (const line of this.options.api.logs(
@@ -1142,7 +1146,14 @@ export class KubernetesRuntime implements RuntimeAdapter {
                 followSignal,
               )) {
                 const entry = this.logEntry(line, name);
+                const key = entryKey(entry);
+                const isReplay = replaying && entry.timestamp === since && previous?.keys.has(key);
+                if (entry.timestamp !== since) replaying = false;
                 since = entry.timestamp;
+                const last = lastEntriesByPod.get(name);
+                if (last?.timestamp === entry.timestamp) last.keys.add(key);
+                else lastEntriesByPod.set(name, { timestamp: entry.timestamp, keys: new Set([key]) });
+                if (isReplay) continue;
                 if (historyReady) emitLive(entry);
                 else handoff.push(entry);
               }
