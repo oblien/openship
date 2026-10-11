@@ -133,6 +133,12 @@ describe("deployment log controls", () => {
     expect(host.querySelector("input")!.disabled).toBe(true);
   });
 
+  it("shows an overflow notice immediately when switching to a full terminal", async () => {
+    web.terminal.buffer.active.baseY = 1000;
+    await render("web");
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(copy.terminal.olderOutputDiscarded);
+  });
+
   it("finds a term that arrives later in the live output and supports Enter, Shift+Enter, and Escape", async () => {
     await render();
     await query("later");

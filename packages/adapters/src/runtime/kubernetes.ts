@@ -997,13 +997,14 @@ export class KubernetesRuntime implements RuntimeAdapter {
   async getRuntimeLogs(ref: string, tail = 100): Promise<LogEntry[]> {
     const status = await this.status(ref);
     const result: LogEntry[] = [];
+    const perPodTail = Math.max(1, Math.min(Math.ceil(tail / Math.max(status.pods.length, 1)), 2000));
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)]);
     for (let index = 0; index < status.pods.length; index += 4) {
       await Promise.all(
         status.pods.slice(index, index + 4).map(async (pod) => {
           try {
             for await (const line of this.options.api.logs(
-              `${this.core}/pods/${pod.name}/log?container=app&timestamps=true&tailLines=${Math.max(1, Math.min(tail, 2000))}`,
+              `${this.core}/pods/${pod.name}/log?container=app&timestamps=true&tailLines=${perPodTail}`,
               signal,
             ))
               result.push(this.logEntry(line, pod.name));

@@ -39,9 +39,11 @@ export function DeploymentLogsPanel({
   useEffect(() => {
     setOlderOutputDiscarded(false);
     if (!terminal) return;
-    const writes = terminal.onWriteParsed(() => {
+    const updateOverflowNotice = () => {
       setOlderOutputDiscarded(terminal.buffer.active.baseY >= (terminal.options.scrollback ?? 1000));
-    });
+    };
+    updateOverflowNotice();
+    const writes = terminal.onWriteParsed(updateOverflowNotice);
     return () => writes.dispose();
   }, [terminal]);
 

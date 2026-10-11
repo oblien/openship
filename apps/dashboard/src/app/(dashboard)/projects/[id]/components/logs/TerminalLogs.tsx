@@ -680,7 +680,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             overlay={
                 terminalLogsData.logs.length === 0 ? (
                     <p className="text-sm text-muted-foreground/50">
-                        {streamStatus === "connecting" ? terminalCopy.waitingForLogs : terminalCopy.pressStart}
+                        {streamStatus === "stopped" ? terminalCopy.pressStart : terminalCopy.waitingForLogs}
                     </p>
                 ) : undefined
             }

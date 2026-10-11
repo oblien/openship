@@ -489,6 +489,32 @@ describe("Kubernetes workload lifecycle", () => {
     stop();
     await fixture.runtime.dispose();
   });
+  it("bounds aggregate history work across replicas", async () => {
+    const fixture = setup();
+    const result = await fixture.runtime.deploy(config());
+    const deployment = [...fixture.resources.values()].find((value) => value.kind === "Deployment")!;
+    const pods = ["instance-a", "instance-b", "instance-c"].map((name) => ({
+      kind: "Pod",
+      metadata: { ...deployment.spec.template.metadata, name },
+      status: { phase: "Running" },
+    }));
+    const request = fixture.request.getMockImplementation()!;
+    fixture.request.mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path.includes("/pods?labelSelector="))
+        return { items: pods, metadata: { resourceVersion: "1" } };
+      return request(method, path, body);
+    });
+    const observedPaths: string[] = [];
+    fixture.api.logs.mockImplementation(async function* (path: string) {
+      observedPaths.push(path);
+      yield "2025-01-01T00:00:00Z ready";
+    });
+
+    await fixture.runtime.getRuntimeLogs(result.containerId!, 1000);
+
+    expect(observedPaths).toHaveLength(3);
+    expect(observedPaths.every((path) => path.includes("tailLines=334"))).toBe(true);
+  });
   it("publishes a source build through the existing builder and records an immutable artifact", async () => {
     const { runtime, builder } = setup();
     const result = await runtime.build({ sessionId: "build-1" } as never);
