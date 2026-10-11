@@ -418,7 +418,7 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
     const consume = async () => {
       for await (const entry of this.server
         .workspace()
-        .workloads.logsStream(this.id(deploymentId), { signal: controller.signal })) {
+        .workloads.logsStream(this.id(deploymentId), { tail: options?.tail, signal: controller.signal })) {
         if (controller.signal.aborted) return;
         const message = entry.line ?? entry.data;
         if (typeof message === "string")
