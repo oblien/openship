@@ -80,7 +80,9 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
   const targetRef = terminalRef ?? internalTerminalRef;
   const { resolvedTheme } = useTheme();
   const [readyTerminal, setReadyTerminal] = useState<Terminal | null>(null);
-  useLogTerminal(readyTerminal, active);
+  const isFollowing = useLogTerminal(readyTerminal, active);
+  const isFollowingRef = useRef(isFollowing);
+  isFollowingRef.current = isFollowing;
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -131,7 +133,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
         if (!containerElement.isConnected) return;
         if (containerElement.offsetWidth === 0 || containerElement.offsetHeight === 0) return;
         try {
-          const shouldStayAtBottom = isAtBottom;
+          const shouldStayAtBottom = isAtBottom && isFollowingRef.current;
           fitAddon.fit();
           if (shouldStayAtBottom) terminal.scrollToBottom();
         } catch (error) {

@@ -70,7 +70,7 @@ export function DeploymentLogsPanel({
   };
 
   return (
-    <LogTerminalContext.Provider value={setTerminal}>
+    <LogTerminalContext.Provider value={{ setTerminal, isFollowing: follow.isFollowing }}>
       <section className="@container min-w-0 overflow-hidden rounded-2xl bg-card">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-3 @2xl:max-w-[45%] @2xl:flex-none">

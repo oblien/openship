@@ -26,6 +26,7 @@ import type {
   ImageArtifactConfig,
   LogEntry,
   ResourceUsage,
+  RuntimeLogStreamOptions,
 } from "../types";
 import type { RuntimeAdapter, RuntimeCapability, DeploymentRef } from "./types";
 import { BuildLogger } from "./build-pipeline";
@@ -1018,7 +1019,11 @@ export class KubernetesRuntime implements RuntimeAdapter {
     }
     return result.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-tail);
   }
-  async streamRuntimeLogs(ref: string, onLog: (entry: LogEntry) => void): Promise<() => void> {
+  async streamRuntimeLogs(
+    ref: string,
+    onLog: (entry: LogEntry) => void,
+    opts?: RuntimeLogStreamOptions,
+  ): Promise<() => void> {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal]);
     const deployment = await this.owned(`${this.base}/${this.refName(ref)}`);
@@ -1026,6 +1031,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
     );
     const path = `${this.core}/pods?labelSelector=${selector}`;
+    const tailLines = Math.max(0, Math.min(opts?.tail ?? 100, 2000));
     const streams = new Map<string, AbortController>();
     const pods = new Map<string, KubernetesObject>();
     let warned = false;
@@ -1062,7 +1068,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
           while (!followSignal.aborted) {
             try {
               for await (const line of this.options.api.logs(
-                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=2000`,
+                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=${tailLines}`,
                 followSignal,
               )) {
                 const entry = this.logEntry(line, name);

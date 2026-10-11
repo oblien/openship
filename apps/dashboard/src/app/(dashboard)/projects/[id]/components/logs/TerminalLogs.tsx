@@ -422,7 +422,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         callbacks: {
             onLog: (message, rawText, rawBytes) => {
                 if (rawText) {
-                    const logText = rawText.trim();
+                    const logText = rawText.replace(/\r?\n$/, '');
                     // ONLY save to context - let the effect above handle terminal writing
                     addTerminalLog(logText);
                 }

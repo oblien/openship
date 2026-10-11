@@ -444,6 +444,36 @@ describe("Kubernetes workload lifecycle", () => {
       },
     ]);
   });
+  it("uses the requested history tail for each live pod log stream", async () => {
+    const fixture = setup();
+    const result = await fixture.runtime.deploy(config());
+    const deployment = [...fixture.resources.values()].find((value) => value.kind === "Deployment")!;
+    const pod = {
+      kind: "Pod",
+      metadata: { ...deployment.spec.template.metadata, name: "instance-a" },
+      status: { phase: "Running" },
+    };
+    const request = fixture.request.getMockImplementation()!;
+    fixture.request.mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path.includes("/pods?labelSelector="))
+        return { items: [pod], metadata: { resourceVersion: "1" } };
+      return request(method, path, body);
+    });
+    fixture.watch.mockImplementation(async function* (_path, signal: AbortSignal) {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    });
+    let observedPath = "";
+    fixture.api.logs.mockImplementation(async function* (path: string, signal: AbortSignal) {
+      observedPath = path;
+      yield "2025-01-01T00:00:00Z ready";
+      await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    });
+
+    const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, vi.fn(), { tail: 1000 });
+    await vi.waitFor(() => expect(observedPath).toContain("tailLines=1000"));
+    stop();
+    await fixture.runtime.dispose();
+  });
   it("publishes a source build through the existing builder and records an immutable artifact", async () => {
     const { runtime, builder } = setup();
     const result = await runtime.build({ sessionId: "build-1" } as never);
