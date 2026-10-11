@@ -1024,6 +1024,10 @@ export class KubernetesRuntime implements RuntimeAdapter {
     onLog: (entry: LogEntry) => void,
     opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
+    const tail = opts?.tail ?? 100;
+    if (tail > 0) {
+      for (const entry of await this.getRuntimeLogs(ref, tail)) onLog(entry);
+    }
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal]);
     const deployment = await this.owned(`${this.base}/${this.refName(ref)}`);
@@ -1031,7 +1035,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
     );
     const path = `${this.core}/pods?labelSelector=${selector}`;
-    const tailLines = Math.max(0, Math.min(opts?.tail ?? 100, 2000));
+    const tailLines = Math.max(0, Math.min(tail, 2000));
     const streams = new Map<string, AbortController>();
     const pods = new Map<string, KubernetesObject>();
     let warned = false;

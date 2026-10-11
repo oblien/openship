@@ -462,15 +462,21 @@ describe("Kubernetes workload lifecycle", () => {
     fixture.watch.mockImplementation(async function* (_path, signal: AbortSignal) {
       await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
     });
-    let observedPath = "";
+    const observedPaths: string[] = [];
     fixture.api.logs.mockImplementation(async function* (path: string, signal: AbortSignal) {
-      observedPath = path;
+      observedPaths.push(path);
       yield "2025-01-01T00:00:00Z ready";
+      if (!path.includes("follow=true")) return;
       await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
     });
 
     const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, vi.fn(), { tail: 1000 });
-    await vi.waitFor(() => expect(observedPath).toContain("tailLines=1000"));
+    await vi.waitFor(() => {
+      expect(observedPaths).toEqual(expect.arrayContaining([
+        expect.stringContaining("tailLines=1000"),
+        expect.stringContaining("follow=true"),
+      ]));
+    });
     stop();
     await fixture.runtime.dispose();
   });
