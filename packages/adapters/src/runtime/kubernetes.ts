@@ -1025,8 +1025,18 @@ export class KubernetesRuntime implements RuntimeAdapter {
     opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
     const tail = opts?.tail ?? 100;
+    const historyCutoff = new Date();
+    const historyCutoffIso = historyCutoff.toISOString();
+    const overlap = new Map<string, number>();
+    const entryKey = (entry: LogEntry) => `${entry.timestamp}\u0000${entry.message}`;
     if (tail > 0) {
-      for (const entry of await this.getRuntimeLogs(ref, tail)) onLog(entry);
+      for (const entry of await this.getRuntimeLogs(ref, tail)) {
+        onLog(entry);
+        if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
+          const key = entryKey(entry);
+          overlap.set(key, (overlap.get(key) ?? 0) + 1);
+        }
+      }
     }
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal]);
@@ -1068,7 +1078,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
         streams.set(name, follower);
         const followSignal = AbortSignal.any([signal, follower.signal]);
         void (async () => {
-          let since = new Date().toISOString();
+          let since = historyCutoffIso;
           while (!followSignal.aborted) {
             try {
               for await (const line of this.options.api.logs(
@@ -1077,6 +1087,13 @@ export class KubernetesRuntime implements RuntimeAdapter {
               )) {
                 const entry = this.logEntry(line, name);
                 since = entry.timestamp;
+                const key = entryKey(entry);
+                const count = overlap.get(key) ?? 0;
+                if (count > 0) {
+                  if (count === 1) overlap.delete(key);
+                  else overlap.set(key, count - 1);
+                  continue;
+                }
                 onLog(entry);
               }
             } catch (error) {

@@ -463,19 +463,28 @@ describe("Kubernetes workload lifecycle", () => {
       await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
     });
     const observedPaths: string[] = [];
+    const historyTimestamp = new Date(Date.now() + 1000).toISOString();
+    const liveTimestamp = new Date(Date.now() + 2000).toISOString();
     fixture.api.logs.mockImplementation(async function* (path: string, signal: AbortSignal) {
       observedPaths.push(path);
-      yield "2025-01-01T00:00:00Z ready";
-      if (!path.includes("follow=true")) return;
+      if (!path.includes("follow=true")) {
+        yield `${historyTimestamp} ready`;
+        return;
+      }
+      yield `${historyTimestamp} ready`;
+      yield `${liveTimestamp} gap`;
       await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
     });
 
-    const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, vi.fn(), { tail: 1000 });
+    const onLog = vi.fn();
+    const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, onLog, { tail: 1000 });
     await vi.waitFor(() => {
-      expect(observedPaths).toEqual(expect.arrayContaining([
-        expect.stringContaining("tailLines=1000"),
-        expect.stringContaining("follow=true"),
-      ]));
+      expect(observedPaths.some((path) => !path.includes("follow=true") && path.includes("tailLines=1000"))).toBe(true);
+      expect(observedPaths.some((path) => path.includes("follow=true") && path.includes("tailLines=1000"))).toBe(true);
+      expect(onLog.mock.calls.map(([entry]) => entry.message)).toEqual([
+        "[instance-a] ready",
+        "[instance-a] gap",
+      ]);
     });
     stop();
     await fixture.runtime.dispose();
