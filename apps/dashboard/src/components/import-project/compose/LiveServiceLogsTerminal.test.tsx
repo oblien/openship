@@ -47,7 +47,7 @@ it("connects only the visible, ready terminal and disconnects when hidden", asyn
   await render();
   await render();
   expect(h.controls.connect).toHaveBeenCalledOnce();
-  expect(h.controls.connect).toHaveBeenCalledWith("projects/project/services/service/logs/stream?tail=100&deploymentId=deployment");
+  expect(h.controls.connect).toHaveBeenCalledWith("projects/project/services/service/logs/stream?tail=1000&deploymentId=deployment");
   await render(false);
   expect(h.controls.disconnect).toHaveBeenCalledOnce();
 });

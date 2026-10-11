@@ -216,6 +216,8 @@ const BUILD_OPTION_DEFAULTS = {
 
 interface TerminalLogsData {
   logs: string[];
+  totalLogs: number;
+  droppedLogs: number;
   isStreaming: boolean;
   sseConnection: { disconnect: () => void } | null;
   xtermInstance: any | null;
@@ -384,6 +386,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
 
   const [terminalLogsData, setTerminalLogsData] = useState<TerminalLogsData>({
     logs: [],
+    totalLogs: 0,
+    droppedLogs: 0,
     isStreaming: false,
     sseConnection: null,
     xtermInstance: null,
@@ -955,6 +959,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
   const addTerminalLog = useCallback((log: string) => {
     setTerminalLogsData((prev) => ({
       ...prev,
+      totalLogs: prev.totalLogs + 1,
+      droppedLogs: prev.droppedLogs + (prev.logs.length >= MAX_TERMINAL_LOGS ? 1 : 0),
       logs: [...prev.logs, log].slice(-MAX_TERMINAL_LOGS),
     }));
   }, []);
@@ -963,6 +969,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
     setTerminalLogsData((prev) => ({
       ...prev,
       logs: [],
+      totalLogs: 0,
+      droppedLogs: 0,
     }));
   }, []);
 

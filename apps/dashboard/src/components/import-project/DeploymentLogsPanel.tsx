@@ -8,6 +8,8 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { LogTerminalContext } from "@/components/terminal/LogTerminalContext";
 import { TerminalSearch } from "@/components/terminal/TerminalSearch";
+import { TerminalFollowControls } from "@/components/terminal/TerminalFollowControls";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { useTerminalSearch } from "@/components/terminal/useTerminalSearch";
 import { terminalText } from "@/components/terminal/terminal-text";
 import { useToast } from "@/context/ToastContext";
@@ -30,7 +32,18 @@ export function DeploymentLogsPanel({
   const [copied, setCopied] = useState(false);
   const currentTerminal = useRef(terminal);
   currentTerminal.current = terminal;
-  const search = useTerminalSearch(terminal);
+  const follow = useTerminalFollow(terminal);
+  const search = useTerminalSearch(terminal, follow.pauseForInspection);
+  const [olderOutputDiscarded, setOlderOutputDiscarded] = useState(false);
+
+  useEffect(() => {
+    setOlderOutputDiscarded(false);
+    if (!terminal) return;
+    const writes = terminal.onWriteParsed(() => {
+      setOlderOutputDiscarded(terminal.buffer.active.baseY >= (terminal.options.scrollback ?? 1000));
+    });
+    return () => writes.dispose();
+  }, [terminal]);
 
   useEffect(() => {
     if (search.error) showToast(search.error.message, "error", copy.terminal.logsErrorTitle);
@@ -64,8 +77,15 @@ export function DeploymentLogsPanel({
             <h2 className="shrink-0 text-sm font-semibold text-foreground">{title}</h2>
             {summary}
           </div>
-          <div className="order-last w-full min-w-0 @2xl:order-none @2xl:w-auto @2xl:flex-1">
-            <TerminalSearch {...search} />
+          <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 @2xl:order-none @2xl:w-auto @2xl:flex-1">
+            <div className="min-w-0 flex-1 basis-56">
+              <TerminalSearch {...search} />
+            </div>
+            <TerminalFollowControls
+              isFollowing={follow.isFollowing}
+              onToggle={follow.toggle}
+              onJumpToLatest={follow.resume}
+            />
           </div>
           <Button
             type="button"
@@ -80,7 +100,12 @@ export function DeploymentLogsPanel({
             <UiIcon name={copied ? "check" : "copy"} aria-hidden className={`size-4 ${copied ? "text-success" : ""}`} />
           </Button>
         </div>
-        <div className="relative h-[clamp(280px,50vh,400px)] overflow-hidden">{children}</div>
+        {olderOutputDiscarded && (
+          <p className="px-4 pb-3 text-xs text-muted-foreground sm:px-5" role="status">
+            {copy.terminal.olderOutputDiscarded}
+          </p>
+        )}
+        <div className="relative h-[clamp(420px,65vh,720px)] overflow-hidden">{children}</div>
       </section>
     </LogTerminalContext.Provider>
   );

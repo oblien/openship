@@ -36,18 +36,25 @@ function makeTerminal(id: string) {
   const instance = {
     id, lines,
     buffer: { active: {
+      baseY: 0,
+      viewportY: 0,
       get length() { return lines.length; },
       getLine: (index: number) => lines[index] === undefined ? undefined : {
         isWrapped: false,
         translateToString: () => lines[index],
       },
     } },
+    options: { scrollback: 1000 },
     clearSelection: vi.fn(),
+    scrollToBottom: vi.fn(),
+    scrollToLine: vi.fn(),
     loadAddon: (addon: { activate: (terminal: unknown) => void }) => addon.activate(instance),
+    onScroll: () => ({ dispose: vi.fn() }),
     onWriteParsed: (callback: () => void) => {
       listeners.add(callback);
       return { dispose: () => listeners.delete(callback) };
     },
+    onResize: () => ({ dispose: vi.fn() }),
   };
   return { terminal: instance as unknown as Terminal, lines, write: () => listeners.forEach(callback => callback()) };
 }
