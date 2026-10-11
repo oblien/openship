@@ -24,6 +24,7 @@ import { useTheme } from "@/components/theme-provider";
 import { deployApi, projectsApi } from "@/lib/api";
 import { composeServiceTally, serviceLogSource } from "@/context/deployment/types";
 import { useLogTerminal } from "@/components/terminal/LogTerminalContext";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { LiveServiceLogsTerminal } from "./LiveServiceLogsTerminal";
 import type { DeploymentStatus, ServiceDeployStatus } from "@/context/deployment/types";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -685,7 +686,8 @@ function ComposeLogTerminal({
   const prevActiveRef = useRef(false);
   const [terminal, setTerminal] = useState<any | null>(null);
   const [ready, setReady] = useState(false);
-  const isFollowing = useLogTerminal(terminal, active);
+  const follow = useTerminalFollow(terminal);
+  const isFollowing = useLogTerminal(terminal, active, follow);
 
   useEffect(() => {
     const terminal = terminalRef.current;

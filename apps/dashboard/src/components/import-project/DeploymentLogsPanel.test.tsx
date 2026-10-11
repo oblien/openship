@@ -33,17 +33,18 @@ vi.mock("@xterm/addon-search", () => ({
 function makeTerminal(id: string) {
   const listeners = new Set<() => void>();
   const lines = [`${id} first needle`, `${id} second needle`];
+  const activeBuffer = {
+    baseY: 0,
+    viewportY: 0,
+    get length() { return lines.length; },
+    getLine: (index: number) => lines[index] === undefined ? undefined : {
+      isWrapped: false,
+      translateToString: () => lines[index],
+    },
+  };
   const instance = {
     id, lines,
-    buffer: { active: {
-      baseY: 0,
-      viewportY: 0,
-      get length() { return lines.length; },
-      getLine: (index: number) => lines[index] === undefined ? undefined : {
-        isWrapped: false,
-        translateToString: () => lines[index],
-      },
-    } },
+    buffer: { active: activeBuffer },
     options: { scrollback: 1000 },
     clearSelection: vi.fn(),
     scrollToBottom: vi.fn(),
@@ -56,7 +57,7 @@ function makeTerminal(id: string) {
     },
     onResize: () => ({ dispose: vi.fn() }),
   };
-  return { terminal: instance as unknown as Terminal, lines, write: () => listeners.forEach(callback => callback()) };
+  return { terminal: instance as unknown as Terminal, activeBuffer, lines, write: () => listeners.forEach(callback => callback()) };
 }
 
 function Surface({ terminal, active }: { terminal: Terminal; active: boolean }) {
@@ -134,7 +135,7 @@ describe("deployment log controls", () => {
   });
 
   it("shows an overflow notice immediately when switching to a full terminal", async () => {
-    web.terminal.buffer.active.baseY = 1000;
+    web.activeBuffer.baseY = 1000;
     await render("web");
     expect(host.querySelector('[role="status"]')?.textContent).toBe(copy.terminal.olderOutputDiscarded);
   });

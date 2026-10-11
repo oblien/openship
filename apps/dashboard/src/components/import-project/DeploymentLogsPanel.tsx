@@ -1,19 +1,20 @@
 "use client";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { LogTerminalContext } from "@/components/terminal/LogTerminalContext";
+import { LogTerminalContext, type LogTerminalFollowController } from "@/components/terminal/LogTerminalContext";
 import { TerminalSearch } from "@/components/terminal/TerminalSearch";
 import { TerminalFollowControls } from "@/components/terminal/TerminalFollowControls";
-import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { useTerminalSearch } from "@/components/terminal/useTerminalSearch";
 import { terminalText } from "@/components/terminal/terminal-text";
 import { useToast } from "@/context/ToastContext";
 import { copyText } from "@/lib/clipboard";
+
+const noop = () => {};
 
 /** The same console surface for single-app and Compose deployments. */
 export function DeploymentLogsPanel({
@@ -29,12 +30,26 @@ export function DeploymentLogsPanel({
   const { showToast } = useToast();
   const copy = t.projectDetail.logs;
   const [terminal, setTerminal] = useState<Terminal | null>(null);
+  const [activeFollow, setActiveFollow] = useState<{
+    terminal: Terminal;
+    controller: LogTerminalFollowController;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const currentTerminal = useRef(terminal);
   currentTerminal.current = terminal;
-  const follow = useTerminalFollow(terminal);
-  const search = useTerminalSearch(terminal, follow.pauseForInspection);
+  const follow = activeFollow?.controller;
+  const pauseForInspection = follow?.pauseForInspection ?? noop;
+  const search = useTerminalSearch(terminal, pauseForInspection);
   const [olderOutputDiscarded, setOlderOutputDiscarded] = useState(false);
+
+  const registerFollow = useCallback((nextTerminal: Terminal, controller: LogTerminalFollowController) => {
+    setActiveFollow((current) => current?.terminal === nextTerminal && current.controller === controller
+      ? current
+      : { terminal: nextTerminal, controller });
+  }, []);
+  const unregisterFollow = useCallback((nextTerminal: Terminal) => {
+    setActiveFollow((current) => current?.terminal === nextTerminal ? null : current);
+  }, []);
 
   useEffect(() => {
     setOlderOutputDiscarded(false);
@@ -72,7 +87,7 @@ export function DeploymentLogsPanel({
   };
 
   return (
-    <LogTerminalContext.Provider value={{ setTerminal, isFollowing: follow.isFollowing }}>
+    <LogTerminalContext.Provider value={{ setTerminal, registerFollow, unregisterFollow }}>
       <section className="@container min-w-0 overflow-hidden rounded-2xl bg-card">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-3 @2xl:max-w-[45%] @2xl:flex-none">
@@ -84,9 +99,9 @@ export function DeploymentLogsPanel({
               <TerminalSearch {...search} />
             </div>
             <TerminalFollowControls
-              isFollowing={follow.isFollowing}
-              onToggle={follow.toggle}
-              onJumpToLatest={follow.resume}
+              isFollowing={follow?.isFollowing ?? true}
+              onToggle={follow?.toggle ?? noop}
+              onJumpToLatest={follow?.resume ?? noop}
             />
           </div>
           <Button

@@ -6,6 +6,7 @@ import type { MutableRefObject } from "react";
 import type { ITheme, Terminal } from "@xterm/xterm";
 import { useTheme } from "@/components/theme-provider";
 import { useLogTerminal } from "@/components/terminal/LogTerminalContext";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalTheme = "light" | "dark";
@@ -80,7 +81,8 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
   const targetRef = terminalRef ?? internalTerminalRef;
   const { resolvedTheme } = useTheme();
   const [readyTerminal, setReadyTerminal] = useState<Terminal | null>(null);
-  const isFollowing = useLogTerminal(readyTerminal, active);
+  const follow = useTerminalFollow(readyTerminal);
+  const isFollowing = useLogTerminal(readyTerminal, active, follow);
   const isFollowingRef = useRef(isFollowing);
   isFollowingRef.current = isFollowing;
 

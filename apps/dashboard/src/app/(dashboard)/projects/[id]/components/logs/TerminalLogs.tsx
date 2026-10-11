@@ -20,7 +20,6 @@ import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { Button } from "@/components/ui/button";
 
 interface TerminalLogsProps {
-    projectId: string;
     projectName: string;
     title?: React.ReactNode;
     streamTarget: string;
@@ -37,7 +36,6 @@ const appendQueryParam = (target: string, key: string, value: string) => {
 };
 
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
-    projectId,
     projectName,
     title,
     streamTarget,
@@ -407,7 +405,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         }
     };
 
-    // Create ref wrapper for terminal instance that always points to context
+    // Keep an instance ref in sync with context so live SSE writes reach xterm.
     const xtermInstanceRef = useRef<any>(null);
 
     // Keep ref in sync with context - this ensures SSE writes to current terminal
@@ -424,9 +422,9 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 if (rawText) {
                     const logText = rawText.replace(/\r?\n$/, '');
                     addTerminalLog(logText);
-                    if (terminalReady && xtermInstanceRef.current?.xterm) {
+                    if (terminalReady && xtermInstanceRef.current) {
                         try {
-                            xtermInstanceRef.current.xterm.write(logText + '\r\n');
+                            xtermInstanceRef.current.write(logText + '\r\n');
                             lastLogSequenceRef.current += 1;
                         } catch (err) {
                             errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error writing log to terminal:', err);

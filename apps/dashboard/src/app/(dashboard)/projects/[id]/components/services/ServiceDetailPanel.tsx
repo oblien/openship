@@ -709,7 +709,6 @@ export function ServiceDetailPanel({
       {activeTab === "logs" && (
         <div className="min-h-[clamp(440px,65vh,760px)]">
           <TerminalLogs
-            projectId={projectId}
             projectName={service.name}
             streamTarget={endpoints.services.logsStream(projectId, service.id)}
             onLogsChange={() => {

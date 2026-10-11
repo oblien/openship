@@ -306,7 +306,6 @@ export const LogsSettings = () => {
               </div>
             ) : (
               <TerminalLogs
-                projectId={id}
                 projectName={terminalService?.name || projectData?.name || t.projectSettings.logs.projectFallback}
                 title={hasMultipleLogTargets ? (
                   <CustomSelect
