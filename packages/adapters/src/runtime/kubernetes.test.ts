@@ -489,7 +489,7 @@ describe("Kubernetes workload lifecycle", () => {
     stop();
     await fixture.runtime.dispose();
   });
-  it("bounds aggregate history work across replicas", async () => {
+  it("returns the global tail when replica histories are uneven", async () => {
     const fixture = setup();
     const result = await fixture.runtime.deploy(config());
     const deployment = [...fixture.resources.values()].find((value) => value.kind === "Deployment")!;
@@ -504,16 +504,24 @@ describe("Kubernetes workload lifecycle", () => {
         return { items: pods, metadata: { resourceVersion: "1" } };
       return request(method, path, body);
     });
-    const observedPaths: string[] = [];
+    const podLogs = Object.fromEntries(pods.map((pod, podIndex) => [
+      pod.metadata.name,
+      Array.from({ length: 1000 }, (_, index) =>
+        `${new Date(Date.UTC(2025, 0, podIndex + 1, 0, 0, index)).toISOString()} ${pod.metadata.name}-${index}`,
+      ),
+    ]));
     fixture.api.logs.mockImplementation(async function* (path: string) {
-      observedPaths.push(path);
-      yield "2025-01-01T00:00:00Z ready";
+      const podName = path.split("/pods/")[1].split("/")[0];
+      const tailLines = Number(new URL(`https://cluster${path}`).searchParams.get("tailLines"));
+      for (const line of podLogs[podName].slice(-tailLines)) yield line;
     });
 
-    await fixture.runtime.getRuntimeLogs(result.containerId!, 1000);
+    const entries = await fixture.runtime.getRuntimeLogs(result.containerId!, 1000);
 
-    expect(observedPaths).toHaveLength(3);
-    expect(observedPaths.every((path) => path.includes("tailLines=334"))).toBe(true);
+    expect(entries).toHaveLength(1000);
+    expect(entries.map((entry) => entry.message)).toEqual(
+      Array.from({ length: 1000 }, (_, index) => `[instance-c] instance-c-${index}`),
+    );
   });
   it("publishes a source build through the existing builder and records an immutable artifact", async () => {
     const { runtime, builder } = setup();

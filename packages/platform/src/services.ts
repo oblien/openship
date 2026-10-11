@@ -30,6 +30,7 @@ export interface ServiceDependencies {
     projectId: string,
     serviceId: string,
     input: RuntimeLogsInput,
+    options?: { signal?: AbortSignal },
   ): EventSubscription;
 }
 export interface PlatformServiceOperations
@@ -78,7 +79,7 @@ export function createServiceOperations(
       if ((await deps.parentFor(context, serviceId)) !== projectId)
         throw new NotFoundError("service", serviceId);
       for await (const event of subscriptionEvents(
-        deps.subscribe(context, projectId, serviceId, input),
+        deps.subscribe(context, projectId, serviceId, input, { signal: options.signal }),
         options.signal,
       )) {
         await authorization.authorize(context, {

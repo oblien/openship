@@ -8,7 +8,7 @@ import { findActiveDeployment } from "@repo/platform/engine/lib/active-deploymen
 import { repos } from "@repo/db";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
 import { checkEdge, edgeProxy } from "@repo/adapters";
-import type { LogEntry, ImportedSite, RuntimeAdapter } from "@repo/adapters";
+import type { LogEntry, ImportedSite, RuntimeAdapter, RuntimeLogStreamOptions } from "@repo/adapters";
 import {
   deploymentContainerIds,
   resolveDeploymentStaticRoot,
@@ -64,7 +64,7 @@ export async function streamRuntimeLogs(
   projectId: string,
   organizationId: string,
   onLog: (entry: LogEntry) => void,
-  opts?: { tail?: number },
+  opts?: RuntimeLogStreamOptions,
 ) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);

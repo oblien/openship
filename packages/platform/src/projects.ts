@@ -77,7 +77,12 @@ export interface ProjectDependencies {
   ): ReturnType<ProjectLogStreams["streamClusterDatabaseEvents"]>;
   controls?: ResourceServices<typeof ProjectControlSchemas>;
   home?(ctx: ExecutionContext): Promise<unknown>;
-  subscribeLogs?(ctx: ExecutionContext, id: string, input: { tail?: number }): EventSubscription;
+  subscribeLogs?(
+    ctx: ExecutionContext,
+    id: string,
+    input: { tail?: number },
+    options?: { signal?: AbortSignal },
+  ): EventSubscription;
   subscribeRoutingRetry?(
     ctx: ExecutionContext,
     id: string,
@@ -253,7 +258,10 @@ export function createProjectOperations(
           501,
           "CAPABILITY_UNAVAILABLE",
         );
-      for await (const event of subscriptionEvents(subscribe(context, id, input), options.signal)) {
+      for await (const event of subscriptionEvents(
+        subscribe(context, id, input, { signal: options.signal }),
+        options.signal,
+      )) {
         await authorize(context, id, "read");
         yield event;
       }
