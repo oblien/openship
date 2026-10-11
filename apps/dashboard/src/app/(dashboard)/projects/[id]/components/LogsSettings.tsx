@@ -188,14 +188,6 @@ export const LogsSettings = () => {
         ? endpoints.services.logsStream(id, terminalService.id)
         : ""
       : endpoints.projects.logsStream(id);
-  const terminalHistoryTarget = !hasProjectId
-    ? ""
-    : isServiceLogTarget
-      ? terminalService
-        ? endpoints.services.logs(id, terminalService.id)
-        : ""
-      : endpoints.projects.logs(id);
-
   const handleLogsChange = useCallback((logs: string[]) => {
     setCurrentLogs(logs);
   }, []);
@@ -300,7 +292,7 @@ export const LogsSettings = () => {
       </div>
 
       {/* Content */}
-      <div className="min-w-0 flex-1 min-h-[460px]">
+      <div className="min-w-0 flex-1 min-h-[clamp(440px,65vh,760px)]">
         <div
           id={`${tabsId}-panel-terminal`}
           role="tabpanel"
@@ -314,7 +306,6 @@ export const LogsSettings = () => {
               </div>
             ) : (
               <TerminalLogs
-                projectId={id}
                 projectName={terminalService?.name || projectData?.name || t.projectSettings.logs.projectFallback}
                 title={hasMultipleLogTargets ? (
                   <CustomSelect
@@ -337,7 +328,6 @@ export const LogsSettings = () => {
                   />
                 ) : undefined}
                 streamTarget={terminalStreamTarget}
-                historyTarget={terminalHistoryTarget}
                 onLogsChange={handleLogsChange}
               />
             )

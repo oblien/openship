@@ -205,10 +205,16 @@ async function recentServerLogs(ctx: ExecutionContext, id: string, input?: Serve
 
 export const projectLogOperations = { getServerLogStreamToken: serverLogStreamToken, recentServerLogs } satisfies ResourceServices<typeof ProjectLogSchemas>;
 
-export const subscribeProjectLogs: NonNullable<ProjectDependencies["subscribeLogs"]> = (ctx, id, input) => async (write) => {
+export const subscribeProjectLogs: NonNullable<ProjectDependencies["subscribeLogs"]> = (ctx, id, input, options) => async (write) => {
   const stream = await projectService.streamRuntimeLogs(id, ctx.organizationId, entry => {
     write("log", JSON.stringify({ type: "log", data: entry.rawData, message: entry.message, timestamp: entry.timestamp, level: entry.level }));
-  }, input);
+  }, {
+    ...input,
+    signal: options?.signal,
+    onEnd: (error) => write("end", JSON.stringify(error
+      ? { error: safeErrorMessage(error) }
+      : { message: "Log stream ended" })),
+  });
   if (stream.serverId) sshManager.retain(stream.serverId);
   let closed = false;
   return {

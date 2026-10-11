@@ -6,6 +6,7 @@ import type { MutableRefObject } from "react";
 import type { ITheme, Terminal } from "@xterm/xterm";
 import { useTheme } from "@/components/theme-provider";
 import { useLogTerminal } from "@/components/terminal/LogTerminalContext";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalTheme = "light" | "dark";
@@ -80,7 +81,10 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
   const targetRef = terminalRef ?? internalTerminalRef;
   const { resolvedTheme } = useTheme();
   const [readyTerminal, setReadyTerminal] = useState<Terminal | null>(null);
-  useLogTerminal(readyTerminal, active);
+  const follow = useTerminalFollow(readyTerminal);
+  const isFollowing = useLogTerminal(readyTerminal, active, follow);
+  const isFollowingRef = useRef(isFollowing);
+  isFollowingRef.current = isFollowing;
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -103,7 +107,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
         letterSpacing: 0,
         theme: themeFor(containerRef.current),
         cursorBlink: true,
-        scrollback: 1000,
+        scrollback: 10000,
         convertEol: true,
       });
       const fitAddon = new FitAddon();
@@ -115,6 +119,10 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
       setReadyTerminal(terminal);
 
       const containerElement = containerRef.current;
+      let isAtBottom = true;
+      const scrollSubscription = terminal.onScroll((position) => {
+        isAtBottom = position >= terminal.buffer.active.baseY;
+      });
       const fit = () => {
         // xterm's fit()/scrollToBottom() reach into the renderer, which has no
         // `dimensions` until the container is actually laid out. Calling them on
@@ -127,8 +135,9 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
         if (!containerElement.isConnected) return;
         if (containerElement.offsetWidth === 0 || containerElement.offsetHeight === 0) return;
         try {
+          const shouldStayAtBottom = isAtBottom && isFollowingRef.current;
           fitAddon.fit();
-          terminal.scrollToBottom();
+          if (shouldStayAtBottom) terminal.scrollToBottom();
         } catch (error) {
           errorDiagnostics.error("dashboard/components/import-project/TerminalSurface", "Error fitting terminal:", error);
         }
@@ -145,6 +154,7 @@ const TerminalSurface: React.FC<TerminalSurfaceProps> = ({
         window.clearTimeout(fitTimer);
         resizeObserver.disconnect();
         window.removeEventListener("resize", fit);
+        scrollSubscription.dispose();
         terminal.dispose();
         if (targetRef.current === terminal) {
           targetRef.current = null;

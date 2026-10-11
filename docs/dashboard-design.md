@@ -347,6 +347,14 @@ and a relevant next action. Connection attempts can be cancelled. After a sessio
 show reconnect feedback above its retained output instead of covering or replacing it.
 When a shell opens, refresh the canonical service status; do not mark it running optimistically.
 
+Runtime log viewers use a responsive 65vh body, capped at 760px on project pages and 720px on
+deployment pages. Keep search, follow controls and stream state together in the header. Following
+starts enabled; manual scrolling and search navigation pause it, and Jump to latest resumes it.
+The follow control stays separate from stopping the stream. Resizing preserves the inspected
+position. Runtime streams backfill up to 1,000 entries; project copy/download retains the latest
+1,000 entries, while xterm can render up to 10,000 rows. Show a notice when terminal rows or
+copy/download entries have been discarded, and describe entry counts separately from rendered rows.
+
 Catalog category filters match the Library's tabs: compact `text-sm` labels with `px-4 py-2`,
 `rounded-lg`, and a filled `bg-foreground text-background` selected state. Inactive choices use
 muted text and a subtle hover fill, with no decorative border around each option. Preserve

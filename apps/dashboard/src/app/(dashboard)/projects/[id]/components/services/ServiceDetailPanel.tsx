@@ -707,12 +707,10 @@ export function ServiceDetailPanel({
 
       {/* ── Logs ───────────────────────────────────────────────── */}
       {activeTab === "logs" && (
-        <div className="min-h-[460px]">
+        <div className="min-h-[clamp(440px,65vh,760px)]">
           <TerminalLogs
-            projectId={projectId}
             projectName={service.name}
             streamTarget={endpoints.services.logsStream(projectId, service.id)}
-            historyTarget={endpoints.services.logs(projectId, service.id)}
             onLogsChange={() => {
               /* view-only; the panel doesn't need the buffer */
             }}

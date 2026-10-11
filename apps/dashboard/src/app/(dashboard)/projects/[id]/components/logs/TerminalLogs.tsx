@@ -6,25 +6,28 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import '@xterm/xterm/css/xterm.css';
 import './logs.css';
+import type { Terminal } from "@xterm/xterm";
 import { useLogStream } from "@/hooks/useSSEConnection";
 
 import { useToast } from "@/context/ToastContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useTheme } from "@/components/theme-provider";
-import { api } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
 import { TerminalSearch } from "@/components/terminal/TerminalSearch";
+import { TerminalFollowControls } from "@/components/terminal/TerminalFollowControls";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { Button } from "@/components/ui/button";
 
 interface TerminalLogsProps {
-    projectId: string;
     projectName: string;
     title?: React.ReactNode;
     streamTarget: string;
-    historyTarget: string;
     onLogsChange: (logs: string[]) => void;
 }
+
+const LOG_HISTORY_TAIL = 1000;
+const LOG_SCROLLBACK_ROWS = 10000;
 
 const appendQueryParam = (target: string, key: string, value: string) => {
     if (!target) return target;
@@ -32,36 +35,10 @@ const appendQueryParam = (target: string, key: string, value: string) => {
     return `${target}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 };
 
-const decodeLogEntry = (entry: any): string | null => {
-    if (!entry || typeof entry !== 'object') return null;
-
-    if (typeof entry.rawData === 'string' && entry.rawData) {
-        try {
-            const binary = atob(entry.rawData);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-                bytes[i] = binary.charCodeAt(i);
-            }
-            return new TextDecoder().decode(bytes).replace(/\r?\n$/, '');
-        } catch (diagnosticFailure) {
-          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs");
-            // Fall through to message below.
-        }
-    }
-
-    if (typeof entry.message === 'string') {
-        return entry.message.replace(/\r?\n$/, '');
-    }
-
-    return null;
-};
-
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
-    projectId,
     projectName,
     title,
     streamTarget,
-    historyTarget,
     onLogsChange,
 }) => {
     const { showToast } = useToast();
@@ -81,14 +58,30 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     const [hasMatches, setHasMatches] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [terminalReady, setTerminalReady] = useState(false);
+    const [readyTerminal, setReadyTerminal] = useState<Terminal | null>(null);
+    const [olderTerminalRowsDiscarded, setOlderTerminalRowsDiscarded] = useState(false);
+    const [streamStatus, setStreamStatus] = useState<"connecting" | "live" | "stopped" | "ended" | "failed">("stopped");
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<any>(null);
     const searchAddonRef = useRef<any>(null);
     const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
-    const lastLogIndexRef = useRef(0); // Track last written log index to prevent duplicates
-    const terminalLogCountRef = useRef(0);
+    const lastLogSequenceRef = useRef(0); // Monotonic count survives the retained array reaching its cap.
+    const manualStopRef = useRef(false);
+    const containerExitedRef = useRef(false);
     const effectShows = useRef(false);
+    const follow = useTerminalFollow(readyTerminal);
+
+    useEffect(() => {
+        setOlderTerminalRowsDiscarded(false);
+        if (!readyTerminal) return;
+        const writes = readyTerminal.onWriteParsed(() => {
+            setOlderTerminalRowsDiscarded(
+                readyTerminal.buffer.active.baseY >= (readyTerminal.options.scrollback ?? LOG_SCROLLBACK_ROWS),
+            );
+        });
+        return () => writes.dispose();
+    }, [readyTerminal]);
     const getDarkTheme = () => ({
         background: '#060606',
         foreground: '#e5e5e5',
@@ -153,7 +146,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             fontSize: 14,
             fontFamily: '"JetBrains Mono", "Fira Code", monospace',
             theme: getTerminalTheme(),
-            scrollback: 10000,
+            scrollback: LOG_SCROLLBACK_ROWS,
             disableStdin: true,
             allowProposedApi: true,
             rightClickSelectsWord: false,
@@ -189,6 +182,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
 
 
         xtermRef.current = { xterm, fitAddon };
+        setReadyTerminal(xterm);
         setTerminalXtermInstance(xterm);
         showOblienHeader(xtermRef);
 
@@ -230,6 +224,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     resizeObserver.disconnect();
                 }
                 xterm.dispose();
+                setReadyTerminal((current) => current === xterm ? null : current);
             }
         }
     }
@@ -247,26 +242,25 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     // Replay ALL stored logs when terminal mounts
     useEffect(() => {
         if (terminalReady && xtermRef.current?.xterm) {
-            // Reset the index to replay all logs
-            lastLogIndexRef.current = 0;
-
             // Replay all stored logs
-            terminalLogsData.logs.forEach((log, index) => {
+            terminalLogsData.logs.forEach((log) => {
                 if (xtermRef.current?.xterm) {
                     xtermRef.current.xterm.write(log + '\r\n');
                 }
             });
 
-            // Update lastLogIndex to current length
-            lastLogIndexRef.current = terminalLogsData.logs.length;
+            lastLogSequenceRef.current = terminalLogsData.totalLogs;
         }
     }, [terminalReady]); // Only run when terminal becomes ready
 
     // Write NEW logs from context to terminal (live updates)
     useEffect(() => {
-        if (terminalReady && xtermRef.current?.xterm && terminalLogsData.logs.length > lastLogIndexRef.current) {
-            // Write only new logs that haven't been written yet
-            const newLogs = terminalLogsData.logs.slice(lastLogIndexRef.current);
+        if (terminalReady && xtermRef.current?.xterm && terminalLogsData.totalLogs > lastLogSequenceRef.current) {
+            // The provider retains only the latest 1,000 entries. Sequence
+            // numbers let the terminal append after that array stops growing.
+            const firstRetainedSequence = terminalLogsData.totalLogs - terminalLogsData.logs.length;
+            const firstNewIndex = Math.max(0, lastLogSequenceRef.current - firstRetainedSequence);
+            const newLogs = terminalLogsData.logs.slice(firstNewIndex);
             newLogs.forEach(log => {
                 if (xtermRef.current?.xterm) {
                     try {
@@ -277,10 +271,9 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 }
             });
 
-            // Update the index
-            lastLogIndexRef.current = terminalLogsData.logs.length;
+            lastLogSequenceRef.current = terminalLogsData.totalLogs;
         }
-    }, [terminalLogsData.logs.length, terminalReady]); // Run when new logs arrive
+    }, [terminalLogsData.logs, terminalLogsData.totalLogs, terminalReady]); // Run when new logs arrive
 
     // Update terminal theme when global theme changes
     useEffect(() => {
@@ -292,10 +285,6 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     useEffect(() => {
         onLogsChange(terminalLogsData.logs);
     }, [terminalLogsData.logs, onLogsChange]);
-
-    useEffect(() => {
-        terminalLogCountRef.current = terminalLogsData.logs.length;
-    }, [terminalLogsData.logs.length]);
 
     // Native search with debouncing for performance
     const performSearch = useCallback((query: string) => {
@@ -337,11 +326,12 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             });
 
             setHasMatches(found);
+            if (found) follow.pauseForInspection();
         } catch (error) {
             errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search addon error:', error);
             setHasMatches(false);
         }
-    }, []);
+    }, [follow.pauseForInspection]);
 
     // Debounced search effect
     useEffect(() => {
@@ -373,7 +363,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         if (!searchAddonRef.current || !searchQuery || !hasMatches) return;
         try {
             // Navigate to next match with decorations
-            searchAddonRef.current.findNext(searchQuery, {
+            const found = searchAddonRef.current.findNext(searchQuery, {
                 caseSensitive: false,
                 wholeWord: false,
                 regex: false,
@@ -386,6 +376,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     activeMatchColorOverviewRuler: '#6372a4',
                 }
             });
+            if (found) follow.pauseForInspection();
         } catch (error) {
             errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search next error:', error);
         }
@@ -395,7 +386,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         if (!searchAddonRef.current || !searchQuery || !hasMatches) return;
         try {
             // Navigate to previous match with decorations
-            searchAddonRef.current.findPrevious(searchQuery, {
+            const found = searchAddonRef.current.findPrevious(searchQuery, {
                 caseSensitive: false,
                 wholeWord: false,
                 regex: false,
@@ -408,12 +399,13 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     activeMatchColorOverviewRuler: '#6372a4',
                 }
             });
+            if (found) follow.pauseForInspection();
         } catch (error) {
             errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search previous error:', error);
         }
     };
 
-    // Create ref wrapper for terminal instance that always points to context
+    // Keep an instance ref in sync with context so live SSE writes reach xterm.
     const xtermInstanceRef = useRef<any>(null);
 
     // Keep ref in sync with context - this ensures SSE writes to current terminal
@@ -428,9 +420,16 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         callbacks: {
             onLog: (message, rawText, rawBytes) => {
                 if (rawText) {
-                    const logText = rawText.trim();
-                    // ONLY save to context - let the effect above handle terminal writing
+                    const logText = rawText.replace(/\r?\n$/, '');
                     addTerminalLog(logText);
+                    if (terminalReady && xtermInstanceRef.current) {
+                        try {
+                            xtermInstanceRef.current.write(logText + '\r\n');
+                            lastLogSequenceRef.current += 1;
+                        } catch (err) {
+                            errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error writing log to terminal:', err);
+                        }
+                    }
                 }
             },
             onError: (message) => {
@@ -439,6 +438,8 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             },
             onContainerExit: (exitCode, message) => {
                 console.log('Container exited:', exitCode, message);
+                containerExitedRef.current = true;
+                setStreamStatus("ended");
                 setTerminalStreaming(false);
                 if (exitCode !== 0) {
                     showToast(message || interpolate(t.projectDetail.logs.terminal.containerExited, { code: String(exitCode) }), 'error', t.projectDetail.logs.terminal.containerStoppedTitle);
@@ -447,44 +448,48 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         },
         onConnect: () => {
             console.log('Connected to terminal logs stream');
+            setStreamStatus("live");
         },
         onDisconnect: () => {
             console.log('Disconnected from terminal logs stream');
+            setStreamStatus(containerExitedRef.current ? "ended" : manualStopRef.current ? "stopped" : "failed");
             setTerminalStreaming(false);
         },
         onError: (error) => {
             errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Terminal logs stream error:', error);
+            setStreamStatus("failed");
             setTerminalStreaming(false);
             showToast(t.projectDetail.logs.terminal.connectFailed, 'error', t.projectDetail.logs.terminal.connectFailedTitle);
         },
     });
 
-    const loadRecentLogs = useCallback(async (force = false) => {
-        if (!historyTarget) return;
-        if (!force && terminalLogCountRef.current > 0) return;
-
-        try {
-            const response = await api.get<{ data?: any[] }>(historyTarget, {
-                params: { tail: 100 },
-            });
-            const entries = Array.isArray(response.data) ? response.data : [];
-            for (const entry of entries) {
-                const text = decodeLogEntry(entry);
-                if (text) addTerminalLog(text);
-            }
-        } catch (error) {
-            errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Failed to load recent terminal logs:', error);
-        }
-    }, [historyTarget, addTerminalLog]);
-
     const connectLiveStream = useCallback(async () => {
         if (!streamTarget) return;
-        await logStream.connect(appendQueryParam(streamTarget, 'tail', '0'));
+        manualStopRef.current = false;
+        containerExitedRef.current = false;
+        setStreamStatus("connecting");
+        await logStream.connect(appendQueryParam(streamTarget, 'tail', String(LOG_HISTORY_TAIL)));
     }, [streamTarget, logStream]);
+
+    const clearLogs = useCallback(() => {
+        clearTerminalLogs();
+        lastLogSequenceRef.current = 0;
+        setSearchQuery("");
+        setHasMatches(false);
+        setIsSearching(false);
+        searchAddonRef.current?.clearDecorations?.();
+        setOlderTerminalRowsDiscarded(false);
+        follow.resume();
+        effectShows.current = true;
+        if (xtermRef.current?.xterm) {
+            xtermRef.current.xterm.reset();
+        }
+    }, [clearTerminalLogs, follow.resume]);
 
     const toggleStreaming = async () => {
         if (terminalLogsData.isStreaming) {
             // Disconnect using the clean hook
+            manualStopRef.current = true;
             logStream.disconnect();
 
             if (streamIntervalRef.current) {
@@ -492,16 +497,17 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 streamIntervalRef.current = null;
             }
             setTerminalStreaming(false);
+            setStreamStatus("stopped");
         } else {
             clearLogs();
             setTerminalStreaming(true);
             try {
                 if (streamTarget) {
-                    await loadRecentLogs(true);
                     await connectLiveStream();
                 } else {
                     // Mock stream - add initial message as a log
                     addTerminalLog('[Using Mock Stream - No Project ID]');
+                    setStreamStatus("live");
 
                     streamIntervalRef.current = setInterval(() => {
                         const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -512,6 +518,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 }
             } catch (error) {
                 errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error starting stream:', error);
+                setStreamStatus("failed");
                 setTerminalStreaming(false);
             }
         }
@@ -522,32 +529,29 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
 
         const wasStreaming = terminalLogsData.isStreaming;
 
+        manualStopRef.current = true;
         logStream.disconnect();
         if (streamIntervalRef.current) {
             clearInterval(streamIntervalRef.current);
             streamIntervalRef.current = null;
         }
 
-        clearTerminalLogs();
-        lastLogIndexRef.current = 0;
-        if (xtermRef.current?.xterm) {
-            xtermRef.current.xterm.reset();
-        }
+        clearLogs();
 
         if (!wasStreaming) {
             setTerminalStreaming(false);
+            setStreamStatus("stopped");
             return;
         }
 
+        manualStopRef.current = false;
         setTerminalStreaming(true);
-        void (async () => {
-            await loadRecentLogs(true);
-            await connectLiveStream();
-        })().catch((error) => {
+        void connectLiveStream().catch((error) => {
             errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error switching log stream:', error);
+            setStreamStatus("failed");
             setTerminalStreaming(false);
         });
-    }, [streamTarget, loadRecentLogs, connectLiveStream]);
+    }, [streamTarget, connectLiveStream, clearLogs]);
 
     // Auto-start streaming when terminal is ready
     const autoStarted = useRef(false);
@@ -555,14 +559,12 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         if (!terminalReady || !streamTarget || autoStarted.current) return;
         autoStarted.current = true;
         setTerminalStreaming(true);
-        void (async () => {
-            await loadRecentLogs();
-            await connectLiveStream();
-        })().catch((diagnosticFailure) => {
+        void connectLiveStream().catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs");
+            setStreamStatus("failed");
             setTerminalStreaming(false);
         });
-    }, [terminalReady, streamTarget, loadRecentLogs, connectLiveStream]);
+    }, [terminalReady, streamTarget, connectLiveStream]);
 
     const logStreamRef = useRef(logStream);
     useEffect(() => { logStreamRef.current = logStream; });
@@ -572,6 +574,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             if (streamIntervalRef.current) {
                 clearInterval(streamIntervalRef.current);
             }
+            manualStopRef.current = true;
             logStreamRef.current.disconnect();
             setTerminalStreaming(false);
         };
@@ -588,7 +591,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         return () => {
             window.removeEventListener('clearLogs', handleClearLogs);
         };
-    }, []);
+    }, [clearLogs]);
 
     const isStreamingRef = useRef(false);
     useEffect(() => {
@@ -613,39 +616,45 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         effectShows.current = true;
       }
 
-    const clearLogs = () => {
-        clearTerminalLogs();
-        // Reset the log index counter
-        lastLogIndexRef.current = 0;
-        terminalLogCountRef.current = 0;
-        effectShows.current = true;
-        if (xtermRef.current?.xterm) {
-            // Clear the terminal display first
-            xtermRef.current.xterm.reset();
-            // showOblienHeader(xtermRef);
-        }
-    };
+    const terminalCopy = t.projectDetail.logs.terminal;
+    const statusLabel = {
+        connecting: terminalCopy.connecting,
+        live: terminalCopy.live,
+        stopped: terminalCopy.stopped,
+        ended: terminalCopy.ended,
+        failed: terminalCopy.failed,
+    }[streamStatus];
 
     return (
         <TerminalCardShell
             name={projectName || t.projectDetail.logs.terminal.fallbackName}
             title={title}
             toolbar={
-                <TerminalSearch
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    onNext={handleSearchNext}
-                    onPrevious={handleSearchPrevious}
-                    hasMatches={hasMatches}
-                    searching={isSearching}
-                    disabled={!terminalReady}
-                />
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <div className="min-w-0 flex-1 basis-56">
+                        <TerminalSearch
+                            value={searchQuery}
+                            onChange={setSearchQuery}
+                            onNext={handleSearchNext}
+                            onPrevious={handleSearchPrevious}
+                            hasMatches={hasMatches}
+                            searching={isSearching}
+                            disabled={!terminalReady}
+                        />
+                    </div>
+                    <TerminalFollowControls
+                        isFollowing={follow.isFollowing}
+                        onToggle={follow.toggle}
+                        onJumpToLatest={follow.resume}
+                    />
+                </div>
             }
             status={
                 <>
                     <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${terminalLogsData.isStreaming ? 'bg-success-solid animate-pulse' : 'bg-muted-foreground/30'}`}></div>
-                        <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{interpolate(t.projectDetail.logs.terminal.lines, { count: String(terminalLogsData.logs.length) })}</span>
+                        <div className={`h-2 w-2 rounded-full ${streamStatus === "live" ? "bg-success-solid animate-pulse" : streamStatus === "failed" ? "bg-danger" : "bg-muted-foreground/40"}`}></div>
+                        <span className="text-xs text-muted-foreground hidden sm:inline">{statusLabel}</span>
+                        <span className="text-xs text-muted-foreground font-mono hidden md:inline">{interpolate(terminalCopy.entries, { count: String(terminalLogsData.logs.length) })}</span>
                     </div>
 
                     <Button
@@ -676,10 +685,28 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             overlay={
                 terminalLogsData.logs.length === 0 ? (
                     <p className="text-sm text-muted-foreground/50">
-                        {terminalLogsData.isStreaming ? t.projectDetail.logs.terminal.waitingForLogs : t.projectDetail.logs.terminal.pressStart}
+                        {{
+                            stopped: terminalCopy.pressStart,
+                            connecting: terminalCopy.waitingForLogs,
+                            live: terminalCopy.waitingForLogs,
+                            ended: terminalCopy.ended,
+                            failed: terminalCopy.failed,
+                        }[streamStatus]}
                     </p>
                 ) : undefined
             }
+            notice={
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pb-3 text-xs text-muted-foreground">
+                    <span>{interpolate(terminalCopy.renderedRows, { count: LOG_SCROLLBACK_ROWS.toLocaleString() })}</span>
+                    {olderTerminalRowsDiscarded && (
+                        <span role="status">{terminalCopy.olderOutputDiscarded}</span>
+                    )}
+                    {terminalLogsData.droppedLogs > 0 && (
+                        <span role="status">{terminalCopy.olderEntriesDiscarded}</span>
+                    )}
+                </div>
+            }
+            className="min-h-[clamp(440px,65vh,760px)]"
         >
             <div ref={terminalRef} className="w-full h-full" />
         </TerminalCardShell>

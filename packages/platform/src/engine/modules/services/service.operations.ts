@@ -224,7 +224,7 @@ export const serviceDependencies: ServiceDependencies = {
       return result;
     },
   },
-  subscribe: (ctx, projectId, id, input) => async (write) => {
+  subscribe: (ctx, projectId, id, input, options) => async (write) => {
     const stream = await run(() =>
       service.streamServiceRuntimeLogs(
         ctx,
@@ -244,6 +244,7 @@ export const serviceDependencies: ServiceDependencies = {
         },
         {
           ...input,
+          signal: options?.signal,
           onEnd: (error) => {
             write("end", JSON.stringify(error
               ? { error: safeErrorMessage(error) }

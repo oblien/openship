@@ -33,23 +33,31 @@ vi.mock("@xterm/addon-search", () => ({
 function makeTerminal(id: string) {
   const listeners = new Set<() => void>();
   const lines = [`${id} first needle`, `${id} second needle`];
+  const activeBuffer = {
+    baseY: 0,
+    viewportY: 0,
+    get length() { return lines.length; },
+    getLine: (index: number) => lines[index] === undefined ? undefined : {
+      isWrapped: false,
+      translateToString: () => lines[index],
+    },
+  };
   const instance = {
     id, lines,
-    buffer: { active: {
-      get length() { return lines.length; },
-      getLine: (index: number) => lines[index] === undefined ? undefined : {
-        isWrapped: false,
-        translateToString: () => lines[index],
-      },
-    } },
+    buffer: { active: activeBuffer },
+    options: { scrollback: 1000 },
     clearSelection: vi.fn(),
+    scrollToBottom: vi.fn(),
+    scrollToLine: vi.fn(),
     loadAddon: (addon: { activate: (terminal: unknown) => void }) => addon.activate(instance),
+    onScroll: () => ({ dispose: vi.fn() }),
     onWriteParsed: (callback: () => void) => {
       listeners.add(callback);
       return { dispose: () => listeners.delete(callback) };
     },
+    onResize: () => ({ dispose: vi.fn() }),
   };
-  return { terminal: instance as unknown as Terminal, lines, write: () => listeners.forEach(callback => callback()) };
+  return { terminal: instance as unknown as Terminal, activeBuffer, lines, write: () => listeners.forEach(callback => callback()) };
 }
 
 function Surface({ terminal, active }: { terminal: Terminal; active: boolean }) {
@@ -124,6 +132,12 @@ describe("deployment log controls", () => {
     await render(null);
     expect(button(copy.actions.copy).disabled).toBe(true);
     expect(host.querySelector("input")!.disabled).toBe(true);
+  });
+
+  it("shows an overflow notice immediately when switching to a full terminal", async () => {
+    web.activeBuffer.baseY = 1000;
+    await render("web");
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(copy.terminal.olderOutputDiscarded);
   });
 
   it("finds a term that arrives later in the live output and supports Enter, Shift+Enter, and Escape", async () => {

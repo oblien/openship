@@ -6,7 +6,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
 
 /** Native xterm search follows the visible buffer without filtering or rewriting its logs. */
-export function useTerminalSearch(terminal: Terminal | null) {
+export function useTerminalSearch(terminal: Terminal | null, onNavigate?: () => void) {
   const [value, onChange] = useState("");
   const [loaded, setLoaded] = useState<{ terminal: Terminal; addon: SearchAddon } | null>(null);
   const [hasMatches, setHasMatches] = useState(false);
@@ -42,7 +42,8 @@ export function useTerminalSearch(terminal: Terminal | null) {
       ? addon.findNext(value, { incremental })
       : addon.findPrevious(value);
     setHasMatches(matched.current);
-  }, [addon, value]);
+    if (matched.current) onNavigate?.();
+  }, [addon, value, onNavigate]);
 
   useEffect(() => {
     matched.current = false;

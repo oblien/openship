@@ -118,14 +118,17 @@ describe("shared bare lifecycle on a managed server", () => {
   it("cancels an application log stream without publishing a disconnect error", async () => {
     await supervisor.deploy(options);
     let observed: AbortSignal | undefined;
-    workloads.logsStream.mockImplementation(async function* (_id, options: { signal: AbortSignal }) {
+    let observedTail: number | undefined;
+    workloads.logsStream.mockImplementation(async function* (_id, options: { signal: AbortSignal; tail?: number }) {
       observed = options.signal;
+      observedTail = options.tail;
       yield { line: "ready", stream: "stdout" };
       if (!options.signal.aborted) await new Promise<void>(resolve => options.signal.addEventListener("abort", () => resolve(), { once: true }));
     });
     const onEnd = vi.fn(), onLog = vi.fn();
     const stop = await supervisor.streamLogs("release-a", onLog, { tail: 0, onEnd });
     await vi.waitFor(() => expect(onLog).toHaveBeenCalled());
+    expect(observedTail).toBe(0);
     stop();
     expect(observed?.aborted).toBe(true);
     expect(onEnd).not.toHaveBeenCalled();

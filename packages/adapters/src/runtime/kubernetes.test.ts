@@ -444,6 +444,91 @@ describe("Kubernetes workload lifecycle", () => {
       },
     ]);
   });
+  it("uses the requested history tail for each live pod log stream", async () => {
+    const fixture = setup();
+    const result = await fixture.runtime.deploy(config());
+    const deployment = [...fixture.resources.values()].find((value) => value.kind === "Deployment")!;
+    const pod = {
+      kind: "Pod",
+      metadata: { ...deployment.spec.template.metadata, name: "instance-a" },
+      status: { phase: "Running" },
+    };
+    const request = fixture.request.getMockImplementation()!;
+    fixture.request.mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path.includes("/pods?labelSelector="))
+        return { items: [pod], metadata: { resourceVersion: "1" } };
+      return request(method, path, body);
+    });
+    fixture.watch.mockImplementation(async function* (_path, signal: AbortSignal) {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    });
+    const observedPaths: string[] = [];
+    const historyTimestamp = new Date(Date.now() + 1000).toISOString();
+    const liveTimestamp = new Date(Date.now() + 2000).toISOString();
+    fixture.api.logs.mockImplementation(async function* (path: string, signal: AbortSignal) {
+      observedPaths.push(path);
+      if (!path.includes("follow=true")) {
+        yield `${historyTimestamp} ready`;
+        return;
+      }
+      yield `${historyTimestamp} ready`;
+      yield `${liveTimestamp} gap`;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    });
+
+    const onLog = vi.fn();
+    const stop = await fixture.runtime.streamRuntimeLogs(result.containerId!, onLog, { tail: 1000 });
+    await vi.waitFor(() => {
+      expect(observedPaths.some((path) => !path.includes("follow=true") && path.includes("tailLines=1000"))).toBe(true);
+      expect(onLog.mock.calls.map(([entry]) => entry.message)).toEqual([
+        "[instance-a] ready",
+        "[instance-a] gap",
+      ]);
+    });
+    stop();
+    await fixture.runtime.dispose();
+  });
+  it("returns the global tail when replica histories are uneven", async () => {
+    const fixture = setup();
+    const result = await fixture.runtime.deploy(config());
+    const deployment = [...fixture.resources.values()].find((value) => value.kind === "Deployment")!;
+    const pods = ["instance-a", "instance-b", "instance-c"].map((name) => ({
+      kind: "Pod",
+      metadata: { ...deployment.spec.template.metadata, name },
+      status: { phase: "Running" },
+    }));
+    const request = fixture.request.getMockImplementation()!;
+    fixture.request.mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path.includes("/pods?labelSelector="))
+        return { items: pods, metadata: { resourceVersion: "1" } };
+      return request(method, path, body);
+    });
+    const podLogs: Record<string, string[]> = {
+      "instance-a": Array.from({ length: 600 }, (_, index) =>
+        `${new Date(Date.UTC(2025, 0, 2, 0, 0, index)).toISOString()} instance-a-${index}`,
+      ),
+      "instance-b": Array.from({ length: 399 }, (_, index) =>
+        `${new Date(Date.UTC(2025, 0, 1, 0, 0, index)).toISOString()} instance-b-${index}`,
+      ),
+      "instance-c": [`${new Date(Date.UTC(2025, 0, 3)).toISOString()} instance-c-0`],
+    };
+    fixture.api.logs.mockImplementation(async function* (path: string) {
+      const podName = path.split("/pods/")[1].split("/")[0];
+      const tailLines = Number(new URL(`https://cluster${path}`).searchParams.get("tailLines"));
+      for (const line of podLogs[podName].slice(-tailLines)) yield line;
+    });
+
+    const entries = await fixture.runtime.getRuntimeLogs(result.containerId!, 1000);
+
+    expect(entries).toHaveLength(1000);
+    expect(entries.map((entry) => entry.message)).toEqual(
+      [
+        ...Array.from({ length: 399 }, (_, index) => `[instance-b] instance-b-${index}`),
+        ...Array.from({ length: 600 }, (_, index) => `[instance-a] instance-a-${index}`),
+        "[instance-c] instance-c-0",
+      ],
+    );
+  });
   it("publishes a source build through the existing builder and records an immutable artifact", async () => {
     const { runtime, builder } = setup();
     const result = await runtime.build({ sessionId: "build-1" } as never);

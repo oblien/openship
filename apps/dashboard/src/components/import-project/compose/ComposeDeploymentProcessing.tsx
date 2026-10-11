@@ -23,6 +23,8 @@ import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/components/theme-provider";
 import { deployApi, projectsApi } from "@/lib/api";
 import { composeServiceTally, serviceLogSource } from "@/context/deployment/types";
+import { useLogTerminal } from "@/components/terminal/LogTerminalContext";
+import { useTerminalFollow } from "@/components/terminal/useTerminalFollow";
 import { LiveServiceLogsTerminal } from "./LiveServiceLogsTerminal";
 import type { DeploymentStatus, ServiceDeployStatus } from "@/context/deployment/types";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -682,7 +684,10 @@ function ComposeLogTerminal({
   const terminalRef = useRef<any | null>(null);
   const writtenCountRef = useRef(0);
   const prevActiveRef = useRef(false);
+  const [terminal, setTerminal] = useState<any | null>(null);
   const [ready, setReady] = useState(false);
+  const follow = useTerminalFollow(terminal);
+  const isFollowing = useLogTerminal(terminal, active, follow);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -701,7 +706,7 @@ function ComposeLogTerminal({
       writtenCountRef.current = 0;
     }
 
-    const shouldScroll = becameActive || (active && isTerminalAtBottom(terminal));
+    const shouldScroll = isFollowing && (becameActive || (active && isTerminalAtBottom(terminal)));
     logs.slice(writtenCountRef.current).forEach((log) => {
       terminal.write(terminalBytes(log));
     });
@@ -709,7 +714,7 @@ function ComposeLogTerminal({
     if (shouldScroll) {
       terminal.scrollToBottom();
     }
-  }, [active, logs, ready]);
+  }, [active, isFollowing, logs, ready]);
 
   return (
     <div
@@ -724,6 +729,7 @@ function ComposeLogTerminal({
         active={active}
         onReady={(terminal) => {
           terminalRef.current = terminal;
+          setTerminal(terminal);
           setReady(true);
         }}
         theme={theme}

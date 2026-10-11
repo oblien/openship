@@ -95,10 +95,10 @@ export const LiveServiceLogsTerminal: React.FC<LiveServiceLogsTerminalProps> = (
   });
 
   const connect = useCallback(async () => {
-    // Every connection re-backfills ?tail=100; a stale buffer would duplicate
+    // Every connection re-backfills ?tail=1000; a stale buffer would duplicate
     // those lines, so each (re)connection starts from a clean slate.
     terminalRef.current?.reset();
-    const query = new URLSearchParams({ tail: "100", deploymentId });
+    const query = new URLSearchParams({ tail: "1000", deploymentId });
     await logStream.connect(`${endpoints.services.logsStream(projectId, serviceId)}?${query}`);
   }, [logStream, projectId, serviceId, deploymentId]);
 

@@ -26,6 +26,7 @@ import type {
   ImageArtifactConfig,
   LogEntry,
   ResourceUsage,
+  RuntimeLogStreamOptions,
 } from "../types";
 import type { RuntimeAdapter, RuntimeCapability, DeploymentRef } from "./types";
 import { BuildLogger } from "./build-pipeline";
@@ -160,8 +161,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       );
     return ref.slice(prefix.length);
   }
-  private async owned(path: string) {
-    const object = await this.options.api.request("GET", path, undefined, this.lifetime.signal);
+  private async owned(path: string, signal = this.lifetime.signal) {
+    const object = await this.options.api.request("GET", path, undefined, signal);
     this.assertOwned(object);
     return object;
   }
@@ -646,8 +647,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       }
     }
   }
-  async status(ref: string): Promise<ClusterWorkloadStatus> {
-    const deployment = await this.owned(`${this.base}/${this.refName(ref)}`);
+  async status(ref: string, signal = this.lifetime.signal): Promise<ClusterWorkloadStatus> {
+    const deployment = await this.owned(`${this.base}/${this.refName(ref)}`, signal);
     const selector = encodeURIComponent(
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
     );
@@ -655,7 +656,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
       "GET",
       `${this.core}/pods?labelSelector=${selector}`,
       undefined,
-      this.lifetime.signal,
+      signal,
     );
     return {
       desired: deployment.spec.replicas,
@@ -993,40 +994,116 @@ export class KubernetesRuntime implements RuntimeAdapter {
       message: `[${pod}] ${split > 0 ? line.slice(split + 1) : line}`,
     };
   }
-  async getRuntimeLogs(ref: string, tail = 100): Promise<LogEntry[]> {
-    const status = await this.status(ref);
-    const result: LogEntry[] = [];
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)]);
+  async getRuntimeLogs(ref: string, tail = 100, requestSignal?: AbortSignal): Promise<LogEntry[]> {
+    if (tail <= 0) return [];
+    const signal = AbortSignal.any([
+      this.lifetime.signal,
+      ...(requestSignal ? [requestSignal] : []),
+      AbortSignal.timeout(30_000),
+    ]);
+    const status = await this.status(ref, signal);
+    const maxPerPod = Math.min(Math.max(tail, 1), 2000);
+    const perPodTail = Math.max(1, Math.min(Math.ceil(tail / Math.max(status.pods.length, 1)), maxPerPod));
+    const readPodLogs = async (pod: { name: string }, tailLines: number) => {
+      const entries: LogEntry[] = [];
+      try {
+        for await (const line of this.options.api.logs(
+          `${this.core}/pods/${pod.name}/log?container=app&timestamps=true&tailLines=${tailLines}`,
+          signal,
+        ))
+          entries.push(this.logEntry(line, pod.name));
+      } catch (error) {
+        if (
+          !isMissing(error) &&
+          !(error instanceof KubernetesApiError && error.statusCode === 400)
+        )
+          throw error;
+      }
+      return entries;
+    };
+    const entriesByPod = new Map<string, LogEntry[]>();
+    const requestedByPod = new Map<string, number>();
     for (let index = 0; index < status.pods.length; index += 4) {
       await Promise.all(
         status.pods.slice(index, index + 4).map(async (pod) => {
-          try {
-            for await (const line of this.options.api.logs(
-              `${this.core}/pods/${pod.name}/log?container=app&timestamps=true&tailLines=${Math.max(1, Math.min(tail, 2000))}`,
-              signal,
-            ))
-              result.push(this.logEntry(line, pod.name));
-          } catch (error) {
-            if (
-              !isMissing(error) &&
-              !(error instanceof KubernetesApiError && error.statusCode === 400)
-            )
-              throw error;
-          }
+          requestedByPod.set(pod.name, perPodTail);
+          entriesByPod.set(pod.name, await readPodLogs(pod, perPodTail));
         }),
       );
     }
-    return result.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-tail);
+    const sorted = () => [...entriesByPod.values()].flat().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    let current = sorted();
+    while (true) {
+      const cutoff = current.length >= tail ? current[current.length - tail].timestamp : undefined;
+      const additional = status.pods.filter((pod) => {
+        const entries = entriesByPod.get(pod.name) ?? [];
+        const requested = requestedByPod.get(pod.name) ?? perPodTail;
+        return entries.length >= requested && requested < maxPerPod && (!cutoff || entries[0].timestamp > cutoff);
+      });
+      if (additional.length === 0) break;
+      for (let index = 0; index < additional.length; index += 4) {
+        await Promise.all(
+          additional.slice(index, index + 4).map(async (pod) => {
+            const requested = requestedByPod.get(pod.name) ?? perPodTail;
+            const nextRequested = Math.min(maxPerPod, Math.max(requested + 1, requested * 2));
+            requestedByPod.set(pod.name, nextRequested);
+            entriesByPod.set(pod.name, await readPodLogs(pod, nextRequested));
+          }),
+        );
+      }
+      current = sorted();
+    }
+    return current.slice(-tail);
   }
-  async streamRuntimeLogs(ref: string, onLog: (entry: LogEntry) => void): Promise<() => void> {
+  async streamRuntimeLogs(
+    ref: string,
+    onLog: (entry: LogEntry) => void,
+    opts?: RuntimeLogStreamOptions,
+  ): Promise<() => void> {
+    const tail = opts?.tail ?? 100;
     const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, this.lifetime.signal]);
-    const deployment = await this.owned(`${this.base}/${this.refName(ref)}`);
+    const signal = AbortSignal.any([
+      controller.signal,
+      this.lifetime.signal,
+      ...(opts?.signal ? [opts.signal] : []),
+    ]);
+    let ended = false;
+    const finish = (error?: unknown) => {
+      if (ended) return;
+      ended = true;
+      try {
+        opts?.onEnd?.(error instanceof Error ? error : error ? new Error(String(error)) : undefined);
+      } finally {
+        controller.abort();
+      }
+    };
+    const historyCutoff = new Date();
+    const historyCutoffIso = historyCutoff.toISOString();
+    const overlap = new Map<string, number>();
+    const entryKey = (entry: LogEntry) => `${entry.timestamp}\u0000${entry.message}`;
+    let historyReady = false;
+    const handoff: LogEntry[] = [];
+    const emit = (entry: LogEntry) => {
+      if (historyReady) onLog(entry);
+      else handoff.push(entry);
+    };
+    const emitLive = (entry: LogEntry) => {
+      const key = entryKey(entry);
+      const count = overlap.get(key) ?? 0;
+      if (count > 0) {
+        if (count === 1) overlap.delete(key);
+        else overlap.set(key, count - 1);
+        return;
+      }
+      onLog(entry);
+    };
+    const deployment = await this.owned(`${this.base}/${this.refName(ref)}`, signal);
     const selector = encodeURIComponent(
       `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
     );
     const path = `${this.core}/pods?labelSelector=${selector}`;
     const streams = new Map<string, AbortController>();
+    const lastEntriesByPod = new Map<string, { timestamp: string; keys: Set<string> }>();
     const pods = new Map<string, KubernetesObject>();
     let warned = false;
     const synchronize = () => {
@@ -1044,7 +1121,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
         }
       if (pods.size > 6 && !warned) {
         warned = true;
-        onLog({
+        emit({
           timestamp: new Date().toISOString(),
           level: "info",
           message:
@@ -1058,26 +1135,37 @@ export class KubernetesRuntime implements RuntimeAdapter {
         streams.set(name, follower);
         const followSignal = AbortSignal.any([signal, follower.signal]);
         void (async () => {
-          let since = new Date().toISOString();
           while (!followSignal.aborted) {
+            const previous = lastEntriesByPod.get(name);
+            let since = previous?.timestamp ?? historyCutoffIso;
+            let replaying = previous !== undefined;
             try {
               for await (const line of this.options.api.logs(
-                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=2000`,
+                `${this.core}/pods/${name}/log?container=app&timestamps=true&follow=true&sinceTime=${encodeURIComponent(since)}&tailLines=0`,
                 followSignal,
               )) {
                 const entry = this.logEntry(line, name);
+                const key = entryKey(entry);
+                const isReplay = replaying && entry.timestamp === since && previous?.keys.has(key);
+                if (entry.timestamp !== since) replaying = false;
                 since = entry.timestamp;
-                onLog(entry);
+                const last = lastEntriesByPod.get(name);
+                if (last?.timestamp === entry.timestamp) last.keys.add(key);
+                else lastEntriesByPod.set(name, { timestamp: entry.timestamp, keys: new Set([key]) });
+                if (isReplay) continue;
+                if (historyReady) emitLive(entry);
+                else handoff.push(entry);
               }
             } catch (error) {
               observeCaughtError(error, "adapters/runtime/kubernetes");
               if (isMissing(error) || followSignal.aborted) return;
               if (error instanceof KubernetesApiError && [401, 403].includes(error.statusCode)) {
-                onLog({
+                emit({
                   timestamp: new Date().toISOString(),
                   level: "warn",
                   message: `Live logs unavailable for ${name}: ${error.message}`,
                 });
+                finish(error);
                 return;
               }
             }
@@ -1106,6 +1194,23 @@ export class KubernetesRuntime implements RuntimeAdapter {
     let version: string;
     try {
       version = await readPods();
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
+    try {
+      if (tail > 0) {
+        for (const entry of await this.getRuntimeLogs(ref, tail, signal)) {
+          onLog(entry);
+          if (Date.parse(entry.timestamp) >= historyCutoff.getTime()) {
+            const key = entryKey(entry);
+            overlap.set(key, (overlap.get(key) ?? 0) + 1);
+          }
+        }
+      }
+      historyReady = true;
+      for (const entry of handoff) emitLive(entry);
+      handoff.length = 0;
     } catch (error) {
       controller.abort();
       throw error;
@@ -1140,13 +1245,14 @@ export class KubernetesRuntime implements RuntimeAdapter {
       }
     })().catch((error) => {
       observeCaughtError(error, "adapters/runtime/kubernetes");
-      if (!signal.aborted)
-        onLog({
+      if (!signal.aborted) {
+        emit({
           timestamp: new Date().toISOString(),
           level: "warn",
           message: `Cluster log stream stopped: ${error instanceof Error ? error.message : String(error)}`,
         });
-      controller.abort();
+        finish(error);
+      }
     });
     return () => controller.abort();
   }
