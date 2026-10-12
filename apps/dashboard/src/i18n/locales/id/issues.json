@@ -1,0 +1,92 @@
+{
+  "title": "Masalah",
+  "subtitle": "Semua yang ditemukan OpenShip salah di proyek, server, dan domain Anda.",
+  "tabs": {
+    "open": "Terbuka",
+    "resolved": "Selesai"
+  },
+  "resolvedNote": "Riwayat mencakup insiden container dan server — pemeriksaan lain melaporkan status saat ini, jadi sertifikat atau deployment yang diperbaiki berhenti muncul di sini.",
+  "rescan": "Pindai ulang",
+  "rescanning": "Memindai",
+  "filters": {
+    "searchPlaceholder": "Cari masalah",
+    "all": "Semua",
+    "outage": "Gangguan",
+    "action_required": "Perlu tindakan",
+    "advisory": "Saran",
+    "clear": "Hapus filter"
+  },
+  "scopes": {
+    "platform": "OpenShip",
+    "server": "Server",
+    "project": "Proyek",
+    "domain": "Domain"
+  },
+  "scopeSubtitles": {
+    "platform": "Instalasi ini sendiri",
+    "server": "Mesin tempat workload Anda berjalan",
+    "project": "Proyek yang di-deploy dan container mereka",
+    "domain": "Hostname kustom dan sertifikat"
+  },
+  "kinds": {
+    "deploy_blocked": "Deploy diblokir",
+    "prompt": "Menunggu keputusan",
+    "partial_decision": "Rilis sebagian",
+    "routing_unsynced": "Routing belum disinkronkan",
+    "domain_unverified": "Belum diverifikasi",
+    "ssl_error": "Masalah sertifikat",
+    "port_advisory": "Saran port",
+    "workload_unhealthy": "Health check gagal",
+    "workload_crash_loop": "Crash loop",
+    "workload_down": "Container mati",
+    "server_unreachable": "Server tidak terjangkau",
+    "edge_down": "Edge mati",
+    "edge_absent": "Edge belum terinstal",
+    "mail_down": "Mesin email mati",
+    "update_available": "Pembaruan tersedia",
+    "component_behind": "Pembaruan komponen tersedia"
+  },
+  "since": "Mulai {when}",
+  "resolvedWhen": "Selesai {when}",
+  "expiresIn": "Berakhir dalam {n} menit",
+  "view": "Lihat",
+  "fix": "Perbaiki",
+  "install": "Instal",
+  "update": "Perbarui",
+  "mailSetup": "Pengaturan email",
+  "selfUpdateNote": "Instalasi ini memperbarui dirinya sendiri dari command line.",
+  "empty": {
+    "openTitle": "Tidak ada yang perlu diperhatikan",
+    "openBody": "Tidak ada deploy yang diblokir atau menunggu, tidak ada masalah sertifikat atau domain, tidak ada yang tertinggal, tidak ada yang salah port. Pemeriksaan tetap berjalan di latar belakang.",
+    "resolvedTitle": "Tidak ada insiden yang selesai",
+    "resolvedBody": "Insiden container dan server muncul di sini setelah pulih, dan disimpan selama 30 hari.",
+    "filteredTitle": "Tidak ada yang cocok",
+    "filteredBody": "Beberapa masalah terbuka — tidak ada yang cocok dengan filter ini."
+  },
+  "summary": {
+    "title": "Ringkasan",
+    "subtitle": "Kesehatan sekilas",
+    "totalOpen": "terbuka",
+    "totalResolved": "selesai",
+    "bySeverity": "Berdasarkan tingkat",
+    "byArea": "Berdasarkan area"
+  },
+  "home": {
+    "attentionTitle": "Perlu perhatian",
+    "attentionSubtitle": "Ada yang rusak atau menunggu Anda",
+    "updatesTitle": "Pembaruan tersedia",
+    "updatesSubtitle": "Rilis baru siap diterapkan",
+    "more": "{n} lagi",
+    "hide": "Sembunyikan sampai ada perubahan"
+  },
+  "loadFailed": "Tidak dapat memuat masalah",
+  "toast": {
+    "title": "Masalah",
+    "rescanned": "Pindai ulang selesai",
+    "rescanPartial": "Pindai ulang selesai, {n} pemeriksaan gagal",
+    "rescanFailed": "Pindai ulang gagal",
+    "resolved": "Selesai",
+    "resolveFailed": "Tidak dapat menerapkan perbaikan",
+    "confirmDestructive": "Ini memiliki efek samping yang tidak dapat dibatalkan. Lanjutkan?"
+  }
+}

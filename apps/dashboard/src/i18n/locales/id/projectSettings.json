@@ -1,0 +1,1064 @@
+{
+  "settingSection": {
+    "edit": "Edit",
+    "save": "Simpan",
+    "cancel": "Batal"
+  },
+  "appSource": {
+    "title": "Sumber",
+    "description": "Aplikasi ini di-deploy dari rilis — tidak ada repo untuk push; pembaruan dikirim sebagai versi baru.",
+    "sourceType": "Sumber",
+    "kindRelease": "Rilis",
+    "kindImage": "Gambar container",
+    "current": "Versi saat ini",
+    "latest": "Versi terbaru",
+    "repository": "Repository",
+    "notChecked": "Belum diperiksa",
+    "upToDate": "Sudah terbaru",
+    "updateAvailable": "Pembaruan tersedia",
+    "checkForUpdates": "Periksa pembaruan",
+    "checkFailed": "Tidak dapat memeriksa pembaruan",
+    "update": "Perbarui",
+    "updateTo": "Perbarui ke {version}",
+    "updating": "Memperbarui…",
+    "updateFailed": "Pembaruan gagal",
+    "toastTitle": "Sumber",
+    "cliManaged": "Ini adalah control plane OpenShip — ia memperbarui dirinya sendiri. Jalankan \"openship update\" di host untuk meningkatkannya; tidak ada yang perlu diubah di sini."
+  },
+  "releaseImageSource": {
+    "validationInvalid": "Sumber gambar rilis tidak valid.",
+    "toast": {
+      "saved": "Sumber rilis container disimpan.",
+      "saveFailed": "Tidak dapat menyimpan sumber rilis container."
+    },
+    "status": {
+      "notDeployed": "Belum di-deploy",
+      "checking": "Memeriksa…",
+      "unavailable": "Tidak tersedia"
+    },
+    "switchToImage": {
+      "title": "Beralih ke sumber gambar prebuilt",
+      "description": "Menyimpan menggantikan sumber Git atau lokal saat ini untuk setiap environment. Deployment dan riwayat rollback yang ada tetap tersedia.",
+      "keep": "Pertahankan sumber saat ini"
+    },
+    "switchToGit": {
+      "title": "Beralih ke sumber Git",
+      "description": "Tidak ada yang berubah sampai Anda menautkan repository. Menautkan menggantikan sumber gambar yang dilacak untuk setiap environment.",
+      "back": "Kembali ke sumber gambar"
+    },
+    "entry": {
+      "shortButton": "Gunakan gambar prebuilt",
+      "button": "Lacak gambar container prebuilt",
+      "description": "Deploy gambar registry yang di-version langsung, tanpa meng-clone atau membangun repository."
+    },
+    "summary": {
+      "title": "Gambar container yang dilacak",
+      "badge": "Prebuilt",
+      "description": "Deploy gambar yang dipublikasikan langsung. Tidak ada repository yang di-clone dan tidak ada command build yang dijalankan.",
+      "linkGit": "Tautkan repository Git",
+      "image": "Gambar",
+      "versionSource": "Sumber versi",
+      "githubReleases": "GitHub Releases",
+      "pinnedVersion": "Versi yang disematkan",
+      "currentVersion": "Versi saat ini",
+      "targetVersion": "Versi target",
+      "latestVersion": "Versi terbaru",
+      "updateAvailable": "Pembaruan tersedia"
+    },
+    "editor": {
+      "trackingTitle": "Pelacakan rilis",
+      "configureTitle": "Konfigurasi gambar prebuilt",
+      "templateHint": "Gunakan {tag} untuk mempertahankan tag pasti penerbit, atau {version} untuk versi yang dinormalisasi.",
+      "provider": "Penyedia versi",
+      "githubTitle": "GitHub Releases",
+      "githubDescription": "Ikuti tag rilis terbaru yang dipublikasikan.",
+      "urlTitle": "URL versi atau pin",
+      "urlDescription": "Baca endpoint versi atau deploy versi tetap.",
+      "imageTemplate": "Template gambar",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "Repository GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "URL versi",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "Endpoint HTTPS yang mengembalikan teks atau JSON dengan version/tag_name.",
+      "pinnedVersion": "Versi yang disematkan",
+      "pinnedPlaceholder": "Opsional, misalnya v2.4.1",
+      "pinnedHint": "Mengganti versi terbaru yang ditemukan; kosongkan untuk melacak pembaruan.",
+      "appliesAll": "Perubahan berlaku untuk setiap environment di proyek ini.",
+      "saving": "Menyimpan…",
+      "save": "Simpan sumber"
+    }
+  },
+  "appSettings": {
+    "modeApp": "Pengaturan aplikasi",
+    "modeDeployment": "Deployment",
+    "saveChanges": "Simpan perubahan",
+    "saving": "Menyimpan…",
+    "saved": "Pengaturan disimpan",
+    "saveHint": "Simpan untuk menyimpan perubahan ini — berlaku saat aplikasi di-deploy berikutnya.",
+    "applyNow": "Terapkan sekarang",
+    "applying": "Menerapkan…",
+    "applied": "Menerapkan perubahan",
+    "restartNote": "Terapkan sekarang untuk memulai ulang aplikasi dengan pengaturan baru, atau berlaku saat deploy berikutnya.",
+    "redeployNote": "Menerapkan perubahan ini membuat ulang aplikasi — Anda mungkin perlu mengautentikasi ulang dashboard atau CLI-nya setelahnya.",
+    "advancedShow": "Tampilkan lanjutan",
+    "advancedHide": "Sembunyikan lanjutan",
+    "secretSet": "Ditetapkan — kosongkan untuk mempertahankan nilai saat ini",
+    "loadError": "Tidak dapat memuat pengaturan aplikasi.",
+    "saveFailed": "Tidak dapat menyimpan pengaturan.",
+    "applyFailed": "Tidak dapat menerapkan perubahan.",
+    "unmanaged": "Aplikasi ini belum memiliki pengaturan yang dapat dikonfigurasi."
+  },
+  "appInstall": {
+    "install": "Instal",
+    "installing": "Menginstal…",
+    "advanced": "Opsi deploy lanjutan",
+    "nameLabel": "Nama",
+    "nameHint": "Cara aplikasi ini muncul di OpenShip.",
+    "domainTitle": "Di mana harus berada?",
+    "domainFree": "Subdomain gratis",
+    "domainFreeHint": "Subdomain gratis di {domain}",
+    "domainCustom": "Domain Anda sendiri",
+    "domainCustomPlaceholder": "app.example.com",
+    "domainNone": "Tanpa URL publik",
+    "domainNoneHint": "Hanya internal — tanpa alamat publik.",
+    "customRequired": "Masukkan domain Anda, atau pilih opsi lain.",
+    "progressPreparing": "Mempersiapkan…",
+    "progressDeploying": "Mendeploy…",
+    "progressLive": "Aplikasi Anda aktif",
+    "openApp": "Buka aplikasi",
+    "goToApp": "Ke aplikasi",
+    "installFailed": "Instalasi gagal",
+    "installFailedBody": "Berhenti sebelum semuanya berjalan. Detail teknis berisi log build lengkap.",
+    "installCancelledSelf": "Anda menghentikan instalasi ini.",
+    "installCancelledBody": "Container dan gambar yang dibuat dihapus, dan volume data dipertahankan — menginstal ulang menggunakannya kembali. Apa pun yang sudah aktif dibiarkan.",
+    "settledAtPhase": "Berhenti di {phase}",
+    "viewDetails": "Lihat detail teknis",
+    "showLogs": "Tampilkan log",
+    "hideLogs": "Sembunyikan log",
+    "deployLogs": "log deploy",
+    "logsWaiting": "Menunggu output…",
+    "logsEmpty": "Tidak ada output yang ditangkap.",
+    "back": "Kembali",
+    "phaseImages": "Mempersiapkan gambar",
+    "phaseServices": "Memulai layanan",
+    "phaseAppSetup": "Menyelesaikan pengaturan",
+    "phaseReady": "Aktif",
+    "phaseQueued": "Dalam antrean…",
+    "stepperTitle": "Langkah instalasi",
+    "firstLoginTitle": "Masuk pertama",
+    "firstLoginUser": "Nama pengguna",
+    "firstLoginPassword": "Password",
+    "destinationTitle": "Di mana menginstal",
+    "destinationHint": "Pilih server atau cloud tempat aplikasi ini berjalan.",
+    "descMore": "Lebih banyak",
+    "descLess": "Lebih sedikit",
+    "needsTitle": "Yang dibutuhkan",
+    "needsMemory": "{value} RAM",
+    "needsCpu": "{value}",
+    "hostFitTitle": "Server ini lebih kecil dari yang dibutuhkan {app}",
+    "hostFitMemory": "Membutuhkan {needed} RAM — ini memiliki {available}",
+    "hostFitCpu": "Membutuhkan {needed} — ini memiliki {available}",
+    "hostFitHint": "Instal di mesin yang lebih besar, atau pilih tujuan lain.",
+    "routePortLabel": "Hanya port (tanpa domain)",
+    "routePortDesc": "Dapat diakses di alamat host dan port — tanpa domain atau Cloud yang diperlukan.",
+    "routeFreeLabel": "Subdomain gratis",
+    "routeFreeDesc": "Subdomain gratis di {domain}, dirutekan oleh OpenShip Cloud.",
+    "routeFreeNeedsCloud": "Hubungkan OpenShip Cloud untuk menggunakan subdomain gratis.",
+    "routeCustomLabel": "Domain Anda sendiri",
+    "routeCustomDesc": "Arahkan domain yang Anda miliki ke aplikasi ini.",
+    "routeDomainLabel": "Domain",
+    "routeDomainDesc": "Akses di domain — subdomain gratis atau milik Anda sendiri.",
+    "exposeTitle": "Eksposur",
+    "httpBadge": "Web",
+    "tcpBadge": "Database",
+    "tcpPublishLabel": "Publikasikan port",
+    "tcpPublishDesc": "Publikasikan di host sehingga alat eksternal dapat terhubung.",
+    "tcpInternalLabel": "Hanya internal",
+    "tcpInternalDesc": "Hanya layanan lain di aplikasi ini yang dapat menjangkaunya.",
+    "tcpFirewallNote": "Buka port {port} di firewall server Anda untuk terhubung dari luar.",
+    "desktopReachNote": "Di desktop Anda bisa membukanya di localhost — atau teruskan port dari Server → Port untuk server remote.",
+    "statusInstalling": "Menginstal",
+    "statusLive": "Aktif",
+    "statusCancelled": "Dibatalkan",
+    "statusFailed": "Gagal",
+    "stopInstall": "Hentikan instalasi",
+    "stopping": "Menghentikan…",
+    "installCancelled": "Instalasi dibatalkan",
+    "startOver": "Mulai ulang",
+    "breadcrumbApps": "Aplikasi",
+    "appEyebrow": "Aplikasi",
+    "stopFailed": "Tidak dapat menghentikan instalasi",
+    "progressStep": "Langkah {current} dari {total}",
+    "progressServicesReady": "{done} dari {total} layanan siap",
+    "summaryTitle": "Konfigurasi",
+    "summaryDestination": "Tujuan",
+    "summaryServices": "Layanan",
+    "mail": {
+      "title": "Atur email",
+      "subtitle": "Deploy webmail di domain Anda sendiri, atau hubungkan mailbox yang ada.",
+      "chooseSelf": "Self-host server email",
+      "chooseSelfDesc": "SMTP/IMAP penuh + webmail (iRedMail) di server Anda — kami menyediakan semuanya.",
+      "chooseConnect": "Hubungkan mailbox yang ada",
+      "chooseConnectDesc": "Deploy hanya UI webmail, diarahkan ke penyedia SMTP/IMAP eksternal mana pun — Amazon SES, Oracle Cloud, Gmail, Fastmail, dan lainnya.",
+      "provider": "Penyedia",
+      "presets": {
+        "custom": "Kustom",
+        "ses": "Amazon SES",
+        "gmail": "Gmail",
+        "fastmail": "Fastmail"
+      },
+      "sendOnlyNote": "{provider} hanya mengirim email — tidak menyimpan mailbox. IMAP harus diarahkan ke tempat email Anda benar-benar disimpan.",
+      "sendOnlyNoInbox": "Belum ada inbox? Atur server email di sini, lalu teruskan pengiriman melalui {provider} →",
+      "imapOnOurServer": "Mailbox dibaca dari {host} — server email instance ini sendiri. Hanya pengiriman yang melalui {provider}.",
+      "relayNote": "Instance ini sudah menjalankan server email. Jika mailbox ada di sana, teruskan pengiriman dari tab Delivery → Sending: IMAP tetap lokal dan hanya pengiriman yang ke {provider}, per domain atau per alamat, dan webmail-nya tetap berfungsi.",
+      "relayCta": "Konfigurasikan relay sebagai gantinya →",
+      "hostname": "Alamat webmail",
+      "hostnameHint": "URL publik yang dibuka orang untuk membaca email mereka, misalnya mail.example.com.",
+      "imapHost": "Host IMAP",
+      "imapPort": "Port IMAP",
+      "smtpHost": "Host SMTP",
+      "smtpPort": "Port SMTP",
+      "deploy": "Deploy webmail",
+      "deploying": "Mendeploy…",
+      "hostnameRequired": "Masukkan alamat webmail.",
+      "hostsRequired": "Masukkan host IMAP dan SMTP."
+    }
+  },
+  "advanced": {
+    "projectInfo": {
+      "title": "Info Proyek",
+      "description": "Ringkasan konfigurasi saat ini"
+    },
+    "metric": {
+      "status": "Status",
+      "project": "Proyek",
+      "hostedOn": "Dihost di"
+    },
+    "projectMenu": {
+      "rename": "Ganti nama proyek",
+      "copyId": "Salin ID proyek",
+      "idCopied": "ID proyek disalin",
+      "copyFailed": "Tidak dapat menyalin ke clipboard",
+      "pause": "Jeda proyek",
+      "resume": "Lanjutkan proyek",
+      "delete": "Hapus proyek"
+    },
+    "rename": {
+      "title": "Ganti nama proyek",
+      "description": "Mengubah nama tampilan. Tidak ada yang di-deploy ulang.",
+      "label": "Nama proyek",
+      "placeholder": "Proyek saya",
+      "identityNote": "Proyek mempertahankan identitas \"{slug}\" — URL, nama container, dan volume tidak berubah. Untuk mengubah URL, edit domain di Domain & Route.",
+      "save": "Simpan",
+      "cancel": "Batal",
+      "toast": {
+        "renamed": "Diganti namanya menjadi {name}",
+        "failed": "Gagal mengganti nama proyek"
+      }
+    },
+    "statusActive": "Aktif",
+    "statusDisabled": "Nonaktif",
+    "hostedCloud": "OpenShip Cloud",
+    "hostedServer": "Server",
+    "hostedLocal": "Lokal",
+    "projectStatus": {
+      "title": "Status Proyek",
+      "description": "Kontrol apakah proyek aktif atau dijeda",
+      "active": "Proyek Aktif",
+      "disabled": "Proyek Nonaktif",
+      "liveAccessible": "Aktif dan dapat diakses",
+      "pausedInaccessible": "Dijeda dan tidak dapat diakses",
+      "disable": "Nonaktifkan",
+      "enable": "Aktifkan",
+      "migrating": "Migrasi",
+      "migratingHint": "Sedang dipindahkan ke server lain"
+    },
+    "migration": {
+      "title": "Migrasi",
+      "description": "Pindahkan proyek ini ke server lain",
+      "currentServer": "Server saat ini",
+      "migrate": "Migrasi",
+      "noOtherServers": "Tambah server kedua untuk memindahkan proyek ini ke salah satunya.",
+      "cloudLater": "Server ke server. Pindah ke atau dari OpenShip Cloud belum didukung.",
+      "startFailed": "Tidak dapat memulai migrasi",
+      "confirmTitle": "Pindahkan {project} ke {server}",
+      "confirmSubtitle": "Tidak ada yang berubah sampai Anda memulai pemindahan.",
+      "svcVolumes": "{count} volume",
+      "downtimeNote": "Proyek offline saat data disalin dan server baru memulainya. Layanan stateful mati selama seluruh pemindahan.",
+      "dnsNote": "DNS masih mengarah ke server lama — pindahkan record Anda setelah server baru melayani.",
+      "cancel": "Batal",
+      "confirmStart": "Mulai pindah",
+      "duplicate": "Duplikat",
+      "intentMove": "Pindahkan",
+      "intentCopy": "Duplikat",
+      "intentMoveHint": "Proyek dipindahkan. Container dan volume-nya dihapus dari server lama setelah Anda mengonfirmasi.",
+      "intentCopyHint": "Yang asli tetap berjalan. Proyek kedua dibuat di server baru dengan salinan data.",
+      "confirmTitleCopy": "Duplikat {project} ke {server}",
+      "confirmStartCopy": "Mulai duplikat",
+      "downtimeNoteCopy": "Proyek sebentar offline saat data disalin — volume harus berhenti agar bisa disalin dengan bersih. Ia mulai lagi di server lama segera setelah penyalinan selesai.",
+      "copyNoDomainsNote": "Salinan dimulai tanpa domain — yang asli tetap dengan proyek yang melayaninya.",
+      "fromLabel": "Dari",
+      "toLabel": "Ke",
+      "modeLabel": "Mode",
+      "scopeLabel": "Apa yang diduplikat",
+      "scopeAll": "Pilih semua",
+      "scopeHintAll": "Setiap layanan, beserta datanya.",
+      "scopeHintSome": "{count} layanan — sisanya hanya tetap di yang asli.",
+      "sourceServices": "{count} layanan",
+      "runningStatus": "Sedang berlangsung — {status}"
+    },
+    "cache": {
+      "title": "Cache",
+      "description": "Hapus artefak build yang di-cache dan instalasi dependensi",
+      "clearInstall": "Hapus Cache Instal",
+      "clearInstallDesc": "Hapus node_modules yang di-cache",
+      "clearBuild": "Hapus Cache Build",
+      "clearBuildDesc": "Hapus output build yang di-cache"
+    },
+    "transfer": {
+      "title": "Transfer & Clone",
+      "description": "Pindahkan atau duplikat proyek ini ke environment yang berbeda",
+      "current": "Saat ini",
+      "transfer": "Transfer",
+      "clone": "Clone",
+      "anotherServer": "Server lain",
+      "targetLocal": "Mesin Lokal",
+      "targetServer": "Server Self-Hosted",
+      "targetCloud": "OpenShip Cloud"
+    },
+    "danger": {
+      "title": "Zona Bahaya",
+      "description": "Aksi tak terbalikkan untuk proyek ini",
+      "body": "Menghapus proyek ini akan menghapus secara permanen semua deployment, domain kustom, environment variable, dan data analitik.",
+      "delete": "Hapus Proyek"
+    },
+    "toast": {
+      "toggleFailed": "Gagal mengalihkan proyek",
+      "clearInstallFailed": "Gagal menghapus cache instal",
+      "clearBuildFailed": "Gagal menghapus cache build"
+    },
+    "routing": {
+      "title": "Routing",
+      "description": "Cara edge menjangkau upstream aplikasi ini",
+      "intro": "Pilih cara edge mengalamatkan container proyek ini.",
+      "note": "Loopback port direkomendasikan: port host 127.0.0.1 pribadi, stabil melintasi restart dan tidak pernah terekspos jaringan. Container IP adalah lanjutan (pertukaran zero-downtime; perlu edge di Docker bridge; tidak didukung di Docker Desktop).",
+      "modes": {
+        "auto": {
+          "label": "Otomatis",
+          "desc": "Direkomendasikan (loopback port)"
+        },
+        "loopbackPort": {
+          "label": "Loopback port",
+          "desc": "Port host 127.0.0.1 pribadi"
+        },
+        "containerIp": {
+          "label": "IP Container",
+          "desc": "Lanjutan — bridge IP"
+        }
+      },
+      "toast": {
+        "saved": "Routing disetel ke {mode}",
+        "failed": "Gagal memperbarui routing"
+      }
+    },
+    "internalAlias": {
+      "title": "Hostname internal",
+      "description": "Nama kustom yang digunakan layanan lain untuk menjangkau aplikasi ini secara pribadi",
+      "intro": "Atur nama DNS tambahan untuk aplikasi ini di jaringan proyek pribadinya. Ia resolve bersama default (slug proyek) — layanan tertaut lain bisa menggunakan keduanya. Akses publik tidak berubah; ini tidak pernah mengekspos port.",
+      "label": "Alias hostname",
+      "hint": "Huruf, angka, dan tanda hubung saja. Kosongkan untuk menggunakan slug proyek.",
+      "save": "Simpan",
+      "toast": {
+        "saved": "Hostname internal diperbarui",
+        "failed": "Tidak dapat memperbarui hostname internal",
+        "invalid": "Masukkan setidaknya satu huruf atau angka"
+      }
+    }
+  },
+  "routeRules": {
+    "title": "Aturan route",
+    "description": "Aturan rate-limit, blokir, dan izin/tolak yang diterapkan di edge — diterapkan secara instan, tanpa deploy ulang.",
+    "loading": "Memuat aturan…",
+    "empty": "Belum ada aturan route. Tambahkan satu di bawah.",
+    "allHosts": "Semua hostname",
+    "allPaths": "Semua path",
+    "addTitle": "Tambah aturan",
+    "pathLabel": "Prefix path (opsional)",
+    "rps": "Request / detik",
+    "burst": "Burst",
+    "methods": "Izinkan hanya metode",
+    "banIps": "Blokir IP / CIDR",
+    "banCountries": "Blokir negara (ISO)",
+    "allowCountries": "Izinkan hanya negara (ISO)",
+    "denyCidrs": "Tolak CIDR",
+    "allowReferers": "Hotlink: izinkan referer",
+    "banUserAgents": "Blokir user-agent (substring)",
+    "blockEmptyUa": "Blokir user-agent kosong",
+    "blockStatus": "Blokir kode respons",
+    "add": "Tambah aturan",
+    "remove": "Hapus",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif",
+    "saved": "Aturan disimpan",
+    "saveFailed": "Gagal menyimpan aturan",
+    "loadFailed": "Gagal memuat aturan"
+  },
+  "backup": {
+    "live": {
+      "title": "Backup langsung",
+      "description": "Progres real-time untuk jalankan yang baru Anda mulai. Bertahan penyegaran halaman.",
+      "dismiss": "Tutup"
+    },
+    "destinations": {
+      "title": "Tujuan backup",
+      "description": "Target penyimpanan per pengguna. Tambah bucket S3-compatible, server SFTP, atau disk lokal.",
+      "manage": "Kelola",
+      "loading": "Memuat…",
+      "emptyPrefix": "Belum ada tujuan. ",
+      "emptyLink": "Buat satu",
+      "emptySuffix": " untuk mulai mencadangkan.",
+      "verified": "Terverifikasi",
+      "failed": "Gagal"
+    },
+    "services": {
+      "title": "Layanan + kebijakan",
+      "description": "Setiap layanan bisa memiliki kebijakan backup sendiri (jadwal + tujuan). Default level proyek ada di Bagian 2.",
+      "refresh": "Segarkan",
+      "empty": "Proyek ini belum memiliki layanan. Backup level layanan muncul di sini setelah Anda menambahkannya.",
+      "policyLabel": "Kebijakan:",
+      "manualOnly": "hanya manual",
+      "preDeploy": "pra-deploy",
+      "webhook": "webhook",
+      "noPolicy": "Tanpa kebijakan",
+      "backupNow": "Backup sekarang",
+      "editPolicy": "Edit kebijakan",
+      "addDestinationFirst": "Tambah tujuan terlebih dahulu",
+      "createPolicyHint": "Buat kebijakan backup untuk layanan ini",
+      "createPolicy": "Buat kebijakan"
+    },
+    "recent": {
+      "title": "Backup terbaru",
+      "description": "25 jalankan terbaru di semua layanan di proyek ini.",
+      "loading": "Memuat…",
+      "empty": "Belum ada backup.",
+      "protectedTitle": "Dilindungi dari pruning retention",
+      "protected": "Dilindungi",
+      "restoreTitle": "Pulihkan dari backup ini",
+      "allowPrune": "Izinkan retention memangkas",
+      "protectFrom": "Lindungi dari retention"
+    },
+    "toast": {
+      "runFailed": "Jalankan backup gagal",
+      "toggleProtectionFailed": "Gagal mengalihkan perlindungan"
+    }
+  },
+  "build": {
+    "edit": "Edit",
+    "webmail": {
+      "title": "Dikelola oleh openship",
+      "description": "Webmail menggunakan pipeline build dan mulai yang tetap — command instal, build, dan run tidak dapat dikonfigurasi. Deploy ulang dari ringkasan email untuk mengambil perubahan upstream."
+    },
+    "services": {
+      "title": "Pengaturan per layanan",
+      "descriptionTemplate": "Proyek ini memiliki {serviceLabel}. Command build, framework, port, dan command run ada di setiap baris layanan — lihat dan edit di tab Layanan.",
+      "open": "Buka Layanan",
+      "subAppOne": "{count} sub-aplikasi",
+      "subAppOther": "{count} sub-aplikasi",
+      "composeOne": "{count} compose service",
+      "composeOther": "{count} compose service",
+      "both": "{subApps} dan {composeServices}"
+    },
+    "runtime": {
+      "title": "Konfigurasi runtime",
+      "description": "Hanya-baca. Edit melalui wizard deploy sehingga setiap perubahan dikirim sebagai versi baru.",
+      "framework": "Framework",
+      "packageManager": "Manajer paket",
+      "runtimeIsolation": "Isolasi runtime",
+      "runtimePort": "Port runtime",
+      "installCommand": "Command instal",
+      "buildCommand": "Command build",
+      "noBuildStep": "Tanpa langkah build",
+      "outputDirectory": "Direktori output",
+      "rootDirectory": "Direktori root",
+      "composePath": "File Compose",
+      "startCommand": "Command mulai",
+      "staticNoServer": "Statik (tanpa server)",
+      "modeSandboxed": "Sandboxed (container)",
+      "modeDirect": "Direct (host process)",
+      "modeDefault": "Default (diselesaikan saat deploy)",
+      "modeStatic": "Tidak ada — dilayani sebagai file statik"
+    },
+    "storage": {
+      "title": "Penyimpanan persisten",
+      "description": "Path yang dipertahankan saat versi baru menggantikan yang lama. Sisanya di container dibuang saat deploy.",
+      "edit": "Edit",
+      "save": "Simpan",
+      "cancel": "Batal",
+      "saved": "Penyimpanan diperbarui. Berlaku saat deploy berikutnya.",
+      "reset": "Gunakan default framework",
+      "empty": "Tidak ada yang dipertahankan antar deploy.",
+      "inherited": "Default framework untuk stack ini.",
+      "declared": "Ditetapkan untuk proyek ini.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "Satu per baris. Path kosong relatif terhadap aplikasi (storage), atau berikan mount lengkap (name:/app/path, /host/path:/app/path)."
+    },
+    "objectStorage": {
+      "title": "Penyimpanan objek",
+      "description": "Bucket S3 untuk unggahan — bertahan deploy ulang dan bekerja dengan lebih dari satu replika, berbeda dengan path lokal.",
+      "connect": "Hubungkan",
+      "disconnect": "Putuskan",
+      "disconnected": "Penyimpanan objek terputus.",
+      "connected": "Bucket terverifikasi dan tersambung. Berlaku saat deploy berikutnya.",
+      "loading": "Memeriksa…",
+      "empty": "Tidak ada bucket yang tersambung. Unggahan tetap di disk container.",
+      "sourceLabel": "Sumber",
+      "externalOption": "Penyedia eksternal",
+      "providerLabel": "Penyedia",
+      "bucketLabel": "Bucket",
+      "endpointLabel": "Endpoint",
+      "regionLabel": "Region",
+      "accessKeyLabel": "ID access key",
+      "secretKeyLabel": "Secret access key",
+      "testAndConnect": "Uji & hubungkan",
+      "cancel": "Batal",
+      "envLabel": "Variabel",
+      "envHint": "Menetapkan:",
+      "appliesOnDeploy": "Diterapkan saat deploy berikutnya."
+    },
+    "env": {
+      "title": "Environment variable",
+      "description": "Dienkripsi saat penyimpanan. Secret tetap tersembunyi — hanya nilai yang Anda ubah yang ditulis.",
+      "edit": "Edit"
+    }
+  },
+  "envVars": {
+    "cancel": "Batal",
+    "saveChanges": "Simpan perubahan",
+    "close": "Tutup",
+    "applyTitle": "Terapkan tanpa rebuild",
+    "applyText": "Disimpan. Terapkan ini ke layanan yang berjalan — ia restart dengan env baru, tanpa clone atau rebuild.",
+    "applyButton": "Terapkan (restart, tanpa rebuild)",
+    "title": "Environment variable",
+    "description": "Produksi. Dienkripsi saat penyimpanan. Secret ditampilkan sebagai sudah diatur — ketik untuk mengganti; kosongkan untuk mempertahankan.",
+    "empty": "Belum ada environment variable.",
+    "keyPlaceholder": "KUNCI",
+    "secretPlaceholder": "•••••••• (sudah diatur — ketik untuk mengganti)",
+    "valuePlaceholder": "nilai",
+    "hideValue": "Sembunyikan nilai",
+    "showValue": "Tampilkan nilai",
+    "markedSecret": "Ditandai sebagai secret",
+    "markSecret": "Tandai sebagai secret",
+    "removeVariable": "Hapus variabel",
+    "addVariable": "Tambah variabel",
+    "toast": {
+      "loadFailed": "Gagal memuat environment variable",
+      "loadFailedTitle": "Kesalahan",
+      "validationTitle": "Validasi",
+      "saved": "Environment variable disimpan",
+      "savedTitle": "Disimpan",
+      "saveFailed": "Gagal menyimpan environment variable",
+      "saveFailedTitle": "Gagal menyimpan",
+      "noChanges": "Tidak ada perubahan untuk disimpan — nilai yang disimpan dipertahankan.",
+      "noChangesTitle": "Tidak ada yang perlu disimpan",
+      "applying": "Memulai ulang layanan dengan env baru — tanpa rebuild.",
+      "applyingTitle": "Menerapkan",
+      "applyFailed": "Tidak dapat menerapkan env ke layanan yang berjalan",
+      "applyFailedTitle": "Gagal menerapkan"
+    },
+    "linkedBadge": "Tertaut",
+    "linkedManaged": "melalui {app}",
+    "linkedTitle": "Integrasi tertaut",
+    "linkedBody": "Nilai ini berasal dari koneksi {app}. Kelola dari aplikasi itu — perubahan yang dibuat di sini tidak akan bertahan.",
+    "unlink": "Hapus koneksi"
+  },
+  "gitInfo": {
+    "autoDeploy": "Auto-deploy"
+  },
+  "git": {
+    "connectFirst": {
+      "title": "Hubungkan GitHub terlebih dahulu",
+      "description": "Tautkan akun GitHub Anda untuk menghubungkan repository ke proyek ini.",
+      "connecting": "Menghubungkan…",
+      "connect": "Hubungkan GitHub"
+    },
+    "link": {
+      "title": "Tautkan Repository",
+      "description": "Hubungkan repository GitHub untuk mengaktifkan deployment yang dipicu webhook.",
+      "select": "Pilih Repository"
+    },
+    "picker": {
+      "title": "Pilih repository",
+      "description": "Pilih repository untuk ditautkan ke proyek ini",
+      "linking": "Menautkan repository…"
+    },
+    "appBanner": {
+      "title": "Aplikasi GitHub belum terinstal",
+      "description": "Instal Aplikasi GitHub OpenShip di akun atau organisasi Anda untuk mengaktifkan auto-deploy dan deployment yang dipicu webhook untuk proyek cloud.",
+      "install": "Instal Aplikasi GitHub"
+    },
+    "webhookBanner": {
+      "title": "Aktifkan auto-deploy",
+      "description": "Auto-deploy memerlukan endpoint webhook langsung. Ekspos API OpenShip ini di URL publik atau konfigurasi domain webhook yang terverifikasi untuk pengiriman langsung."
+    },
+    "source": {
+      "title": "Repository Sumber",
+      "description": "Integrasi Git, pemicu deployment, dan kesehatan repository",
+      "repository": "Repository",
+      "open": "Buka"
+    },
+    "webhookEndpoint": {
+      "title": "Endpoint Webhook",
+      "descriptionSet": "GitHub mengirim event push langsung ke domain ini",
+      "descriptionUnset": "Pilih domain untuk pengiriman webhook langsung",
+      "updating": "Memperbarui…",
+      "select": "Pilih domain…",
+      "clear": "Hapus pilihan"
+    },
+    "autoDeployCard": {
+      "title": "Auto Deploy",
+      "enabled": "Aktif",
+      "disabled": "Nonaktif",
+      "descDelivers": "Push dikirim ke {domain}",
+      "descAuto": "Push memicu deployment secara otomatis",
+      "descManual": "Deployment harus dimulai secara manual"
+    },
+    "webhookCard": {
+      "title": "Webhook",
+      "direct": "Langsung",
+      "active": "Aktif",
+      "inactive": "Tidak aktif",
+      "descDirect": "Event dikirim langsung melalui {domain}",
+      "descActive": "Event repository mencapai OpenShip",
+      "descInactive": "Webhook belum dikonfigurasi atau tidak merespons"
+    },
+    "rollbackStrategy": {
+      "title": "Strategi rollback",
+      "rebuild": "Rebuild (git)",
+      "instant": "Instan (snapshot)",
+      "descRebuild": "Membangun ulang commit lama, kecuali gambar-nya masih ada di host.",
+      "descInstant": "Menyimpan gambar setiap versi, sehingga pemulihan tidak pernah membangun ulang. Menggunakan lebih banyak disk.",
+      "toggleAria": "Alihkan retensi snapshot",
+      "keepNone": "Tidak menyimpan salinan ekstra",
+      "keepCopies": "Simpan salinan per versi",
+      "descRebuildFiles": "Membangun ulang commit lama, kecuali file-nya masih ada di host.",
+      "descInstantFiles": "Menyimpan file setiap versi, sehingga pemulihan tidak pernah membangun ulang. Menggunakan lebih banyak disk."
+    },
+    "rollbackHistory": {
+      "title": "Riwayat rollback",
+      "valueOne": "{count} versi",
+      "valueOther": "{count} versi",
+      "descSnapshot": "Versi lebih lama dipangkas untuk mengembalikan disk.",
+      "descGit": "Gambar terbaru dipertahankan bagaimanapun, sehingga rollback bisa melewati build.",
+      "decreaseAria": "Kurangi riwayat rollback",
+      "increaseAria": "Tambah riwayat rollback",
+      "sizeEach": "~{size} masing-masing",
+      "diskFree": "{size} tersedia",
+      "autoBadge": "dibuat secara otomatis",
+      "manualBadge": "ditetapkan secara manual",
+      "kindFiles": "file build di disk",
+      "kindImages": "gambar di host",
+      "descGitFiles": "File versi terbaru dipertahankan bagaimanapun, sehingga rollback bisa melewati build."
+    },
+    "commits": {
+      "title": "Commit Terbaru",
+      "subtitle": "Commit terbaru di {branch}",
+      "empty": "Tidak ada commit yang ditemukan",
+      "emptyDesc": "Push ke repository Anda dan aktivitas commit terbaru akan muncul di sini.",
+      "viewAll": "Lihat semua commit di GitHub"
+    },
+    "cloneToken": {
+      "title": "Override Token Clone",
+      "description": "Token berskala proyek yang digunakan modul clone sebelum kembali ke token global Anda atau Aplikasi GitHub",
+      "loading": "Memuat…",
+      "explainer": "Tempel GitHub PAT di sini untuk digunakan HANYA untuk proyek ini. Prioritas tertinggi dalam rantai clone — mengganti token level pengaturan Anda dan Aplikasi GitHub.",
+      "hide": "Sembunyikan token",
+      "show": "Tampilkan token",
+      "saveToken": "Simpan token",
+      "cancel": "Batal",
+      "savedTitle": "Token disimpan untuk proyek ini",
+      "lastUpdated": "Terakhir diperbarui {when}",
+      "justNow": "baru saja",
+      "replace": "Ganti",
+      "clear": "Hapus"
+    },
+    "toast": {
+      "pasteToken": "Tempel token sebelum menyimpan",
+      "cloneTokenTitle": "Token clone",
+      "tokenSaved": "Token clone proyek disimpan",
+      "tokenSaveFailed": "Gagal menyimpan token",
+      "tokenCleared": "Token clone proyek dihapus",
+      "tokenClearFailed": "Gagal menghapus token",
+      "autoDeployEnabled": "Auto-deploy diaktifkan",
+      "autoDeployDisabled": "Auto-deploy dinonaktifkan",
+      "autoDeployFailed": "Gagal mengalihkan auto-deploy",
+      "rollbackGit": "Strategi rollback: Git-driven (tanpa snapshot)",
+      "rollbackSnapshot": "Strategi rollback: Snapshot (artefak dipertahankan)",
+      "rollbackStrategyFailed": "Gagal memperbarui strategi rollback",
+      "rollbackWindowOne": "Menyimpan {count} versi terakhir untuk rollback",
+      "rollbackWindowOther": "Menyimpan {count} versi terakhir untuk rollback",
+      "rollbackHistoryFailed": "Gagal memperbarui riwayat rollback",
+      "webhookDomainSet": "Domain webhook disetel ke {domain}",
+      "webhookDomainCleared": "Domain webhook dihapus",
+      "webhookDomainFailed": "Gagal menyetel domain webhook",
+      "linked": "Ditautkan ke {repo}",
+      "appNotInstalled": "Aplikasi GitHub belum terinstal untuk akun ini",
+      "linkFailed": "Gagal menautkan repository"
+    }
+  },
+  "logs": {
+    "noRuntime": "Tidak ada log runtime",
+    "noRuntimeDesc": "Proyek ini tidak memiliki server process yang berjalan dan tidak ada domain, jadi tidak ada yang bisa di-streaming. Tambah domain dan log request edge-nya akan muncul di sini.",
+    "terminal": "Terminal",
+    "server": "Server",
+    "requests": "Request",
+    "target": "Target log runtime",
+    "targetDescProject": "Beralih antara runtime proyek dan runtime layanan.",
+    "targetDescService": "Beralih antara runtime layanan.",
+    "projectRuntime": "Runtime proyek",
+    "selectService": "Pilih layanan untuk melihat log runtime-nya.",
+    "projectFallback": "Proyek"
+  },
+  "resources": {
+    "title": "Daya Mesin",
+    "description": "Batasan CPU dan memori untuk container proyek ini.",
+    "loading": "Membaca mesin target…",
+    "machineCapacity": "Mesin: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Melebihi mesin ini",
+    "appliesOnNextDeploy": "Batasan diterapkan saat container dibuat ulang — deploy ulang agar perubahan berlaku.",
+    "tiers": {
+      "unlimited": {
+        "name": "Tanpa batas",
+        "description": "Gunakan seluruh mesin (default)",
+        "spec": "Kapasitas mesin"
+      },
+      "micro": {
+        "name": "Micro",
+        "description": "Sidecar dan worker kecil"
+      },
+      "low": {
+        "name": "Rendah",
+        "description": "Aplikasi kecil dan situs statis"
+      },
+      "medium": {
+        "name": "Sedang",
+        "description": "Sebagian besar aplikasi web"
+      },
+      "high": {
+        "name": "Tinggi",
+        "description": "Aplikasi dengan lalu lintas tinggi"
+      },
+      "xlarge": {
+        "name": "Ekstra besar",
+        "description": "Database dan workload berat"
+      }
+    },
+    "custom": {
+      "name": "Kustom",
+      "description": "Atur batasan Anda sendiri",
+      "notSet": "Belum ditetapkan"
+    },
+    "customPanel": {
+      "boundedBy": "Mesin ini memiliki {cpu} vCPU dan {memory}. Masukkan 0 untuk tanpa batas.",
+      "capacityUnknown": "Tidak dapat membaca kapasitas mesin ini, jadi tidak ada batas yang diterapkan. Masukkan 0 untuk tanpa batas.",
+      "cpuCores": "Inti CPU",
+      "memory": "Memori (MB)",
+      "zeroMeansNoLimit": "0 = tanpa batas",
+      "cancel": "Batal",
+      "saving": "Menyimpan…",
+      "save": "Simpan"
+    },
+    "toast": {
+      "updated": "Daya mesin diperbarui",
+      "updateFailed": "Gagal memperbarui daya mesin",
+      "invalidValues": "CPU dan memori harus 0 atau bilangan positif"
+    }
+  },
+  "sleep": {
+    "title": "Mode Mesin",
+    "description": "Kontrol ketersediaan dan efisiensi biaya",
+    "autoSleep": "Tidur Otomatis",
+    "recommended": "DIREKOMENDASIKAN",
+    "autoSleepDesc": "Berhenti saat idle, bangun secara instan",
+    "autoSleepMeta": "Efisien biaya • Tanpa cold start",
+    "alwaysOn": "Selalu Aktif",
+    "alwaysOnDesc": "Container tidak pernah berhenti",
+    "alwaysOnMeta": "Ketersediaan maksimum • Biaya lebih tinggi",
+    "infoTitle": "Cara kerja Tidur Otomatis",
+    "infoBefore": "Saat ada request, container Anda tetap berjalan. Setelah tidak aktif, ia tidur untuk menghemat biaya. Saat request berikutnya, ia bangun ",
+    "infoEmphasis": "secara instan",
+    "infoAfter": " — tanpa penundaan cold start.",
+    "toast": {
+      "updated": "Mode tidur berhasil diperbarui",
+      "updateFailed": "Gagal memperbarui mode tidur"
+    }
+  },
+  "deleteDialog": {
+    "title": "Hapus Proyek",
+    "bodyPrefix": "Apakah Anda yakin ingin menghapus ",
+    "bodySuffix": "? Aksi ini tidak dapat dibatalkan dan akan menghapus secara permanen semua data proyek, deployment, dan pengaturan.",
+    "cancel": "Batal",
+    "delete": "Hapus Proyek"
+  },
+  "deletion": {
+    "title": "Hapus proyek",
+    "cannotUndo": "Aksi ini tidak dapat dibatalkan.",
+    "aboutToPrefix": "Anda akan menghapus ",
+    "aboutToSuffix": ".",
+    "scanning": "Memindai layanan dan volume yang terlampir…",
+    "wipeAria": "Juga hapus data layanan",
+    "wipeLabelOne": "Juga hapus data layanan ({count} volume)",
+    "wipeLabelOther": "Juga hapus data layanan ({count} volume)",
+    "wipeOn": "Volume akan dihapus secara permanen — konten database, cache, unggahan, semua yang disimpan oleh layanan ini akan hilang.",
+    "wipeOff": "Nonaktif: container dihapus tetapi volume bernama tetap di disk. Lampirkan kembali nanti berdasarkan nama.",
+    "appData": "Data aplikasi",
+    "volOne": "{count} vol",
+    "volOther": "{count} vol",
+    "amberWipe": "Semua deployment, domain, env var, dan data layanan persisten akan dihapus secara permanen.",
+    "amberNoWipe": "Semua deployment, domain, env var, dan analitik akan dihapus secara permanen.",
+    "typePrefix": "Ketik ",
+    "typeSuffix": " untuk mengonfirmasi.",
+    "cancel": "Batal",
+    "confirmDeleteEnvWipe": "Hapus environment + hapus data",
+    "confirmDeleteEnv": "Hapus environment",
+    "recordOnlyLabel": "Hapus dari OpenShip saja",
+    "recordOnlyDesc": "Mempertahankan aplikasi dan data-nya berjalan di server Anda — hanya catatan OpenShip yang dihapus. Anda bisa mengimpornya kembali nanti.",
+    "recordOnlyReversible": "Dapat dibalik — aplikasi tetap di server Anda.",
+    "recordOnlyNote": "Tidak ada di server yang disentuh — aplikasi tetap berjalan dengan datanya. Hanya catatan OpenShip yang dihapus, dan dapat diimpor kembali nanti.",
+    "confirmRecordOnly": "Hapus catatan",
+    "linkedTitleOne": "{count} proyek terhubung ke aplikasi ini",
+    "linkedTitleOther": "{count} proyek terhubung ke aplikasi ini",
+    "linkedNote": "Mereka tetap berjalan dengan data yang tidak tersentuh — mereka hanya kehilangan koneksi ini. Deploy ulang mereka untuk mengambilnya.",
+    "linkedNoteRecordOnly": "Mereka tetap berjalan, tetapi tautan ikut dengan catatan — mengimpor ulang aplikasi ini nanti tidak akan mengembalikannya."
+  },
+  "routing": {
+    "title": "Routing",
+    "description": "Rewrite, redirect & header. Diterapkan saat disimpan — tanpa rebuild.",
+    "saving": "Menyimpan…",
+    "save": "Simpan",
+    "summaryNone": "Tidak ada yang dikonfigurasi",
+    "summaryActive": "Dikonfigurasi",
+    "toast": {
+      "title": "Routing",
+      "updated": "Routing diperbarui — diterapkan ke deployment yang berjalan.",
+      "failed": "Gagal memperbarui routing"
+    }
+  },
+  "domains": {
+    "status": {
+      "verified": "Terverifikasi",
+      "active": "Aktif",
+      "failed": "Gagal",
+      "removing": "Menghapus",
+      "pending": "Tertunda"
+    },
+    "ssl": {
+      "includedByHost": "Disertakan oleh host",
+      "active": "Aktif",
+      "provisioning": "Menyediakan",
+      "expired": "Kedaluwarsa",
+      "error": "Kesalahan",
+      "inactive": "Tidak aktif",
+      "external": "TLS eksternal",
+      "manual": "Sertifikat manual"
+    },
+    "typeCustom": "Domain kustom",
+    "typeFree": "Subdomain gratis",
+    "primaryDomainTitle": "Domain utama",
+    "domainNTitle": "Domain {n}",
+    "portLabel": "Port {port}",
+    "noPortSelected": "Tidak ada port yang dipilih",
+    "meta": {
+      "accessTitle": "URL Akses",
+      "accessSubtitle": "Endpoint pengembangan lokal",
+      "local": "Lokal",
+      "availableOnMachine": "Tersedia di mesin ini",
+      "primaryTitle": "Domain Utama",
+      "primaryAcross": "Route utama di {count} domain",
+      "hostManaged": "URL produksi yang dikelola host",
+      "customProduction": "Domain produksi kustom"
+    },
+    "route": {
+      "disabled": "Nonaktif",
+      "routePaused": "Route dijeda",
+      "serviceDisabled": "Layanan nonaktif",
+      "internal": "Internal",
+      "notExposed": "Tidak terekspos",
+      "public": "Publik"
+    },
+    "actions": {
+      "visit": "Kunjungi",
+      "editDomains": "Edit domain",
+      "hideSetup": "Sembunyikan pengaturan",
+      "addDomain": "Tambah domain"
+    },
+    "add": {
+      "title": "Tambah domain",
+      "description": "Tambah route: pilih domain gratis atau kustom dan port yang dipetakan.",
+      "free": "Subdomain gratis",
+      "custom": "Domain kustom",
+      "domainName": "Nama domain",
+      "subdomain": "Subdomain",
+      "customPlaceholder": "yourdomain.com",
+      "defaultAppName": "my-app",
+      "mapsToPort": "Dipetakan ke port",
+      "servesPath": "Melayani path",
+      "servesPathHint": "Request ke domain ini dilayani dari path ini di output build Anda.",
+      "servesPathRedeploy": "Path baru berlaku saat deploy berikutnya.",
+      "includeWww": "Sertakan www",
+      "includeWwwDesc": "Juga buat record untuk www.{domain}",
+      "includeWwwFallback": "yourdomain.com",
+      "externalIngress": "Ingress & TLS eksternal",
+      "externalIngressDesc": "TLS berakhir di upstream (Cloudflare Tunnel, load balancer). Verifikasi hanya dengan TXT — domain tidak perlu mengarah ke server ini, dan kami tidak akan menerbitkan sertifikat.",
+      "noWww": "Domain itu sudah ada di proyek ini.",
+      "adding": "Menambah…",
+      "submit": "Tambah domain"
+    },
+    "dns": {
+      "title": "Record DNS",
+      "descPreview": "Tambah record ini di penyedia DNS Anda, lalu klik Tambah domain untuk melampirkannya",
+      "descApply": "Terapkan record ini di penyedia DNS Anda, lalu tunggu propagasi",
+      "infoPreview": "Tambah record ini terlebih dahulu — tidak berubah setelah ditambah, jadi propagasi dimulai sekarang. Lalu tekan Tambah domain untuk melampirkannya, dan akhirnya Verifikasi setelah DNS resolve.",
+      "infoApply": "Perubahan DNS bisa memakan waktu hingga 48 jam untuk dipropagasi secara global. Setelah record resolve, klik Verifikasi di bawah — kami akan memeriksa DNS, menandai domain aktif, dan menyediakan SSL di latar belakang.",
+      "verifying": "Memverifikasi…",
+      "verify": "Verifikasi {hostname}"
+    },
+    "records": {
+      "toggle": "Record DNS",
+      "hint": "Tambah ini di penyedia DNS Anda, lalu klik Verifikasi.",
+      "loading": "Memuat record…",
+      "none": "Tidak ada record untuk ditambahkan untuk domain ini.",
+      "failed": "Tidak dapat memuat record DNS untuk domain ini.",
+      "retry": "Coba lagi"
+    },
+    "verifyMissing": {
+      "both": "CNAME maupun record TXT belum resolve — tamb record di bawah, tunggu DNS propagasi, lalu Verifikasi.",
+      "cname": "Record CNAME belum resolve — tambah di bawah, tunggu DNS propagasi, lalu Verifikasi.",
+      "txt": "Record verifikasi TXT belum resolve — tambah di bawah, tunggu DNS propagasi, lalu Verifikasi."
+    },
+    "portHint": {
+      "body": "Tidak ada yang merespons di port {port} — request mungkin 502 sampai aplikasi mendengarkan di sana.",
+      "bodyService": "Layanan \"{service}\": tidak ada yang merespons di port {port} — request mungkin 502 sampai ia mendengarkan di sana."
+    },
+    "outputHint": {
+      "body": "Tidak ada output build yang ditemukan di {path} — periksa Direktori Output Anda dan deploy ulang.",
+      "noIndex": "Output ada di {path} tetapi tidak ada file index — request akan 404. Periksa Direktori Output Anda.",
+      "notServed": "Edge merespons HTTP {status} untuk {path} — path ini tidak melayani. Periksa Direktori Output dan route Anda."
+    },
+    "overview": {
+      "primary": "Utama",
+      "mappedTo": "Dipetakan ke",
+      "redirect": "Redirect",
+      "redirectValue": "{status} → {hostname}",
+      "status": "Status",
+      "ssl": "SSL",
+      "visit": "Kunjungi"
+    },
+    "cold": {
+      "localUrl": "URL Lokal",
+      "type": "Tipe",
+      "status": "Status"
+    },
+    "edit": {
+      "title": "Edit domain",
+      "descServer": "Edit port internal mana yang harus dirutekan setiap domain.",
+      "descStatic": "Edit path statik mana yang harus dilayani setiap domain.",
+      "cancel": "Batal",
+      "saving": "Menyimpan…",
+      "save": "Simpan perubahan"
+    },
+    "addRoute": {
+      "cancel": "Batal",
+      "add": "Tambah route",
+      "free": "Subdomain gratis",
+      "custom": "Domain kustom",
+      "customPlaceholder": "app.example.com",
+      "defaultServiceName": "my-service",
+      "port": "Port",
+      "portPlaceholder": "8080",
+      "submit": "Tambah",
+      "loading": "Memuat route…",
+      "emptyPrefix": "Belum ada domain. Klik ",
+      "emptyAction": "Tambah route",
+      "emptySuffix": " untuk mengarahkan domain ke port layanan."
+    },
+    "editRoute": {
+      "title": "Edit route",
+      "internalOnly": "Hanya internal",
+      "close": "Tutup",
+      "disabledWarning": "Layanan dinonaktifkan - route tidak aktif sampai layanan diaktifkan kembali.",
+      "save": "Simpan perubahan"
+    },
+    "menu": {
+      "editRoute": "Edit route",
+      "settingPrimary": "Menyetel utama…",
+      "setPrimary": "Tetapkan sebagai utama",
+      "verifying": "Memverifikasi…",
+      "verify": "Verifikasi",
+      "renewing": "Memperbarui…",
+      "renewSsl": "Perbarui SSL",
+      "rechecking": "Memeriksa ulang…",
+      "recheckSsl": "Periksa ulang SSL",
+      "uploadCert": "Unggah sertifikat"
+    },
+    "certUpload": {
+      "title": "Unggah sertifikat",
+      "desc": "Layani TLS dari sertifikat Anda sendiri (milik sendiri atau Cloudflare Origin CA) alih-alih Let's Encrypt. Gunakan ini saat proxy upstream menampilkan domain ini dan origin masih memerlukan sertifikat nyata (Cloudflare Full-strict). Certbot dinonaktifkan untuk domain ini setelah sertifikat diunggah — perbarui dengan mengunggah yang baru.",
+      "certLabel": "Sertifikat (fullchain PEM)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "Kunci privat (PEM)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "submit": "Instal sertifikat",
+      "submitting": "Menginstal…",
+      "close": "Batal"
+    },
+    "toast": {
+      "enterPort": "Masukkan port yang harus dirutekan domain ini (1–65535).",
+      "addDomainTitle": "Tambah domain",
+      "addDomainFailed": "Gagal menambah domain",
+      "addDomainFailedTitle": "Gagal menambah domain",
+      "addedCustom": "{label} ditambah — terapkan record DNS, lalu Verifikasi.",
+      "addedFree": "{label} ditambah.",
+      "copied": "Disalin ke clipboard",
+      "verifiedSuccess": "{hostname} terverifikasi — SSL sedang disediakan di latar belakang.",
+      "verifiedTitle": "Domain terverifikasi",
+      "verifyNotYet": "{hostname} belum bisa diverifikasi.",
+      "verifyFailedTitle": "Verifikasi gagal",
+      "verifyFailed": "Gagal memverifikasi domain.",
+      "sslRenewed": "SSL diperbarui untuk {hostname}.",
+      "sslRenewFailed": "Gagal memperbarui SSL untuk {hostname}.",
+      "sslTitle": "SSL",
+      "sslVerified": "SSL terverifikasi untuk {hostname}.",
+      "sslNoCert": "Belum ditemukan sertifikat yang valid untuk {hostname}. Jika baru deploy, beri waktu untuk Let's Encrypt, lalu periksa ulang.",
+      "sslRecheckFailed": "Gagal memeriksa ulang SSL untuk {hostname}.",
+      "certUploaded": "Sertifikat terinstal untuk {hostname}.",
+      "certUploadFailed": "Gagal menginstal sertifikat untuk {hostname}.",
+      "completeEndpoints": "Lengkapi setiap domain dan port yang dipetakan sebelum menyimpan",
+      "domainsTitle": "Domain",
+      "routingUpdated": "Routing domain diperbarui",
+      "routingUpdateFailed": "Gagal memperbarui routing domain",
+      "primaryUpdated": "Domain utama diperbarui",
+      "setPrimaryFailed": "Gagal menyetel domain utama",
+      "routeUpdateFailed": "Gagal memperbarui route layanan",
+      "publishing": "Mempublikasikan — mendeploy untuk menginstal edge dan menerapkan domain Anda…",
+      "publishFailed": "Domain disimpan, tetapi deploy tidak dimulai — deploy ulang untuk mempublikasikannya.",
+      "enterPortShort": "Masukkan port yang harus dirutekan domain ini.",
+      "noServicePort": "Tidak ada layanan yang mempublikasikan port {port}. Tambah port itu ke layanan terlebih dahulu.",
+      "enterCustom": "Masukkan domain kustom.",
+      "enterSubdomain": "Masukkan subdomain."
+    },
+    "edge": {
+      "setUp": "Atur edge",
+      "ready": "Edge siap",
+      "checking": "Memeriksa edge…",
+      "recheck": "Periksa ulang",
+      "foreignProxyHint": "Proxy lain memegang 80/443"
+    },
+    "diagnosis": {
+      "title": "Mengapa ini tidak berfungsi",
+      "noneYet": "Belum ada pemeriksaan yang dijalankan, jadi belum ada hasil yang ditampilkan. Tambah record DNS yang ditampilkan untuk domain ini, lalu jalankan Verifikasi.",
+      "attempts": "{count} percobaan gagal sejauh ini.",
+      "pillHint": "Tampilkan alasannya"
+    }
+  }
+}
