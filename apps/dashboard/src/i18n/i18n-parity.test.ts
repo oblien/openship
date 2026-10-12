@@ -272,26 +272,33 @@ describe("i18n locale parity vs the English source", () => {
    * A namespace absent from this map must stay at zero.
    */
   const UNTRANSLATED_BASELINE: Record<string, number> = {
-    deploy: 133,
-    settings: 99,
-    projectSettings: 48,
-    importProject: 43,
+    // Bumped for `uk`'s own irreducible remainder: brand names (Openship Cloud/Edge/
+    // Mail, GitHub Releases, Amazon SES, Cloudflare Tunnel/R2, AWS S3, Backblaze B2,
+    // DigitalOcean Spaces, Microsoft Teams), literal technical strings that must not
+    // change (PEM certificate/key headers, `npm start`, a `pg_dump` command, a mail
+    // client name list), and placeholder-only templates with no actual prose (e.g.
+    // `{greeting}, {name}` or `{status} → {hostname}`) — every ordinary UI string in
+    // `uk` was translated; see the PR that added this locale for the per-key audit.
+    deploy: 138,
+    settings: 110,
+    projectSettings: 57,
+    importProject: 45,
     billing: 28,
-    onboarding: 24,
-    projectDetail: 19,
-    library: 18,
-    misc: 18,
-    projects: 17,
-    deployments: 14,
-    emailsAdmin: 12,
-    overview: 12,
+    onboarding: 27,
+    projectDetail: 20,
+    library: 21,
+    misc: 23,
+    projects: 19,
+    deployments: 16,
+    emailsAdmin: 13,
+    overview: 13,
     chrome: 10,
-    widgets: 9,
-    dashboard: 6,
+    widgets: 10,
+    dashboard: 7,
     emails: 6,
-    servers: 6,
+    servers: 7,
     migration: 3,
-    jobs: 2,
+    jobs: 3,
     // `auth` is deliberately absent, i.e. pinned at 0: it was brought to zero when
     // password reset moved from a link to a code, and it is the flow where an
     // English-rendering string is most costly — somebody locked out of their account
