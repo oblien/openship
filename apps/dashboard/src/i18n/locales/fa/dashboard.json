@@ -1,0 +1,221 @@
+{
+  "home": {
+    "goodMorning": "صبح بخیر",
+    "goodAfternoon": "ظهر بخیر",
+    "goodEvening": "عصر بخیر",
+    "subtitle": "آنچه در پروژه‌های شما می‌گذرد",
+    "statsProjects": "پروژه‌ها",
+    "statsDeployments": "استقرارها",
+    "statsSuccessful": "موفق",
+    "statsFailed": "ناموفق",
+    "recentProjects": "پروژه‌های اخیر",
+    "yourLatestActivity": "آخرین فعالیت شما",
+    "viewAll": "مشاهده همه",
+    "noProjectsYet": "هنوز پروژه‌ای نیست",
+    "createFirstProject": "اولین پروژه خود را بسازید",
+    "justNow": "همین الان",
+    "minutesAgo": "{n} دقیقه پیش",
+    "hoursAgo": "{n} ساعت پیش",
+    "daysAgo": "{n} روز پیش",
+    "monthsAgo": "{n} ماه پیش",
+    "statusLive": "زنده",
+    "statusPaused": "متوقف",
+    "yourProjects": "پروژه‌های شما",
+    "loading": "در حال بارگذاری...",
+    "projectCountOne": "{count} پروژه",
+    "projectCountOther": "{count} پروژه",
+    "viewAllProjects": "مشاهده همه {count} پروژه →",
+    "viewAllApps": "مشاهده همه {count} اپ →",
+    "greetingName": "{greeting}، {name}",
+    "importGit": "وارد کردن Git",
+    "importGitDesc": "از مخزن",
+    "mcpDeploy": "استقرار MCP",
+    "mcpDeployDesc": "اتصال یک عامل هوش مصنوعی",
+    "settingsCard": "تنظیمات",
+    "settingsCardDesc": "حساب و تیم",
+    "docs": "مستندات",
+    "docsDesc": "بیشتر بدانید",
+    "activityTitle": "فعالیت",
+    "systemStatus": "وضعیت سیستم",
+    "operational": "عملیاتی",
+    "oneIssue": "۱ مشکل",
+    "manyIssues": "{n} مشکل",
+    "recentTitle": "اخیر",
+    "activityEmpty": "فعالیت شما اینجا ظاهر می‌شود",
+    "appsEmptyTitle": "هنوز اپی نیست",
+    "appsEmptyDesc": "با یک کلیک، کاملاً روی زیرساخت خودتان — پایگاه‌داده، خودکارسازی، تحلیل، خزانه رمز و بیشتر، روی سرورهای خودتان.",
+    "allSystemsOperational": "همه سیستم‌ها عملیاتی‌اند",
+    "runningSmoothly": "پروژه‌های شما به‌خوبی اجرا می‌شوند",
+    "time": {
+      "justNow": "همین الان",
+      "minutes": "{n} دقیقه پیش",
+      "hours": "{n} ساعت پیش",
+      "days": "{n} روز پیش",
+      "months": "{n} ماه پیش"
+    }
+  },
+  "nav": {
+    "home": "خانه",
+    "new-project": "پروژه جدید",
+    "projects": "پروژه‌ها",
+    "apps": "اپ‌ها",
+    "deployments": "استقرارها",
+    "issues": "مشکلات",
+    "backups": "پشتیبان‌ها",
+    "domains": "دامنه‌ها",
+    "monitoring": "پایش",
+    "servers": "سرورها",
+    "emails": "ایمیل‌ها",
+    "jobs": "کارها",
+    "settings": "تنظیمات",
+    "billing": "صورتحساب و مصرف",
+    "audit": "گزارش حسابرسی",
+    "mailSetup": "راه‌اندازی ایمیل",
+    "mailSetupProgress": "پیشرفت راه‌اندازی",
+    "addMailbox": "افزودن صندوق نامه",
+    "webmail": "وب‌میل",
+    "sections": {
+      "main": "اصلی",
+      "settings": "تنظیمات",
+      "infrastructure": "زیرساخت",
+      "mail": "ایمیل",
+      "delivery": "تحویل",
+      "system": "سیستم",
+      "account": "حساب"
+    }
+  },
+  "sidebar": {
+    "expand": "گسترش نوار کناری",
+    "collapse": "جمع کردن نوار کناری"
+  },
+  "user": {
+    "logout": "خروج",
+    "loggingOut": "در حال خروج…",
+    "profile": "نمایه",
+    "preferences": "ترجیحات"
+  },
+  "pages": {
+    "apps": {
+      "title": "اپ‌ها",
+      "description": "سرویس‌های مدیریت‌شده با یک کلیک — Convex، WordPress، ایمیل و بیشتر را نصب و اجرا کنید.",
+      "createButton": "نصب اپ",
+      "loading": "در حال بارگذاری اپ‌ها…",
+      "countOne": "{count} اپ نصب شده",
+      "countOther": "{count} اپ نصب شده",
+      "emptyTitle": "اولین اپ خود را نصب کنید",
+      "emptyDescription": "Convex، n8n، Ghost و بیشتر را بالا بیاورید — یک کلیک، کاملاً روی زیرساخت خودتان. یکی را برای شروع انتخاب کنید.",
+      "popular": "اپ‌های محبوب",
+      "alsoDeploy": "همچنین می‌توانید مستقر کنید",
+      "browseAll": "مرور همه اپ‌ها",
+      "moreApps": "+{count} مورد دیگر",
+      "catalogTitle": "نصب یک اپ",
+      "catalogDescription": "سرویس‌های مدیریت‌شده با یک کلیک. یکی را انتخاب کنید تا به‌عنوان اپ نصب شود.",
+      "catalogSearchPlaceholder": "جستجوی اپ‌ها…",
+      "catalogNoResults": "هیچ اپی با جستجوی شما مطابقت ندارد.",
+      "categories": {
+        "all": "همه",
+        "backend": "بک‌اند",
+        "database": "پایگاه‌داده",
+        "cms": "CMS",
+        "analytics": "تحلیل",
+        "automation": "خودکارسازی",
+        "mail": "ایمیل",
+        "other": "ابزارها"
+      },
+      "installing": "در حال نصب…",
+      "install": "نصب",
+      "cancel": "لغو",
+      "nameLabel": "نام",
+      "configTitle": "پیکربندی {app}",
+      "comingSoon": "به‌زودی"
+    },
+    "projects": {
+      "title": "پروژه‌ها",
+      "description": "برنامه‌های خود را به‌سادگی مستقر و مدیریت کنید",
+      "createButton": "ایجاد پروژه",
+      "stats": {
+        "totalProjects": "کل پروژه‌ها",
+        "liveNow": "اکنون زنده",
+        "avgPerDay": "میانگین در روز",
+        "successRate": "نرخ موفقیت"
+      },
+      "searchPlaceholder": "جستجوی پروژه‌ها...",
+      "pinnedProjects": "پروژه‌های سنجاق‌شده",
+      "otherProjects": "سایر پروژه‌ها",
+      "noResultsFound": "هیچ پروژه‌ای مطابق «{query}» پیدا نشد",
+      "emptyState": {
+        "title": "اولین پروژه خود را شروع کنید",
+        "description": "یک مخزن Git وارد کنید، از قالب استفاده کنید، یا از CLI مستقر کنید. پروژه‌های شما اینجا ظاهر می‌شوند.",
+        "createProject": "ایجاد پروژه",
+        "browseTemplates": "مرور قالب‌ها",
+        "zeroConfig": "استقرار بدون پیکربندی",
+        "instant": "آنی",
+        "instantDesc": "استقرار در چند ثانیه",
+        "global": "سراسری",
+        "globalDesc": "بیش از ۱۰۰ منطقه لبه",
+        "previews": "پیش‌نمایش‌ها",
+        "previewsDesc": "یک URL برای هر شاخه",
+        "rollbacks": "بازگردانی",
+        "rollbacksDesc": "بازگشت با یک کلیک",
+        "commandPalette": "یا {key} را بزنید تا پالت فرمان باز شود"
+      },
+      "view": {
+        "label": "نما",
+        "list": "فهرست",
+        "grid": "شبکه"
+      }
+    },
+    "deployments": {
+      "title": "استقرارها",
+      "description": "تاریخچه استقرار را ببینید و مدیریت کنید."
+    },
+    "domains": {
+      "title": "دامنه‌ها",
+      "description": "دامنه‌های سفارشی و رکوردهای DNS را مدیریت کنید."
+    },
+    "monitoring": {
+      "title": "پایش",
+      "description": "لاگ‌ها، متریک‌ها و بررسی سلامت سرویس‌های شما."
+    },
+    "servers": {
+      "title": "سرورها",
+      "description": "سرورهای استقرار و زیرساخت خود را مدیریت کنید."
+    },
+    "settings": {
+      "title": "تنظیمات",
+      "description": "تنظیمات حساب، تیم و پلتفرم."
+    },
+    "billing": {
+      "title": "صورتحساب و مصرف",
+      "description": "اشتراک، مصرف و روش‌های پرداخت را مدیریت کنید."
+    }
+  },
+  "quickLinks": {
+    "title": "اقدامات سریع",
+    "subtitle": "به کارهای رایج بروید",
+    "deployProject": {
+      "title": "استقرار پروژه",
+      "description": "وارد کردن از Git"
+    },
+    "projects": {
+      "title": "پروژه‌ها",
+      "description": "همه پروژه‌ها"
+    },
+    "deployments": {
+      "title": "استقرارها",
+      "description": "تاریخچه ساخت"
+    },
+    "settings": {
+      "title": "تنظیمات",
+      "description": "مدیریت دسترسی"
+    },
+    "domains": {
+      "title": "دامنه‌ها",
+      "description": "دامنه‌های سفارشی"
+    },
+    "billing": {
+      "title": "صورتحساب و مصرف",
+      "description": "مصرف و طرح‌ها"
+    }
+  }
+}

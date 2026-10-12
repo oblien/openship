@@ -1,0 +1,144 @@
+{
+  "activity": {
+    "title": "فعالیت",
+    "thisWeek": "این هفته",
+    "deploymentSingular": "{count} استقرار",
+    "deploymentPlural": "{count} استقرار"
+  },
+  "apiRequests": {
+    "title": "درخواست‌های API",
+    "last7Days": "۷ روز گذشته",
+    "totalRequests": "کل درخواست‌ها",
+    "requestsTooltip": "{count} درخواست"
+  },
+  "credits": {
+    "title": "مانده اعتبار",
+    "availableToUse": "آماده استفاده",
+    "spentThisMonth": "مصرف‌شده این ماه",
+    "add": "افزودن"
+  },
+  "deployments": {
+    "title": "استقرارها",
+    "lastNDays": "{period} روز گذشته",
+    "deploymentSingular": "{count} استقرار",
+    "deploymentPlural": "{count} استقرار"
+  },
+  "homeTip": {
+    "quickTip": "نکته سریع",
+    "connectText": "مخزن GitHub را برای استقرار خودکار روی هر push متصل کنید.",
+    "connectLabel": "اتصال GitHub",
+    "createText": "اولین پروژه را بسازید تا استقرار را شروع کنید.",
+    "createLabel": "پروژه جدید",
+    "settingsText": "متغیرهای محیط و دامنه‌های سفارشی را در تنظیمات پروژه تنظیم کنید.",
+    "settingsLabel": "تنظیمات پروژه",
+    "connected": "متصل",
+    "tips": {
+      "envVars": {
+        "text": "متغیرهای محیط رمزگذاری‌شده و رازها را به هر پروژه اضافه کنید.",
+        "label": "باز کردن پروژه‌ها"
+      },
+      "customDomain": {
+        "text": "یک دامنه سفارشی را به پروژه اشاره دهید — HTTPS به‌صورت خودکار صادر می‌شود.",
+        "label": "باز کردن پروژه‌ها"
+      },
+      "autoDeploy": {
+        "text": "GitHub را متصل کنید تا هر push خودکار مستقر شود، بدون راه‌اندازی CI.",
+        "label": "باز کردن تنظیمات Git"
+      },
+      "rollback": {
+        "text": "با یک کلیک به هر استقرار قبلی بازگردید.",
+        "label": "مشاهده استقرارها"
+      },
+      "apps": {
+        "text": "اپ‌های میزبانی شخصی مثل Gitea، n8n و Metabase را با یک کلیک نصب کنید.",
+        "label": "مرور اپ‌ها"
+      },
+      "servers": {
+        "text": "سرورهای خود را از طریق SSH متصل کنید و از اینجا روی آن‌ها مستقر شوید.",
+        "label": "مدیریت سرورها"
+      },
+      "jobs": {
+        "text": "فرمان‌ها را با cron زمان‌بندی کنید — تلاش دوباره، لاگ زنده و تاریخچه همراه است.",
+        "label": "باز کردن کارها"
+      },
+      "backups": {
+        "text": "پشتیبان‌گیری خودکار برای پایگاه‌داده و volumeها را تنظیم کنید.",
+        "label": "پیکربندی پشتیبان‌ها"
+      },
+      "mail": {
+        "text": "سرور ایمیل و وب‌میل خودتان را کاملاً روی زیرساخت خودتان اجرا کنید.",
+        "label": "راه‌اندازی ایمیل"
+      },
+      "team": {
+        "text": "هم‌تیمی‌ها را دعوت کنید و دسترسی‌شان را به‌ازای هر پروژه محدود کنید.",
+        "label": "مدیریت تیم"
+      }
+    }
+  },
+  "welcome": {
+    "title": "اولین پروژه را راه‌اندازی کنید",
+    "subtitle": "یک مخزن متصل کنید یا از قالب شروع کنید — Openship آن را می‌سازد، مستقر می‌کند و ظرف چند دقیقه یک URL زنده به شما می‌دهد.",
+    "createProject": "ایجاد پروژه",
+    "importGithub": "وارد کردن از GitHub",
+    "tipPrefix": "نکته: بزنید",
+    "tipSuffix": "تا به هر جا بروید"
+  },
+  "header": {
+    "goodMorning": "صبح بخیر",
+    "goodAfternoon": "ظهر بخیر",
+    "goodEvening": "عصر بخیر",
+    "greetingWithName": "{greeting}، {name}",
+    "overview": "نمای کلی",
+    "subtitle": "مصرف پلتفرم را پایش کنید و منابع را مدیریت کنید",
+    "creditsBalance": "مانده اعتبار",
+    "topUp": "شارژ"
+  },
+  "hero": {
+    "title": "فعالیت پلتفرم",
+    "subtitle": "مصرف توکن و درخواست‌های API",
+    "tokens": "توکن‌ها",
+    "requests": "درخواست‌ها",
+    "lastNDays": "{period} روز گذشته",
+    "agents": "عامل‌ها",
+    "environments": "محیط‌ها",
+    "total": "کل",
+    "production": "تولید",
+    "testing": "آزمایشی",
+    "prodCount": "{count} تولید",
+    "testCount": "{count} آزمایش"
+  },
+  "projects": {
+    "title": "پروژه‌ها",
+    "activeDeployments": "استقرارهای فعال",
+    "total": "کل",
+    "live": "زنده",
+    "building": "در حال ساخت",
+    "needAttentionSingular": "{count} پروژه نیاز به توجه دارد",
+    "needAttentionPlural": "{count} پروژه نیاز به توجه دارند"
+  },
+  "sandboxes": {
+    "title": "Sandboxها",
+    "developmentEnvironments": "محیط‌های توسعه",
+    "totalSandboxes": "کل sandboxها",
+    "active": "فعال",
+    "runningCount": "{count} در حال اجرا",
+    "stoppedCount": "{count} متوقف"
+  },
+  "stats": {
+    "creditsBalance": "مانده اعتبار",
+    "tokenUsage": "مصرف توکن",
+    "thisMonth": "این ماه",
+    "apiRequests": "درخواست‌های API",
+    "last7Days": "۷ روز گذشته",
+    "deployments": "استقرارها",
+    "successfulCount": "{count} موفق",
+    "activeProjects": "پروژه‌های فعال",
+    "sandboxes": "Sandboxها",
+    "activeCount": "{count} فعال"
+  },
+  "tokenUsage": {
+    "title": "مصرف توکن",
+    "lastNDays": "{period} روز گذشته",
+    "tokensTooltip": "{count} توکن"
+  }
+}

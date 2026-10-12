@@ -22,6 +22,7 @@
 <p align="center">
   <a href="../../README.md"><img src="https://img.shields.io/badge/lang-English-555" alt="English" /></a>
   <a href="README.ar.md"><img src="https://img.shields.io/badge/lang-العربية-555" alt="العربية" /></a>
+  <a href="README.fa.md"><img src="https://img.shields.io/badge/lang-فارسی-555" alt="فارسی" /></a>
   <a href="README.zh.md"><img src="https://img.shields.io/badge/lang-简体中文-555" alt="简体中文" /></a>
   <a href="README.es.md"><img src="https://img.shields.io/badge/lang-Español-555" alt="Español" /></a>
   <a href="README.fr.md"><img src="https://img.shields.io/badge/lang-Français-555" alt="Français" /></a>

@@ -1,0 +1,88 @@
+{
+  "plans": {
+    "free": {
+      "name": "رایگان",
+      "tagline": "سایت‌های استاتیک را بدون هزینه روی Openship Cloud منتشر کنید."
+    },
+    "starter": {
+      "name": "شروع",
+      "tagline": "برای اولین اپ واقعی — کانتینر، پایگاه‌داده و بقیهٔ کارها."
+    },
+    "pro": {
+      "name": "حرفه‌ای",
+      "tagline": "برای اپ‌های production که جا برای رشد می‌خواهند."
+    },
+    "team": {
+      "name": "مقیاس",
+      "tagline": "برای تیم‌هایی که ترافیک جدی را روی زیرساخت مشترک اجرا می‌کنند."
+    },
+    "enterprise": {
+      "name": "سازمانی",
+      "tagline": "سقف سفارشی، زیرساخت اختصاصی و SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "همهٔ امکانات «{inherited}»، به‌علاوه:",
+    "staticOnly": "فقط سایت‌های استاتیک — SSG، SPA و HTML ساده",
+    "anyWorkload": "هر چیزی را اجرا کنید — کانتینر، استک Compose و worker",
+    "managedServices": "Postgres و Redis مدیریت‌شده، با کل کاتالوگ اپ‌ها",
+    "buildMinutes": "{buildMinutes} دقیقهٔ ساخت در ماه",
+    "credits": "{credits} واحد اعتبار محاسباتی در ماه",
+    "freeSubdomains": "{freeSubdomains} زیردامنهٔ رایگان روی {freeDomainSuffix}",
+    "freeSubdomainsUnlimited": "زیردامنه‌های رایگان نامحدود روی {freeDomainSuffix}",
+    "customDomains": "دامنه‌های سفارشی نامحدود، با TLS",
+    "unlimitedSeats": "اعضای تیم نامحدود — بدون هزینهٔ به‌ازای نفر",
+    "previewDeploys": "استقرار پیش‌نمایش با هر push",
+    "backups": "پشتیبان روزانه با بازیابی به یک لحظهٔ مشخص",
+    "observability": "لاگ زنده، متریک و هشدار سلامت",
+    "mailServer": "سرور ایمیل داخلی — SMTP، IMAP و وب‌میل",
+    "auditLog": "گزارش حسابرسی با نگهداری طولانی‌تر",
+    "sharedChannel": "کانال مشترک Slack یا Discord",
+    "sso": "SSO و SAML",
+    "customLimits": "سقف‌های سفارشی که در قرارداد توافق می‌شود",
+    "dedicatedInfra": "زیرساخت و منطقهٔ اختصاصی",
+    "onboarding": "راه‌اندازی و مهاجرت با همراهی کامل تیم ما",
+    "communitySupport": "پشتیبانی جامعه",
+    "emailSupport": "پشتیبانی ایمیلی",
+    "prioritySupport": "پشتیبانی اولویت‌دار",
+    "dedicatedSupport": "پشتیبانی اختصاصی با SLA",
+    "selfHostedOpenSource": "کل پلتفرم، متن‌باز (Apache 2.0)",
+    "selfHostedUnlimited": "استقرار، پروژه، سرور و دامنهٔ نامحدود",
+    "selfHostedServices": "همهٔ سرویس‌های مدیریت‌شده — Postgres، Redis و ایمیل",
+    "selfHostedClients": "CLI، وب و دسکتاپ — یک بک‌اند",
+    "selfHostedFreeSubdomains": "{freeSubdomains} زیردامنهٔ رایگان روی {freeDomainSuffix} هنگام اتصال به Openship Cloud",
+    "runningServices": "{runningServices} سرویس در حال اجرا — اپ، پایگاه‌داده و worker",
+    "power": "تا {powerCpu} vCPU و {powerRamGb} GB RAM برای هر سرویس",
+    "projects": "{maxProjects} پروژه",
+    "projectsUnlimited": "پروژه‌های نامحدود",
+    "meteredCredits": "محاسبه، پهنای باند و فضای ذخیره‌سازی همگی از اعتبار ماهانه کم می‌شوند"
+  },
+  "selfHosted": {
+    "name": "میزبانی شخصی",
+    "tagline": "کل پلتفرم را روی ماشین‌های خودتان اجرا کنید. هر باکس Linux، هر ارائه‌دهنده، هر منطقه. بدون اندازه‌گیری مصرف، بدون سقف صندلی، بدون تله‌متری.",
+    "priceLabel": "رایگان",
+    "priceNote": "Apache 2.0 — همیشه رایگان، بدون کارت اعتباری",
+    "cta": "میزبانی شخصی را شروع کنید"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} واحد اعتبار",
+    "pack_25k": "{credits} واحد اعتبار",
+    "pack_100k": "{credits} واحد اعتبار"
+  },
+  "ui": {
+    "perMonth": "/ماه",
+    "perYear": "/سال",
+    "custom": "سفارشی",
+    "free": "رایگان",
+    "unlimited": "نامحدود",
+    "mostPopular": "محبوب‌ترین",
+    "monthsFree": "{months} ماه رایگان",
+    "ctaStart": "رایگان شروع کنید",
+    "ctaChoose": "طرح {name} را انتخاب کنید",
+    "ctaContact": "با فروش صحبت کنید",
+    "billedMonthly": "صورتحساب ماهانه، لغو در هر زمان",
+    "campaignBadge": "{percentOff}٪ تخفیف",
+    "campaignEnds": "پیشنهاد تا {date} اعتبار دارد",
+    "wasPrice": "قبلاً {price}"
+  }
+}

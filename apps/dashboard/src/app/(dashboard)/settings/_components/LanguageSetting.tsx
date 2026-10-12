@@ -4,7 +4,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
  * Settings → General → Language. Switches the interface locale via the shared
- * I18nProvider (which flips <html lang/dir>, so RTL for Arabic is automatic).
+ * I18nProvider (which flips <html lang/dir>, so RTL for Arabic and Persian is automatic).
  * Each language is a selectable card showing its AUTONYM — its own name, in its
  * own script (中文, Español, …), never translated into the current UI language.
  */
@@ -17,6 +17,7 @@ import { SettingsSection } from "./SettingsSection";
 const NATIVE: Record<Locale, string> = {
   en: "English",
   ar: "العربية",
+  fa: "فارسی",
   es: "Español",
   fr: "Français",
   de: "Deutsch",
@@ -30,6 +31,7 @@ const NATIVE: Record<Locale, string> = {
 const CODE: Record<Locale, string> = {
   en: "EN",
   ar: "ع",
+  fa: "فا",
   es: "ES",
   fr: "FR",
   de: "DE",
