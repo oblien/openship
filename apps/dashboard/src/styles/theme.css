@@ -29,6 +29,8 @@
 /* ── Light (default) ──────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
+  /* Native controls (<select> popups, scrollbars, date pickers) render light. */
+  color-scheme: light;
 
   /* Foreground scale - black on white */
   --th-on-04: rgba(0,0,0,.04);
@@ -175,6 +177,9 @@
 
 /* ── Dark ─────────────────────────────────────────────────────── */
 [data-theme="dark"] {
+  /* Native controls (<select> popups, scrollbars, date pickers) render dark —
+     without this the OS draws a white option list under our white text. */
+  color-scheme: dark;
 
   /* Foreground scale - white on black */
   --th-on-04: rgba(255,255,255,.04);
@@ -315,6 +320,7 @@
    dark: a true-gray page lifted just off #000 (no color tint) with
    better text contrast and a clear page → card → dropdown ladder. */
 [data-theme="dim"] {
+  color-scheme: dark;
 
   /* Foreground scale - white on slate */
   --th-on-04: rgba(255,255,255,.04);
