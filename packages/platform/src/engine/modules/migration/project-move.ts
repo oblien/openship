@@ -33,7 +33,7 @@ import { repos, type Deployment, type Project } from "@repo/db";
 
 import { createMigrationDockerRuntime as createServerDockerRuntime } from "./migration-runtime";
 import { findActiveDeployment } from "../../lib/active-deployment";
-import { isControlPlaneProject } from "../../lib/resource-access";
+import { assertNotExternal, isControlPlaneProject } from "../../lib/resource-access";
 import { discoverServerStack } from "./docker-inspect.service";
 import type { AdoptResult } from "./migrate.service";
 import type { DiscoveredService } from "./docker-reconcile";
@@ -398,6 +398,7 @@ export async function loadProjectMoveWorkload(
   if (!project) {
     throw new ProjectMoveRefused("not_server_hosted", "That project no longer exists.");
   }
+  assertNotExternal(project);
 
   const roleWork = await loadProjectRoleWork(project);
 

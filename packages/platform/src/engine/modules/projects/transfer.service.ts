@@ -45,7 +45,7 @@ import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { linkedCloudIdentity } from "../../lib/cloud/server-link";
 import { sameCloudIdentity } from "../../lib/cloud/transport";
 import { isProjectPromotion, projectPromotionDigest, type ProjectPromotion } from "../../lib/cloud/project-promotion";
-import { assertNotControlPlane } from "../../lib/resource-access";
+import { assertProjectMutable } from "../../lib/resource-access";
 
 // ─── Typed errors ────────────────────────────────────────────────────────────
 
@@ -102,6 +102,7 @@ interface ProjectRow {
   clusterId: string | null;
   cloudPromotion: ProjectPromotion | null;
   appTemplateId: string | null;
+  gitProvider: string | null;
 }
 
 async function loadProject(projectId: string, organizationId: string): Promise<ProjectRow | null> {
@@ -114,6 +115,7 @@ async function loadProject(projectId: string, organizationId: string): Promise<P
       clusterId: schema.project.clusterId,
       cloudPromotion: schema.project.cloudPromotion,
       appTemplateId: schema.project.appTemplateId,
+      gitProvider: schema.project.gitProvider,
     })
     .from(schema.project)
     .where(eq(schema.project.id, projectId));
@@ -155,7 +157,7 @@ async function transferProjectToCloudLocked(input: TransferToCloudInput): Promis
   // 1) Pre-flight: project exists in this org and isn't already on cloud.
   const project = await loadProject(input.projectId, input.organizationId);
   if (!project) throw new TransferProjectNotFoundError(input.projectId);
-  assertNotControlPlane(project);
+  assertProjectMutable(project);
   if (project.workspaceId) {
     throw new TransferAlreadyOnTargetError("cloud");
   }

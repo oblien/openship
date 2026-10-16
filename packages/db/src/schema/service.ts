@@ -353,5 +353,6 @@ export const serviceDeployment = pgTable(
     // service status pill on the project page.
     index("ix_service_deployment_service_status").on(t.serviceId, t.status),
     index("ix_service_deployment_service_created").on(t.serviceId, t.createdAt),
+    index("ix_service_deployment_container").on(t.containerId),
   ],
 );

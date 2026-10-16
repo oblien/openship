@@ -4,6 +4,7 @@ import {
   RELEASE_ARTIFACT_KINDS,
   SOURCE_PROVIDERS,
   isReleaseProvider,
+  matchesExternalContainer,
   releaseArtifactKind,
   renderAssetName,
   renderReleaseImage,
@@ -255,5 +256,35 @@ describe("renderReleaseImage", () => {
     expect(() =>
       renderReleaseImage("ghcr.io/acme/api:{tag}", { version: "1.2.3", tag: "" }),
     ).toThrow(/tag cannot be empty/);
+  });
+});
+
+const kamalWeb = {
+  names: ["myapp-web-production-abc123"],
+  labels: { service: "myapp", role: "web", destination: "production" },
+};
+
+describe("matchesExternalContainer", () => {
+  it("matches by exact container name only", () => {
+    expect(matchesExternalContainer([{ name: "myapp-web-production-abc123" }], kamalWeb)).toBe(
+      true,
+    );
+    expect(matchesExternalContainer([{ name: "myapp-web" }], kamalWeb)).toBe(false);
+  });
+
+  it("requires every listed label to be equal", () => {
+    expect(
+      matchesExternalContainer([{ labels: { service: "myapp", role: "web" } }], kamalWeb),
+    ).toBe(true);
+    expect(
+      matchesExternalContainer([{ labels: { service: "myapp", role: "job" } }], kamalWeb),
+    ).toBe(false);
+  });
+
+  it("matches when any matcher matches and never on an empty matcher", () => {
+    expect(
+      matchesExternalContainer([{ name: "other" }, { labels: { role: "web" } }], kamalWeb),
+    ).toBe(true);
+    expect(matchesExternalContainer([{}, { labels: {} }], kamalWeb)).toBe(false);
   });
 });

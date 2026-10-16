@@ -707,7 +707,7 @@ export async function planProjectImport(
       // Only metadata with typed resource references is rewritten. Environment
       // variables, build arguments and mounted files are opaque user content.
       const metadataColumns: Record<string, string[]> = {
-        project: ["objectStorage", "compositeRoutes", "releaseSource"],
+        project: ["objectStorage", "compositeRoutes", "releaseSource", "externalConfig"],
         deployment: ["meta"],
         incoming_webhook: ["actionConfig"],
         backup_restore: ["meta"],

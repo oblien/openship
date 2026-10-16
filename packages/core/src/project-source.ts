@@ -13,12 +13,47 @@ export const SOURCE_PROVIDERS = [
   "local",
   "upload",
   "release",
+  "external",
 ] as const;
 export type SourceProvider = (typeof SOURCE_PROVIDERS)[number];
 
 /** True for a release source (no clone/build — deploy an archive or container image). */
 export function isReleaseProvider(gitProvider: string | null | undefined): boolean {
   return gitProvider === "release";
+}
+
+/** True for an observe-only project deployed by another tool (Openship only reads logs and status). */
+export function isExternalProject(
+  project: { gitProvider?: string | null } | null | undefined,
+): boolean {
+  return project?.gitProvider === "external";
+}
+
+export interface ExternalContainerMatcher {
+  name?: string;
+  labels?: Record<string, string>;
+}
+
+export interface ExternalProjectConfig {
+  serverId: string;
+  matchers: ExternalContainerMatcher[];
+}
+
+/** A matcher must pin something; an empty one would match every container on the server. */
+export function isValidExternalMatcher(matcher: ExternalContainerMatcher): boolean {
+  return Boolean(matcher.name?.trim()) || Object.keys(matcher.labels ?? {}).length > 0;
+}
+
+export function matchesExternalContainer(
+  matchers: readonly ExternalContainerMatcher[],
+  container: { names: readonly string[]; labels?: Record<string, string> | null },
+): boolean {
+  const labels = container.labels ?? {};
+  return matchers.some((m) => {
+    if (!isValidExternalMatcher(m)) return false;
+    if (m.name && !container.names.includes(m.name)) return false;
+    return Object.entries(m.labels ?? {}).every(([k, v]) => labels[k] === v);
+  });
 }
 
 /**

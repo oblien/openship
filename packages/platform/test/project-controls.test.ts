@@ -126,3 +126,25 @@ describe("authorized project controls", () => {
     });
   });
 });
+
+describe("external project creation", () => {
+  it("requires write access to the observed server, not just project creation", async () => {
+    const createExternal = vi.fn(async () => ({ id: "project-x" }));
+    const authorization = createAuthorization(state);
+    const ops = createProjectOperations(authorization, {
+      createExternal,
+      recordAudit: vi.fn(),
+    } as unknown as ProjectDependencies);
+    state.servers.set("server-a", { organizationId: "org-a" });
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:*", { permissions: ["create"] });
+    const input = { name: "Shop", serverId: "server-a", matchers: [{ name: "shop-web" }] };
+
+    await expect(ops.createExternal(context, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(createExternal).not.toHaveBeenCalled();
+
+    state.grants.set("org-a:alice:server:server-a", { permissions: ["write"] });
+    await ops.createExternal(context, input).catch(() => {});
+    expect(createExternal).toHaveBeenCalledOnce();
+  });
+});

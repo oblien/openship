@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { EnsureProjectBody, type TCreateProjectBody, type TEnsureProjectBody, type TUpdateProjectBody } from "./project-inputs";
+import { EnsureProjectBody, type TCreateExternalProjectBody, type TCreateProjectBody, type TEnsureProjectBody, type TUpdateProjectBody } from "./project-inputs";
 import type { ProjectControlOperations } from "./project-controls";
 import type { ProjectLocalOperations } from "./project-local";
 import type { ProjectLogStreams } from "./project-logs";
@@ -76,6 +76,7 @@ export const ProjectHomeSchema = Type.Object({
 export type ProjectHome = Static<typeof ProjectHomeSchema>;
 export const isProjectHome = (value: unknown): value is ProjectHome => Value.Check(ProjectHomeSchema, value);
 export type CreateProjectInput = TCreateProjectBody;
+export type CreateExternalProjectInput = TCreateExternalProjectBody;
 export type EnsureProjectInput = TEnsureProjectBody;
 export type UpdateProjectInput = TUpdateProjectBody;
 export const ListProjectsSchema = Type.Object({
@@ -93,6 +94,7 @@ export interface ProjectOperations
     ProjectRoutingStreams {
   getHome(): Promise<ProjectHome>;
   create(input: CreateProjectInput): Promise<Project>;
+  createExternal(input: CreateExternalProjectInput): Promise<Project>;
   ensure(input: EnsureProjectInput): Promise<EnsureProjectResult>;
   list(input?: ListProjectsInput): Promise<ProjectPage>;
   get(id: string): Promise<Project>;

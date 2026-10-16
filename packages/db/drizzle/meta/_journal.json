@@ -1366,6 +1366,13 @@
       "when": 1792022400003,
       "tag": "0194_managed_ingress",
       "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1792022400004,
+      "tag": "0195_external_project",
+      "breakpoints": true
     }
   ]
 }

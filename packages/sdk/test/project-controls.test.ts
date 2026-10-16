@@ -315,6 +315,22 @@ const cases: Array<{
     envelope: "data",
   },
   {
+    name: "listExternalContainers",
+    method: "GET",
+    path: "/external/containers",
+    output: [
+      {
+        id: "c1",
+        name: "shop-web-1",
+        image: "shop:1",
+        state: "running",
+        status: "Up",
+        labels: { service: "shop" },
+      },
+    ],
+    envelope: "data",
+  },
+  {
     name: "getCloneToken",
     method: "GET",
     path: "/clone-token",

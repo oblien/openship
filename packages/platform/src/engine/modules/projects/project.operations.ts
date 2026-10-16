@@ -7,6 +7,7 @@ import {
   type EnsureProjectInput,
 } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
+import { ValidationError } from "@repo/core";
 import { authorization } from "../../lib/authorization";
 import { audit } from "../../lib/audit-emitter";
 import { assertNativeSourcePath } from "../../native/source-policy";
@@ -21,6 +22,8 @@ import { subscribeRoutingRetry } from "./project-routing-retry.operations";
 import { maybeCloudProjectRequest } from "../../lib/cloud/project-creation";
 
 async function checkSource(input: Partial<CreateProjectInput>) {
+  if (input.gitProvider === "external")
+    throw new ValidationError("Create external projects with POST /api/projects/external.");
   if (input.localPath && process.env.OPENSHIP_NATIVE === "true")
     await assertNativeSourcePath(input.localPath);
   if (
@@ -70,6 +73,15 @@ export const projectDependencies: ProjectDependencies = {
   volumeEvents: clusterVolumeEvents,
   local: createProjectLocalDependencies(create),
   create,
+  async createExternal(ctx, input) {
+    const service = await import("./external-project.service");
+    return service.createExternalProject(
+      input,
+      ctx.organizationId,
+      ctx.tokenScope ?? undefined,
+      ctx,
+    );
+  },
   async ensure(ctx, input) {
     const cloud = await maybeCloudProjectRequest(
       ctx,

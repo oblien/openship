@@ -498,6 +498,12 @@
       "description": "Read recent runtime log entries.",
       "route": "GET /api/projects/:id/logs"
     },
+    "projects.listExternalContainers": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "List the containers an external project observes.",
+      "route": "GET /api/projects/:id/external/containers"
+    },
     "projects.getCloneToken": {
       "page": "projects",
       "section": "Environments and settings",
@@ -665,6 +671,12 @@
       "section": "Source and deployment",
       "description": "Import an allowed local project.",
       "route": "POST /api/projects/import"
+    },
+    "projects.createExternal": {
+      "page": "projects",
+      "section": "Source and deployment",
+      "description": "Link an externally deployed app as an observe-only project.",
+      "route": "POST /api/projects/external"
     },
     "projects.listLocal": {
       "page": "projects",

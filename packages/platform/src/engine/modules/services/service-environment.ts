@@ -12,7 +12,7 @@ import {
   assertRunningServiceQuota,
 } from "../../lib/plan-guard";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
-import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
+import { assertProjectMutable, assertResourceInOrg } from "../../lib/resource-access";
 import { assertExactServiceTargets } from "../deployments/exact-service-targets";
 import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
 import { applyProjectRouting } from "../domains/routing-apply.service";
@@ -32,7 +32,7 @@ export async function applyServiceEnvironment(
   return withProjectRuntimeLock(projectId, async () => {
     const project = await repos.project.findById(projectId);
     assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-    assertNotControlPlane(project);
+    assertProjectMutable(project);
     if (project.deletionInProgress)
       throw new AppError("This project is being deleted.", 409, "PROJECT_DELETING");
     const services = await repos.service.listByProject(projectId);

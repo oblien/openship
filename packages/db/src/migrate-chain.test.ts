@@ -284,7 +284,7 @@ describe("migration chain applies to an existing, populated database", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, roles: null })),
+        projects.map((project) => ({ ...project, roles: null, external_config: null })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
         deployments.map((deployment) => ({ ...deployment, role_containers: null })),
@@ -326,7 +326,15 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null })),
+        projects.map((project) => ({
+          ...project,
+          github_checks: null,
+          runtime_version: null,
+          runtime_image: null,
+          lifecycle_operation: null,
+          roles: null,
+          external_config: null,
+        })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -532,6 +540,7 @@ describe("migration chain applies to an existing, populated database", () => {
           lifecycle_operation: null,
           cloud_static_hosting: "pages",
           github_checks: null,
+          external_config: null,
           server_id: previous.workspace_id
             ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
             : previous.server_id,

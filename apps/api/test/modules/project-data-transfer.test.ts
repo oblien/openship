@@ -125,6 +125,7 @@ async function source() {
       environmentName: "Staging",
       environmentSlug: "staging",
       serverId: "source_server",
+      externalConfig: { serverId: "source_server", matchers: [{ name: "web" }] },
     },
     {
       id: "database",
@@ -710,6 +711,8 @@ describe("project control-plane export and import", () => {
       activeDeploymentId: "deploy_web",
     });
     expect(decrypt(project!.cloneTokenEncrypted!)).toBe("project-clone-token");
+    const [staging] = await db.select().from(schema.project).where(eq(schema.project.id, "staging"));
+    expect(staging!.externalConfig?.serverId).toBe("target_server");
     const [environment] = await db
       .select()
       .from(schema.envVar)

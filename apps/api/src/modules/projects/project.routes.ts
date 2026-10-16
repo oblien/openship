@@ -29,6 +29,7 @@ import {
   ProjectDatabaseSchemas,
   ProjectVolumeSchemas,
   CreateProjectBody,
+  CreateExternalProjectBody,
   EnsureProjectBody,
   FolderSessionBody,
   UpdateProjectBody,
@@ -321,6 +322,22 @@ r.post(
     },
   },
   ctrl.create,
+);
+
+r.post(
+  "/external",
+  {
+    tag: "project:write",
+    collection: true,
+    projectCreate: true,
+    body: CreateExternalProjectBody,
+    auditHandledByOperation: true,
+    mcp: {
+      description:
+        "Link an app deployed by another tool (Kamal, docker run) as an observe-only project. Openship reads logs and status of the containers matched by name or labels on the given server, and never deploys, stops, or routes them.",
+    },
+  },
+  ctrl.createExternal,
 );
 
 /* ─── Projects CRUD ────────────────────────────────────────────────────── */
@@ -1141,6 +1158,16 @@ r.get(
     query: ProjectControlSchemas.runtimeLogs.input,
   },
   ctrl.runtimeLogs,
+);
+r.get(
+  "/:id/external/containers",
+  {
+    tag: "project:read",
+    mcp: {
+      description: "List the containers an external project's matchers select on its server.",
+    },
+  },
+  ctrl.listExternalContainers,
 );
 r.get(
   "/:id/logs/stream",

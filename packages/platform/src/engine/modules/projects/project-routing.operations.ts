@@ -6,7 +6,7 @@ import { repos } from "@repo/db";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ExecutionContext } from "../../../context";
 import { env } from "../../config";
-import { assertResourceInOrg } from "../../lib/resource-access";
+import { assertNotExternal, assertResourceInOrg } from "../../lib/resource-access";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { pushProjectRulesResolved } from "../route-rules/route-rule.service";
 import { sanitizeSpec, normalizePathPrefix } from "../route-rules/rule-inputs";
@@ -18,6 +18,11 @@ async function localProject(ctx: ExecutionContext, id: string) {
   if (env.CLOUD_MODE) throw new NotFoundError("Operation");
   const project = await repos.project.findById(id);
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
+  return project;
+}
+async function mutableLocalProject(ctx: ExecutionContext, id: string) {
+  const project = await localProject(ctx, id);
+  assertNotExternal(project);
   return project;
 }
 async function ownedDomain(projectId: string, domainId?: string | null) {
@@ -44,7 +49,7 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
     return repos.routeRule.listByProject(id);
   },
   async createRouteRule(ctx, id, input) {
-    await localProject(ctx, id);
+    await mutableLocalProject(ctx, id);
     await ownedDomain(id, input.domainId);
     const rule = await repos.routeRule.create({
       organizationId: ctx.organizationId, projectId: id, domainId: input.domainId ?? null,
@@ -55,7 +60,7 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
     return rule;
   },
   async updateRouteRule(ctx, id, input) {
-    await localProject(ctx, id);
+    await mutableLocalProject(ctx, id);
     const existing = await repos.routeRule.get(input.ruleId);
     if (!existing || existing.projectId !== id || existing.organizationId !== ctx.organizationId)
       throw new NotFoundError("Rule", input.ruleId);
@@ -73,7 +78,7 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
     return rule;
   },
   async removeRouteRule(ctx, id, ruleId) {
-    await localProject(ctx, id);
+    await mutableLocalProject(ctx, id);
     await repos.routeRule.removeForProject(id, ruleId);
     await repush(id);
     record(ctx, id, "routeRule.remove", ruleId);
