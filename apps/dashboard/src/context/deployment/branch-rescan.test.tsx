@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_MASK } from "@repo/core";
 import { baseDictionary } from "@/i18n";
 import { DeploymentContext } from "@/context/DeploymentContext";
 import Sidebar from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/Sidebar";
@@ -240,6 +241,149 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+describe("deployment setup with workspace repository grants", () => {
+  const sourceDenied = () =>
+    new ApiError(404, "Not Found", {
+      code: "NOT_FOUND",
+      error: "github 'example/demo' not found",
+    });
+
+  function allowMaskedScan() {
+    api.prepare.mockImplementation(async ({ includeEnv, branch = "main" }) => {
+      if (includeEnv) throw sourceDenied();
+      return scan(branch, {
+        rootEnv: { SOURCE_TOKEN: ENV_MASK, OPTIONAL_TOKEN: ENV_MASK },
+        openshipEnvKeys: ["SOURCE_TOKEN"],
+      });
+    });
+  }
+
+  it("opens an accessible repository with masked source values when editable values are denied", async () => {
+    allowMaskedScan();
+    await act(async () => {
+      expect(await current.initializeFromRepo("example", "demo")).toEqual({ success: true });
+    });
+    expect(api.prepare).toHaveBeenCalledTimes(2);
+    expect(current.config).toMatchObject({
+      owner: "example",
+      repo: "demo",
+      branch: "main",
+      framework: "node",
+    });
+    expect(current.config.envVars).toContainEqual(
+      expect.objectContaining({
+        key: "SOURCE_TOKEN",
+        value: ENV_MASK,
+        preserveValue: true,
+      }),
+    );
+    expect(current.config.rootEnvVars).toEqual([
+      expect.objectContaining({
+        key: "OPTIONAL_TOKEN",
+        value: ENV_MASK,
+        preserveValue: true,
+      }),
+    ]);
+    expect(api.showToast).not.toHaveBeenCalled();
+    expect(api.buildAccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps branch and compose rescans available without source-content access", async () => {
+    allowMaskedScan();
+    await act(async () =>
+      current.updateConfig({
+        envVars: [...current.config.envVars, { key: "APP_MODE", value: "preview", visible: true }],
+      }),
+    );
+    await selectBranch("openship");
+    expect(current.config.branch).toBe("openship");
+    expect(api.prepare).toHaveBeenLastCalledWith({
+      owner: "example",
+      repo: "demo",
+      branch: "openship",
+      env: { APP_MODE: "preview" },
+      includeEnv: false,
+    });
+    await act(async () => {
+      expect(await current.rescanWithComposePath(" deploy/compose.yml ")).toMatchObject({
+        success: true,
+      });
+    });
+    expect(api.prepare).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner: "example",
+        repo: "demo",
+        branch: "openship",
+        composePath: "deploy/compose.yml",
+        env: { APP_MODE: "preview" },
+        includeEnv: false,
+      }),
+    );
+    expect(current.config.envVars).toContainEqual({
+      key: "APP_MODE",
+      value: "preview",
+      visible: true,
+    });
+    expect(current.isRescanning).toBe(false);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("keeps editable values for a caller with source-content access", async () => {
+    api.prepare.mockResolvedValueOnce(scan("main", { rootEnv: { EDITABLE: "source-value" } }));
+    await act(async () => {
+      expect(await current.initializeFromRepo("example", "demo")).toEqual({ success: true });
+    });
+    expect(api.prepare).toHaveBeenCalledOnce();
+    expect(current.config.rootEnvVars).toEqual([
+      expect.objectContaining({ key: "EDITABLE", value: "source-value" }),
+    ]);
+  });
+
+  it("still refuses an inaccessible or missing repository after the masked scan", async () => {
+    api.prepare.mockRejectedValue(sourceDenied());
+    const previous = current.config;
+    await act(async () => {
+      expect(await current.initializeFromRepo("example", "demo")).toMatchObject({
+        success: false,
+        error: "github 'example/demo' not found",
+        errorType: "api_error",
+      });
+    });
+    expect(api.prepare).toHaveBeenCalledTimes(2);
+    expect(current.config).toBe(previous);
+    expect(api.buildAccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, "UNAUTHORIZED"],
+    [403, "GITHUB_ACCESS_DENIED"],
+    [429, "RATE_LIMITED"],
+    [503, "UPSTREAM_UNAVAILABLE"],
+    [404, undefined],
+  ])("does not retry an unrelated scan failure (%s, %s)", async (status, code) => {
+    api.prepare.mockRejectedValueOnce(
+      new ApiError(status, "Failed", { code, error: "Scan failed" }),
+    );
+    await act(async () => {
+      expect(await current.initializeFromRepo("example", "demo")).toMatchObject({
+        success: false,
+        error: "Scan failed",
+      });
+    });
+    expect(api.prepare).toHaveBeenCalledOnce();
+  });
+
+  it("does not retry local-source errors as a GitHub permission fallback", async () => {
+    api.prepare.mockRejectedValueOnce(sourceDenied());
+    await act(async () => {
+      expect(await current.initializeFromLocal("/missing/project")).toMatchObject({
+        success: false,
+      });
+    });
+    expect(api.prepare).toHaveBeenCalledOnce();
+  });
 });
 
 describe("deploy branch detection", () => {
