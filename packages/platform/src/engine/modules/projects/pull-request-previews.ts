@@ -63,16 +63,21 @@ export function previewEnvironmentInput(
 ) {
   const suffix = createHash("sha256").update(source.id).digest("hex").slice(0, 6);
   const slug = `${source.slug.slice(0, 35)}-pr-${number}-${suffix}`;
-  const safeVolumes = (volumes: readonly string[] | null | undefined) => {
+  const safeVolumes = (volumes: readonly string[] | null | undefined, deployed = true) => {
+    const kept: string[] = [];
     for (const spec of volumes ?? []) {
       const { source } = parseVolumeMount(spec);
-      if (isHostPathSource(source) || source === "." || source === "..")
+      if (isHostPathSource(source) || source === "." || source === "..") {
+        // Disabled services never deploy; drop their host paths rather than copy them.
+        if (!deployed) continue;
         throw new AppError(
           "PR previews require isolated named volumes; host bind mounts must be removed from the preview template.",
           400,
         );
+      }
+      kept.push(spec);
     }
-    return volumes ? [...volumes] : null;
+    return volumes ? kept : null;
   };
   const commands = (row: {
     installCommand?: string | null;
@@ -151,12 +156,15 @@ export function previewEnvironmentInput(
     services: services.map((row) => {
       commands(row);
       const advanced = row.advanced ?? {};
+      // Re-checked on every preview deployment, so enabling a copied row later is still guarded.
+      const deployed = row.enabled !== false;
       if (
-        row.namespaceVolumes === false ||
-        advanced.networkMode === "host" ||
-        advanced.pidMode === "host" ||
-        advanced.networkMode?.startsWith("container:") ||
-        advanced.pidMode?.startsWith("container:")
+        deployed &&
+        (row.namespaceVolumes === false ||
+          advanced.networkMode === "host" ||
+          advanced.pidMode === "host" ||
+          advanced.networkMode?.startsWith("container:") ||
+          advanced.pidMode?.startsWith("container:"))
       )
         throw new AppError(
           `Service ${row.name} shares host resources. PR previews require isolated services.`,
@@ -197,7 +205,7 @@ export function previewEnvironmentInput(
         row: {
           ...copy,
           namespaceVolumes: true,
-          volumes: safeVolumes(row.volumes) ?? [],
+          volumes: safeVolumes(row.volumes, deployed) ?? [],
           ports: (row.ports ?? []).map((port) => port.split(":").at(-1)!),
           hostPort: null,
           domain: publicEndpoints[0]?.domain ?? null,

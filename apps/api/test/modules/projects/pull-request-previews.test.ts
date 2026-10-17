@@ -215,6 +215,32 @@ describe("preview templates across stacks", () => {
       ),
     ).toThrow("Environment");
   });
+  test("disabled services never deploy, so their host resources do not block previews", () => {
+    const web = { id: "web", name: "web", enabled: true, volumes: ["cache:/cache"] } as Service;
+    const tools = {
+      id: "tools",
+      name: "tools",
+      enabled: false,
+      namespaceVolumes: false,
+      volumes: ["/srv/config:/config:ro", "tools-data:/data"],
+      advanced: { networkMode: "host" },
+    } as unknown as Service;
+    const rows = previewEnvironmentInput(source, [web, tools], 5, "feature").services;
+    expect(rows.map((item) => [item.row.name, item.row.enabled])).toEqual([
+      ["web", true],
+      ["tools", false],
+    ]);
+    expect(rows[1]!.row).toMatchObject({ volumes: ["tools-data:/data"], namespaceVolumes: true });
+    for (const enabled of [
+      { ...tools, enabled: true },
+      { ...tools, enabled: undefined },
+      { ...tools, enabled: true, namespaceVolumes: true, advanced: {} },
+      { ...tools, enabled: true, volumes: ["site:/usr/share/nginx/html"], advanced: {} },
+    ])
+      expect(() =>
+        previewEnvironmentInput(source, [web, enabled as Service], 5, "feature"),
+      ).toThrow(/isolated/);
+  });
   test("forks, drafts, wrong base branches and closed PRs cannot run preview code", () => {
     expect(previewEligible(pr, source)).toBe(true);
     for (const change of [
