@@ -285,7 +285,26 @@
       "repoCountOther": "{count} مستودعات",
       "coveredByOrg": "مغطى بمنح المؤسسة الكامل أعلاه.",
       "noRepos": "لا توجد مستودعات.",
-      "searchRepos": "البحث في المستودعات…"
+      "searchRepos": "البحث في المستودعات…",
+      "capabilityAreas": {
+        "domains": "النطاقات",
+        "deployments": "عمليات النشر"
+      },
+      "capabilityLabels": {
+        "domains:read": "عرض",
+        "domains:write": "إضافة والتحقق",
+        "domains:delete": "حذف",
+        "deployments:read": "عرض",
+        "deployments:trigger": "تشغيل"
+      },
+      "capabilityHints": {
+        "domains:read": "عرض النطاقات وسجلات DNS وحالة الشهادة",
+        "domains:write": "إضافة النطاقات والتحقق منها وتجديدها وتشغيل تحديات DNS",
+        "domains:delete": "حذف النطاقات",
+        "deployments:read": "قراءة عمليات النشر والسجلات وحالة البناء",
+        "deployments:trigger": "بدء عمليات النشر وإعادة النشر وإعادة التشغيل والإلغاء والتراجع"
+      },
+      "capabilityImplied": "مضمّن في مستوى الوصول لهذا المورد"
     },
     "sourceAccess": {
       "title": "الوصول إلى التعليمة البرمجية المصدرية",

@@ -534,7 +534,7 @@ export async function replaceGrants(ctx: ExecutionContext, body: { userId: strin
     const resourceGrants = createResourceGrantRepo(tx);
   const existing = await resourceGrants.listByMember(organizationId, body.userId);
   const existingByKey = new Map(existing.map((g) => [`${g.resourceType}:${g.resourceId}`, g]));
-  const permsKey = (p: Permission[]) => [...p].sort().join(",");
+  const permsKey = (p: readonly string[]) => [...p].sort().join(",");
 
   for (const g of existing) {
     if (!desired.has(`${g.resourceType}:${g.resourceId}`)) {

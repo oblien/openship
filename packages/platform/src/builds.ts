@@ -39,7 +39,7 @@ export function createBuildOperations(authorization: Authorization, dependencies
     },
     async buildAccess(ctx, value) {
       const input = parseInput(BuildAccessBody, value);
-      const context = await authorization.authorize(ctx, { resourceType: "project", resourceId: input.projectId, action: "write" });
+      const context = await authorization.authorize(ctx, { resourceType: "project", resourceId: input.projectId, action: "write", capability: "deployments:trigger" });
       return result(context, await resources().access(context, input));
     },
     async start(ctx, value) {

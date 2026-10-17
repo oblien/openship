@@ -8,6 +8,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Hono, type Context } from "hono";
 import { repos, type Permission } from "@repo/db";
+import { isCapability, type Capability, type GrantPermission } from "@repo/core";
 import { secureRouter } from "../../lib/secure-router";
 import { parseBearerToken } from "../../lib/bearer";
 import {
@@ -73,12 +74,18 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
   }
 
   let grantedRootTypes: ReadonlySet<string> = new Set();
-  let wildcardGrants: ReadonlyMap<string, readonly Permission[]> = new Map();
+  let wildcardGrants: ReadonlyMap<string, readonly GrantPermission[]> = new Map();
+  let grantedCapabilities: ReadonlySet<Capability> = new Set();
   let canCreateProjects = false;
   let sourceCapabilities: ReadonlySet<"content" | "write"> = new Set();
   if (role === "restricted" && id.hasBinding) {
     const grants = await repos.patGrant.listByToken(id.tokenId);
-    grantedRootTypes = new Set(grants.map((g) => g.resourceType));
+    // A capability-only grant (`{project, P, ["domains:read"]}`) reaches only its
+    // capability's routes, so it does not make the whole root type "granted".
+    grantedRootTypes = new Set(
+      grants.filter((g) => (g.permissions ?? []).some((p) => !isCapability(p))).map((g) => g.resourceType),
+    );
+    grantedCapabilities = new Set(grants.flatMap((g) => (g.permissions ?? []).filter(isCapability)));
     // Wildcard rows carry their permissions so the tool filter can answer the same
     // verb question the wildcard arm of `checkPermission` answers. One row per type
     // at most — `pat_grant_unique` is on (token, type, id).
@@ -115,6 +122,7 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
       readOnly: id.readOnly,
       grantedRootTypes,
       wildcardGrants,
+      grantedCapabilities,
       canCreateProjects,
       sourceCapabilities,
     },

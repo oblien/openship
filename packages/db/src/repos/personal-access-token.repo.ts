@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, isNull, isNotNull, or, sql } from "drizzle-
 import {
   generateId,
   AppError,
-  type Permission,
+  type GrantPermission,
   type ResourceType,
   type SourceAccessScope,
 } from "@repo/core";
@@ -180,7 +180,7 @@ export function createPersonalAccessTokenRepo(db: Database) {
       grants: ReadonlyArray<{
         resourceType: ResourceType;
         resourceId: string;
-        permissions: Permission[];
+        permissions: GrantPermission[];
         scope?: SourceAccessScope | null;
       }>;
     }): Promise<PersonalAccessToken> {

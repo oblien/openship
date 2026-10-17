@@ -6,6 +6,9 @@ import {
   NotFoundError,
   UnauthorizedError,
   ORG_SINGLETON_RESOURCE_TYPES,
+  capabilityFor,
+  type Capability,
+  type GrantPermission,
   type Permission,
   type ResourceType,
 } from "@repo/core";
@@ -35,6 +38,12 @@ export interface PermissionInput {
   scope?: "list" | "all";
   /** Only the dedicated project-create operation may enable create-only grants. */
   projectCreate?: boolean;
+  /**
+   * The fine-grained capability that also satisfies this check, for a check on a
+   * ROOT made on behalf of one of its children (list a project's domains, trigger
+   * a deploy). Omitted, it is derived from `resourceType` + `action`.
+   */
+  capability?: Capability;
 }
 
 export interface PermissionGrantSource {
@@ -43,7 +52,7 @@ export interface PermissionGrantSource {
     userId: string,
     type: ResourceType,
     id: string,
-  ): Promise<{ permissions: readonly Permission[] } | null>;
+  ): Promise<{ permissions: readonly GrantPermission[] } | null>;
 }
 
 export interface PermissionMembership {
@@ -114,7 +123,7 @@ export function roleAllowsResourceType(
   return type !== "billing" && type !== "audit";
 }
 
-export function permitsAction(permissions: readonly Permission[], action: Permission): boolean {
+export function permitsAction(permissions: readonly GrantPermission[], action: Permission): boolean {
   switch (action) {
     case "read":
       return permissions.some((p) => p === "read" || p === "write" || p === "admin");
@@ -136,6 +145,17 @@ function membershipRole(member: PermissionMembership): ContextRole | null {
   return role === "owner" || role === "admin" || role === "member" || role === "restricted"
     ? role
     : null;
+}
+
+/**
+ * Does a grant authorize this check? Its coarse level, or — for a resource tree
+ * that defines one — the capability the check maps to (`domain`+`admin` ⇒
+ * `domains:delete`). A capability never satisfies a different check.
+ */
+export function grantPermits(permissions: readonly GrantPermission[], input: PermissionInput): boolean {
+  if (permitsAction(permissions, input.action)) return true;
+  const capability = input.capability ?? capabilityFor(input.resourceType, input.action);
+  return !!capability && permissions.includes(capability);
 }
 
 /** The existing API policy, with persistence and cloud linkage supplied by its owner. */
@@ -255,7 +275,7 @@ export function createAuthorization(deps: AuthorizationDependencies) {
         input.resourceType as ResourceType,
         "*",
       );
-      return grant ? permitsAction(grant.permissions, input.action) : false;
+      return grant ? grantPermits(grant.permissions, input) : false;
     }
 
     let root = await resolveResourceOrg(input.resourceType, input.resourceId);
@@ -267,7 +287,7 @@ export function createAuthorization(deps: AuthorizationDependencies) {
       } else return false;
     }
     const grant = await source.findForResource(organizationId, userId, root.rootType, root.rootId);
-    return grant ? permitsAction(grant.permissions, input.action) : false;
+    return grant ? grantPermits(grant.permissions, input) : false;
   }
 
   /** Internal compatibility helper. The caller must already have verified resource ownership. */

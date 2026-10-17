@@ -285,7 +285,26 @@
       "repoCountOther": "{count} depo",
       "coveredByOrg": "Yukarıdaki organizasyon geneli yetkinin kapsamında.",
       "noRepos": "Depo yok.",
-      "searchRepos": "Depolarda ara…"
+      "searchRepos": "Depolarda ara…",
+      "capabilityAreas": {
+        "domains": "Alan adları",
+        "deployments": "Dağıtımlar"
+      },
+      "capabilityLabels": {
+        "domains:read": "Görüntüle",
+        "domains:write": "Ekle ve doğrula",
+        "domains:delete": "Sil",
+        "deployments:read": "Görüntüle",
+        "deployments:trigger": "Başlat"
+      },
+      "capabilityHints": {
+        "domains:read": "Alan adlarını, DNS kayıtlarını ve sertifika durumunu listele",
+        "domains:write": "Alan adı ekle, doğrula, yenile ve DNS doğrulamalarını çalıştır",
+        "domains:delete": "Alan adlarını sil",
+        "deployments:read": "Dağıtımları, günlükleri ve derleme durumunu oku",
+        "deployments:trigger": "Dağıtımları başlat, yeniden dağıt, yeniden başlat, iptal et ve geri al"
+      },
+      "capabilityImplied": "Bu kaynağın erişim düzeyine dahil"
     },
     "sourceAccess": {
       "title": "Kaynak kodu erişimi",

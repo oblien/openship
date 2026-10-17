@@ -17,7 +17,7 @@ const target = (c: Context) => ({ serverId: c.req.query("serverId")?.trim() || u
 export async function list(c: Context) {
   const projectId = c.req.query("projectId");
   if (!projectId) return c.json({ error: "projectId query parameter required" }, 400);
-  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "read" });
+  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "read", capability: "domains:read" });
   const proxied = await maybeProxyCloudProject(c, projectId, operationContext(c).organizationId);
   if (proxied) return proxied;
   return c.json({ data: await operationData(c, operations().list(operationContext(c), projectId)) });
@@ -26,7 +26,7 @@ export async function list(c: Context) {
 export async function add(c: Context) {
   const body = await c.req.json<TAddDomainBody>();
   const { projectId, ...input } = body;
-  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "write" });
+  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "write", capability: "domains:write" });
   const proxied = await maybeProxyCloudProject(c, projectId, operationContext(c).organizationId, { body: JSON.stringify(body) });
   if (proxied) return proxied;
   const { domain, ...details } = await operationData(c, operations().create(operationContext(c), projectId, input));

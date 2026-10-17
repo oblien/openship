@@ -39,6 +39,7 @@ export function AccessScopeEditor({
   orgKey,
   disabled,
   showCreateCapability = true,
+  showCapabilities = true,
   onCatalogLoaded,
   suppressWildcardTypes = ["project"],
   onPickerChange,
@@ -52,6 +53,8 @@ export function AccessScopeEditor({
   /** Member grants hide it: the grants API's permission whitelist has no "create",
    *  so the switch would offer a capability the server drops. */
   showCreateCapability?: boolean;
+  /** Per-resource capability toggles (`domains:delete`). Token grants only. */
+  showCapabilities?: boolean;
   onCatalogLoaded?: (type: ResourceType, entries: CatalogEntry[]) => void;
   /** Defaults to ["project"] — see the picker call below. */
   suppressWildcardTypes?: ResourceType[];
@@ -145,6 +148,7 @@ export function AccessScopeEditor({
         // project wildcard.
         suppressWildcardTypes={suppressWildcardTypes}
         levels={levels}
+        capabilities={showCapabilities}
         onCatalogLoaded={onCatalogLoaded}
         disabled={disabled}
       />

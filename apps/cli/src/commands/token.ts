@@ -11,6 +11,7 @@
  *   revoke  DELETE /tokens/:id             → { data: { revoked: true } }
  */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { isCapability } from "@repo/core";
 import { Command } from "commander";
 import chalk from "chalk";
 import { getShipClient } from "../lib/ship-client";
@@ -24,14 +25,19 @@ import { jsonCommand } from "../lib/json-command";
 import type { TCreateTokenBody } from "@repo/sdk";
 type Grant = NonNullable<TCreateTokenBody["grants"]>[number];
 
-/** Parse a repeatable `--grant type:id:perm1,perm2` into the API's grant shape. */
-function collectGrant(value: string, acc: Grant[]): Grant[] {
-  const [resourceType, resourceId, permsRaw, extra] = value.split(":");
-  if (!resourceType || !resourceId || !permsRaw || extra !== undefined) {
+/**
+ * Parse a repeatable `--grant type:id:perm1,perm2` into the API's grant shape.
+ * Permissions are levels (read, write, admin, create) or capabilities, which carry
+ * their own colon (`project:proj_1:domains:read,domains:delete`).
+ */
+export function collectGrant(value: string, acc: Grant[]): Grant[] {
+  const [resourceType, resourceId, ...rest] = value.split(":");
+  const permsRaw = rest.join(":");
+  if (!resourceType || !resourceId || !permsRaw) {
     throw new Error(`Invalid --grant "${value}". Expected type:id:perm1,perm2`);
   }
   const permissions = permsRaw.split(",").map((p) => p.trim()).filter(Boolean);
-  if (permissions.some(p => !["read", "write", "admin", "create"].includes(p)))
+  if (permissions.some(p => !["read", "write", "admin", "create"].includes(p) && !isCapability(p)))
     throw new Error(`Invalid permission in --grant "${value}"`);
   return [...acc, { resourceType, resourceId, permissions: permissions as Grant["permissions"] }];
 }
@@ -71,7 +77,7 @@ const createCmd = new Command("create")
   .option("--expires <days>", "Expire after N days (1–365); omit for non-expiring", positiveInteger)
   .option(
     "--grant <type:id:perms>",
-    "Scope the token to a resource (repeatable), e.g. project:abc123:read,write",
+    "Scope the token to a resource (repeatable), e.g. project:abc123:read,write or project:abc123:domains:read,domains:write,domains:delete",
     collectGrant,
     [] as Grant[],
   )

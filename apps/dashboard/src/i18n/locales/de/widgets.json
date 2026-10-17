@@ -285,7 +285,26 @@
       "repoCountOther": "{count} Repos",
       "coveredByOrg": "Durch die oben stehende organisationsweite Berechtigung abgedeckt.",
       "noRepos": "Keine Repositories.",
-      "searchRepos": "Repos durchsuchen…"
+      "searchRepos": "Repos durchsuchen…",
+      "capabilityAreas": {
+        "domains": "Domains",
+        "deployments": "Deployments"
+      },
+      "capabilityLabels": {
+        "domains:read": "Ansehen",
+        "domains:write": "Hinzufügen & prüfen",
+        "domains:delete": "Löschen",
+        "deployments:read": "Ansehen",
+        "deployments:trigger": "Auslösen"
+      },
+      "capabilityHints": {
+        "domains:read": "Domains, DNS-Einträge und Zertifikatsstatus anzeigen",
+        "domains:write": "Domains hinzufügen, prüfen und erneuern, DNS-Challenges ausführen",
+        "domains:delete": "Domains löschen",
+        "deployments:read": "Deployments, Logs und Build-Status lesen",
+        "deployments:trigger": "Deployments starten, neu ausführen, neu starten, abbrechen und zurücksetzen"
+      },
+      "capabilityImplied": "In der Zugriffsstufe dieser Ressource enthalten"
     },
     "sourceAccess": {
       "title": "Quellcode-Zugriff",

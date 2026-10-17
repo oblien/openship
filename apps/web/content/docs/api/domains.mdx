@@ -138,6 +138,13 @@ Manual renewal uses `startDnsChallenge(id, { mode: "manual", force: true })` and
 Connected-provider mode renews automatically when the SSL job is enabled. See the
 [wildcard guide](/docs/guides/custom-domains#wildcard-domains) for DNS names, record cleanup and renewal steps.
 
+## Access
+
+A project grant covers its domains: `read` for the `domain:read` routes, `write` for `domain:write`, and
+`admin` for `DELETE /api/domains/:id` (`domain:admin`). A token can instead hold the capabilities
+`domains:read`, `domains:write` and `domains:delete` on the project, which reach the same routes and nothing
+else on the project. See [Capabilities](/docs/security/permissions#capabilities-finer-than-read--write--admin).
+
 ## Errors
 
 <Callout title="422 — verification failed" type="warn">

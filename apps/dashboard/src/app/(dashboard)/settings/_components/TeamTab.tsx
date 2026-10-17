@@ -347,7 +347,7 @@ export function TeamTab() {
             saveLabel={t.settings.team.memberPanel.saveLabel}
             // A MEMBER, not a token: "unscoped" is meaningless, `readOnly` is a token
             // property, and the grants API's permission whitelist has no `create`.
-            show={{ templates: false, readOnlySwitch: false, createCapability: false }}
+            show={{ templates: false, readOnlySwitch: false, createCapability: false, capabilities: false }}
             // "All projects" is a legitimate member grant — only the token mint
             // refuses a non-create project wildcard.
             suppressWildcardTypes={[]}

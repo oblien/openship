@@ -285,7 +285,26 @@
       "repoCountOther": "{count} репозиториев",
       "coveredByOrg": "Покрывается разрешением для всей организации выше.",
       "noRepos": "Нет репозиториев.",
-      "searchRepos": "Поиск репозиториев…"
+      "searchRepos": "Поиск репозиториев…",
+      "capabilityAreas": {
+        "domains": "Домены",
+        "deployments": "Развёртывания"
+      },
+      "capabilityLabels": {
+        "domains:read": "Просмотр",
+        "domains:write": "Добавление и проверка",
+        "domains:delete": "Удаление",
+        "deployments:read": "Просмотр",
+        "deployments:trigger": "Запуск"
+      },
+      "capabilityHints": {
+        "domains:read": "Просмотр доменов, DNS-записей и статуса сертификатов",
+        "domains:write": "Добавление, проверка и продление доменов, DNS-проверки",
+        "domains:delete": "Удаление доменов",
+        "deployments:read": "Просмотр развёртываний, логов и статуса сборки",
+        "deployments:trigger": "Запуск, повторное развёртывание, перезапуск, отмена и откат развёртываний"
+      },
+      "capabilityImplied": "Входит в уровень доступа к этому ресурсу"
     },
     "sourceAccess": {
       "title": "Доступ к исходному коду",

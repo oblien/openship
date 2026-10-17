@@ -285,7 +285,26 @@
       "repoCountOther": "{count} repos",
       "coveredByOrg": "Covered by the org-wide grant above.",
       "noRepos": "No repositories.",
-      "searchRepos": "Search repos…"
+      "searchRepos": "Search repos…",
+      "capabilityAreas": {
+        "domains": "Domains",
+        "deployments": "Deployments"
+      },
+      "capabilityLabels": {
+        "domains:read": "View",
+        "domains:write": "Add & verify",
+        "domains:delete": "Delete",
+        "deployments:read": "View",
+        "deployments:trigger": "Trigger"
+      },
+      "capabilityHints": {
+        "domains:read": "List domains, DNS records and certificate status",
+        "domains:write": "Add, verify and renew domains, run DNS challenges",
+        "domains:delete": "Delete domains",
+        "deployments:read": "Read deployments, logs and build status",
+        "deployments:trigger": "Start, redeploy, restart, cancel and roll back deployments"
+      },
+      "capabilityImplied": "Included in this resource's access level"
     },
     "sourceAccess": {
       "title": "Source access",

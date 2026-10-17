@@ -14,6 +14,7 @@ import {
   type CheckedResourceType,
 } from "../../lib/permission";
 import type { Permission } from "@repo/db";
+import { capabilityFor, type Capability, type GrantPermission } from "@repo/core";
 import { Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { env } from "@repo/platform/engine/config/index";
@@ -90,7 +91,10 @@ export interface McpPrincipal {
    * advertise/enforce drift as one that over-advertises. Making it required means
    * the compiler names every construction site instead.
    */
-  wildcardGrants: ReadonlyMap<string, readonly Permission[]>;
+  wildcardGrants: ReadonlyMap<string, readonly GrantPermission[]>;
+  /** Fine-grained capabilities held on any grant (`domains:delete`). A tool whose
+   *  tag maps to one is listed for its holder even without a coarse root grant. */
+  grantedCapabilities?: ReadonlySet<Capability>;
   /** True when the token holds a create-capable project wildcard grant
    *  ({project, "*", permissions:["create"]}) — the "own projects" scope. Lets a
    *  restricted token see the project-create routes and the project list (which
@@ -394,7 +398,10 @@ export function filterToolsForPrincipal(
       const held = principal.wildcardGrants.get(t.perm.leaf);
       return held ? permitsAction(held, assertedAction(t.perm.action)) : false;
     }
-    return principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot);
+    if (principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot)) return true;
+    // Same mapping the permission check uses: `domain:admin` ⇒ `domains:delete`.
+    const capability = capabilityFor(t.perm.leaf, assertedAction(t.perm.action));
+    return !!capability && !!principal.grantedCapabilities?.has(capability);
   });
 }
 

@@ -2,6 +2,7 @@ import {
   AppError, DomainCollectionSchemas, DomainResourceSchemas, DomainScopedSchemas,
   ResourceIdSchema, VerifyDomainInputSchema, parseInput, type DomainOperations,
 } from "@repo/contracts";
+import { capabilityFor } from "@repo/core";
 import type { Authorization } from "./authorization";
 import type { ExecutionContext } from "./context";
 import {
@@ -26,8 +27,15 @@ export interface PlatformDomainOperations extends
 }
 
 export function createDomainOperations(authorization: Authorization, deps?: DomainDependencies): PlatformDomainOperations {
+  // List/create check the parent project on behalf of its domains, so a project
+  // grant holding `domains:read` / `domains:write` satisfies them too.
+  const domainCollection: Authorization = Object.freeze({
+    ...authorization,
+    authorize: (ctx, input, scopeOrg) =>
+      authorization.authorize(ctx, { ...input, capability: capabilityFor("domain", input.action) ?? undefined }, scopeOrg),
+  });
   return Object.freeze({
-    ...createResourceOperations(DomainCollectionSchemas, authorization, "project", deps?.collection),
+    ...createResourceOperations(DomainCollectionSchemas, domainCollection, "project", deps?.collection),
     ...createResourceOperations(DomainResourceSchemas, authorization, "domain", deps?.resources),
     ...createScopedOperations(DomainScopedSchemas, authorization, "domain", deps?.scoped),
     async *verifyStream(ctx, value, command = {}, options = {}) {

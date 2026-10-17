@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { CAPABILITIES } from "@repo/core";
 
 /**
  * Repo source access — the SURFACE a github grant reaches, where `permissions` is
@@ -18,11 +19,14 @@ export const TokenGrantSchema = Type.Object({
   permissions: Type.Array(
     // "create" is the collection-only capability used by the "projects it
     // creates" scope: a {project,"*",[create]} grant. See permission.ts.
+    // Fine-grained capabilities (`domains:delete`, …) sit beside the coarse
+    // levels; see @repo/core access-capabilities.ts.
     Type.Union([
       Type.Literal("read"),
       Type.Literal("write"),
       Type.Literal("admin"),
       Type.Literal("create"),
+      ...CAPABILITIES.map((c) => Type.Literal(c)),
     ]),
   ),
   scope: Type.Optional(Type.Union([TokenSourceScopeSchema, Type.Null()])),

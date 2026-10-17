@@ -332,6 +332,13 @@ curl -X POST "$OPENSHIP_URL/api/deployments/ssl/status" \
   }}
 />
 
+## Access
+
+A project grant covers its deployments: `read` for the `deployment:read` routes, `write` for
+`deployment:write` and starting a deploy, `admin` for `DELETE /api/deployments/:id`. A token can instead hold
+`deployments:read` and `deployments:trigger` on the project; deleting a deployment still needs `admin`. See
+[Capabilities](/docs/security/permissions#capabilities-finer-than-read--write--admin).
+
 ## Errors
 
 <Callout title="400 — bad request / failed operation" type="warn">

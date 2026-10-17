@@ -10,6 +10,9 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *   - Inline search (client-side filter)
  *   - "All resources" wildcard row that emits the `*` id
  *   - Per-row read/write/admin permission chips
+ *   - Optional per-row capability toggles (Domains: View / Add & verify / Delete,
+ *     …) for types that define them; the coarse level is the preset, and the
+ *     capabilities it already implies show as on and locked
  *   - GitHub is a hierarchical org→repo tree: check a whole org, OR expand it
  *     to pick specific repos. A whole-org grant supersedes its repo grants.
  *
@@ -35,7 +38,13 @@ import { Modal } from "@/components/ui/Modal";
 import { SourceAccessModal } from "./SourceAccessModal";
 import {
   GRANTABLE_RESOURCE_TYPES,
+  CAPABILITY_AREAS,
+  capabilitiesForRoot,
+  capabilitiesImpliedBy,
+  isCapability,
   isOrgSingletonResourceType,
+  type Capability,
+  type CapabilityArea,
   type SourceAccessScope,
 } from "@repo/core";
 
@@ -43,6 +52,10 @@ import {
 export type { Permission, PickerGrant, ResourceType } from "@/lib/api";
 
 const PERMISSIONS: Permission[] = ["read", "write", "admin"];
+
+/** Grant permissions split into the coarse levels and the capabilities. */
+const coarseOf = (perms: readonly Permission[]) => perms.filter((p) => !isCapability(p));
+const capsOf = (perms: readonly Permission[]) => perms.filter(isCapability) as Capability[];
 
 const DEFAULT_TYPES: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
 
@@ -141,6 +154,11 @@ interface ResourcePickerProps {
    */
   levels?: LevelsConfig;
   /**
+   * Show capability toggles under rows whose type defines capabilities. Token
+   * grants only: the member-grants API keeps the coarse levels.
+   */
+  capabilities?: boolean;
+  /**
    * Called whenever a catalog page loads, with the entries it fetched. Lets a
    * caller that renders its own view of the selection (e.g. the MCP consent
    * screen's summary panel) show "storefront" instead of a raw cuid, without
@@ -158,6 +176,7 @@ export function ResourcePicker({
   defaultPermissions = ["read"],
   suppressWildcardTypes,
   levels,
+  capabilities,
   onCatalogLoaded,
   disabled,
 }: ResourcePickerProps) {
@@ -226,6 +245,8 @@ export function ResourcePicker({
     onChange(writeGrant(value, resourceType, resourceId, existing ? [] : defaultPermissions));
   };
 
+  // The level chips and the level switch edit the coarse levels only; a row's
+  // capabilities are kept as they are, and edited by their own toggles.
   const togglePermission = (resourceType: ResourceType, resourceId: string, perm: Permission) => {
     const current = findGrantIn(value, resourceType, resourceId)?.permissions ?? [];
     const next = current.includes(perm)
@@ -234,9 +255,16 @@ export function ResourcePicker({
     onChange(writeGrant(value, resourceType, resourceId, next));
   };
 
-  /** Replace a row's permissions outright — the level control's writer. */
+  /** Replace a row's coarse levels outright — the level control's writer. */
   const setPermissions = (resourceType: ResourceType, resourceId: string, perms: Permission[]) => {
-    onChange(writeGrant(value, resourceType, resourceId, perms));
+    const caps = capsOf(findGrantIn(value, resourceType, resourceId)?.permissions ?? []);
+    onChange(writeGrant(value, resourceType, resourceId, [...perms, ...caps]));
+  };
+
+  /** Replace a row's capabilities, keeping its coarse levels. */
+  const setCapabilities = (resourceType: ResourceType, resourceId: string, caps: Capability[]) => {
+    const coarse = coarseOf(findGrantIn(value, resourceType, resourceId)?.permissions ?? []);
+    onChange(writeGrant(value, resourceType, resourceId, [...coarse, ...caps]));
   };
 
   const filteredCatalog = useMemo(() => {
@@ -360,6 +388,7 @@ export function ResourcePicker({
                       onToggleResource={toggleResource}
                       onTogglePermission={togglePermission}
                       onSetPermissions={setPermissions}
+                      onSetCapabilities={capabilities ? setCapabilities : undefined}
                       levels={levels}
                       disabled={disabled || wildcardActive}
                       covered={wildcardActive}
@@ -425,7 +454,7 @@ function PermissionChips({
 }
 
 /** One row's access control: named levels when the caller configured them,
- *  otherwise the read/write/admin chips. */
+ *  otherwise the read/write/admin chips. Fed the coarse levels only. */
 function GrantControl({
   levels,
   perms,
@@ -443,7 +472,8 @@ function GrantControl({
     return (
       <LevelSwitch
         options={levels.options}
-        value={levels.resolve(perms)}
+        // A capability-only grant has no level: show none selected, not "View".
+        value={perms.length > 0 ? levels.resolve(perms) : ""}
         disabled={disabled}
         onChange={(id) => onSet(levels.toPermissions(id))}
         // Default (md) on purpose — no `size="sm"`. This sits directly beside
@@ -467,6 +497,7 @@ function ResourceRow({
   onToggleResource,
   onTogglePermission,
   onSetPermissions,
+  onSetCapabilities,
   levels,
   disabled,
   covered,
@@ -479,6 +510,8 @@ function ResourceRow({
   onToggleResource: (rt: ResourceType, rid: string) => void;
   onTogglePermission: (rt: ResourceType, rid: string, p: Permission) => void;
   onSetPermissions: (rt: ResourceType, rid: string, perms: Permission[]) => void;
+  /** Set to show this row's capability toggles (types that define capabilities). */
+  onSetCapabilities?: (rt: ResourceType, rid: string, caps: Capability[]) => void;
   levels?: LevelsConfig;
   disabled?: boolean;
   /** True when an "All X" wildcard is selected — this specific row is redundant
@@ -524,15 +557,91 @@ function ResourceRow({
         {checked && !covered && (
           <GrantControl
             levels={levels}
-            perms={grant?.permissions ?? []}
+            perms={coarseOf(grant?.permissions ?? [])}
             onToggle={(p) => onTogglePermission(resourceType, resourceId, p)}
             onSet={(perms) => onSetPermissions(resourceType, resourceId, perms)}
             disabled={disabled}
           />
         )}
       </div>
+      {onSetCapabilities && !isWildcard && !covered && capabilitiesForRoot(resourceType).length > 0 && (
+        <CapabilityRows
+          rootType={resourceType}
+          permissions={grant?.permissions ?? []}
+          onSet={(caps) => onSetCapabilities(resourceType, resourceId, caps)}
+          disabled={disabled}
+        />
+      )}
     </div>
   );
+}
+
+// ── Capability toggles (under a row) ─────────────────────────────────────────
+/**
+ * One line per capability area of `rootType` (Domains, Deployments), one toggle
+ * per verb. Capabilities are independent — `domains:delete` alone allows only
+ * delete — so each toggle adds or removes exactly its own capability. Those the
+ * row's coarse level already implies show as on and locked: the server grants
+ * them either way, and the coarse level is the preset.
+ */
+export function CapabilityRows({
+  rootType,
+  permissions,
+  onSet,
+  disabled,
+}: {
+  rootType: string;
+  permissions: readonly Permission[];
+  onSet: (caps: Capability[]) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const w = t.widgets.permissions.resourcePicker;
+  const held = capsOf(permissions);
+  const implied = new Set(capabilitiesImpliedBy(coarseOf(permissions), rootType));
+  const areas = (Object.keys(CAPABILITY_AREAS) as CapabilityArea[]).filter(
+    (a) => CAPABILITY_AREAS[a].root === rootType,
+  );
+
+  return (
+    <div className="mt-1.5 space-y-1 ps-7">
+      {areas.map((area) => (
+        <div key={area} className="flex items-center gap-3">
+          <p className="flex-1 min-w-0 truncate text-xs text-muted-foreground">{w.capabilityAreas[area]}</p>
+          <div className="flex shrink-0 items-center gap-1" role="group" aria-label={w.capabilityAreas[area]}>
+            {capabilitiesForRoot(rootType)
+              .filter((c) => c.startsWith(`${area}:`))
+              .map((c) => {
+                const locked = implied.has(c);
+                const on = locked || held.includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onSet(toggleCapability(held, c))}
+                    disabled={disabled || locked}
+                    title={locked ? w.capabilityImplied : w.capabilityHints[c]}
+                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tracking-wide transition-colors disabled:cursor-not-allowed ${
+                      on
+                        ? "bg-primary/20 text-foreground ring-1 ring-inset ring-primary/40"
+                        : "bg-muted/40 text-muted-foreground/70 hover:text-foreground"
+                    } ${locked ? "opacity-60" : ""}`}
+                  >
+                    {w.capabilityLabels[c]}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The held capability set after clicking `capability`'s toggle. */
+export function toggleCapability(held: readonly Capability[], capability: Capability): Capability[] {
+  return held.includes(capability) ? held.filter((c) => c !== capability) : [...held, capability];
 }
 
 function Checkbox({

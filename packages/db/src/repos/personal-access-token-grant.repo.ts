@@ -11,19 +11,21 @@ import {
   generateId,
   parseSourceAccessScope,
   serializeSourceAccessScope,
+  isCapability,
+  type GrantPermission,
   type SourceAccessScope,
 } from "@repo/core";
 
 import type { Database } from "../client";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
-import type { Permission, ResourceGrant, ResourceType } from "./resource-grant.repo";
+import type { ResourceGrant, ResourceType } from "./resource-grant.repo";
 
 type Row = typeof personalAccessTokenGrant.$inferSelect;
 
 export interface PatGrantInput {
   resourceType: ResourceType;
   resourceId: string;
-  permissions: Permission[];
+  permissions: GrantPermission[];
   scope?: SourceAccessScope | null;
 }
 
@@ -37,12 +39,13 @@ export async function insertPatGrants(db: Pick<Database, "insert">, tokenId: str
 }
 
 function rowToGrant(row: Row): ResourceGrant {
-  let permissions: Permission[] = [];
+  let permissions: GrantPermission[] = [];
   try {
     const parsed = JSON.parse(row.permissionsJson);
     if (Array.isArray(parsed)) {
       permissions = parsed.filter(
-        (p): p is Permission => p === "read" || p === "write" || p === "admin" || p === "create",
+        (p): p is GrantPermission =>
+          p === "read" || p === "write" || p === "admin" || p === "create" || isCapability(p),
       );
     }
   } catch {

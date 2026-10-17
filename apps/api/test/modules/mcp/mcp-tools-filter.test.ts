@@ -131,6 +131,7 @@ function principal(
     wildcardGrants: p.wildcardGrants ?? new Map(Object.entries(wildcards)),
     canCreateProjects: p.canCreateProjects ?? false,
     sourceCapabilities: p.sourceCapabilities ?? new Set(),
+    grantedCapabilities: p.grantedCapabilities,
   };
 }
 
@@ -304,4 +305,23 @@ describe("filterToolsForPrincipal", () => {
     // still no GitHub, since no github grant
     expect(names(out)).not.toContain("get_github_repos_by_owner_by_repo");
   });
+
+  it("a capability-only grant lists exactly the tools its capabilities map to", () => {
+    const domainGet = tool({
+      name: "get_domains_by_id",
+      method: "GET",
+      perm: { root: "domain", leaf: "domain", action: "read", wildcard: false, grantRoot: "project" },
+    });
+    const domainDelete = tool({
+      name: "delete_domains_by_id",
+      method: "DELETE",
+      perm: { root: "domain", leaf: "domain", action: "admin", wildcard: false, grantRoot: "project" },
+    });
+    const out = filterToolsForPrincipal(
+      [...ALL, domainGet, domainDelete],
+      principal({ grantedCapabilities: new Set(["domains:delete"]) }),
+    );
+    expect(names(out)).toEqual(["delete_domains_by_id"]);
+  });
 });
+

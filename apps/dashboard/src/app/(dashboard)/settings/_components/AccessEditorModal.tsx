@@ -59,7 +59,12 @@ export function AccessEditorModal({
   initial: PickerGrant[];
   availableTypes?: ResourceType[];
   saveLabel?: string;
-  show?: { templates?: boolean; readOnlySwitch?: boolean; createCapability?: boolean };
+  show?: {
+    templates?: boolean;
+    readOnlySwitch?: boolean;
+    createCapability?: boolean;
+    capabilities?: boolean;
+  };
   suppressWildcardTypes?: ResourceType[];
   /** Called with the final selection. Throw to keep the modal open. */
   onSave: (grants: PickerGrant[]) => Promise<void> | void;

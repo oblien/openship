@@ -11,6 +11,7 @@ import {
   generateId,
   parseSourceAccessScope,
   serializeSourceAccessScope,
+  type GrantPermission,
   type Permission,
   type ResourceType,
   type SourceAccessScope,
@@ -30,7 +31,8 @@ export interface ResourceGrant {
   userId: string;
   resourceType: ResourceType;
   resourceId: string;
-  permissions: Permission[];
+  /** Coarse levels; scoped-token grants may also carry capabilities (`domains:delete`). */
+  permissions: GrantPermission[];
   /**
    * Source-access scope — the SURFACE, where `permissions` is the VERB.
    * `undefined` means metadata only: for a github repo grant, "read" alone does

@@ -61,9 +61,15 @@ export interface AccessControlEditorProps {
   /**
    * Which halves to render. Member grants turn all three off: "unscoped member" is
    * meaningless, `readOnly` is a token property, and the grants API's permission
-   * whitelist has no `create`, so the create switch would offer a no-op.
+   * whitelist has no `create`, so the create switch would offer a no-op. The same
+   * whitelist drops capabilities (`domains:delete`), so their toggles go too.
    */
-  show?: { templates?: boolean; readOnlySwitch?: boolean; createCapability?: boolean };
+  show?: {
+    templates?: boolean;
+    readOnlySwitch?: boolean;
+    createCapability?: boolean;
+    capabilities?: boolean;
+  };
   /**
    * Defaults to `["project"]`. Every TOKEN consumer needs it — the mint refuses any
    * non-create `{project,"*"}` grant — while member grants pass `[]` to keep the
@@ -119,6 +125,7 @@ export function AccessControlEditor({
           orgKey={orgKey}
           disabled={disabled}
           showCreateCapability={showCreate}
+          showCapabilities={show?.capabilities ?? true}
           onCatalogLoaded={onCatalogLoaded}
           suppressWildcardTypes={suppressWildcardTypes}
           onPickerChange={(grants) => dispatch({ type: "pickerChange", grants })}

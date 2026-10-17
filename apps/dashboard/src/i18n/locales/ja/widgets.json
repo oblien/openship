@@ -285,7 +285,26 @@
       "repoCountOther": "{count} 個のリポジトリ",
       "coveredByOrg": "上記の組織全体への付与に含まれます。",
       "noRepos": "リポジトリがありません。",
-      "searchRepos": "リポジトリを検索…"
+      "searchRepos": "リポジトリを検索…",
+      "capabilityAreas": {
+        "domains": "ドメイン",
+        "deployments": "デプロイ"
+      },
+      "capabilityLabels": {
+        "domains:read": "表示",
+        "domains:write": "追加と検証",
+        "domains:delete": "削除",
+        "deployments:read": "表示",
+        "deployments:trigger": "実行"
+      },
+      "capabilityHints": {
+        "domains:read": "ドメイン、DNS レコード、証明書の状態を表示",
+        "domains:write": "ドメインの追加・検証・更新と DNS チャレンジの実行",
+        "domains:delete": "ドメインを削除",
+        "deployments:read": "デプロイ、ログ、ビルド状態を表示",
+        "deployments:trigger": "デプロイの開始・再デプロイ・再起動・キャンセル・ロールバック"
+      },
+      "capabilityImplied": "このリソースのアクセスレベルに含まれています"
     },
     "sourceAccess": {
       "title": "ソースアクセス",

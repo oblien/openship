@@ -25,7 +25,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
-import { NotFoundError, normalizeRepoPath } from "@repo/core";
+import { NotFoundError, capabilityFor, capabilityRoot, normalizeRepoPath } from "@repo/core";
 import { permission, ORG_SINGLETON_RESOURCES, type CheckedResourceType } from "./permission";
 import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
@@ -496,6 +496,12 @@ export function githubReadTarget(
 /*  Middleware factory                                                 */
 /* ------------------------------------------------------------------ */
 
+/** The capability a child collection check on its parent also accepts, if the child defines one. */
+function withCapability(root: string, leaf: string, action: Action) {
+  const capability = capabilityFor(leaf, action);
+  return capability && capabilityRoot(capability) === root ? { capability } : {};
+}
+
 /**
  * Build the Hono middleware that enforces a permission tag AND emits an
  * audit_event after a successful mutation.
@@ -590,9 +596,10 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
         // Enforce it here; a missing id must never become a wildcard list.
         const projectId = c.req.query("projectId");
         if (!projectId?.trim()) return c.json({ error: "projectId query parameter required" }, 400);
+        const action = parsed.isList ? "read" : parsed.action as Action;
         await permission.assert(getRequestContext(c), {
-          resourceType: "project", resourceId: projectId,
-          action: parsed.isList ? "read" : parsed.action as Action,
+          resourceType: "project", resourceId: projectId, action,
+          ...withCapability("project", parsed.leaf, action),
         });
       }
       // A body names the target project and the handler asserts on it — see
@@ -617,10 +624,13 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
             400,
           );
         }
+        const action = parsed.isList ? "read" : parsed.action as Action;
         await permission.assert(getRequestContext(c), {
           resourceType: parsed.root,
           resourceId: parentId,
-          action: parsed.isList ? "read" : parsed.action as Action,
+          action,
+          // A capability on the parent (`deployments:read`) also lists its children.
+          ...withCapability(parsed.root, parsed.leaf, action),
         });
         leafId = "*";
       } else {

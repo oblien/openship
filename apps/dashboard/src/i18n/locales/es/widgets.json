@@ -285,7 +285,26 @@
       "repoCountOther": "{count} repositorios",
       "coveredByOrg": "Cubierto por la concesión a toda la organización de arriba.",
       "noRepos": "No hay repositorios.",
-      "searchRepos": "Buscar repositorios…"
+      "searchRepos": "Buscar repositorios…",
+      "capabilityAreas": {
+        "domains": "Dominios",
+        "deployments": "Despliegues"
+      },
+      "capabilityLabels": {
+        "domains:read": "Ver",
+        "domains:write": "Añadir y verificar",
+        "domains:delete": "Eliminar",
+        "deployments:read": "Ver",
+        "deployments:trigger": "Lanzar"
+      },
+      "capabilityHints": {
+        "domains:read": "Ver dominios, registros DNS y estado del certificado",
+        "domains:write": "Añadir, verificar y renovar dominios, ejecutar desafíos DNS",
+        "domains:delete": "Eliminar dominios",
+        "deployments:read": "Leer despliegues, registros y estado de compilación",
+        "deployments:trigger": "Iniciar, redesplegar, reiniciar, cancelar y revertir despliegues"
+      },
+      "capabilityImplied": "Incluido en el nivel de acceso de este recurso"
     },
     "sourceAccess": {
       "title": "Acceso al código fuente",

@@ -37,7 +37,7 @@ openship token create [options] <name>
 | --- | --- |
 | `--read-only` | Reject mutation methods (POST/PUT/PATCH/DELETE) (default: false) |
 | `--expires <days>` | Expire after N days (1–365); omit for non-expiring |
-| `--grant <type:id:perms>` | Scope the token to a resource (repeatable), e.g. project:abc123:read,write (default: []) |
+| `--grant <type:id:perms>` | Scope the token to a resource (repeatable), e.g. project:abc123:read,write or project:abc123:domains:read,domains:write,domains:delete (default: []) |
 | `--full-access` | Mint an UNSCOPED token with your own full access (required when no --grant is given) (default: false) |
 
 ## openship token list

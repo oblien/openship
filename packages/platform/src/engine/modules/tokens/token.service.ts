@@ -5,9 +5,14 @@ import { checkPermissionOnResource } from "@repo/platform/engine/lib/authorizati
 import { canUseGitHubRepo, resolveSourceAccess } from "@repo/platform/engine/modules/github/github-access";
 import {
   AppError,
+  capabilityAction,
+  capabilityRoot,
+  isCapability,
   isGrantableResourceType,
   isOrgSingletonResourceType,
   scopeIsSubset,
+  type Capability,
+  type GrantPermission,
   type SourceAccessScope,
 } from "@repo/core";
 import { mintPatToken } from "@repo/platform/engine/lib/pat";
@@ -55,7 +60,7 @@ function serialize(t: PublicPersonalAccessToken) {
 }
 
 /** The strongest action a grant's permissions imply. */
-function strongestAction(perms: Permission[]): Permission {
+function strongestAction(perms: readonly GrantPermission[]): Permission {
   if (perms.includes("admin")) return "admin";
   if (perms.includes("write")) return "write";
   return "read";
@@ -87,8 +92,19 @@ function splitRepoGrant(g: { resourceType: string; resourceId: string }): {
  */
 async function minterHasAccess(
   ctx: RequestContext,
-  g: { resourceType: string; resourceId: string; permissions: Permission[] },
+  g: { resourceType: string; resourceId: string; permissions: GrantPermission[] },
 ): Promise<boolean> {
+  // Each capability needs the same reach the minter would need to use it.
+  for (const capability of g.permissions.filter(isCapability)) {
+    const ok = await checkPermissionOnResource(ctx, {
+      resourceType: g.resourceType as never,
+      resourceId: g.resourceId,
+      action: capabilityAction(capability),
+      capability,
+    });
+    if (!ok) return false;
+  }
+  if (g.permissions.every(isCapability)) return true;
   const action = strongestAction(g.permissions);
   if (g.resourceType === "github_installation" || g.resourceType === "github_repository") {
     const op = action === "read" ? "read" : "write";
@@ -226,7 +242,7 @@ async function validateGrants(
   grants: Array<{
     resourceType: string;
     resourceId: string;
-    permissions: Permission[];
+    permissions: GrantPermission[];
     scope?: SourceAccessScope | null;
   }>,
 ): Promise<{ status: 400 | 403; body: { error: string; code: string } } | null> {
@@ -246,6 +262,17 @@ async function validateGrants(
         body: {
           error: `${g.resourceType} is granted for the whole organization — use "*" as the resource id`,
           code: "SINGLETON_REQUIRES_WILDCARD",
+        },
+      };
+    }
+    // A capability is held on its root type only (`domains:*` on a project).
+    const misplaced = g.permissions.find((p) => isCapability(p) && capabilityRoot(p) !== g.resourceType);
+    if (misplaced) {
+      return {
+        status: 400,
+        body: {
+          error: `${misplaced} is granted on a ${capabilityRoot(misplaced as Capability)}, not a ${g.resourceType}`,
+          code: "INVALID_CAPABILITY",
         },
       };
     }
@@ -504,7 +531,7 @@ function serializeBinding(
   b: { id: string; oauthClientId: string | null; name: string; organizationId: string | null; readOnly: boolean; scoped: boolean; createdAt: Date; lastUsedAt: Date | null; useCount: number; expiresAt?: Date | null },
   name: string,
   organizationName: string | null,
-  grants: Array<{ resourceType: string; resourceId: string; permissions: Permission[]; scope?: SourceAccessScope }>,
+  grants: Array<{ resourceType: string; resourceId: string; permissions: GrantPermission[]; scope?: SourceAccessScope }>,
   opts: { includeGrants: boolean },
 ) {
   return {

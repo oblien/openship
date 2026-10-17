@@ -128,10 +128,13 @@ Choose explicit access for each token:
 
 ```bash
 openship token create deploy-bot --grant project:proj_123:read,write
+openship token create edge-domains --expires 90 --grant project:proj_123:domains:read,domains:write,domains:delete
 openship token create report-reader --read-only --expires 30 --full-access
 openship token list
 ```
 
+A grant's permissions are levels (`read`, `write`, `admin`) or
+[capabilities](/docs/security/permissions#capabilities-finer-than-read--write--admin) such as `domains:delete`.
 Pass either `--grant` or `--full-access`; omitting both is refused. A full-access token acts with your
 own permissions. Scoped credentials cannot mint unrestricted credentials.
 

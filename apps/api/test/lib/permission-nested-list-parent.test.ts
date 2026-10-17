@@ -68,14 +68,18 @@ describe("nested list permission scope", () => {
     c.req.query.mockImplementation((name: string) => name === "projectId" ? "project-1" : undefined);
     await check(c as never, next);
     expect(assertPermission).toHaveBeenCalledWith(expect.anything(), {
-      resourceType: "project", resourceId: "project-1", action: "read",
+      resourceType: "project", resourceId: "project-1", action: "read", capability: "domains:read",
     });
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it.each(["project:service:list", "project:deployment:list"])(
+  it.each([
+    ["project:service:list", {}],
+    // A child with capabilities lets the parent's `deployments:read` list it too.
+    ["project:deployment:list", { capability: "deployments:read" }],
+  ])(
     "authorizes %s against the concrete parent project",
-    async (tag) => {
+    async (tag, extra) => {
       const c = context({ id: "project-1" });
       const next = vi.fn(async () => {});
 
@@ -83,7 +87,7 @@ describe("nested list permission scope", () => {
 
       expect(assertPermission).toHaveBeenCalledWith(
         expect.anything(),
-        { resourceType: "project", resourceId: "project-1", action: "read" },
+        { resourceType: "project", resourceId: "project-1", action: "read", ...extra },
       );
       expect(next).toHaveBeenCalledOnce();
     },

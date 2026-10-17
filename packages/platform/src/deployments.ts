@@ -79,6 +79,7 @@ export function createDeploymentOperations(deps: DeploymentDependencies): Platfo
         resourceType: "project",
         resourceId: input.projectId,
         action: "write",
+        capability: "deployments:trigger",
       });
       // The existing engine validates registered-server ownership and runtime
       // admission using this resolved organization, along with source access,

@@ -91,6 +91,36 @@ The resource picker offers these grantable types:
 | **GitHub orgs** | Every repo under one GitHub installation. |
 | **GitHub repos** | A single repository. |
 
+### Capabilities: finer than read / write / admin
+
+A **scoped access token** can also carry **capabilities** in a grant's `permissions`, next to (or instead of) the levels. A capability is `<area>:<verb>` and covers one slice of the resource it is granted on, and nothing else:
+
+| Capability | Granted on | Allows |
+|---|---|---|
+| `domains:read` | a project | List the project's domains, read their DNS records, verification and certificate status. |
+| `domains:write` | a project | Add domains, verify them, set the primary domain, renew certificates, run DNS challenges and DNS auto-configure. |
+| `domains:delete` | a project | Delete the project's domains. |
+| `deployments:read` | a project | Read the project's deployments, their logs and build status, and list them. |
+| `deployments:trigger` | a project | Start a deploy, and redeploy, restart, cancel, pin or roll back the project's deployments. |
+
+Capabilities don't stack: `domains:delete` alone allows deleting domains, not adding them. The levels keep their meaning and are the presets: project `read` includes every `:read` capability above, `write` adds `domains:write` and `deployments:trigger`, and `admin` adds `domains:delete`. Deleting a deployment, and every route outside these areas, still needs the level. Capabilities are granted on a specific project id; the project `"*"` grant stays create-only.
+
+In the token editor, each project row shows a toggle per capability under its level. Toggles the level already includes show as on and locked.
+
+For an automation that adds, verifies and removes one project's custom domains, and nothing else:
+
+```json
+{
+  "name": "edge-domains",
+  "expiresInDays": 90,
+  "grants": [
+    { "resourceType": "project", "resourceId": "<projectId>", "permissions": ["domains:read", "domains:write", "domains:delete"] }
+  ]
+}
+```
+
+Member grants keep the levels only.
+
 <Callout title="Which types you'll see" type="info">
 The picker adapts to your instance. A **self-hosted** instance shows Servers and Mail servers; **Openship Cloud** shows Billing in their place. Projects, Backup destinations, the Audit log, and GitHub are offered on both.
 </Callout>

@@ -671,3 +671,24 @@ describe("the digest answers the file-contents question", () => {
     expect(d.cannot).not.toContain("notReadSource");
   });
 });
+
+describe("capability grants", () => {
+  const domainsOnly: PickerGrant = {
+    resourceType: "project",
+    resourceId: "p1",
+    permissions: ["domains:read", "domains:write", "domains:delete"],
+  };
+
+  it("a capability-only row states no level, and lists its capabilities", () => {
+    const [row] = summaryRows([domainsOnly]);
+    expect(row).toMatchObject({ level: null, capabilities: ["domains:read", "domains:write", "domains:delete"] });
+    expect(summaryGroups([row!])[0]!.sharedLevel).toBeNull();
+  });
+
+  it("counts capability writes as writes and domains:delete as a delete", () => {
+    const d = capabilityDigest(sel({ grants: [domainsOnly] }));
+    expect(d.can).toContain("operatePickedProjects");
+    expect(d.cannot).not.toContain("notDelete");
+    expect(readOnlyContradictions(sel({ grants: [domainsOnly], readOnly: true })).writes).toBe(1);
+  });
+});

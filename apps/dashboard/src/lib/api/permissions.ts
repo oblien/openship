@@ -4,7 +4,7 @@ import {
   INVITATION_DELIVERY_HEADER,
   INVITATION_DELIVERY_LINK_ONLY,
   type GrantableResourceType,
-  type Permission,
+  type GrantPermission,
   type SourceAccessScope,
 } from "@repo/core";
 import { api } from "./client";
@@ -26,7 +26,8 @@ import type { PermissionOperations } from "@repo/contracts";
 // the column can hold. The alias keeps every consumer's import unchanged while
 // making the intent explicit at the boundary.
 export type ResourceType = GrantableResourceType;
-export type { Permission };
+/** A grant's permission entry: a coarse level or a capability (`domains:delete`). */
+export type Permission = GrantPermission;
 
 export interface PickerGrant {
   resourceType: ResourceType;

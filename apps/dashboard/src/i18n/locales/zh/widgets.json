@@ -285,7 +285,26 @@
       "repoCountOther": "{count} 个仓库",
       "coveredByOrg": "已被上方的组织级授权涵盖。",
       "noRepos": "没有仓库。",
-      "searchRepos": "搜索仓库……"
+      "searchRepos": "搜索仓库……",
+      "capabilityAreas": {
+        "domains": "域名",
+        "deployments": "部署"
+      },
+      "capabilityLabels": {
+        "domains:read": "查看",
+        "domains:write": "添加和验证",
+        "domains:delete": "删除",
+        "deployments:read": "查看",
+        "deployments:trigger": "触发"
+      },
+      "capabilityHints": {
+        "domains:read": "查看域名、DNS 记录和证书状态",
+        "domains:write": "添加、验证和续期域名，执行 DNS 质询",
+        "domains:delete": "删除域名",
+        "deployments:read": "查看部署、日志和构建状态",
+        "deployments:trigger": "启动、重新部署、重启、取消和回滚部署"
+      },
+      "capabilityImplied": "已包含在此资源的访问级别中"
     },
     "sourceAccess": {
       "title": "源码访问权限",
