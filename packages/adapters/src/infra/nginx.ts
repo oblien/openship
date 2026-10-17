@@ -3051,6 +3051,13 @@ ${serveLocation}
     const dir = join(this.certDir, domain);
     await this.stageCertDir(dir, cert);
 
+    // If writing a manual cert replaced a managed Certbot live directory with regular files,
+    // an existing renewal/*.conf will cause future certbot commands to fail with:
+    // "expected .../privkey.pem to be a symlink". Remove the obsolete renewal conf.
+    await this._rm(this.renewalConfPath(domain)).catch((err) => {
+      observeCaughtError(err, "adapters/infra/nginx");
+    });
+
     await this.activateCert(domain);
 
     return {

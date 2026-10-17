@@ -252,6 +252,14 @@ describe("Certbot renewal after adopting a certificate", () => {
     );
   });
 
+  test("cleans up obsolete renewal conf when direct manual cert is installed over lineage", async () => {
+    const s = await setup();
+    await s.put(DOMAIN, s.old, true);
+    const renewalConf = join(s.root, "renewal", `${DOMAIN}.conf`);
+    await s.nginx.installCert(DOMAIN, s.old);
+    await expect(readFile(renewalConf, "utf8")).rejects.toThrow();
+  });
+
   test("renews the linked lineage even when its certificate has already expired", async () => {
     const s = await setup();
     await s.put(`${DOMAIN}-0001`, s.renewed, true);
