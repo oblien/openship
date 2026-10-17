@@ -64,6 +64,15 @@ export const SYSTEM = {
     /** Log lines folded into the failure message, so diagnosing needs no SSH. */
     STABILIZE_LOG_TAIL_LINES: 20,
     /**
+     * Background restart-loop watch that runs AFTER a deploy has reported ready
+     * (GH-672). Off the critical path, so it can afford a much longer look than
+     * the blocking gate: a service that only crashes once its first request or
+     * cron tick arrives is invisible inside 15s but obvious inside a minute.
+     */
+    BACKGROUND_STABILIZE_WINDOW_MS: 60_000,
+    /** Inspect poll interval for the background watch — gentler on remote hosts. */
+    BACKGROUND_STABILIZE_POLL_MS: 2_000,
+    /**
      * Readiness-probe budget when a project OPTS IN to the health check. Only
      * reached with `readiness.enabled` — an unconfigured deploy runs no probe
      * at all, so this never sits on the default critical path.

@@ -554,5 +554,6 @@
       "server_unreachable": "Servidor inaccesible"
     }
   },
-  "migrationAwaitingHint": "La migración te espera: completa el cambio o revértela en Ajustes → Avanzado del proyecto"
+  "migrationAwaitingHint": "La migración te espera: completa el cambio o revértela en Ajustes → Avanzado del proyecto",
+  "restartLoopHint": "Un servicio se reinicia en bucle tras el último despliegue: revisa sus registros y vuelve a desplegar"
 }

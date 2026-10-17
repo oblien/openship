@@ -39,6 +39,7 @@
     "prompt": "判断を待っています",
     "partial_decision": "部分的なリリース",
     "routing_unsynced": "ルーティングが未同期",
+    "restart_loop": "再起動ループ",
     "domain_unverified": "ドメインが未確認",
     "ssl_error": "証明書の問題",
     "port_advisory": "ポートに関する注意",

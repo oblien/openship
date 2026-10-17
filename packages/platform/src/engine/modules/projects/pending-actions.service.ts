@@ -39,7 +39,11 @@ import * as sessionManager from "@repo/platform/engine/modules/deployments/sessi
 // Leaf import, not the ./compose barrel — this needs one pure predicate over
 // `project.framework`, not the whole compose pipeline in the graph.
 import { isMultiServiceProject } from "@repo/platform/engine/modules/deployments/compose/project-services";
-import { deploymentIsInFlight, deploymentRoutingUnsynced } from "@repo/platform/engine/modules/projects/deployment-flags";
+import {
+  deploymentIsInFlight,
+  deploymentRestartLoop,
+  deploymentRoutingUnsynced,
+} from "@repo/platform/engine/modules/projects/deployment-flags";
 
 // ─── Shape ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +56,8 @@ export type PendingActionKind =
   | "partial_decision"
   /** Live, but the managed edge route didn't sync. */
   | "routing_unsynced"
+  /** Reported ready, then a service started restart-looping (background watch). */
+  | "restart_loop"
   /** A custom domain whose DNS hasn't verified. */
   | "domain_unverified"
   /** A certificate that errored or expired. */
@@ -300,6 +306,35 @@ function buildRoutingUnsynced(projectId: string, dep: Deployment): PendingAction
   };
 }
 
+/**
+ * The release reported ready, then the background watch saw a service keep
+ * restarting (GH-672). The deploy "succeeded", so without this the only sign is
+ * a crash-loop incident on a project that otherwise reads "Live".
+ */
+function buildRestartLoop(projectId: string, dep: Deployment): PendingAction | null {
+  const finding = deploymentRestartLoop(dep);
+  if (!finding) return null;
+  const names = finding.services.map((s) => `"${s.serviceName}"`).join(", ");
+  const first = finding.services[0]!;
+  return {
+    id: `restart_loop:${dep.id}`,
+    kind: "restart_loop",
+    severity: "action_required",
+    title:
+      finding.services.length === 1
+        ? `${first.serviceName} is restart-looping`
+        : `${finding.services.length} services are restart-looping`,
+    message:
+      `The deploy reported ready, but ${names} kept restarting afterwards ` +
+      `(${first.reason}${first.oomKilled ? " — OOM-killed" : ""}). ` +
+      `Check the service logs, fix the cause, then redeploy.`,
+    details: { deploymentId: dep.id, detectedAt: finding.detectedAt, services: finding.services },
+    resolveWith: [
+      { label: "Redeploy", method: "POST", path: `/api/deployments/${dep.id}/redeploy` },
+    ],
+  };
+}
+
 type DomainRow = Awaited<ReturnType<typeof repos.domain.listByProject>>[number];
 
 /**
@@ -489,6 +524,8 @@ export function collectPendingActions(input: {
     if (decision) actions.push(decision);
     const routing = buildRoutingUnsynced(project.id, active);
     if (routing) actions.push(routing);
+    const looping = buildRestartLoop(project.id, active);
+    if (looping) actions.push(looping);
     actions.push(...buildPortAdvisories(active, isMultiServiceProject(project)));
   }
 
@@ -593,6 +630,8 @@ export async function getDeploymentPendingActions(
   }
   const decision = buildPartialDecision(dep);
   if (decision) actions.push(decision);
+  const looping = buildRestartLoop(dep.projectId, dep);
+  if (looping) actions.push(looping);
   if (project) actions.push(...buildPortAdvisories(dep, isMultiServiceProject(project)));
   return actions.sort(bySeverity);
 }

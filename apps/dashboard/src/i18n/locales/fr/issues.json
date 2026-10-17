@@ -39,6 +39,7 @@
     "prompt": "En attente d'une décision",
     "partial_decision": "Version partielle",
     "routing_unsynced": "Routage non synchronisé",
+    "restart_loop": "Redémarrages en boucle",
     "domain_unverified": "Domaine non vérifié",
     "ssl_error": "Problème de certificat",
     "port_advisory": "Information sur un port",

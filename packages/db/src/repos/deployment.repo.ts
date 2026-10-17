@@ -899,6 +899,24 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     },
 
     /**
+     * Record (or clear, with `null`) the background restart-loop finding on a
+     * settled release without replacing concurrent metadata. Only lands while the
+     * row is still a live-able success (`ready` / `partial_failure`): a release
+     * that was cancelled, rejected or superseded meanwhile is left alone.
+     */
+    async setRestartLoop(id: string, value: Record<string, unknown> | null): Promise<boolean> {
+      const rows = await db
+        .update(deployment)
+        .set({
+          meta: sql`jsonb_set(coalesce(${deployment.meta}, '{}'::jsonb), '{restartLoop}', ${JSON.stringify(value)}::jsonb)`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(deployment.id, id), sql`${deployment.status} in ('ready', 'partial_failure')`))
+        .returning();
+      return rows.length > 0;
+    },
+
+    /**
      * Atomically make cancellation the terminal outcome only while the work is
      * actually in flight. A read followed by updateStatus is not sufficient:
      * the worker can become ready between those calls, and a late cancel would

@@ -170,8 +170,8 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
 // pending-actions aggregator can share them without importing this file's graph.
 // Imported (this file calls one below) AND re-exported, because the
 // project.service barrel is the established import surface for callers.
-import { deploymentIsBlocked, deploymentRoutingUnsynced } from "./deployment-flags";
-export { deploymentIsBlocked, deploymentRoutingUnsynced };
+import { deploymentIsBlocked, deploymentRestartLooping, deploymentRoutingUnsynced } from "./deployment-flags";
+export { deploymentIsBlocked, deploymentRestartLooping, deploymentRoutingUnsynced };
 
 // Same reason: the run→payload projection is an allowlist that must be readable and
 // testable without this file's graph. See the module doc for what it deliberately drops.
@@ -230,6 +230,7 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
   awaitingDecision: boolean;
   routingUnsynced: boolean;
   routingWarning: string | null;
+  restartLooping: boolean;
 } {
   const meta = (dep?.meta ?? null) as {
     composeDeployment?: { decision?: string };
@@ -254,6 +255,8 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
      * in this same meta blob.
      */
     routingWarning: (meta?.deployWarning ?? null) || null,
+    /** Reported ready, then the background watch caught a service restart-looping (GH-672). */
+    restartLooping: deploymentRestartLooping(dep),
   };
 }
 

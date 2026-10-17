@@ -554,5 +554,6 @@
       "server_unreachable": "Server nicht erreichbar"
     }
   },
-  "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung unter „Einstellungen → Erweitert“ im Projekt abschließen oder zurücknehmen"
+  "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung unter „Einstellungen → Erweitert“ im Projekt abschließen oder zurücknehmen",
+  "restartLoopHint": "Ein Dienst startet seit dem letzten Deployment ständig neu — Logs prüfen und erneut deployen"
 }

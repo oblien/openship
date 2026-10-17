@@ -554,5 +554,6 @@
       "server_unreachable": "Serveur inaccessible"
     }
   },
-  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet"
+  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet",
+  "restartLoopHint": "Un service redémarre en boucle depuis le dernier déploiement — consultez ses journaux, puis redéployez"
 }

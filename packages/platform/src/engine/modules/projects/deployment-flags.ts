@@ -68,3 +68,40 @@ export function deploymentRoutingUnsynced(dep: Deployment | null | undefined): b
   const meta = (dep?.meta ?? null) as { edgeUnsynced?: boolean; deployWarning?: string } | null;
   return meta?.edgeUnsynced === true || typeof meta?.deployWarning === "string";
 }
+
+/**
+ * One service the background watch caught crash-looping after this release went
+ * live (GH-672). Written to `meta.restartLoop` by the post-deploy watch.
+ */
+export interface RestartLoopService {
+  serviceId?: string;
+  serviceName: string;
+  /** Operator-phrased verdict, e.g. "restarted 5 times in 60s". */
+  reason: string;
+  exitCode?: number | null;
+  oomKilled?: boolean;
+  /** Headline + the container's last log lines. */
+  detail: string;
+}
+
+export interface RestartLoopFinding {
+  detectedAt: string;
+  services: RestartLoopService[];
+}
+
+/** The background restart-loop finding on this release, or null. */
+export function deploymentRestartLoop(dep: Deployment | null | undefined): RestartLoopFinding | null {
+  const meta = (dep?.meta ?? null) as { restartLoop?: RestartLoopFinding | null } | null;
+  const finding = meta?.restartLoop;
+  return finding && Array.isArray(finding.services) && finding.services.length > 0 ? finding : null;
+}
+
+/**
+ * Did this release report ready, then start crash-looping once the background
+ * watch looked at it for longer? The deploy itself "succeeded", so nothing else
+ * on the row says so — without this the project reads a green "Live" over a
+ * service docker is restarting every few seconds.
+ */
+export function deploymentRestartLooping(dep: Deployment | null | undefined): boolean {
+  return deploymentRestartLoop(dep) !== null;
+}

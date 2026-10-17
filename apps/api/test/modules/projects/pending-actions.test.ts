@@ -799,3 +799,62 @@ describe("scoping", () => {
     expect(actions[0].resolveWith[0].path).toBe("/api/deployments/dep-blocked/redeploy");
   });
 });
+
+/**
+ * GH-672: a release that reported ready and THEN started restart-looping. The
+ * deploy row still says `ready`, so this item is the only thing that turns the
+ * project from a green "Live" into "Action Required".
+ */
+describe("restart_loop", () => {
+  const looping = (over: Record<string, unknown> = {}) =>
+    dep({
+      id: "dep-live",
+      meta: {
+        restartLoop: {
+          detectedAt: "2026-10-13T00:00:00.000Z",
+          services: [
+            {
+              serviceId: "svc_1",
+              serviceName: "api",
+              reason: "restarted 4 times in 60s",
+              exitCode: 1,
+              oomKilled: false,
+              detail: '"api" did not stay up: restarted 4 times in 60s',
+            },
+          ],
+        },
+      },
+      ...over,
+    });
+
+  it("is surfaced from the ACTIVE release as action required, resolved by redeploy", async () => {
+    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
+    deploymentFindById.mockResolvedValue(looping());
+
+    const actions = await getProjectPendingActions(PROJECT, ORG);
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      id: "restart_loop:dep-live",
+      kind: "restart_loop",
+      severity: "action_required",
+      title: "api is restart-looping",
+    });
+    expect(actions[0].message).toContain("restarted 4 times in 60s");
+    expect(actions[0].resolveWith).toEqual([
+      { label: "Redeploy", method: "POST", path: "/api/deployments/dep-live/redeploy" },
+    ]);
+  });
+
+  it("is listed on the deployment's own view too", async () => {
+    deploymentFindById.mockResolvedValue(looping());
+    const actions = await getDeploymentPendingActions("dep-live", ORG);
+    expect(actions.map((a) => a.kind)).toEqual(["restart_loop"]);
+  });
+
+  it("is silent when the background watch found nothing", async () => {
+    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
+    deploymentFindById.mockResolvedValue(looping({ meta: { restartLoop: null } }));
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+});

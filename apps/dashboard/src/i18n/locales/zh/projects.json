@@ -554,5 +554,6 @@
       "server_unreachable": "服务器不可达"
     }
   },
-  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「设置 → 高级」中完成切换或回滚"
+  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「设置 → 高级」中完成切换或回滚",
+  "restartLoopHint": "上次部署后有服务反复重启 —— 请检查其日志，然后重新部署"
 }

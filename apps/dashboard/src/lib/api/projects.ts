@@ -46,6 +46,7 @@ export interface PendingAction {
     | "prompt"
     | "partial_decision"
     | "routing_unsynced"
+    | "restart_loop"
     | "domain_unverified"
     | "ssl_error"
     | "port_advisory";

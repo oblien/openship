@@ -39,6 +39,7 @@
     "prompt": "Bir karar bekliyor",
     "partial_decision": "Kısmi sürüm",
     "routing_unsynced": "Yönlendirme eşitlenmedi",
+    "restart_loop": "Yeniden başlatma döngüsü",
     "domain_unverified": "Alan adı doğrulanmadı",
     "ssl_error": "Sertifika sorunu",
     "port_advisory": "Port bilgisi",

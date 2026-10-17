@@ -39,6 +39,7 @@
     "prompt": "Waiting for a decision",
     "partial_decision": "Partial release",
     "routing_unsynced": "Routing not synced",
+    "restart_loop": "Restart loop",
     "domain_unverified": "Domain not verified",
     "ssl_error": "Certificate problem",
     "port_advisory": "Port advisory",

@@ -82,6 +82,13 @@ describe("getProjectStatus — a blocked deploy needs attention", () => {
     expect(getProjectStatus({ activeDeploymentId: "d", awaitingDecision: true })).toBe("attention");
     expect(getProjectStatus({ activeDeploymentId: "d", routingUnsynced: true })).toBe("attention");
   });
+
+  // GH-672: the deploy said ready, then the background watch saw a service keep
+  // restarting. The row is still `ready`, so only this flag stops a green "Live".
+  it("flags a live release that started restart-looping after it reported ready", () => {
+    expect(getProjectStatus({ activeDeploymentId: "d", restartLooping: true })).toBe("attention");
+    expect(getProjectStatus({ activeDeploymentId: "d", restartLooping: false })).toBe("live");
+  });
 });
 
 describe("getProjectStatus — a failed latest deploy is never Live", () => {
@@ -169,6 +176,11 @@ describe("projectActionHref — every action badge has an owner", () => {
       "routing repair",
       { id: "p1", activeDeploymentId: "live", routingUnsynced: true },
       "/projects/p1/domains",
+    ],
+    [
+      "restart loop after deploy",
+      { id: "p1", activeDeploymentId: "live", restartLooping: true },
+      "/projects/p1/deployments",
     ],
     [
       "blocked deployment",

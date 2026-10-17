@@ -554,5 +554,6 @@
       "server_unreachable": "Sunucuya erişilemiyor"
     }
   },
-  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Ayarlar → Gelişmiş bölümünden geçişi tamamlayın ya da geri alın"
+  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Ayarlar → Gelişmiş bölümünden geçişi tamamlayın ya da geri alın",
+  "restartLoopHint": "Bir servis son dağıtımdan sonra sürekli yeniden başlıyor — günlüklerini kontrol edip yeniden dağıtın"
 }

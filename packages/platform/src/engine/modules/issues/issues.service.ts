@@ -316,6 +316,7 @@ const PENDING_TAB: Record<PendingActionKind, string> = {
   partial_decision: "deployments",
   port_advisory: "deployments",
   routing_unsynced: "domains",
+  restart_loop: "deployments",
   domain_unverified: "domains",
   ssl_error: "domains",
   routing_rules_dropped: "domains",

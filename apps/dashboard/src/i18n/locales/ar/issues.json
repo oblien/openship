@@ -39,6 +39,7 @@
     "prompt": "في انتظار قرار",
     "partial_decision": "إصدار جزئي",
     "routing_unsynced": "التوجيه غير متزامن",
+    "restart_loop": "حلقة إعادة تشغيل",
     "domain_unverified": "النطاق غير موثَّق",
     "ssl_error": "مشكلة في الشهادة",
     "port_advisory": "تنبيه بشأن منفذ",

@@ -39,6 +39,7 @@
     "prompt": "等待决定",
     "partial_decision": "部分发布",
     "routing_unsynced": "路由未同步",
+    "restart_loop": "重启循环",
     "domain_unverified": "域名未验证",
     "ssl_error": "证书问题",
     "port_advisory": "端口提示",
