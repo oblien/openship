@@ -225,6 +225,7 @@ import {
   extractDockerBuildFailureHint,
   getDockerBuildIdleTimeoutMs,
   startDockerBuildIdleMonitor,
+  startDockerTaggedImageWatch,
   type DockerBuildDiagnosticContext,
 } from "./docker-build-diagnostics";
 import {
@@ -232,6 +233,7 @@ import {
   type LegacyBuildContainerInspect,
   type LegacyBuildContainerTermination,
 } from "./docker-build-container-tracker";
+import { stripNullBytesFromDockerStream } from "./docker-progress-stream";
 
 // ─── Connection config ───────────────────────────────────────────────────────
 export type DockerConnectionOptions = DockerTransportOptions & {
@@ -280,6 +282,11 @@ interface DockerodeBuildStreamOptions {
   cancelSignal?: AbortSignal;
   /** Present only for the classic builder, whose RUN container id appears in the stream. */
   legacyBuilder?: { expectedMemoryBytes?: number; ownershipHost: string };
+  /**
+   * Unique tag for this build. When the Engine API log stalls, an inspectable
+   * tag means the daemon already committed the image.
+   */
+  imageTag?: string;
 }
 
 const BUILD_CONTAINER_CLEANUP_TIMEOUT_MS = 5_000;
@@ -2466,6 +2473,7 @@ export class DockerRuntime implements RuntimeAdapter {
         diagnosticContext,
         abortBuild: abort,
         cancelSignal,
+        imageTag: tag,
         ...(ownershipHost && {
           legacyBuilder: { expectedMemoryBytes: buildLimits.memory, ownershipHost },
         }),
@@ -2517,10 +2525,12 @@ export class DockerRuntime implements RuntimeAdapter {
       await new Promise<void>((resolve, reject) => {
         let settled = false;
         let idleMonitor: ReturnType<typeof startDockerBuildIdleMonitor> | null = null;
+        let imageWatch: ReturnType<typeof startDockerTaggedImageWatch> | null = null;
         let cancellationTimer: ReturnType<typeof setTimeout> | null = null;
 
         const clearTimers = () => {
           idleMonitor?.stop();
+          imageWatch?.stop();
           if (cancellationTimer) clearTimeout(cancellationTimer);
           options.cancelSignal?.removeEventListener("abort", requestCancellation);
         };
@@ -2545,6 +2555,7 @@ export class DockerRuntime implements RuntimeAdapter {
         const requestCancellation = () => {
           if (settled || cancellationTimer) return;
           idleMonitor?.stop();
+          imageWatch?.stop();
           // A cancel can land after `Step ... : RUN` but just before Docker emits
           // `Running in <id>`. Keep only the response stream alive for this tiny
           // grace window so cleanup can identify the exact container; no new
@@ -2590,8 +2601,23 @@ export class DockerRuntime implements RuntimeAdapter {
         if (options.cancelSignal?.aborted) requestCancellation();
         else options.cancelSignal?.addEventListener("abort", requestCancellation, { once: true });
 
+        if (options.imageTag) {
+          const imageTag = options.imageTag;
+          imageWatch = startDockerTaggedImageWatch({
+            inspect: () => this.docker.getImage(imageTag).inspect(),
+            onTagged: () => {
+              if (settled) return;
+              log.log(
+                "Docker tagged the image while the build log was stalled. Continuing with that image.",
+              );
+              succeed();
+              (stream as { destroy?: (error?: Error) => void }).destroy?.();
+            },
+          });
+        }
+
         this.docker.modem.followProgress(
-          stream,
+          stripNullBytesFromDockerStream(stream),
           (err: Error | null) => {
             if (err) {
               fail(err);
@@ -3690,6 +3716,7 @@ export class DockerRuntime implements RuntimeAdapter {
                 diagnosticContext,
                 abortBuild: abort,
                 cancelSignal: signal,
+                imageTag: tag,
                 ...(ownershipHost && {
                   legacyBuilder: { expectedMemoryBytes: buildLimits.memory, ownershipHost },
                 }),
@@ -4877,7 +4904,9 @@ export class DockerRuntime implements RuntimeAdapter {
     try {
       const stream = await this.docker.pull(ref, authconfig ? { authconfig } : {});
       await new Promise<void>((resolve, reject) => {
-        this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+        this.docker.modem.followProgress(stripNullBytesFromDockerStream(stream), (err) =>
+          err ? reject(err) : resolve(),
+        );
       });
     } catch (err) {
       observeCaughtError(err, "adapters/runtime/docker");
@@ -4982,7 +5011,7 @@ export class DockerRuntime implements RuntimeAdapter {
     let loadOutput = "";
     await new Promise<void>((resolve, reject) => {
       this.docker.modem.followProgress(
-        stream as NodeJS.ReadableStream,
+        stripNullBytesFromDockerStream(stream as NodeJS.ReadableStream),
         (err) => (err ? reject(err) : resolve()),
         (ev: { stream?: string }) => {
           if (ev?.stream) loadOutput += ev.stream;
@@ -5078,7 +5107,7 @@ export class DockerRuntime implements RuntimeAdapter {
       if (bounded.aborted) abort();
       try {
         await new Promise<void>((resolve, reject) => {
-          this.docker.modem.followProgress(stream, (error: Error | null) => error ? reject(error) : resolve(), (event: { error?: string; aux?: { Digest?: string } }) => {
+          this.docker.modem.followProgress(stripNullBytesFromDockerStream(stream), (error: Error | null) => error ? reject(error) : resolve(), (event: { error?: string; aux?: { Digest?: string } }) => {
             if (event.aux?.Digest) publishedDigest = event.aux.Digest;
           });
         });
