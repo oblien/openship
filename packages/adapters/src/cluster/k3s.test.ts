@@ -85,6 +85,24 @@ with patch('pathlib.Path.is_dir', lambda path: str(path) == '/run/systemd/system
     }
 `);
   });
+  it("refuses cgroup v1 hosts before installing a kubelet that would crash-loop", () => {
+    python(`from types import SimpleNamespace
+ns['C'] = {'host': {'role': 'server', 'privateIp': '10.20.0.1'}}
+ns['owner'] = lambda: None
+ns['foreign'] = lambda: None
+files = {'/proc/swaps': 'Filename Type Size Used Priority\\n', '/proc/meminfo': 'MemTotal: 8388608 kB\\n'}
+with patch('pathlib.Path.is_dir', lambda path: str(path) in ['/run/systemd/system', '/sys/fs/cgroup/memory']), \\
+     patch('pathlib.Path.exists', lambda path: str(path) in files), \\
+     patch('pathlib.Path.read_text', lambda path: files[str(path)]), \\
+     patch('os.cpu_count', return_value=4), \\
+     patch('shutil.disk_usage', return_value=SimpleNamespace(free=20 * 1024**3)):
+    try:
+        ns['inspect']()
+        raise AssertionError('cgroup v1 host was accepted')
+    except RuntimeError as error:
+        assert 'cgroup v1' in str(error) and 'systemd.unified_cgroup_hierarchy=1' in str(error)
+`);
+  });
   it("reserves upstream DNS addresses hidden behind a local resolver stub", () => {
     python(`with tempfile.TemporaryDirectory() as folder:
     stub = pathlib.Path(folder)/'stub.conf'
@@ -153,6 +171,8 @@ with tempfile.TemporaryDirectory() as folder:
     config = json.loads(writes[str(ns['CONFIG'])])
     assert config['bind-address'] == '10.20.0.1'
     assert config['kubelet-arg'] == ['address=10.20.0.1']
+    # A private-only kubelet refuses the agent tunnel's loopback dial, so servers must dial it directly.
+    assert config['egress-selector-mode'] == 'disabled'
     assert config['disable'] == ['traefik','servicelb','local-storage']
     assert config['secrets-encryption'] is True
     assert 'token' not in config

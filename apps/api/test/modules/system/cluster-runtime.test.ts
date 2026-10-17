@@ -203,6 +203,39 @@ describe("managed cluster runtime", () => {
     expect(result.id).toBe(row.id);
     expect(h.defer).not.toHaveBeenCalled();
   });
+  it("makes the local server the first control so it stays the public gateway", async () => {
+    const row = record();
+    h.cluster.mockResolvedValue({
+      id: row.clusterId,
+      revision: 1,
+      serverIds: ["a", "b", "c", "d"],
+      networkId: row.plan.networkId,
+    });
+    h.network.mockResolvedValue({
+      id: row.plan.networkId,
+      revision: 1,
+      members: [...row.plan.hosts, { serverId: "d", privateIp: "10.20.0.9" }],
+      network: { cidrs: ["10.20.0.0/24"] },
+      operation: null,
+    });
+    h.authorize.mockImplementation(async (_ctx, serverId) => ({
+      name: `Server ${serverId}`,
+      sshHost: `${serverId}.example`,
+      isLocal: serverId === "d",
+    }));
+    await operations.setupClusterRuntime(ctx, {
+      clusterId: "pool-a",
+      revision: 1,
+      requestId: "request-123456789",
+    });
+    const plan = h.start.mock.calls[0][4] as { hosts: { serverId: string; role: string }[] };
+    expect(plan.hosts.map((host) => [host.serverId, host.role])).toEqual([
+      ["d", "server"],
+      ["a", "server"],
+      ["b", "server"],
+      ["c", "agent"],
+    ]);
+  });
   it("starts saved controls before waiting for quorum and verifies real services before readiness", async () => {
     const row = record();
     await runClusterRuntime(ctx, row);
