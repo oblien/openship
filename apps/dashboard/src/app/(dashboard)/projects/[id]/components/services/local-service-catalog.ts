@@ -13,7 +13,9 @@
  * catalog's package icon at render time.
  *
  * Default env keys cover the minimum needed to boot the image - the
- * user will paste their real secrets in the configure step.
+ * user will paste their real secrets in the configure step. A credential
+ * the image refuses to start without uses `generate: "secret"`, so the
+ * default Add boots. The configure step can still replace the value.
  */
 
 import type { ImageCatalogEntry } from "@/lib/api/images";
@@ -50,7 +52,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [5432],
     defaultEnv: [
       { key: "POSTGRES_USER", value: "postgres" },
-      { key: "POSTGRES_PASSWORD", value: "" },
+      { key: "POSTGRES_PASSWORD", generate: "secret" },
       { key: "POSTGRES_DB", value: "app" },
     ],
     defaultVolumes: ["pgdata:/var/lib/postgresql/data"],
@@ -64,7 +66,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "Popular relational database, especially common with PHP and WordPress.",
     ports: [3306],
     defaultEnv: [
-      { key: "MYSQL_ROOT_PASSWORD", value: "" },
+      { key: "MYSQL_ROOT_PASSWORD", generate: "secret" },
       { key: "MYSQL_DATABASE", value: "app" },
     ],
     defaultVolumes: ["mysql_data:/var/lib/mysql"],
@@ -78,7 +80,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "MySQL-compatible drop-in maintained by the original authors.",
     ports: [3306],
     defaultEnv: [
-      { key: "MARIADB_ROOT_PASSWORD", value: "" },
+      { key: "MARIADB_ROOT_PASSWORD", generate: "secret" },
       { key: "MARIADB_DATABASE", value: "app" },
     ],
     defaultVolumes: ["mariadb_data:/var/lib/mysql"],
@@ -93,7 +95,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [27017],
     defaultEnv: [
       { key: "MONGO_INITDB_ROOT_USERNAME", value: "root" },
-      { key: "MONGO_INITDB_ROOT_PASSWORD", value: "" },
+      { key: "MONGO_INITDB_ROOT_PASSWORD", generate: "secret" },
     ],
     defaultVolumes: ["mongo_data:/data/db"],
   },
@@ -209,7 +211,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "Fast, open-source search engine with first-class typo tolerance.",
     ports: [8108],
     defaultEnv: [
-      { key: "TYPESENSE_API_KEY", value: "" },
+      { key: "TYPESENSE_API_KEY", generate: "secret" },
       { key: "TYPESENSE_DATA_DIR", value: "/data" },
     ],
     defaultVolumes: ["typesense_data:/data"],

@@ -544,6 +544,45 @@ describe("database connection values for project services", () => {
     expect(outputs[0].value).toBe("postgresql://postgres:service-secret@db:5432/postgres");
   });
 
+  // #1309: the dashboard catalog generates these credentials (24 random bytes as
+  // hex). Each catalog default must yield a connection URL with that password.
+  const generated = "0123456789abcdef".repeat(3);
+  it.each([
+    {
+      image: "postgres:16-alpine",
+      port: "5432",
+      environment: { POSTGRES_USER: "postgres", POSTGRES_PASSWORD: generated, POSTGRES_DB: "app" },
+      url: `postgresql://postgres:${generated}@db:5432/app`,
+    },
+    {
+      image: "mysql:8",
+      port: "3306",
+      environment: { MYSQL_ROOT_PASSWORD: generated, MYSQL_DATABASE: "app" },
+      url: `mysql://root:${generated}@db:3306/app`,
+    },
+    {
+      image: "mariadb:11",
+      port: "3306",
+      environment: { MARIADB_ROOT_PASSWORD: generated, MARIADB_DATABASE: "app" },
+      url: `mysql://root:${generated}@db:3306/app`,
+    },
+    {
+      image: "mongo:7",
+      port: "27017",
+      environment: { MONGO_INITDB_ROOT_USERNAME: "root", MONGO_INITDB_ROOT_PASSWORD: generated },
+      url: `mongodb://root:${generated}@db:27017/?authSource=admin`,
+    },
+  ])(
+    "builds the $image catalog default's URL from its generated password",
+    async ({ image, port, environment, url }) => {
+      listByProject.mockResolvedValue([
+        { id: "svc-db", name: "db", image, ports: [port], enabled: true, environment },
+      ]);
+      const { outputs } = await getAppConnectionView(ctx, "proj1");
+      expect(outputs[0]).toMatchObject({ secret: true, value: url });
+    },
+  );
+
   it("does not offer a fabricated connection when credentials are missing", async () => {
     listByProject.mockResolvedValue([{ id: "svc-db", name: "db", image: "postgres:16", ports: ["5432"], environment: {} }]);
     expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("");
