@@ -490,22 +490,19 @@ async function panelTraffic(entry: DomainEntry): Promise<void> {
     let bwIn = 0;
     let bwOut = 0;
     let rtSum = 0;
-    let rtN = 0;
     const countries: Record<string, number> = {};
     for (const b of buckets) {
       requests += b.requests || 0;
       bwIn += b.bandwidthIn || 0;
       bwOut += b.bandwidthOut || 0;
-      if (b.responseTime) {
-        rtSum += b.responseTime;
-        rtN++;
-      }
+      // responseTime is the minute's total (seconds), not its average.
+      rtSum += b.responseTime || 0;
       for (const [cc, n] of Object.entries(b.countries ?? {})) countries[cc] = (countries[cc] || 0) + Number(n);
     }
     info(`  Traffic — ${entry.hostname}  ${chalk.dim("(last hour · server-scoped)")}`);
     info(`  Requests:   ${fmtInt(requests)}`);
     info(`  Bandwidth:  ↓ ${fmtBytes(bwIn)}   ↑ ${fmtBytes(bwOut)}`);
-    info(`  Avg resp:   ${Math.round((rtN ? rtSum / rtN : 0) * 1000)} ms`);
+    info(`  Avg resp:   ${Math.round((requests ? rtSum / requests : 0) * 1000)} ms`);
     const top = Object.entries(countries).sort((a, b) => b[1] - a[1]).slice(0, 5);
     if (top.length) info(`  Top countries: ${top.map(([c, n]) => `${c}=${fmtInt(n)}`).join("   ")}`);
   } catch (e) {

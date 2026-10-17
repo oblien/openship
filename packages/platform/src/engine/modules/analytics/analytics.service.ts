@@ -55,6 +55,7 @@ interface MgmtAnalyticsBucket {
   unique_requests: number;
   bandwidth_in: number;
   bandwidth_out: number;
+  /** Total response time of the minute's requests in seconds (a sum, not an average). */
   response_time: number;
 }
 
@@ -130,14 +131,14 @@ export function summariseBuckets(
   const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
   const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
   const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
-  const weightedRt = buckets.reduce((s, b) => s + b.response_time * b.requests, 0);
+  const totalRt = buckets.reduce((s, b) => s + b.response_time, 0);
   return {
     totalRequests: totalReqs,
     pageRequests: totalUnique,
     uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: totalReqs > 0 ? Math.round((weightedRt / totalReqs) * 1000) : 0,
+    avgResponseTimeMs: totalReqs > 0 ? Math.round((totalRt / totalReqs) * 1000) : 0,
     lastUpdated,
   };
 }
@@ -178,7 +179,7 @@ export function buildHourlyPeriods(
       uniqueVisitors: number;
       bandwidthIn: number;
       bandwidthOut: number;
-      responseTimeWeighted: number;
+      responseTimeTotal: number;
     }
   >();
 
@@ -189,14 +190,14 @@ export function buildHourlyPeriods(
       uniqueVisitors: 0,
       bandwidthIn: 0,
       bandwidthOut: 0,
-      responseTimeWeighted: 0,
+      responseTimeTotal: 0,
     };
 
     current.requests += bucket.requests;
     current.uniqueVisitors += bucket.unique_requests;
     current.bandwidthIn += bucket.bandwidth_in;
     current.bandwidthOut += bucket.bandwidth_out;
-    current.responseTimeWeighted += bucket.response_time * bucket.requests;
+    current.responseTimeTotal += bucket.response_time;
     hourly.set(hourKey, current);
   }
 
@@ -218,7 +219,7 @@ export function buildHourlyPeriods(
       bandwidthOut: current?.bandwidthOut ?? 0,
       avgResponseTimeMs:
         current && current.requests > 0
-          ? Math.round((current.responseTimeWeighted / current.requests) * 1000)
+          ? Math.round((current.responseTimeTotal / current.requests) * 1000)
           : 0,
       topPaths: [],
       trafficByHour: {},

@@ -25,20 +25,22 @@ function bucket(minute: number, requests: number, responseTime: number): Bucket 
 }
 
 describe("analytics response-time averaging", () => {
-  // response_time is a per-minute average (see server_analytics schema). Two
-  // minutes with very different request counts: 1 request at 1000ms, then 99 at
-  // 100ms. Request-weighted average = (1*1.0 + 99*0.1) / 100 = 0.109s → 109ms.
-  const uneven = [bucket(0, 1, 1.0), bucket(1, 99, 0.1)];
-  const WEIGHTED_MS = 109;
+  // response_time is the TOTAL response time of the minute's requests, in seconds:
+  // site_logger.lua adds every request's time to the minute's `:t` counter and
+  // mgmt_api.lua returns that sum. Two minutes with very different request counts:
+  // 1 request taking 1000ms, then 99 requests taking 100ms each (9.9s in total).
+  // Average = (1.0 + 9.9) / 100 = 0.109s → 109ms.
+  const uneven = [bucket(0, 1, 1.0), bucket(1, 99, 9.9)];
+  const AVERAGE_MS = 109;
 
-  it("summariseBuckets weights avgResponseTimeMs by request count", () => {
-    expect(summariseBuckets(uneven, "now").avgResponseTimeMs).toBe(WEIGHTED_MS);
+  it("summariseBuckets divides the summed response time by total requests", () => {
+    expect(summariseBuckets(uneven, "now").avgResponseTimeMs).toBe(AVERAGE_MS);
   });
 
-  it("buildHourlyPeriods weights avgResponseTimeMs by request count", () => {
+  it("buildHourlyPeriods divides the summed response time by the hour's requests", () => {
     const periods = buildHourlyPeriods(uneven, 0, 1);
     expect(periods).toHaveLength(1);
-    expect(periods[0].avgResponseTimeMs).toBe(WEIGHTED_MS);
+    expect(periods[0].avgResponseTimeMs).toBe(AVERAGE_MS);
   });
 
   it("reports 0 (not NaN) when a period carries no requests", () => {

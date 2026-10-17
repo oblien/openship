@@ -66,7 +66,11 @@ export const serverAnalytics = pgTable(
     bandwidthIn: bigint("bandwidth_in", { mode: "number" }).notNull().default(0),
     bandwidthOut: bigint("bandwidth_out", { mode: "number" }).notNull().default(0),
 
-    /** Average response time in seconds (float) */
+    /**
+     * TOTAL response time of this minute's requests, in seconds (float). The edge
+     * adds each request's time to the minute's counter, so divide the sum by
+     * `requests` for an average; never multiply it by `requests` again.
+     */
     responseTime: real("response_time").notNull().default(0),
 
     /** Per-minute country breakdown: { "US": 42, "DE": 17, ... } */
