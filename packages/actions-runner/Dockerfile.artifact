@@ -1,0 +1,6 @@
+# This image only distributes files. It is never started as an Actions service.
+FROM scratch
+LABEL org.opencontainers.image.source="https://github.com/oblien/openship" \
+      org.opencontainers.image.description="Verified Openship Actions workers for Linux and macOS (x64 and ARM64)" \
+      org.opencontainers.image.licenses="Apache-2.0"
+COPY dist/ /dist/

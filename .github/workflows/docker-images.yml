@@ -23,6 +23,11 @@ on:
         description: "Image tag for a manual test (e.g. 0.0.0-rc.1). Blank → short SHA. Never moves :latest."
         required: false
         type: string
+      runner_assets_only:
+        description: "Publish only a tested Actions worker artifact and its pin files; never update product image tags."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: docker-images-${{ github.ref }}
@@ -34,16 +39,78 @@ permissions:
   packages: write
 
 jobs:
+  worker-artifact:
+    name: Publish verified Actions worker files
+    if: github.event_name == 'workflow_dispatch' && inputs.runner_assets_only == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OPENSHIP_ACTIONS_RUNNER_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.4"
+          cache-dependency-path: packages/actions-runner/go.sum
+      - name: Test artifact installation without Docker or Go
+        run: node --test packages/actions-runner/distribution.test.mjs
+      - name: Test the worker and pinned engine
+        working-directory: packages/actions-runner
+        run: node test.mjs
+      - name: Vet the worker
+        working-directory: packages/actions-runner
+        run: node test.mjs --vet
+      - name: Build or reuse and verify all four workers once
+        env:
+          OPENSHIP_ACTIONS_RUNNER_BUILD: ""
+        run: |
+          node packages/actions-runner/assets.mjs
+          node packages/actions-runner/assets.mjs --verify
+          echo "WORKER_SOURCE=$(node --input-type=module -e 'import { runnerFingerprint } from "./packages/actions-runner/assets.mjs"; console.log(runnerFingerprint())')" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the immutable file artifact
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: packages/actions-runner
+          file: packages/actions-runner/Dockerfile.artifact
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository_owner }}/openship-actions-runner:source-${{ env.WORKER_SOURCE }}
+          push: true
+          provenance: false
+          sbom: false
+      - name: Generate exact release pins
+        env:
+          WORKER_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-actions-runner@${{ steps.image.outputs.digest }}
+        run: node packages/actions-runner/pin-artifact.mjs "$WORKER_IMAGE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: actions-worker-pins
+          path: |
+            packages/actions-runner/artifact.json
+            apps/api/Dockerfile
+          if-no-files-found: error
+
   # Typecheck + tests. `merge-images` depends on this, so a red test cannot become a
   # pullable image tag. See .github/workflows/release-gate.yml for why this is a
   # called workflow rather than a trigger.
   gate:
+    if: inputs.runner_assets_only != true
     name: Release gate
     uses: ./.github/workflows/release-gate.yml
 
   # Native per-arch builds (no QEMU — reuses the ubuntu-24.04-arm runner). Each
   # arch is pushed to GHCR BY DIGEST; merge-images assembles the manifest lists.
   build-images:
+    if: inputs.runner_assets_only != true
     name: Build ${{ matrix.image }} (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -232,6 +299,7 @@ jobs:
   # have pushed by digest under no tag, so this reads the exact bytes merge-images is
   # about to tag, and a failure leaves them unreferenced in the registry.
   dashboard-routes:
+    if: inputs.runner_assets_only != true
     name: Audit dashboard route surface
     needs: build-images
     runs-on: ubuntu-24.04
@@ -276,6 +344,7 @@ jobs:
         run: node apps/dashboard/scripts/check-routes.mjs /tmp/image-routes.json
 
   merge-images:
+    if: inputs.runner_assets_only != true
     name: Publish ${{ matrix.image }} (manifest)
     # `gate` as well as the builds: this job is where images become PULLABLE (the
     # per-arch builds above push by digest only, under no tag), so it is the point a

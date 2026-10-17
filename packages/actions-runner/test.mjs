@@ -5,7 +5,7 @@ const options = process.argv.filter((arg) => arg === "-race");
 if (command === "test") {
   const prepared = spawnSync(
     process.execPath,
-    ["--test", "prepare.test.mjs", "github-gate.test.cjs"],
+    ["--test", "prepare.test.mjs", "github-gate.test.cjs", "distribution.test.mjs"],
     {
       cwd: directory,
       stdio: "inherit",

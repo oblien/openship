@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "source": "43cfef4781076c67f564c95d5675d9e0e2013611a0f1cc0037d76e63f7c5d8c3",
+  "image": "ghcr.io/oblien/openship-actions-runner@sha256:2d7d5857f2a05831275c806e4e12842a74b8f41ba004ed7f7211213a55735632"
+}

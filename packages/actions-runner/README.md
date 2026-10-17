@@ -22,18 +22,61 @@ when upgrading GitHub's runner.
 
 ## Build and test
 
-Development needs Node 22 and Go 1.26.4. Installed Openship instances receive the
-compiled workers and do not need Go.
+Product builds reuse the immutable worker image in `artifact.json`. The shared
+`stageActionRunnerAssets` loader checks the source fingerprint, protocol, engine,
+all four binary checksums and notices. The fingerprint covers compilation and
+embedded-script inputs; transport-module, documentation and test-only changes can
+reuse the binary release. Desktop, CLI and native release packaging fetch the pinned OCI layer over HTTPS and embed its files; Docker is not required
+for that fetch. The API Dockerfile copies the same files from that exact image
+digest. Installed products never fetch or compile a worker at startup.
+
+Developing changed worker source needs Node 22 and Go 1.26.4. A valid local build
+is reused first. A matching published pin is fetched when local assets are absent;
+a failed fetch fails the build instead of silently compiling. Unpublished source
+uses the declared Go toolchain. `OPENSHIP_ACTIONS_RUNNER_BUILD=1` explicitly permits
+a source build when offline; it still must pass the same verification. Installed
+Openship instances receive the compiled workers and do not need Go.
 
 ```sh
 node packages/actions-runner/build.mjs
 node packages/actions-runner/test.mjs
 ```
 
+For an unpublished worker in a custom API image, build the workers first, package
+those files locally, and supply that image to the API build:
+
+```sh
+docker build --platform linux/amd64 -f packages/actions-runner/Dockerfile.artifact -t openship-actions-local packages/actions-runner
+docker build --build-arg ACTIONS_RUNNER_IMAGE=openship-actions-local -f apps/api/Dockerfile .
+```
+
+Both paths use the same staging verification.
+
 The build produces Linux and macOS binaries for x64 and arm64, a checksum manifest,
 and dependency license notices. API, CLI, SDK and Desktop packaging use the same
 asset manifest. The adapter verifies the selected binary before copying it to a
-destination.
+destination. Destination copies are cached by their SHA-256, rechecked before
+reuse and replaced only when needed.
+
+To publish changed worker source, dispatch the existing **Docker images** workflow
+on the reviewed branch with `runner_assets_only=true`. That path runs worker tests
+and vet, builds all four targets once, and publishes the file-only
+`openship-actions-runner:source-<fingerprint>` image without changing any product
+image tag. Download its `actions-worker-pins` artifact and commit `artifact.json`
+and the API Dockerfile pin together. The image must allow anonymous pulls before
+merging; a newly created GHCR package is private by default. Subsequent product
+builds reuse the digest, and the shared CI cache is independent of build-host OS
+and architecture. Registry layers and binaries are both digest-verified. The required CI test gate
+also forces a fresh anonymous install with Go and Docker removed from PATH. Keep the
+source-build path for development; never switch a release to a mutable `latest`
+worker tag.
+
+The distribution image has no service process or socket mount. The selected
+server runs the worker binary. Docker jobs talk to that server's daemon; exposing
+its socket inside jobs is opt-in on persistent destinations. The official runner
+uses its existing private ownership proxy socket. That proxy tracks cleanup and
+limits, rather than sandboxing hostile Docker code. Native macOS execution does
+not require Docker.
 
 `prepare.mjs` applies the documented compatibility patches to a private copy of
 act. It never edits the global Go module cache. Patches require their expected
