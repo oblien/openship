@@ -490,6 +490,8 @@ export interface ComposeUpOpts {
    * why `composeUp` cannot work it out for itself once the prefetch has written `.env`.
    */
   envChanged?: boolean;
+  /** Force-recreate the env-consuming services even if .env was already written or unchanged. */
+  forceRecreate?: boolean;
   /**
    * Proceed even though this run would regenerate secrets an existing data volume was
    * created with (see secretRotationRisk). The DB keeps its old password until
@@ -3500,7 +3502,7 @@ export async function composeUp(
   // own `rendered` compared `.env` against the prefetch's write and so always said
   // "unchanged". See ComposePrefetchResult.envChanged.
   const envChanged = opts.envChanged ?? rendered;
-  // The edge container mounts EDGE_SITES_HOST_DIR. A conf left there by an older or
+  const shouldRecreate = opts.forceRecreate || envChanged;
   // failed attempt (a carried catch-all claiming `default_server`) crash-loops it with
   // `[emerg] a duplicate default server` — every time, forever, because the file is on
   // the host and outlives the container. Compose never carried anything, so it never
@@ -3508,7 +3510,7 @@ export async function composeUp(
   // `openship up` after it. Sanitize what we're about to mount, every start.
   const up = (extra: { withBuildOverride?: boolean } = {}) =>
     compose(
-      envChanged
+      shouldRecreate
         ? ["up", "-d", "--force-recreate", ...ENV_CONSUMING_SERVICES]
         : ["up", "-d"],
       extra,
@@ -3673,7 +3675,7 @@ export async function composeUpdate(
   version?: string,
 ): Promise<{ applied: boolean; refused: boolean }> {
   if (!existsSync(COMPOSE_FILE)) return { applied: false, refused: false };
-  const r = await composeUp(version ? { version } : {});
+  const r = await composeUp({ forceRecreate: true, ...(version ? { version } : {}) });
   return { applied: r.ok, refused: !!r.refused };
 }
 

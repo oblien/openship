@@ -915,6 +915,15 @@ describe("composeUpdate", () => {
     expect(verbs()).toContainEqual(["pull"]);
     expect(verbs().at(-1)?.slice(0, 3)).toEqual(["up", "-d", "--force-recreate"]);
   });
+  it("force-recreates even when .env was already written on disk with the target version", async () => {
+    // Simulate the state after a prior step wrote .env before reconcile
+    seedEnv({ ...CONFIGURED, OPENSHIP_VERSION: "0.4.6" });
+    expect(await composeUpdate("0.4.6")).toEqual({ applied: true, refused: false });
+
+    expect(verbs()).toContainEqual(["pull"]);
+    expect(verbs().at(-1)?.slice(0, 3)).toEqual(["up", "-d", "--force-recreate"]);
+  });
+
 
   it("is a no-op when there's no compose install", async () => {
     expect(await composeUpdate("0.4.6")).toEqual({ applied: false, refused: false });
