@@ -157,7 +157,7 @@ import {
   outputFindingIsBroken,
   staticOutputTargets,
 } from "./output-audit.service";
-import { RELEASE_COMMAND_TIMEOUT_MS, releasePhaseSkipReason, resolveReleaseCommands, runReleasePhase } from "./release-phase";
+import { MULTI_SERVICE_RELEASE_REMEDY, RELEASE_COMMAND_TIMEOUT_MS, releasePhaseSkipReason, resolveReleaseCommands, runReleasePhase } from "./release-phase";
 import { createBuildConfig } from "./build-config";
 import {
   pinnedAppImage,
@@ -1269,6 +1269,7 @@ async function executeBuildAndDeploy(
         deliberateSkipReason: releasePhaseSkipReason(dep.trigger, snapshot.targetServiceIds),
         signal: cancellationSignal,
         unsupportedReason: "Project release commands are not supported on multi-service deployments",
+        unsupportedRemedy: MULTI_SERVICE_RELEASE_REMEDY,
         log: (message, level) => logger.log(`${message}\n`, level),
       });
 

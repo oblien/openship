@@ -59,10 +59,34 @@ describe("rolesUnsupportedReason", () => {
     }
   });
 
-  it("refuses a multi-service deploy", () => {
+  it("refuses a multi-service deploy and points to a new single-app project", () => {
     expect(rolesUnsupportedReason(input({ multiService: true }))).toBe(
-      'Runtime roles are not supported on multi-service deployments yet. Remove "roles" from openship.json, or deploy the app as a single service.',
+      "Runtime roles are not supported on multi-service deployments yet. " +
+        "To keep the roles, deploy the app as a new single-app Docker project. " +
+        "Connect separately deployed services through Apps & Services → Add → Connect existing. " +
+        "Connecting services does not convert this project back to single-app. " +
+        'To remove the roles, set "roles" to [] through the project API, SDK or CLI. ' +
+        'Also remove "roles" from openship.json if the repository declares them.',
     );
+  });
+
+  // A deploy sees only the project's saved roles. openship.json seeds them at
+  // import, Configure roles and the project API save them, and nothing records
+  // which one did. So one message must hold for every source: openship.json is
+  // conditional, the API path clears roles whoever saved them, and Configure
+  // roles is not offered because it is unavailable on these deployments.
+  it("uses source-neutral wording in both refusals", () => {
+    for (const reason of [
+      rolesUnsupportedReason(input({ multiService: true })),
+      rolesUnsupportedReason(input({ runtime: bareLike })),
+    ]) {
+      expect(reason).toContain('set "roles" to [] through the project API, SDK or CLI.');
+      expect(reason).toContain(
+        'Also remove "roles" from openship.json if the repository declares them.',
+      );
+      expect(reason).not.toMatch(/Remove "roles" from openship\.json/);
+      expect(reason).not.toMatch(/Configure roles/);
+    }
   });
 
   it("refuses a static site", () => {
@@ -74,7 +98,9 @@ describe("rolesUnsupportedReason", () => {
   it("refuses a runtime without the roles capability and names it", () => {
     const reason = rolesUnsupportedReason(input({ runtime: bareLike }));
     expect(reason).toBe(
-      'Runtime roles are not supported on the "bare" runtime yet. Deploy to a Docker server, or remove "roles" from openship.json.',
+      'Runtime roles are not supported on the "bare" runtime yet. Deploy to a Docker server. ' +
+        'To remove the roles, set "roles" to [] through the project API, SDK or CLI. ' +
+        'Also remove "roles" from openship.json if the repository declares them.',
     );
   });
 

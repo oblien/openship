@@ -1160,10 +1160,53 @@ describe("single-app prebuilt release-image pipeline", () => {
     await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
     await waitForDeploymentQuiescence("deployment-1", "project-1");
     expect(mocks.reportPipelineError).toHaveBeenCalledWith(
-      expect.anything(), expect.stringContaining("not supported on multi-service deployments"), expect.anything(), undefined,
+      expect.anything(),
+      "Project release commands are not supported on multi-service deployments. " +
+        "Deployment stopped before activation. " +
+        "To keep the release commands, deploy the app as a new single-app Docker project. " +
+        "Connect separately deployed services through Apps & Services → Add → Connect existing. " +
+        "Connecting services does not convert this project back to single-app. " +
+        "Otherwise remove the release commands.",
+      expect.anything(), undefined,
     );
     expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
+    expect(executeComposePipeline).not.toHaveBeenCalled();
     expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a rollback", { trigger: "rollback" }, {}],
+    ["a service-only action", { trigger: "redeploy" }, { targetServiceIds: ["svc-db"] }],
+  ])("deploys %s of a multi-service project without refusing its release commands", async (_label, dep, meta) => {
+    vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(true);
+    vi.mocked(isMultiServiceRuntime).mockReturnValue(true);
+    await run(deployment({ ...dep, meta: {
+      ...snapshot(), serviceDeploymentMode: "services", releaseCommands: ["migrate"], ...meta,
+      composeServices: [{ name: "db", image: "postgres:16", ports: [], dependsOn: [], environment: {}, volumes: [] }],
+    } }));
+    await drainDeploymentExecutions();
+    expect(executeComposePipeline).toHaveBeenCalledOnce();
+    expect(mocks.reportPipelineError).not.toHaveBeenCalled();
+    expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
+  });
+
+  it("refuses runtime roles on a multi-service deployment before the build starts", async () => {
+    vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(true);
+    vi.mocked(isMultiServiceRuntime).mockReturnValue(true);
+    await run(deployment({ meta: {
+      ...snapshot(), serviceDeploymentMode: "services",
+      roles: [{ name: "queue", kind: "worker", command: "php artisan queue:work" }],
+      composeServices: [{ name: "redis", image: "redis:7", ports: [], dependsOn: [], environment: {}, volumes: [] }],
+    } }));
+    await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
+    await waitForDeploymentQuiescence("deployment-1", "project-1");
+    expect(mocks.reportPipelineError).toHaveBeenCalledWith(
+      expect.anything(), expect.stringMatching(/^Runtime roles are not supported on multi-service deployments yet\. /), expect.anything(), undefined,
+    );
+    expect(mocks.setDeploymentStatus).not.toHaveBeenCalledWith("deployment-1", "building");
+    expect(executeComposePipeline).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
     expect(mocks.deploy).not.toHaveBeenCalled();
   });
 

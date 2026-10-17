@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  MULTI_SERVICE_RELEASE_REMEDY,
   RELEASE_COMMAND_TIMEOUT_MS,
   resolveReleaseCommands,
   releasePhaseSkipReason,
@@ -81,12 +82,62 @@ describe("runReleasePhase", () => {
 
   it("fails before activation when the runtime cannot run declared commands", async () => {
     const log = vi.fn();
+    const message =
+      "This runtime cannot run release commands. Deployment stopped before activation. " +
+      "Use a supported runtime or remove the release commands.";
     await expect(runReleasePhase({
       commands: ["migrate"],
       unsupportedReason: "This runtime cannot run release commands",
       log,
-    })).rejects.toThrow(/Deployment stopped before activation/);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("cannot run release commands"), "error");
+    })).rejects.toThrow(message);
+    expect(log).toHaveBeenCalledWith(message, "error");
+  });
+
+  // The reason build-pipeline.ts passes for a multi-service deployment.
+  const MULTI_SERVICE_REASON =
+    "Project release commands are not supported on multi-service deployments";
+
+  // A service added inside the project makes it multi-service. "Use a supported
+  // runtime" gives that operator nothing to do: the runtime is already Docker.
+  it("points to a new single-app project when a multi-service deployment cannot run them", async () => {
+    const log = vi.fn();
+    const message =
+      "Project release commands are not supported on multi-service deployments. " +
+      "Deployment stopped before activation. " +
+      "To keep the release commands, deploy the app as a new single-app Docker project. " +
+      "Connect separately deployed services through Apps & Services → Add → Connect existing. " +
+      "Connecting services does not convert this project back to single-app. " +
+      "Otherwise remove the release commands.";
+    await expect(
+      runReleasePhase({
+        commands: ["php artisan migrate --force"],
+        unsupportedReason: MULTI_SERVICE_REASON,
+        unsupportedRemedy: MULTI_SERVICE_RELEASE_REMEDY,
+        log,
+      }),
+    ).rejects.toThrow(message);
+    expect(log).toHaveBeenCalledExactlyOnceWith(message, "error");
+  });
+
+  // The multi-service caller never passes `run`, so these skips are all that
+  // keeps its rollbacks and service-only actions from being refused.
+  it.each([
+    ["a rollback", releasePhaseSkipReason("rollback")],
+    ["a service-only action", releasePhaseSkipReason("redeploy", ["db"])],
+  ])("skips %s on a multi-service deployment instead of refusing it", async (_label, skip) => {
+    const lines: Array<[string, string | undefined]> = [];
+    await expect(
+      runReleasePhase({
+        commands: ["php artisan migrate --force"],
+        unsupportedReason: MULTI_SERVICE_REASON,
+        unsupportedRemedy: MULTI_SERVICE_RELEASE_REMEDY,
+        deliberateSkipReason: skip,
+        log: (message, level) => lines.push([message, level]),
+      }),
+    ).resolves.toBeUndefined();
+    expect(lines).toEqual([
+      [`${skip} — not running 1 release command: php artisan migrate --force.`, undefined],
+    ]);
   });
 
   it("stops between commands when cancelled and preserves the cancellation reason", async () => {

@@ -28,6 +28,17 @@ const DEFAULT_STOP_GRACE_S = 10;
 /** Same base bound as the rollout's own teardown calls (#629). */
 const BASE_TEARDOWN_TIMEOUT_MS = 30_000;
 
+/**
+ * How to remove roles, whoever saved them. A deploy reads the project's saved
+ * roles, and nothing records their source: an `openship.json` import, Configure
+ * roles, or the project API. An `openship.json` that declares roles can save them
+ * again when a deploy form re-reads the repository, so the remedy names both.
+ * Configure roles is unavailable wherever these refusals apply, so it is not offered.
+ */
+const REMOVE_ROLES =
+  'To remove the roles, set "roles" to [] through the project API, SDK or CLI. ' +
+  'Also remove "roles" from openship.json if the repository declares them.';
+
 /** Why this deploy cannot run its roles, or null when it can (or declares none). */
 export function rolesUnsupportedReason(input: {
   roles: readonly StackRole[] | null | undefined;
@@ -38,13 +49,19 @@ export function rolesUnsupportedReason(input: {
   const { roles, runtime, deployMode, multiService } = input;
   if (!roles?.length) return null;
   if (multiService) {
-    return 'Runtime roles are not supported on multi-service deployments yet. Remove "roles" from openship.json, or deploy the app as a single service.';
+    return (
+      "Runtime roles are not supported on multi-service deployments yet. " +
+      "To keep the roles, deploy the app as a new single-app Docker project. " +
+      "Connect separately deployed services through Apps & Services → Add → Connect existing. " +
+      "Connecting services does not convert this project back to single-app. " +
+      REMOVE_ROLES
+    );
   }
   if (deployMode === "static-file-serve") {
     return "Runtime roles need a server image; a static site has no process to run them from.";
   }
   if (!runtime.supports("roles") || !runtime.deployRole) {
-    return `Runtime roles are not supported on the "${runtime.name}" runtime yet. Deploy to a Docker server, or remove "roles" from openship.json.`;
+    return `Runtime roles are not supported on the "${runtime.name}" runtime yet. Deploy to a Docker server. ${REMOVE_ROLES}`;
   }
   return null;
 }

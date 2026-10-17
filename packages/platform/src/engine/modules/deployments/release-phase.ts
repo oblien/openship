@@ -55,6 +55,8 @@ export async function runReleasePhase(opts: {
   run?: (command: string) => Promise<void>;
   /** Why `run` is missing — the deployment fails with this explanation. */
   unsupportedReason?: string;
+  /** What the operator can do about it; defaults to the unsupported-runtime advice. */
+  unsupportedRemedy?: string;
   /**
    * Set when the phase is skipped BY DESIGN rather than for want of a runtime
    * primitive. Rollbacks and explicitly scoped service actions do not replay
@@ -64,7 +66,8 @@ export async function runReleasePhase(opts: {
   signal?: AbortSignal;
   log: (message: string, level?: "info" | "warn" | "error") => void;
 }): Promise<void> {
-  const { commands, run, unsupportedReason, deliberateSkipReason, signal, log } = opts;
+  const { commands, run, unsupportedReason, unsupportedRemedy, deliberateSkipReason, signal, log } =
+    opts;
   signal?.throwIfAborted();
   if (commands.length === 0) return;
 
@@ -81,7 +84,8 @@ export async function runReleasePhase(opts: {
 
   if (!run) {
     const message = `${unsupportedReason ?? "This runtime cannot run release commands"}. ` +
-      "Deployment stopped before activation. Use a supported runtime or remove the release commands.";
+      "Deployment stopped before activation. " +
+      (unsupportedRemedy ?? "Use a supported runtime or remove the release commands.");
     log(message, "error");
     throw new Error(message);
   }
@@ -111,6 +115,19 @@ export async function runReleasePhase(opts: {
 
   log("Release phase complete.");
 }
+
+/**
+ * The remedy for release commands on a multi-service deployment. The runtime is
+ * already Docker there, so "use a supported runtime" gives no next step. A new
+ * single-app project can use separately deployed services through a connection
+ * and stay single-app. Connecting services to this project does not convert it
+ * back, and it may be multi-service for other reasons, so the remedy says so.
+ */
+export const MULTI_SERVICE_RELEASE_REMEDY =
+  "To keep the release commands, deploy the app as a new single-app Docker project. " +
+  "Connect separately deployed services through Apps & Services → Add → Connect existing. " +
+  "Connecting services does not convert this project back to single-app. " +
+  "Otherwise remove the release commands.";
 
 /** Per-command budget. Re-exported so the pipeline and its tests name one number. */
 export const RELEASE_COMMAND_TIMEOUT_MS = SYSTEM.DEPLOYMENTS.RELEASE_COMMAND_TIMEOUT_MS;
