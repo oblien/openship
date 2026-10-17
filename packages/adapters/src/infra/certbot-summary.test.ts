@@ -43,6 +43,16 @@ Certbot failed to authenticate some domains (authenticator: webroot).
     expect(s).toMatch(/takeover|another web server|:80/i);
   });
 
+  it("502 → challenge listener failed to respond (NOT takeover / foreign web server)", () => {
+    const out = `${OPENER}
+  Type:   unauthorized
+  Detail: 89.168.41.226: Invalid response from http://inbox.rschl.de/.well-known/acme-challenge/abc: 502`;
+    const s = summarizeCertbotFailure(out, "inbox.rschl.de");
+    expect(s).toMatch(/502\/504|internal challenge listener/i);
+    expect(s).not.toMatch(/another web server is still serving :80/i);
+    expect(s).not.toMatch(/takeover didn't complete/i);
+  });
+
   it("525 → Cloudflare answered the challenge itself, and names the three fixes", () => {
     // Cloudflare redirected the plain-HTTP challenge to https ("Always Use HTTPS"),
     // then couldn't complete TLS to origin. Reported as an "Invalid response", so

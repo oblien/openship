@@ -1217,6 +1217,11 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
       `of three ways — set SSL/TLS → Overview to "Full" (not "Full (strict)") until the first ` +
       `certificate is issued, or turn the orange cloud off for this record until it is, or upload a ` +
       `Cloudflare Origin CA certificate from the Domains tab and skip Let's Encrypt entirely.`;
+  } else if (/\b50[24]\b/i.test(text)) {
+    diagnosis =
+      `The challenge request reached port 80, but the internal challenge listener failed to respond (HTTP 502/504). ` +
+      `The edge proxy could not reach the temporary challenge responder on port ${ACME_HTTP01_PORT}. ` +
+      `Nothing is occupying :80 from another web server — retry issuance.`;
   } else if (/404|invalid response|unauthorized|"?status"?:?\s*40\d/i.test(text)) {
     // Same status, two different causes, told apart by which port answered.
     //
