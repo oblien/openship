@@ -900,6 +900,15 @@ function assertValidDomain(domain: string): void {
   }
 }
 
+export function parentWildcardDomain(domain: string): string | null {
+  if (domain.startsWith("*.")) return null;
+  const firstDot = domain.indexOf(".");
+  if (firstDot <= 0) return null;
+  const parent = domain.slice(firstDot + 1);
+  if (!parent.includes(".")) return null;
+  return `*.${parent}`;
+}
+
 /**
  * `proxy_pass`/`root` values are interpolated verbatim into the generated
  * server{} block and — on proxy adopt/takeover — come from PARSING A FOREIGN
@@ -2073,10 +2082,10 @@ ${serveLocation}
     let serverBlock: string;
     let bootstrapServed = false;
 
-    if (route.tls && (await this.certsExist(route.domain))) {
-      const certPath = join(this.certDir, route.domain, "fullchain.pem");
-      const keyPath = join(this.certDir, route.domain, "privkey.pem");
-      // Full SSL config - certs already provisioned. The :80 block carries the
+    const resolvedCertDomain = route.tls ? await this.resolveCertDomain(route.domain) : null;
+    if (route.tls && resolvedCertDomain) {
+      const certPath = join(this.certDir, resolvedCertDomain, "fullchain.pem");
+      const keyPath = join(this.certDir, resolvedCertDomain, "privkey.pem");
       // full app body too (not just a redirect), because behind a TLS-terminating
       // CDN it is the block that actually serves — including the rules guard, so
       // rate limits / bans / country rules can't be bypassed by arriving on :80.
@@ -3236,7 +3245,14 @@ ${serveLocation}
     });
   }
 
-  private async certsExist(domain: string): Promise<boolean> {
+  private async resolveCertDomain(domain: string): Promise<string | null> {
+    if (await this.certsExistDirect(domain)) return domain;
+    const wildcard = parentWildcardDomain(domain);
+    if (wildcard && (await this.certsExistDirect(wildcard))) return wildcard;
+    return null;
+  }
+
+  private async certsExistDirect(domain: string): Promise<boolean> {
     const certPath = join(this.certDir, domain, "fullchain.pem");
     if (this.executor) {
       return this.executor.exists(certPath);
@@ -3250,6 +3266,10 @@ ${serveLocation}
     }
   }
 
+  private async certsExist(domain: string): Promise<boolean> {
+    return (await this.resolveCertDomain(domain)) !== null;
+  }
+
   /**
    * Read the on-disk cert and report its validity. Distinguishes three cases so
    * the caller never downgrades a healthy domain on a transient hiccup:
@@ -3258,14 +3278,15 @@ ${serveLocation}
    *   - file present, unreadable/unparseable → not verified, reason "read_error"
    */
   private async readCertInfo(domain: string): Promise<SslResult> {
-    if (!(await this.certsExist(domain))) {
+    const resolvedDomain = await this.resolveCertDomain(domain);
+    if (!resolvedDomain) {
       return { domain, expiresAt: "", issuer: "certbot", verified: false, reason: "missing" };
     }
     let certPem: string;
     let keyPem: string;
     try {
-      certPem = await this._readFile(join(this.certDir, domain, "fullchain.pem"));
-      keyPem = await this._readFile(join(this.certDir, domain, "privkey.pem"));
+      certPem = await this._readFile(join(this.certDir, resolvedDomain, "fullchain.pem"));
+      keyPem = await this._readFile(join(this.certDir, resolvedDomain, "privkey.pem"));
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       // The file exists but couldn't be read (SSH blip, permissions, partial

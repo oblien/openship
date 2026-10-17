@@ -917,6 +917,21 @@ describe("NginxProvider config generation", () => {
     expect(c).toContain("proxy_pass http://127.0.0.1:3009;");
   });
 
+  test("subdomain inherits parent wildcard cert when available", async () => {
+    const { nginx, conf, files } = setup();
+    const wildcardCert = makeTestCert(["*.example.com"]);
+    files.set("/etc/letsencrypt/live/*.example.com/fullchain.pem", wildcardCert.certPem);
+    files.set("/etc/letsencrypt/live/*.example.com/privkey.pem", wildcardCert.keyPem);
+
+    await nginx.registerRoute(PROXY);
+    const c = conf("app-example-com")!;
+    expect(c).toContain("ssl_certificate /etc/letsencrypt/live/*.example.com/fullchain.pem;");
+    expect(c).toContain("ssl_certificate_key /etc/letsencrypt/live/*.example.com/privkey.pem;");
+
+    const sslInfo = await nginx.verifyCert("app.example.com");
+    expect(sslInfo.verified).toBe(true);
+  });
+
   test("static route → root + try_files, app is not proxied", async () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({
