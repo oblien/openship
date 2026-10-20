@@ -11,7 +11,7 @@ import {
 export { runtimeTarget, runtimeTargetId, cloudRuntimeTarget, cloudRuntimeTargetId };
 
 const DEFAULT_BETTER_AUTH_SECRET = "change-me-in-production";
-const MINIMAX_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+const DEFAULT_MINIMAX_MODEL = "MiniMax-M3.1-Flash";
 const MINIMAX_BASE_URLS = [
   "https://api.minimax.io/v1",
   "https://api.minimaxi.com/v1",
@@ -399,7 +399,7 @@ const envSchema = z.object({
 
   /** Optional MiniMax configuration forwarded to managed webmail deployments. */
   MINIMAX_API_KEY: z.string().trim().min(1).optional(),
-  MINIMAX_MODEL: z.enum(MINIMAX_MODELS).default(MINIMAX_MODELS[0]),
+  MINIMAX_MODEL: z.string().trim().min(1).default(DEFAULT_MINIMAX_MODEL),
   MINIMAX_BASE_URL: z.enum(MINIMAX_BASE_URLS).default(MINIMAX_BASE_URLS[0]),
 
   /** Enables verbose timing logs for SSH/system checks and environment detection */

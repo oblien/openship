@@ -2906,18 +2906,19 @@
               "key": "MINIMAX_MODEL",
               "service": "webmail",
               "label": "MiniMax model",
-              "type": "select",
+              "help": "Choose a suggested model or keep an explicitly configured model ID.",
+              "type": "text",
               "options": [
+                {
+                  "value": "MiniMax-M3.1-Flash",
+                  "label": "MiniMax-M3.1-Flash"
+                },
                 {
                   "value": "MiniMax-M3",
                   "label": "MiniMax-M3"
-                },
-                {
-                  "value": "MiniMax-M2.7",
-                  "label": "MiniMax-M2.7"
                 }
               ],
-              "default": "MiniMax-M3",
+              "default": "MiniMax-M3.1-Flash",
               "advanced": true,
               "installStep": true,
               "requiresRedeploy": true

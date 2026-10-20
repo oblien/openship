@@ -176,7 +176,7 @@ front to terminate TLS and route public traffic to it.
 | \`DEFAULT_SMTP_HOST\`  | \`mail.<email-domain>\`    | Pinned SMTP host              |
 | \`DEFAULT_SMTP_PORT\`  | \`587\`                    |                               |
 | \`MINIMAX_API_KEY\`    | unset                    | Enables AI email generation   |
-| \`MINIMAX_MODEL\`      | \`MiniMax-M3\`             | Chat model                    |
+| \`MINIMAX_MODEL\`      | \`MiniMax-M3.1-Flash\`             | Chat model                    |
 | \`MINIMAX_BASE_URL\`   | \`https://api.minimax.io/v1\` | Global or CN API endpoint  |
 | \`BRANDING_PATH\`      | \`./data/branding\`        | Where branding lives on disk  |
 | \`SQLITE_PATH\`        | \`./data/zero.db\`         | Session DB                    |

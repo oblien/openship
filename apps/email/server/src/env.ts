@@ -158,7 +158,7 @@ export const env: Env = {
   DEFAULT_SMTP_PORT: int('DEFAULT_SMTP_PORT', 587),
 
   MINIMAX_API_KEY: process.env.MINIMAX_API_KEY?.trim() || undefined,
-  MINIMAX_MODEL: choice('MINIMAX_MODEL', MINIMAX_MODELS, MINIMAX_MODELS[0]),
+  MINIMAX_MODEL: process.env.MINIMAX_MODEL?.trim() || MINIMAX_MODELS[0],
   MINIMAX_BASE_URL: choice('MINIMAX_BASE_URL', MINIMAX_BASE_URLS, MINIMAX_BASE_URLS[0]),
 
   SQLITE_PATH: optional('SQLITE_PATH', './data/zero.db'),

@@ -1,12 +1,13 @@
 import { z } from "zod";
 
-export const MINIMAX_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+export const MINIMAX_MODELS = ["MiniMax-M3.1-Flash", "MiniMax-M3"] as const;
 export const MINIMAX_BASE_URLS = [
   "https://api.minimax.io/v1",
   "https://api.minimaxi.com/v1",
 ] as const;
 
-export type MiniMaxModel = (typeof MINIMAX_MODELS)[number];
+// Suggested models do not restrict explicitly configured legacy or custom IDs.
+export type MiniMaxModel = string;
 export type MiniMaxBaseUrl = (typeof MINIMAX_BASE_URLS)[number];
 
 export interface MiniMaxConfig {

@@ -27,7 +27,7 @@ export interface AppSettingField {
   label: string;
   help?: string;
   type: "text" | "password" | "boolean" | "select" | "number" | "multiselect" | "radio" | "textarea";
-  /** Choices for `type:"select"` / `"radio"` / `"multiselect"`. */
+  /** Choices for select/radio/multiselect; suggestions for text inputs. */
   options?: readonly AppSettingOption[];
   /** Join char for a `type:"multiselect"` value in the stored env string (default ","). */
   separator?: string;

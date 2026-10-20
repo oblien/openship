@@ -301,11 +301,26 @@ function Field({
           value={str}
           placeholder={field.placeholder}
           autoComplete={masked ? "new-password" : undefined}
+          list={
+            field.type === "text" && field.options?.length
+              ? `${field.service}-${field.key}-options`
+              : undefined
+          }
           min={field.type === "number" ? field.min : undefined}
           max={field.type === "number" ? field.max : undefined}
           step={field.type === "number" ? (field.step ?? (field.integer ? 1 : undefined)) : undefined}
           onChange={(e) => onChange(e.target.value)}
         />
+      )}
+
+      {field.type === "text" && !!field.options?.length && (
+        <datalist id={`${field.service}-${field.key}-options`}>
+          {field.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </datalist>
       )}
 
       {error ? (

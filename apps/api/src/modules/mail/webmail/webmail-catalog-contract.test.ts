@@ -60,9 +60,11 @@ describe("webmail catalog contract", () => {
     expect(apiKey?.type).toBe("password");
     expect(apiKey?.secret).toBe(true);
     expect(model?.options?.map((option) => option.value)).toEqual([
+      "MiniMax-M3.1-Flash",
       "MiniMax-M3",
-      "MiniMax-M2.7",
     ]);
+    expect(model?.default).toBe("MiniMax-M3.1-Flash");
+    expect(model?.type).toBe("text");
     expect(baseUrl?.options?.map((option) => option.value)).toEqual([
       "https://api.minimax.io/v1",
       "https://api.minimaxi.com/v1",
