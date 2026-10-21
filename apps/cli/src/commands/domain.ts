@@ -7,7 +7,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  */
 
 import { Command, Option } from "commander";
-import { UploadCertBody, parseInput } from "@repo/contracts";
+import { DOMAIN_PAGE_DEFAULT_LIMIT, UploadCertBody, parseInput } from "@repo/contracts";
 import { readFileSync } from "node:fs";
 import { attachCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
 import { getShipClient } from "../lib/ship-client";
@@ -51,14 +51,21 @@ function printRecords(result: DomainRecords): void {
 const listCmd = new Command("list")
   .description("List a project's custom domains")
   .requiredOption("-p, --project <id>", "Project ID to list domains for")
+  .option("--limit <number>", "Show one page of at most this many domains, ordered by hostname", positiveInteger)
+  .option("--cursor <cursor>", "Continue from the cursor printed by the previous page")
   .action(async (opts) => {
     try {
-      const rows = await getShipClient().domains.list(opts.project);
+      const ship = getShipClient();
+      const page = opts.limit !== undefined || opts.cursor !== undefined
+        ? await ship.domains.listPage(opts.project, { limit: opts.limit ?? DOMAIN_PAGE_DEFAULT_LIMIT, cursor: opts.cursor })
+        : undefined;
+      const rows = page?.domains ?? await ship.domains.list(opts.project);
       if (isJsonMode()) {
-        printJson(rows);
+        printJson(page ?? rows);
         return;
       }
       printTable(rows.map(domainRow), ["id", "hostname", "type", "primary", "verified", "status", "ssl"]);
+      if (page?.nextCursor) info(`  More domains: --cursor ${page.nextCursor}`);
     } catch (e) {
       observeCaughtError(e, "cli/commands/domain");
       rethrowCommandExit(e);

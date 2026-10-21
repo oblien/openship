@@ -29,7 +29,8 @@ export function renderApiReference() {
     if (!entry.page || !entry.description)
       throw new Error(`Missing documentation for ${sdk ?? route}`);
     if (route && !routes.has(route)) throw new Error(`Documented route no longer exists: ${route}`);
-    if (route && coveredRoutes.has(route)) throw new Error(`Route documented twice: ${route}`);
+    if (route && coveredRoutes.has(route) && !entry.sharedRoute)
+      throw new Error(`Route documented twice: ${route}`);
     if (route) coveredRoutes.add(route);
     const rows = pages.get(entry.page) ?? [];
     rows.push({ ...entry, sdk, route });

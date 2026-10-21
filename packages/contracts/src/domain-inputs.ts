@@ -12,11 +12,43 @@ export const DomainIdParam = Type.Object({
 
 // ─── Query params ────────────────────────────────────────────────────────────
 
+export const DOMAIN_PAGE_DEFAULT_LIMIT = 50;
+
+/**
+ * Paging and filters for GET /domains. Without any of them the endpoint keeps
+ * returning every row; with any of them it returns one page ordered by hostname
+ * and a `nextCursor` while more rows match.
+ */
+export const DomainPageQuery = Type.Object({
+  limit: Type.Integer({ minimum: 1, maximum: 200, description: `Rows per page. Defaults to ${DOMAIN_PAGE_DEFAULT_LIMIT} over HTTP.` }),
+  cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 1024, description: "nextCursor from the previous page." })),
+  q: Type.Optional(Type.String({ minLength: 1, maxLength: 253, description: "Case-insensitive hostname substring." })),
+  status: Type.Optional(Type.Union(
+    [Type.Literal("pending"), Type.Literal("active"), Type.Literal("failed"), Type.Literal("removing")],
+    { description: "Verification status." },
+  )),
+  serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Only domains routed to this service." })),
+  bound: Type.Optional(Type.Boolean({ description: "Match boundByDomain: true for domains that own their service binding." })),
+});
+
 export const ListDomainsQuery = Type.Object({
   projectId: Type.String({ minLength: 1 }),
+  ...Type.Partial(DomainPageQuery).properties,
 });
 
 // ─── Request bodies ──────────────────────────────────────────────────────────
+
+/**
+ * Route this domain to one service, from the domain row itself. The service must
+ * belong to the domain's project and `targetPort` must be one of its ports
+ * (default: its primary port). Rows bound this way are not entries of the
+ * service's `publicEndpoints`, so any number of them can share a service.
+ */
+const BindingServiceId = Type.String({ minLength: 1, maxLength: 128 });
+const DomainServiceBindingFields = {
+  serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Service of the same project to route this domain to." })),
+  targetPort: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535, description: "Container port of that service. Defaults to its primary port." })),
+};
 
 export const AddDomainBody = Type.Object({
   projectId: Type.String({ minLength: 1 }),
@@ -51,7 +83,25 @@ export const AddDomainBody = Type.Object({
   redirectStatus: Type.Optional(Type.Integer({ minimum: 300, maximum: 399 })),
   /** ACME challenge method: "http-01" (default) | "dns-01" (required for wildcards). */
   sslChallenge: Type.Optional(Type.Union([Type.Literal("http-01"), Type.Literal("dns-01")])),
+  ...DomainServiceBindingFields,
 });
+
+/**
+ * PATCH /:id — change the service binding this domain row owns. `serviceId: null`
+ * unbinds the domain and removes its route. Closed so a misspelled field fails
+ * the request rather than silently changing nothing.
+ */
+export const UpdateDomainBody = Type.Object(
+  {
+    serviceId: Type.Optional(
+      Type.Union([BindingServiceId, Type.Null()], {
+        description: "Service of the same project to route this domain to, or null to unbind it.",
+      }),
+    ),
+    targetPort: DomainServiceBindingFields.targetPort,
+  },
+  { additionalProperties: false, minProperties: 1 },
+);
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
  *  domain. The cert/key pair is validated (parse + key match) in the adapter. */
@@ -82,5 +132,7 @@ export const PreviewDomainBody = Type.Object({
 
 export type TDomainIdParam = Static<typeof DomainIdParam>;
 export type TListDomainsQuery = Static<typeof ListDomainsQuery>;
+export type TDomainPageQuery = Static<typeof DomainPageQuery>;
 export type TAddDomainBody = Static<typeof AddDomainBody>;
+export type TUpdateDomainBody = Static<typeof UpdateDomainBody>;
 export type TUploadCertBody = Static<typeof UploadCertBody>;

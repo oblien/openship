@@ -6,8 +6,10 @@ import {
   ne,
   lt,
   lte,
+  gt,
   gte,
   asc,
+  ilike,
   inArray,
   isNull,
   isNotNull,
@@ -283,6 +285,33 @@ export function createDomainRepo(db: Database) {
         ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
         ...(opts?.offset !== undefined ? { offset: opts.offset } : {}),
       });
+    },
+
+    /**
+     * One keyset page of a project's domains ordered by hostname (unique, and
+     * indexed with projectId). The cursor is the last hostname, base64url
+     * encoded; `nextCursor` is set only while more rows match the filters.
+     */
+    async pageByProject(projectId: string, opts: {
+      limit: number;
+      cursor?: string;
+      q?: string;
+      status?: string;
+      serviceId?: string;
+      bound?: boolean;
+    }): Promise<{ rows: Domain[]; nextCursor?: string }> {
+      const after = opts.cursor ? Buffer.from(opts.cursor, "base64url").toString("utf8") : undefined;
+      const rows = await db.select().from(domain).where(and(
+        eq(domain.projectId, projectId),
+        after ? gt(domain.hostname, after) : undefined,
+        opts.q ? ilike(domain.hostname, `%${opts.q.replace(/[\\%_]/g, "\\$&")}%`) : undefined,
+        opts.status ? eq(domain.status, opts.status) : undefined,
+        opts.serviceId ? eq(domain.serviceId, opts.serviceId) : undefined,
+        opts.bound === undefined ? undefined : eq(domain.boundByDomain, opts.bound),
+      )).orderBy(asc(domain.hostname)).limit(opts.limit + 1);
+      if (rows.length <= opts.limit) return { rows };
+      const page = rows.slice(0, opts.limit);
+      return { rows: page, nextCursor: Buffer.from(page.at(-1)!.hostname).toString("base64url") };
     },
 
     /**
