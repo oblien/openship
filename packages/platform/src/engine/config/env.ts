@@ -150,6 +150,18 @@ const envSchema = z.object({
   OPENSHIP_PROMPT_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
   /**
+   * How many image builds may run at the same time on ONE build host (a server,
+   * or this machine for local deploys). Extra builds wait in a FIFO queue and
+   * start as soon as a slot frees; only the image-build phase holds a slot, never
+   * the deploy/health phases. Default 1: concurrent BuildKit exports on a single
+   * Docker/containerd host can corrupt its content store ("lease does not exist",
+   * spurious "no space left on device") — most easily triggered by auto-deploy
+   * fan-out, where one push starts every project tracking that branch (GH-676).
+   * 0 disables the cap. Managed Cloud ignores this; it has its own plan-based queue.
+   */
+  OPENSHIP_MAX_CONCURRENT_BUILDS: z.coerce.number().int().min(0).catch(1),
+
+  /**
    * Escape hatch for the container health watch's Docker event streams (one
    * persistent `/events` subscription per server, which is what cuts failure
    * detection from ~90s to ~10s — see modules/monitoring/container-events).

@@ -148,6 +148,7 @@ import {
 import type { HostPortTargetIdentity } from "../../lib/host-port-target";
 import { reserveResolvedLoopbackRoutes } from "./observed-host-port-claims";
 import { verifyDeployedContainers } from "./stability-audit.service";
+import { acquireBuildSlot, buildHostKey, type BuildSlotRelease } from "./build-slots";
 import {
   resolveReadinessGate,
   runReadinessGate,
@@ -1265,6 +1266,24 @@ async function executeBuildAndDeploy(
       return relay;
     };
 
+    // GH-676: cap concurrent image builds per build host so a push that fans out
+    // to several auto-deploying projects queues their builds instead of running
+    // them all against one Docker/containerd store at once. Only the build phase
+    // holds the slot. Managed Cloud has its own plan-based queue and skips this.
+    const takeBuildSlot = (): Promise<BuildSlotRelease> => {
+      if (env.CLOUD_MODE && project.workspaceId) return Promise.resolve(() => {});
+      const limit = env.OPENSHIP_MAX_CONCURRENT_BUILDS;
+      return acquireBuildSlot(buildHostKey(resolved.serverId), limit, {
+        signal: cancellationSignal,
+        onWait: (ahead) =>
+          logger.log(
+            `Waiting for a build slot: ${ahead} build${ahead === 1 ? " is" : "s are"} ahead of this one ` +
+              `on ${resolved.serverId ? "this server" : "this machine"} (limit ${limit} at a time, ` +
+              `OPENSHIP_MAX_CONCURRENT_BUILDS)…\n`,
+          ),
+      });
+    };
+
     if (useServicePipeline && isMultiServiceRuntime(runtime)) {
       // A compose project's release phase would have to name a SERVICE to run in
       // (there is no single app image), which v1 doesn't model — so say so
@@ -1298,8 +1317,10 @@ async function executeBuildAndDeploy(
       // fan-out (all services share the same repo), thread its helper path into
       // every service buildConfig, and close it once the pipeline settles.
       const composeRelay = await openRelayIfNeeded();
+      let releaseBuildSlot: BuildSlotRelease | undefined;
       try {
         throwIfDeploymentCancelled(cancellationSignal);
+        releaseBuildSlot = await takeBuildSlot();
         await executeComposePipeline({
           project,
           dep,
@@ -1325,9 +1346,15 @@ async function executeBuildAndDeploy(
           gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,
           cloneOnServer: effectiveCloneOnTarget,
           signal: cancellationSignal,
-          onBuildFinished: () => finishCloudBuildPhase(project.workspaceId),
+          onBuildFinished: async () => {
+            // The images are built: let the next queued build start while this
+            // stack deploys.
+            releaseBuildSlot?.();
+            await finishCloudBuildPhase(project.workspaceId);
+          },
         });
       } finally {
+        releaseBuildSlot?.();
         if (composeRelay) await composeRelay.close().catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline");
         });
@@ -1427,7 +1454,17 @@ async function executeBuildAndDeploy(
         logger,
       );
     }
-    const buildResult = reusedArtifact ?? preparedReleaseImage ?? (await buildFromSource());
+    const buildResult =
+      reusedArtifact ??
+      preparedReleaseImage ??
+      (await (async () => {
+        const releaseBuildSlot = await takeBuildSlot();
+        try {
+          return await buildFromSource();
+        } finally {
+          releaseBuildSlot();
+        }
+      })());
 
     // ONLY an artifact this deploy PRODUCED goes on the cleanup list. `provisioned`
     // exists so onFailure/onCancelled can reclaim a half-built image or build dir,

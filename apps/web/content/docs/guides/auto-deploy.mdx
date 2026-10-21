@@ -114,6 +114,12 @@ handled by that delivery, so only the remaining projects are retried. It also sk
 a commit that is already building or live. A successful delivery remains deduplicated.
 </Callout>
 
+<Callout title="Several projects deploy from one push" type="info">
+When several projects auto-deploy from the same branch, one push starts all of them. On a self-hosted instance Openship runs **one image build at a time per server** by default. The others wait in a queue with a "Waiting for a build slot" line in their deploy log, and each one starts as soon as the build ahead of it finishes. Running many builds at once against one Docker host can corrupt its build cache, which shows up as `failed to commit … no space left on device` with plenty of free disk, or `lease does not exist`.
+
+Only the build step waits. Each deploy's rollout and health checks run outside the queue. To let more builds run at once on a host with enough CPU and memory, set `OPENSHIP_MAX_CONCURRENT_BUILDS` on the Openship API (for example `2`). Set it to `0` to remove the limit. Openship Cloud uses its own plan-based build queue instead.
+</Callout>
+
 ## Related guides
 
 <Cards>
