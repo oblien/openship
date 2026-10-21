@@ -1,7 +1,7 @@
 /** HTTP paths, status codes, and envelopes over the shared domain operations. */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import type { TAddDomainBody } from "@repo/contracts";
+import { DOMAIN_PAGE_DEFAULT_LIMIT, type TAddDomainBody, type TDomainPageQuery, type TUpdateDomainBody } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
 import { permission } from "../../lib/permission";
@@ -20,7 +20,27 @@ export async function list(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "read" });
   const proxied = await maybeProxyCloudProject(c, projectId, operationContext(c).organizationId);
   if (proxied) return proxied;
-  return c.json({ data: await operationData(c, operations().list(operationContext(c), projectId)) });
+  const query = pageQuery(c);
+  if (!query) return c.json({ data: await operationData(c, operations().list(operationContext(c), projectId)) });
+  const { domains, nextCursor } = await operationData(c, operations().listPage(operationContext(c), projectId, query));
+  return c.json({ data: domains, nextCursor });
+}
+
+/** Any paging or filter parameter switches GET /domains to one page. */
+function pageQuery(c: Context): TDomainPageQuery | undefined {
+  const value = (key: string) => c.req.query(key);
+  if (!["limit", "cursor", "q", "status", "serviceId", "bound"].some((key) => value(key) !== undefined)) return undefined;
+  const limit = value("limit");
+  const bound = value("bound");
+  return {
+    limit: limit === undefined ? DOMAIN_PAGE_DEFAULT_LIMIT : Number(limit),
+    cursor: value("cursor") || undefined,
+    q: value("q")?.trim() || undefined,
+    status: value("status") as TDomainPageQuery["status"],
+    serviceId: value("serviceId") || undefined,
+    // Anything but "true"/"false" is passed through so the operation rejects it.
+    bound: bound === "true" ? true : bound === "false" ? false : bound,
+  } as TDomainPageQuery;
 }
 
 export async function add(c: Context) {
@@ -35,6 +55,9 @@ export async function add(c: Context) {
 
 export async function get(c: Context) {
   return c.json({ data: await operationData(c, operations().get(operationContext(c), param(c, "id"))) });
+}
+export async function update(c: Context) {
+  return c.json({ data: await operationData(c, operations().update(operationContext(c), param(c, "id"), await c.req.json<TUpdateDomainBody>())) });
 }
 export async function remove(c: Context) {
   return c.json(await operationData(c, operations().remove(operationContext(c), param(c, "id"))));

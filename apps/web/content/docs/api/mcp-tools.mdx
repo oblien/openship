@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **512 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **513 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -210,11 +210,12 @@ The current API has **512 unique tools**. Permission tags below describe the rou
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
 | `delete_domains_by_id`<br />`DELETE /api/domains/:id` | Delete a domain by id. | `domain:admin` |
-| `get_domains`<br />`GET /api/domains` | List domains for the project named by the projectId query parameter. | `domain:list` |
+| `get_domains`<br />`GET /api/domains` | List domains for the project named by the projectId query parameter. Pass limit, cursor, q, status, serviceId or bound to read one hostname-ordered page; the response then carries nextCursor while more rows match. | `domain:list` |
 | `get_domains_by_id`<br />`GET /api/domains/:id` | Read one domain's verify + SSL state. | `domain:read` |
 | `get_domains_by_id_dns_challenge`<br />`GET /api/domains/:id/dns/challenge` | Read the current DNS-01 HTTPS setup, including the actual ACME TXT record, deadline, logs, and result. Safe to poll or reopen after reconnecting; contains no certificate keys. | `domain:read` |
 | `get_domains_by_id_dns_plan`<br />`GET /api/domains/:id/dns/plan` | Preview what auto-configuring this domain's DNS through a connected provider would change. | `domain:read` |
 | `get_domains_by_id_records`<br />`GET /api/domains/:id/records` | Get the DNS records for a domain. | `domain:read` |
+| `patch_domains_by_id`<br />`PATCH /api/domains/:id` | Bind a domain to a service of its project (serviceId + targetPort), move it, or unbind it with serviceId null. A bound domain is routed from its own row, not the service's publicEndpoints list. | `domain:write` |
 | `post_domains`<br />`POST /api/domains` | Add a domain (free subdomain or custom). | `domain:write` |
 | `post_domains_by_id_certificate`<br />`POST /api/domains/:id/certificate` | Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA). | `domain:write`<br />Self-hosted |
 | `post_domains_by_id_dns_apply`<br />`POST /api/domains/:id/dns/apply` | Auto-configure this domain's DNS through a connected provider. | `domain:write` |

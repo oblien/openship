@@ -177,7 +177,7 @@ export function buildCompositeRegistration(input: {
  * that path to the root service or a 404. Unlike `buildCompositeRegistration` this
  * expresses ARBITRARY multi-service fan-out, not the 1-static + 1-server shape.
  */
-type DomainOwners = ReadonlyMap<string, Pick<Domain, "serviceId">>;
+type DomainOwners = ReadonlyMap<string, Pick<Domain, "serviceId"> & Partial<Pick<Domain, "boundByDomain" | "targetPort">>>;
 
 /** Resolve stored topology against current endpoint ports and domain ownership. */
 export function resolveDomainFanoutRoutes(input: {
@@ -185,7 +185,14 @@ export function resolveDomainFanoutRoutes(input: {
   services: Service[];
   domainByHostname?: DomainOwners;
 }): ProjectCompositeRoute[] {
-  return (input.routes ?? []).flatMap((route) => {
+  return (input.routes ?? []).flatMap((stored) => {
+    const owner = input.domainByHostname?.get(stored.hostname.toLowerCase());
+    // The domain row owns `/`; keep its configured path table when it moves,
+    // but never let stale topology reactivate an explicitly unbound hostname.
+    if (owner?.boundByDomain && (!owner.serviceId || !owner.targetPort)) return [];
+    const route = owner?.boundByDomain
+      ? { ...stored, rootServiceId: owner.serviceId!, rootPort: owner.targetPort! }
+      : stored;
     if (!route.rootServiceId) {
       // Path-only domains belong to the project, with no implicit service at `/`.
       // Keep the complete table: a missing path target must block replacement.
@@ -203,7 +210,7 @@ export function resolveDomainFanoutRoutes(input: {
     const endpoint = resolveServicePublicEndpoints(service).find(
       (endpoint) => publicEndpointHostname(endpoint) === route.hostname,
     );
-    return [{ ...route, rootPort: endpoint?.port ?? route.rootPort }];
+    return [{ ...route, rootPort: owner?.boundByDomain ? route.rootPort : endpoint?.port ?? route.rootPort }];
   });
 }
 

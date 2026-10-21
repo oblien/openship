@@ -1031,7 +1031,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Durum",
       "ssl": "SSL",
-      "visit": "Aç"
+      "visit": "Aç",
+      "routedBy": "Yönlendiren"
     },
     "cold": {
       "localUrl": "Yerel URL",
@@ -1200,6 +1201,34 @@
       "description": "Uygulama çalışmaya devam eder — yalnızca bu rota ve edge kaydı kaldırılır. İstediğiniz zaman tekrar ekleyebilirsiniz.",
       "confirm": "Rotayı kaldır",
       "removing": "Kaldırılıyor…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Alan adını bir servise bağla",
+        "move": "Alan adını bir servise taşı",
+        "unbind": "Alan adı bağlantısını kaldır"
+      },
+      "bind": "Servise bağla",
+      "move": "Başka bir servise taşı",
+      "unbind": "Bağlantıyı kaldır",
+      "unbindDescription": "Alan adı artık trafik yönlendirmez. Doğrulaması ve sertifikası korunur; daha sonra yeniden bağlayabilirsiniz.",
+      "service": "Servis",
+      "port": "Port",
+      "save": "Bağlantıyı kaydet",
+      "saving": "Kaydediliyor...",
+      "noServices": "Bağlanabilecek TCP portuna sahip etkin ve dışa açık bir servis yok.",
+      "target": "{service} · port: {port}",
+      "routedByDomain": "Bu alan adı",
+      "routedByService": "Servisin uç nokta listesi",
+      "notRouted": "Yönlendirilmiyor",
+      "search": "Alan adlarında ara",
+      "loadMore": "Daha fazla alan adı yükle",
+      "loadingMore": "Yükleniyor...",
+      "noMatches": "“{query}” ile eşleşen alan adı yok.",
+      "bound": "{hostname} artık {service} servisine yönleniyor.",
+      "unbound": "{hostname} artık trafik yönlendirmiyor.",
+      "failed": "Alan adı bağlantısı güncellenemedi.",
+      "loadFailed": "Alan adları yüklenemedi."
     }
   },
   "serviceEnvironment": {

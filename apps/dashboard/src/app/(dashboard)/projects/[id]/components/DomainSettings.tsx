@@ -112,6 +112,10 @@ interface DomainSummaryItem {
    *  doesn't read as broken. */
   redirectTo?: string;
   redirectStatus?: number;
+  /** Whether this domain's own row or its service's endpoint list routes it. */
+  routedByLabel?: string;
+  /** Set when the server supports row-owned bindings and this row can carry one. */
+  binding?: { owned: boolean; serviceId?: string; targetPort?: number };
   status: { label: string; tone: DomainTone };
   ssl: { label: string; tone: DomainTone };
   /**
@@ -333,6 +337,8 @@ function resolveDomainSsl(hostname: string, domain: any, baseDomain: string, t: 
       return { label: s.inactive, tone: "neutral" };
   }
 }
+
+const BOUND_PAGE_SIZE = 50;
 
 interface DomainSettingsProps {
   /** Keep domain management inside a service, with an optional port selected. */
@@ -632,6 +638,14 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   // of an ugly native window.confirm).
   const [removeTarget, setRemoveTarget] = useState<DomainSummaryItem | null>(null);
   const [removing, setRemoving] = useState(false);
+  // Bind / Move / Unbind modal for a domain row that owns its service binding.
+  const [bindingTarget, setBindingTarget] = useState<{ summary: DomainSummaryItem; mode: "bind" | "move" | "unbind" } | null>(null);
+  const [bindingDraft, setBindingDraft] = useState({ serviceId: "", port: "" });
+  const [bindingSaving, setBindingSaving] = useState(false);
+  const [domainQuery, setDomainQuery] = useState("");
+  // Row-bound domains are read a page at a time (GET /domains?bound=true).
+  const [boundPage, setBoundPage] = useState<{ rows: any[]; nextCursor?: string; loading: boolean } | null>(null);
+  const boundRequest = useRef(0);
   const [isEditingDomains, setIsEditingDomains] = useState(false);
   // Tracks the per-domain Verify button state. Holds the domainId of the
   // row currently running its verify check so the button can spin and
@@ -675,6 +689,47 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   const hasProjectLevelRouting =
     !serviceScope && ((Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0) ||
     !projectHasServices);
+  // Servers that support row-owned bindings report `boundByDomain` on every row.
+  const rowBinding = domainsData.domains.some((row: any) => typeof row?.boundByDomain === "boolean");
+  const pagedBound = rowBinding && !hasProjectLevelRouting;
+  const loadBoundPage = useCallback(async (query: string, cursor?: string) => {
+    const request = ++boundRequest.current;
+    setBoundPage((page) => ({ rows: page?.rows ?? [], nextCursor: page?.nextCursor, loading: true }));
+    try {
+      const result = await domainsApi.listPage(String(id), {
+        limit: BOUND_PAGE_SIZE, bound: true, cursor, q: query.trim() || undefined, serviceId: serviceScope?.serviceId,
+      });
+      if (request !== boundRequest.current) return;
+      setBoundPage((page) => ({
+        rows: [...(cursor ? page?.rows ?? [] : []), ...result.data], nextCursor: result.nextCursor, loading: false,
+      }));
+    } catch (error) {
+      observeCaughtError(error, "dashboard/app/(dashboard)/projects/[id]/components/DomainSettings");
+      if (request !== boundRequest.current) return;
+      setBoundPage((page) => ({ rows: page?.rows ?? [], nextCursor: page?.nextCursor, loading: false }));
+      showToast(getApiErrorMessage(error, t.projectSettings.domains.binding.loadFailed), "error");
+    }
+  }, [id, serviceScope?.serviceId, showToast, t]);
+  useEffect(() => {
+    if (!pagedBound) {
+      boundRequest.current++;
+      setBoundPage(null);
+      return;
+    }
+    const timer = setTimeout(() => void loadBoundPage(domainQuery), domainQuery ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [pagedBound, domainQuery, loadBoundPage]);
+  /** Re-read the project's domains after a POST/PATCH that changed routing. */
+  const reloadDomains = async () => {
+    const { data } = await domainsApi.list(String(id));
+    updateDomains(data.map((row) => ({ ...row, domain: row.hostname, primary: row.isPrimary })));
+    if (pagedBound) void loadBoundPage(domainQuery);
+    invalidateProjectCaches(id);
+    await Promise.resolve().then(() => onRoutesChanged?.()).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/DomainSettings");
+    });
+    return data;
+  };
   const draftPublicEndpoints = useMemo(
     () =>
       createProjectEndpointDrafts(
@@ -1706,6 +1761,23 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     }
     setAddRouteSaving(true);
     try {
+      // The domain row owns its binding: no service endpoint-list entry, no cap.
+      if (rowBinding && domainType === "custom") {
+        const hostname = domainValue.toLowerCase();
+        if (domainRowsByHostname.has(hostname)) {
+          setAddRouteError(t.projectSettings.domains.add.noWww);
+          return;
+        }
+        const { data: created } = await domainsApi.create(id, { hostname, serviceId: target.id, targetPort: Number(cleanPort) });
+        setShowAddRoute(false);
+        setAddRouteDraft({ ...emptyAddRouteDraft, port: portFilter ? String(portFilter) : "" });
+        showToast(t.projectSettings.domains.toast.routingUpdated, "success", t.projectSettings.domains.toast.domainsTitle);
+        await reloadDomains();
+        if (selfHosted && !isCloudProject && hostname.startsWith("*.") && !created.externalIngress && !created.manualSsl) {
+          setDnsSetup({ domainId: created.id, hostname: created.hostname });
+        }
+        return;
+      }
       const endpoint = validatedPublicEndpointPayload(createPublicEndpoint({
         port: cleanPort, domainType,
         domain: domainType === "free" ? domainValue : "",
@@ -1792,6 +1864,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
               }),
               mappedPort: endpoint.port,
               serviceId: service.id,
+              routedByLabel: rowBinding ? t.projectSettings.domains.binding.routedByService : undefined,
               liveUrl: `https://${hostname}`,
               isPrimary: domain?.isPrimary ?? false,
               needsVerify: !!domain && domain.verified === false,
@@ -1818,38 +1891,117 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
    * isn't attached to an exposed service hits it. A domain the project owns has to
    * be listed by the page that owns domains, whether or not a service claims it.
    */
-  const orphanDomainCards: DomainSummaryItem[] = (() => {
-    const claimed = new Set(serviceRouteCards.map(({ summary }) => summary.hostname.toLowerCase()));
-    return [...domainRowsByHostname.entries()]
-      .filter(([hostname]) => !claimed.has(hostname))
-      .map(([hostname, domain]) => ({
-        id: typeof domain?.id === "string" ? domain.id : hostname,
-        domainId: typeof domain?.id === "string" ? domain.id : undefined,
-        title: domain?.hostname ?? hostname,
-        hostname: domain?.hostname ?? hostname,
-        typeLabel:
-          domain?.domainType === "custom"
-            ? t.projectSettings.domains.typeCustom
-            : t.projectSettings.domains.typeFree,
-        mappedLabel: domain.port ? interpolate(t.projectSettings.domains.portLabel, { port: String(domain.port) }) : "",
-        mappedPort: Number(domain.port) || undefined,
-        serviceId: typeof domain.serviceId === "string" ? domain.serviceId : undefined,
-        liveUrl: `https://${domain?.hostname ?? hostname}`,
-        isPrimary: domain?.isPrimary ?? false,
-        needsVerify: domain?.verified === false,
-        externalIngress: domain?.externalIngress === true,
-        ...describeDomainStatus(domain, projectData, t),
-        ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
-      }));
-  })();
+  const binding = t.projectSettings.domains.binding;
+  const domainRowSummary = (hostname: string, domain: any): DomainSummaryItem => {
+    const boundService = typeof domain?.serviceId === "string"
+      ? services.find((service) => service.id === domain.serviceId)
+      : undefined;
+    const port = Number(domain?.targetPort) || undefined;
+    const owned = domain?.boundByDomain === true;
+    return {
+      id: typeof domain?.id === "string" ? domain.id : hostname,
+      domainId: typeof domain?.id === "string" ? domain.id : undefined,
+      title: domain?.hostname ?? hostname,
+      hostname: domain?.hostname ?? hostname,
+      typeLabel:
+        domain?.domainType === "custom"
+          ? t.projectSettings.domains.typeCustom
+          : t.projectSettings.domains.typeFree,
+      mappedLabel: !port ? "" : boundService
+        ? interpolate(binding.target, { service: boundService.name, port: String(port) })
+        : interpolate(t.projectSettings.domains.portLabel, { port: String(port) }),
+      mappedPort: port,
+      serviceId: typeof domain.serviceId === "string" ? domain.serviceId : undefined,
+      routedByLabel: !rowBinding ? undefined : owned
+        ? domain.serviceId ? binding.routedByDomain : binding.notRouted
+        : domain.serviceId ? binding.routedByService : undefined,
+      binding: rowBinding && domain?.id && domain.ownerType === "project" && !domain.redirectTo
+        ? { owned, serviceId: domain.serviceId ?? undefined, targetPort: port }
+        : undefined,
+      liveUrl: `https://${domain?.hostname ?? hostname}`,
+      isPrimary: domain?.isPrimary ?? false,
+      needsVerify: domain?.verified === false,
+      externalIngress: domain?.externalIngress === true,
+      ...describeDomainStatus(domain, projectData, t, !owned || !boundService || (boundService.enabled && boundService.exposed)),
+      ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
+    };
+  };
+  const claimedHostnames = new Set(serviceRouteCards.map(({ summary }) => summary.hostname.toLowerCase()));
+  // Row-bound domains come from the paged read when the server supports it.
+  const orphanDomainCards: DomainSummaryItem[] = [...domainRowsByHostname.entries()]
+    .filter(([hostname, domain]) => !claimedHostnames.has(hostname) && !(pagedBound && domain?.boundByDomain === true))
+    .map(([hostname, domain]) => domainRowSummary(hostname, domain));
+  const boundDomainCards: DomainSummaryItem[] = (boundPage?.rows ?? []).flatMap((row) => {
+    const hostname = String(row?.hostname ?? "").toLowerCase();
+    // The project payload is the fresher copy; a row it no longer has was removed.
+    const current = domainRowsByHostname.get(hostname);
+    return current?.id === row.id && current.boundByDomain === true && !claimedHostnames.has(hostname)
+      ? [domainRowSummary(hostname, current)]
+      : [];
+  });
 
   /** Cards actually rendered — gates "Set as primary", which needs a choice. */
-  const totalRouteCards = serviceRouteCards.length + orphanDomainCards.length;
+  const totalRouteCards = serviceRouteCards.length + orphanDomainCards.length + boundDomainCards.length;
   const inServiceScope = (summary: DomainSummaryItem) => !serviceScope || (
     summary.serviceId === serviceScope.serviceId && (!portFilter || summary.mappedPort === portFilter)
   );
-  const visibleServiceRoutes = serviceRouteCards.filter(({ summary }) => inServiceScope(summary));
-  const visibleOrphanRoutes = orphanDomainCards.filter(inServiceScope);
+  // The paged rows are searched by the server; the rest are already loaded.
+  const queryText = pagedBound ? domainQuery.trim().toLowerCase() : "";
+  const matchesQuery = (summary: DomainSummaryItem) => !queryText || summary.hostname.toLowerCase().includes(queryText);
+  const visibleServiceRoutes = serviceRouteCards.filter(({ summary }) => inServiceScope(summary) && matchesQuery(summary));
+  const visibleOrphanRoutes = [...orphanDomainCards.filter(matchesQuery), ...boundDomainCards].filter(inServiceScope);
+  const bindableServices = services.filter((service) => service.enabled && service.exposed && tcpPorts(service).length > 0);
+  function tcpPorts(service: Service) {
+    return servicePortTargets(service, baseDomain)
+      .filter((target) => target.port && target.protocol === "tcp")
+      .map((target) => String(target.port));
+  }
+  const bindingService = bindableServices.find((service) => service.id === bindingDraft.serviceId);
+  const bindingPorts = bindingService ? tcpPorts(bindingService) : [];
+  const openBinding = (summary: DomainSummaryItem, mode: "bind" | "move" | "unbind") => {
+    const current = bindableServices.find((service) => service.id === summary.binding?.serviceId);
+    const service = mode === "bind" ? bindableServices[0] : current ?? bindableServices[0];
+    setBindingDraft({
+      serviceId: service?.id ?? "",
+      port: current && summary.binding?.targetPort ? String(summary.binding.targetPort) : service ? tcpPorts(service)[0] ?? "" : "",
+    });
+    setBindingTarget({ summary, mode });
+  };
+  const bindingMenuActions = (summary: DomainSummaryItem): MenuAction[] => {
+    if (!summary.binding || !summary.domainId) return [];
+    if (!summary.binding.serviceId)
+      return [{ id: "bind", label: binding.bind, icon: <UiIcon name="link" className="size-4" />, onClick: () => openBinding(summary, "bind") }];
+    if (!summary.binding.owned) return [];
+    return [
+      { id: "move", label: binding.move, icon: <UiIcon name="arrow-right" className="size-4" />, onClick: () => openBinding(summary, "move") },
+      { id: "unbind", label: binding.unbind, icon: <UiIcon name="close" className="size-4" />, onClick: () => openBinding(summary, "unbind") },
+    ];
+  };
+  const handleSaveBinding = async () => {
+    const target = bindingTarget;
+    if (!target?.summary.domainId || bindingSaving) return;
+    const service = services.find((item) => item.id === bindingDraft.serviceId);
+    if (target.mode !== "unbind" && (!service || !bindingDraft.port)) return;
+    setBindingSaving(true);
+    try {
+      await domainsApi.update(target.summary.domainId, target.mode === "unbind"
+        ? { serviceId: null }
+        : { serviceId: service!.id, targetPort: Number(bindingDraft.port) });
+      setBindingTarget(null);
+      showToast(
+        target.mode === "unbind"
+          ? interpolate(binding.unbound, { hostname: target.summary.hostname })
+          : interpolate(binding.bound, { hostname: target.summary.hostname, service: service!.name }),
+        "success",
+        t.projectSettings.domains.toast.domainsTitle,
+      );
+      await reloadDomains();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, binding.failed), "error", t.projectSettings.domains.toast.domainsTitle);
+    } finally {
+      setBindingSaving(false);
+    }
+  };
 
   // Build the ⋯ menu items for a domain card. Shared by the single-app and
   // service route cards so both collapse the same way. Visit is NOT here — it's
@@ -1979,6 +2131,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       onSetPrimary: opts.onSetPrimary,
       isSettingPrimary: settingPrimaryId === item.id,
     });
+    if (!hasProjectLevelRouting) menuActions.unshift(...bindingMenuActions(item));
     if (projectData.activeDeploymentId && !projectData.awaitingDecision) {
       menuActions.push({
         id: "retry-routing",
@@ -2592,6 +2745,16 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       {!hasProjectLevelRouting && (servicesLoading || (serviceScope ? !!scopedService : services.length > 0)) && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {pagedBound && (
+              <input
+                type="search"
+                value={domainQuery}
+                aria-label={binding.search}
+                placeholder={binding.search}
+                onChange={(event) => setDomainQuery(event.target.value)}
+                className="h-9 min-w-0 flex-1 rounded-xl border border-border/50 bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/40 sm:max-w-xs"
+              />
+            )}
             {/* Migrated/edgeless stacks: routes may be recorded but the server's
                 edge (OpenResty on 80/443) isn't set up yet. We probe edge health
                 first — show "Edge ready" when OpenResty already owns it, else the
@@ -2705,6 +2868,10 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
           {servicesLoading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">{t.projectSettings.domains.addRoute.loading}</div>
+          ) : visibleServiceRoutes.length === 0 && visibleOrphanRoutes.length === 0 && queryText && !boundPage?.loading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {interpolate(binding.noMatches, { query: domainQuery.trim() })}
+            </div>
           ) : visibleServiceRoutes.length === 0 && visibleOrphanRoutes.length === 0 && !showAddRoute ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               {t.projectSettings.domains.addRoute.emptyPrefix}<span className="font-medium text-foreground">{t.projectSettings.domains.addRoute.emptyAction}</span>{t.projectSettings.domains.addRoute.emptySuffix}
@@ -2733,6 +2900,17 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                       : undefined,
                 }),
               )}
+            </div>
+          )}
+          {boundPage?.nextCursor && (
+            <div className="flex justify-center">
+              <ActionButton
+                label={boundPage.loading ? binding.loadingMore : binding.loadMore}
+                icon={boundPage.loading ? "spinner" : "chevron-down"}
+                spinning={boundPage.loading}
+                disabled={boundPage.loading}
+                onClick={() => void loadBoundPage(domainQuery, boundPage.nextCursor)}
+              />
             </div>
           )}
         </div>
@@ -2821,6 +2999,86 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
               >
                 {routeSaving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                 {t.projectSettings.domains.editRoute.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bindingTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+          onClick={() => !bindingSaving && setBindingTarget(null)}
+        >
+          <div
+            role="dialog"
+            aria-label={binding.titles[bindingTarget.mode]}
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-border/40 px-5 py-4">
+              <h3 className="text-[14px] font-semibold text-foreground">{binding.titles[bindingTarget.mode]}</h3>
+              <p className="mt-0.5 break-all text-[12px] text-muted-foreground">{bindingTarget.summary.hostname}</p>
+            </div>
+            <div className="space-y-3 px-5 py-5">
+              {bindingTarget.mode === "unbind" ? (
+                <p className="text-[12px] leading-relaxed text-muted-foreground">{binding.unbindDescription}</p>
+              ) : bindableServices.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">{binding.noServices}</p>
+              ) : (
+                <>
+                  <CustomSelect
+                    aria-label={binding.service}
+                    variant="filled"
+                    triggerClassName="bg-muted/60 hover:bg-muted"
+                    value={bindingDraft.serviceId}
+                    disabled={bindingSaving}
+                    options={bindableServices.map((service) => ({
+                      value: service.id,
+                      label: service.name,
+                      icon: <ServiceIcon service={service} className="size-4 shrink-0" />,
+                    }))}
+                    onChange={(value) => {
+                      const service = bindableServices.find((item) => item.id === value);
+                      setBindingDraft({ serviceId: value, port: service ? tcpPorts(service)[0] ?? "" : "" });
+                    }}
+                  />
+                  <CustomSelect
+                    aria-label={binding.port}
+                    variant="filled"
+                    triggerClassName="bg-muted/60 hover:bg-muted"
+                    value={bindingDraft.port}
+                    disabled={bindingSaving}
+                    options={bindingPorts.map((port) => ({
+                      value: port,
+                      label: interpolate(t.projectSettings.domains.portLabel, { port }),
+                    }))}
+                    onChange={(port) => setBindingDraft((draft) => ({ ...draft, port }))}
+                  />
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border/40 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setBindingTarget(null)}
+                disabled={bindingSaving}
+                className="inline-flex min-h-9 items-center rounded-xl bg-foreground/[0.06] px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1] disabled:opacity-50"
+              >
+                {t.projectSettings.domains.edit.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveBinding()}
+                disabled={bindingSaving || (bindingTarget.mode !== "unbind" && (!bindingDraft.serviceId || !bindingDraft.port))}
+                className={`inline-flex min-h-9 items-center gap-2 rounded-xl px-4 text-[12px] font-medium transition-colors disabled:opacity-50 ${
+                  bindingTarget.mode === "unbind"
+                    ? "bg-danger-solid text-white hover:bg-danger-solid/90"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                }`}
+              >
+                {bindingSaving && <UiIcon name="spinner" className="size-4 animate-spin" />}
+                {bindingSaving ? binding.saving : bindingTarget.mode === "unbind" ? binding.unbind : binding.save}
               </button>
             </div>
           </div>
@@ -3274,6 +3532,7 @@ function DomainOverviewCard({
         ) : domain.mappedLabel ? (
           <InfoRow label={d.overview.mappedTo} value={domain.mappedLabel} />
         ) : null}
+        {domain.routedByLabel ? <InfoRow label={d.overview.routedBy} value={domain.routedByLabel} /> : null}
         <InfoRow
           label={d.overview.status}
           value={

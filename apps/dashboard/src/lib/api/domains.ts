@@ -1,7 +1,9 @@
 import { ApiError, api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsPlanResult, DnsProvisionResult } from "./dns";
-import type { Domain, DomainDiagnostics, DomainDnsChallenge, StartDomainDnsChallenge } from "@repo/contracts";
+import type {
+  Domain, DomainDiagnostics, DomainDnsChallenge, StartDomainDnsChallenge, TDomainPageQuery, TUpdateDomainBody,
+} from "@repo/contracts";
 
 export interface DomainVerifyResult {
   verified: boolean;
@@ -59,6 +61,15 @@ export const domainsApi = {
   cancelDnsChallenge: (domainId: string, attemptId: string) =>
     api.post<{ data: DomainDnsChallenge }>(`${endpoints.domains.byId(domainId)}/dns/challenge/cancel`, { attemptId }),
   list: (projectId: string) => api.get<{ data: Domain[] }>("domains", { params: { projectId } }),
+  /** One hostname-ordered page; `nextCursor` is set while more rows match. */
+  listPage: (projectId: string, query: TDomainPageQuery) =>
+    api.get<{ data: Domain[]; nextCursor?: string }>("domains", { params: { projectId, ...query } }),
+  /** Create a domain row that owns its service binding (POST /domains). */
+  create: (projectId: string, input: { hostname: string; serviceId: string; targetPort: number }) =>
+    api.post<{ data: Domain }>("domains", { projectId, ...input }),
+  /** Bind, move (serviceId + targetPort) or unbind (serviceId null) a domain row. */
+  update: (domainId: string, input: TUpdateDomainBody) =>
+    api.patch<{ data: Domain }>(endpoints.domains.byId(domainId), input),
   /**
    * Read one domain's current verify/SSL state. The recovery read for a flow
    * whose live stream dropped before reporting: the operation itself finished

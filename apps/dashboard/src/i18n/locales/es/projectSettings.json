@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Estado",
       "ssl": "SSL",
-      "visit": "Visitar"
+      "visit": "Visitar",
+      "routedBy": "Enrutado por"
     },
     "cold": {
       "localUrl": "URL local",
@@ -1151,6 +1152,34 @@
       "description": "La aplicación seguirá ejecutándose; solo se eliminan esta ruta y su registro en el edge. Puedes volver a agregarla en cualquier momento.",
       "confirm": "Eliminar ruta",
       "removing": "Eliminando…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Vincular el dominio a un servicio",
+        "move": "Mover el dominio a un servicio",
+        "unbind": "Desvincular el dominio"
+      },
+      "bind": "Vincular a un servicio",
+      "move": "Mover a otro servicio",
+      "unbind": "Desvincular",
+      "unbindDescription": "El dominio deja de enrutar tráfico. Se conservan su verificación y su certificado, así que puedes volver a vincularlo más tarde.",
+      "service": "Servicio",
+      "port": "Puerto",
+      "save": "Guardar vínculo",
+      "saving": "Guardando...",
+      "noServices": "No hay ningún servicio habilitado y expuesto con un puerto TCP al que vincularlo.",
+      "target": "{service} · puerto {port}",
+      "routedByDomain": "Este dominio",
+      "routedByService": "Lista de endpoints del servicio",
+      "notRouted": "Sin enrutar",
+      "search": "Buscar dominios",
+      "loadMore": "Cargar más dominios",
+      "loadingMore": "Cargando...",
+      "noMatches": "Ningún dominio coincide con «{query}».",
+      "bound": "{hostname} ahora enruta a {service}.",
+      "unbound": "{hostname} ya no enruta tráfico.",
+      "failed": "No se pudo actualizar el vínculo del dominio.",
+      "loadFailed": "No se pudieron cargar los dominios."
     }
   },
   "serviceEnvironment": {

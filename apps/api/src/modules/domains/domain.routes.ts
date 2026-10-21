@@ -6,12 +6,14 @@
 
 import { Hono } from "hono";
 import {
+  DomainPageQuery,
   DomainResourceSchemas,
   VerifyPendingDomainsInputSchema,
   ResourceIdSchema,
   AddDomainBody,
   UploadCertBody,
   PreviewDomainBody,
+  UpdateDomainBody,
 } from "@repo/contracts";
 import { Type } from "@sinclair/typebox";
 import { secureRouter } from "../../lib/secure-router";
@@ -23,7 +25,7 @@ const r = secureRouter(new Hono(), {
 });
 
 /* ─── Domains ──────────────────────────────────────────────────────────── */
-r.get("/", { tag: "domain:list", collectionProject: "query", mcp: { description: "List domains for the project named by the projectId query parameter." }, query: Type.Object({ projectId: ResourceIdSchema }) }, ctrl.list);
+r.get("/", { tag: "domain:list", collectionProject: "query", mcp: { description: "List domains for the project named by the projectId query parameter. Pass limit, cursor, q, status, serviceId or bound to read one hostname-ordered page; the response then carries nextCursor while more rows match." }, query: Type.Object({ projectId: ResourceIdSchema, ...Type.Partial(DomainPageQuery).properties }) }, ctrl.list);
 r.post(
   "/",
   {
@@ -45,6 +47,7 @@ r.post("/preview", { tag: "domain:read", cloudResource: "server", readOnly: true
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
 r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, ctrl.get);
+r.patch("/:id", { tag: "domain:write", auditHandledByOperation: true, body: UpdateDomainBody, mcp: { description: "Bind a domain to a service of its project (serviceId + targetPort), move it, or unbind it with serviceId null. A bound domain is routed from its own row, not the service's publicEndpoints list." } }, ctrl.update);
 r.delete(
   "/:id",
   {

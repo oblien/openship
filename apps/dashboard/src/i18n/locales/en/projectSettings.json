@@ -1031,7 +1031,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Status",
       "ssl": "SSL",
-      "visit": "Visit"
+      "visit": "Visit",
+      "routedBy": "Routed by"
     },
     "cold": {
       "localUrl": "Local URL",
@@ -1200,6 +1201,34 @@
       "description": "The app keeps running — only this route and its edge registration are removed. You can add it back at any time.",
       "confirm": "Remove route",
       "removing": "Removing…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Bind domain to a service",
+        "move": "Move domain to a service",
+        "unbind": "Unbind domain"
+      },
+      "bind": "Bind to service",
+      "move": "Move to another service",
+      "unbind": "Unbind",
+      "unbindDescription": "The domain stops routing traffic. Its verification and certificate are kept, so you can bind it again later.",
+      "service": "Service",
+      "port": "Port",
+      "save": "Save binding",
+      "saving": "Saving...",
+      "noServices": "No enabled, exposed service with a TCP port to bind to.",
+      "target": "{service} · port {port}",
+      "routedByDomain": "This domain",
+      "routedByService": "Service endpoint list",
+      "notRouted": "Not routed",
+      "search": "Search domains",
+      "loadMore": "Load more domains",
+      "loadingMore": "Loading...",
+      "noMatches": "No domains match “{query}”.",
+      "bound": "{hostname} now routes to {service}.",
+      "unbound": "{hostname} no longer routes traffic.",
+      "failed": "Could not update the domain binding.",
+      "loadFailed": "Could not load domains."
     }
   },
   "serviceEnvironment": {

@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Status",
       "ssl": "SSL",
-      "visit": "Besuchen"
+      "visit": "Besuchen",
+      "routedBy": "Geroutet durch"
     },
     "cold": {
       "localUrl": "Lokale URL",
@@ -1151,6 +1152,34 @@
       "description": "Die App läuft weiter — nur diese Route und ihre Edge-Registrierung werden entfernt. Sie können sie jederzeit wieder hinzufügen.",
       "confirm": "Route entfernen",
       "removing": "Wird entfernt…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Domain an einen Dienst binden",
+        "move": "Domain zu einem Dienst verschieben",
+        "unbind": "Domainbindung lösen"
+      },
+      "bind": "An Dienst binden",
+      "move": "Zu anderem Dienst verschieben",
+      "unbind": "Bindung lösen",
+      "unbindDescription": "Die Domain leitet keinen Verkehr mehr weiter. Verifizierung und Zertifikat bleiben erhalten, sodass du sie später erneut binden kannst.",
+      "service": "Dienst",
+      "port": "Port",
+      "save": "Bindung speichern",
+      "saving": "Wird gespeichert...",
+      "noServices": "Kein aktivierter, freigegebener Dienst mit TCP-Port zum Binden vorhanden.",
+      "target": "{service} · Port {port}",
+      "routedByDomain": "Diese Domain",
+      "routedByService": "Endpunktliste des Dienstes",
+      "notRouted": "Nicht geroutet",
+      "search": "Domains durchsuchen",
+      "loadMore": "Weitere Domains laden",
+      "loadingMore": "Wird geladen...",
+      "noMatches": "Keine Domains passen zu „{query}“.",
+      "bound": "{hostname} leitet jetzt zu {service}.",
+      "unbound": "{hostname} leitet keinen Verkehr mehr weiter.",
+      "failed": "Die Domainbindung konnte nicht aktualisiert werden.",
+      "loadFailed": "Domains konnten nicht geladen werden."
     }
   },
   "serviceEnvironment": {

@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "状态",
       "ssl": "SSL",
-      "visit": "访问"
+      "visit": "访问",
+      "routedBy": "路由来源"
     },
     "cold": {
       "localUrl": "本地 URL",
@@ -1151,6 +1152,34 @@
       "description": "应用将继续运行 — 仅删除此路由及其边缘注册。您可以随时重新添加它。",
       "confirm": "删除路由",
       "removing": "正在删除…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "将域名绑定到服务",
+        "move": "将域名移动到服务",
+        "unbind": "解除域名绑定"
+      },
+      "bind": "绑定到服务",
+      "move": "移动到其他服务",
+      "unbind": "解除绑定",
+      "unbindDescription": "该域名将停止路由流量。其验证和证书会保留，之后可以重新绑定。",
+      "service": "服务",
+      "port": "端口",
+      "save": "保存绑定",
+      "saving": "保存中...",
+      "noServices": "没有可绑定的、已启用并已公开且带有 TCP 端口的服务。",
+      "target": "{service} · 端口 {port}",
+      "routedByDomain": "此域名",
+      "routedByService": "服务的端点列表",
+      "notRouted": "未路由",
+      "search": "搜索域名",
+      "loadMore": "加载更多域名",
+      "loadingMore": "加载中...",
+      "noMatches": "没有与“{query}”匹配的域名。",
+      "bound": "{hostname} 现在路由到 {service}。",
+      "unbound": "{hostname} 不再路由流量。",
+      "failed": "无法更新域名绑定。",
+      "loadFailed": "无法加载域名。"
     }
   },
   "serviceEnvironment": {

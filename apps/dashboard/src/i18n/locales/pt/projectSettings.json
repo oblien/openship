@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Estado",
       "ssl": "SSL",
-      "visit": "Visitar"
+      "visit": "Visitar",
+      "routedBy": "Encaminhado por"
     },
     "cold": {
       "localUrl": "URL local",
@@ -1151,6 +1152,34 @@
       "description": "O aplicativo continuará funcionando — apenas esta rota e seu registro no edge são removidos. Você pode adicioná-la novamente a qualquer momento.",
       "confirm": "Remover rota",
       "removing": "Removendo…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Associar o domínio a um serviço",
+        "move": "Mover o domínio para um serviço",
+        "unbind": "Desassociar o domínio"
+      },
+      "bind": "Associar a um serviço",
+      "move": "Mover para outro serviço",
+      "unbind": "Desassociar",
+      "unbindDescription": "O domínio deixa de encaminhar tráfego. A verificação e o certificado são mantidos, para que possa associá-lo novamente mais tarde.",
+      "service": "Serviço",
+      "port": "Porta",
+      "save": "Guardar associação",
+      "saving": "A guardar...",
+      "noServices": "Não há nenhum serviço ativado e exposto com uma porta TCP para associar.",
+      "target": "{service} · porta {port}",
+      "routedByDomain": "Este domínio",
+      "routedByService": "Lista de endpoints do serviço",
+      "notRouted": "Sem encaminhamento",
+      "search": "Pesquisar domínios",
+      "loadMore": "Carregar mais domínios",
+      "loadingMore": "A carregar...",
+      "noMatches": "Nenhum domínio corresponde a “{query}”.",
+      "bound": "{hostname} encaminha agora para {service}.",
+      "unbound": "{hostname} já não encaminha tráfego.",
+      "failed": "Não foi possível atualizar a associação do domínio.",
+      "loadFailed": "Não foi possível carregar os domínios."
     }
   },
   "serviceEnvironment": {

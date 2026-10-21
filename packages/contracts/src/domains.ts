@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { AddDomainBody, PreviewDomainBody, UploadCertBody } from "./domain-inputs";
+import { AddDomainBody, DomainPageQuery, PreviewDomainBody, UpdateDomainBody, UploadCertBody } from "./domain-inputs";
 import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type { StreamOptions } from "./services";
 import type { ResourceOperations, ResourceOperationSchema, ScopedOperations } from "./resource-operations";
@@ -45,6 +45,10 @@ export const DomainSchema = Type.Object({
   sslIssuer: nullableString, sslExpiresAt: nullableString,
   createdAt: Type.String(), updatedAt: Type.String(),
   diagnostics: Type.Optional(Type.Union([DomainDiagnosticsSchema, Type.Null()])),
+  /** True when this row owns its serviceId/targetPort binding (POST/PATCH /domains)
+   *  rather than mirroring publicEndpoints. Retained when explicitly unbound
+   *  (serviceId null) so the hostname stays unrouted. Absent on older servers. */
+  boundByDomain: Type.Optional(Type.Boolean()),
 });
 export type Domain = Static<typeof DomainSchema>;
 
@@ -153,12 +157,19 @@ export const PendingDomainVerificationSchema = Type.Object({
   })),
 });
 
+export const DomainPageSchema = Type.Object({
+  domains: Type.Array(DomainSchema),
+  nextCursor: Type.Optional(Type.String()),
+});
+export type DomainPage = Static<typeof DomainPageSchema>;
 export const DomainCollectionSchemas = {
   list: { action: "read", output: Type.Array(DomainSchema) },
+  listPage: { action: "read", input: DomainPageQuery, output: DomainPageSchema },
   create: { action: "write", input: CreateDomainInputSchema, output: CreateDomainResultSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const DomainResourceSchemas = {
   get: { action: "read", output: DomainSchema },
+  update: { action: "write", input: UpdateDomainBody, output: DomainSchema },
   remove: { action: "admin", output: Type.Object({ message: Type.Literal("domain removed") }) },
   verify: { action: "write", input: VerifyDomainInputSchema, optionalInput: true, output: DomainVerificationSchema },
   records: { action: "read", input: DomainDnsTargetSchema, optionalInput: true, output: DomainRecordsSchema },

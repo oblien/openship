@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "Statut",
       "ssl": "SSL",
-      "visit": "Visiter"
+      "visit": "Visiter",
+      "routedBy": "Routé par"
     },
     "cold": {
       "localUrl": "URL locale",
@@ -1151,6 +1152,34 @@
       "description": "L'application continue de fonctionner — seules cette route et son enregistrement edge sont supprimés. Vous pouvez la réajouter à tout moment.",
       "confirm": "Supprimer la route",
       "removing": "Suppression…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "Lier le domaine à un service",
+        "move": "Déplacer le domaine vers un service",
+        "unbind": "Délier le domaine"
+      },
+      "bind": "Lier à un service",
+      "move": "Déplacer vers un autre service",
+      "unbind": "Délier",
+      "unbindDescription": "Le domaine n’achemine plus de trafic. Sa vérification et son certificat sont conservés : vous pourrez le lier de nouveau plus tard.",
+      "service": "Service",
+      "port": "Port",
+      "save": "Enregistrer la liaison",
+      "saving": "Enregistrement...",
+      "noServices": "Aucun service activé et exposé avec un port TCP auquel le lier.",
+      "target": "{service} · port : {port}",
+      "routedByDomain": "Ce domaine",
+      "routedByService": "Liste des points de terminaison du service",
+      "notRouted": "Non routé",
+      "search": "Rechercher des domaines",
+      "loadMore": "Charger plus de domaines",
+      "loadingMore": "Chargement...",
+      "noMatches": "Aucun domaine ne correspond à « {query} ».",
+      "bound": "{hostname} est maintenant routé vers {service}.",
+      "unbound": "{hostname} n’achemine plus de trafic.",
+      "failed": "Impossible de mettre à jour la liaison du domaine.",
+      "loadFailed": "Impossible de charger les domaines."
     }
   },
   "routeRules": {

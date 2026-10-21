@@ -960,7 +960,8 @@
       "redirectValue": "{status} → {hostname}",
       "status": "ステータス",
       "ssl": "SSL",
-      "visit": "アクセス"
+      "visit": "アクセス",
+      "routedBy": "ルーティング元"
     },
     "cold": {
       "localUrl": "ローカル URL",
@@ -1151,6 +1152,34 @@
       "description": "アプリは実行を継続します — このルートとエッジ登録のみが削除されます。いつでも再度追加できます。",
       "confirm": "ルートを削除",
       "removing": "削除中…"
+    },
+    "binding": {
+      "titles": {
+        "bind": "ドメインをサービスにバインド",
+        "move": "ドメインをサービスへ移動",
+        "unbind": "ドメインのバインドを解除"
+      },
+      "bind": "サービスにバインド",
+      "move": "別のサービスへ移動",
+      "unbind": "バインドを解除",
+      "unbindDescription": "このドメインはトラフィックをルーティングしなくなります。検証と証明書は保持されるため、後で再度バインドできます。",
+      "service": "サービス",
+      "port": "ポート",
+      "save": "バインドを保存",
+      "saving": "保存中...",
+      "noServices": "バインドできる TCP ポートを持つ、有効かつ公開されたサービスがありません。",
+      "target": "{service} · ポート {port}",
+      "routedByDomain": "このドメイン",
+      "routedByService": "サービスのエンドポイント一覧",
+      "notRouted": "ルーティングなし",
+      "search": "ドメインを検索",
+      "loadMore": "さらにドメインを読み込む",
+      "loadingMore": "読み込み中...",
+      "noMatches": "「{query}」に一致するドメインはありません。",
+      "bound": "{hostname} は {service} にルーティングされるようになりました。",
+      "unbound": "{hostname} はトラフィックをルーティングしなくなりました。",
+      "failed": "ドメインのバインドを更新できませんでした。",
+      "loadFailed": "ドメインを読み込めませんでした。"
     }
   },
   "serviceEnvironment": {
