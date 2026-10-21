@@ -870,6 +870,12 @@
       "description": "Read one domain record.",
       "route": "GET /api/domains/:id"
     },
+    "domains.update": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Bind a domain to a service of its project and port, or unbind it with serviceId null.",
+      "route": "PATCH /api/domains/:id"
+    },
     "domains.remove": {
       "page": "domains",
       "section": "Operations",

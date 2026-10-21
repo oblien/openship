@@ -1,7 +1,7 @@
 /** HTTP paths, status codes, and envelopes over the shared domain operations. */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import type { TAddDomainBody } from "@repo/contracts";
+import type { TAddDomainBody, TUpdateDomainBody } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
 import { permission } from "../../lib/permission";
@@ -35,6 +35,9 @@ export async function add(c: Context) {
 
 export async function get(c: Context) {
   return c.json({ data: await operationData(c, operations().get(operationContext(c), param(c, "id"))) });
+}
+export async function update(c: Context) {
+  return c.json({ data: await operationData(c, operations().update(operationContext(c), param(c, "id"), await c.req.json<TUpdateDomainBody>())) });
 }
 export async function remove(c: Context) {
   return c.json(await operationData(c, operations().remove(operationContext(c), param(c, "id"))));

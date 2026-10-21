@@ -18,6 +18,18 @@ export const ListDomainsQuery = Type.Object({
 
 // ─── Request bodies ──────────────────────────────────────────────────────────
 
+/**
+ * Route this domain to one service, from the domain row itself. The service must
+ * belong to the domain's project and `targetPort` must be one of its ports
+ * (default: its primary port). Rows bound this way are not entries of the
+ * service's `publicEndpoints`, so any number of them can share a service.
+ */
+const BindingServiceId = Type.String({ minLength: 1, maxLength: 128 });
+const DomainServiceBindingFields = {
+  serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Service of the same project to route this domain to." })),
+  targetPort: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535, description: "Container port of that service. Defaults to its primary port." })),
+};
+
 export const AddDomainBody = Type.Object({
   projectId: Type.String({ minLength: 1 }),
   hostname: Type.String({
@@ -51,7 +63,25 @@ export const AddDomainBody = Type.Object({
   redirectStatus: Type.Optional(Type.Integer({ minimum: 300, maximum: 399 })),
   /** ACME challenge method: "http-01" (default) | "dns-01" (required for wildcards). */
   sslChallenge: Type.Optional(Type.Union([Type.Literal("http-01"), Type.Literal("dns-01")])),
+  ...DomainServiceBindingFields,
 });
+
+/**
+ * PATCH /:id — change the service binding this domain row owns. `serviceId: null`
+ * unbinds the domain and removes its route. Closed so a misspelled field fails
+ * the request rather than silently changing nothing.
+ */
+export const UpdateDomainBody = Type.Object(
+  {
+    serviceId: Type.Optional(
+      Type.Union([BindingServiceId, Type.Null()], {
+        description: "Service of the same project to route this domain to, or null to unbind it.",
+      }),
+    ),
+    targetPort: DomainServiceBindingFields.targetPort,
+  },
+  { additionalProperties: false, minProperties: 1 },
+);
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
  *  domain. The cert/key pair is validated (parse + key match) in the adapter. */
@@ -83,4 +113,5 @@ export const PreviewDomainBody = Type.Object({
 export type TDomainIdParam = Static<typeof DomainIdParam>;
 export type TListDomainsQuery = Static<typeof ListDomainsQuery>;
 export type TAddDomainBody = Static<typeof AddDomainBody>;
+export type TUpdateDomainBody = Static<typeof UpdateDomainBody>;
 export type TUploadCertBody = Static<typeof UploadCertBody>;

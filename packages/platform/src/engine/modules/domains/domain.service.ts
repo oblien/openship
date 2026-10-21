@@ -70,7 +70,8 @@ import {
   assertRedirectTargets,
   normalizeRedirect,
 } from "../../lib/domain-redirect";
-import type { TAddDomainBody } from "@repo/contracts";
+import type { TAddDomainBody, TUpdateDomainBody } from "@repo/contracts";
+import { parseServicePort, resolveServicePort } from "../../lib/deployable-service";
 import { certbotLineageDirs, edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
 import type { AdoptedCert, CloudInfraProvider, ManualCert } from "@repo/adapters";
 // Concrete modules, not the `../dns` barrel: importing a barrel that reaches a
@@ -149,6 +150,19 @@ export interface AddDomainResult {
 export async function addDomain(
   ctx: RequestContext,
   data: TAddDomainBody,
+  opts: Parameters<typeof addDomainUnlocked>[2] = {},
+): Promise<AddDomainResult> {
+  if (!data.serviceId) return addDomainUnlocked(ctx, data, opts);
+  const project = await repos.project.findById(data.projectId);
+  assertResourceInOrg(project, "Project", ctx.organizationId, data.projectId);
+  const result = await withLiveProjectRuntimeMutation(data.projectId, () => addDomainUnlocked(ctx, data, opts));
+  if (!result) throw new NotFoundError("Project");
+  return result;
+}
+
+async function addDomainUnlocked(
+  ctx: RequestContext,
+  data: TAddDomainBody,
   opts: {
     /**
      * Hostnames the caller has ALREADY established this project owns, unioned
@@ -217,6 +231,13 @@ export async function addDomain(
     ]);
   }
 
+  const binding = data.serviceId
+    ? await resolveDomainServiceBinding(data.projectId, data.serviceId, data.targetPort)
+    : null;
+  if (!binding && data.targetPort !== undefined) {
+    throw new ValidationError("targetPort needs a serviceId: it is a port of the service the domain routes to.");
+  }
+
   const existing = await repos.domain.findByHostname(hostname);
   if (existing) {
     if (existing.projectId !== data.projectId) {
@@ -241,9 +262,23 @@ export async function addDomain(
       patch.redirectStatus = redirect.redirectStatus;
     }
 
+    if (binding && existing.serviceId && !existing.boundByDomain) {
+      throw new ValidationError(
+        `${hostname} is routed by its service's public endpoints. Remove it there first, then bind it here.`,
+      );
+    }
+    if (binding && (
+      existing.serviceId !== binding.serviceId ||
+      existing.targetPort !== binding.targetPort ||
+      !existing.boundByDomain
+    )) {
+      Object.assign(patch, binding);
+    }
+
     if (Object.keys(patch).length > 0) {
       await repos.domain.update(existing.id, patch);
     }
+    if (binding) await applyBoundDomainRoutes(data.projectId);
     if (data.isPrimary && !existing.isPrimary) {
       await repos.domain.setPrimary(data.projectId, existing.id);
     }
@@ -308,6 +343,7 @@ export async function addDomain(
     verificationToken: token,
     redirectTo: redirect.redirectTo,
     redirectStatus: redirect.redirectStatus,
+    ...binding,
   });
 
   if (data.isPrimary) {
@@ -322,6 +358,8 @@ export async function addDomain(
   // that can't be claimed (already taken by another project, invalid) must not undo
   // it — the apex stays, and the operator can add www by hand.
   const www = data.includeWww ? await addWwwSibling(ctx, data, hostname) : null;
+  // After the sibling, so one route apply covers both rows.
+  if (binding) await applyBoundDomainRoutes(data.projectId);
 
   // `includeWww` reaches buildRecords so the returned panel lists the SIBLING's
   // record too. It didn't before, which is why "Include www" so often ended in a
@@ -389,6 +427,10 @@ async function addWwwSibling(
         isPrimary: false,
         externalIngress: data.externalIngress,
         redirectTo: hostname,
+        // A bound apex is not in any publicEndpoints list, so its www redirect
+        // has to be routed the same way: from its own row, on the same service.
+        serviceId: data.serviceId,
+        targetPort: data.targetPort,
       },
       // The apex was created/confirmed by the call we're inside — see
       // `extraOwnedHostnames`.
@@ -457,6 +499,9 @@ export async function ensurePendingServiceDomain(opts: {
   targetPort?: number;
 }): Promise<{ created: boolean; domainId: string | null }> {
   const { hostname, existing, mayOwn } = await resolveServiceDomainOwnership(opts);
+  // A row that owns its binding is routed from the row; a service's endpoint
+  // list naming the same hostname must not re-point it.
+  if (existing?.boundByDomain) return { created: false, domainId: existing.id };
   if (existing) {
     const patch: Record<string, unknown> = {};
     if ((existing.serviceId ?? null) !== opts.serviceId) patch.serviceId = opts.serviceId;
@@ -507,9 +552,127 @@ export async function removeServiceDomain(opts: {
   if (!hostname) return;
 
   const existing = await repos.domain.findByHostname(hostname);
-  if (existing && (existing.serviceId ?? null) === opts.serviceId) {
+  if (existing && !existing.boundByDomain && (existing.serviceId ?? null) === opts.serviceId) {
     await repos.domain.remove(existing.id);
   }
+}
+
+// ─── Service binding owned by the domain row ────────────────────────────────
+
+/**
+ * Validate a domain → service binding: the service must belong to `projectId`
+ * (never another project's, even in the same org) and `targetPort` must be one of
+ * its ports. Omitted port → the service's primary port.
+ */
+async function resolveDomainServiceBinding(
+  projectId: string,
+  serviceId: string,
+  targetPort?: number,
+): Promise<{ serviceId: string; targetPort: number; boundByDomain: true }> {
+  const svc = await repos.service.findById(serviceId);
+  if (!svc || svc.projectId !== projectId) {
+    throw new ValidationError(`Service "${serviceId}" is not a service of this project.`);
+  }
+  // A paused service plans no routes, so a binding made now would leave a moved
+  // domain's old vhost serving. Unexposing later is fine: that edit removes them.
+  if (!svc.enabled || !svc.exposed) {
+    throw new ValidationError(`Service "${svc.name}" is not serving public traffic. Enable and expose it, then bind the domain.`);
+  }
+  const ports = new Set<number>();
+  for (const value of [svc.exposedPort, ...(svc.ports ?? [])]) {
+    const port = parseServicePort(value);
+    if (port !== null) ports.add(port);
+  }
+  for (const endpoint of resolveServicePublicEndpoints({ ...svc, exposed: true })) {
+    if (endpoint.port !== undefined) ports.add(endpoint.port);
+  }
+  const port = targetPort ?? resolveServicePort(svc);
+  if (port === null) {
+    throw new ValidationError(`Service "${svc.name}" has no port to route to. Set its container port, or pass targetPort.`);
+  }
+  if (!ports.has(port)) {
+    throw new ValidationError(
+      `Port ${port} is not a port of service "${svc.name}"` +
+        (ports.size ? ` (ports: ${[...ports].join(", ")}).` : "."),
+    );
+  }
+  return { serviceId: svc.id, targetPort: port, boundByDomain: true };
+}
+
+/** Re-plan the project's live routes, which now include its domain-bound rows.
+ *  Best-effort like every live route apply: the row is already saved, and the
+ *  next deploy registers it if the edge is unreachable now. */
+async function applyBoundDomainRoutes(projectId: string): Promise<void> {
+  const { applyProjectRouting } = await import("./routing-apply.service");
+  await withLiveProjectRuntimeMutation(projectId, () => applyProjectRouting(projectId)).catch((err) => {
+    errorDiagnostics.warn("platform/engine/modules/domains/domain.service", `[domains] live route apply deferred: ${safeErrorMessage(err)}`, err);
+  });
+}
+
+/**
+ * PATCH /domains/:id — bind this domain to a service of its project, move it to
+ * another port/service, or unbind it (`serviceId: null`). The route follows the
+ * row: an unbind removes the hostname from the edge and keeps the row (and its
+ * verification and certificate) so it can be bound again.
+ */
+export async function updateDomain(ctx: RequestContext, domainId: string, data: TUpdateDomainBody) {
+  const current = await getDomainWithAuth(domainId, ctx.organizationId);
+  const result = await withLiveProjectRuntimeMutation(current.project.id, () => updateLiveDomainBinding(ctx, domainId, data));
+  if (!result) throw new NotFoundError("Project");
+  return result;
+}
+
+async function updateLiveDomainBinding(ctx: RequestContext, domainId: string, data: TUpdateDomainBody) {
+  // Re-read the binding and service after acquiring the deployment/teardown lock.
+  const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  if (domain.ownerType !== "project") {
+    throw new ValidationError("Only a project domain can be bound to a service.");
+  }
+
+  if (data.serviceId === null) {
+    if (data.targetPort !== undefined) {
+      throw new ValidationError("targetPort cannot be set while unbinding the domain.");
+    }
+    if (!domain.boundByDomain) {
+      if (domain.serviceId) {
+        throw new ValidationError(
+          `${domain.hostname} is routed by its service's public endpoints. Remove it there, or delete the domain.`,
+        );
+      }
+      return getDomain(ctx, domainId);
+    }
+    await withLiveProjectRuntimeMutation(project.id, async (liveProject) => {
+      const deployment = liveProject.activeDeploymentId
+        ? await findActiveDeployment(liveProject).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/domains/domain.service"); return null; })
+        : null;
+      await reconcileProjectRoutes(liveProject, {
+        deployment,
+        removes: [{ hostname: domain.hostname, isCustomDomain: domain.domainType === "custom" }],
+      }).catch((err) => {
+        errorDiagnostics.error("platform/engine/modules/domains/domain.service", `[DOMAIN] Failed to remove route for ${domain.hostname}:`, err);
+        throw new AppError("Could not remove the route. The binding was kept so you can retry.", 502, "DOMAIN_ROUTE_REMOVAL_FAILED");
+      });
+      await repos.domain.update(domain.id, { serviceId: null, targetPort: null, boundByDomain: true });
+    });
+    return getDomain(ctx, domainId);
+  }
+
+  const serviceId = data.serviceId ?? (domain.boundByDomain ? domain.serviceId : null);
+  if (!serviceId) {
+    throw new ValidationError("serviceId is required to bind this domain to a service.");
+  }
+  if (domain.serviceId && !domain.boundByDomain) {
+    throw new ValidationError(
+      `${domain.hostname} is routed by its service's public endpoints. Remove it there first, then bind it here.`,
+    );
+  }
+  // Same service → keep its port unless a new one is given; a new service starts
+  // from its own primary port.
+  const keptPort = serviceId === domain.serviceId ? domain.targetPort ?? undefined : undefined;
+  const binding = await resolveDomainServiceBinding(project.id, serviceId, data.targetPort ?? keptPort);
+  await repos.domain.update(domain.id, binding);
+  await applyBoundDomainRoutes(project.id);
+  return getDomain(ctx, domainId);
 }
 
 // ─── Preview records (no DB write) ───────────────────────────────────────────
@@ -1277,7 +1440,9 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   // ONE transaction, because the two writes describe one outcome. As separate
   // awaits a failure between them recreates exactly that stale state, with the
   // row already gone so there's nothing left to retry against.
-  const serviceRouting = domain.serviceId
+  // A row that owns its binding is not part of the service's routing config, so
+  // removing it leaves the service row alone.
+  const serviceRouting = domain.serviceId && !domain.boundByDomain
     ? await resolveRemainingServiceRouting(project, domain.serviceId, domain.hostname)
     : null;
 

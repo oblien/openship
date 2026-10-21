@@ -82,6 +82,33 @@ curl -X POST "$OPENSHIP_URL/api/domains/preview" \
 The response's `mode` tells you which setup applies: `selfhosted` (an A record to your server), `cloud`
 (a CNAME to Openship Cloud), or `external` (a TXT record only — you front TLS yourself).
 
+## Bind tenant domains to a service
+
+A custom domain can own its service binding instead of occupying an entry in the service's
+`publicEndpoints`. The service must be enabled, exposed, and belong to this project. Its container
+port must be declared on that service; omitting `targetPort` selects its primary port.
+
+```ts
+const { domain } = await ship.domains.create("proj_123", {
+  hostname: "tenant.example.com",
+  serviceId: "svc_123",
+  targetPort: 4000,
+});
+await ship.domains.update(domain.id, { targetPort: 9000 });
+// Keep the domain, verification and certificate, but remove its route.
+await ship.domains.update(domain.id, { serviceId: null });
+// Rebind explicitly when it should serve traffic again.
+await ship.domains.update(domain.id, { serviceId: "svc_123" });
+```
+
+REST uses `POST /api/domains` with `projectId` and the same fields, followed by
+`PATCH /api/domains/:id` for binding changes. Row-owned domains do not count toward the endpoint
+list's cap. Editing that list leaves them intact; deleting one removes only that domain.
+`boundByDomain: true` identifies row ownership, including an explicitly unbound row with a null
+`serviceId`. A failed route removal keeps the binding so it can be retried. Binding changes reuse
+the project's live routing flow; unavailable routing can still require Retry routing or a redeploy.
+DNS verification and certificates remain per hostname. Service deletion also deletes its bound domains.
+
 ## Verify a domain
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -161,6 +188,7 @@ to get valid IDs.
 | List domains using the supplied filters. | `domains.list(id)` | `GET /api/domains`<br />`domain:list` |
 | Attach a domain using the requested project and routing configuration. | `domains.create(id, input)` | `POST /api/domains`<br />`domain:write` |
 | Read one domain record. | `domains.get(id)` | `GET /api/domains/:id`<br />`domain:read` |
+| Bind a domain to a service of its project and port, or unbind it with serviceId null. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
 | Remove a domain and its routing binding. | `domains.remove(id)` | `DELETE /api/domains/:id`<br />`domain:admin` |
 | Run domain verification. | `domains.verify(id, input?)` | `POST /api/domains/:id/verify`<br />`domain:write` |
 | Read DNS records required by a domain. | `domains.records(id, input?)` | `GET /api/domains/:id/records`<br />`domain:read` |

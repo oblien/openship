@@ -1007,9 +1007,11 @@ export async function updateService(
       // `enabled` / `exposed` are non-nullable DB columns - no need to
       // fall back to `svc.*` on the updated row.
       const isRoutable = updated.enabled && updated.exposed;
-      const domainByHostname = project.compositeRoutes?.length
-        ? new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]))
-        : undefined;
+      // Always loaded: domain-bound rows (POST/PATCH /domains) are routes of this
+      // service too, so pausing or resuming it has to carry them.
+      const domainByHostname = new Map(
+        (await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]),
+      );
       // Diff the SET of routes (a service can publish several ports). A hostname
       // present before but gone now is removed; every current route is
       // (re-)registered (register is additive/idempotent upstream).
@@ -1292,9 +1294,9 @@ async function deleteLiveService(project: Project, svc: Service): Promise<void> 
         service: svc,
         runtimeName: platform().runtime.name,
         usesManagedRouting: true,
-        ...(project.compositeRoutes?.length ? {
-          domainByHostname: new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain])),
-        } : {}),
+        // Includes domain-bound rows: the FK cascade drops them with the service,
+        // so their vhosts have to go now too.
+        domainByHostname: new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain])),
       });
       if (routes.length > 0) {
         // Same single path as edit: cloud → page/workspace teardown, self-hosted

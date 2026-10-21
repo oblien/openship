@@ -48,6 +48,15 @@ export const domain = pgTable(
     // certificate was invisible to the renewer and expired ~90 days after install.
     /** Service ID for service-scoped domain routing (null = project-level / main service) */
     serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
+    /**
+     * True when THIS row owns its `serviceId` + `targetPort` binding (set through
+     * POST/PATCH /api/domains), instead of mirroring an entry of the service's
+     * `publicEndpoints`. The route planner adds these rows next to the service's
+     * own endpoints, so they don't count toward that list's cap, and edits to the
+     * list never create, move or delete them. Retained on unbind (serviceId null)
+     * so the row cannot fall back to project-level routing.
+     */
+    boundByDomain: boolean("bound_by_domain").notNull().default(false),
 
     /** The custom domain (e.g. "app.example.com") */
     hostname: text("hostname").notNull().unique(),

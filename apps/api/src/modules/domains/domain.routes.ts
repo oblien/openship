@@ -12,6 +12,7 @@ import {
   AddDomainBody,
   UploadCertBody,
   PreviewDomainBody,
+  UpdateDomainBody,
 } from "@repo/contracts";
 import { Type } from "@sinclair/typebox";
 import { secureRouter } from "../../lib/secure-router";
@@ -45,6 +46,7 @@ r.post("/preview", { tag: "domain:read", cloudResource: "server", readOnly: true
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
 r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, ctrl.get);
+r.patch("/:id", { tag: "domain:write", auditHandledByOperation: true, body: UpdateDomainBody, mcp: { description: "Bind a domain to a service of its project (serviceId + targetPort), move it, or unbind it with serviceId null. A bound domain is routed from its own row, not the service's publicEndpoints list." } }, ctrl.update);
 r.delete(
   "/:id",
   {

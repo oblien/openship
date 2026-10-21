@@ -146,6 +146,13 @@ export const domainDependencies: DomainDependencies = {
   },
   resources: {
     get: service.getDomain,
+    async update(ctx, id, input) {
+      const result = await service.updateDomain(ctx, id, input);
+      record(ctx, id, "domain:write", {
+        operation: "update", serviceId: result.serviceId, targetPort: result.targetPort, boundByDomain: result.boundByDomain,
+      });
+      return result;
+    },
     async remove(ctx, id) {
       await domainExecution(ctx, id);
       await service.removeDomain(ctx, id);
