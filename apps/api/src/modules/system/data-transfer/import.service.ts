@@ -13,6 +13,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { isDomainProxySettings } from "@repo/core";
 import {
   db,
   assertDumpSchemaCompatible,
@@ -130,8 +131,16 @@ export function assertValidEnvelope(file: DataTransferFile): void {
       assertDumpSchemaCompatible(file.dump);
     } catch (error) {
       observeCaughtError(error, "api/modules/system/data-transfer/import.service");
-      throw new InvalidTransferFileError(error instanceof Error ? error.message : "This export requires a newer destination build.");
+      throw new InvalidTransferFileError(
+        error instanceof Error ? error.message : "This export requires a newer destination build.",
+      );
     }
+  }
+  // Whole-instance restores bypass the project planner, so validate the domain
+  // contract before either preview or any restore transaction can accept it.
+  for (const domain of file.dump.tables.domain ?? []) {
+    if (domain.proxy != null && !isDomainProxySettings(domain.proxy))
+      throw new InvalidTransferFileError("The export contains invalid domain proxy settings.");
   }
   if (file.secrets) {
     if (typeof file.secrets !== "object" || Array.isArray(file.secrets)) {

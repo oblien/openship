@@ -147,6 +147,21 @@ export const domainDependencies: DomainDependencies = {
   },
   resources: {
     get: service.getDomain,
+    async update(ctx, id, input) {
+      await domainExecution(ctx, id);
+      try {
+        const result = await service.updateDomain(ctx, id, input);
+        record(ctx, id, "domain:write", { operation: "update", proxy: result.proxy });
+        return result;
+      } catch (error) {
+        record(ctx, id, "domain:write", {
+          operation: "update",
+          failed: true,
+          error: safeErrorMessage(error),
+        });
+        throw error;
+      }
+    },
     async remove(ctx, id) {
       await domainExecution(ctx, id);
       await service.removeDomain(ctx, id);

@@ -9,9 +9,16 @@
  *   4. Services discover each other by name (hostname = service name)
  */
 
-import { registerProjectRoute, createProjectRouteRegistrar } from "@repo/platform/engine/lib/project-route-registration";
+import {
+  registerProjectRoute,
+  createProjectRouteRegistrar,
+} from "@repo/platform/engine/lib/project-route-registration";
+import { assertDomainProxyTarget } from "@repo/platform/engine/lib/domain-proxy-capabilities";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { findActiveDeployment, findProjectDeployment } from "@repo/platform/engine/lib/active-deployment";
+import {
+  findActiveDeployment,
+  findProjectDeployment,
+} from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
 import { deploymentForcesImagePull, deploymentImagePullPolicy, isMutableImageRef } from "../image-pull-policy";
 import type { DeploymentConfigSnapshot } from "../build.service";
@@ -960,6 +967,7 @@ export async function deployComposeServices(
   logger: BuildLogger,
   opts?: ComposeDeployOptions,
 ): Promise<ComposeDeployResult> {
+  if (opts?.routing instanceof CloudInfraProvider) await assertDomainProxyTarget(project, "cloud");
   const runUnlocked = (): Promise<ComposeDeployResult> => {
     throwIfDeploymentCancelled(opts?.signal);
     const run = () => deployComposeServicesUnlocked(project, dep, runtime, logger, opts);

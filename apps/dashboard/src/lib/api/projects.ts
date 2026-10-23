@@ -11,6 +11,7 @@ import type {
   DeploymentHistoryQuery,
 } from "@repo/core";
 import type {
+  DomainBodyLimitState,
   EnsureProjectInput,
   DeploymentPage,
   ProjectControlOperations,
@@ -208,7 +209,10 @@ export interface EdgeDirectiveState {
   drift: boolean;
 }
 
+export type { DomainBodyLimitState } from "@repo/contracts";
+
 export interface EdgeConfigHostState {
+  bodyLimit?: DomainBodyLimitState;
   hostname: string;
   found: boolean;
   tls: boolean;

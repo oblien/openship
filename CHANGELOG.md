@@ -81,6 +81,15 @@ Redis and application storage. For a temporary recovery on 0.9.4, set
 `docker compose up -d` with that installation's existing Compose file and project
 name. A later CLI run regenerates that file; update to 0.9.5 for the permanent fix.
 
+## Unreleased
+
+- **Set a request body limit per domain** — self-hosted nginx/OpenResty domains
+  can override the project limit through the API, SDK, CLI and Domains settings.
+  Clearing the override restores inheritance. Limits apply to incoming HTTP
+  bodies, including Socket.IO polling, while applications still limit WebSocket
+  messages after upgrade. Edge read-back separates desired settings from observed
+  configuration; a failed reload preserves the previous serving configuration.
+
 ## 0.9.4
 
 This release adds deployment to existing Docker Swarm clusters, reviewed database

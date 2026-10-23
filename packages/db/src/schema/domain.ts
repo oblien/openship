@@ -4,10 +4,12 @@ import {
   timestamp,
   boolean,
   integer,
+  jsonb,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { DomainProxySettings } from "@repo/core";
 import { project } from "./project";
 import { service } from "./service";
 import { webhookSource } from "./webhook-source";
@@ -55,6 +57,8 @@ export const domain = pgTable(
     targetPort: integer("target_port"),
     /** Static output subpath this hostname should serve */
     targetPath: text("target_path"),
+    /** Explicit per-domain proxy overrides; NULL inherits project/Edge defaults. */
+    proxy: jsonb("proxy").$type<DomainProxySettings>(),
     /** Route kind: managed/free subdomain or custom domain */
     domainType: text("domain_type"),
     /** Is this the primary domain for the project? */

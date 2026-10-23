@@ -34,6 +34,7 @@ const {
   queueActionDeployment: vi.fn(),
   repos: {
     routeProtection: { list: vi.fn(async () => []) },
+    domain: { listByProject: vi.fn(async () => [] as Array<{ proxy: { clientMaxBodySize: string } | null }>) },
     actions: { deploymentForActionRequest: vi.fn() },
     projectConnection: { listByTarget: vi.fn(async () => []) },
     project: {
@@ -546,6 +547,18 @@ describe("resolveSnapshotTarget", () => {
     const t = await resolveSnapshotTarget(project({ workspaceId: "ws_1", serverId: "srv_1" }));
     expect(t.deployTarget).toBe("cloud");
     expect(t.serverId).toBe("srv_1");
+  });
+
+  it.each(["cloud", "cluster"])("blocks a %s snapshot until domain caps are cleared", async (target) => {
+    const value = project(target === "cloud" ? { workspaceId: "ws_1", serverId: "srv_1" } : { clusterId: "cluster-1" });
+    repos.domain.listByProject.mockResolvedValueOnce([{ proxy: { clientMaxBodySize: "0" } }]);
+    requireClusterDeploymentTarget.mockResolvedValue({ runtime: { id: "runtime-1" } });
+    await expect(resolveSnapshotTarget(value)).rejects.toMatchObject({
+      code: "DOMAIN_PROXY_SETTINGS_UNSUPPORTED",
+    });
+    expect(requireClusterDeploymentTarget).not.toHaveBeenCalled();
+    repos.domain.listByProject.mockResolvedValueOnce([{ proxy: null }]);
+    await expect(resolveSnapshotTarget(value)).resolves.toMatchObject({ deployTarget: target });
   });
 
   it("lets an explicit override win over the durable binding", async () => {

@@ -1156,6 +1156,29 @@
       "description": "O aplicativo continuará funcionando — apenas esta rota e seu registro no edge são removidos. Você pode adicioná-la novamente a qualquer momento.",
       "confirm": "Remover rota",
       "removing": "Removendo…"
+    },
+    "bodyLimit": {
+      "title": "Limite do corpo HTTP",
+      "inherit": "Herdar do projeto",
+      "custom": "Personalizado",
+      "unlimited": "Ilimitado (0)",
+      "hint": "Limita corpos HTTP, incluindo uploads e polling. Quadros WebSocket e limites da aplicação são separados. Use k, m ou g; 0 significa ilimitado.",
+      "saved": "Valor salvo",
+      "effective": "Limite efetivo",
+      "source": "Origem",
+      "domain": "Domínio",
+      "project": "Projeto",
+      "edge": "Padrão do Edge",
+      "observed": "Limite observado",
+      "status": "Estado ativo",
+      "applied": "Aplicado",
+      "pending": "Não aplicado — tente o roteamento novamente",
+      "unknown": "Desconhecido",
+      "unsupported": "Requer Edge nginx/OpenResty auto-hospedado.",
+      "invalid": "Informe 2m, 1g ou 0 para ilimitado.",
+      "save": "Salvar",
+      "saving": "Salvando…",
+      "refresh": "Atualizar estado"
     }
   },
   "serviceEnvironment": {

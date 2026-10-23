@@ -26,14 +26,18 @@ import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.se
  * save, a domain delete), and threading it through each is how they end up emitting
  * different vhosts for the same project.
  */
-const project = (proxy?: unknown) => ({
-  id: "proj-1",
-  organizationId: "org-1",
-  workspaceId: null,
-  activeDeploymentId: "dep-1",
-  webhookDomain: null,
-  routingConfig: proxy ? ({ proxy } as never) : null,
-});
+const project = (proxy?: unknown) => {
+  const current = {
+    id: "proj-1",
+    organizationId: "org-1",
+    workspaceId: null,
+    activeDeploymentId: "dep-1",
+    webhookDomain: null,
+    routingConfig: proxy ? ({ proxy } as never) : null,
+  };
+  vi.mocked(repos.project.findById).mockResolvedValue(current as never);
+  return current;
+};
 
 // Request-limit behavior is independent of host-port ownership. Use a bridge
 // upstream so this focused test does not bypass the loopback route guard with

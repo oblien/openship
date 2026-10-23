@@ -1156,6 +1156,29 @@
       "description": "アプリは実行を継続します — このルートとエッジ登録のみが削除されます。いつでも再度追加できます。",
       "confirm": "ルートを削除",
       "removing": "削除中…"
+    },
+    "bodyLimit": {
+      "title": "HTTP本文の上限",
+      "inherit": "プロジェクトから継承",
+      "custom": "カスタム",
+      "unlimited": "無制限 (0)",
+      "hint": "アップロードやポーリングを含むHTTP本文を制限します。WebSocketフレームとアプリの制限は別です。k、m、gを使用し、0は無制限です。",
+      "saved": "保存済みの上限",
+      "effective": "有効な上限",
+      "source": "適用元",
+      "domain": "ドメイン",
+      "project": "プロジェクト",
+      "edge": "Edgeの既定値",
+      "observed": "確認された上限",
+      "status": "稼働状態",
+      "applied": "適用済み",
+      "pending": "未適用 — ルーティングを再試行",
+      "unknown": "不明",
+      "unsupported": "セルフホストのnginx/OpenResty Edgeが必要です。",
+      "invalid": "2m、1g、または無制限の0を入力してください。",
+      "save": "保存",
+      "saving": "保存中…",
+      "refresh": "状態を更新"
     }
   },
   "serviceEnvironment": {

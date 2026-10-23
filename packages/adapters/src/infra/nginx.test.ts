@@ -15,6 +15,7 @@ import {
   PROXY_DIRECTIVES,
   PROXY_GZIP_TYPES,
   expectedProxyState,
+  resolveDomainProxySettings,
   type ProxyDirectiveSpec,
   type ProxySettings,
 } from "@repo/core";
@@ -1659,6 +1660,38 @@ describe("renderProxyOptions (curated reverse-proxy directives)", () => {
 });
 
 describe("registerRoute renders proxy directives at server scope", () => {
+  test("independent domain limits occur once in both serving scopes and survive certificate replay", async () => {
+    const domains = ["api.example.com", "events.example.com"];
+    const { nginx, conf, files } = setup({ certDomains: domains });
+    for (const [i, domain] of domains.entries()) {
+      await nginx.registerRoute({
+        ...PROXY,
+        domain,
+        proxy: resolveDomainProxySettings(
+          { clientMaxBodySize: "2m", proxyReadTimeout: "90s" },
+          i === 1 ? { clientMaxBodySize: "1m" } : null,
+        ),
+        proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://127.0.0.1:4000" }],
+      });
+      const slug = domain.replaceAll(".", "-");
+      const generated = conf(slug)!;
+      for (const block of serverBlocks(generated)) {
+        expect(
+          [...block.matchAll(/client_max_body_size\s+([^;]+);/g)].map((match) => match[1]),
+        ).toEqual([i === 1 ? "1m" : "2m"]);
+      }
+      const state = JSON.parse(files.get(`${SITES}/${slug}.route.json`)!);
+      expect(state.proxy.clientMaxBodySize).toBe(i === 1 ? "1m" : "2m");
+      await nginx.activateCert(domain);
+      expect(conf(slug)).toBe(generated);
+      files.set(`${SITES}/${slug}.conf`, generated.replace(/^# openship-vhost-gen: \d+\n/m, ""));
+      const restarted = await nginx.reapplyStoredRoutes();
+      expect(restarted.repaired).toContain(domain);
+      expect(restarted.failed).toEqual([]);
+      expect(conf(slug)).toBe(generated);
+    }
+  });
+
   test("route.proxy → directive present in the generated vhost", async () => {
     const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
     await nginx.registerRoute({ ...PROXY, proxy: { clientMaxBodySize: "50m" } });
