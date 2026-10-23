@@ -88,6 +88,106 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     return { ...extra, errorMessage: redactUrlCredentials(extra.errorMessage) };
   }
 
+  /** Both cancellation and activation revalidate the same current approval. */
+  async function assertAutomaticApproval(
+    tx: DatabaseTransaction,
+    request: typeof actionDeployment.$inferSelect | undefined,
+    target: typeof project.$inferSelect | undefined,
+    expected: { owner?: string; revision?: string | null; branch: string },
+  ) {
+    if (
+      !request ||
+      !expected.owner ||
+      request.leaseOwner !== expected.owner ||
+      !request.leaseUntil ||
+      request.leaseUntil <= new Date() ||
+      request.status !== "deploying" ||
+      request.revision !== expected.revision ||
+      request.ref !== `refs/heads/${expected.branch}` ||
+      !target?.autoDeploy ||
+      target.disabledAt ||
+      (target.gitBranch && target.gitBranch !== expected.branch)
+    )
+      throw new AppError(
+        "The automatic deployment request changed. Review the project's Actions tab.",
+        409,
+        "ACTIONS_DEPLOYMENT_CHANGED",
+      );
+    const requirements = await tx
+      .select({
+        id: actionWorkflow.id,
+        version: actionWorkflow.updatedAt,
+        enabled: actionWorkflow.enabled,
+        owner: actionWorkflow.owner,
+        repo: actionWorkflow.repo,
+      })
+      .from(actionProject)
+      .innerJoin(actionWorkflow, eq(actionWorkflow.id, actionProject.workflowId))
+      .where(
+        and(
+          eq(actionProject.projectId, request.projectId),
+          eq(actionProject.organizationId, request.organizationId),
+          eq(actionProject.required, true),
+        ),
+      )
+      .for("share");
+    const plainPush = request.intent.kind === "push";
+    if (
+      (plainPush &&
+        request.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase()) ||
+      (!plainPush && !requirements.length) ||
+      requirements.length !== Object.keys(request.requirements).length ||
+      requirements.some(
+        (row) =>
+          !row.enabled ||
+          row.version.toISOString() !== request.requirements[row.id] ||
+          row.owner !== target.gitOwner?.toLowerCase() ||
+          row.repo !== target.gitRepo?.toLowerCase(),
+      )
+    )
+      throw new AppError(
+        "Required workflow configuration changed before deployment",
+        409,
+        "ACTIONS_DEPLOYMENT_CHANGED",
+      );
+    if (!requirements.length) return;
+    const runs = await tx
+      .selectDistinctOn([actionRun.workflowId])
+      .from(actionRun)
+      .where(
+        and(
+          eq(actionRun.organizationId, request.organizationId),
+          inArray(
+            actionRun.workflowId,
+            requirements.map((row) => row.id),
+          ),
+          eq(actionRun.revision, request.revision),
+          eq(actionRun.ref, request.ref),
+          eq(actionRun.untrusted, false),
+          eq(actionRun.eventName, "push"),
+        ),
+      )
+      .orderBy(
+        asc(actionRun.workflowId),
+        desc(actionRun.createdAt),
+        desc(actionRun.attempt),
+        desc(actionRun.id),
+      );
+    if (
+      runs.length !== requirements.length ||
+      runs.some(
+        (run) =>
+          run.status !== "success" ||
+          run.configuration.workflowVersion !== request.requirements[run.workflowId],
+      )
+    )
+      throw new AppError(
+        "Required checks have not passed for this commit",
+        409,
+        "ACTIONS_CHECKS_PENDING",
+      );
+  }
+
   // Pin the outcome and its clock in the same transaction. The cancel handler
   // and the worker can both finish the session later, but neither may replace
   // this duration with cleanup time or a missing build result (zero). The worker
@@ -118,12 +218,20 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         const [target] = await tx.select().from(project).where(eq(project.id, automatic.projectId));
         if (!request || !target?.autoDeploy || !target.autoDeployCancelBuilds || target.disabledAt)
           return false;
-        if (
-          (target.gitBranch && request.ref !== `refs/heads/${target.gitBranch}`) ||
-          (request.intent.kind === "push" &&
-            request.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase())
-        )
-          return false;
+        try {
+          await assertAutomaticApproval(tx, request, target, {
+            owner: automatic.owner,
+            revision: request.revision,
+            branch: request.ref.replace(/^refs\/heads\//, ""),
+          });
+        } catch (error) {
+          if (
+            error instanceof AppError &&
+            ["ACTIONS_DEPLOYMENT_CHANGED", "ACTIONS_CHECKS_PENDING"].includes(error.code ?? "")
+          )
+            return false;
+          throw error;
+        }
         where = and(
           where,
           eq(deployment.projectId, target.id),
@@ -541,26 +649,9 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
             eq(actionDeployment.organizationId, rest.organizationId),
           )).for("update");
           const [target] = await tx.select().from(project).where(eq(project.id, rest.projectId));
-          if (!receipt || !actionLeaseOwner || receipt.leaseOwner !== actionLeaseOwner ||
-            !receipt.leaseUntil || receipt.leaseUntil <= new Date() || receipt.status !== "deploying" ||
-            receipt.revision !== rest.commitSha || receipt.ref !== `refs/heads/${rest.branch}` ||
-            !target?.autoDeploy || target.disabledAt || (target.gitBranch && target.gitBranch !== rest.branch))
-            throw new AppError("The required-check deployment request changed. Refresh the project's Actions tab.", 409, "ACTIONS_DEPLOYMENT_CHANGED");
-          const requirements = await tx.select({ id: actionWorkflow.id, version: actionWorkflow.updatedAt, enabled: actionWorkflow.enabled, owner: actionWorkflow.owner, repo: actionWorkflow.repo })
-            .from(actionProject).innerJoin(actionWorkflow, eq(actionWorkflow.id, actionProject.workflowId))
-            .where(and(eq(actionProject.projectId, rest.projectId), eq(actionProject.organizationId, rest.organizationId), eq(actionProject.required, true))).for("share");
-          const plainPush = receipt.intent.kind === "push";
-          if ((plainPush && receipt.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase()) ||
-            (!plainPush && !requirements.length) || requirements.length !== Object.keys(receipt.requirements).length || requirements.some(row =>
-            !row.enabled || row.version.toISOString() !== receipt.requirements[row.id] ||
-            row.owner !== target.gitOwner?.toLowerCase() || row.repo !== target.gitRepo?.toLowerCase()))
-            throw new AppError("Required workflow configuration changed before deployment", 409, "ACTIONS_DEPLOYMENT_CHANGED");
-          const runs = await tx.selectDistinctOn([actionRun.workflowId]).from(actionRun).where(and(
-            eq(actionRun.organizationId, rest.organizationId), inArray(actionRun.workflowId, requirements.map(row => row.id)),
-            eq(actionRun.revision, receipt.revision), eq(actionRun.ref, receipt.ref), eq(actionRun.untrusted, false), eq(actionRun.eventName, "push"),
-          )).orderBy(asc(actionRun.workflowId), desc(actionRun.createdAt), desc(actionRun.attempt), desc(actionRun.id));
-          if (runs.length !== requirements.length || runs.some(run => run.status !== "success" || run.configuration.workflowVersion !== receipt.requirements[run.workflowId]))
-            throw new AppError("Required checks have not passed for this commit", 409, "ACTIONS_CHECKS_PENDING");
+          await assertAutomaticApproval(tx, receipt, target, {
+            owner: actionLeaseOwner, revision: rest.commitSha, branch: rest.branch,
+          });
         }
         // A terminal-looking deployment can still have a worker unwinding after
         // cancellation. The partial unique status index no longer covers that

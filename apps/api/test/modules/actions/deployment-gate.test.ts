@@ -170,6 +170,27 @@ async function fixture() {
 }
 
 describe("required Actions deployment admission with real database transactions", () => {
+  it("revalidates workflow versions and the latest trusted checks before cancelling an old build", async () => {
+    const f = await fixture();
+    await f.run();
+    const activeId = generateId("dep");
+    await db.insert(schema.deployment).values({ id: activeId, projectId: f.projectId,
+      organizationId: f.owner.orgId, branch: "main", trigger: "actions", status: "building", commitSha: "b".repeat(40) });
+    await repos.project.update(f.projectId, { autoDeployCancelBuilds: true });
+    await repos.actions.claimActionDeployment(f.owner.orgId, f.receipt.id, "controller");
+    await repos.actions.updateActionDeployment(f.owner.orgId, f.receipt.id, "controller", { status: "deploying" }, false);
+    const proof = { organizationId: f.owner.orgId, projectId: f.projectId, requestId: f.receipt.id, owner: "controller" };
+    await db.update(schema.actionWorkflow).set({ updatedAt: new Date(f.workflow.updatedAt.getTime() + 1000) })
+      .where(eq(schema.actionWorkflow.id, f.workflow.id));
+    expect(await repos.deployment.cancelObsoleteAutomaticBuild(activeId, proof)).toBe(false);
+    await db.update(schema.actionWorkflow).set({ updatedAt: f.workflow.updatedAt })
+      .where(eq(schema.actionWorkflow.id, f.workflow.id));
+    const latest = (await f.run({ status: "queued", finishedAt: null, settledAt: null, createdAt: new Date(Date.now() + 1000) }))!;
+    expect(await repos.deployment.cancelObsoleteAutomaticBuild(activeId, proof)).toBe(false);
+    await db.update(schema.actionRun).set({ status: "success" }).where(eq(schema.actionRun.id, latest.id));
+    expect(await repos.deployment.cancelObsoleteAutomaticBuild(activeId, proof)).toBe(true);
+  });
+
   it("waits for the exact trusted push, then admits one deployment across controller retries", async () => {
     const f = await fixture();
     await Promise.all([
