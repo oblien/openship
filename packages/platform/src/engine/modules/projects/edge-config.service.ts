@@ -20,6 +20,9 @@ import {
   PROXY_DIRECTIVES,
   expectedProxyState,
   sanitizeProxySettings,
+  resolveDomainProxySettings,
+  sanitizeDomainProxySettings,
+  type DomainProxySettings,
   type ProxyDirectiveGroup,
   type ProxySettings,
 } from "@repo/core";
@@ -55,6 +58,15 @@ export interface EdgeConfigHostState {
   /** Live values that differ from expected AND are valid to store — the "adopt" payload. */
   adoptable: ProxySettings;
   driftCount: number;
+  /** Observed values come from the edge configuration, not an application probe. */
+  bodyLimit: {
+    saved: DomainProxySettings | null;
+    /** Null until an inherited HTTP default can be observed. */
+    effective: string | null;
+    source: "domain" | "project" | "edge";
+    observed: string | null;
+    applied: boolean | null;
+  };
 }
 
 export interface EdgeConfigReport {
@@ -75,9 +87,12 @@ function buildHostState(
   site: ImportedSite | null,
   saved: ProxySettings,
   nginxVersion: readonly [number, number, number] | null,
+  domainProxy?: DomainProxySettings | null,
 ): EdgeConfigHostState {
   const tls = site?.ssl ?? false;
-  const expected = expectedProxyState(saved, { tls, nginxVersion });
+  const resolved = resolveDomainProxySettings(saved, domainProxy);
+  const domainSaved = sanitizeDomainProxySettings(domainProxy) ?? null;
+  const expected = expectedProxyState(resolved, { tls, nginxVersion });
   const live = (site?.proxy ?? {}) as Record<string, string | number | boolean>;
   const liveRaw = site?.proxyRaw ?? {};
 
@@ -113,6 +128,24 @@ function buildHostState(
     directives,
     adoptable: (sanitizeProxySettings(adoptable) ?? {}) as ProxySettings,
     driftCount: directives.filter((d) => d.drift).length,
+    bodyLimit: {
+      saved: domainSaved,
+      effective: resolved?.clientMaxBodySize ?? null,
+      source: domainSaved ? "domain" : saved.clientMaxBodySize !== undefined ? "project" : "edge",
+      observed:
+        typeof live.clientMaxBodySize === "string"
+          ? live.clientMaxBodySize
+          : (liveRaw.clientMaxBodySize ?? null),
+      // An omitted vhost directive inherits the installed HTTP default. The
+      // per-vhost scanner cannot prove that value, so do not invent a 50m read.
+      applied: !site
+        ? null
+        : resolved?.clientMaxBodySize !== undefined
+          ? resolved.clientMaxBodySize === live.clientMaxBodySize
+          : live.clientMaxBodySize !== undefined || liveRaw.clientMaxBodySize !== undefined
+            ? false
+            : null,
+    },
   };
 }
 
@@ -128,8 +161,14 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
 
   if (project.workspaceId) return { reachable: false, saved, hosts: [] };
 
-  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return []; });
+  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service");
+    return [];
+  });
   const hostnames = [...new Set(domains.map((d) => d.hostname.toLowerCase()))].sort();
+  const domainProxy = new Map(
+    domains.map((domain) => [domain.hostname.toLowerCase(), domain.proxy]),
+  );
   if (hostnames.length === 0) return { reachable: false, saved, hosts: [] };
 
   const read = await withServerHostExecutor(project, async (exec) => {
@@ -146,13 +185,29 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
       : null;
     const hosts: EdgeConfigHostState[] = [];
     for (const hostname of hostnames) {
-      const site = await proxy.siteFor(hostname).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
-      hosts.push(buildHostState(hostname, site, saved, version));
+      const site = await proxy.siteFor(hostname).catch((diagnosticFailure) => {
+        observeCaughtError(
+          diagnosticFailure,
+          "platform/engine/modules/projects/edge-config.service",
+        );
+        return null;
+      });
+      hosts.push(buildHostState(hostname, site, saved, version, domainProxy.get(hostname)));
     }
     return { kind: proxy.kind, ours: proxy.ours, version, hosts };
-  }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
+  }).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service");
+    return null;
+  });
 
-  if (!read) return { reachable: false, saved, hosts: [] };
+  if (!read)
+    return {
+      reachable: false,
+      saved,
+      hosts: hostnames.map((hostname) =>
+        buildHostState(hostname, null, saved, null, domainProxy.get(hostname)),
+      ),
+    };
   return {
     reachable: true,
     proxyKind: read.kind,

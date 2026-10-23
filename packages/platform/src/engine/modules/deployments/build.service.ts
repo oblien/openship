@@ -1,5 +1,6 @@
 import { nativeJobsEnabled } from "../../native/execution-policy";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
+import { assertDomainProxyTarget } from "../../lib/domain-proxy-capabilities";
 /**
  * Build service — build session LIFECYCLE + config/snapshot helpers.
  *
@@ -1110,9 +1111,14 @@ export async function resolveSnapshotTarget(
   else if (activeMeta?.serverId) deployTarget = "server";
 
   await assertRouteProtectionTarget(project, deployTarget);
+  await assertDomainProxyTarget(project, deployTarget);
 
   if (project.clusterId && override?.deployTarget && override.deployTarget !== "cluster")
-    throw new AppError("Change this project's cluster target in Topology before deploying to a different target.", 409, "CLUSTER_TARGET_CONFLICT");
+    throw new AppError(
+      "Change this project's cluster target in Topology before deploying to a different target.",
+      409,
+      "CLUSTER_TARGET_CONFLICT",
+    );
   if (deployTarget === "cluster") {
     const clusterId = project.clusterId ?? activeMeta?.clusterId;
     if (!clusterId) throw new AppError("Choose a cluster in the project topology first.", 422, "CLUSTER_TARGET_REQUIRED");

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ExportSelection } from "@repo/core";
-import { selectProjectTransfer, type TransferRowReader } from "./project-transfer";
+import {
+  selectProjectTransfer,
+  snapshotTransferReader,
+  type TransferRowReader,
+} from "./project-transfer";
 
 const selection: ExportSelection = {
   scope: "projects",
@@ -112,5 +116,51 @@ describe("project transfer indirect ingress ownership", () => {
     const result = await selectProjectTransfer(read("project-b"), selection);
     expect(result.tables.project?.map((p) => p.id)).toEqual(["project-a"]);
     expect(result.tables.ingress_hostname).toBeUndefined();
+  });
+});
+
+describe("project transfer domain proxy overrides", () => {
+  it("preserves explicit, null, and legacy missing values without changing authoritative ownership", async () => {
+    const domains = [
+      {
+        id: "explicit",
+        projectId: "project-a",
+        hostname: "explicit.test",
+        proxy: { clientMaxBodySize: "2m" },
+      },
+      {
+        id: "unlimited",
+        projectId: "project-a",
+        hostname: "unlimited.test",
+        proxy: { clientMaxBodySize: "0" },
+      },
+      { id: "inherited", projectId: "project-a", hostname: "inherited.test", proxy: null },
+      { id: "legacy", projectId: "project-a", hostname: "legacy.test" },
+    ];
+    const rows = {
+      project: [
+        {
+          id: "project-a",
+          groupId: "group-a",
+          organizationId: "org-a",
+          routingConfig: { proxy: { clientMaxBodySize: "10m" } },
+        },
+      ],
+      project_app: [{ id: "group-a", organizationId: "org-a" }],
+      domain: [
+        ...domains,
+        {
+          id: "foreign",
+          projectId: "project-b",
+          hostname: "foreign.test",
+          proxy: { clientMaxBodySize: "1m" },
+        },
+      ],
+    };
+    const result = await selectProjectTransfer(snapshotTransferReader(rows), selection);
+    expect(result.tables.domain).toEqual(domains);
+    expect(result.tables.domain!.find((row) => row.id === "legacy")).not.toHaveProperty("proxy");
+    (result.tables.domain![0]!.proxy as { clientMaxBodySize: string }).clientMaxBodySize = "1m";
+    expect(domains[0]!.proxy).toEqual({ clientMaxBodySize: "2m" });
   });
 });

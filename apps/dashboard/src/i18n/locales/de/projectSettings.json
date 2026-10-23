@@ -1156,6 +1156,29 @@
       "description": "Die App läuft weiter — nur diese Route und ihre Edge-Registrierung werden entfernt. Sie können sie jederzeit wieder hinzufügen.",
       "confirm": "Route entfernen",
       "removing": "Wird entfernt…"
+    },
+    "bodyLimit": {
+      "title": "HTTP-Body-Limit",
+      "inherit": "Vom Projekt erben",
+      "custom": "Benutzerdefiniert",
+      "unlimited": "Unbegrenzt (0)",
+      "hint": "Begrenzt HTTP-Anfragedaten einschließlich Uploads und Polling. WebSocket-Frames und Anwendungslimits sind unabhängig. k, m oder g verwenden; 0 bedeutet unbegrenzt.",
+      "saved": "Gespeicherter Wert",
+      "effective": "Effektives Limit",
+      "source": "Quelle",
+      "domain": "Domain",
+      "project": "Projekt",
+      "edge": "Edge-Standard",
+      "observed": "Beobachtetes Limit",
+      "status": "Live-Status",
+      "applied": "Angewendet",
+      "pending": "Nicht angewendet — Routing erneut versuchen",
+      "unknown": "Unbekannt",
+      "unsupported": "Erfordert einen selbst gehosteten nginx/OpenResty-Edge.",
+      "invalid": "Größe wie 2m, 1g oder 0 für unbegrenzt eingeben.",
+      "save": "Speichern",
+      "saving": "Speichern…",
+      "refresh": "Status aktualisieren"
     }
   },
   "serviceEnvironment": {

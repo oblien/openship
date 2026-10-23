@@ -51,6 +51,64 @@ After adding, you must point your DNS at Openship and then **verify**. Use `POST
 (or `openship domain preview <hostname>`) to see the exact records to add at your DNS provider first.
 </Callout>
 
+## Set a domain HTTP body limit
+
+Self-hosted nginx/OpenResty domains can override the project's request-body limit independently:
+
+```ts
+await ship.domains.update("dom_api", { proxy: { clientMaxBodySize: "2m" } });
+await ship.domains.update("dom_polling", { proxy: { clientMaxBodySize: "1m" } });
+// Clear the override and inherit the project again.
+await ship.domains.update("dom_polling", { proxy: null });
+```
+
+The REST endpoint is `PATCH /api/domains/:id`. It requires write access to the domain's project.
+
+| Request body | Result |
+| --- | --- |
+| `{}` | Leave the saved override unchanged. |
+| `{"proxy":null}` | Clear the override and inherit the project. |
+| `{"proxy":{}}` | Replace the override with an empty object, also inheriting the project. |
+| `{"proxy":{"clientMaxBodySize":"2m"}}` | Replace the override with a 2 MiB cap. |
+| `{"proxy":{"clientMaxBodySize":"0"}}` | Disable the HTTP body limit for this domain. |
+
+Use a positive integer with a lowercase `k`, `m`, or `g` suffix, or `0` for unlimited.
+Bare nonzero numbers, unknown fields, unsafe values, and numeric overflow are rejected.
+New overrides require the selected routing provider to support domain body limits; detecting an
+unrelated nginx installation is not sufficient. Unsupported providers return
+`CAPABILITY_UNAVAILABLE` before saving a new override; an unreachable or unconfirmed
+active edge returns `EDGE_UNAVAILABLE`. Clearing a legacy override with `null` or `{}` restores inheritance
+even when the provider cannot enforce an override; a successful save alone is not application proof.
+
+The domain override takes precedence over the project, then the installed Edge HTTP default.
+The standard Edge default is `50m`; read-back reports an unobserved inherited default as unknown.
+This limits HTTP request bodies, including uploads and polling requests. It does not set WebSocket
+frame/message limits or raise the application's own upload limit.
+
+For a running, deployed project, saving re-applies the current routing without a rebuild.
+A known-supported provider can also save desired settings before the first deployment or while
+paused. Those changes remain pending until deployment or explicit resume; saving does not scan
+the live Edge, resume the project, or recreate paused routes. Read-back remains unobservable
+before deployment: `observed` and `applied` are null. An unobserved inherited Edge default also
+has a null `effective` value.
+
+If apply fails, the endpoint returns
+`DOMAIN_PROXY_APPLY_FAILED` and keeps the desired setting for retry. Repeat the update or use
+**Retry routing** in the dashboard. A failed apply retains its project routing warning across
+navigation. A successful repeat save resolves this operation's warning while preserving unrelated
+warnings. Existing hostnames keep their managed Cloud registrations during a cap-only edit.
+Read `GET /api/projects/:id/edge-config` afterward:
+`hosts[].bodyLimit` reports `saved`, `effective`, `source`, `observed`, and `applied` for each hostname.
+`applied: null` means live application could not be observed; a saved value alone does not prove it is active.
+
+```bash
+openship domain update dom_api --client-max-body-size 2m
+openship domain update dom_api --client-max-body-size 0  # unlimited
+openship domain update dom_api --inherit-client-max-body-size
+```
+
+The two update options are mutually exclusive.
+
 ## Preview required DNS
 
 Side-effect-free: pass a hostname, get back the records to create. `POST` is used only so the hostname
@@ -184,5 +242,6 @@ to get valid IDs.
 | Preview domain connection requirements. | `domains.preview(input)` | `POST /api/domains/preview`<br />`domain:read` |
 | Request renewal for eligible certificates. | `domains.renewAllSsl()` | `POST /api/domains/renew-all`<br />`domain:write` |
 | Verify pending domains visible to the caller. | `domains.verifyPending(input?)` | `POST /api/domains/verify-pending`<br />`domain:write` |
+| Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration for observed application status. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
 
 {/* api-operations:end */}

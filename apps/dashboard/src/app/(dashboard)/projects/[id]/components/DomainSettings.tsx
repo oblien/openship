@@ -24,6 +24,7 @@ import { useCloud } from "@/context/CloudContext";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
+import DomainBodyLimit from "@/components/domains/DomainBodyLimit";
 import DnsChallengePanel from "@/components/domains/DnsChallengePanel";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
@@ -2020,8 +2021,31 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       <DomainOverviewCard
         key={item.id}
         domain={item}
-        protectionControl={<RouteProtectionButton hostname={item.hostname} projectId={String(id)}
-          unsupported={isCloudProject || projectData.deployTarget === "cluster" || !selfHosted || !!item.externalIngress || item.hostname.endsWith(`.${baseDomain}`) || item.hostname.startsWith("*.")} />}
+        bodyLimitControl={
+          item.domainId ? (
+            <DomainBodyLimit
+              key={`${resourceKey}:${item.domainId}`}
+              domainId={item.domainId}
+              hostname={item.hostname}
+              projectId={String(id)}
+              supported={!isCloudProject && selfHosted && projectData.deployTarget !== "cluster"}
+            />
+          ) : undefined
+        }
+        protectionControl={
+          <RouteProtectionButton
+            hostname={item.hostname}
+            projectId={String(id)}
+            unsupported={
+              isCloudProject ||
+              projectData.deployTarget === "cluster" ||
+              !selfHosted ||
+              !!item.externalIngress ||
+              item.hostname.endsWith(`.${baseDomain}`) ||
+              item.hostname.startsWith("*.")
+            }
+          />
+        }
         menuActions={menuActions}
         sslActionBusy={isRenewing || isRechecking}
         sslActionLabel={
@@ -3148,6 +3172,7 @@ function DiagnosablePill({
 function DomainOverviewCard({
   domain,
   protectionControl,
+  bodyLimitControl,
   menuActions = [],
   sslActionBusy = false,
   sslActionLabel,
@@ -3167,6 +3192,7 @@ function DomainOverviewCard({
 }: {
   domain: DomainSummaryItem;
   protectionControl?: React.ReactNode;
+  bodyLimitControl?: React.ReactNode;
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
    *  plain icon; Verify is a direct inline button below, not a menu item. */
   menuActions?: MenuAction[];
@@ -3307,6 +3333,7 @@ function DomainOverviewCard({
         ) : domain.mappedLabel ? (
           <InfoRow label={d.overview.mappedTo} value={domain.mappedLabel} />
         ) : null}
+        {bodyLimitControl}
         <InfoRow
           label={d.overview.status}
           value={

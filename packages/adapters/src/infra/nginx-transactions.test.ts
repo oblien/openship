@@ -65,6 +65,23 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+describe("domain body-cap transactions (#1431)", () => {
+  it("restores the serving cap and replay state after a rejected reload, then retries the desired cap", async () => {
+    await nginx.registerRoute({ ...route(DOTTED), proxy: { clientMaxBodySize: "2m" } });
+    const before = await readFile(routePath, "utf8");
+    const saved = await readFile(statePath, "utf8");
+    reload.mockRejectedValueOnce(new Error("new body limit config rejected"));
+    await expect(
+      nginx.registerRoute({ ...route(DOTTED), proxy: { clientMaxBodySize: "1m" } }),
+    ).rejects.toThrow("new body limit config rejected");
+    expect(await readFile(routePath, "utf8")).toBe(before);
+    expect(await readFile(statePath, "utf8")).toBe(saved);
+    await provider().registerRoute({ ...route(DOTTED), proxy: { clientMaxBodySize: "1m" } });
+    expect(JSON.parse(await readFile(statePath, "utf8")).proxy.clientMaxBodySize).toBe("1m");
+    expect(await readFile(routePath, "utf8")).toContain("client_max_body_size 1m;");
+  });
+});
+
 describe("container real-IP configuration rollback", () => {
   const operations = ["register", "remove", "rate-limit"] as const;
   const apply = (operation: (typeof operations)[number]) => {

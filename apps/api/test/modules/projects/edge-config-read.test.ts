@@ -270,6 +270,77 @@ describe("readProjectEdgeConfig — the http2 version floor", () => {
 });
 
 describe("readProjectEdgeConfig — hostnames", () => {
+  it("separates saved, effective and observed body limits per hostname", async () => {
+    listDomains.mockResolvedValue([
+      { id: "api", hostname: "api.example.com", proxy: null },
+      { id: "events", hostname: "events.example.com", proxy: { clientMaxBodySize: "1m" } },
+    ]);
+    box({
+      sites: {
+        "api.example.com": site({ proxy: { clientMaxBodySize: "2m" } }),
+        "events.example.com": site({ proxy: { clientMaxBodySize: "2m" } }),
+      },
+    });
+    const r = await readProjectEdgeConfig(
+      project({ routingConfig: { proxy: { clientMaxBodySize: "2m" } } }),
+    );
+    expect(r.hosts[0]!.bodyLimit).toEqual({
+      saved: null,
+      effective: "2m",
+      source: "project",
+      observed: "2m",
+      applied: true,
+    });
+    expect(r.hosts[1]!.bodyLimit).toEqual({
+      saved: { clientMaxBodySize: "1m" },
+      effective: "1m",
+      source: "domain",
+      observed: "2m",
+      applied: false,
+    });
+    expect(r.hosts.map((host) => host.driftCount)).toEqual([0, 1]);
+  });
+
+  it("reports an unobserved Edge default without claiming it was applied", async () => {
+    box({ sites: { "app.example.com": site() } });
+    const r = await readProjectEdgeConfig(project());
+    expect(r.hosts[0]!.bodyLimit).toMatchObject({
+      saved: null,
+      source: "edge",
+      observed: null,
+      applied: null,
+    });
+    expect(r.hosts[0]!.directives).toEqual([]);
+  });
+
+  it("reports a stale explicit cap after clearing even when the inherited HTTP default is unknown", async () => {
+    box({ sites: { "app.example.com": site({ proxy: { clientMaxBodySize: "1m" } }) } });
+    const r = await readProjectEdgeConfig(project());
+    expect(r.hosts[0]!.bodyLimit).toEqual({
+      saved: null,
+      effective: null,
+      source: "edge",
+      observed: "1m",
+      applied: false,
+    });
+    expect(r.hosts[0]!.driftCount).toBe(1);
+  });
+
+  it("retains desired state when the edge cannot be read", async () => {
+    listDomains.mockResolvedValue([
+      { id: "events", hostname: "events.example.com", proxy: { clientMaxBodySize: "0" } },
+    ]);
+    withServerHostExecutor.mockRejectedValue(new Error("offline"));
+    const r = await readProjectEdgeConfig(project());
+    expect(r.hosts[0]!.bodyLimit).toEqual({
+      saved: { clientMaxBodySize: "0" },
+      effective: "0",
+      source: "domain",
+      observed: null,
+      applied: null,
+    });
+  });
+
   it("reports every hostname of the project, deduped, lowercased and sorted", async () => {
     listDomains.mockResolvedValue([
       { id: "d1", hostname: "B.example.com" },

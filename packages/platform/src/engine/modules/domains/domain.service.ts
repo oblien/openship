@@ -29,6 +29,8 @@ import {
   wwwSiblingHostname,
   SYSTEM,
   DOMAIN_VERIFY_GRACE_MS,
+  coerceProxyValue,
+  PROXY_DIRECTIVE_BY_KEY,
 } from "@repo/core";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { platform } from "../../lib/platform-config";
@@ -70,9 +72,22 @@ import {
   assertRedirectTargets,
   normalizeRedirect,
 } from "../../lib/domain-redirect";
-import type { TAddDomainBody } from "@repo/contracts";
+import {
+  isRecord,
+  parseInput,
+  UpdateDomainBody,
+  type TAddDomainBody,
+  type UpdateDomainInput,
+} from "@repo/contracts";
+import { resolveProjectLiveDeployTarget } from "../projects/project-deploy-target";
+import { withDeploymentPlatform, type DeploymentMeta } from "../../lib/deployment-runtime";
+import { readProjectEdgeConfig } from "../projects/edge-config.service";
+import { markRoutingWarning } from "../projects/project-runtime.service";
+import { reapplyProjectLiveRoutes } from "./project-route.service";
+import { applyProjectRouting } from "./routing-apply.service";
+import { canRouteSelfApp } from "../../lib/self-app-routing";
 import { certbotLineageDirs, edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
-import type { AdoptedCert, CloudInfraProvider, ManualCert } from "@repo/adapters";
+import type { AdoptedCert, CloudInfraProvider, ManualCert, RoutingProvider } from "@repo/adapters";
 // Concrete modules, not the `../dns` barrel: importing a barrel that reaches a
 // routes file mounts the HTTP route table as a side effect of importing a service.
 import {
@@ -102,6 +117,191 @@ export async function listDomains(ctx: RequestContext, projectId: string) {
 export async function getDomain(ctx: RequestContext, domainId: string) {
   const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
   return (await withDomainDiagnostics(project, [domain]))[0]!;
+}
+
+/** A cap save reapplies the complete route surface. Its failure warning owns
+ * only its own message; retain any earlier warning for successful recovery. */
+async function markDomainProxyApplyWarning(project: Project, message: string) {
+  const deployment = (await findActiveDeployment(project)) ?? null;
+  if (!deployment) return markRoutingWarning(null, message);
+  const meta = { ...((deployment.meta as Record<string, unknown> | null) ?? {}) };
+  const owner = meta.domainProxyApplyWarning;
+  const previous =
+    isRecord(owner) &&
+    owner.message === meta.deployWarning &&
+    meta.edgeUnsynced === true &&
+    isRecord(owner.previous)
+      ? owner.previous
+      : Object.fromEntries(
+          Object.entries(meta).filter(([key]) => key === "edgeUnsynced" || key === "deployWarning"),
+        );
+  await markRoutingWarning(
+    {
+      ...deployment,
+      meta: { ...meta, domainProxyApplyWarning: { message, previous } },
+    },
+    message,
+  );
+}
+
+async function clearDomainProxyApplyWarning(project: Project) {
+  const deployment = await findActiveDeployment(project);
+  if (!deployment) return;
+  const meta = { ...((deployment.meta as Record<string, unknown> | null) ?? {}) };
+  const owner = meta.domainProxyApplyWarning;
+  if (!isRecord(owner) || typeof owner.message !== "string") return;
+  delete meta.domainProxyApplyWarning;
+  // A different operation may have replaced the warning since this save failed.
+  if (meta.deployWarning === owner.message && meta.edgeUnsynced === true) {
+    for (const key of ["edgeUnsynced", "deployWarning"] as const) {
+      if (isRecord(owner.previous) && Object.prototype.hasOwnProperty.call(owner.previous, key))
+        meta[key] = owner.previous[key];
+      else delete meta[key];
+    }
+  }
+  await repos.deployment.updateStatus(deployment.id, deployment.status, { meta });
+}
+
+/** Save desired state under the same lock as project teardown, then reapply the
+ * existing topology. A saved row never proves the edge accepted the change. */
+export async function updateDomain(
+  ctx: RequestContext,
+  domainId: string,
+  command: UpdateDomainInput,
+) {
+  const input = parseInput(UpdateDomainBody, command);
+  const value = input.proxy?.clientMaxBodySize;
+  if (
+    value !== undefined &&
+    (value.trim() !== value ||
+      coerceProxyValue(PROXY_DIRECTIVE_BY_KEY.get("clientMaxBodySize")!, value) === undefined)
+  )
+    throw new ValidationError("Invalid HTTP body cap");
+  const { project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const result = await withLiveProjectRuntimeMutation(project.id, async (liveProject) => {
+    assertResourceInOrg(liveProject, "Domain", ctx.organizationId, domainId);
+    const domain = await repos.domain.findById(domainId);
+    if (
+      !domain ||
+      domain.ownerType !== "project" ||
+      domain.projectId !== liveProject.id ||
+      domain.status === "removing"
+    ) {
+      throw new NotFoundError("Domain", domainId);
+    }
+    if (input.proxy === undefined) return domain;
+    // Inheritance can clear a legacy override even on a provider that cannot
+    // enforce one. Only an explicit cap requires affirmative provider support.
+    if (value !== undefined) {
+      if (
+        liveProject.workspaceId ||
+        liveProject.clusterId ||
+        ["cloud", "cluster"].includes(
+          (await resolveProjectLiveDeployTarget(liveProject)).deployTarget ?? "",
+        )
+      ) {
+        throw new AppError(
+          "Domain HTTP body caps require a self-hosted nginx/OpenResty edge",
+          501,
+          "CAPABILITY_UNAVAILABLE",
+        );
+      }
+      const deployment = liveProject.activeDeploymentId
+        ? await findActiveDeployment(liveProject)
+        : null;
+      if (liveProject.activeDeploymentId && !deployment)
+        throw new NotFoundError("Deployment", liveProject.activeDeploymentId);
+      const requireProviderSupport = async ({
+        routing,
+        effectiveTarget,
+      }: {
+        routing: Pick<RoutingProvider, "supportsDomainProxy">;
+        effectiveTarget: string;
+      }) => {
+        if (
+          routing.supportsDomainProxy !== true ||
+          effectiveTarget === "cloud" ||
+          effectiveTarget === "cluster"
+        ) {
+          throw new AppError(
+            "This routing provider does not support domain HTTP body caps",
+            501,
+            "CAPABILITY_UNAVAILABLE",
+          );
+        }
+      };
+      if (deployment || liveProject.serverId) {
+        await withDeploymentPlatform(
+          deployment ?? {
+            projectId: liveProject.id,
+            organizationId: liveProject.organizationId,
+            meta: { deployTarget: "server", serverId: liveProject.serverId } as DeploymentMeta,
+          },
+          requireProviderSupport,
+        );
+      } else {
+        // With no deployment/server binding, use the actual instance provider:
+        // synthesizing a local deployment could upgrade a desktop/noop provider.
+        const instance = platform();
+        await requireProviderSupport({
+          routing: instance.routing,
+          effectiveTarget: instance.target,
+        });
+      }
+      if (!liveProject.disabledAt && liveProject.activeDeploymentId) {
+        // A detected nginx on the host is only observation, never provider authority.
+        const edge = await readProjectEdgeConfig(liveProject);
+        if (edge.proxyKind && !["nginx", "openresty"].includes(edge.proxyKind)) {
+          throw new AppError(
+            "This edge provider does not support domain HTTP body caps",
+            501,
+            "CAPABILITY_UNAVAILABLE",
+          );
+        }
+        if (!edge.reachable || !edge.proxyKind) {
+          throw new AppError(
+            "Could not confirm a supported nginx/OpenResty edge. Retry when the server is reachable.",
+            503,
+            "EDGE_UNAVAILABLE",
+          );
+        }
+      }
+    }
+    // Replacement semantics, including {} (no override) and null (inherit).
+    await repos.domain.update(domainId, { proxy: input.proxy });
+    const updated = await repos.domain.findById(domainId);
+    if (!updated || updated.projectId !== liveProject.id)
+      throw new NotFoundError("Domain", domainId);
+    // Saving desired state must never resume paused routes or publish a release
+    // before deployment. The normal deploy/resume path reads the saved override.
+    if (liveProject.disabledAt || !liveProject.activeDeploymentId) return updated;
+    const warnings: string[] = [];
+    try {
+      const isSelfApp = await canRouteSelfApp(ctx, liveProject.id);
+      const previousHostnames = (await repos.domain.listByProject(liveProject.id))
+        .filter((row) => isSelfApp || !row.serviceId)
+        .map((row) => row.hostname);
+      await reapplyProjectLiveRoutes(liveProject, previousHostnames, {
+        isSelfApp,
+        onWarning: (message) => warnings.push(message),
+      });
+      await applyProjectRouting(liveProject.id, { onWarning: (message) => warnings.push(message) });
+      if (warnings.length) throw new Error(warnings.join("; "));
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+      const message = `The domain setting for ${domain.hostname} was saved, but routing apply failed: ${safeErrorMessage(error)}`;
+      await markDomainProxyApplyWarning(liveProject, message);
+      throw new AppError(
+        "The domain setting was saved, but routing apply failed. Check the live Edge configuration and retry routing.",
+        502,
+        "DOMAIN_PROXY_APPLY_FAILED",
+      );
+    }
+    await clearDomainProxyApplyWarning(liveProject);
+    return updated;
+  });
+  if (!result) throw new NotFoundError("Domain", domainId);
+  return result;
 }
 
 // ─── Set primary ───────────────────────────────────────────────────────────────

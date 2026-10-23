@@ -44,7 +44,24 @@ r.post("/preview", { tag: "domain:read", cloudResource: "server", readOnly: true
 // Per-domain routes carry the shared Cloud resource gateway (after the permission middleware):
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
-r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, ctrl.get);
+r.get(
+  "/:id",
+  { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } },
+  ctrl.get,
+);
+r.patch(
+  "/:id",
+  {
+    tag: "domain:write",
+    auditHandledByOperation: true,
+    body: DomainResourceSchemas.update.input,
+    mcp: {
+      description:
+        "Replace or clear a domain HTTP body cap on a self-hosted nginx/OpenResty edge. Omitted proxy is unchanged; null inherits the project; 0 means unlimited. Read project Edge config to confirm live application.",
+    },
+  },
+  ctrl.update,
+);
 r.delete(
   "/:id",
   {
