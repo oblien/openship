@@ -33,7 +33,7 @@ const bodyLimit = {
   effective: "0",
   source: "domain",
   observed: "1m",
-  applied: false,
+  configurationMatches: false,
 };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,7 +81,7 @@ async function click(text: string) {
 }
 
 describe("per-domain HTTP body editor", () => {
-  it("labels unlimited explicitly and shows observed drift instead of treating saved as applied", async () => {
+  it("labels unlimited explicitly and shows observed drift instead of treating saved as live", async () => {
     await render();
     expect(h.edge).not.toHaveBeenCalled();
     await open();
@@ -113,14 +113,16 @@ describe("per-domain HTTP body editor", () => {
             effective: "5m",
             source: "project",
             observed: "5m",
-            applied: true,
+            configurationMatches: true,
           },
         },
       ],
     });
     await click("Save");
     expect(h.update).toHaveBeenCalledWith("domain-a", { proxy: null });
-    expect(container.textContent).toContain("Applied");
+    expect(container.textContent).toContain("Matches saved value (live reload not confirmed)");
+    expect(container.textContent).not.toContain("Live status");
+    expect(container.textContent).not.toMatch(/\bApplied\b/);
     expect(container.textContent).toContain("5m");
     expect(container.textContent).toContain("Project");
   });
@@ -145,7 +147,7 @@ describe("per-domain HTTP body editor", () => {
             effective: null,
             source: "domain",
             observed: null,
-            applied: null,
+            configurationMatches: null,
           },
         },
       ],
@@ -155,7 +157,7 @@ describe("per-domain HTTP body editor", () => {
     expect(container.textContent).toContain("Unlimited (0)");
     expect(container.textContent).toContain("Unknown");
     expect(container.textContent).not.toContain("Not applied");
-    expect(container.textContent).not.toContain("Applied");
+    expect(container.textContent).not.toContain("Matches saved value");
   });
   it.each(["25", "1m;return 200", " 1m", "99999999999999999999999999g"])(
     "blocks invalid or overflow input %j before saving",

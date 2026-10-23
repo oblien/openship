@@ -40,9 +40,11 @@ and live edits resolve the saved domain value before registering the route.
 Certificate activation and restart repairs replay the resolved route. Config
 validation or reload failure keeps the previous vhost and replay state; retry
 after correcting the error. Read-back shows the saved override, effective value
-and source, and the value observed in the edge configuration. An unreadable edge
-or an unobserved inherited HTTP default is reported as unknown. Configuration
-read-back is not a request probe of a running nginx worker.
+and source, the value observed in the edge configuration, and whether that
+configuration matches the resolved value. An unreadable edge or an unobserved
+inherited HTTP default is reported as unknown. Configuration read-back is not a
+request probe of a running nginx worker, so a matching file is never reported as
+live application.
 
 These limits apply to incoming HTTP bodies, including chunked requests and
 Socket.IO polling POSTs. They do not limit response sizes, throughput, or

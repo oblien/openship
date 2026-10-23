@@ -52,7 +52,7 @@ export const DomainBodyLimitStateSchema = Type.Object({
   effective: nullableString,
   source: Type.Union([Type.Literal("domain"), Type.Literal("project"), Type.Literal("edge")]),
   observed: nullableString,
-  applied: Type.Union([Type.Boolean(), Type.Null()]),
+  configurationMatches: Type.Union([Type.Boolean(), Type.Null()]),
 });
 export type DomainBodyLimitState = Static<typeof DomainBodyLimitStateSchema>;
 export const ProjectEdgeConfigSchema = Type.Object({

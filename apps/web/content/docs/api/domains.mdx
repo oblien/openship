@@ -89,7 +89,7 @@ For a running, deployed project, saving re-applies the current routing without a
 A known-supported provider can also save desired settings before the first deployment or while
 paused. Those changes remain pending until deployment or explicit resume; saving does not scan
 the live Edge, resume the project, or recreate paused routes. Read-back remains unobservable
-before deployment: `observed` and `applied` are null. An unobserved inherited Edge default also
+before deployment: `observed` and `configurationMatches` are null. An unobserved inherited Edge default also
 has a null `effective` value.
 
 If apply fails, the endpoint returns
@@ -98,8 +98,9 @@ If apply fails, the endpoint returns
 navigation. A successful repeat save resolves this operation's warning while preserving unrelated
 warnings. Existing hostnames keep their managed Cloud registrations during a cap-only edit.
 Read `GET /api/projects/:id/edge-config` afterward:
-`hosts[].bodyLimit` reports `saved`, `effective`, `source`, `observed`, and `applied` for each hostname.
-`applied: null` means live application could not be observed; a saved value alone does not prove it is active.
+`hosts[].bodyLimit` reports `saved`, `effective`, `source`, `observed`, and `configurationMatches` for each hostname.
+`configurationMatches` compares the generated server-block file with the resolved cap; `null` means it could not be compared.
+A matching file does not prove the running workers use that value, and neither does a saved value, so the API reports no live-application status.
 
 ```bash
 openship domain update dom_api --client-max-body-size 2m
@@ -242,6 +243,6 @@ to get valid IDs.
 | Preview domain connection requirements. | `domains.preview(input)` | `POST /api/domains/preview`<br />`domain:read` |
 | Request renewal for eligible certificates. | `domains.renewAllSsl()` | `POST /api/domains/renew-all`<br />`domain:write` |
 | Verify pending domains visible to the caller. | `domains.verifyPending(input?)` | `POST /api/domains/verify-pending`<br />`domain:write` |
-| Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration for observed application status. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
+| Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration to compare the saved value with the observed server-block configuration. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
 
 {/* api-operations:end */}
