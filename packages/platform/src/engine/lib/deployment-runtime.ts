@@ -293,7 +293,7 @@ async function serverTargetTopology(server: OrgServer, organizationId?: string) 
 }
 
 /** One authority check before either a host channel or the local Docker socket. */
-async function assertLocalDeploymentAccess(organizationId?: string): Promise<void> {
+export async function assertLocalDeploymentAccess(organizationId?: string): Promise<void> {
   const target = platform().target;
   if (env.CLOUD_MODE || target === "cloud") {
     throw new AppError("The cloud control plane cannot be a local deployment target", 403, "LOCAL_HOST_ACCESS_DENIED");

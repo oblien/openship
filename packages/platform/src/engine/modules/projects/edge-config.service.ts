@@ -28,7 +28,7 @@ import {
 } from "@repo/core";
 import { edgeProxy, detectOpenRestyPaths, type ImportedSite } from "@repo/adapters";
 
-import { withServerHostExecutor } from "@repo/platform/engine/lib/edge-host-executor";
+import { withDeploymentEdgeExecutor } from "@repo/platform/engine/lib/edge-host-executor";
 
 /** One directive's saved-vs-served state. */
 export interface EdgeDirectiveState {
@@ -65,7 +65,8 @@ export interface EdgeConfigHostState {
     effective: string | null;
     source: "domain" | "project" | "edge";
     observed: string | null;
-    applied: boolean | null;
+    /** The vhost file agrees with the resolved cap; says nothing about the running workers. */
+    configurationMatches: boolean | null;
   };
 }
 
@@ -138,7 +139,7 @@ function buildHostState(
           : (liveRaw.clientMaxBodySize ?? null),
       // An omitted vhost directive inherits the installed HTTP default. The
       // per-vhost scanner cannot prove that value, so do not invent a 50m read.
-      applied: !site
+      configurationMatches: !site
         ? null
         : resolved?.clientMaxBodySize !== undefined
           ? resolved.clientMaxBodySize === live.clientMaxBodySize
@@ -171,7 +172,7 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
   );
   if (hostnames.length === 0) return { reachable: false, saved, hosts: [] };
 
-  const read = await withServerHostExecutor(project, async (exec) => {
+  const read = await withDeploymentEdgeExecutor(project, async (exec) => {
     const proxy = await edgeProxy(exec);
     if (!proxy) return null;
     // The version floor decides whether `http2 on;` is even expected on this box;

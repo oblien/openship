@@ -3905,7 +3905,7 @@
     "domains.update": {
       "page": "domains",
       "section": "Operations",
-      "description": "Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration for observed application status.",
+      "description": "Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration to compare the saved value with the observed server-block configuration.",
       "route": "PATCH /api/domains/:id"
     }
   },

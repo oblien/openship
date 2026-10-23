@@ -18,9 +18,9 @@ import type { Project } from "@repo/db";
  * The box is faked at the executor seam: these assert the report, not SSH.
  */
 
-const { listDomains, withServerHostExecutor, edgeProxy, detectOpenRestyPaths } = vi.hoisted(() => ({
+const { listDomains, withDeploymentEdgeExecutor, edgeProxy, detectOpenRestyPaths } = vi.hoisted(() => ({
   listDomains: vi.fn(),
-  withServerHostExecutor: vi.fn(),
+  withDeploymentEdgeExecutor: vi.fn(),
   edgeProxy: vi.fn(),
   detectOpenRestyPaths: vi.fn(),
 }));
@@ -36,7 +36,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   detectOpenRestyPaths,
 }));
 
-vi.mock("@repo/platform/engine/lib/edge-host-executor", () => ({ withServerHostExecutor }));
+vi.mock("@repo/platform/engine/lib/edge-host-executor", () => ({ withDeploymentEdgeExecutor }));
 
 import { readProjectEdgeConfig } from "@repo/platform/engine/modules/projects/edge-config.service";
 
@@ -68,7 +68,7 @@ function box(opts: {
     siteFor: vi.fn(async (h: string) => opts.sites?.[h] ?? null),
   });
   detectOpenRestyPaths.mockResolvedValue({ nginxVersion: opts.version ?? null });
-  withServerHostExecutor.mockImplementation(
+  withDeploymentEdgeExecutor.mockImplementation(
     async (_p: Project, fn: (e: unknown) => Promise<unknown>) => fn({}),
   );
 }
@@ -85,7 +85,7 @@ describe("readProjectEdgeConfig — when it can't tell", () => {
   it("reports unreachable for a cloud project without touching a box", async () => {
     const r = await readProjectEdgeConfig(project({ workspaceId: "ws1" }));
     expect(r).toEqual({ reachable: false, saved: {}, hosts: [] });
-    expect(withServerHostExecutor).not.toHaveBeenCalled();
+    expect(withDeploymentEdgeExecutor).not.toHaveBeenCalled();
   });
 
   it("reports unreachable for a project with no hostnames yet", async () => {
@@ -97,13 +97,13 @@ describe("readProjectEdgeConfig — when it can't tell", () => {
   });
 
   it("reports unreachable rather than throwing when the box can't be reached", async () => {
-    withServerHostExecutor.mockRejectedValue(new Error("ssh: connection refused"));
+    withDeploymentEdgeExecutor.mockRejectedValue(new Error("ssh: connection refused"));
     await expect(readProjectEdgeConfig(project())).resolves.toMatchObject({ reachable: false });
   });
 
   it("reports unreachable when nothing proxy-like answers", async () => {
     edgeProxy.mockResolvedValue(null);
-    withServerHostExecutor.mockImplementation(
+    withDeploymentEdgeExecutor.mockImplementation(
       async (_p: Project, fn: (e: unknown) => Promise<unknown>) => fn({}),
     );
     expect((await readProjectEdgeConfig(project())).reachable).toBe(false);
@@ -289,14 +289,14 @@ describe("readProjectEdgeConfig — hostnames", () => {
       effective: "2m",
       source: "project",
       observed: "2m",
-      applied: true,
+      configurationMatches: true,
     });
     expect(r.hosts[1]!.bodyLimit).toEqual({
       saved: { clientMaxBodySize: "1m" },
       effective: "1m",
       source: "domain",
       observed: "2m",
-      applied: false,
+      configurationMatches: false,
     });
     expect(r.hosts.map((host) => host.driftCount)).toEqual([0, 1]);
   });
@@ -308,7 +308,7 @@ describe("readProjectEdgeConfig — hostnames", () => {
       saved: null,
       source: "edge",
       observed: null,
-      applied: null,
+      configurationMatches: null,
     });
     expect(r.hosts[0]!.directives).toEqual([]);
   });
@@ -321,7 +321,7 @@ describe("readProjectEdgeConfig — hostnames", () => {
       effective: null,
       source: "edge",
       observed: "1m",
-      applied: false,
+      configurationMatches: false,
     });
     expect(r.hosts[0]!.driftCount).toBe(1);
   });
@@ -330,14 +330,14 @@ describe("readProjectEdgeConfig — hostnames", () => {
     listDomains.mockResolvedValue([
       { id: "events", hostname: "events.example.com", proxy: { clientMaxBodySize: "0" } },
     ]);
-    withServerHostExecutor.mockRejectedValue(new Error("offline"));
+    withDeploymentEdgeExecutor.mockRejectedValue(new Error("offline"));
     const r = await readProjectEdgeConfig(project());
     expect(r.hosts[0]!.bodyLimit).toEqual({
       saved: { clientMaxBodySize: "0" },
       effective: "0",
       source: "domain",
       observed: null,
-      applied: null,
+      configurationMatches: null,
     });
   });
 
@@ -384,7 +384,7 @@ describe("readProjectEdgeConfig — hostnames", () => {
       }),
     });
     detectOpenRestyPaths.mockResolvedValue({ nginxVersion: null });
-    withServerHostExecutor.mockImplementation(
+    withDeploymentEdgeExecutor.mockImplementation(
       async (_p: Project, fn: (e: unknown) => Promise<unknown>) => fn({}),
     );
 

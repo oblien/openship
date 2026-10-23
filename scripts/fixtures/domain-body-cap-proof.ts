@@ -42,11 +42,7 @@ assert.equal((await readdir(out)).length, 0, "Refusing to overwrite an existing 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const runtime = join(out, "runtime");
 const sites = join(runtime, "sites-enabled");
-const native = args.includes("--native-nginx");
-const servingSites = native ? join(runtime, "native-serving-sites") : sites;
-let nativeOrigin: Bun.Subprocess | undefined;
-let nativeNginx: Bun.Subprocess | undefined;
-let originPort = 3000;
+const originPort = 3000;
 const certs = join(runtime, "certs");
 const eventPath = join(out, "origin-events.jsonl");
 const commandPath = join(out, "commands.log");
@@ -73,7 +69,7 @@ let phase = "setup";
 const negative = args.includes("--negative-control-project-only");
 const result: Record<string, unknown> = {
   status: "RUNNING",
-  engine: native ? "native-nginx-with-documented-lua-shims" : "openresty-container",
+  engine: "openresty-container",
   image,
   nodeImage,
   negativeControl: negative,
@@ -231,39 +227,13 @@ async function row(
   return entry;
 }
 const paths = {
-  bin: native ? "/opt/homebrew/bin/nginx" : "/usr/local/openresty/bin/openresty",
+  bin: "/usr/local/openresty/bin/openresty",
   compiledConfPath: join(runtime, "nginx.conf"),
   confPath: join(runtime, "nginx.conf"),
   confDir: runtime,
   sitesDir: sites,
   pidPath: join(runtime, "nginx.pid"),
 };
-async function syncNativeSites() {
-  for (const name of await readdir(sites)) {
-    if (!name.endsWith(".conf")) continue;
-    const raw = await readFile(join(sites, name), "utf8");
-    const served = raw
-      .replace(/^    (?:log_by_lua_file|access_by_lua_file) [^;]+;\n/gm, "")
-      .replace(/^    listen 80;/gm, `    listen 127.0.0.1:${ports.http};`)
-      .replace(/^    listen 443 ssl;/gm, `    listen 127.0.0.1:${ports.https} ssl;`);
-    assert.deepEqual(
-      served.match(/client_max_body_size[^;]+;/g),
-      raw.match(/client_max_body_size[^;]+;/g),
-      "Harness changed a feature directive",
-    );
-    await writeFile(join(servingSites, name), served);
-    appendFileSync(
-      join(out, "native-shims.jsonl"),
-      JSON.stringify({
-        phase,
-        file: name,
-        rawSha256: hash(raw),
-        servedSha256: hash(served),
-        shims: ["remove access/log Lua hooks", "remap listeners to free loopback ports"],
-      }) + "\n",
-    );
-  }
-}
 class FixtureExecutor extends LocalExecutor {
   override async exec(text: string): Promise<string> {
     // The provider inventories the container-side sites path. It is an alias
@@ -274,18 +244,7 @@ class FixtureExecutor extends LocalExecutor {
     const staleCommand = `grep -L ${quote(generationPattern)} ${quote(inventoryDir)}/*.conf 2>/dev/null || true`;
     if (text === listCommand || text === staleCommand) {
       appendFileSync(commandPath, `# Exact allowlisted adapter inventory command:\n${text}\n`);
-      if (!native)
-        return (await command(docker("exec", container, "sh", "-c", text))).stdout.trim();
-      // Native mode has no container alias; map only these two read-only operations
-      // onto the owned fixture directory. Config tests and reloads remain real.
-      if (text === listCommand) return (await command(["ls", "-1", sites])).stdout.trim();
-      const files = (await readdir(sites)).filter((name) => name.endsWith(".conf"));
-      const stale = await command(
-        ["grep", "-L", generationPattern, ...files.map((name) => join(sites, name))],
-        true,
-      );
-      assert(stale.code === 0 || stale.code === 1, "Fixture stale-generation inventory failed");
-      return stale.stdout.trim();
+      return (await command(docker("exec", container, "sh", "-c", text))).stdout.trim();
     }
     assert.equal(text, buildReloadCommand(paths), "Unexpected adapter command; refusing to run it");
     appendFileSync(
@@ -300,11 +259,8 @@ class FixtureExecutor extends LocalExecutor {
       await writeFile(file, candidate);
       await writeFile(join(out, "rollback-invalid-candidate.conf"), candidate);
     }
-    if (native) await syncNativeSites();
     const tested = await command(
-      native
-        ? [paths.bin, "-t", "-c", paths.confPath]
-        : docker("exec", container, paths.bin, "-t", "-c", paths.confPath),
+      docker("exec", container, paths.bin, "-t", "-c", paths.confPath),
       true,
     );
     appendFileSync(
@@ -315,9 +271,7 @@ class FixtureExecutor extends LocalExecutor {
       throw new Error(`nginx config test rejected candidate: ${tested.stderr}`);
     const signal = fault === "reload-failure" ? "fixture-invalid-signal" : "reload";
     const reloaded = await command(
-      native
-        ? [paths.bin, "-s", signal, "-c", paths.confPath]
-        : docker("exec", container, paths.bin, "-s", signal, "-c", paths.confPath),
+      docker("exec", container, paths.bin, "-s", signal, "-c", paths.confPath),
       true,
     );
     if (reloaded.code !== 0) throw new Error(`nginx reload command failed: ${reloaded.stderr}`);
@@ -365,11 +319,6 @@ async function snapshotPhase() {
   await mkdir(snapshot, { recursive: true });
   for (const name of await readdir(sites)) await copyFile(join(sites, name), join(snapshot, name));
   await copyFile(paths.confPath, join(snapshot, "nginx.conf"));
-  if (native) {
-    await mkdir(join(snapshot, "native-serving"));
-    for (const name of await readdir(servingSites))
-      await copyFile(join(servingSites, name), join(snapshot, "native-serving", name));
-  }
 }
 async function readReplayState() {
   return Promise.all(
@@ -551,10 +500,6 @@ async function management(host: string, rules: unknown[]) {
   assert.equal(response.status, 200, await response.text());
 }
 async function rate() {
-  if (native) {
-    log("GAP: production Lua rate behavior requires OpenResty; ordinary nginx cannot execute it");
-    return;
-  }
   // Unique prefixes prevent old per-second buckets from contaminating a later phase.
   for (const protocol of protocols)
     for (const host of hosts) {
@@ -644,16 +589,6 @@ async function rollback(fault: "invalid-config" | "reload-failure") {
   }
 }
 async function cleanup() {
-  for (const child of [nativeNginx, nativeOrigin]) {
-    if (!child) continue;
-    appendFileSync(commandPath, `# Stop owned foreground child PID ${child.pid} with SIGTERM\n`);
-    child.kill("SIGTERM");
-    const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
-    await child.exited;
-    clearTimeout(timer);
-  }
-  nativeNginx = undefined;
-  nativeOrigin = undefined;
   if (ownedContainer) {
     await command(docker("logs", container), true);
     await command(docker("rm", "--force", container), true);
@@ -710,38 +645,28 @@ try {
   result.sourceHashes = sourceHashes;
   await command(["bun", "--version"]);
   await command(["node", "--version"]);
-  if (!native) {
-    await command(["docker", "version", "--format", "{{.Server.Version}}"]);
-    await command(docker("image", "inspect", image, "--format", "{{.Id}} {{json .RepoDigests}}"));
+  await command(["docker", "version", "--format", "{{.Server.Version}}"]);
+  await command(docker("image", "inspect", image, "--format", "{{.Id}} {{json .RepoDigests}}"));
+  await command(docker("image", "inspect", nodeImage, "--format", "{{.Id}} {{json .RepoDigests}}"));
+  extractionContainer = container + "-node";
+  await command(
+    docker("create", "--name", extractionContainer, "--entrypoint", "/bin/true", nodeImage),
+  );
+  await command(
+    docker("cp", extractionContainer + ":/usr/local/bin/node", join(runtime, "tools", "node")),
+  );
+  for (const library of ["libstdc++.so.6", "libgcc_s.so.1"])
     await command(
-      docker("image", "inspect", nodeImage, "--format", "{{.Id}} {{json .RepoDigests}}"),
+      docker(
+        "cp",
+        "--follow-link",
+        extractionContainer + ":/usr/lib/" + library,
+        join(runtime, "tools", library),
+      ),
     );
-    extractionContainer = container + "-node";
-    await command(
-      docker("create", "--name", extractionContainer, "--entrypoint", "/bin/true", nodeImage),
-    );
-    await command(
-      docker("cp", extractionContainer + ":/usr/local/bin/node", join(runtime, "tools", "node")),
-    );
-    for (const library of ["libstdc++.so.6", "libgcc_s.so.1"])
-      await command(
-        docker(
-          "cp",
-          "--follow-link",
-          extractionContainer + ":/usr/lib/" + library,
-          join(runtime, "tools", library),
-        ),
-      );
-    await command(docker("rm", extractionContainer));
-    extractionContainer = undefined;
-  } else {
-    (result.gaps as string[]).push(
-      "Production Lua rate behavior not executed in native nginx mode; run the OpenResty mode for that separate behavior test",
-    );
-    await mkdir(servingSites, { recursive: true });
-    await command([paths.bin, "-V"]);
-    originPort = await freePort();
-  }
+  await command(docker("rm", extractionContainer));
+  extractionContainer = undefined;
+
   ports = { http: await freePort(), https: await freePort(), management: await freePort() };
   assert.equal(
     new Set(Object.values(ports)).size,
@@ -774,75 +699,53 @@ try {
     join(repo, "scripts/fixtures/domain-body-cap/origin.ts"),
     join(runtime, "origin.ts"),
   );
-  let conf = `worker_processes 1;\nerror_log ${out}/error.log info;\npid ${paths.pidPath};\nevents { worker_connections 256; }\nhttp {\n  default_type application/octet-stream;\n  client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};\n  client_body_temp_path ${runtime}/body-temp;\n  proxy_temp_path ${runtime}/proxy-temp;\n  log_format fixture '$host $request_method $request_uri status=$status bytes=$request_length id=$http_x_fixture_id';\n  access_log ${out}/access.log fixture;\n  lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";\n${EDGE_SHARED_DICTS.map(({ name, size }) => `  lua_shared_dict ${name} ${size};`).join("\n")}\n  include ${sites}/*.conf;\n  server { listen 9145; location / { content_by_lua_file /usr/local/openresty/site/lualib/openship/mgmt_api.lua; } }\n}\n`;
-  if (native) {
-    conf = conf
-      .replace(/^  lua_package_path .*;\n/m, "")
-      .replace(/^  lua_shared_dict .*;\n/gm, "")
-      .replace(`include ${sites}/*.conf;`, `include ${servingSites}/*.conf;`)
-      .replace(/^  server \{ listen 9145; .*\n/m, "");
-  }
+  const conf = `worker_processes 1;\nerror_log ${out}/error.log info;\npid ${paths.pidPath};\nevents { worker_connections 256; }\nhttp {\n  default_type application/octet-stream;\n  client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};\n  client_body_temp_path ${runtime}/body-temp;\n  proxy_temp_path ${runtime}/proxy-temp;\n  log_format fixture '$host $request_method $request_uri status=$status bytes=$request_length id=$http_x_fixture_id';\n  access_log ${out}/access.log fixture;\n  lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";\n${EDGE_SHARED_DICTS.map(({ name, size }) => `  lua_shared_dict ${name} ${size};`).join("\n")}\n  include ${sites}/*.conf;\n  server { listen 9145; location / { content_by_lua_file /usr/local/openresty/site/lualib/openship/mgmt_api.lua; } }\n}\n`;
   await writeFile(paths.confPath, conf);
-  if (native) {
-    const nginxArgs = [paths.bin, "-c", paths.confPath, "-g", "daemon off;"];
-    appendFileSync(commandPath, "$ " + nginxArgs.map(quote).join(" ") + "\n");
-    nativeNginx = Bun.spawn(nginxArgs, {
-      stdout: Bun.file(join(out, "nginx-process.stdout.log")),
-      stderr: Bun.file(join(out, "nginx-process.stderr.log")),
-    });
-    const originArgs = ["node", join(runtime, "origin.ts"), String(originPort), eventPath, deps];
-    appendFileSync(commandPath, "$ " + originArgs.map(quote).join(" ") + "\n");
-    nativeOrigin = Bun.spawn(originArgs, {
-      stdout: Bun.file(join(out, "origin-process.stdout.log")),
-      stderr: Bun.file(join(out, "origin-process.stderr.log")),
-    });
-  } else {
-    const launch = docker(
-      "run",
+  const launch = docker(
+    "run",
+    "--detach",
+    "--name",
+    container,
+    "--publish",
+    `127.0.0.1:${ports.http}:80`,
+    "--publish",
+    `127.0.0.1:${ports.https}:443`,
+    "--publish",
+    `127.0.0.1:${ports.management}:9145`,
+    "--mount",
+    `type=bind,src=${out},dst=${out}`,
+    "--mount",
+    `type=bind,src=${deps},dst=${deps},readonly`,
+    "--mount",
+    `type=bind,src=${sites},dst=${OPENRESTY_DEFAULT_PATHS.sitesDir}`,
+    "--mount",
+    `type=bind,src=${repo}/packages/adapters/src/infra/lua,dst=/usr/local/openresty/site/lualib/openship,readonly`,
+    "--entrypoint",
+    paths.bin,
+    image,
+    "-c",
+    paths.confPath,
+    "-g",
+    "daemon off;",
+  );
+  ownedContainer = true;
+  await command(launch);
+  await command(docker("inspect", container, "--format", "{{json .HostConfig.PortBindings}}"));
+  await command(docker("exec", container, paths.bin, "-V"));
+  await command(
+    docker(
+      "exec",
       "--detach",
-      "--name",
       container,
-      "--publish",
-      `127.0.0.1:${ports.http}:80`,
-      "--publish",
-      `127.0.0.1:${ports.https}:443`,
-      "--publish",
-      `127.0.0.1:${ports.management}:9145`,
-      "--mount",
-      `type=bind,src=${out},dst=${out}`,
-      "--mount",
-      `type=bind,src=${deps},dst=${deps},readonly`,
-      "--mount",
-      `type=bind,src=${sites},dst=${OPENRESTY_DEFAULT_PATHS.sitesDir}`,
-      "--mount",
-      `type=bind,src=${repo}/packages/adapters/src/infra/lua,dst=/usr/local/openresty/site/lualib/openship,readonly`,
-      "--entrypoint",
-      paths.bin,
-      image,
-      "-c",
-      paths.confPath,
-      "-g",
-      "daemon off;",
-    );
-    ownedContainer = true;
-    await command(launch);
-    await command(docker("inspect", container, "--format", "{{json .HostConfig.PortBindings}}"));
-    await command(docker("exec", container, paths.bin, "-V"));
-    await command(
-      docker(
-        "exec",
-        "--detach",
-        container,
-        "env",
-        `LD_LIBRARY_PATH=${runtime}/tools`,
-        join(runtime, "tools", "node"),
-        join(runtime, "origin.ts"),
-        "3000",
-        eventPath,
-        deps,
-      ),
-    );
-  }
+      "env",
+      `LD_LIBRARY_PATH=${runtime}/tools`,
+      join(runtime, "tools", "node"),
+      join(runtime, "origin.ts"),
+      "3000",
+      eventPath,
+      deps,
+    ),
+  );
   await until(
     async () => ((await events()).some((event) => event.event === "ready") ? true : undefined),
     "counting origin ready",
@@ -894,8 +797,7 @@ try {
   for (const protocol of protocols)
     for (const host of hosts)
       await row(protocol, host, 1.5 * MiB, "content-length", 200, "unset-inherits-http-default");
-  result.status = native ? "PARTIAL" : "PASS";
-  result.assertionStatus = "PASS";
+  result.status = "PASS";
   result.requestRows = matrix.length;
   result.replayOperations = replayResults.length;
   result.replayRequestRows = replayResults.reduce(
@@ -905,7 +807,7 @@ try {
   result.originHttpRequests = (await events()).filter(
     (event) => event.event === "http-start",
   ).length;
-  result.scope = `${native ? "Native nginx with documented Lua/port shims" : "Disposable OpenResty"} + real generated RouteConfig vhosts + shared resolver + actual activateCert and stored-route replay; no API/DB/UI, deployment, whole-OS restart, ACME renewal, or king-dev proof`;
+  result.scope = `Disposable OpenResty + real generated RouteConfig vhosts + shared resolver + actual activateCert and stored-route replay; no API/DB/UI, deployment, whole-OS restart, ACME renewal, or king-dev proof`;
 } catch (error) {
   result.status = "FAIL";
   result.error = String(error);

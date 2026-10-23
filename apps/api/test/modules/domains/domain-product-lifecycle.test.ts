@@ -200,7 +200,7 @@ describe("domain body cap persisted lifecycle", () => {
     const { project, domain, ctx } = await fixture(false, false);
     const before = await readProjectEdgeConfig(project);
     expect(before.reachable).toBe(false);
-    expect(before.hosts[0]?.bodyLimit.applied).toBeNull();
+    expect(before.hosts[0]?.bodyLimit.configurationMatches).toBeNull();
     await expect(
       updateDomain(ctx, domain.id, { proxy: { clientMaxBodySize: "2m" } }),
     ).resolves.toMatchObject({ proxy: { clientMaxBodySize: "2m" } });
@@ -214,7 +214,7 @@ describe("domain body cap persisted lifecycle", () => {
       effective: "2m",
       source: "domain",
       observed: null,
-      applied: null,
+      configurationMatches: null,
     });
     await updateDomain(ctx, domain.id, { proxy: null });
     const inherited = await readProjectEdgeConfig((await repos.project.findById(project.id))!);
@@ -223,7 +223,7 @@ describe("domain body cap persisted lifecycle", () => {
       effective: null,
       source: "edge",
       observed: null,
-      applied: null,
+      configurationMatches: null,
     });
   });
 });

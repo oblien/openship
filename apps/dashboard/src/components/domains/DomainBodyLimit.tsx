@@ -128,9 +128,9 @@ export default function DomainBodyLimit({
                 <dd>{display(state?.observed)}</dd>
                 <dt>{copy.status}</dt>
                 <dd>
-                  {state?.applied === true
-                    ? copy.applied
-                    : state?.applied === false
+                  {state?.configurationMatches === true
+                    ? copy.matches
+                    : state?.configurationMatches === false
                       ? copy.pending
                       : copy.unknown}
                 </dd>
