@@ -30,6 +30,11 @@ Blank resets an image override. Unsupported destinations explain which source or
 runtime, and saved overrides remain visible so users can clear them. Static Docker builds show
 only the build image. Do not repeat these fields under Advanced. The saved project Configuration
 card shows the selected runtime version.
+Build-location choices and summaries describe execution, independently of source cloning.
+Keep local building in the destination's advanced controls only when the runtime supports it.
+Remote Docker, static sandbox, service, managed Cloud and cluster builds name their build
+destination; a stale local-build preference must not advertise work on Desktop. Preserve the
+separate clone-location choice and existing source behavior when hiding unavailable builds.
 Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
 **Refresh images & redeploy** and **Check image updates** actions for every stack, including
 prebuilt image services. Refresh preserves configured versions and digest pins. Image drift uses

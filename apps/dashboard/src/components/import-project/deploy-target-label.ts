@@ -1,5 +1,6 @@
 import { interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
+import { resolveWorkload, type WorkloadType } from "@repo/core";
 
 /**
  * WHERE this deploy lands and WHERE it builds, as display strings.
@@ -31,14 +32,48 @@ export function describeBuildTarget(
   return "—";
 }
 
+interface BuildLocationConfig {
+  deployTarget: string;
+  buildStrategy: string;
+  runtimeMode?: string;
+  projectType?: string;
+  serviceDeploymentMode?: string;
+  options?: { workloadType?: WorkloadType | null; hasServer?: boolean | null };
+}
+
+/** Display the execution location, not the clone location. Remote Docker builds
+ * use the target daemon; managed and cluster builds stay on their destinations.
+ * Only a single bare app can build on this instance and transfer its output.
+ * Static server apps build in Docker even though they are served as bare files.
+ * See resolveBuildRuntimeModes in the deployment engine and #535 for local Docker.
+ */
+export function resolveBuildLocation(config: BuildLocationConfig): "local" | "target" {
+  if (config.deployTarget === "local") return "local";
+  if (
+    config.deployTarget !== "server" ||
+    config.buildStrategy !== "local" ||
+    config.runtimeMode !== "bare"
+  ) {
+    return "target";
+  }
+  const buildsServices =
+    (config.projectType === "services" || config.projectType === "monorepo") &&
+    config.serviceDeploymentMode !== "single";
+  if (
+    config.projectType === "docker" ||
+    buildsServices ||
+    resolveWorkload(config.options?.workloadType, config.options?.hasServer) === "static"
+  ) {
+    return "target";
+  }
+  return "local";
+}
+
 /** Where the build runs (vs where it deploys, shown by the target above).
  *  Concise so it fits the narrow info column without truncating. */
-export function describeBuildStrategy(
-  config: { deployTarget: string; buildStrategy: string },
-  t: Dictionary,
-): string {
+export function describeBuildStrategy(config: BuildLocationConfig, t: Dictionary): string {
   const dp = t.importProject.deploymentProcessing;
-  if (config.buildStrategy === "local") return dp.strategyLocal;
+  if (resolveBuildLocation(config) === "local") return dp.strategyLocal;
   if (config.deployTarget === "cloud") return dp.strategyCloud;
   if (config.deployTarget === "cluster") return "Cluster build server";
   if (config.deployTarget === "server") return dp.strategyServer;

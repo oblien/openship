@@ -21,6 +21,7 @@ import { CloudStaticHosting } from "@/components/project-settings/CloudStaticHos
 import ServerRuntimePicker, { type ServerRuntimeSelection } from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { resolveBuildLocation } from "@/components/import-project/deploy-target-label";
 
 // ─── Compact summary (shown when editing from step 2) ────────────────────────
 
@@ -82,8 +83,15 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   const tierLabels = useResourceTierLabels();
   const target = targetLabels[deployTarget];
   // Remote builds run on the selected destination.
+  const buildsHere = resolveBuildLocation({
+    deployTarget,
+    buildStrategy,
+    runtimeMode,
+    projectType: isServices ? "services" : "app",
+    options: { hasServer },
+  }) === "local";
   const build =
-    buildStrategy === "local"
+    buildsHere
       ? buildLabels.local
       : deployTarget === "cloud"
         ? { label: t.deploy.summary.targetCloud, icon: <UiIcon name="cloud" className="size-4" /> }
@@ -92,14 +100,11 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     ? serverName
     : target.label;
 
-  // Build "destination" derived from (deployTarget, buildStrategy):
-  //   - buildStrategy === "local" → local machine
-  //   - buildStrategy === "server" → runs ON the deploy target
   // Same destination → collapse Build + Deploy into a single chip with
   // the two icons stacked + a `+` between them, instead of two
   // sections separated by an arrow. Most users have matching targets
   // (cloud-on-cloud, server-on-server), so this is the common case.
-  const buildDest = buildStrategy === "local" ? "local" : deployTarget;
+  const buildDest = buildsHere ? "local" : deployTarget;
   const sameDestination = showBuildStrategy && buildDest === deployTarget;
 
   // Right-hand chip on the summary — one at a time, by workload shape:
@@ -316,8 +321,13 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
       description: ts.build.remoteDesc,
     },
   ];
-  // Managed builds always execute on the selected server's adapter.
-  const visibleBuildOptions = !selfHosted || config.deployTarget === "cloud" ? [] : buildOptions;
+  // Managed builds always execute on the selected server's adapter, and a server
+  // Docker build only runs on the server's daemon, so "This Machine" is not offered.
+  const localBuildAvailable = resolveBuildLocation({ ...config, buildStrategy: "local" }) === "local";
+  const visibleBuildOptions =
+    !selfHosted || config.deployTarget === "cloud"
+      ? []
+      : buildOptions.filter((opt) => opt.value !== "local" || localBuildAvailable);
 
   // Clone-location picker (DOCKER server deploys, incl. services). Bare always
   // clones on the target, so it keeps the credential-forwarding checkbox below
@@ -326,16 +336,15 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
   // Services always deploy as docker (build on the server), so the clone picker
   // applies to them regardless of the config.runtimeMode field (which may not be
   // hydrated to "docker" on a config-edit).
-  // Clone location only exists for a REMOTE build (the clone runs on the target).
-  // "This Machine" (local build) clones + builds here and ships the output, so
-  // there's no on-server-vs-here choice to make — hide it entirely.
+  // Docker builds on the target even when a legacy buildStrategy says "local".
+  // Keep source acquisition editable without promising local image builds.
   const showCloneStrategy = selfHosted &&
     config.deployTarget === "server" &&
-    config.buildStrategy === "server" &&
-    (config.runtimeMode === "docker" || isServiceDeployment);
+    !localBuildAvailable;
   // Clone-on-server is the default (primary card); cloning on the api host and
   // uploading is the advanced/manual alternative.
-  const cloneStrategy: CloneStrategy = config.cloneStrategy ?? "server";
+  const cloneStrategy: CloneStrategy = config.cloneStrategy ??
+    (config.buildStrategy === "local" ? "api-host" : "server");
   const cloneOptions: Array<{
     value: CloneStrategy;
     icon: React.ReactNode;
@@ -361,15 +370,15 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
     },
   ];
 
-  // Default the clone location to "on the server" for a brand-new deploy when
-  // the choice is UNSET. Git-identity forwarding is no longer a per-deploy
+  // Seed an unset clone choice without changing a legacy local-source request.
+  // Git-identity forwarding is no longer a per-deploy
   // choice — it's the operator-wide "Forward my git identity to build servers"
   // setting (Settings → Clone credentials), resolved server-side at build time.
   useEffect(() => {
     if (config.projectId) return;
     if (!showCloneStrategy) return;
-    if (config.cloneStrategy == null) updateConfig({ cloneStrategy: "server" });
-  }, [config.projectId, showCloneStrategy, config.cloneStrategy, updateConfig]);
+    if (config.cloneStrategy == null) updateConfig({ cloneStrategy });
+  }, [config.projectId, showCloneStrategy, config.cloneStrategy, cloneStrategy, updateConfig]);
 
 
   const canContinue = destinationReady && !resourceSelectionPending;

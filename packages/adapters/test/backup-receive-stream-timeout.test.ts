@@ -147,7 +147,9 @@ describe("receiveStream no longer depends on wait() answering", () => {
       dockerFrame(2, "zstd: Read error (39): premature end\n"),
       dockerFrame(2, "tar: short read\n"),
     ]);
-    const h = harness({ wait: 1 }, () => ({ logs: async () => log }));
+    const h = harness({ wait: 1 }, () => ({
+      logs: async () => Readable.from([log.subarray(0, 5), log.subarray(5, 13), log.subarray(13)]),
+    }));
     const exec = await h.executor();
 
     const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
@@ -156,6 +158,147 @@ describe("receiveStream no longer depends on wait() answering", () => {
     p.catch(() => {});
 
     await expect(drive(p, 10_000)).rejects.toThrow(/premature end[\s\S]*tar: short read/);
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it("falls back when attach delivered a frame header without its stderr payload", async () => {
+    const h = harness({ wait: 1 }, () => ({
+      logs: async () => Readable.from([dockerFrame(2, "tar: short read\n")]),
+    }));
+    const exec = await h.executor();
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+      compression: "none",
+    });
+    p.catch(() => {});
+    (attach.current as FakeAttachStream).push(dockerFrame(2, "missing stderr").subarray(0, 8));
+    await expect(drive(p, 5_000)).rejects.toThrow(
+      /Restore helper exited with code 1: tar: short read/,
+    );
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it.each([
+    "diagnostic timeout",
+    "disabled ceiling",
+    "restore ceiling",
+    "restore idle",
+    "cancellation",
+  ])("reports the helper failure and cleans up when log retrieval reaches %s", async (stop) => {
+    let requestSignal: AbortSignal | undefined;
+    const logs = vi.fn((opts: { abortSignal?: AbortSignal }) => {
+      requestSignal = opts.abortSignal;
+      return new Promise<Readable>(() => {});
+    });
+    const h = harness({ wait: 1 }, () => ({ logs }));
+    const exec = await h.executor();
+    const controller = new AbortController();
+    let failure: Error | undefined;
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+      compression: "none",
+      idleTimeoutMs: stop === "restore idle" ? 1_000 : 60_000,
+      timeoutMs: stop === "restore ceiling" ? 1_000 : stop === "disabled ceiling" ? 0 : 60_000,
+      signal: controller.signal,
+    });
+    void p.catch((error) => {
+      failure = error;
+    });
+    await vi.advanceTimersByTimeAsync(750);
+    expect(logs).toHaveBeenCalledOnce();
+    if (stop === "cancellation") controller.abort();
+    await vi.advanceTimersByTimeAsync(
+      stop === "diagnostic timeout" || stop === "disabled ceiling" ? 3_000 : 500,
+    );
+    expect(failure?.message).toMatch(/Restore helper exited with code 1/);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(h.removals).toEqual([{ force: true }]);
+    expect((attach.current as FakeAttachStream).destroyed_).toBe(true);
+  });
+
+  it("bounds and closes a log response whose headers arrive but whose body stalls", async () => {
+    const output = new Readable({ read() {} });
+    const h = harness({ wait: 1 }, () => ({ logs: async () => output }));
+    const exec = await h.executor();
+    await expect(
+      drive(
+        exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+          compression: "none",
+        }),
+        5_000,
+      ),
+    ).rejects.toThrow(/Restore helper exited with code 1/);
+    expect(output.destroyed).toBe(true);
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it("closes a diagnostic stream that arrives after the request has timed out", async () => {
+    let reply!: (stream: Readable) => void;
+    const h = harness({ wait: 1 }, () => ({
+      logs: () =>
+        new Promise<Readable>((resolve) => {
+          reply = resolve;
+        }),
+    }));
+    const exec = await h.executor();
+    let failure: Error | undefined;
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+      compression: "none",
+    });
+    void p.catch((error) => {
+      failure = error;
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(failure?.message).toMatch(/Restore helper exited with code 1/);
+    const output = new Readable({ read() {} });
+    reply(output);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(output.destroyed).toBe(true);
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it("stops reading oversized diagnostics without buffering the entire response", async () => {
+    let produced = 0;
+    const output = Readable.from(
+      (async function* () {
+        while (produced < 10_000) {
+          produced++;
+          yield dockerFrame(2, "tar: " + "x".repeat(4_096) + "\n");
+        }
+      })(),
+      { highWaterMark: 1 },
+    );
+    const logs = vi.fn(async () => output);
+    const h = harness({ wait: 1 }, () => ({ logs }));
+    const exec = await h.executor();
+    await expect(
+      drive(
+        exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+          compression: "none",
+        }),
+        5_000,
+      ),
+    ).rejects.toThrow(/Restore helper exited with code 1: x/);
+    expect(logs).toHaveBeenCalledWith(expect.objectContaining({ follow: true, tail: 40 }));
+    expect(produced).toBeGreaterThan(0);
+    expect(produced).toBeLessThan(100);
+    expect(output.destroyed).toBe(true);
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it("preserves the exit code when the daemon cannot provide helper logs", async () => {
+    const h = harness({ wait: 1 }, () => ({
+      logs: async () => {
+        throw new Error("logging driver cannot read logs");
+      },
+    }));
+    const exec = await h.executor();
+    await expect(
+      drive(
+        exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+          compression: "none",
+        }),
+        5_000,
+      ),
+    ).rejects.toThrow(/^Restore helper exited with code 1$/);
     expect(h.removals).toEqual([{ force: true }]);
   });
 });

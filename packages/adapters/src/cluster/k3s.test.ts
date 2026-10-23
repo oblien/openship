@@ -22,6 +22,37 @@ function python(body: string) {
   expect(result.stderr || result.stdout).not.toContain("AssertionError");
   expect(result.status, result.stderr).toBe(0);
 }
+
+const configurationFixture = String.raw`
+def configure_host(folder):
+    ns['ROOT'] = folder
+    ns['OWNER'] = folder / 'owner.json'
+    ns['CONFIG'] = folder / 'config.yaml'
+    ns['C'] = {'id':'runtime','generation':1,'deadline':time.time()+60,'host':{'nodeName':'node-a','role':'server','privateIp':'10.20.0.1','interfaceName':'wg0'},'version':'v1.36.4+k3s1','podCidr':'10.42.0.0/16','serviceCidr':'10.43.0.0/16','bootstrap':True}
+    ns['foreign'] = lambda: None
+    ns['binary'] = lambda: None
+    atomic = ns['atomic']
+    def local_atomic(path, content, mode=0o600):
+        if folder in pathlib.Path(path).parents: atomic(path, content, mode)
+    ns['atomic'] = local_atomic
+    commands = []
+    ns['run'] = lambda args, timeout=30: commands.append(args) or ''
+    (folder / 'firewall.sh').write_text('#!/bin/sh')
+    assert ns['configure']()['installed']
+    commands.clear()
+    return commands
+
+def saved_legacy_config():
+    config = json.loads(ns['CONFIG'].read_text())
+    del config['egress-selector-mode']
+    ns['CONFIG'].write_text(json.dumps(config))
+    value = ns['owner']()
+    value['configHash'] = ns['digest_file'](ns['CONFIG'])
+    ns['atomic'](ns['OWNER'], json.dumps(value))
+    ns['C']['generation'] += 1
+    return config
+`;
+
 describe("K3s host setup", () => {
   it.each([
     { state: "null", ipam: { Config: null } },
@@ -83,6 +114,24 @@ with patch('pathlib.Path.is_dir', lambda path: str(path) == '/run/systemd/system
         'ranges': ['10.20.0.0/24', '10.42.0.0/16', '10.43.0.53/32', '10.50.0.0/16', '172.17.0.0/16'],
         'installed': False,
     }
+`);
+  });
+  it("refuses cgroup v1 hosts before installing a kubelet that would crash-loop", () => {
+    python(`from types import SimpleNamespace
+ns['C'] = {'host': {'role': 'server', 'privateIp': '10.20.0.1'}}
+ns['owner'] = lambda: None
+ns['foreign'] = lambda: None
+files = {'/proc/swaps': 'Filename Type Size Used Priority\\n', '/proc/meminfo': 'MemTotal: 8388608 kB\\n'}
+with patch('pathlib.Path.is_dir', lambda path: str(path) in ['/run/systemd/system', '/sys/fs/cgroup/memory']), \\
+     patch('pathlib.Path.exists', lambda path: str(path) in files), \\
+     patch('pathlib.Path.read_text', lambda path: files[str(path)]), \\
+     patch('os.cpu_count', return_value=4), \\
+     patch('shutil.disk_usage', return_value=SimpleNamespace(free=20 * 1024**3)):
+    try:
+        ns['inspect']()
+        raise AssertionError('cgroup v1 host was accepted')
+    except RuntimeError as error:
+        assert 'cgroup v1' in str(error) and 'systemd.unified_cgroup_hierarchy=1' in str(error)
 `);
   });
   it("reserves upstream DNS addresses hidden behind a local resolver stub", () => {
@@ -153,9 +202,140 @@ with tempfile.TemporaryDirectory() as folder:
     config = json.loads(writes[str(ns['CONFIG'])])
     assert config['bind-address'] == '10.20.0.1'
     assert config['kubelet-arg'] == ['address=10.20.0.1']
+    # A private-only kubelet refuses the agent tunnel's loopback dial, so servers must dial it directly.
+    assert config['egress-selector-mode'] == 'disabled'
     assert config['disable'] == ['traefik','servicelb','local-storage']
     assert config['secrets-encryption'] is True
     assert 'token' not in config
+`);
+  });
+  it("migrates an unchanged owned config and restarts its control only once", () => {
+    python(`${configurationFixture}
+with tempfile.TemporaryDirectory() as folder, patch('subprocess.run') as call:
+    call.return_value.returncode = 0
+    commands = configure_host(pathlib.Path(folder))
+    legacy = saved_legacy_config()
+    assert ns['configure']()['installed']
+    assert json.loads(ns['CONFIG'].read_text()) == dict(legacy, **{'egress-selector-mode': 'disabled'})
+    assert ns['owner']()['configHash'] == ns['digest_file'](ns['CONFIG'])
+    assert ['systemctl', 'restart', '--no-block', 'k3s'] in commands
+    assert not ns['owner']().get('restartRequired')
+    commands.clear()
+    assert ns['configure']()['installed']
+    assert ['systemctl', 'start', '--no-block', 'k3s'] in commands
+    assert not any(command[1] == 'restart' for command in commands)
+`);
+  });
+  it.each(["configuration write", "ownership update", "binary install", "service restart"])(
+    "resumes the required migration restart after a failed %s",
+    (failure) => {
+      python(`${configurationFixture}
+failure = ${JSON.stringify(failure)}
+with tempfile.TemporaryDirectory() as folder, patch('subprocess.run') as call:
+    call.return_value.returncode = 0
+    commands = configure_host(pathlib.Path(folder))
+    saved_legacy_config()
+    atomic, binary, run = ns['atomic'], ns['binary'], ns['run']
+    def interrupted(): raise RuntimeError('interrupted migration')
+    def write(path, content, mode=0o600):
+        if failure == 'configuration write' and pathlib.Path(path) == ns['CONFIG']: interrupted()
+        if failure == 'ownership update' and pathlib.Path(path) == ns['OWNER'] and json.loads(ns['CONFIG'].read_text()).get('egress-selector-mode') == 'disabled': interrupted()
+        return atomic(path, content, mode)
+    def command(args, timeout=30):
+        if args[1] == 'restart': interrupted()
+        return run(args, timeout)
+    if failure in ['configuration write', 'ownership update']: ns['atomic'] = write
+    elif failure == 'binary install': ns['binary'] = interrupted
+    else: ns['run'] = command
+    try:
+        ns['configure']()
+        raise AssertionError('the injected interruption was not reached')
+    except RuntimeError as error: assert str(error) == 'interrupted migration'
+    assert ns['owner']().get('restartRequired')
+    ns['atomic'], ns['binary'], ns['run'] = atomic, binary, run
+    commands.clear()
+    assert ns['configure']()['installed']
+    assert ['systemctl', 'restart', '--no-block', 'k3s'] in commands
+    assert ns['owner']()['configHash'] == ns['digest_file'](ns['CONFIG'])
+    assert not ns['owner']().get('restartRequired')
+`);
+    },
+  );
+  it.each(["edited file", "missing ownership hash", "different configuration"])(
+    "refuses legacy migration with %s",
+    (change) => {
+      python(`${configurationFixture}
+change = ${JSON.stringify(change)}
+with tempfile.TemporaryDirectory() as folder, patch('subprocess.run') as call:
+    call.return_value.returncode = 0
+    commands = configure_host(pathlib.Path(folder))
+    legacy = saved_legacy_config()
+    value = ns['owner']()
+    if change == 'edited file': ns['CONFIG'].write_text(json.dumps(legacy, indent=2))
+    elif change == 'missing ownership hash': del value['configHash']
+    else:
+        legacy['bind-address'] = '10.20.0.99'
+        ns['CONFIG'].write_text(json.dumps(legacy))
+        value['configHash'] = ns['digest_file'](ns['CONFIG'])
+    ns['atomic'](ns['OWNER'], json.dumps(value))
+    original = ns['CONFIG'].read_bytes()
+    try:
+        ns['configure']()
+        raise AssertionError('adopted an unverified configuration')
+    except RuntimeError as error: assert 'changed outside' in str(error)
+    assert ns['CONFIG'].read_bytes() == original
+    assert not commands
+`);
+    },
+  );
+  it.each(["ActiveState=activating\nNRestarts=27\n", "NRestarts=27\nActiveState=activating\n"])(
+    "reads service properties by name regardless of their output order",
+    (properties) => {
+      python(`ns['C'] = {'host': {'role': 'server'}}
+ns['owner'] = lambda: {'id': 'runtime'}
+def command(args, timeout=30):
+    if args[0] == 'journalctl': return 'Error: kubelet cannot start\\n'
+    if any('NRestarts' in arg for arg in args): return ${JSON.stringify(properties)}
+    return 'activating\\n'
+ns['run'] = command
+result = ns['readiness']()
+assert not result['ready']
+assert 'Service is activating after 27 restarts.' in result['message']
+assert 'kubelet cannot start' in result['message']
+`);
+    },
+  );
+  it.each(["journalctl", "systemctl"])(
+    "preserves the API failure when extra %s diagnostics are unavailable",
+    (failure) => {
+      python(`ns['C'] = {'host': {'role': 'server'}}
+ns['owner'] = lambda: {'id': 'runtime'}
+def kubectl(args, timeout=30): raise RuntimeError('API connection refused')
+def command(args, timeout=30):
+    if args[0] == 'systemctl' and not any('NRestarts' in arg for arg in args): return 'active\\n'
+    if args[0] == ${JSON.stringify(failure)}: raise RuntimeError('diagnostics unavailable')
+    return 'NRestarts=0\\nActiveState=active\\n' if args[0] == 'systemctl' else 'Error: service is starting\\n'
+ns['kubectl'], ns['run'] = kubectl, command
+result = ns['readiness']()
+assert not result['ready']
+assert result['message'].startswith('API connection refused ')
+`);
+    },
+  );
+  it("keeps the API cause and recent journal failure within the response limit and redacts join tokens", () => {
+    python(`ns['C'] = {'host': {'role': 'server'}}
+ns['owner'] = lambda: {'id': 'runtime'}
+token = 'K10' + 'a' * 64 + '::server:secret-credential_part/123'
+def kubectl(args, timeout=30): raise RuntimeError('API connection refused')
+def command(args, timeout=30):
+    if args[0] == 'journalctl': return 'Error: ' + 'x' * 3000 + ' ' + token + ' latest failure'
+    return 'NRestarts=27\\nActiveState=active\\n' if any('NRestarts' in arg for arg in args) else 'active\\n'
+ns['kubectl'], ns['run'] = kubectl, command
+result = ns['readiness']()
+assert not result['ready'] and len(result['message']) <= 2000
+assert result['message'].startswith('API connection refused Service is active after 27 restarts.')
+assert result['message'].endswith('latest failure')
+assert 'credential_part' not in result['message'] and '[redacted]' in result['message']
 `);
   });
   it("does not uninstall when user workloads, volumes or database operators remain", () => {
@@ -231,14 +411,12 @@ except RuntimeError as error: assert 'Remove cluster workloads' in str(error)
 `);
   });
   it("validates the release service instead of accepting an arbitrary download target", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "stable", latest: "https://untrusted.example/script" }],
-        }),
-      });
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ id: "stable", latest: "https://untrusted.example/script" }],
+      }),
+    });
     vi.stubGlobal("fetch", fetcher);
     try {
       await expect(k3sTools.resolveVersion()).rejects.toThrow("valid stable release");

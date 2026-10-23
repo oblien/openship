@@ -77,9 +77,11 @@ Migrations `0143_cluster_database.sql` and `0144_cluster_database_recovery.sql` 
 
 Setup checks every physical server, installs missing prerequisites through the shared toolchain, inspects existing networks and runtimes, selects unused pod/service ranges, pins the official K3s stable release, verifies the binary checksum and installs private cluster services. The version and ranges are saved before any runtime installation and remain fixed across retries.
 
-Pools of one or two servers have one control server. Pools of three or more have three controls with embedded etcd; additional members are workers. All controls are also schedulable. Selection uses the saved, sorted member IDs and does not rebalance roles automatically. This establishes control-plane quorum; it does not establish replicated application data or guarantee availability across provider failure domains.
+Pools of one or two servers have one control server. Pools of three or more have three controls with embedded etcd; additional members are workers. All controls are also schedulable. Selection puts the local "This Server" first, so the server with the public address is the gateway control, then follows the saved, sorted member IDs; roles are not rebalanced automatically. This establishes control-plane quorum; it does not establish replicated application data or guarantee availability across provider failure domains.
 
-The control API and kubelet use the selected private addresses. Pod networking uses Flannel VXLAN over the existing private interface, including a managed WireGuard interface. VXLAN is encrypted when carried by WireGuard; a native provider network retains its existing transport security. The bundled Traefik, ServiceLB and local-path storage components are disabled so setup does not take over Edge ingress or imply durable database storage.
+The control API and kubelet use the selected private addresses. The API server dials kubelets directly over the private peer connections, rather than through an agent tunnel that targets loopback. Retrying an older installation migrates only an unchanged, verified OpenShip-owned configuration and restarts the affected control services; saved node roles and addresses stay fixed. Interrupted migrations resume the required restart on retry.
+
+Pod networking uses Flannel VXLAN over the existing private interface, including a managed WireGuard interface. VXLAN is encrypted when carried by WireGuard; a native provider network retains its existing transport security. The bundled Traefik, ServiceLB and local-path storage components are disabled so setup does not take over Edge ingress or imply durable database storage.
 
 Readiness requires every expected node to report the correct name, cluster label, version and private IP. Disposable pods then run on every node and test internal DNS and HTTP through a ClusterIP service on every node. A failed pod, image pull, DNS lookup or service route fails the operation even if Kubernetes reports all nodes Ready. Verification namespaces are owned and separated by attempt; retries remove leftover test resources.
 
@@ -91,7 +93,7 @@ Readiness requires every expected node to report the correct name, cluster label
 | Tools                 | Python 3.8+, iproute2 4.15+, iptables 1.8+, curl 7.61+; missing tools install automatically                                       |
 | Control capacity      | At least 2 CPUs, approximately 2 GB RAM, and 5 GB free runtime disk space                                                         |
 | Worker capacity       | At least 1 CPU, approximately 1 GB RAM, and 5 GB free runtime disk space                                                          |
-| Memory                | Memory/process cgroups; swap disabled before setup                                                                                |
+| Memory                | cgroup v2 memory/process controllers; swap disabled before setup                                                                  |
 | Host firewall         | Unfiltered hosts or raw iptables, including the iptables nft backend                                                              |
 | Network               | Distinct private IPv4 addresses, active interfaces with MTU at least 1280, and bidirectional access between every selected member |
 | Existing installation | No unrelated Kubernetes/CNI runtime or conflicting listener/owned firewall chain                                                  |

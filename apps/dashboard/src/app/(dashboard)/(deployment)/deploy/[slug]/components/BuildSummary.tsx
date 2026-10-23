@@ -9,6 +9,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { STACKS } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { resolveBuildLocation } from "@/components/import-project/deploy-target-label";
 
 const BuildSummary: React.FC = () => {
   const { config } = useDeployment();
@@ -28,11 +29,7 @@ const BuildSummary: React.FC = () => {
     ? (config.monorepoApps ?? []).filter((app) => app.enabled)
     : config.services || [];
   const exposedServices = services.filter((s) => s.exposed !== false);
-  // Build location follows buildStrategy FIRST: a "local" build runs on this
-  // machine even when the deploy target is Openship Cloud (local-orchestrated
-  // cloud — build here, upload the output to the cloud workspace). Only a
-  // SERVER build takes the target's name ("Openship Cloud" vs generic "Server").
-  const buildLocation = config.buildStrategy === "local"
+  const buildLocation = resolveBuildLocation(config) === "local"
     ? {
         label: t.deploy.buildSummary.localMachine,
         icon: <UiIcon name="monitor" className="size-3.5 text-muted-foreground" />,
