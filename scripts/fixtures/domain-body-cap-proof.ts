@@ -758,7 +758,7 @@ try {
   for (const protocol of protocols) for (const host of hosts) await polling(protocol, host, true);
   await rate();
   log(
-    "PASS: project-only 2m baseline, both hostnames, HTTP and HTTPS, CL + chunked boundaries, Socket.IO polling; rate evidence depends on engine mode",
+    "PASS: project-only 2m baseline, both hostnames, HTTP and HTTPS, CL + chunked boundaries, Socket.IO polling, Lua rate rules",
   );
 
   phase = "domain-override-2m-1m";
@@ -771,7 +771,7 @@ try {
     }
   await rate();
   log(
-    "PASS: independent 2m/1m caps, polling rejection before origin, real polling-to-WebSocket upgrade, app frame limit; rate evidence depends on engine mode",
+    "PASS: independent 2m/1m caps, polling rejection before origin, real polling-to-WebSocket upgrade, app frame limit, Lua rate rules",
   );
   await lifecycleReplay();
 
