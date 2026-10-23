@@ -673,6 +673,12 @@ and supporting metadata. Match nearby page headings instead of introducing a new
 Use **Domains & routing** for sections covering domains, published ports, and internal access. Use
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
+Path routing belongs below the project’s domain cards, before advanced rewrite settings. Keep the
+existing hostname and root service visible; edit literal paths, enabled services and declared container
+ports using shared filled controls. Preserve unsaved drafts independently per domain, show save failures
+inline, and reset drafts and in-flight callbacks when the instance/account scope changes. Save only the
+selected domain’s path table through the existing project update API. Clearing paths restores its root.
+
 Routing rules have visible sections for rewrites, redirects, response headers, and
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled

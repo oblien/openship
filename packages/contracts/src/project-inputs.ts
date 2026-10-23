@@ -556,9 +556,43 @@ export const CreateProjectBody = Type.Object({
   internalAlias: Type.Optional(Type.Union([Type.String({ maxLength: 100 }), Type.Null()])),
 });
 
+/** Literal HTTP paths forwarded to another service of this project. */
+export const ProjectDomainPathsSchema = Type.Array(
+  Type.Object(
+    {
+      domainId: Type.String({ minLength: 1, maxLength: 128 }),
+      paths: Type.Array(
+        Type.Object(
+          {
+            pathPrefix: Type.String({
+              minLength: 2,
+              maxLength: 500,
+              pattern: "^/[A-Za-z0-9._~/:@+=,-]+$",
+            }),
+            serviceId: Type.String({ minLength: 1, maxLength: 128 }),
+            port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
+            exact: Type.Optional(Type.Boolean()),
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 100 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  {
+    maxItems: 40,
+    description:
+      "Replace path forwarding for each named domain; omitted domains stay unchanged. An empty paths list clears that domain's forwarding and restores its root service.",
+  },
+);
+
 // `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+export const UpdateProjectBody = Type.Object({
+  ...Type.Partial(Type.Omit(CreateProjectBody, ["serverId"])).properties,
+  domainRoutes: Type.Optional(ProjectDomainPathsSchema),
+});
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to

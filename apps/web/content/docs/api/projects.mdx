@@ -624,3 +624,27 @@ IDs.
 | Stream edge setup for the project. | HTTP only | `POST /api/projects/:id/routing/ensure-edge/stream`<br />`project:write` |
 
 {/* api-operations:end */}
+
+## Forward domain paths between services
+
+Use the existing project update operation. Each `domainRoutes` entry replaces paths for one existing
+domain; domains omitted from the request stay unchanged. The domain keeps its root service.
+
+```ts
+await ship.projects.update("proj_123", {
+  domainRoutes: [{
+    domainId: "dom_123",
+    paths: [{ pathPrefix: "/api", serviceId: "svc_api", port: 9000 }],
+  }],
+});
+// Restore this domain's normal root routing.
+await ship.projects.update("proj_123", {
+  domainRoutes: [{ domainId: "dom_123", paths: [] }],
+});
+```
+
+REST uses `PATCH /api/projects/:id` with the same body. MCP and the native SDK use the same validation.
+A path is a literal prefix by default; `exact: true` selects exact matching. The request path is kept
+when forwarding. Services must be enabled, container-backed, declare the selected port and belong to
+this project. Redirect domains cannot also forward paths. Clearing a legacy path-only imported table
+requires configuring its root first. Batches accept up to 40 domains and 100 paths per domain.

@@ -1,3 +1,4 @@
+import { updateProject } from "@repo/platform/engine/modules/projects/project-crud.service";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -873,4 +874,21 @@ it("routes a recreated app on its first deploy after mid-build certificate reuse
     exec.mockRestore();
     issues.mockRejectedValue(new Error("Existing certificates must be reused"));
   }
+});
+
+it("edits one self-hosted domain to forward /api to another service and restores the root when cleared", async () => {
+  const domain = (await h.repos.domain.findByHostname("app.example.com"))!;
+  expect(domain).toBeDefined();
+  await h.repos.domain.update(domain.id, { externalIngress: true });
+  const config = () => [...h.files].find(([path, data]) => path.endsWith(".conf") && data.includes("server_name app.example.com;"))?.[1];
+  await updateProject("project", { domainRoutes: [{ domainId: domain.id, paths: [
+    { pathPrefix: "/api", serviceId: "service-api", port: 4010 },
+  ] }] }, "org");
+  expect(config()).toMatch(/location[^\n]*\/api/);
+  expect(config()).toContain("proxy_pass http://10.0.0.2:4010;");
+  expect(config()).toContain("proxy_pass http://10.0.0.3:3021;");
+  await updateProject("project", { domainRoutes: [{ domainId: domain.id, paths: [] }] }, "org");
+  expect(config()).not.toMatch(/location[^\n]*\/api/);
+  expect(config()).toContain("proxy_pass http://10.0.0.3:3021;");
+  expect(await h.repos.domain.findById(domain.id)).toMatchObject({ serviceId: "service-dashboard", targetPort: 3021 });
 });

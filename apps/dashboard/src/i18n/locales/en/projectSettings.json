@@ -1252,5 +1252,20 @@
     "checkUnavailable": "Image comparison needs recorded digests and registry access.",
     "checkFailed": "Could not check image updates.",
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
+  },
+  "domainPaths": {
+    "title": "Path routing",
+    "description": "Use one hostname for several services.",
+    "domain": "Domain",
+    "path": "Path prefix",
+    "service": "Service",
+    "port": "Container port",
+    "exact": "Exact path only",
+    "remove": "Remove",
+    "empty": "All paths use the domain’s root service.",
+    "add": "Add path",
+    "help": "Paths stay in the request sent to the service. Save an empty list to restore the root service. New port mappings may require a deployment.",
+    "saved": "Saved. Check the domain’s routing status.",
+    "notApplied": "The API did not save these paths. Update the instance and try again."
   }
 }

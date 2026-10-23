@@ -80,6 +80,7 @@ interface BasicProjectData {
   framework: string;
   options?: ProjectOptions;
   domains?: ProjectDomain[];
+  compositeRoutes?: import("@repo/core").ProjectCompositeRoute[] | null;
   routingClaims?: ProjectRoutingClaim[];
   routingRetry?: ProjectRoutingRetry | null;
   access?: ProjectAccess;

@@ -1252,5 +1252,20 @@
     "checkUnavailable": "Für den Image-Vergleich sind erfasste Digests und Zugriff auf die Registry erforderlich.",
     "checkFailed": "Image-Updates konnten nicht geprüft werden.",
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
+  },
+  "domainPaths": {
+    "title": "Pfadrouting",
+    "description": "Einen Hostnamen für mehrere Dienste verwenden.",
+    "domain": "Domain",
+    "path": "Pfadpräfix",
+    "service": "Dienst",
+    "port": "Container-Port",
+    "exact": "Nur exakter Pfad",
+    "remove": "Entfernen",
+    "empty": "Alle Pfade verwenden den Basisdienst der Domain.",
+    "add": "Pfad hinzufügen",
+    "help": "Der Pfad bleibt in der Anfrage an den Dienst erhalten. Eine leere Liste stellt den Basisdienst wieder her. Neue Portzuordnungen können eine Bereitstellung erfordern.",
+    "saved": "Gespeichert. Prüfe den Routingstatus der Domain.",
+    "notApplied": "Die API hat diese Pfade nicht gespeichert. Aktualisiere die Instanz und versuche es erneut."
   }
 }

@@ -1252,5 +1252,20 @@
     "checkUnavailable": "La comparación requiere resúmenes registrados y acceso al registro.",
     "checkFailed": "No se pudieron buscar actualizaciones de imágenes.",
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
+  },
+  "domainPaths": {
+    "title": "Enrutamiento por rutas",
+    "description": "Usa un nombre de host para varios servicios.",
+    "domain": "Dominio",
+    "path": "Prefijo de ruta",
+    "service": "Servicio",
+    "port": "Puerto del contenedor",
+    "exact": "Solo ruta exacta",
+    "remove": "Eliminar",
+    "empty": "Todas las rutas usan el servicio principal del dominio.",
+    "add": "Añadir ruta",
+    "help": "La ruta se conserva en la solicitud al servicio. Guarda una lista vacía para restaurar el servicio principal. Los nuevos mapeos de puertos pueden requerir un despliegue.",
+    "saved": "Guardado. Revisa el estado del enrutamiento del dominio.",
+    "notApplied": "La API no guardó estas rutas. Actualiza la instancia e inténtalo de nuevo."
   }
 }

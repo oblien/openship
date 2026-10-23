@@ -1252,5 +1252,20 @@
     "checkUnavailable": "La comparaison nécessite des empreintes enregistrées et un accès au registre.",
     "checkFailed": "Impossible de vérifier les mises à jour d’images.",
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
+  },
+  "domainPaths": {
+    "title": "Routage par chemin",
+    "description": "Utilisez un nom d’hôte pour plusieurs services.",
+    "domain": "Domaine",
+    "path": "Préfixe du chemin",
+    "service": "Service",
+    "port": "Port du conteneur",
+    "exact": "Chemin exact uniquement",
+    "remove": "Supprimer",
+    "empty": "Tous les chemins utilisent le service principal du domaine.",
+    "add": "Ajouter un chemin",
+    "help": "Le chemin est conservé dans la requête au service. Enregistrez une liste vide pour restaurer le service principal. Les nouveaux mappages de ports peuvent nécessiter un déploiement.",
+    "saved": "Enregistré. Vérifiez l’état du routage du domaine.",
+    "notApplied": "L’API n’a pas enregistré ces chemins. Mettez l’instance à jour et réessayez."
   }
 }

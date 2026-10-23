@@ -55,6 +55,13 @@ export const ProjectSchema = Type.Object({
   startCommand: Type.Optional(nullableString()),
   releaseCommands: EnsureProjectBody.properties.releaseCommands,
   roles: EnsureProjectBody.properties.roles,
+  /** Canonical per-host service path tables, also used for imported routes. */
+  compositeRoutes: Type.Optional(Type.Union([Type.Null(), Type.Array(Type.Object({
+    hostname: Type.String(), isCustomDomain: Type.Boolean(),
+    rootServiceId: Type.Optional(Type.String()), rootPort: Type.Optional(Type.Number()),
+    locations: Type.Array(Type.Object({ pathPrefix: Type.String(), serviceId: Type.String(),
+      port: Type.Optional(Type.Number()), exact: Type.Optional(Type.Boolean()) })),
+  }))])),
   outputDirectory: Type.Optional(nullableString()),
   rootDirectory: Type.Optional(nullableString()),
   hasServer: Type.Optional(Type.Boolean()),

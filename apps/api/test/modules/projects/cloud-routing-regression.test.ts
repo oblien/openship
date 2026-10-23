@@ -1,7 +1,8 @@
+import { prepareProjectDomainPaths } from "@repo/platform/engine/modules/projects/project-domain-paths";
 import "../mail/_setup-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudDockerRuntime } from "@repo/adapters";
-import type { Deployment, Domain, Project } from "@repo/db";
+import type { Deployment, Domain, Project, Service, ServiceDeployment } from "@repo/db";
 import { managedRoutingFixture } from "../../../../../packages/adapters/test/managed-routing-fixture";
 
 const h = vi.hoisted(() => ({
@@ -201,4 +202,41 @@ describe("managed Cloud route port edits and repair", () => {
     ]);
     expect(h.fixture.pages.delete).not.toHaveBeenCalled();
   });
+});
+
+it("publishes a complete shared-host path table and clears it back to the root on Cloud", async () => {
+  h.services = [
+    { id: "web", projectId: h.project.id, name: "web", enabled: true, exposed: true,
+      exposedPort: "8000", ports: ["8000"], domainType: "free", domain: "app" },
+    { id: "api", projectId: h.project.id, name: "api", enabled: true, exposed: false,
+      exposedPort: "9000", ports: ["9000"] },
+  ] as Service[];
+  h.liveRows = [{ serviceId: "web", containerId: "container-a" }, { serviceId: "api", containerId: "container-b" }] as ServiceDeployment[];
+  h.domains[0] = { ...h.domains[0]!, ownerType: "project", serviceId: "web" };
+  vi.mocked(h.fixture.scope.resolveTarget).mockImplementation(async (id, port) => {
+    if (id === "container-a" && port === 8000) return 32000;
+    if (id === "container-b" && port === 9000) return 32001;
+    throw new Error("unowned service port");
+  });
+  h.project.compositeRoutes = await prepareProjectDomainPaths(h.project, [{ domainId: "domain-a", paths: [
+    { pathPrefix: "/api", serviceId: "api", port: 9000 },
+  ] }]);
+  await applyProjectRouting(h.project.id);
+  expect(h.fixture.routes.set).toHaveBeenLastCalledWith("app.opsh.io", expect.objectContaining({ routes: [
+    { match: { path: "/api", type: "prefix" }, action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32001 } },
+    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 } },
+  ] }));
+  const writes = h.fixture.routes.set.mock.calls.length;
+  vi.mocked(h.fixture.scope.resolveTarget).mockImplementation(async (id) => {
+    if (id === "container-a") return 32000;
+    throw new Error("backend target unavailable");
+  });
+  await applyProjectRouting(h.project.id);
+  expect(h.fixture.routes.set).toHaveBeenCalledTimes(writes);
+  h.project.compositeRoutes = await prepareProjectDomainPaths(h.project, [{ domainId: "domain-a", paths: [] }]);
+  await applyProjectRouting(h.project.id);
+  expect(h.fixture.routes.set).toHaveBeenLastCalledWith("app.opsh.io", expect.objectContaining({ routes: [
+    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 } },
+  ] }));
+  expect(h.fixture.pages.create).toHaveBeenCalledOnce();
 });

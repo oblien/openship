@@ -9,6 +9,7 @@ import { getPortCheckIssue } from "@repo/core";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { DomainPathsCard } from "@/components/routing/DomainPathsCard";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
 import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
@@ -2770,6 +2771,12 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
       {/* Routing (rewrites/redirects/headers) — advanced, sits AFTER the
           domain/route cards so the primary domain list leads the page. */}
+      {!serviceScope && !servicesLoading && !domainsData.isLoading && <DomainPathsCard
+        projectId={id} domains={domainsData.domains} services={services}
+        initial={projectData.compositeRoutes} baseDomain={baseDomain}
+        onSaved={(project) => setProjectData(prev => ({ ...prev, ...project }))}
+      />}
+
       {!serviceScope && <RoutingConfigCard
         id={id}
         isCloudProject={isCloudProject}

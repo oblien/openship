@@ -1252,5 +1252,20 @@
     "checkUnavailable": "Karşılaştırma için kayıtlı özetler ve kayıt deposuna erişim gerekir.",
     "checkFailed": "İmaj güncellemeleri denetlenemedi.",
     "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
+  },
+  "domainPaths": {
+    "title": "Yol yönlendirmesi",
+    "description": "Bir ana bilgisayar adını birden fazla hizmet için kullanın.",
+    "domain": "Alan adı",
+    "path": "Yol öneki",
+    "service": "Hizmet",
+    "port": "Konteyner bağlantı noktası",
+    "exact": "Yalnızca tam yol",
+    "remove": "Kaldır",
+    "empty": "Tüm yollar alan adının kök hizmetini kullanır.",
+    "add": "Yol ekle",
+    "help": "Hizmete gönderilen istekte yol korunur. Kök hizmeti geri yüklemek için boş bir liste kaydedin. Yeni bağlantı noktası eşlemeleri dağıtım gerektirebilir.",
+    "saved": "Kaydedildi. Alan adının yönlendirme durumunu kontrol edin.",
+    "notApplied": "API bu yolları kaydetmedi. Örneği güncelleyip yeniden deneyin."
   }
 }

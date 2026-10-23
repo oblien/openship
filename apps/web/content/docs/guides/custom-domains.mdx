@@ -173,6 +173,22 @@ require a new TXT challenge at renewal; the domain details show when renewal is 
 
 </Steps>
 
+## One hostname, several services
+
+For a Docker services project, configure the domain’s normal root destination first. Then open
+**Domains → Path routing**, choose that existing domain, and add a path such as `/api` pointing to
+your API service and its container port. The frontend keeps `/`; the API can remain internal without
+a second public hostname. Use **Exact path only** to match one path instead of a prefix.
+
+This works on self-hosted servers and managed Cloud servers. Saving re-applies the live routing table. If the chosen port is not yet reachable by the edge,
+deploy the project once to activate its port mapping. Paths remain in the upstream request, so `/api/users` reaches the API as
+`/api/users`. This editor currently requires a container-backed root and container-backed path targets.
+Only enabled services and their declared ports in the same project are allowed.
+
+Each hostname keeps one domain record and certificate. Clearing its paths restores its normal root;
+other hostnames stay unchanged. If an upstream cannot be resolved, the previous complete table
+stays in place and the domain’s routing status shows the retry needed.
+
 ## Wildcard domains
 
 Add `*.example.com` to the project's **Domains** tab or the service's public routes. Openship
