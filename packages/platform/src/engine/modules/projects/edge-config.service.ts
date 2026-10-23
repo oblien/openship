@@ -119,7 +119,8 @@ function buildHostState(
       ...(raw !== undefined ? { liveRaw: raw } : {}),
       drift,
     });
-    if (drift && got !== undefined) adoptable[spec.key] = got;
+    if (drift && got !== undefined && !(spec.key === "clientMaxBodySize" && domainSaved))
+      adoptable[spec.key] = got;
   }
 
   return {

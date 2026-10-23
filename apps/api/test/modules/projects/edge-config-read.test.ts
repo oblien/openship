@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { ImportedSite } from "@repo/adapters";
 import type { Project } from "@repo/db";
+import { resolveDomainProxySettings } from "@repo/core";
 
 /**
  * The read-back endpoint exists because "saved equals served" was an assumption. It
@@ -270,6 +271,50 @@ describe("readProjectEdgeConfig — the http2 version floor", () => {
 });
 
 describe("readProjectEdgeConfig — hostnames", () => {
+  it.each(["1m", "0"])(
+    "keeps a failed domain cap change to %s out of project adoption",
+    async (clientMaxBodySize) => {
+      const domainProxy = { clientMaxBodySize };
+      listDomains.mockResolvedValue([
+        { id: "api", hostname: "api.example.com", proxy: null },
+        { id: "events", hostname: "events.example.com", proxy: domainProxy },
+      ]);
+      box({
+        sites: {
+          "api.example.com": site({ proxy: { clientMaxBodySize: "2m" } }),
+          "events.example.com": site({
+            proxy: { clientMaxBodySize: "4m", proxyReadTimeout: "300s" },
+          }),
+        },
+      });
+      const report = await readProjectEdgeConfig(
+        project({ routingConfig: { proxy: { clientMaxBodySize: "2m" } } }),
+      );
+      const events = report.hosts[1]!;
+      expect(events.bodyLimit).toEqual({
+        saved: domainProxy,
+        effective: clientMaxBodySize,
+        source: "domain",
+        observed: "4m",
+        configurationMatches: false,
+      });
+      expect(events.directives).toContainEqual(
+        expect.objectContaining({ key: "clientMaxBodySize", drift: true }),
+      );
+      expect(events.adoptable).toEqual({ proxyReadTimeout: "300s" });
+      const adopted = Object.assign(
+        {},
+        report.saved,
+        ...report.hosts.map((host) => host.adoptable),
+      );
+      expect(adopted).toEqual({ clientMaxBodySize: "2m", proxyReadTimeout: "300s" });
+      expect(resolveDomainProxySettings(adopted, null)?.clientMaxBodySize).toBe("2m");
+      expect(resolveDomainProxySettings(adopted, domainProxy)?.clientMaxBodySize).toBe(
+        clientMaxBodySize,
+      );
+    },
+  );
+
   it("separates saved, effective and observed body limits per hostname", async () => {
     listDomains.mockResolvedValue([
       { id: "api", hostname: "api.example.com", proxy: null },
