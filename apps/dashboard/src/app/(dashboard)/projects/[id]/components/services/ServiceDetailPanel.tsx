@@ -29,7 +29,7 @@ import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/button";
-import DropdownMenu from "@/components/ui/DropdownMenu";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
 import { ServiceEnvironmentPanel } from "./ServiceEnvironmentPanel";
 import { TerminalLogs } from "../logs/TerminalLogs";
@@ -44,7 +44,7 @@ import { ServiceLocalhostAction } from "./ServiceLocalhostAction";
 import type { ServiceDomainIntent } from "./ServicePortsCard";
 import { configuredServiceEndpoints } from "@/lib/service-endpoints";
 import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
-import { RuntimeRedeployMenu } from "@/components/project-settings/RuntimeRedeployMenu";
+import { useRuntimeRedeployActions } from "@/components/project-settings/RuntimeRedeployMenu";
 import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 
 type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
@@ -135,6 +135,7 @@ export function ServiceDetailPanel({
   const storageResetPending = useRef(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
   const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment || resettingStorage || runtimeUpdate.updating;
+  const runtimeActions = useRuntimeRedeployActions(runtimeUpdate, serviceOperationBusy);
   const status = getServiceStatus(service, container, containerChecking);
 
   // Backup only applies to compose services (stateful containers) — never
@@ -534,6 +535,24 @@ export function ServiceDetailPanel({
     }
   };
 
+  const serviceActions: MenuAction[] = [
+    ...(resolvedUrl ? [{
+      id: "open",
+      label: t.projects.connections.openShort,
+      icon: <UiIcon name="arrow-up-right" className="size-4" />,
+      onClick: () => { window.open(resolvedUrl, "_blank", "noopener,noreferrer"); },
+    }] : []),
+    ...(service.enabled && activeDeploymentId ? [{
+      id: "redeploy",
+      label: redeploying || runtimeUpdate.updating
+        ? t.projectDetail.services.detail.redeploying
+        : t.projectDetail.services.detail.redeploy,
+      icon: <UiIcon name="rocket" className="size-4" />,
+      disabled: serviceOperationBusy,
+      onClick: () => void (usesDeployPipeline ? handleRedeployService() : runtimeUpdate.update()),
+    }, ...runtimeActions] : []),
+  ];
+
   /* ── Render ─────────────────────────────────────────────────── */
 
   const serviceIdentity = (
@@ -597,24 +616,6 @@ export function ServiceDetailPanel({
           </div>
         </div>
         <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
-          {service.enabled && activeDeploymentId && (
-            <div className="flex items-center gap-1">
-              <Button size="sm" variant="secondary" className="h-9" disabled={serviceOperationBusy}
-                onClick={() => void (usesDeployPipeline ? handleRedeployService() : runtimeUpdate.update())}>
-                <UiIcon name="rocket" className="size-3.5" />
-                {redeploying || runtimeUpdate.updating ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}
-              </Button>
-              <RuntimeRedeployMenu runtime={runtimeUpdate} disabled={serviceOperationBusy} />
-            </div>
-          )}
-          {resolvedUrl && (
-            <Button asChild variant="secondary" size="sm" className="h-9">
-              <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" title={resolvedUrl}>
-                {t.projects.connections.openShort}
-                <UiIcon name="arrow-up-right" className="size-3.5" />
-              </a>
-            </Button>
-          )}
           {service.enabled && (
             <Button
               type="button"
@@ -644,6 +645,14 @@ export function ServiceDetailPanel({
             <UiIcon name="refresh" className={`size-4 ${containerChecking ? "animate-spin" : ""}`} />
             <span className="sr-only">{t.projects.services.refresh}</span>
           </Button>
+          {serviceActions.length > 0 && (
+            <DropdownMenu
+              triggerLabel={t.projects.card.more}
+              triggerClassName="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              menuClassName="w-[min(24rem,calc(100vw-2rem))] min-w-0 [&_button>span]:whitespace-normal"
+              actions={serviceActions}
+            />
+          )}
         </div>
         {/* Another container on the host also answers to this service — a
             leftover from an adopt/redeploy. It isn't the one we manage, and it

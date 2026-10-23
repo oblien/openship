@@ -73,6 +73,10 @@ async function render() {
 async function refresh() {
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
 }
+function button(label: string) {
+  return [...host.querySelectorAll<HTMLButtonElement>("button")]
+    .find((element) => element.textContent?.trim() === label)!;
+}
 beforeEach(() => {
   (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
@@ -92,7 +96,47 @@ afterEach(async () => {
 });
 
 describe("NotificationDeliveryHistory", () => {
-  it("reads the last 50 across channel kinds, shows registry labels, statuses, provider marks and timestamps without mutations", async () => {
+  it("pages through older deliveries and refreshes back to the newest page without mutations", async () => {
+    const rows = Array.from({ length: 53 }, (_, index) => delivery({ id: `delivery-${index}` }));
+    mocks.listDeliveries.mockImplementation(async ({ before, limit }) => {
+      const start = before ? rows.findIndex((row) => row.id === before) + 1 : 0;
+      return { deliveries: rows.slice(start, start + limit) };
+    });
+    await render();
+    expect(host.querySelectorAll("li")).toHaveLength(25);
+    expect(button("Previous").disabled).toBe(true);
+    await act(async () => button("Next").click());
+    expect(mocks.listDeliveries).toHaveBeenLastCalledWith({ limit: 26, before: "delivery-24" });
+    expect(host.textContent).toContain("Page 2");
+    await act(async () => button("Next").click());
+    expect(mocks.listDeliveries).toHaveBeenLastCalledWith({ limit: 26, before: "delivery-49" });
+    expect(host.querySelectorAll("li")).toHaveLength(3);
+    expect(button("Next").disabled).toBe(true);
+    await act(async () => button("Previous").click());
+    expect(mocks.listDeliveries).toHaveBeenLastCalledWith({ limit: 26, before: "delivery-24" });
+    await refresh();
+    expect(mocks.listDeliveries).toHaveBeenLastCalledWith({ limit: 26, before: undefined });
+    expect(host.textContent).toContain("Page 1");
+    expect(mocks.markSeen).not.toHaveBeenCalled();
+    expect(mocks.testChannel).not.toHaveBeenCalled();
+  });
+
+  it("does not show the previous page as a failed new page, and lets users go back", async () => {
+    mocks.listDeliveries
+      .mockResolvedValueOnce({ deliveries: Array.from({ length: 26 }, (_, index) => delivery({ id: String(index), lastError: "first page" })) })
+      .mockRejectedValueOnce(new Error("page unavailable"))
+      .mockResolvedValueOnce({ deliveries: [delivery()] });
+    await render();
+    await act(async () => button("Next").click());
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("first page");
+    expect(button("Next").disabled).toBe(true);
+    await act(async () => button("Previous").click());
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelectorAll("li")).toHaveLength(1);
+  });
+
+  it("reads a page across channel kinds, shows registry labels, statuses, provider marks and timestamps without mutations", async () => {
     const kinds = ["slack", "discord", "msteams", "telegram", "email", "webhook", "in_app"];
     const statuses = ["sent", "queued", "sending", "failed", "seen"] as const;
     mocks.listDeliveries.mockResolvedValue({
@@ -101,8 +145,8 @@ describe("NotificationDeliveryHistory", () => {
       ),
     });
     await render();
-    expect(mocks.listDeliveries).toHaveBeenCalledExactlyOnceWith({ limit: 50 });
-    expect(host.textContent).toContain("Last 50 deliveries");
+    expect(mocks.listDeliveries).toHaveBeenCalledExactlyOnceWith({ limit: 26, before: undefined });
+    expect(host.textContent).toContain("Deliveries across all channels.");
     expect(host.textContent).toContain("Deployment failed");
     for (const status of ["Sent", "Queued", "Sending", "Failed", "Seen"])
       expect(host.textContent).toContain(status);

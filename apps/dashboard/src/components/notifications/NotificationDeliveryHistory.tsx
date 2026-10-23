@@ -15,6 +15,9 @@ import {
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ChannelLogo, CHANNEL_LABELS } from "@/components/ui/ChannelLogo";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@repo/ui/icons";
+
+const PAGE_SIZE = 25;
 
 /** Remount before rendering another account's private delivery history. */
 export function NotificationDeliveryHistory() {
@@ -34,11 +37,15 @@ function ScopedDeliveryHistory() {
   const { t, locale } = useI18n();
   const copy = t.settings.notifications.deliveryHistory;
   const [revision, setRevision] = useState(0);
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const before = cursors[cursors.length - 1];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [data, setData] = useState<{
     deliveries: NotificationDelivery[];
     categories: NotificationCategory[];
+    before: string | undefined;
+    hasMore: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -46,11 +53,16 @@ function ScopedDeliveryHistory() {
     setLoading(true);
     setError(false);
     void Promise.all([
-      notificationsApi.listDeliveries({ limit: 50 }),
+      notificationsApi.listDeliveries({ limit: PAGE_SIZE + 1, before }),
       notificationsApi.listCategories(),
     ])
       .then(([history, registry]) => {
-        if (active) setData({ deliveries: history.deliveries, categories: registry.categories });
+        if (active) setData({
+          deliveries: history.deliveries.slice(0, PAGE_SIZE),
+          categories: registry.categories,
+          before,
+          hasMore: history.deliveries.length > PAGE_SIZE,
+        });
       })
       .catch((error) => {
         observeCaughtError(error, "dashboard/components/notifications/NotificationDeliveryHistory");
@@ -63,9 +75,12 @@ function ScopedDeliveryHistory() {
     return () => {
       active = false;
     };
-  }, [revision]);
+  }, [before, revision]);
 
-  const labels = new Map(data?.categories.map((category) => [category.id, category.label]));
+  // Never label the previous page's rows as the page currently being requested.
+  const page = data?.before === before ? data : null;
+  const busy = loading || (!error && !page);
+  const labels = new Map(page?.categories.map((category) => [category.id, category.label]));
   return (
     <section aria-label={copy.title} className="rounded-2xl bg-card p-5 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -77,13 +92,16 @@ function ScopedDeliveryHistory() {
           type="button"
           variant="secondary"
           size="sm"
-          disabled={loading}
-          onClick={() => setRevision((value) => value + 1)}
+          disabled={busy}
+          onClick={() => {
+            setCursors([undefined]);
+            setRevision((value) => value + 1);
+          }}
         >
           {copy.refresh}
         </Button>
       </div>
-      {loading && (
+      {busy && (
         <p role="status" className="text-sm text-muted-foreground">
           {copy.loading}
         </p>
@@ -93,12 +111,12 @@ function ScopedDeliveryHistory() {
           {copy.error}
         </p>
       )}
-      {!loading && !error && data?.deliveries.length === 0 && (
+      {!busy && !error && page?.deliveries.length === 0 && (
         <p className="text-sm text-muted-foreground">{copy.empty}</p>
       )}
-      {!!data?.deliveries.length && (
+      {!!page?.deliveries.length && (
         <ul className="divide-y divide-border/30">
-          {data.deliveries.map((delivery) => {
+          {page.deliveries.map((delivery) => {
             const kind = Object.hasOwn(CHANNEL_LABELS, delivery.channelKind)
               ? (delivery.channelKind as ChannelKind)
               : null;
@@ -148,6 +166,34 @@ function ScopedDeliveryHistory() {
             );
           })}
         </ul>
+      )}
+      {(cursors.length > 1 || page?.hasMore) && (
+        <nav aria-label={copy.title} className="flex items-center justify-between gap-3 border-t border-border/40 pt-4 text-sm text-muted-foreground">
+          <span>{interpolate(copy.page, { page: String(cursors.length) })}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy || cursors.length === 1}
+              onClick={() => setCursors((current) => current.slice(0, -1))}
+            >
+              <Icon name="chevron-left" className="size-4 rtl:rotate-180" />
+              {t.settings.common.previous}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy || error || !page?.hasMore}
+              onClick={() => {
+                const last = page?.deliveries.at(-1);
+                if (last && page?.hasMore) setCursors((current) => [...current, last.id]);
+              }}
+            >
+              {t.settings.common.next}
+              <Icon name="chevron-right" className="size-4 rtl:rotate-180" />
+            </Button>
+          </div>
+        </nav>
       )}
     </section>
   );

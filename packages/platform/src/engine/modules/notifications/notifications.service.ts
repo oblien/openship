@@ -325,13 +325,15 @@ export async function listDeliveries(ctx: ExecutionContext, input: Static<typeof
   const unseenOnly = input.unseen ?? false;
   const limit = input.limit ?? 100;
   const deliveries = [];
-  for (let offset = 0; deliveries.length < limit; offset += 250) {
-    const rows = await repos.notificationDelivery.listForUser(ctx.userId, ctx.organizationId, { unseenOnly, limit: 250, offset });
+  let before = input.before;
+  while (deliveries.length < limit) {
+    const rows = await repos.notificationDelivery.listForUser(ctx.userId, ctx.organizationId, { unseenOnly, limit: 250, before });
     for (const row of rows) if (await canReadNotification(ctx, row)) {
       deliveries.push(row);
       if (deliveries.length === limit) break;
     }
     if (rows.length < 250) break;
+    before = rows[rows.length - 1]!.id;
   }
   return deliveries;
 }

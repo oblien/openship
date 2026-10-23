@@ -275,6 +275,14 @@ show an error and Retry, never editable empty defaults. Preserve a previous
 successful snapshot on refresh failure, with preference controls disabled until
 a successful retry.
 
+Alert preferences keep both switches at the start of the controls row and only the channel
+picker at the end, wrapping on narrow screens. A header search button reveals a local filter over alert names
+and descriptions within the selected category tab; closing it clears the filter. Channel
+cards keep Edit and Delete in a top-end More menu, while Send test sits at the end of its row.
+Notifications has inline Channels & alerts and Delivery history tabs. Load history only when
+opened, use server-backed newest-first pagination, and retain channel drafts when changing
+tabs. Refresh returns to the latest page; browsing history never acknowledges deliveries.
+
 Global deployment history lives in Monitoring’s final Deployments tab. Lead with server-side
 7/30/90-day outcome totals, a daily chart and a project breakdown, followed by the history.
 Project and search filters scope both; status filters drill into the history without changing
@@ -862,6 +870,11 @@ user choices and manually added folders. Keep each route on its owning app. The 
 shows at most three domain rows, a total count and **View all**; the shared domain editor
 uses an app selector and a public-access toggle. Changing wizard settings takes effect
 when saved or deployed, according to the existing wizard action.
+
+Service detail headers keep Open, Redeploy and image-update actions in the shared More
+menu. Reuse the existing runtime-update actions and operation guards; Settings remains the
+place for the full lifecycle controls. Volume cards must allow their action menu to extend
+outside the card instead of clipping it with `overflow-hidden`.
 
 ### Adding project services
 

@@ -842,7 +842,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "Delivery history",
-      "description": "Last 50 deliveries across all channels.",
+      "description": "Deliveries across all channels.",
+      "page": "Page {page}",
       "refresh": "Refresh",
       "loading": "Loading deliveries…",
       "error": "Could not load delivery history. Refresh to try again.",
@@ -928,7 +929,9 @@
       "allTab": "All",
       "eventHeader": "Event",
       "cellAria": "{category} via {channel}",
-      "notifyMe": "Notify me"
+      "notifyMe": "Notify me",
+      "search": "Search alerts",
+      "noResults": "No matching alerts."
     },
     "orgDefaults": {
       "title": "Organization defaults",
@@ -941,6 +944,7 @@
       "description": "Channels belong to your account and are shared across organizations. Alert preferences and defaults apply to the active organization.",
       "ready": "{count} of {total} channels ready",
       "preferences": "Alert preferences",
+      "configuration": "Channels & alerts",
       "retry": "Retry"
     },
     "groups": {

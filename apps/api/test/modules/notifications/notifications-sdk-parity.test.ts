@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { seedOwner, installFakeRunner, db, schema, repos, type SeededOwner } from "../jobs/_harness";
-import { eq } from "@repo/db";
+import { eq, sql } from "@repo/db";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -44,6 +44,40 @@ async function delivery(owner: SeededOwner, channelId: string, projectId?: strin
 }
 
 describe("notifications shared SDK/HTTP operations", () => {
+  it("paginates visible history across hidden rows without shifting on inserts or crossing scopes", async () => {
+    const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner);
+    const visible = await project(owner, "history-visible"), hidden = await project(owner, "history-hidden");
+    const base = { userId: owner.userId, organizationId: owner.orgId, channelKind: "in_app", category: "deploy.failed" };
+    await db.insert(schema.notificationDelivery).values([
+      ...Array.from({ length: 260 }, (_, index) => ({ ...base, id: `history-hidden-${String(index).padStart(3, "0")}`, payload: { resourceType: "project", resourceId: hidden.id } })),
+      ...["a", "b", "c"].map(id => ({ ...base, id: `history-${id}`, payload: { resourceType: "project", resourceId: visible.id } })),
+      { ...base, id: "foreign-user", userId: other.userId, payload: {} },
+      { ...base, id: "foreign-org", organizationId: other.orgId, payload: {} },
+    ]);
+    // Equal sub-millisecond timestamps exercise the ID tie-break without rounding
+    // the database cursor through JavaScript Date serialization.
+    await db.update(schema.notificationDelivery).set({ createdAt: sql`'2026-10-23 12:34:56.123456'::timestamp` });
+    await db.update(schema.member).set({ role: "restricted" }).where(eq(schema.member.userId, owner.userId));
+    for (const [resourceType, resourceId, permissions] of [["notifications", "*", ["read"]], ["project", visible.id, ["read"]]] as const)
+      await repos.resourceGrant.upsert({ organizationId: owner.orgId, userId: owner.userId, resourceType, resourceId, permissions: [...permissions], grantedByUserId: owner.userId });
+
+    for (const client of [c.native, c.remote]) {
+      const first = await client.listDeliveries({ limit: 2 });
+      expect(first.map(row => row.id)).toEqual(["history-c", "history-b"]);
+      expect((await client.listDeliveries({ limit: 2, before: first.at(-1)!.id })).map(row => row.id)).toEqual(["history-a"]);
+      for (const before of ["foreign-user", "foreign-org", "missing", "history-a"])
+        expect(await client.listDeliveries({ limit: 2, before })).toEqual([]);
+    }
+    await db.insert(schema.notificationDelivery).values({ ...base, id: "newest", createdAt: new Date("2026-10-24"), payload: { resourceType: "project", resourceId: visible.id } });
+    expect((await c.remote.listDeliveries({ limit: 2, before: "history-b" })).map(row => row.id)).toEqual(["history-a"]);
+    expect((await c.native.listDeliveries({ limit: 2 })).map(row => row.id)).toEqual(["newest", "history-c"]);
+    expect((await repos.notificationDelivery.findById("history-a"))?.seenAt).toBeNull();
+    for (const client of [c.native, c.remote])
+      await expect(client.listDeliveries({ before: "x".repeat(129) })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await repos.resourceGrant.upsert({ organizationId: owner.orgId, userId: owner.userId, resourceType: "project", resourceId: visible.id, permissions: [], grantedByUserId: owner.userId });
+    expect(await c.remote.listDeliveries({ before: "history-b" })).toEqual([]);
+  });
+
   it("retains channel encryption, one-time reveal, verification and exactly one audit", async () => {
     const owner = await seedOwner(), c = await clients(owner);
     const created = await c.remote.createChannel({ kind: "webhook", label: "Receiver", config: { url: "https://receiver.example.test/notify" } });

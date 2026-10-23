@@ -21,10 +21,11 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *      defaults used when a member has not made an explicit category choice.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Switch } from "@/components/ui/Switch";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
@@ -135,7 +136,7 @@ function ChannelMultiSelect({
         // wrapper below (child opacity doesn't touch the parent's backdrop-filter).
         <div
           role="menu"
-          className="absolute end-0 z-50 mt-1 w-52 overflow-hidden rounded-xl border border-border/60 bg-popover/70 p-1 shadow-xl shadow-black/[0.08] backdrop-blur-xl animate-in slide-in-from-top-1 duration-150"
+          className="absolute top-full end-0 z-50 mt-1 w-52 overflow-hidden rounded-xl border border-border/60 bg-popover/70 p-1 shadow-xl shadow-black/[0.08] backdrop-blur-xl animate-in slide-in-from-top-1 duration-150"
         >
           <div className="animate-in fade-in duration-200">
             {DEFAULT_KIND_CHOICES.map((k) => {
@@ -203,7 +204,7 @@ function NotificationSection({
   return (
     <section aria-label={title} className="rounded-2xl bg-card p-5 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="text-base font-medium text-foreground">{title}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
@@ -226,6 +227,38 @@ function useActiveView() {
 }
 
 function ScopedNotificationSettings({
+  section = "all",
+  ...props
+}: NotificationSettingsProps) {
+  const { t } = useI18n();
+  const [view, setView] = useState<"preferences" | "history">("preferences");
+  const tabsId = useId();
+  if (section === "channels") return <NotificationPreferences {...props} section={section} />;
+  return (
+    <div className="space-y-5">
+      <Tabs
+        idPrefix={tabsId}
+        ariaLabel={t.settings.notifications.overview.title}
+        value={view}
+        onChange={setView}
+        tabs={[
+          { key: "preferences", label: t.settings.notifications.overview.configuration },
+          { key: "history", label: t.settings.notifications.deliveryHistory.title },
+        ]}
+      />
+      <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={view !== "preferences"}>
+        <NotificationPreferences {...props} section={section} />
+      </div>
+      {view === "history" && (
+        <div role="tabpanel" id={`${tabsId}-panel-history`} aria-labelledby={`${tabsId}-tab-history`}>
+          <NotificationDeliveryHistory />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationPreferences({
   mode = "settings",
   section = "all",
 }: NotificationSettingsProps) {
@@ -372,7 +405,6 @@ function ScopedNotificationSettings({
           onChange={() => refresh({ silent: true })}
         />
       )}
-      {section !== "channels" && <NotificationDeliveryHistory />}
     </div>
   );
 }
@@ -498,6 +530,29 @@ function ChannelsCard({
                   {describeChannel(ch, t.settings.notifications.describe)}
                 </p>
               </div>
+              <DropdownMenu
+                triggerLabel={`${t.projects.card.more}: ${ch.label}`}
+                className="shrink-0"
+                actions={[
+                  {
+                    id: "edit",
+                    label: t.settings.notifications.channels.edit,
+                    icon: <UiIcon name="edit" className="size-4" />,
+                    disabled: showForm,
+                    onClick: () => {
+                      setEditing(ch);
+                      setShowForm(true);
+                    },
+                  },
+                  {
+                    id: "delete",
+                    label: t.settings.notifications.channels.deleteChannel,
+                    icon: <UiIcon name="trash" className="size-4" />,
+                    variant: "danger",
+                    onClick: () => void handleDelete(ch.id),
+                  },
+                ]}
+              />
               <div className="flex w-full flex-wrap items-center gap-3">
                 <span className="text-sm text-muted-foreground">
                   {ch.enabled
@@ -527,6 +582,7 @@ function ChannelsCard({
                     onClick={() => handleTest(ch.id)}
                     disabled={testing === ch.id}
                     variant="secondary"
+                    className="ms-auto"
                   >
                     {testing === ch.id ? (
                       <UiIcon name="spinner" className="size-3.5 animate-spin" />
@@ -536,27 +592,6 @@ function ChannelsCard({
                     {t.settings.notifications.channels.sendTest}
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={showForm}
-                  onClick={() => {
-                    setEditing(ch);
-                    setShowForm(true);
-                  }}
-                >
-                  {t.settings.notifications.channels.edit}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => handleDelete(ch.id)}
-                  variant="ghost"
-                  size="icon"
-                  className="ms-auto"
-                  aria-label={t.settings.notifications.channels.deleteChannel}
-                >
-                  <UiIcon name="trash" className="size-4" />
-                </Button>
               </div>
             </li>
           ))}
@@ -626,6 +661,29 @@ function EventNotificationsCard({
   const active = useActiveView();
   const [busyCat, setBusyCat] = useState<string | null>(null);
   const [tab, setTab] = useState<string>(ALL_TAB);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchTrigger = useRef<HTMLButtonElement>(null);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearch("");
+    searchTrigger.current?.focus();
+  };
+  const visibleCategories = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase(locale);
+    return categories
+      .map((cat) => {
+        const translated = (t.settings.notifications as any)?.categories?.[cat.id];
+        return locale === "en" ? cat : {
+          ...cat,
+          label: translated?.label ?? cat.label,
+          description: translated?.description ?? cat.description,
+        };
+      })
+      .filter((cat) =>
+        !query || `${cat.label} ${cat.description}`.toLocaleLowerCase(locale).includes(query),
+      );
+  }, [categories, search, t, locale]);
 
   // Counts are how many events live in the tab, NOT how many you're subscribed
   // to — they're a table of contents, so they stay put while you toggle rows.
@@ -666,20 +724,21 @@ function EventNotificationsCard({
     { id: string; label: string | null; cats: NotificationCategory[] }[]
   >(() => {
     if (tab !== ALL_TAB) {
-      return [{ id: tab, label: null, cats: categories.filter((cat) => cat.group === tab) }];
+      const cats = visibleCategories.filter((cat) => cat.group === tab);
+      return cats.length ? [{ id: tab, label: null, cats }] : [];
     }
     const out = groups
       .map((g) => ({
         id: g.id,
         label: (locale !== "en" ? ((t.settings.notifications as any)?.groups?.[g.id] ?? g.label) : g.label) as string | null,
-        cats: categories.filter((cat) => cat.group === g.id),
+        cats: visibleCategories.filter((cat) => cat.group === g.id),
       }))
       .filter((s) => s.cats.length > 0);
     const known = new Set(groups.map((g) => g.id));
-    const rest = categories.filter((cat) => !known.has(cat.group));
+    const rest = visibleCategories.filter((cat) => !known.has(cat.group));
     if (rest.length > 0) out.push({ id: "__ungrouped__", label: null, cats: rest });
     return out;
-  }, [categories, groups, tab, t, locale]);
+  }, [visibleCategories, groups, tab, t, locale]);
 
   const defIndex = useMemo(() => {
     const m = new Map<string, NotificationDefault>();
@@ -753,18 +812,56 @@ function EventNotificationsCard({
     <NotificationSection
       title={t.settings.notifications.overview.preferences}
       description={t.settings.notifications.orgDefaults.description}
+      action={
+        <Button
+          ref={searchTrigger}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          aria-label={searchOpen
+            ? t.settings.common.close
+            : t.settings.notifications.subscriptions.search}
+          aria-expanded={searchOpen}
+          onClick={() => searchOpen ? closeSearch() : setSearchOpen(true)}
+        >
+          <UiIcon name={searchOpen ? "close" : "search"} className="size-4" />
+        </Button>
+      }
     >
+      {searchOpen && (
+        <Input
+          autoFocus
+          type="search"
+          variant="filled"
+          value={search}
+          aria-label={t.settings.notifications.subscriptions.search}
+          placeholder={t.settings.notifications.subscriptions.search}
+          onChange={(event) => setSearch(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              closeSearch();
+            }
+          }}
+        />
+      )}
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div className="space-y-5">
+        {search.trim() && sections.length === 0 && (
+          <p role="status" className="py-4 text-sm text-muted-foreground">
+            {t.settings.notifications.subscriptions.noResults}
+          </p>
+        )}
         {sections.map((section) => (
           <section key={section.id} className="space-y-3">
             {section.label && (
               <h3 className="text-sm font-medium text-foreground">{section.label}</h3>
             )}
             {section.cats.map((cat) => {
-              const catLoc = (t.settings.notifications as any)?.categories?.[cat.id];
-              const catLabel = locale !== "en" ? (catLoc?.label ?? cat.label) : cat.label;
-              const catDesc = locale !== "en" ? (catLoc?.description ?? cat.description) : cat.description;
+              const catLabel = cat.label;
+              const catDesc = cat.description;
               const def = defIndex.get(cat.id);
               const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
               const kinds = (
@@ -773,8 +870,8 @@ function EventNotificationsCard({
               const isBusy = busyCat === cat.id;
               const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
               return (
-                <div key={cat.id} className="rounded-xl bg-card p-4 space-y-4">
-                  <div>
+                <div key={cat.id} className="space-y-4 rounded-xl bg-card p-4">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">{catLabel}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{catDesc}</p>
                   </div>
@@ -803,11 +900,13 @@ function EventNotificationsCard({
                         })}
                       />
                     </div>
-                    <ChannelMultiSelect
-                      value={kinds}
-                      disabled={disabled || isBusy || !isAdmin}
-                      onChange={(next) => setDefault(cat.id, enabled, next)}
-                    />
+                    <div className="ms-auto">
+                      <ChannelMultiSelect
+                        value={kinds}
+                        disabled={disabled || isBusy || !isAdmin}
+                        onChange={(next) => setDefault(cat.id, enabled, next)}
+                      />
+                    </div>
                   </div>
                 </div>
               );

@@ -105,7 +105,7 @@ export function ServiceVolumesPanel({
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+    <section className="rounded-2xl border border-border/50 bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
         <div>
           <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -312,6 +312,7 @@ export function ServiceVolumesPanel({
                   </span>
                   {onResetVolumes && parsed.kind === "named" && !parsed.readOnly && (
                     <DropdownMenu triggerLabel={copy.emptyVolume.menu} disabled={operationBusy}
+                      menuClassName="w-[min(22rem,calc(100vw-2rem))] min-w-0 [&_button>span]:whitespace-normal"
                       actions={[{ id: "empty-volume", label: copy.emptyVolume.title,
                         icon: <UiIcon name="refresh" className="size-4" />,
                         onClick: () => setResetPlan(emptyVolumePlan(mounts, mount)),

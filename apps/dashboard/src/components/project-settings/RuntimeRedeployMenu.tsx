@@ -5,6 +5,32 @@ import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n } from "@/components/i18n-provider";
 import type { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
 
+/** Reuse the same image actions in Redeploy dropdowns and service context menus. */
+export function useRuntimeRedeployActions(
+  runtime: ReturnType<typeof useRuntimeUpdate>,
+  disabled = false,
+): MenuAction[] {
+  const { t } = useI18n();
+  const copy = t.projectSettings.runtimeUpdates;
+  const busy = disabled || runtime.updating || runtime.checking;
+  return [
+    {
+      id: "refresh-runtime",
+      label: copy.refresh,
+      icon: <Icon name="refresh" className="size-4" />,
+      disabled: busy,
+      onClick: () => void runtime.update(),
+    },
+    {
+      id: "check-runtime",
+      label: copy.check,
+      icon: <Icon name="search" className="size-4" />,
+      disabled: busy,
+      onClick: () => void runtime.checkUpdates(),
+    },
+  ];
+}
+
 /** The same image refresh and check actions beside project and service Redeploy. */
 export function RuntimeRedeployMenu({
   runtime,
@@ -21,6 +47,7 @@ export function RuntimeRedeployMenu({
 }) {
   const { t } = useI18n();
   const copy = t.projectSettings.runtimeUpdates;
+  const runtimeActions = useRuntimeRedeployActions(runtime, disabled);
   return (
     <DropdownMenu
       align="right"
@@ -34,25 +61,7 @@ export function RuntimeRedeployMenu({
           className={`size-4 ${runtime.updating || runtime.checking ? "animate-spin" : ""}`}
         />
       }
-      actions={[
-        ...(supported
-          ? [
-              {
-                id: "refresh-runtime",
-                label: copy.refresh,
-                icon: <Icon name="refresh" className="size-4" />,
-                onClick: () => void runtime.update(),
-              },
-              {
-                id: "check-runtime",
-                label: copy.check,
-                icon: <Icon name="search" className="size-4" />,
-                onClick: () => void runtime.checkUpdates(),
-              },
-            ]
-          : []),
-        ...actions,
-      ]}
+      actions={[...(supported ? runtimeActions : []), ...actions]}
     />
   );
 }

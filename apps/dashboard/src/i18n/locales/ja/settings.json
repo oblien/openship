@@ -782,7 +782,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "配信履歴",
-      "description": "すべてのチャンネルの直近50件の配信。",
+      "description": "すべてのチャンネルの配信履歴。",
+      "page": "ページ {page}",
       "refresh": "更新",
       "loading": "配信を読み込み中…",
       "error": "配信履歴を読み込めませんでした。更新して再試行してください。",
@@ -868,7 +869,9 @@
       "allTab": "すべて",
       "eventHeader": "イベント",
       "cellAria": "{channel} 経由の {category}",
-      "notifyMe": "通知"
+      "notifyMe": "通知",
+      "search": "アラートを検索",
+      "noResults": "一致するアラートはありません。"
     },
     "orgDefaults": {
       "title": "組織のデフォルト",
@@ -881,6 +884,7 @@
       "description": "チャネルはアカウントに属し、組織間で共有されます。アラート設定と既定値は現在の組織に適用されます。",
       "ready": "{total} チャネル中 {count} 件が利用可能",
       "preferences": "アラート設定",
+      "configuration": "チャンネルとアラート",
       "retry": "再試行"
     },
     "groups": {

@@ -157,10 +157,11 @@ export const notificationsApi = {
   }) => api.put<{ default: NotificationDefault }>(endpoints.notifications.defaults, data),
 
   // ── Deliveries (in-app inbox)
-  listDeliveries: (opts?: { unseen?: boolean; limit?: number }) => {
+  listDeliveries: (opts?: { unseen?: boolean; limit?: number; before?: string }) => {
     const params = new URLSearchParams();
     if (opts?.unseen) params.set("unseen", "true");
     if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
     const qs = params.toString();
     const url = qs
       ? `${endpoints.notifications.deliveries}?${qs}`

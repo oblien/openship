@@ -166,9 +166,7 @@ it("renders all seven channel kinds with preferences and history; never sends a 
   expect(host.querySelectorAll("li")).toHaveLength(7);
   expect(host.textContent).toContain("7 of 7 channels ready");
   expect(host.querySelector('section[aria-label="Alert preferences"]')).not.toBeNull();
-  expect(host.lastElementChild?.lastElementChild?.getAttribute("aria-label")).toBe(
-    "Delivery history",
-  );
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
   expect(m.test).not.toHaveBeenCalled();
   expect(
     Array.from(host.querySelectorAll("button")).filter((b) => b.textContent === "Send test"),
@@ -181,8 +179,67 @@ it("sends only the clicked channel test and can disable or delete a channel", as
   expect(m.test).toHaveBeenCalledExactlyOnceWith("email");
   await click("Enabled: email destination");
   expect(m.update).toHaveBeenCalledExactlyOnceWith("email", { enabled: false });
+  await click("More: email destination");
   await click("Delete channel");
   expect(m.remove).toHaveBeenCalledExactlyOnceWith("email");
+});
+
+it("opens history inline only when selected and preserves a channel draft on return", async () => {
+  await render();
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  await click("Add channel");
+  await fill("Name", "On call draft");
+  await click("Delivery history");
+  expect(host.querySelector('section[aria-label="Delivery history"]')).not.toBeNull();
+  expect(host.querySelector('[role="tabpanel"][hidden]')).not.toBeNull();
+  await click("Channels & alerts");
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  expect([...host.querySelectorAll<HTMLInputElement>("input")].some((input) => input.value === "On call draft")).toBe(true);
+  expect(m.create).not.toHaveBeenCalled();
+});
+
+it("filters alert names and descriptions within the selected tab without changing preferences", async () => {
+  m.categories.mockResolvedValue({
+    categories: [
+      {
+        id: "deploy.failed", group: "deployments", label: "Deployment failed",
+        description: "A build failed.", defaultEnabled: true,
+      },
+      {
+        id: "backup.failed", group: "backups", label: "Backup failed",
+        description: "Could not save a snapshot.", defaultEnabled: true,
+      },
+    ],
+    groups: [{ id: "deployments", label: "Deployments" }, { id: "backups", label: "Backups" }],
+  });
+  await render();
+  await click("Search alerts");
+  const search = host.querySelector<HTMLInputElement>('input[type="search"]')!;
+  const filter = async (query: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, query);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await filter("  SNAPSHOT  ");
+  expect(button("Notify me: Backup failed")).toBeDefined();
+  expect(host.textContent).not.toContain("Deployment failed");
+  await filter("failed");
+  await click("Deployments1");
+  expect(button("Notify me: Deployment failed")).toBeDefined();
+  expect(host.textContent).not.toContain("Backup failed");
+  await filter("snapshot");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("No matching alerts.");
+  await act(async () => {
+    search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(host.querySelector('input[type="search"]')).toBeNull();
+  expect(document.activeElement).toBe(button("Search alerts"));
+  expect(button("Notify me: Deployment failed")).toBeDefined();
+  await click("Search alerts");
+  expect(host.querySelector<HTMLInputElement>('input[type="search"]')?.value).toBe("");
+  expect(m.subscribe).not.toHaveBeenCalled();
+  expect(m.setDefault).not.toHaveBeenCalled();
+  expect(m.categories).toHaveBeenCalledTimes(1);
 });
 
 it.each([
@@ -364,6 +421,8 @@ it("works without props and explains account channels versus organization prefer
   expect(host.textContent).toContain(
     "Alert preferences and defaults apply to the active organization",
   );
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  await click("Delivery history");
   expect(host.querySelector('section[aria-label="Delivery history"]')).not.toBeNull();
 });
 
@@ -383,6 +442,7 @@ it.each(["email", "webhook", "slack", "discord", "msteams", "telegram", "in_app"
     };
     m.channels.mockResolvedValue({ channels: [ch] });
     await render();
+    await click(`More: ${kind} destination`);
     await click("Edit");
     expect(button("Channel type").disabled).toBe(true);
     await fill("Name", "Renamed");
@@ -402,6 +462,7 @@ it("updates a Telegram destination while retaining the stored token and topic", 
     ],
   });
   await render();
+  await click("More: telegram destination");
   await click("Edit");
   await fill("Chat ID", "-456");
   await click("Save");
@@ -418,6 +479,7 @@ it("changes a Slack credential without dropping its optional channel name or sen
     ],
   });
   await render();
+  await click("More: slack destination");
   await click("Edit");
   await fill("Webhook URL", "https://hooks.slack.com/services/new");
   await click("Save");
@@ -452,6 +514,7 @@ it.each([false, true])(
     m.create.mockResolvedValue(result);
     m.update.mockResolvedValue(result);
     await render();
+    if (editing) await click("More: webhook destination");
     await click(editing ? "Edit" : "Add channel");
     if (!editing) {
       await choose("Webhook");

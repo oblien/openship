@@ -21,6 +21,6 @@ export async function testChannel(c: Context) {
   return c.json(result, result.ok ? 200 : 400);
 }
 export async function listDeliveries(c: Context) {
-  const input = { unseen: c.req.query("unseen") === "true", limit: Math.min(parseInt(c.req.query("limit") ?? "100", 10) || 100, 500) };
+  const input = { unseen: c.req.query("unseen") === "true", limit: Math.min(parseInt(c.req.query("limit") ?? "100", 10) || 100, 500), before: c.req.query("before") };
   return c.json({ deliveries: await operationData(c, notifications().listDeliveries(operationContext(c), input)) });
 }

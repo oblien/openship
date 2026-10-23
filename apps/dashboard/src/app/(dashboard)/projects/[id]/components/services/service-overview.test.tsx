@@ -97,18 +97,20 @@ async function render(tab = "overview", props: Partial<Props> = {}) {
 
 it("offers image apps the same scoped redeploy and image-check controls", async () => {
   await render("overview", { projectType: "app", activeDeploymentId: "active" });
-  await act(async () => button(baseDictionary.projectSettings.runtimeUpdates.options).click());
+  expect([...host.querySelectorAll("button")].some((element) => element.textContent === copy.redeploy)).toBe(false);
+  await act(async () => button(baseDictionary.projects.card.more).click());
   await act(async () => button(baseDictionary.projectSettings.runtimeUpdates.check).click());
   expect(mocks.runtimeCheck).toHaveBeenCalledExactlyOnceWith("project-stack", { serviceIds: [service.id] });
   expect(mocks.runtimeUpdate).not.toHaveBeenCalled();
+  await act(async () => button(baseDictionary.projects.card.more).click());
   await act(async () => button(copy.redeploy).click());
   expect(mocks.runtimeUpdate).toHaveBeenCalledExactlyOnceWith("project-stack", { serviceIds: [service.id] });
   expect(mocks.push).toHaveBeenCalledWith("/build/dep-image-refresh");
 });
 
-it("refreshes source service base images from the shared redeploy dropdown", async () => {
+it("refreshes source service base images from the shared More menu", async () => {
   await render("overview", { activeDeploymentId: "active", service: { ...service, image: null, build: "." } });
-  await act(async () => button(baseDictionary.projectSettings.runtimeUpdates.options).click());
+  await act(async () => button(baseDictionary.projects.card.more).click());
   await act(async () => button(baseDictionary.projectSettings.runtimeUpdates.refresh).click());
   expect(mocks.runtimeUpdate).toHaveBeenCalledExactlyOnceWith("project-stack", { serviceIds: [service.id] });
   expect(mocks.push).toHaveBeenCalledWith("/build/dep-image-refresh");

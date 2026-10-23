@@ -70,4 +70,5 @@ export const UpsertNotificationDefaultBody = Type.Object({
 export const NotificationDeliveryQuery = Type.Object({
   unseen: Type.Optional(Type.Boolean()),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  before: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Delivery ID to page before, in newest-first order. Omit to read the latest deliveries." })),
 });

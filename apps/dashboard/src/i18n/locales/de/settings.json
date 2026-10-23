@@ -782,7 +782,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "Zustellverlauf",
-      "description": "Die letzten 50 Zustellungen über alle Kanäle.",
+      "description": "Zustellungen über alle Kanäle.",
+      "page": "Seite {page}",
       "refresh": "Aktualisieren",
       "loading": "Zustellungen werden geladen…",
       "error": "Der Zustellverlauf konnte nicht geladen werden. Zum erneuten Versuchen aktualisieren.",
@@ -868,7 +869,9 @@
       "allTab": "Alle",
       "eventHeader": "Ereignis",
       "cellAria": "{category} über {channel}",
-      "notifyMe": "Benachrichtigen"
+      "notifyMe": "Benachrichtigen",
+      "search": "Benachrichtigungen suchen",
+      "noResults": "Keine passenden Benachrichtigungen."
     },
     "orgDefaults": {
       "title": "Organisationsstandards",
@@ -881,6 +884,7 @@
       "description": "Kanäle gehören zu Ihrem Konto und werden organisationsübergreifend verwendet. Benachrichtigungseinstellungen und Standards gelten für die aktive Organisation.",
       "ready": "{count} von {total} Kanälen bereit",
       "preferences": "Benachrichtigungseinstellungen",
+      "configuration": "Kanäle & Benachrichtigungen",
       "retry": "Erneut versuchen"
     },
     "groups": {

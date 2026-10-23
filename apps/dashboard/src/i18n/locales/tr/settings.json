@@ -821,7 +821,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "İletim geçmişi",
-      "description": "Tüm kanallardaki son 50 iletim.",
+      "description": "Tüm kanallardaki teslimatlar.",
+      "page": "Sayfa {page}",
       "refresh": "Yenile",
       "loading": "İletimler yükleniyor…",
       "error": "İletim geçmişi yüklenemedi. Yenileyerek tekrar deneyin.",
@@ -907,7 +908,9 @@
       "allTab": "Tümü",
       "eventHeader": "Olay",
       "cellAria": "{channel} üzerinden {category}",
-      "notifyMe": "Bana bildir"
+      "notifyMe": "Bana bildir",
+      "search": "Uyarılarda ara",
+      "noResults": "Eşleşen uyarı yok."
     },
     "orgDefaults": {
       "title": "Organizasyon varsayılanları",
@@ -920,6 +923,7 @@
       "description": "Kanallar hesabınıza aittir ve kuruluşlar arasında paylaşılır. Uyarı tercihleri ve varsayılanlar etkin kuruluş için geçerlidir.",
       "ready": "{total} kanaldan {count} tanesi hazır",
       "preferences": "Uyarı tercihleri",
+      "configuration": "Kanallar ve uyarılar",
       "retry": "Yeniden dene"
     },
     "groups": {

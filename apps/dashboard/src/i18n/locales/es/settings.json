@@ -782,7 +782,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "Historial de entregas",
-      "description": "Últimas 50 entregas de todos los canales.",
+      "description": "Entregas en todos los canales.",
+      "page": "Página {page}",
       "refresh": "Actualizar",
       "loading": "Cargando entregas…",
       "error": "No se pudo cargar el historial. Actualiza para intentarlo de nuevo.",
@@ -868,7 +869,9 @@
       "allTab": "Todos",
       "eventHeader": "Evento",
       "cellAria": "{category} vía {channel}",
-      "notifyMe": "Notificarme"
+      "notifyMe": "Notificarme",
+      "search": "Buscar alertas",
+      "noResults": "No hay alertas que coincidan."
     },
     "orgDefaults": {
       "title": "Valores predeterminados de la organización",
@@ -881,6 +884,7 @@
       "description": "Los canales pertenecen a tu cuenta y se comparten entre organizaciones. Las preferencias y los valores predeterminados se aplican a la organización activa.",
       "ready": "{count} de {total} canales listos",
       "preferences": "Preferencias de alertas",
+      "configuration": "Canales y alertas",
       "retry": "Reintentar"
     },
     "groups": {

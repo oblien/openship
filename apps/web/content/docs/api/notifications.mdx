@@ -292,12 +292,22 @@ curl "$OPENSHIP_URL/api/notifications/deliveries?unseen=true&limit=20" \
 </Tab>
 </Tabs>
 
+To read older deliveries, pass the last returned delivery's ID as `before` with the same
+filters and limit. Results remain scoped to the signed-in user, active organization and
+current project permissions. New deliveries do not shift older pages. An empty response
+means there are no older visible deliveries, or the cursor was removed by retention; omit
+`before` to refresh from the latest page. Reading history does not mark deliveries seen.
+
 <TypeTable
   type={{
     unseen: {
       type: "boolean",
       description: "Pass ?unseen=true to return only unseen deliveries.",
       default: "false",
+    },
+    before: {
+      type: "string",
+      description: "Last delivery ID from the previous page. Omit for the latest page.",
     },
     limit: {
       type: "integer",

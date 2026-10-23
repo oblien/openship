@@ -782,7 +782,8 @@
   "notifications": {
     "deliveryHistory": {
       "title": "发送记录",
-      "description": "所有渠道最近的50条发送记录。",
+      "description": "所有渠道的投递记录。",
+      "page": "第 {page} 页",
       "refresh": "刷新",
       "loading": "正在加载发送记录…",
       "error": "无法加载发送记录，请刷新重试。",
@@ -868,7 +869,9 @@
       "allTab": "全部",
       "eventHeader": "事件",
       "cellAria": "通过 {channel} 接收 {category}",
-      "notifyMe": "通知我"
+      "notifyMe": "通知我",
+      "search": "搜索提醒",
+      "noResults": "没有匹配的提醒。"
     },
     "orgDefaults": {
       "title": "组织默认设置",
@@ -881,6 +884,7 @@
       "description": "渠道属于你的账户，可跨组织使用。提醒偏好和默认设置仅适用于当前组织。",
       "ready": "{total} 个渠道中有 {count} 个就绪",
       "preferences": "提醒偏好",
+      "configuration": "渠道与提醒",
       "retry": "重试"
     },
     "groups": {
