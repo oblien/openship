@@ -251,7 +251,7 @@
     "jobWorkflow": "تشغيل سير عمل",
     "jobCommand": "تشغيل أمر",
     "requestStatus": {
-      "waiting": "بانتظار الفحوص",
+      "waiting": "بانتظار النشر",
       "blocked": "فشلت الفحوص المطلوبة",
       "deploying": "جارٍ بدء النشر",
       "deployed": "بدأ النشر",

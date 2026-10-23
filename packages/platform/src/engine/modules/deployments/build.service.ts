@@ -1,3 +1,4 @@
+import { nativeJobsEnabled } from "../../native/execution-policy";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
 /**
  * Build service — build session LIFECYCLE + config/snapshot helpers.
@@ -26,6 +27,7 @@ import {
   type Project,
   type Service,
   type DeploymentResourceChanges,
+  type AutomaticBuildCancellation,
 } from "@repo/db";
 import {
   AppError,
@@ -677,7 +679,8 @@ async function canonicalizeCommitRef(
   ref: string | undefined,
 ): Promise<string | undefined> {
   const trimmed = ref?.trim();
-  if (!trimmed || isFullCommitSha(trimmed)) return trimmed;
+  if (!trimmed) return trimmed;
+  if (isFullCommitSha(trimmed)) return trimmed.toLowerCase();
   if (!project.gitOwner || !project.gitRepo) return trimmed;
   const found = await getCommitByRef(ctx, project.gitOwner, project.gitRepo, trimmed).catch(
     (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; },
@@ -2252,9 +2255,12 @@ export async function requestBuildAccess(
  */
 export async function cancelBuildSession(
   deploymentId: string,
-  opts: { keepProvisioned?: boolean } = {},
+  opts: { keepProvisioned?: boolean; automaticRequest?: AutomaticBuildCancellation } = {},
 ) {
   const { dep, project } = await loadDeployment(deploymentId);
+
+  if (opts.automaticRequest && !["queued", "building"].includes(dep.status))
+    return { success: false, pending: false, status: "cancelled" as const, message: "This deployment has already left the cancellable build phase." };
 
   const retryingCancellation = dep.status === "cancelled" &&
     await repos.deployment.hasLiveBuildExecution(dep.id, dep.projectId);
@@ -2277,11 +2283,11 @@ export async function cancelBuildSession(
       }
     : undefined;
   if (
-    !retryingCancellation && !(await repos.deployment.cancelInFlight(
-      dep.id,
-      cancellationMeta ? { meta: cancellationMeta } : undefined,
-    ))
+    !retryingCancellation && !(opts.automaticRequest
+      ? await repos.deployment.cancelObsoleteAutomaticBuild(dep.id, opts.automaticRequest)
+      : await repos.deployment.cancelInFlight(dep.id, cancellationMeta ? { meta: cancellationMeta } : undefined))
   ) {
+    if (opts.automaticRequest) return { success: false, pending: false, status: "cancelled" as const, message: "The automatic deployment request changed." };
     throw new ForbiddenError("Cannot cancel a deployment that is no longer in progress");
   }
 
@@ -2732,6 +2738,45 @@ export interface DeploymentTriggerInput {
 }
 
 export async function triggerDeployment(ctx: RequestContext, data: DeploymentTriggerInput) {
+  const receivedAt = new Date();
+  if (data.trigger !== "webhook" || data.actionRequestId || !nativeJobsEnabled())
+    return triggerDeploymentNow(ctx, data);
+  const project = await repos.project.findById(data.projectId);
+  if (!project || project.organizationId !== ctx.organizationId)
+    throw new NotFoundError("Project", data.projectId);
+  // Remember the durable admission order before source/network preparation. The
+  // queue transaction refuses an intent overtaken by another admitted deployment.
+  const latest = await repos.deployment.findLatestByProject(project.id);
+  try {
+    return await triggerDeploymentNow(ctx, data);
+  } catch (error) {
+    if (
+      !(error instanceof AppError) ||
+      error.code !== "DEPLOYMENT_IN_PROGRESS" ||
+      !project.autoDeploy
+    )
+      throw error;
+    const { queueBlockedPush } = await import("../github/queued-pushes");
+    const branch = await resolveProjectBranch(ctx, project, data.branch);
+    const commitSha = await canonicalizeCommitRef(ctx, project, data.commitSha);
+    const request = await queueBlockedPush(
+      ctx,
+      project,
+      { ...data, branch, commitSha },
+      latest?.id ?? null,
+      receivedAt,
+    );
+    if (!request) throw error;
+    return {
+      deployment: undefined,
+      skipped: true as const,
+      awaitingActions: request,
+      queuedPush: true as const,
+    };
+  }
+}
+
+async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTriggerInput) {
   const project = await repos.project.findById(data.projectId);
   // Recheck the ownership invariant at the engine boundary too: a project may
   // have moved since application authorization resolved its organization.
@@ -2809,7 +2854,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   // written in the same alphabet. See canonicalizeCommitRef.
   const requestedCommitSha = await canonicalizeCommitRef(ctx, project, data.commitSha);
 
-  if (data.trigger === "webhook") {
+  if (data.trigger === "webhook" && !data.actionRequestId) {
     const request = await (await import("../actions/deployment-gate")).queueActionDeployment(ctx, project, { ...data, branch, commitSha: requestedCommitSha });
     if (request) return { awaitingActions: request, deployment: undefined, skipped: true as const };
   }

@@ -627,6 +627,11 @@
       "select": "Sélectionner un domaine...",
       "clear": "Effacer la sélection"
     },
+    "buildQueue": {
+      "label": "Annuler les builds obsolètes",
+      "description": "Conserver uniquement le dernier push en attente. Si activé, un nouveau push annule aussi un ancien build automatique avant les étapes de publication. Les déploiements manuels et les retours arrière sont conservés.",
+      "saveFailed": "Impossible d’enregistrer la préférence d’annulation"
+    },
     "autoDeployCard": {
       "title": "Déploiement automatique",
       "enabled": "Activé",

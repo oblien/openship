@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   onFailure: vi.fn(async () => {}),
   onReconciling: vi.fn(async () => {}),
   onSuccess: vi.fn(async () => {}),
-  setDeploymentStatus: vi.fn(async () => {}),
+  setDeploymentStatus: vi.fn(async (): Promise<boolean | void> => {}),
   promptUser: vi.fn(async () => "migrate"),
   keepProvisioned: false,
 }));
@@ -164,6 +164,17 @@ describe("executeComposePipeline — cancellation", () => {
       staticServiceIds: new Set(), durationMs: 5 };
     return { commit, rollback, built };
   }
+
+  it("cleans built artifacts without cutover when cancellation wins the release transition", async () => {
+    const f = completedCutover();
+    mocks.deployComposeServices.mockReset();
+    mocks.setDeploymentStatus.mockResolvedValueOnce(false);
+    await run(f.built);
+    expect(mocks.deployComposeServices).not.toHaveBeenCalled();
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "image:v2");
+    expect(mocks.onCancelled).toHaveBeenCalledOnce();
+    expect(f.commit).not.toHaveBeenCalled();
+  });
 
   it("retires the predecessor only after the new outcome and active pointer are confirmed", async () => {
     const f = completedCutover();

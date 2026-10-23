@@ -120,6 +120,20 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
   const [showPicker, setShowPicker] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
   const [savingChecks, setSavingChecks] = useState(false);
+  const [savingBuildPolicy, setSavingBuildPolicy] = useState(false);
+  const saveBuildPolicy = async () => {
+    const autoDeployCancelBuilds = !projectData.autoDeployCancelBuilds;
+    setSavingBuildPolicy(true);
+    try {
+      await projectsApi.setOptions(id, { autoDeployCancelBuilds });
+      updateProjectData({ autoDeployCancelBuilds });
+      invalidateProjectCaches(id);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, t.projectSettings.git.buildQueue.saveFailed), "error");
+    } finally {
+      setSavingBuildPolicy(false);
+    }
+  };
   const saveChecks = async (githubChecks: import("@repo/core").GitHubDeploymentChecks) => {
     setSavingChecks(true);
     try {
@@ -511,7 +525,18 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
             </div>
           </div>
 
-
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl bg-card p-4">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-foreground">{t.projectSettings.git.buildQueue.label}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{t.projectSettings.git.buildQueue.description}</p>
+            </div>
+            <Toggle
+              checked={!!projectData.autoDeployCancelBuilds}
+              aria-label={t.projectSettings.git.buildQueue.label}
+              disabled={savingBuildPolicy}
+              onChange={() => void saveBuildPolicy()}
+            />
+          </div>
         </SectionCard>
 
         <GitHubChecksSettings

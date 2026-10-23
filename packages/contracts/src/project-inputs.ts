@@ -379,6 +379,7 @@ export const SetReleaseSourceBody = Type.Object({
 });
 
 export const CreateProjectBody = Type.Object({
+  autoDeployCancelBuilds: Type.Optional(Type.Boolean()),
   githubChecks: Type.Optional(Type.Union([GitHubDeploymentChecksSchema, Type.Null()])),
   name: Type.String({ minLength: 1, maxLength: 100 }),
   /**
@@ -713,6 +714,7 @@ export const SetSleepModeBody = Type.Object({
  */
 export const SetOptionsBody = Type.Object(
   {
+    autoDeployCancelBuilds: CreateProjectBody.properties.autoDeployCancelBuilds,
     githubChecks: CreateProjectBody.properties.githubChecks,
     /** Save a scanned source ref and its build settings in the same update. */
     gitBranch: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),

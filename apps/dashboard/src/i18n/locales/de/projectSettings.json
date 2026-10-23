@@ -627,6 +627,11 @@
       "select": "Domain auswählen...",
       "clear": "Auswahl aufheben"
     },
+    "buildQueue": {
+      "label": "Überholte Builds abbrechen",
+      "description": "Nur den neuesten ausstehenden Push behalten. Wenn aktiviert, bricht ein neuer Push auch einen älteren automatischen Build vor den Release-Schritten ab. Manuelle Deployments und Rollbacks bleiben erhalten.",
+      "saveFailed": "Einstellung zum Build-Abbruch konnte nicht gespeichert werden"
+    },
     "autoDeployCard": {
       "title": "Auto-Deploy",
       "enabled": "Aktiviert",

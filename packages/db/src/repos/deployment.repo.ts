@@ -1,12 +1,13 @@
 import type { RoleContainerRef } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { ilike, type SQL, eq, and, asc, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { ilike, type SQL, eq, and, asc, desc, gt, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { generateId, AppError, redactUrlCredentials, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
 import { isDeepStrictEqual } from "node:util";
-import type { Database } from "../connection";
+import type { Database, DatabaseTransaction } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { deployment, buildSession, project, service, cloudBuildActivity, cloudWorkspace, pullRequestPreview } from "../schema";
 import { actionDeployment, actionProject, actionRun, actionWorkflow } from "../schema/actions";
+import { settleAutomaticDeploymentDeliveries } from "./automatic-deployment-deliveries";
 import { detailOf } from "./storable-detail";
 import { reserveCloudBuildActivity, type CloudBuildResources } from "./cloud-build-activity.repo";
 import { queueDeploymentChecks } from "./deployment-check.repo";
@@ -18,6 +19,13 @@ export type Deployment = typeof deployment.$inferSelect;
 export type NewDeployment = typeof deployment.$inferInsert;
 export type BuildSession = typeof buildSession.$inferSelect;
 export type NewBuildSession = typeof buildSession.$inferInsert;
+
+export interface AutomaticBuildCancellation {
+  organizationId: string;
+  projectId: string;
+  requestId: string;
+  owner: string;
+}
 
 function pendingRoleHandoverCondition() {
   return and(
@@ -84,12 +92,53 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
   // and the worker can both finish the session later, but neither may replace
   // this duration with cleanup time or a missing build result (zero). The worker
   // lease, finishedAt, remains open until its outer finally acknowledges it.
-  async function recordCancellation(where: SQL, extra?: Partial<NewDeployment>): Promise<boolean> {
+  async function recordCancellation(
+    where: SQL,
+    extra?: Partial<NewDeployment>,
+    automatic?: AutomaticBuildCancellation,
+  ): Promise<boolean> {
     const now = new Date();
-    return db.transaction(async (tx) => {
+    const cancel = async (tx: DatabaseTransaction) => {
+      if (automatic) {
+        const [request] = await tx
+          .select()
+          .from(actionDeployment)
+          .where(
+            and(
+              eq(actionDeployment.id, automatic.requestId),
+              eq(actionDeployment.projectId, automatic.projectId),
+              eq(actionDeployment.organizationId, automatic.organizationId),
+              eq(actionDeployment.leaseOwner, automatic.owner),
+              gt(actionDeployment.leaseUntil, now),
+              eq(actionDeployment.status, "deploying"),
+              isNull(actionDeployment.deploymentId),
+            ),
+          )
+          .for("update");
+        const [target] = await tx.select().from(project).where(eq(project.id, automatic.projectId));
+        if (!request || !target?.autoDeploy || !target.autoDeployCancelBuilds || target.disabledAt)
+          return false;
+        if (
+          (target.gitBranch && request.ref !== `refs/heads/${target.gitBranch}`) ||
+          (request.intent.kind === "push" &&
+            request.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase())
+        )
+          return false;
+        where = and(
+          where,
+          eq(deployment.projectId, target.id),
+          eq(deployment.organizationId, automatic.organizationId),
+          eq(deployment.branch, request.ref.replace(/^refs\/heads\//, "")),
+          inArray(deployment.trigger, ["webhook", "actions"]),
+          inArray(deployment.status, ["queued", "building"]),
+          ne(deployment.commitSha, request.revision),
+        )!;
+      }
       const rows = await tx
         .update(deployment)
-        .set(codec.sealDeployment({ ...withRedactedError(extra), status: "cancelled", updatedAt: now }))
+        .set(
+          codec.sealDeployment({ ...withRedactedError(extra), status: "cancelled", updatedAt: now }),
+        )
         .where(and(where, sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'committing'`))
         .returning();
       if (rows.length === 0) return false;
@@ -107,7 +156,15 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         })
         .where(eq(buildSession.deploymentId, rows[0].id));
       return true;
-    });
+    };
+    return automatic
+      ? ((await withProjectWorkAdmission(
+          db,
+          automatic.projectId,
+          automatic.organizationId,
+          cancel,
+        )) ?? false)
+      : db.transaction(cancel);
   }
 
   async function listHistory(scope: SQL, opts: DeploymentHistoryQuery = {}) {
@@ -492,7 +549,9 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           const requirements = await tx.select({ id: actionWorkflow.id, version: actionWorkflow.updatedAt, enabled: actionWorkflow.enabled, owner: actionWorkflow.owner, repo: actionWorkflow.repo })
             .from(actionProject).innerJoin(actionWorkflow, eq(actionWorkflow.id, actionProject.workflowId))
             .where(and(eq(actionProject.projectId, rest.projectId), eq(actionProject.organizationId, rest.organizationId), eq(actionProject.required, true))).for("share");
-          if (!requirements.length || requirements.length !== Object.keys(receipt.requirements).length || requirements.some(row =>
+          const plainPush = receipt.intent.kind === "push";
+          if ((plainPush && receipt.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase()) ||
+            (!plainPush && !requirements.length) || requirements.length !== Object.keys(receipt.requirements).length || requirements.some(row =>
             !row.enabled || row.version.toISOString() !== receipt.requirements[row.id] ||
             row.owner !== target.gitOwner?.toLowerCase() || row.repo !== target.gitRepo?.toLowerCase()))
             throw new AppError("Required workflow configuration changed before deployment", 409, "ACTIONS_DEPLOYMENT_CHANGED");
@@ -539,10 +598,15 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         }).where(and(eq(actionDeployment.id, inserted.actionRequestId), eq(actionDeployment.organizationId, inserted.organizationId)));
         // A deliberate deployment also supersedes pending automatic approvals.
         // It must not be replaced later by a previously queued green commit.
-        if (inserted && !inserted.actionRequestId) await tx.update(actionDeployment).set({
+        if (inserted && !inserted.actionRequestId) {
+          const retired = await tx.update(actionDeployment).set({
           status: "superseded", error: "A newer deployment was started for this project.", updatedAt: new Date(),
         }).where(and(eq(actionDeployment.projectId, inserted.projectId), eq(actionDeployment.organizationId, inserted.organizationId),
-          isNull(actionDeployment.deploymentId), inArray(actionDeployment.status, ["waiting", "blocked", "deploying"])));
+          isNull(actionDeployment.deploymentId), inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]))
+          ).returning();
+          await settleAutomaticDeploymentDeliveries(tx, inserted.organizationId, inserted.projectId,
+            retired.map(row => row.id), "skipped", inserted.id);
+        }
         if (inserted && roleChanges) {
           const [owner] = await tx.select().from(project).where(eq(project.id, rest.projectId));
           if (owner?.activeDeploymentId !== roleChanges.expectedActiveDeploymentId ||
@@ -921,6 +985,14 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       );
     },
 
+    /** A leased newer request may cancel only an automatic build, before activation. */
+    async cancelObsoleteAutomaticBuild(
+      id: string,
+      request: AutomaticBuildCancellation,
+    ): Promise<boolean> {
+      return recordCancellation(eq(deployment.id, id), undefined, request);
+    },
+
     /**
      * Flip meta.composeDeployment.decision "pending" → "superseded" for every
      * OTHER deployment of the project — a newer release makes a held keep/reject
@@ -1115,7 +1187,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     async findLatestByProject(projectId: string) {
       return codec.openDeployment(await db.query.deployment.findFirst({
         where: eq(deployment.projectId, projectId),
-        orderBy: [desc(deployment.createdAt)],
+        orderBy: [desc(deployment.createdAt), desc(deployment.id)],
       }));
     },
 

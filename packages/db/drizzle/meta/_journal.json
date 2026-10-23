@@ -1429,6 +1429,13 @@
       "when": 1792683952079,
       "tag": "0203_database_reader_bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1792683952080,
+      "tag": "0204_automatic_push_admission",
+      "breakpoints": true
     }
   ]
 }

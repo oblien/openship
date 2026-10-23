@@ -1129,6 +1129,17 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.stop).not.toHaveBeenCalled();
   });
 
+  it("does not run release commands or activation when cancellation wins the release transition", async () => {
+    mocks.setDeploymentStatus.mockImplementation(async (_id, status) => status !== "deploying");
+    await run(deployment({ meta: { ...snapshot(), releaseCommands: ["migrate"] } }));
+    await vi.waitFor(() => expect(mocks.onCancelled).toHaveBeenCalledOnce());
+    await waitForDeploymentQuiescence("deployment-1", "project-1");
+    expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+    expect(mocks.stop).not.toHaveBeenCalled();
+    expect(mocks.reportPipelineError).not.toHaveBeenCalled();
+  });
+
   it("skips commands for an unpinned rollback rebuilt from source on Bare", async () => {
     resolvedRuntime.name = "bare";
     mocks.build.mockResolvedValueOnce({

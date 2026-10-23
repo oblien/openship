@@ -251,7 +251,7 @@
     "jobWorkflow": "运行工作流",
     "jobCommand": "运行命令",
     "requestStatus": {
-      "waiting": "等待检查",
+      "waiting": "等待部署",
       "blocked": "必需检查失败",
       "deploying": "正在启动部署",
       "deployed": "部署已启动",

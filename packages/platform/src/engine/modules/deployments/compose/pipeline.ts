@@ -385,9 +385,14 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   } else {
     logger.log("Build phase complete. Starting project service deployment...\n");
   }
-  await setDeploymentStatus(dep.id, "deploying", {
+  if (await setDeploymentStatus(dep.id, "deploying", {
     extra: { buildDurationMs: composeBuild.durationMs },
-  });
+  }) === false) {
+    await finishServiceDeploymentTimings(ctx);
+    if (!keepProvisionedOnCancel()) await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
+    await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: keepProvisionedOnCancel() });
+    return;
+  }
   if (composeBuild.buildFailures.size === 0) {
     try {
       const services = await getCurrentServices();

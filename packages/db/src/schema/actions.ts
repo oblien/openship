@@ -192,6 +192,9 @@ export const actionDeployment = pgTable(
     requirements: jsonb("requirements").$type<Record<string, string>>().notNull(),
     intent: jsonb("intent")
       .$type<{
+        /** Plain pushes share the durable admission controller with required-check deployments. */
+        kind?: "push";
+        repository?: string;
         serverId?: string;
         environment?: string;
         commitMessage?: string;
@@ -225,7 +228,8 @@ export const actionDeployment = pgTable(
       foreignColumns: [project.id, project.organizationId],
       name: "action_deployment_project_owner_fk",
     }).onDelete("cascade"),
-    uniqueIndex("action_deployment_commit_unique").on(t.projectId, t.revision),
+    uniqueIndex("action_deployment_commit_unique").on(t.projectId, t.revision)
+      .where(sql`${t.intent}->>'kind' IS DISTINCT FROM 'push'`),
     index("action_deployment_pending_idx").on(t.status, t.retryAt),
   ],
 );

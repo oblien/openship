@@ -74,12 +74,6 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   { key: "github:pr-previews", label: "Pull request preview environments", defaultCron: "*/30 * * * * *",
     run: async () => { await (await import("../projects/pull-request-previews")).runPullRequestPreviewsSweep(); return { checked: true }; } },
   {
-    key: "github:queued-pushes",
-    label: "Queued GitHub pushes",
-    defaultCron: "*/30 * * * * *",
-    run: async () => (await import("../github/queued-pushes")).deployQueuedPushes(),
-  },
-  {
     key: "github:deployment-checks",
     label: "GitHub deployment Checks",
     defaultCron: "*/10 * * * * *",

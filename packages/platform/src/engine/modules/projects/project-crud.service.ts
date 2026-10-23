@@ -742,6 +742,7 @@ function buildProductionProjectInput(
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
     githubChecks: data.githubChecks,
+    autoDeployCancelBuilds: data.autoDeployCancelBuilds,
     framework: normalizeFramework(data.framework),
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
@@ -2162,6 +2163,7 @@ export async function createProjectEnvironment(
     gitUrl: app?.gitUrl ?? base.gitUrl,
     installationId: app?.installationId ?? base.installationId,
     githubChecks: base.githubChecks,
+    autoDeployCancelBuilds: base.autoDeployCancelBuilds,
     releaseSource: base.releaseSource,
     framework: base.framework,
     packageManager: base.packageManager,
@@ -2747,6 +2749,11 @@ export async function updateOptions(
       throw new ValidationError("gitBranch must be a non-empty branch name of at most 200 characters");
     }
     update.gitBranch = options.gitBranch.trim();
+  }
+  if (options.autoDeployCancelBuilds !== undefined) {
+    if (typeof options.autoDeployCancelBuilds !== "boolean")
+      throw new ValidationError("autoDeployCancelBuilds must be a boolean");
+    update.autoDeployCancelBuilds = options.autoDeployCancelBuilds;
   }
   if (options.githubChecks !== undefined) update.githubChecks = options.githubChecks;
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;

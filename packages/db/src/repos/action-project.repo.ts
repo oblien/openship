@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { AppError } from "@repo/core";
+import { AppError, generateId } from "@repo/core";
 import type { Database } from "../client";
 import { actionDeployment, actionProject, actionRun, actionWorkflow } from "../schema/actions";
 import { project } from "../schema/project";
 import { deployment } from "../schema/deployment";
 import { withProjectWorkAdmission } from "./project-work-admission";
+import { webhookDelivery } from "../schema/webhook-delivery";
+import { settleAutomaticDeploymentDeliveries } from "./automatic-deployment-deliveries";
 
 export type ActionDeploymentRequest = typeof actionDeployment.$inferSelect;
 
@@ -79,22 +81,20 @@ export function createActionProjectRepo(db: Database) {
             and(eq(actionProject.organizationId, org), eq(actionProject.projectId, projectId)),
           );
         if (ids.length)
-          await tx
-            .insert(actionProject)
-            .values(
-              ids.map((workflowId) => ({
-                organizationId: org,
-                projectId,
-                workflowId,
-                required: required.has(workflowId),
-              })),
-            );
+          await tx.insert(actionProject).values(
+            ids.map((workflowId) => ({
+              organizationId: org,
+              projectId,
+              workflowId,
+              required: required.has(workflowId),
+            })),
+          );
         await tx
           .update(project)
           .set({ autoDeploy: input.enabled, updatedAt: new Date() })
           .where(and(eq(project.id, projectId), eq(project.organizationId, org)));
         // Old approvals cannot authorize a newly edited deployment policy.
-        await tx
+        const retired = await tx
           .update(actionDeployment)
           .set({
             status: "superseded",
@@ -108,25 +108,63 @@ export function createActionProjectRepo(db: Database) {
               isNull(actionDeployment.deploymentId),
               inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]),
             ),
-          );
+          )
+          .returning();
+        await settleAutomaticDeploymentDeliveries(
+          tx,
+          org,
+          projectId,
+          retired.map((row) => row.id),
+          "skipped",
+        );
         return true;
       });
       if (!saved)
         throw new AppError("Project is unavailable for changes", 409, "PROJECT_UNAVAILABLE");
     },
-    async queueActionDeployment(input: typeof actionDeployment.$inferInsert) {
+    async queueActionDeployment(
+      input: typeof actionDeployment.$inferInsert,
+      expectedDeploymentId?: string | null,
+    ) {
       return withProjectWorkAdmission(db, input.projectId, input.organizationId, async (tx) => {
         const [target] = await tx.select().from(project).where(eq(project.id, input.projectId));
         if (!target?.autoDeploy || target.disabledAt) return undefined;
-        const [existing] = await tx
-          .select()
-          .from(actionDeployment)
-          .where(
-            and(
-              eq(actionDeployment.projectId, input.projectId),
-              eq(actionDeployment.revision, input.revision),
-            ),
-          );
+        const push = input.intent.kind === "push";
+        if (
+          push &&
+          (input.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase() ||
+            (target.gitBranch && input.ref !== `refs/heads/${target.gitBranch}`))
+        )
+          return undefined;
+        // Source resolution may finish out of order. An older invocation cannot
+        // replace a newer push that has already entered the durable queue.
+        if (push && input.createdAt && input.status !== "superseded") {
+          const [newer] = await tx
+            .select()
+            .from(actionDeployment)
+            .where(
+              and(
+                eq(actionDeployment.projectId, input.projectId),
+                isNull(actionDeployment.deploymentId),
+                inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]),
+                gt(actionDeployment.createdAt, input.createdAt),
+              ),
+            )
+            .limit(1);
+          if (newer) return newer;
+        }
+        const [existing] = push
+          ? []
+          : await tx
+              .select()
+              .from(actionDeployment)
+              .where(
+                and(
+                  eq(actionDeployment.projectId, input.projectId),
+                  eq(actionDeployment.revision, input.revision),
+                  sql`${actionDeployment.intent}->>'kind' IS DISTINCT FROM 'push'`,
+                ),
+              );
         if (existing) return existing;
         const links = await tx
           .select({ id: actionWorkflow.id, version: actionWorkflow.updatedAt })
@@ -143,13 +181,33 @@ export function createActionProjectRepo(db: Database) {
         const requirements = Object.fromEntries(
           links.map((row) => [row.id, row.version.toISOString()]),
         );
-        if (!links.length) return undefined;
+        if (!push && !links.length) return undefined;
+        if (push && links.length)
+          throw new AppError(
+            "Deployment automation changed. Retry the push.",
+            409,
+            "ACTIONS_DEPLOYMENT_CHANGED",
+          );
+        if (push && expectedDeploymentId !== undefined) {
+          const [latest] = await tx
+            .select({ id: deployment.id })
+            .from(deployment)
+            .where(eq(deployment.projectId, input.projectId))
+            .orderBy(desc(deployment.createdAt), desc(deployment.id))
+            .limit(1);
+          if ((latest?.id ?? null) !== expectedDeploymentId)
+            input = {
+              ...input,
+              status: "superseded",
+              error: "A newer deployment was admitted before this push could be queued.",
+            };
+        }
         if (input.status !== "superseded") {
-          await tx
+          const previous = await tx
             .update(actionDeployment)
             .set({
               status: "superseded",
-              error: "A newer commit is waiting for checks.",
+              error: "A newer automatic deployment request replaced this commit.",
               updatedAt: new Date(),
             })
             .where(
@@ -158,14 +216,41 @@ export function createActionProjectRepo(db: Database) {
                 isNull(actionDeployment.deploymentId),
                 inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]),
               ),
-            );
+            )
+            .returning();
+          if (push && previous.some((row) => row.intent.forceAll))
+            input = { ...input, intent: { ...input.intent, forceAll: true } };
+          await settleAutomaticDeploymentDeliveries(
+            tx,
+            input.organizationId,
+            input.projectId,
+            previous.map((row) => row.id),
+            "skipped",
+          );
         }
-        return (
+        const saved = (
           await tx
             .insert(actionDeployment)
             .values({ ...input, requirements })
             .returning()
         )[0];
+        if (push)
+          await tx.insert(webhookDelivery).values({
+            id: generateId("wdl"),
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            source: "github",
+            event: "push",
+            authResult: "ok",
+            outcome: saved.status === "superseded" ? "skipped" : "queued",
+            actionRef: saved.id,
+            summary: {
+              repo: input.intent.repository,
+              branch: input.ref.replace(/^refs\/heads\//, ""),
+              commit: input.revision,
+            },
+          });
+        return saved;
       });
     },
     async projectActionDeployments(org: string, projectId: string) {
@@ -231,24 +316,41 @@ export function createActionProjectRepo(db: Database) {
       >,
       release = true,
     ) {
-      return (
-        await db
-          .update(actionDeployment)
-          .set({
-            ...changes,
-            updatedAt: new Date(),
-            ...(release && { leaseOwner: null, leaseUntil: null }),
-          })
-          .where(
-            and(
-              requestWhere(org, id),
-              eq(actionDeployment.leaseOwner, owner),
-              gt(actionDeployment.leaseUntil, new Date()),
-              inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]),
-            ),
-          )
-          .returning()
-      )[0];
+      return db.transaction(async (tx) => {
+        const saved = (
+          await tx
+            .update(actionDeployment)
+            .set({
+              ...changes,
+              updatedAt: new Date(),
+              ...(release && { leaseOwner: null, leaseUntil: null }),
+            })
+            .where(
+              and(
+                requestWhere(org, id),
+                eq(actionDeployment.leaseOwner, owner),
+                gt(actionDeployment.leaseUntil, new Date()),
+                inArray(actionDeployment.status, ["waiting", "blocked", "deploying"]),
+              ),
+            )
+            .returning()
+        )[0];
+        if (saved && ["deployed", "superseded", "cancelled", "failed"].includes(saved.status))
+          await settleAutomaticDeploymentDeliveries(
+            tx,
+            org,
+            saved.projectId,
+            [id],
+            saved.status === "deployed"
+              ? "dispatched"
+              : saved.status === "failed"
+                ? "failed"
+                : "skipped",
+            saved.deploymentId ?? undefined,
+            saved.error,
+          );
+        return saved;
+      });
     },
     async resetActionDeployment(
       org: string,
@@ -257,31 +359,30 @@ export function createActionProjectRepo(db: Database) {
       changes: Pick<ActionDeploymentRequest, "status" | "error"> &
         Partial<Pick<ActionDeploymentRequest, "requirements" | "authority">>,
     ) {
-      return withProjectWorkAdmission(
-        db,
-        projectId,
-        org,
-        async (tx) =>
-          (
-            await tx
-              .update(actionDeployment)
-              .set({
-                ...changes,
-                leaseOwner: null,
-                leaseUntil: null,
-                retryAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  requestWhere(org, id),
-                  eq(actionDeployment.projectId, projectId),
-                  isNull(actionDeployment.deploymentId),
-                ),
-              )
-              .returning()
-          )[0],
-      );
+      return withProjectWorkAdmission(db, projectId, org, async (tx) => {
+        const saved = (
+          await tx
+            .update(actionDeployment)
+            .set({
+              ...changes,
+              leaseOwner: null,
+              leaseUntil: null,
+              retryAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                requestWhere(org, id),
+                eq(actionDeployment.projectId, projectId),
+                isNull(actionDeployment.deploymentId),
+              ),
+            )
+            .returning()
+        )[0];
+        if (saved && ["cancelled", "superseded"].includes(saved.status))
+          await settleAutomaticDeploymentDeliveries(tx, org, projectId, [id], "skipped");
+        return saved;
+      });
     },
     async deploymentForActionRequest(org: string, requestId: string) {
       return (

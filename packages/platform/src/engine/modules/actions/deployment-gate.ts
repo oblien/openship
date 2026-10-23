@@ -13,8 +13,9 @@ import {
   captureExecutionAuthority,
   resolveExecutionAuthority,
 } from "../../lib/execution-authority";
-import { githubFetch } from "../github/github.auth";
+import { repositoryHead } from "../github/repository-head";
 import type { DeploymentTriggerInput } from "../deployments/build.service";
+import { automaticDeploymentIntent } from "../deployments/automatic-deployment-intent";
 import { requireActionProject, getActionProjectPolicy } from "./project.service";
 import {
   requireActionWorkflow,
@@ -23,18 +24,23 @@ import {
 } from "./action.service";
 import { record } from "./workflow";
 import { assertRequiredPushWorkflow } from "./required-checks";
+import { authorization } from "../../lib/authorization";
+import { notifyAutoDeployFailed } from "../github/queued-pushes";
 
-async function repositoryHead(ctx: ExecutionContext, project: Project, branch: string) {
-  if (!project.gitOwner || !project.gitRepo)
-    throw new AppError("The project no longer has a repository", 409, "ACTIONS_PROJECT_CHANGED");
-  return (
-    await githubFetch<{ sha: string }>({
-      ctx,
-      owner: project.gitOwner,
-      repo: project.gitRepo,
-      url: `https://api.github.com/repos/${encodeURIComponent(project.gitOwner)}/${encodeURIComponent(project.gitRepo)}/commits/${encodeURIComponent(`refs/heads/${branch}`)}`,
-    })
-  ).sha;
+async function requireDeploymentProject(ctx: ExecutionContext, request: ActionDeploymentRequest) {
+  if (request.intent.kind !== "push") return requireActionProject(ctx, request.projectId, true);
+  const target = await repos.project.findByIdInOrganization(request.projectId, ctx.organizationId);
+  if (!target || target.deletedAt) throw new AppError("Project not found", 404, "NOT_FOUND");
+  await authorization.authorize(
+    { ...ctx, scopeMode: "fixed" },
+    {
+      resourceType: "project",
+      resourceId: target.id,
+      action: "write",
+      capability: "deployments:trigger",
+    },
+  );
+  return target;
 }
 
 /** Called at the same deployment entry used by signed pushes and authenticated webhook forwarding. */
@@ -73,18 +79,7 @@ export async function queueActionDeployment(
     authority: await captureExecutionAuthority(ctx),
     status: head === revision ? "waiting" : "superseded",
     error: head === revision ? null : "This push is older than the current repository branch.",
-    intent: {
-      serverId: input.serverId,
-      environment: input.environment,
-      commitMessage: input.commitMessage,
-      serviceIds: input.serviceIds,
-      forceAll: input.forceAll,
-      changedPaths: input.changedPaths,
-      forcePullImages: input.forcePullImages,
-      strictServiceScope: input.strictServiceScope,
-      smartRoute: input.smartRoute,
-      event: input.actionEvent,
-    },
+    intent: automaticDeploymentIntent(input),
   });
 }
 
@@ -104,6 +99,8 @@ export interface ActionDeploymentPorts {
   ): Promise<{ head: string; requirements: Record<string, string>; enabled: boolean }>;
   dispatchChecks(request: ActionDeploymentRequest, missingIds: string[]): Promise<void>;
   deploy(request: ActionDeploymentRequest, owner: string): Promise<string>;
+  cancelObsolete?(request: ActionDeploymentRequest, owner: string): Promise<void>;
+  failed?(request: ActionDeploymentRequest, error: unknown): void;
   reportError(error: unknown, request: ActionDeploymentRequest): void;
 }
 
@@ -165,7 +162,7 @@ export class ActionDeploymentController {
       if (
         !current.enabled ||
         current.head !== request.revision ||
-        !ids.length ||
+        (!ids.length && request.intent.kind !== "push") ||
         Object.keys(current.requirements).length !== ids.length ||
         ids.some((id) => current.requirements[id] !== request.requirements[id])
       ) {
@@ -213,16 +210,24 @@ export class ActionDeploymentController {
         return;
       }
       if (!(await save("deploying", null, false))) return;
+      await this.ports.cancelObsolete?.(request, this.owner);
       const id = await this.ports.deploy(request, this.owner);
       await save("deployed", null, true, id);
     } catch (error) {
-      this.ports.reportError(error, request);
+      const waiting =
+        error instanceof AppError &&
+        ["ACTIONS_CHECKS_PENDING", "DEPLOYMENT_IN_PROGRESS"].includes(error.code ?? "");
+      if (!waiting) this.ports.reportError(error, request);
       const permanent =
         error instanceof AppError &&
         error.statusCode < 500 &&
         ![408, 429].includes(error.statusCode) &&
         !["ACTIONS_CHECKS_PENDING", "DEPLOYMENT_IN_PROGRESS"].includes(error.code ?? "");
-      await save(permanent ? "failed" : "waiting", safeErrorMessage(error));
+      const saved = await save(
+        permanent ? "failed" : "waiting",
+        waiting ? null : safeErrorMessage(error),
+      );
+      if (saved && permanent) this.ports.failed?.(request, error);
     } finally {
       clearInterval(timer);
     }
@@ -236,7 +241,7 @@ export const actionDeploymentController = new ActionDeploymentController({
       request.authority,
       `actions-deployment:${request.id}`,
     );
-    const project = await requireActionProject(ctx, request.projectId, true);
+    const project = await requireDeploymentProject(ctx, request);
     const links = (await repos.actions.projectWorkflows(ctx.organizationId, project.id)).filter(
       ({ link }) => link.required,
     );
@@ -246,12 +251,18 @@ export const actionDeploymentController = new ActionDeploymentController({
       !project.disabledAt &&
       !project.deletionInProgress &&
       (!project.gitBranch || project.gitBranch === branch) &&
+      (request.intent.kind !== "push" ||
+        request.intent.repository === `${project.gitOwner}/${project.gitRepo}`.toLowerCase()) &&
       links.every(
         ({ workflow }) =>
           workflow.enabled &&
           workflow.owner === project.gitOwner?.toLowerCase() &&
           workflow.repo === project.gitRepo?.toLowerCase(),
       );
+    // The default queue waits cheaply in the database. Do not poll GitHub for
+    // a blocked push on every retry while its predecessor is still running.
+    if (enabled && request.intent.kind === "push" && !project.autoDeployCancelBuilds)
+      await (await import("../deployments/build.service")).checkNoActiveBuild(project.id);
     return {
       enabled: !!enabled,
       head: enabled ? await repositoryHead(ctx, project, branch) : "",
@@ -297,8 +308,8 @@ export const actionDeploymentController = new ActionDeploymentController({
   },
   async deploy(request, owner) {
     const ctx = await resolveExecutionAuthority(request.authority, `actions-deploy:${request.id}`);
-    await requireActionProject(ctx, request.projectId, true);
-    const { event: _event, ...intent } = request.intent;
+    await requireDeploymentProject(ctx, request);
+    const { event: _event, kind: _kind, repository: _repository, ...intent } = request.intent;
     const result = await (
       await import("../deployments/build.service")
     ).triggerDeployment(ctx, {
@@ -306,7 +317,7 @@ export const actionDeploymentController = new ActionDeploymentController({
       projectId: request.projectId,
       branch: request.ref.replace(/^refs\/heads\//, ""),
       commitSha: request.revision,
-      trigger: "actions",
+      trigger: request.intent.kind === "push" ? "webhook" : "actions",
       actionRequestId: request.id,
       actionLeaseOwner: owner,
     });
@@ -318,11 +329,51 @@ export const actionDeploymentController = new ActionDeploymentController({
       );
     return result.deployment.id;
   },
-  reportError(error, request) {
-    diagnostics.warn("actions/deployment", "Required-check deployment could not advance", error, {
-      projectId: request.projectId,
-      requestId: request.id,
+  async cancelObsolete(request, owner) {
+    const ctx = await resolveExecutionAuthority(
+      request.authority,
+      `automatic-cancel:${request.id}`,
+    );
+    const project = await requireDeploymentProject(ctx, request);
+    if (!project.autoDeployCancelBuilds) return;
+    const [active] = await repos.deployment.listInFlightByProject(project.id);
+    if (!active || active.commitSha === request.revision) return;
+    await (
+      await import("../deployments/build.service")
+    ).cancelBuildSession(active.id, {
+      automaticRequest: {
+        projectId: project.id,
+        organizationId: project.organizationId,
+        requestId: request.id,
+        owner,
+      },
     });
+  },
+  failed(request, error) {
+    if (request.intent.kind !== "push") return;
+    void repos.project
+      .findByIdInOrganization(request.projectId, request.organizationId)
+      .then((project) => {
+        if (project) notifyAutoDeployFailed(project, error);
+      })
+      .catch((error) =>
+        diagnostics.warn(
+          "actions/deployment",
+          "Could not notify automatic deployment failure",
+          error,
+        ),
+      );
+  },
+  reportError(error, request) {
+    diagnostics.warn(
+      "actions/deployment",
+      "Automatic deployment request could not advance",
+      error,
+      {
+        projectId: request.projectId,
+        requestId: request.id,
+      },
+    );
   },
 });
 
@@ -369,7 +420,7 @@ export async function updateActionDeploymentRequest(
     const links = (await repos.actions.projectWorkflows(ctx.organizationId, project.id)).filter(
       ({ link }) => link.required,
     );
-    if (!links.length)
+    if (!links.length && request.intent.kind !== "push")
       throw new AppError("Select required workflows first", 409, "ACTIONS_WORKFLOW_REQUIRED");
     const requirements: Record<string, string> = {};
     for (const { workflow: saved } of links) {

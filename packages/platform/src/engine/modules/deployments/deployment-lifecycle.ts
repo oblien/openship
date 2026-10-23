@@ -484,17 +484,18 @@ export async function setDeploymentStatus(
       };
     };
   },
-): Promise<void> {
+): Promise<boolean> {
   const applied = await repos.deployment.updateStatus(deploymentId, dbStatus, opts?.extra);
   // An explicit `false` means the row is already cancelled and stayed that way.
   // Broadcasting anyway would tell the UI the deploy the user stopped is still
   // moving. Any other return counts as applied — see recordOutcome.
-  if (applied === false) return;
+  if (applied === false) return false;
   sessionManager.updateStatus(
     deploymentId,
     opts?.sse?.status ?? (dbStatus as BuildSessionState["status"]),
     opts?.sse?.meta,
   );
+  return true;
 }
 
 /**

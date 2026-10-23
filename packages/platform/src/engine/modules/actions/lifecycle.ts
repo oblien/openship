@@ -20,7 +20,7 @@ export async function assertActionsTransferReady(): Promise<void> {
     (await repos.actions.pendingActionDeploymentCount())
   )
     throw new AppError(
-      "Finish or cancel active Actions runs before moving this instance. Their artifact connections must stay on the current controller until cleanup finishes.",
+      "Finish or cancel queued automatic deployments and active Actions runs before moving this instance. Their artifact connections must stay on the current controller until cleanup finishes.",
       409,
       "ACTIONS_INSTANCE_MOVE_BUSY",
     );
@@ -36,6 +36,7 @@ export function startActionController(): void {
     if (stopped) return;
     current = trackBackgroundWork(
       (async () => {
+        await (await import("./deployment-gate")).actionDeploymentController.tick();
         if (Date.now() - schedulesAt > 30_000) {
           schedulesAt = Date.now();
           if (!poolsReady) {
@@ -62,8 +63,6 @@ export function startActionController(): void {
           await (await import("./github-sync")).reconcileGitHubWorkflows(abort.signal);
         if (!abort.signal.aborted)
           await (await import("./github-runners")).reconcileGitHubRunners(abort.signal);
-        if (!abort.signal.aborted)
-          await (await import("./deployment-gate")).actionDeploymentController.tick();
       })().catch((error) => diagnostics.warn("actions/controller", "Actions sweep failed", error)),
     );
     void current.finally(() => {

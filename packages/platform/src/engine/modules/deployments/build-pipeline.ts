@@ -1557,9 +1557,14 @@ async function executeBuildAndDeploy(
       logger.log(`Build time: ${(buildResult.durationMs / 1000).toFixed(1)}s; ${Math.abs(difference).toFixed(1)}s ${difference < 0 ? "faster" : "slower"} than the previous active build.\n`);
     }
 
-    await setDeploymentStatus(dep.id, "deploying", {
+    // Admission to release work and automatic cancellation race on this row.
+    // If cancellation wins, never proceed to release commands or activation.
+    if (await setDeploymentStatus(dep.id, "deploying", {
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
-    });
+    }) === false) {
+      await onCancelled(ctx, buildResult.durationMs, { keepProvisioned: deploymentCancellationKeepsProvisioned(cancellationSignal) });
+      return;
+    }
     // A completed Docker image can survive a later runtime failure. Recording
     // is optional; a failed receipt write keeps the existing cleanup behavior.
     try {

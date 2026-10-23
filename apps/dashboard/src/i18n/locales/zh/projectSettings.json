@@ -627,6 +627,11 @@
       "select": "选择域名...",
       "clear": "清除选择"
     },
+    "buildQueue": {
+      "label": "取消过时的构建",
+      "description": "仅保留最新的待处理推送。启用后，新推送还会在发布步骤开始前取消旧的自动构建。手动部署和回滚会保留。",
+      "saveFailed": "无法保存构建取消偏好"
+    },
     "autoDeployCard": {
       "title": "自动部署",
       "enabled": "已启用",

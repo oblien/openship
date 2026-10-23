@@ -481,6 +481,8 @@ export const project = pgTable(
     webhookSecret: text("webhook_secret"),
     /** Whether pushes to the branch trigger auto-deploy */
     autoDeploy: boolean("auto_deploy").notNull().default(false),
+    /** Only obsolete automatic builds may be cancelled; activation always finishes. */
+    autoDeployCancelBuilds: boolean("auto_deploy_cancel_builds").notNull().default(false),
     /**
      * Collect per-path request counts at the edge ("Top Paths").
      *

@@ -291,3 +291,5 @@ export { createDeploymentCheckRepo, type DeploymentCheck } from "./repos/deploym
 export type { IngressConnection, IngressHostname } from "./repos/ingress.repo";
 
 export { createPullRequestPreviewRepo, type PullRequestPreview } from "./repos/pull-request-preview.repo";
+
+export type { AutomaticBuildCancellation } from "./repos/deployment.repo";

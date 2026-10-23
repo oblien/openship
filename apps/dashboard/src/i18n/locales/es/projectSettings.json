@@ -627,6 +627,11 @@
       "select": "Seleccionar dominio...",
       "clear": "Borrar selección"
     },
+    "buildQueue": {
+      "label": "Cancelar compilaciones obsoletas",
+      "description": "Conservar solo el último push pendiente. Al activar esta opción, un nuevo push también cancela una compilación automática anterior antes de los pasos de lanzamiento. Se conservan los despliegues manuales y las reversiones.",
+      "saveFailed": "No se pudo guardar la preferencia de cancelación"
+    },
     "autoDeployCard": {
       "title": "Despliegue automático",
       "enabled": "Habilitado",

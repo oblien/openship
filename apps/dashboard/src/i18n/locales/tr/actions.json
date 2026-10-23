@@ -251,7 +251,7 @@
     "jobWorkflow": "İş akışını çalıştır",
     "jobCommand": "Komut çalıştır",
     "requestStatus": {
-      "waiting": "Kontroller bekleniyor",
+      "waiting": "Dağıtım bekleniyor",
       "blocked": "Gerekli kontroller başarısız",
       "deploying": "Dağıtım başlatılıyor",
       "deployed": "Dağıtım başladı",

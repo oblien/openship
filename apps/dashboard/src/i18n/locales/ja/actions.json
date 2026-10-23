@@ -251,7 +251,7 @@
     "jobWorkflow": "ワークフローを実行",
     "jobCommand": "コマンドを実行",
     "requestStatus": {
-      "waiting": "チェック待ち",
+      "waiting": "デプロイ待ち",
       "blocked": "必須チェックが失敗",
       "deploying": "デプロイを開始中",
       "deployed": "デプロイ開始済み",

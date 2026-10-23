@@ -251,7 +251,7 @@
     "jobWorkflow": "Executar workflow",
     "jobCommand": "Executar comando",
     "requestStatus": {
-      "waiting": "Aguardando verificações",
+      "waiting": "Aguardando deploy",
       "blocked": "Verificações obrigatórias falharam",
       "deploying": "Iniciando deploy",
       "deployed": "Deploy iniciado",

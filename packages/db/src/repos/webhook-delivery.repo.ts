@@ -140,11 +140,6 @@ export function createWebhookDeliveryRepo(db: Database) {
         .where(eq(webhookDelivery.id, id));
     },
 
-    /** GitHub push rows waiting for their project's running deployment, newest first. */
-    listQueuedPushes() {
-      return page(and(eq(webhookDelivery.outcome, "queued")), { limit: 100 });
-    },
-
     listByProject(projectId: string, opts?: { cursor?: string; limit?: number }) {
       return page(and(eq(webhookDelivery.projectId, projectId)), opts);
     },

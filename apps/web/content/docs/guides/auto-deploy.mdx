@@ -106,10 +106,20 @@ This means Openship couldn't add the webhook to your repository — usually beca
 Check the **Webhook** status card on the Source tab. If it says **Inactive**, delivery isn't reaching Openship — revisit the webhook endpoint above. Also confirm you pushed to the project's **deploy branch**; pushes to other branches are ignored.
 
 If another deployment is running, the new push is reported as **queued** and
-deploys when the running deployment finishes. Pushes queued behind the same
-deployment deploy once, at the newest commit. A queued push is skipped when a newer
-push, a manual deployment, or a rollback starts first. A push forwarded to Openship
-Cloud is not queued.
+deploys when the running deployment finishes. Only the latest pending push is kept;
+its commit is checked against the repository branch before admission. Manual
+deployments and rollbacks supersede pending pushes. This works for self-hosted
+instances and pushes forwarded to Openship Cloud, using the existing durable
+Actions admission controller rather than a separate scheduled job.
+
+Under **Source**, enable **Cancel obsolete builds** to also cancel an older automatic
+build when the newest push is ready. This is off by default. Cancellation is allowed
+only while the old deployment is queued or building; release commands and activation
+are never interrupted automatically. Manual deployments and rollbacks are preserved.
+The replacement waits for the old worker's cleanup before starting. Required Actions
+checks still have to pass for the exact new commit. If native background jobs are
+disabled, a blocked push is reported as failed instead of acknowledging work that
+cannot run.
 
 A push that cannot start for another reason is reported as a **failed** delivery,
 with the reason in the project's webhook events. Fix the cause, then

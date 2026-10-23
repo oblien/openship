@@ -676,6 +676,11 @@
       "select": "Alan adı seçin...",
       "clear": "Seçimi temizle"
     },
+    "buildQueue": {
+      "label": "Eski derlemeleri iptal et",
+      "description": "Yalnızca bekleyen en son push saklanır. Etkinleştirildiğinde yeni bir push, sürüm adımları başlamadan önce eski otomatik derlemeyi de iptal eder. Manuel dağıtımlar ve geri almalar korunur.",
+      "saveFailed": "Derleme iptal tercihi kaydedilemedi"
+    },
     "autoDeployCard": {
       "title": "Otomatik Dağıtım",
       "enabled": "Etkin",

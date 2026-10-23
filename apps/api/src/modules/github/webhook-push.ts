@@ -12,7 +12,7 @@ import {
 } from "@repo/platform/engine/modules/github/github.service";
 import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
-import { AppError, safeErrorMessage, normalizeProjectRootDirectory } from "@repo/core";
+import { safeErrorMessage, normalizeProjectRootDirectory } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
@@ -20,8 +20,7 @@ import {
 import { resolveProjectChangeImpact } from "@repo/platform/engine/modules/github/project-change-impact";
 import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
-import { nativeJobsEnabled } from "@repo/platform/engine/native/execution-policy";
-import { notifyAutoDeployFailed, queuePush } from "@repo/platform/engine/modules/github/queued-pushes";
+import { notifyAutoDeployFailed } from "@repo/platform/engine/modules/github/queued-pushes";
 import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
 import type { GitHubPushPayload } from "@repo/contracts";
 
@@ -255,19 +254,9 @@ async function deployProjectFromPush(
       // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
       changedPaths: changedPathsTruncated ? null : changedPaths,
     },
-  ).catch(async (err) => {
-    // deployQueuedPushes deploys it once the running deployment finishes.
-    if (!(err instanceof AppError && err.code === "DEPLOYMENT_IN_PROGRESS" && nativeJobsEnabled())) throw err;
-    await queuePush(p, {
-      repo: `${input.owner}/${input.repo}`,
-      branch: input.branch,
-      commit: input.commitSha,
-      commitMessage: input.commitMessage,
-      forceAll,
-    });
-    return { queued: true };
-  });
-  if ("queued" in triggered) return triggered;
+  );
+  if ("queuedPush" in triggered) return { queued: true as const };
+
 
   // Persist changed-files onto the deployment row for the dashboard. Best-effort.
   // Skip when deduped — `triggered.deployment` is the already-live one, not ours.

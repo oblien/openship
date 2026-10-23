@@ -676,6 +676,11 @@
       "select": "Select domain...",
       "clear": "Clear selection"
     },
+    "buildQueue": {
+      "label": "Cancel obsolete builds",
+      "description": "Keep only the latest pending push. When enabled, a newer push also cancels an older automatic build before release steps start. Manual deployments and rollbacks are preserved.",
+      "saveFailed": "Could not save build cancellation preference"
+    },
     "autoDeployCard": {
       "title": "Auto Deploy",
       "enabled": "Enabled",

@@ -251,7 +251,7 @@
     "jobWorkflow": "Run workflow",
     "jobCommand": "Run command",
     "requestStatus": {
-      "waiting": "Waiting for checks",
+      "waiting": "Waiting to deploy",
       "blocked": "Required checks failed",
       "deploying": "Starting deployment",
       "deployed": "Deployment started",

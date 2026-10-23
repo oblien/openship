@@ -627,6 +627,11 @@
       "select": "Selecionar domínio...",
       "clear": "Limpar seleção"
     },
+    "buildQueue": {
+      "label": "Cancelar builds obsoletos",
+      "description": "Manter apenas o push pendente mais recente. Quando ativado, um novo push também cancela um build automático anterior antes das etapas de lançamento. Deploys manuais e reversões são preservados.",
+      "saveFailed": "Não foi possível salvar a preferência de cancelamento"
+    },
     "autoDeployCard": {
       "title": "Implementação automática",
       "enabled": "Ativada",

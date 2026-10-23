@@ -4,6 +4,7 @@ import { cancelBuildSession } from "@repo/platform/engine/modules/deployments/bu
 const h = vi.hoisted(() => ({
   session: { id: "session-1", startedAt: null as Date | null },
   cancelInFlight: vi.fn(),
+  cancelObsolete: vi.fn(),
   acknowledgeUnstarted: vi.fn(),
   cancelWorker: vi.fn(),
   cancelDefaultRuntime: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("@repo/db", async (importOriginal) => ({
       // object the mocked racing kickoff could retroactively change.
       findBuildSessionByDeploymentId: async () => ({ ...h.session }),
       cancelInFlight: h.cancelInFlight,
+      cancelObsoleteAutomaticBuild: h.cancelObsolete,
       acknowledgeUnstartedBuildSession: h.acknowledgeUnstarted,
       hasLiveBuildExecution: h.hasLiveExecution,
     },
@@ -76,6 +78,17 @@ beforeEach(() => {
 });
 
 describe("cancel request and worker ownership", () => {
+  it("rejects automatic cancellation after release work starts without signalling or cleanup", async () => {
+    h.status = "deploying";
+    const result = await cancelBuildSession("dep-1", { automaticRequest: {
+      organizationId: "org-1", projectId: "project-1", requestId: "request-1", owner: "controller",
+    } });
+    expect(result.success).toBe(false);
+    expect(h.cancelObsolete).not.toHaveBeenCalled();
+    expect(h.cancelWorker).not.toHaveBeenCalled();
+    expect(h.cleanup).not.toHaveBeenCalled();
+  });
+
   it("signals the owning worker without trying to cancel on the request process's default runtime", async () => {
     h.status = "building";
     h.session.startedAt = new Date();
