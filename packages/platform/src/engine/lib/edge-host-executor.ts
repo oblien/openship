@@ -81,10 +81,11 @@ export async function withDeploymentEdgeExecutor<T>(
 ): Promise<T | null> {
   if (env.CLOUD_MODE) return null;
   const serverId = await resolveServerIdForProject(project);
-  const run = serverId
-    ? sshManager.withExecutor(serverId, fn)
-    : runOnLocalDestination(project, fn);
-  return run.catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
+  const run = serverId ? sshManager.withExecutor(serverId, fn) : runOnLocalDestination(project, fn);
+  return run.catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
+    return null;
+  });
 }
 
 async function runOnLocalDestination<T>(
@@ -94,7 +95,10 @@ async function runOnLocalDestination<T>(
   const { deployTarget } = await resolveProjectLiveDeployTarget(project);
   if (deployTarget !== "local") return null;
   const { assertLocalDeploymentAccess } = await import("./deployment-runtime");
-  const allowed = await assertLocalDeploymentAccess(project.organizationId).then(() => true, () => false);
+  const allowed = await assertLocalDeploymentAccess(project.organizationId).then(
+    () => true,
+    () => false,
+  );
   return allowed ? sshManager.withHostExecutor(fn) : null;
 }
 

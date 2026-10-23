@@ -1,7 +1,13 @@
 import { ApiError, api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsPlanResult, DnsProvisionResult } from "./dns";
-import type { Domain, DomainDiagnostics, DomainDnsChallenge, StartDomainDnsChallenge, UpdateDomainInput } from "@repo/contracts";
+import type {
+  Domain,
+  DomainDiagnostics,
+  DomainDnsChallenge,
+  StartDomainDnsChallenge,
+  UpdateDomainInput,
+} from "@repo/contracts";
 
 export interface DomainVerifyResult {
   verified: boolean;

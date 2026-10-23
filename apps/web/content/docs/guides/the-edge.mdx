@@ -54,7 +54,7 @@ a managed edge. Review these differences when moving a project between them.
 | Domain redirects | Applied through the server's edge configuration. | Applied through the managed Cloud edge. |
 | Shared-password protection | Exact custom HTTPS hostnames on a self-hosted Linux OpenResty edge. | Unsupported; protection requests and transfers of protected projects are rejected. |
 | Route rules: rate limits, IP/country access rules, and hotlink protection | Enforced by the OpenResty route-rule guard after the rules are successfully pushed. | The self-hosted route-rule push path skips Cloud projects. Saving a rule does not establish that equivalent protection is active on Cloud. |
-| Live edge configuration inspection | Can compare saved proxy settings with the configuration served by a reachable server. | Self-hosted OpenResty inspection is unavailable; the report returns `reachable: false`. |
+| Live edge configuration inspection | Can compare saved proxy settings with configuration files on a reachable edge; see [read-back semantics](/docs/api/domains#set-a-domain-http-body-limit). | Self-hosted OpenResty inspection is unavailable; the report returns `reachable: false`. |
 | Operator-defined trusted proxies and client-IP headers | Configured on the self-hosted edge, with the limitations below. | The self-hosted environment variables below do not configure the managed Cloud edge. |
 
 ### Real client IP and trusted proxies

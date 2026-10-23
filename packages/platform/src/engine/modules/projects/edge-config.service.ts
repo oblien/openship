@@ -1,14 +1,14 @@
 /**
- * Read back what the edge is ACTUALLY serving for a project's hostnames, and
- * compare it to what the project saved.
+ * Compare observed vhost files with the resolved project and domain settings.
  *
  * Saved-equals-served is an assumption, not a fact: a hand-edited vhost, a
  * half-applied reload, a value the API accepted but the sanitizer later dropped,
  * or a directive skipped by the box's nginx version floor all leave the stored
  * settings describing a config the box doesn't have. Nothing surfaced that — the
- * UI echoed the row back to the operator and looked correct. This parses the live
+ * UI echoed the row back to the operator and looked correct. This parses the
  * vhost through the SAME table the renderer writes it from, so the two views are
- * comparable by construction.
+ * comparable by construction. A matching file does not prove running workers
+ * loaded it; this read-back does not probe request behavior.
  *
  * Read-only and fail-soft: an unreachable box reports `reachable: false`, never an
  * error. Self-hosted only (there is no OpenResty to read on cloud).
@@ -30,14 +30,14 @@ import { edgeProxy, detectOpenRestyPaths, type ImportedSite } from "@repo/adapte
 
 import { withDeploymentEdgeExecutor } from "@repo/platform/engine/lib/edge-host-executor";
 
-/** One directive's saved-vs-served state. */
+/** One directive's expected-versus-observed configuration state. */
 export interface EdgeDirectiveState {
   key: string;
   directive: string;
   group: ProxyDirectiveGroup;
-  /** What a vhost rendered from the project's settings would carry (companions included). */
+  /** What a vhost rendered from resolved project/domain settings would carry (companions included). */
   expected?: string | number | boolean;
-  /** The live value, when it survived validation (i.e. it is adoptable as-is). */
+  /** The observed configuration value, when it survived validation. */
   live?: string | number | boolean;
   /**
    * The live value exactly as the config declares it. Present even when `live` is
@@ -55,7 +55,7 @@ export interface EdgeConfigHostState {
   /** Whether the live vhost terminates TLS (decides whether `http2` is expected). */
   tls: boolean;
   directives: EdgeDirectiveState[];
-  /** Live values that differ from expected AND are valid to store — the "adopt" payload. */
+  /** Observed drift valid for project adoption; excludes body caps with a domain override. */
   adoptable: ProxySettings;
   driftCount: number;
   /** Observed values come from the edge configuration, not an application probe. */
@@ -71,7 +71,7 @@ export interface EdgeConfigHostState {
 }
 
 export interface EdgeConfigReport {
-  /** False when the project has no server, the box is unreachable, or no proxy reads back. */
+  /** False when the deployment edge cannot be reached or no proxy reads back. */
   reachable: boolean;
   /** Which proxy answered, and whether it is our own OpenResty. */
   proxyKind?: string;
@@ -152,11 +152,11 @@ function buildHostState(
 }
 
 /**
- * Read the live edge config for every hostname the project owns.
+ * Read the edge configuration files for every hostname the project owns.
  *
  * Hostnames come from the project's domain rows — the same source
- * `pushProjectRules` uses — so this reports on exactly the hosts the edge has
- * vhosts for, free subdomains included.
+ * `pushProjectRules` uses — and include free subdomains and domains whose
+ * vhosts are absent or unreadable.
  */
 export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfigReport> {
   const saved = sanitizeProxySettings(project.routingConfig?.proxy) ?? {};

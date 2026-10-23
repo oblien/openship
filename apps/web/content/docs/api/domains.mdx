@@ -73,17 +73,26 @@ The REST endpoint is `PATCH /api/domains/:id`. It requires write access to the d
 | `{"proxy":{"clientMaxBodySize":"0"}}` | Disable the HTTP body limit for this domain. |
 
 Use a positive integer with a lowercase `k`, `m`, or `g` suffix, or `0` for unlimited.
+Units are binary: one `m` is 1,048,576 bytes. Expanded sizes must fit JavaScript's
+safe integer byte range.
 Bare nonzero numbers, unknown fields, unsafe values, and numeric overflow are rejected.
 New overrides require the selected routing provider to support domain body limits; detecting an
 unrelated nginx installation is not sufficient. Unsupported providers return
 `CAPABILITY_UNAVAILABLE` before saving a new override; an unreachable or unconfirmed
 active edge returns `EDGE_UNAVAILABLE`. Clearing a legacy override with `null` or `{}` restores inheritance
 even when the provider cannot enforce an override; a successful save alone is not application proof.
+Projects with explicit domain overrides cannot transfer to Cloud or bind to a cluster;
+those transitions fail with `DOMAIN_PROXY_SETTINGS_UNSUPPORTED` before changing the target.
+Clear the overrides before moving to either destination.
 
 The domain override takes precedence over the project, then the installed Edge HTTP default.
 The standard Edge default is `50m`; read-back reports an unobserved inherited default as unknown.
-This limits HTTP request bodies, including uploads and polling requests. It does not set WebSocket
-frame/message limits or raise the application's own upload limit.
+Inheritance does not store or render a copy of that Edge default. Later project changes
+affect inheriting domains only; other project proxy settings still apply to every domain.
+There is no service-level or path-level body-limit override.
+This limits incoming HTTP request bodies, including chunked uploads and Socket.IO polling POSTs.
+It does not limit response sizes or throughput, set WebSocket frame/message limits, or raise
+the application's own upload limit. Existing rate rules and their path selection remain independent.
 
 For a running, deployed project, saving re-applies the current routing without a rebuild.
 A known-supported provider can also save desired settings before the first deployment or while
@@ -94,21 +103,19 @@ has a null `effective` value.
 
 If apply fails, the endpoint returns
 `DOMAIN_PROXY_APPLY_FAILED` and keeps the desired setting for retry. Repeat the update or use
-**Retry routing** in the dashboard. A failed apply retains its project routing warning across
+**Retry routing** in the dashboard. Config validation or reload failure restores the previous
+vhost and stored route sidecar. Redeploys, routing retries, certificate activation, and stored-route
+repair retain the resolved cap. A failed apply retains its project routing warning across
 navigation. A successful repeat save resolves this operation's warning while preserving unrelated
 warnings. Existing hostnames keep their managed Cloud registrations during a cap-only edit.
 Read `GET /api/projects/:id/edge-config` afterward:
 `hosts[].bodyLimit` reports `saved`, `effective`, `source`, `observed`, and `configurationMatches` for each hostname.
 `configurationMatches` compares the generated server-block file with the resolved cap; `null` means it could not be compared.
 A matching file does not prove the running workers use that value, and neither does a saved value, so the API does not report whether the running workers use it.
+When a domain has an explicit override, its observed body limit is excluded from the project-level
+`adoptable` settings, so adopting configuration drift cannot change the default for inheriting siblings.
 
-```bash
-openship domain update dom_api --client-max-body-size 2m
-openship domain update dom_api --client-max-body-size 0  # unlimited
-openship domain update dom_api --inherit-client-max-body-size
-```
-
-The two update options are mutually exclusive.
+For command syntax, see [`openship domain update`](/docs/cli/reference/domain#openship-domain-update).
 
 ## Preview required DNS
 
