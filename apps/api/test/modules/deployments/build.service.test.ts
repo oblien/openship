@@ -48,6 +48,7 @@ const {
     deployment: {
       listPendingRoleHandovers: vi.fn(async () => []),
       findById: vi.fn(),
+      findLatestByProject: vi.fn(),
       findInProgressByCommit: vi.fn(),
       listInFlightByProject: vi.fn(),
       listByProject: vi.fn(),
@@ -658,6 +659,7 @@ describe("triggerDeployment", () => {
     vi.clearAllMocks();
     queueActionDeployment.mockReset().mockResolvedValue(undefined);
     repos.actions.deploymentForActionRequest.mockReset().mockResolvedValue(undefined);
+    repos.deployment.findLatestByProject.mockReset().mockResolvedValue(undefined);
     repos.deployment.listInFlightByProject.mockResolvedValue([]);
 
     repos.project.findById.mockResolvedValue(baseProject());
