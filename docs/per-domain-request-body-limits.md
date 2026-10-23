@@ -10,7 +10,7 @@ settings, then the installed Edge HTTP default. The standard Edge default remain
 later project changes affect it automatically. Other project proxy settings still
 apply to both domains. There is no service-level or path-level override.
 
-In a domain's **Request body limit** control, select **Inherit project** or
+In a domain's **HTTP body limit** control, select **Inherit project** or
 **Custom**. Custom sizes use a positive integer followed by lowercase `k`, `m`, or
 `g`, in binary units (one `m` is 1,048,576 bytes). The deliberate value `0` means
 **Unlimited**. Expanded sizes must fit JavaScript's safe integer byte range;
