@@ -2032,20 +2032,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             />
           ) : undefined
         }
-        protectionControl={
-          <RouteProtectionButton
-            hostname={item.hostname}
-            projectId={String(id)}
-            unsupported={
-              isCloudProject ||
-              projectData.deployTarget === "cluster" ||
-              !selfHosted ||
-              !!item.externalIngress ||
-              item.hostname.endsWith(`.${baseDomain}`) ||
-              item.hostname.startsWith("*.")
-            }
-          />
-        }
+        protectionControl={<RouteProtectionButton hostname={item.hostname} projectId={String(id)}
+          unsupported={isCloudProject || projectData.deployTarget === "cluster" || !selfHosted || !!item.externalIngress || item.hostname.endsWith(`.${baseDomain}`) || item.hostname.startsWith("*.")} />}
         menuActions={menuActions}
         sslActionBusy={isRenewing || isRechecking}
         sslActionLabel={

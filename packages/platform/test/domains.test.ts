@@ -8,11 +8,7 @@ let state: ReturnType<typeof authorizationFixture>;
 let ctx: ExecutionContext;
 let domains: ReturnType<typeof createDomainOperations>;
 const update = vi.fn();
-const get = vi.fn(),
-  create = vi.fn(),
-  verifyPending = vi.fn(),
-  unsubscribe = vi.fn(),
-  challenge = vi.fn();
+const get = vi.fn(), create = vi.fn(), verifyPending = vi.fn(), unsubscribe = vi.fn(), challenge = vi.fn();
 let write: (event: string, data: string) => boolean;
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -30,16 +26,7 @@ beforeEach(async () => {
   challenge.mockResolvedValue(domainDnsChallengeFixture());
   create.mockResolvedValue({ domain: domainFixture(), records: { mode: "external", records: [] } });
   domains = createDomainOperations(authorization, {
-    collection: { create },
-    resources: {
-      get,
-      update,
-      dnsChallenge: challenge,
-      startDnsChallenge: challenge,
-      checkDnsChallenge: challenge,
-      cancelDnsChallenge: challenge,
-    },
-    scoped: { verifyPending },
+    collection: { create }, resources: { get, update, dnsChallenge: challenge, startDnsChallenge: challenge, checkDnsChallenge: challenge, cancelDnsChallenge: challenge }, scoped: { verifyPending },
     subscribe: () => (send) => {
       write = send;
       send("session", JSON.stringify({ type: "session" }));
@@ -51,9 +38,7 @@ beforeEach(async () => {
 describe("domain operation boundaries", () => {
   it("keeps tenant scope fixed even when the caller belongs to both organizations", async () => {
     await expect(domains.get(ctx, "domain-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(
-      domains.create(ctx, "project-b", { hostname: "app.example.com" }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(domains.create(ctx, "project-b", { hostname: "app.example.com" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(get).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });

@@ -43,8 +43,8 @@ after correcting the error. Read-back shows the saved override, effective value
 and source, the value observed in the edge configuration, and whether that
 configuration matches the resolved value. An unreadable edge or an unobserved
 inherited HTTP default is reported as unknown. Configuration read-back is not a
-request probe of a running nginx worker, so a matching file is never reported as
-live application.
+request probe of a running nginx worker, so a matching file is never treated as proof
+that the running workers use the value.
 
 These limits apply to incoming HTTP bodies, including chunked requests and
 Socket.IO polling POSTs. They do not limit response sizes, throughput, or

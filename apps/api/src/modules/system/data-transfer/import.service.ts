@@ -131,9 +131,7 @@ export function assertValidEnvelope(file: DataTransferFile): void {
       assertDumpSchemaCompatible(file.dump);
     } catch (error) {
       observeCaughtError(error, "api/modules/system/data-transfer/import.service");
-      throw new InvalidTransferFileError(
-        error instanceof Error ? error.message : "This export requires a newer destination build.",
-      );
+      throw new InvalidTransferFileError(error instanceof Error ? error.message : "This export requires a newer destination build.");
     }
   }
   // Whole-instance restores bypass the project planner, so validate the domain

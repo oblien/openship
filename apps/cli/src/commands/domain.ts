@@ -309,22 +309,17 @@ domainCommand.command("upload-cert").argument("<id>", "Domain ID")
 domainCommand.command("verify-pending").description("Retry eligible pending domains within the selected organization")
   .option("--limit <number>", "Maximum domains to inspect", positiveInteger)
   .option("--min-age <minutes>", "Minimum pending age in minutes", positiveInteger)
-  .action((opts) =>
-    printResult(async () => {
-      const result = await getShipClient().domains.verifyPending({
-        limit: opts.limit,
-        minAgeMinutes: opts.minAge,
-      });
-      if (result.failed) process.exitCode = 1;
-      return result;
-    }),
-  );
+  .action(opts => printResult(async () => {
+    const result = await getShipClient().domains.verifyPending({ limit: opts.limit, minAgeMinutes: opts.minAge });
+    if (result.failed) process.exitCode = 1;
+    return result;
+  }));
 
 domainCommand
   .command("update")
   .argument("<id>", "Domain ID")
   .description(
-    "Set the HTTP body cap on a self-hosted nginx/OpenResty domain; inspect project Edge config for live status",
+    "Set the HTTP body cap on a self-hosted nginx/OpenResty domain; compare the saved cap with the observed server-block configuration in project Edge config",
   )
   .addOption(
     new Option(

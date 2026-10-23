@@ -15,10 +15,7 @@
 
 import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { assertDomainProxyTarget } from "@repo/platform/engine/lib/domain-proxy-capabilities";
-import {
-  reportCaughtError as observeCaughtError,
-  diagnostics as errorDiagnostics,
-} from "@repo/core/diagnostics";
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { resolveWorkload, safeErrorMessage } from "@repo/core";
