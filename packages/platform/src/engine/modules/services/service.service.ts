@@ -389,6 +389,10 @@ export async function keepServiceDrift(ctx: RequestContext, projectId: string, s
  * evidence, and `healPhantomAppServiceRow` for what makes the removal safe.
  */
 async function reconcileAppServiceRow(project: Project): Promise<void> {
+  // An explicit Compose source already declares the app as a service. Framework
+  // detection and inherited build commands can still describe its source app;
+  // they must not make the stack look like a standalone app with sidecars.
+  if (project.composePath?.trim()) return;
   // A web app AND a worker are both long-running containers that must survive a
   // sidecar being added; only a STATIC site has no container to keep (#538-B).
   if (deploymentWorkload(project) === "static") return;

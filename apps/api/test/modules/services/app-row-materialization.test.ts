@@ -224,6 +224,15 @@ describe("createService → app-row materialization (#589)", () => {
     expect(materializedRows()).toEqual([]);
   });
 
+  it("does not invent a root app when adding a service to an explicit Compose project", async () => {
+    projectRepo.findById.mockResolvedValue(appProject({ composePath: "docker-compose.prod.yml" }));
+    seed(composeRow({ name: "www", image: null, build: ".", dockerfile: "Dockerfile" }));
+
+    await createService(ctx, "proj_1", composeBody());
+
+    expect(rows.map((row) => row.name)).toEqual(["www", "postgres"]);
+  });
+
   it("still materializes one for a real app-framework project (#231 preserved)", async () => {
     projectRepo.findById.mockResolvedValue(appProject());
     // The sidecar exists by the time the helper runs — createService inserted it.
@@ -354,6 +363,26 @@ describe("boot reconcile → phantom repair (#589)", () => {
 
     expect(serviceRepo.remove).not.toHaveBeenCalled();
     expect(materializedRows()).toEqual([]);
+  });
+
+  it("keeps an explicit Compose stack unchanged across restarts after the root app is deleted", async () => {
+    projectRepo.listAllForScan.mockResolvedValue([
+      appProject({ composePath: "docker-compose.prod.yml" }),
+    ]);
+    const web = composeRow({
+      id: "svc_www",
+      name: "www",
+      image: null,
+      build: ".",
+      dockerfile: "Dockerfile",
+    });
+    const database = composeRow({ id: "svc_mongo", name: "mongo", image: "mongo:9.0.2" });
+    seed(web, database);
+
+    await runBackfill();
+    await runBackfill();
+
+    expect(rows).toEqual([web, database]);
   });
 
   it("still backfills a missing app row for a real app project (#231)", async () => {
