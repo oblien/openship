@@ -158,6 +158,8 @@ When a verified `push` event arrives, the handler maps it to deployments like th
 - **Smart per-service routing.** For monorepo/compose projects, the changed files in the push decide which
   services rebuild; unaffected pushes can be skipped entirely. Single-app projects always rebuild. A pending
   "rebuild everything next time" flag forces a full deploy once.
+- **Queue behind a running deploy.** A push that arrives while its project is deploying is recorded as
+  `queued` and deploys when that deployment finishes. Queued pushes collapse to the newest commit.
 - **Idempotency.** The `X-GitHub-Delivery` id is claimed persistently, so an at-least-once redelivery of the
   same push is dropped instead of deploying twice.
 - **Cloud forwarding.** On a self-hosted box, if no local project matches but a linked **cloud** project owns

@@ -105,9 +105,15 @@ This means Openship couldn't add the webhook to your repository — usually beca
 <Callout title="I pushed, but nothing deployed" type="warn">
 Check the **Webhook** status card on the Source tab. If it says **Inactive**, delivery isn't reaching Openship — revisit the webhook endpoint above. Also confirm you pushed to the project's **deploy branch**; pushes to other branches are ignored.
 
-If another deployment is running, the new push is reported as a **failed** delivery,
-with the reason in the project's webhook events. Wait for the running deployment
-to finish or cancel it, then **Redeliver** the failed event from GitHub's webhook
+If another deployment is running, the new push is reported as **queued** and
+deploys when the running deployment finishes. Pushes queued behind the same
+deployment deploy once, at the newest commit. A queued push is skipped when a newer
+push, a manual deployment, or a rollback starts first. A push forwarded to Openship
+Cloud is not queued.
+
+A push that cannot start for another reason is reported as a **failed** delivery,
+with the reason in the project's webhook events. Fix the cause, then
+**Redeliver** the failed event from GitHub's webhook
 delivery history. GitHub does not automatically redeliver failures. Openship
 accepts a retry of the same failed delivery ID and remembers projects already
 handled by that delivery, so only the remaining projects are retried. It also skips

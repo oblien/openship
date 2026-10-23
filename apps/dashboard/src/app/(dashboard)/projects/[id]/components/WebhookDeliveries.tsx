@@ -99,6 +99,7 @@ const OUTCOME_TONE: Record<string, string> = {
   dispatched: "text-success border-success/40",
   forwarded: "text-info border-info/40",
   skipped: "text-muted-foreground border-border/60",
+  queued: "text-warning border-warning/40",
   ignored: "text-muted-foreground border-border/60",
   received: "text-muted-foreground border-border/60",
   failed: "text-danger border-danger/40",

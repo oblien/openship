@@ -352,7 +352,7 @@ there's nothing pending.
 <Callout type="warn" title="“A deployment is already in progress”">
 `A deployment is already in progress (dep_…). Cancel it first or wait for it to complete.` — Openship runs
 one deploy per project at a time. Wait for the current one to finish, or cancel it from the build screen,
-then try again.
+then try again. A GitHub push that arrives meanwhile is queued and deploys afterwards.
 </Callout>
 
 <Callout type="warn" title="“Docker build failed…” / a non-zero exit code">
