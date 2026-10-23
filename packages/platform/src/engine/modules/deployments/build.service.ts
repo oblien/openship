@@ -1114,11 +1114,7 @@ export async function resolveSnapshotTarget(
   await assertDomainProxyTarget(project, deployTarget);
 
   if (project.clusterId && override?.deployTarget && override.deployTarget !== "cluster")
-    throw new AppError(
-      "Change this project's cluster target in Topology before deploying to a different target.",
-      409,
-      "CLUSTER_TARGET_CONFLICT",
-    );
+    throw new AppError("Change this project's cluster target in Topology before deploying to a different target.", 409, "CLUSTER_TARGET_CONFLICT");
   if (deployTarget === "cluster") {
     const clusterId = project.clusterId ?? activeMeta?.clusterId;
     if (!clusterId) throw new AppError("Choose a cluster in the project topology first.", 422, "CLUSTER_TARGET_REQUIRED");

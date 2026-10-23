@@ -34,9 +34,7 @@ export async function add(c: Context) {
 }
 
 export async function get(c: Context) {
-  return c.json({
-    data: await operationData(c, operations().get(operationContext(c), param(c, "id"))),
-  });
+  return c.json({ data: await operationData(c, operations().get(operationContext(c), param(c, "id"))) });
 }
 export async function update(c: Context) {
   return c.json({

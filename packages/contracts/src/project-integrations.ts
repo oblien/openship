@@ -56,33 +56,13 @@ export const DomainBodyLimitStateSchema = Type.Object({
 });
 export type DomainBodyLimitState = Static<typeof DomainBodyLimitStateSchema>;
 export const ProjectEdgeConfigSchema = Type.Object({
-  reachable: Type.Boolean(),
-  error: Type.Optional(Type.String()),
-  proxyKind: Type.Optional(Type.String()),
-  ours: Type.Optional(Type.Boolean()),
-  nginxVersion: Type.Optional(Type.String()),
+  reachable: Type.Boolean(), error: Type.Optional(Type.String()), proxyKind: Type.Optional(Type.String()), ours: Type.Optional(Type.Boolean()), nginxVersion: Type.Optional(Type.String()),
   saved: proxySettings,
-  hosts: Type.Array(
-    Type.Object({
-      hostname: Type.String(),
-      found: Type.Boolean(),
-      tls: Type.Boolean(),
-      driftCount: Type.Integer(),
-      adoptable: proxySettings,
-      bodyLimit: Type.Optional(DomainBodyLimitStateSchema),
-      directives: Type.Array(
-        Type.Object({
-          key: Type.String(),
-          directive: Type.String(),
-          group: Type.String(),
-          expected: Type.Optional(proxyValue),
-          live: Type.Optional(proxyValue),
-          liveRaw: Type.Optional(Type.String()),
-          drift: Type.Boolean(),
-        }),
-      ),
-    }),
-  ),
+  hosts: Type.Array(Type.Object({
+    hostname: Type.String(), found: Type.Boolean(), tls: Type.Boolean(), driftCount: Type.Integer(), adoptable: proxySettings,
+    bodyLimit: Type.Optional(DomainBodyLimitStateSchema),
+    directives: Type.Array(Type.Object({ key: Type.String(), directive: Type.String(), group: Type.String(), expected: Type.Optional(proxyValue), live: Type.Optional(proxyValue), liveRaw: Type.Optional(Type.String()), drift: Type.Boolean() })),
+  })),
 });
 
 export const ProjectIntegrationSchemas = {

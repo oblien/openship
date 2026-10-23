@@ -23,10 +23,7 @@
  */
 
 import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
-import {
-  reportCaughtError as observeCaughtError,
-  diagnostics as errorDiagnostics,
-} from "@repo/core/diagnostics";
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { assertDomainProxyTarget } from "./domain-proxy-capabilities";
 import { repos, type Deployment } from "@repo/db";
 import type {

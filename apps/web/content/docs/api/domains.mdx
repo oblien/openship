@@ -100,7 +100,7 @@ warnings. Existing hostnames keep their managed Cloud registrations during a cap
 Read `GET /api/projects/:id/edge-config` afterward:
 `hosts[].bodyLimit` reports `saved`, `effective`, `source`, `observed`, and `configurationMatches` for each hostname.
 `configurationMatches` compares the generated server-block file with the resolved cap; `null` means it could not be compared.
-A matching file does not prove the running workers use that value, and neither does a saved value, so the API reports no live-application status.
+A matching file does not prove the running workers use that value, and neither does a saved value, so the API does not report whether the running workers use it.
 
 ```bash
 openship domain update dom_api --client-max-body-size 2m
@@ -243,6 +243,6 @@ to get valid IDs.
 | Preview domain connection requirements. | `domains.preview(input)` | `POST /api/domains/preview`<br />`domain:read` |
 | Request renewal for eligible certificates. | `domains.renewAllSsl()` | `POST /api/domains/renew-all`<br />`domain:write` |
 | Verify pending domains visible to the caller. | `domains.verifyPending(input?)` | `POST /api/domains/verify-pending`<br />`domain:write` |
-| Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge configuration to compare the saved value with the observed server-block configuration. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
+| Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge config to compare the saved cap with the observed server-block configuration. | `domains.update(id, input)` | `PATCH /api/domains/:id`<br />`domain:write` |
 
 {/* api-operations:end */}

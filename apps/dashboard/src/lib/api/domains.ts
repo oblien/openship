@@ -1,13 +1,7 @@
 import { ApiError, api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsPlanResult, DnsProvisionResult } from "./dns";
-import type {
-  Domain,
-  DomainDiagnostics,
-  DomainDnsChallenge,
-  StartDomainDnsChallenge,
-  UpdateDomainInput,
-} from "@repo/contracts";
+import type { Domain, DomainDiagnostics, DomainDnsChallenge, StartDomainDnsChallenge, UpdateDomainInput } from "@repo/contracts";
 
 export interface DomainVerifyResult {
   verified: boolean;
@@ -60,9 +54,7 @@ export const domainsApi = {
   update: (domainId: string, input: UpdateDomainInput) =>
     api.patch<{ data: Domain }>(endpoints.domains.byId(domainId), input),
   dnsChallenge: (domainId: string) =>
-    api.get<{ data: DomainDnsChallenge | null }>(
-      `${endpoints.domains.byId(domainId)}/dns/challenge`,
-    ),
+    api.get<{ data: DomainDnsChallenge | null }>(`${endpoints.domains.byId(domainId)}/dns/challenge`),
   startDnsChallenge: (domainId: string, input: StartDomainDnsChallenge) =>
     api.post<{ data: DomainDnsChallenge }>(`${endpoints.domains.byId(domainId)}/dns/challenge`, input),
   checkDnsChallenge: (domainId: string, attemptId: string) =>

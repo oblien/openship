@@ -23,20 +23,13 @@ import { env } from "../config/env";
 /** The server the project's active deployment runs on (for edge/cert reads). */
 export async function resolveServerIdForProject(project: Project): Promise<string | null> {
   if (!project.activeDeploymentId) return null;
-  const dep = await findActiveDeployment(project).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-    return null;
-  });
+  const dep = await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
   const meta = dep?.meta as DeploymentMeta | undefined;
   let serverId = meta?.serverId ?? null;
   if (meta?.clusterId) {
     const { requireClusterDeploymentTarget } = await import("./cluster-deployment-target");
-    const { runtime } = await requireClusterDeploymentTarget(
-      project.organizationId,
-      meta.clusterId,
-      meta.clusterRuntimeId,
-    );
-    serverId = runtime.plan.hosts.find((host) => host.role === "server")!.serverId;
+    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId, meta.clusterRuntimeId);
+    serverId = runtime.plan.hosts.find(host => host.role === "server")!.serverId;
   }
   if (!serverId) return null;
   // A deployment snapshot is historical configuration, not authority to use
@@ -70,10 +63,7 @@ export async function withServerHostExecutor<T>(
   // No local/remote branch: `acquire` already returns the pooled HOST channel for a
   // local row. The old branch handed out a fresh `createHostExecutor()` per call and
   // never closed it — one leaked sshd session per domain/SSL status read (#291).
-  return sshManager.withExecutor(serverId, fn).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-    return null;
-  });
+  return sshManager.withExecutor(serverId, fn).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
 }
 
 /**
@@ -91,11 +81,10 @@ export async function withDeploymentEdgeExecutor<T>(
 ): Promise<T | null> {
   if (env.CLOUD_MODE) return null;
   const serverId = await resolveServerIdForProject(project);
-  const run = serverId ? sshManager.withExecutor(serverId, fn) : runOnLocalDestination(project, fn);
-  return run.catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-    return null;
-  });
+  const run = serverId
+    ? sshManager.withExecutor(serverId, fn)
+    : runOnLocalDestination(project, fn);
+  return run.catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
 }
 
 async function runOnLocalDestination<T>(
@@ -105,10 +94,7 @@ async function runOnLocalDestination<T>(
   const { deployTarget } = await resolveProjectLiveDeployTarget(project);
   if (deployTarget !== "local") return null;
   const { assertLocalDeploymentAccess } = await import("./deployment-runtime");
-  const allowed = await assertLocalDeploymentAccess(project.organizationId).then(
-    () => true,
-    () => false,
-  );
+  const allowed = await assertLocalDeploymentAccess(project.organizationId).then(() => true, () => false);
   return allowed ? sshManager.withHostExecutor(fn) : null;
 }
 
@@ -132,23 +118,12 @@ export async function withCertStoreExecutor<T>(
   if (env.CLOUD_MODE) return null;
   const serverId = await resolveServerIdForProject(project);
   if (!serverId) return null;
-  const row = await repos.server
-    .getInOrganization(serverId, project.organizationId)
-    .catch((diagnosticFailure) => {
-      observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-      return null;
-    });
+  const row = await repos.server.getInOrganization(serverId, project.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
   if (!row) return null;
   // isLocalHostRow, not `row.isLocal`: a plain loopback/SERVER_IP row for this box is
   // this box too, and it carries its own org gate so a teammate's org can't claim it.
   if (await isLocalHostRow(row)) {
-    return fn(createExecutor()).catch((diagnosticFailure) => {
-      observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-      return null;
-    });
+    return fn(createExecutor()).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
   }
-  return sshManager.withExecutor(serverId, fn).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
-    return null;
-  });
+  return sshManager.withExecutor(serverId, fn).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
 }

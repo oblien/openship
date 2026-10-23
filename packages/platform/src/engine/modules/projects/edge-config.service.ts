@@ -162,10 +162,7 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
 
   if (project.workspaceId) return { reachable: false, saved, hosts: [] };
 
-  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service");
-    return [];
-  });
+  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return []; });
   const hostnames = [...new Set(domains.map((d) => d.hostname.toLowerCase()))].sort();
   const domainProxy = new Map(
     domains.map((domain) => [domain.hostname.toLowerCase(), domain.proxy]),
@@ -186,20 +183,11 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
       : null;
     const hosts: EdgeConfigHostState[] = [];
     for (const hostname of hostnames) {
-      const site = await proxy.siteFor(hostname).catch((diagnosticFailure) => {
-        observeCaughtError(
-          diagnosticFailure,
-          "platform/engine/modules/projects/edge-config.service",
-        );
-        return null;
-      });
+      const site = await proxy.siteFor(hostname).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
       hosts.push(buildHostState(hostname, site, saved, version, domainProxy.get(hostname)));
     }
     return { kind: proxy.kind, ours: proxy.ours, version, hosts };
-  }).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service");
-    return null;
-  });
+  }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
 
   if (!read)
     return {
