@@ -19,12 +19,14 @@ import { resolveDomainProxySettings } from "@repo/core";
  * The box is faked at the executor seam: these assert the report, not SSH.
  */
 
-const { listDomains, withDeploymentEdgeExecutor, edgeProxy, detectOpenRestyPaths } = vi.hoisted(() => ({
-  listDomains: vi.fn(),
-  withDeploymentEdgeExecutor: vi.fn(),
-  edgeProxy: vi.fn(),
-  detectOpenRestyPaths: vi.fn(),
-}));
+const { listDomains, withDeploymentEdgeExecutor, edgeProxy, detectOpenRestyPaths } = vi.hoisted(
+  () => ({
+    listDomains: vi.fn(),
+    withDeploymentEdgeExecutor: vi.fn(),
+    edgeProxy: vi.fn(),
+    detectOpenRestyPaths: vi.fn(),
+  }),
+);
 
 vi.mock("@repo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/db")>()),
