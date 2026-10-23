@@ -8,13 +8,14 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { RoutingConfigEditor } from "./RoutingConfigEditor";
 
 /**
- * The proxy-tunables section exists because OpenResty inherits nginx's defaults, so
- * an upload over 1 MB is a 413 and anything slower than 60s is cut off — and because
- * "what we saved" and "what the edge serves" can differ without anything saying so.
+ * The proxy-tunables section exists because an empty field inherits the project and
+ * then the installed Edge default, so an unexpectedly small inherited cap turns an
+ * upload into a 413 and anything slower than the timeout is cut off — and because
+ * "what we saved" and "what the edge configuration holds" can differ silently.
  *
  * Properties worth pinning: it must NOT appear in the deploy wizard; every group must remain visible; every directive in the table must reach
  * the UI without a code change here; and the live column must never report "not set"
- * for a value the box is actually serving.
+ * for a value the configuration actually holds.
  */
 function render(
   value: RoutingConfig | null,
@@ -71,9 +72,9 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
   });
 
   it("names the defaults it is overriding, so an empty box isn't ambiguous", () => {
-    // "Empty" has to read as "nginx's default applies", not "no limit".
+    // "Empty" has to read as "the inherited value applies", not "no limit".
     const html = render(null, true);
-    expect(html).toContain("1 MB");
+    expect(html).toContain("50m");
     expect(html).toContain("60s");
   });
 
@@ -150,7 +151,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
         },
       ]),
     );
-    expect(html).toContain("Serving:");
+    expect(html).toContain("In edge config:");
     expect(html).toContain("app.example.com");
   });
 
@@ -188,7 +189,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
         },
       ],
     });
-    expect(html).toContain("The edge is serving different values for:");
+    expect(html).toContain("The edge configuration differs from the saved values for:");
     expect(html).toContain("Adopt live values");
   });
 
@@ -229,7 +230,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
       ]),
     );
     expect(html).toContain("20M");
-    expect(html).not.toContain("Serving: not set");
+    expect(html).not.toContain("In edge config: not set");
   });
 
   it("says the live config was unreadable instead of implying agreement", () => {
@@ -240,7 +241,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
     });
     // Apostrophe is HTML-escaped in static markup, so match around it.
     expect(html).toContain("t read the live config");
-    expect(html).not.toContain("The edge is serving different values for:");
+    expect(html).not.toContain("The edge configuration differs from the saved values for:");
   });
 
   it("reports no drift when the box matches", () => {
@@ -259,7 +260,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
         },
       ]),
     );
-    expect(html).not.toContain("The edge is serving different values for:");
+    expect(html).not.toContain("The edge configuration differs from the saved values for:");
     expect(html).not.toContain("Adopt live values");
   });
 });

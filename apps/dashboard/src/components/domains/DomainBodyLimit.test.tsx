@@ -86,13 +86,13 @@ describe("per-domain HTTP body editor", () => {
     expect(h.edge).not.toHaveBeenCalled();
     await open();
     expect(container.textContent).toContain("Unlimited (0)");
-    expect(container.textContent).toContain("Not applied — retry routing");
+    expect(container.textContent).toContain("Configuration differs — retry routing");
     expect(container.textContent).toContain("1m");
     expect(container.textContent).toContain("WebSocket");
     expect((container.querySelector("input") as HTMLInputElement).value).toBe("0");
     await click("Save");
     expect(h.update).toHaveBeenCalledWith("domain-a", { proxy: { clientMaxBodySize: "0" } });
-    expect(container.textContent).toContain("Not applied — retry routing");
+    expect(container.textContent).toContain("Configuration differs — retry routing");
   });
   it("clears the override with null when inheriting the project", async () => {
     await render();
@@ -134,7 +134,7 @@ describe("per-domain HTTP body editor", () => {
     await click("Save");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("reload failed");
     expect(h.edge).toHaveBeenCalledTimes(reads + 1);
-    expect(container.textContent).toContain("Not applied — retry routing");
+    expect(container.textContent).toContain("Configuration differs — retry routing");
   });
   it("keeps a saved custom limit visible when live application cannot be observed", async () => {
     h.edge.mockResolvedValue({
@@ -156,7 +156,7 @@ describe("per-domain HTTP body editor", () => {
     await open();
     expect(container.textContent).toContain("Unlimited (0)");
     expect(container.textContent).toContain("Unknown");
-    expect(container.textContent).not.toContain("Not applied");
+    expect(container.textContent).not.toContain("Configuration differs");
     expect(container.textContent).not.toContain("Matches saved value");
   });
   it.each(["25", "1m;return 200", " 1m", "99999999999999999999999999g"])(

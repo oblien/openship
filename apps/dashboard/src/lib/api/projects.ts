@@ -193,11 +193,12 @@ export interface RouteRuleRow {
 }
 
 /**
- * One proxy directive's saved-vs-served state, from GET projects/:id/edge-config.
+ * One proxy directive's saved-versus-configured state, from GET projects/:id/edge-config.
  *
- * `liveRaw` exists separately from `live` because a vhost can legally hold a value
- * our validators reject (`20M`, `1d`): the UI must show what the box serves even
- * when it isn't adoptable, rather than reporting "not set" for a value that is set.
+ * `liveRaw` is the value found in the generated vhost file, not a measurement of the
+ * running workers. A vhost can legally hold a value our validators reject (`20M`,
+ * `1d`): the UI must show the configured value even when it isn't adoptable, rather
+ * than reporting "not set" for a value that is set.
  */
 export interface EdgeDirectiveState {
   key: string;
@@ -552,9 +553,10 @@ export const projectsApi = {
     }>(endpoints.projects.incidents(id)),
 
   /**
-   * What the edge is ACTUALLY serving for this project's hostnames, next to what
-   * the project saved. Read-only; `reachable: false` when the box can't be read
-   * (which is not the same as "no drift"). Self-hosted only.
+   * What this project's hostnames are configured with on disk, next to what the
+   * project saved. Read-only; `reachable: false` when the box can't be read (which
+   * is not the same as "no drift"). A matching file is not proof of live reload.
+   * Self-hosted only.
    */
   getEdgeConfig: (id: string | number) =>
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),

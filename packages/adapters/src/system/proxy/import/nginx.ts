@@ -373,10 +373,11 @@ function isAcmeWebrootOnly(body: string): boolean {
  * answer different questions:
  *
  *   `raw`   — every declared directive present in the block, verbatim. This is what
- *             the box is actually serving, and it's what the UI must show. A vhost
+ *             the generated vhost file holds, and it's what the UI must show. A vhost
  *             we didn't write can legally hold `client_max_body_size 20M` or
  *             `proxy_read_timeout 1d`; rendering "not set" for a value that IS set
  *             would be a lie, and the operator would chase a limit that isn't there.
+ *             Reading a file does not prove running workers loaded it.
  *   `settings` — the subset that survives `sanitizeProxySettings`, i.e. what can be
  *             adopted into `routingConfig.proxy` and re-rendered unchanged.
  */

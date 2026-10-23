@@ -1221,7 +1221,7 @@
       "observed": "Gözlenen sınır",
       "status": "Yapılandırma denetimi",
       "matches": "Kayıtlı değerle eşleşiyor (uygulama doğrulanmadı)",
-      "pending": "Uygulanmadı — yönlendirmeyi yeniden deneyin",
+      "pending": "Yapılandırma farklı — yönlendirmeyi yeniden deneyin",
       "unknown": "Bilinmiyor",
       "unsupported": "Kendi sunucunuzda nginx/OpenResty Edge gerektirir.",
       "invalid": "2m, 1g veya sınırsız için 0 girin.",

@@ -1172,7 +1172,7 @@
       "observed": "Beobachtetes Limit",
       "status": "Konfigurationsprüfung",
       "matches": "Entspricht dem gespeicherten Wert (Anwendung nicht bestätigt)",
-      "pending": "Nicht angewendet — Routing erneut versuchen",
+      "pending": "Konfiguration weicht ab — Routing erneut versuchen",
       "unknown": "Unbekannt",
       "unsupported": "Erfordert einen selbst gehosteten nginx/OpenResty-Edge.",
       "invalid": "Größe wie 2m, 1g oder 0 für unbegrenzt eingeben.",
