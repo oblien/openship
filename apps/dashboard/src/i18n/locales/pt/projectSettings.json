@@ -1172,7 +1172,7 @@
       "observed": "Limite observado",
       "status": "Verificação da configuração",
       "matches": "Corresponde ao valor salvo (aplicação não confirmada)",
-      "pending": "Não aplicado — tente o roteamento novamente",
+      "pending": "A configuração difere — tente o roteamento novamente",
       "unknown": "Desconhecido",
       "unsupported": "Requer Edge nginx/OpenResty auto-hospedado.",
       "invalid": "Informe 2m, 1g ou 0 para ilimitado.",

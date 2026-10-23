@@ -1172,7 +1172,7 @@
       "observed": "观察到的限制",
       "status": "配置检查",
       "matches": "与已保存的值一致(未确认已生效)",
-      "pending": "未应用 — 请重试路由",
+      "pending": "配置不一致 — 请重试路由",
       "unknown": "未知",
       "unsupported": "需要自托管 nginx/OpenResty Edge。",
       "invalid": "请输入 2m、1g 或表示无限制的 0。",

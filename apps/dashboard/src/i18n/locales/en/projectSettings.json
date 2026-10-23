@@ -1221,7 +1221,7 @@
       "observed": "Observed limit",
       "status": "Configuration check",
       "matches": "Matches saved value (live reload not confirmed)",
-      "pending": "Not applied — retry routing",
+      "pending": "Configuration differs — retry routing",
       "unknown": "Unknown",
       "unsupported": "Requires a self-hosted nginx/OpenResty edge.",
       "invalid": "Enter a size such as 2m or 1g, or 0 for unlimited.",

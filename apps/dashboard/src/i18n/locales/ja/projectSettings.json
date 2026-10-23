@@ -1172,7 +1172,7 @@
       "observed": "確認された上限",
       "status": "設定チェック",
       "matches": "保存値と一致(適用は未確認)",
-      "pending": "未適用 — ルーティングを再試行",
+      "pending": "設定が一致しません — ルーティングを再試行",
       "unknown": "不明",
       "unsupported": "セルフホストのnginx/OpenResty Edgeが必要です。",
       "invalid": "2m、1g、または無制限の0を入力してください。",

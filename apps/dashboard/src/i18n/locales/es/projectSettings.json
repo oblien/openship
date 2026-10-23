@@ -1172,7 +1172,7 @@
       "observed": "Límite observado",
       "status": "Comprobación de configuración",
       "matches": "Coincide con el valor guardado (aplicación no confirmada)",
-      "pending": "Sin aplicar — reintente el enrutamiento",
+      "pending": "La configuración difiere — reintente el enrutamiento",
       "unknown": "Desconocido",
       "unsupported": "Requiere un Edge nginx/OpenResty autohospedado.",
       "invalid": "Introduzca 2m, 1g o 0 para no limitar.",
