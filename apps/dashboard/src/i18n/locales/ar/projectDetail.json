@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "هل تحتاج إلى قواعد بيانات مدارة أو تخزين كائنات؟",
       "cloudConnectBody": "قم بتوصيل Openship Cloud لتوفير Postgres بدون خادم وRedis ومجموعات متوافقة مع S3 بجانب هذا المشروع.",
-      "cloudConnectButton": "استكشاف إضافات Cloud"
+      "cloudConnectButton": "استكشاف إضافات Cloud",
+      "repositorySource": {
+        "catalog": "الكتالوج",
+        "title": "من المستودع",
+        "subtitle": "اختر خدمة جاهزة، أو ابنِ من مستودعك، أو اربط خدمة موجودة.",
+        "context": "سياق البناء",
+        "dockerfile": "ملف Dockerfile",
+        "browseContext": "تصفح المجلدات",
+        "browseDockerfile": "تصفح الملفات",
+        "pathHint": "يبدأ المساران من جذر المستودع. يجب أن يكون Dockerfile داخل سياق البناء.",
+        "deployHint": "احفظ الخدمة ثم انشرها لبناء الصورة باستخدام مصدر هذا المشروع ووجهته.",
+        "noRepository": "اربط مستودع GitHub بهذا المشروع لبناء خدمة من الكود.",
+        "connectRepository": "ربط مستودع",
+        "invalidPath": "أدخل مسارًا نسبيًا داخل المستودع دون «..» أو شرطات مائلة عكسية أو شرطة مائلة في البداية.",
+        "outsideContext": "يجب أن يكون Dockerfile داخل سياق البناء. اختر مجلدًا أبًا لتضمينه.",
+        "noMatches": "جرّب بحثًا أو فئة أخرى، أو اختر صورة مخصصة."
+      }
     },
     "detail": {
       "tabs": {

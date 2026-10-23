@@ -1,5 +1,7 @@
 "use client";
 
+import { serviceRepositorySource } from "./services/repository-source";
+
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -418,6 +420,7 @@ export const ServicesTab = () => {
         <AddServiceModal
           projectId={id}
           open={createOpen}
+          repository={serviceRepositorySource(projectData)}
           projectName={projectSlugBase}
           isCloudProject={projectData?.deployTarget === "cloud"}
           onClose={() => setCreateOpen(false)}
@@ -598,6 +601,7 @@ export const ServicesTab = () => {
       <AddServiceModal
         projectId={id}
         open={createOpen}
+        repository={serviceRepositorySource(projectData)}
         projectName={projectSlugBase}
         isCloudProject={projectData?.deployTarget === "cloud"}
         onClose={() => setCreateOpen(false)}

@@ -1,5 +1,7 @@
 "use client";
 
+import { serviceRepositorySource } from "@/app/(dashboard)/projects/[id]/components/services/repository-source";
+
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1116,6 +1118,7 @@ export default function ProjectTopology({
       <AddServiceModal
         open={adding && (!resourcePicker || addKind === "service")}
         projectId={id}
+        repository={serviceRepositorySource(projectData)}
         projectName={project.name}
         isCloudProject={project.deployTarget === "cloud"}
         onClose={() => setAdding(false)}

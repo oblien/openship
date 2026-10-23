@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "Benötigen Sie verwaltete Datenbanken oder Objektspeicher?",
       "cloudConnectBody": "Verbinden Sie Openship Cloud, um serverlose Postgres-, Redis- und S3-kompatible Buckets neben diesem Projekt bereitzustellen.",
-      "cloudConnectButton": "Cloud-Add-ons entdecken"
+      "cloudConnectButton": "Cloud-Add-ons entdecken",
+      "repositorySource": {
+        "catalog": "Katalog",
+        "title": "Aus Repository",
+        "subtitle": "Wähle einen fertigen Dienst, baue aus deinem Repository oder verbinde einen vorhandenen Dienst.",
+        "context": "Build-Kontext",
+        "dockerfile": "Dockerfile",
+        "browseContext": "Ordner durchsuchen",
+        "browseDockerfile": "Dateien durchsuchen",
+        "pathHint": "Beide Pfade beginnen im Repository-Stamm. Das Dockerfile muss im Build-Kontext liegen.",
+        "deployHint": "Speichere den Dienst und deploye ihn anschließend, um das Image mit Quelle und Ziel dieses Projekts zu bauen.",
+        "noRepository": "Verbinde ein GitHub-Repository mit diesem Projekt, um einen Dienst aus dessen Code zu bauen.",
+        "connectRepository": "Repository verbinden",
+        "invalidPath": "Gib einen relativen Repository-Pfad ohne „..“, Rückstriche oder führenden Schrägstrich ein.",
+        "outsideContext": "Das Dockerfile muss im Build-Kontext liegen. Wähle einen übergeordneten Ordner.",
+        "noMatches": "Versuche eine andere Suche oder Kategorie oder wähle ein eigenes Image."
+      }
     },
     "detail": {
       "tabs": {

@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Icon } from "@repo/ui/icons";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/components/i18n-provider";
-import { githubApi } from "@/lib/api/github";
 import { deployApi } from "@/lib/api/deploy";
 import { getApiErrorMessage, getApiRequestScopeVersion } from "@/lib/api/client";
 import { useDeployment } from "@/context/DeploymentContext";
@@ -14,13 +12,7 @@ import { useDefaultDomainType } from "@/context/CloudContext";
 import { monorepoAppFromScan, normalizeAppRoot } from "@/context/deployment/monorepo-config";
 import type { MonorepoAppConfig } from "@/context/deployment/types";
 import { normalizeSubdomain } from "@/utils/subdomain";
-import { buildTree, type TreeNode } from "@/components/permissions/path-tree";
-
-function directoryPaths(nodes: TreeNode[]): string[] {
-  return nodes.flatMap((node) =>
-    node.isDirectory ? [node.path, ...directoryPaths(node.children)] : [],
-  );
-}
+import { RepositoryPathBrowser } from "@/components/github/RepositoryPathBrowser";
 
 export function RepositoryAppPicker({
   onClose,
@@ -36,10 +28,7 @@ export function RepositoryAppPicker({
   const copy = t.importProject.monorepo.selection;
   const domainType = useDefaultDomainType();
   const [path, setPath] = useState(app?.rootDirectory || ".");
-  const [directories, setDirectories] = useState<string[] | null>(null);
   const [error, setError] = useState("");
-  const [treeError, setTreeError] = useState("");
-  const [retry, setRetry] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [candidate, setCandidate] = useState<MonorepoAppConfig | null>(null);
   const generation = useRef(0);
@@ -48,27 +37,13 @@ export function RepositoryAppPicker({
     !!config.owner && config.owner !== "local" && !config.localPath && !config.uploadSessionId;
 
   useEffect(() => {
-    let cancelled = false;
+    scope.current = getApiRequestScopeVersion();
     setCandidate(null);
     setScanning(false);
-    setDirectories(null);
-    setTreeError("");
-    if (canBrowse)
-      githubApi
-        .getRepoTree(config.owner, config.repo, config.branch)
-        .then((result) => {
-          if (!cancelled && scope.current === getApiRequestScopeVersion())
-            setDirectories(directoryPaths(buildTree(result.data)));
-        })
-        .catch((error) => {
-          if (!cancelled && scope.current === getApiRequestScopeVersion())
-            setTreeError(getApiErrorMessage(error, copy.browseError));
-        });
     return () => {
-      cancelled = true;
       generation.current++;
     };
-  }, [canBrowse, config.owner, config.repo, config.branch, retry, copy.browseError]);
+  }, [config.owner, config.repo, config.branch, config.localPath, config.uploadSessionId]);
 
   const changePath = (next: string) => {
     generation.current++;
@@ -148,9 +123,6 @@ export function RepositoryAppPicker({
       if (request === generation.current) setScanning(false);
     }
   };
-  const parent = path === "." ? "." : path.split("/").slice(0, -1).join("/") || ".";
-  const children =
-    directories?.filter((dir) => (dir.split("/").slice(0, -1).join("/") || ".") === path) ?? [];
 
   return (
     <Modal
@@ -205,43 +177,12 @@ export function RepositoryAppPicker({
           />
         </label>
         {canBrowse && !candidate && (
-          <div className="rounded-xl bg-background p-2 max-h-64 overflow-auto">
-            {path !== "." && (
-              <button
-                className="flex w-full items-center gap-2 rounded-lg p-2 text-sm hover:bg-muted"
-                onClick={() => changePath(parent)}
-              >
-                <Icon name="arrow-left" className="size-4" />
-                {copy.parentFolder}
-              </button>
-            )}
-            {treeError ? (
-              <div role="alert" className="p-2 text-sm">
-                {treeError}
-                <Button variant="secondary" onClick={() => setRetry(retry + 1)}>
-                  {copy.retry}
-                </Button>
-              </div>
-            ) : directories === null ? (
-              <p role="status" className="p-3 text-sm text-muted-foreground">
-                {copy.loadingFolders}
-              </p>
-            ) : children.length ? (
-              children.map((dir) => (
-                <button
-                  key={dir}
-                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-muted"
-                  onClick={() => changePath(dir)}
-                >
-                  <Icon name="folder" className="size-4 text-muted-foreground" />
-                  <span className="min-w-0 truncate">{dir.split("/").at(-1)}</span>
-                  <Icon name="chevron-right" className="ms-auto size-4" />
-                </button>
-              ))
-            ) : (
-              <p className="p-3 text-sm text-muted-foreground">{copy.noSubfolders}</p>
-            )}
-          </div>
+          <RepositoryPathBrowser
+            source={{ owner: config.owner, repo: config.repo, branch: config.branch }}
+            kind="directory"
+            value={path}
+            onChange={changePath}
+          />
         )}
         {candidate && (
           <div className="space-y-2 rounded-xl bg-background p-4 text-sm">

@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "Precisa de bancos de dados gerenciados ou armazenamento de objetos?",
       "cloudConnectBody": "Conecte a Openship Cloud para provisionar Postgres sem servidor, Redis e buckets compatíveis com S3 junto a este projeto.",
-      "cloudConnectButton": "Explorar complementos da Cloud"
+      "cloudConnectButton": "Explorar complementos da Cloud",
+      "repositorySource": {
+        "catalog": "Catálogo",
+        "title": "Do repositório",
+        "subtitle": "Escolha um serviço pronto, compile do seu repositório ou conecte um serviço existente.",
+        "context": "Contexto de compilação",
+        "dockerfile": "Dockerfile",
+        "browseContext": "Explorar pastas",
+        "browseDockerfile": "Explorar arquivos",
+        "pathHint": "Ambos os caminhos começam na raiz do repositório. O Dockerfile deve estar dentro do contexto de compilação.",
+        "deployHint": "Salve o serviço e implante-o para compilar a imagem com a origem e o destino deste projeto.",
+        "noRepository": "Conecte um repositório GitHub a este projeto para compilar um serviço a partir do código.",
+        "connectRepository": "Conectar repositório",
+        "invalidPath": "Insira um caminho relativo sem “..”, barras invertidas ou barra inicial.",
+        "outsideContext": "O Dockerfile deve estar dentro do contexto de compilação. Escolha uma pasta superior para incluí-lo.",
+        "noMatches": "Tente outra busca ou categoria, ou escolha Imagem personalizada."
+      }
     },
     "detail": {
       "tabs": {

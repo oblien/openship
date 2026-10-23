@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "Connecter Openship Cloud",
       "cloudConnectBody": "Liez cette instance à Openship Cloud pour parcourir et ajouter des images cloud gérées. Vous pouvez toujours ajouter n'importe quelle image manuellement depuis Images locales.",
-      "cloudConnectButton": "Se connecter à Openship Cloud"
+      "cloudConnectButton": "Se connecter à Openship Cloud",
+      "repositorySource": {
+        "catalog": "Catalogue",
+        "title": "Depuis le dépôt",
+        "subtitle": "Choisissez un service prêt à l’emploi, construisez depuis votre dépôt ou connectez un service existant.",
+        "context": "Contexte de construction",
+        "dockerfile": "Dockerfile",
+        "browseContext": "Parcourir les dossiers",
+        "browseDockerfile": "Parcourir les fichiers",
+        "pathHint": "Les deux chemins partent de la racine du dépôt. Le Dockerfile doit être dans le contexte de construction.",
+        "deployHint": "Enregistrez le service, puis déployez-le pour construire l’image avec la source et la destination de ce projet.",
+        "noRepository": "Connectez un dépôt GitHub à ce projet pour construire un service depuis son code.",
+        "connectRepository": "Connecter un dépôt",
+        "invalidPath": "Saisissez un chemin relatif sans « .. », barre oblique inverse ni barre oblique initiale.",
+        "outsideContext": "Le Dockerfile doit être dans le contexte de construction. Choisissez un dossier parent pour l’inclure.",
+        "noMatches": "Essayez une autre recherche ou catégorie, ou choisissez une image personnalisée."
+      }
     },
     "detail": {
       "tabs": {

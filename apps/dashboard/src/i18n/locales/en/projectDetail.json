@@ -135,6 +135,22 @@
         "mail": "Mail & SMTP",
         "runtime": "Runtimes",
         "other": "Other"
+      },
+      "repositorySource": {
+        "catalog": "Catalog",
+        "title": "From repository",
+        "subtitle": "Choose a ready-made service, build from your repository, or connect an existing service.",
+        "context": "Build context",
+        "dockerfile": "Dockerfile",
+        "browseContext": "Browse folders",
+        "browseDockerfile": "Browse files",
+        "pathHint": "Both paths start at the repository root. The Dockerfile must be inside the build context.",
+        "deployHint": "Save the service, then deploy it to build the image using this project’s source and destination.",
+        "noRepository": "Connect a GitHub repository to this project to build a service from its code.",
+        "connectRepository": "Connect repository",
+        "invalidPath": "Enter a relative repository path without “..”, backslashes, or a leading slash.",
+        "outsideContext": "The Dockerfile must be inside the build context. Choose a parent folder to include it.",
+        "noMatches": "Try another search or category, or choose Custom image."
       }
     },
     "detail": {

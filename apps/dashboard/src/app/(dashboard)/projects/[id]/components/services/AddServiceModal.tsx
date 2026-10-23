@@ -4,10 +4,18 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import Link from "next/link";
+import { RepositoryBuildFields } from "./RepositoryBuildFields";
+import { repositoryBuildFields, type ServiceRepositorySource } from "./repository-source";
+import { getApiRequestScopeVersion } from "@/lib/api/client";
 import type { ImageCatalogEntry } from "@/lib/api/images";
 import type { ServiceInput } from "@/lib/api/services";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { defaultDomainType } from "@/lib/default-domain-type";
 import { getApiErrorMessage } from "@/lib/api";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
@@ -22,14 +30,14 @@ interface AddServiceModalProps {
   projectName: string;
   // A self-hosted dashboard can also manage a managed Cloud project.
   isCloudProject?: boolean;
+  repository?: ServiceRepositorySource | null;
   onClose: () => void;
   onSubmit: (data: ServiceInput) => Promise<void>;
 }
 
 type EnvRow = { key: string; value: string; visible: boolean };
 
-// Sentinel entry rendered at the end of the catalog grid so the user can
-// pick a plain Docker image string instead of a curated catalog entry.
+// Custom image sentinel; the source selector opens its form directly.
 const CUSTOM_ENTRY: ImageCatalogEntry = {
   id: "__custom__",
   name: "Custom image",
@@ -57,9 +65,12 @@ function envRowsFromCatalog(entry: ImageCatalogEntry | null): EnvRow[] {
   // off per-value if it's sensitive (e.g. an admin password).
   return entry.defaultEnv.map((e) => ({
     key: e.key,
-    value: e.generate === "secret"
-      ? Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) => byte.toString(16).padStart(2, "0")).join("")
-      : e.value ?? "",
+    value:
+      e.generate === "secret"
+        ? Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) =>
+            byte.toString(16).padStart(2, "0"),
+          ).join("")
+        : (e.value ?? ""),
     visible: e.generate !== "secret",
   }));
 }
@@ -78,9 +89,7 @@ function parseVolumeString(raw: string): VolumeRow | null {
 
 function volumeRowsFromCatalog(entry: ImageCatalogEntry | null): VolumeRow[] {
   if (!entry?.defaultVolumes?.length) return [];
-  return entry.defaultVolumes
-    .map(parseVolumeString)
-    .filter((r): r is VolumeRow => r !== null);
+  return entry.defaultVolumes.map(parseVolumeString).filter((r): r is VolumeRow => r !== null);
 }
 
 function volumeStringsFromRows(rows: VolumeRow[]): string[] {
@@ -116,7 +125,18 @@ const CATEGORIES: CategoryDef[] = [
     id: "database",
     label: "Databases",
     icon: "database",
-    match: ["database", "db", "sql", "postgres", "mysql", "mariadb", "mongo", "cockroach", "neon", "sqlite"],
+    match: [
+      "database",
+      "db",
+      "sql",
+      "postgres",
+      "mysql",
+      "mariadb",
+      "mongo",
+      "cockroach",
+      "neon",
+      "sqlite",
+    ],
   },
   {
     id: "cache",
@@ -134,7 +154,17 @@ const CATEGORIES: CategoryDef[] = [
     id: "vector",
     label: "Vector & AI",
     icon: "sparkles",
-    match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama"],
+    match: [
+      "vector",
+      "qdrant",
+      "weaviate",
+      "milvus",
+      "chroma",
+      "pgvector",
+      "embedding",
+      "llm",
+      "ollama",
+    ],
   },
   {
     id: "queue",
@@ -169,7 +199,6 @@ const CATEGORIES: CategoryDef[] = [
 ];
 
 const OTHER_CATEGORY_ID = "other";
-const CUSTOM_CATEGORY_ID = "__custom__";
 
 // Keep service families recognizable without turning each catalog tile into
 // a competing action button. These are presentation colors, not capabilities.
@@ -191,34 +220,65 @@ const CATEGORY_ACCENTS: Record<string, string> = {
  * through to "other" so nothing is hidden.
  */
 function bucketEntry(entry: ImageCatalogEntry): string {
-  const hints = [
-    entry.category,
-    ...(entry.tags ?? []),
-    entry.id,
-    entry.name,
-    entry.image,
-  ];
+  const hints = [entry.category, ...(entry.tags ?? []), entry.id, entry.name, entry.image];
   for (const hint of hints) {
     if (!hint) continue;
     const text = hint.toLowerCase();
     for (const cat of CATEGORIES) {
-      if (cat.id === text || cat.label.toLowerCase() === text || cat.match.some((kw) => text.includes(kw))) return cat.id;
+      if (
+        cat.id === text ||
+        cat.label.toLowerCase() === text ||
+        cat.match.some((kw) => text.includes(kw))
+      )
+        return cat.id;
     }
   }
   return OTHER_CATEGORY_ID;
 }
 
-function CatalogIcon({ entry, className = "size-5" }: { entry: ImageCatalogEntry; className?: string }) {
+function CatalogIcon({
+  entry,
+  className = "size-5",
+}: {
+  entry: ImageCatalogEntry;
+  className?: string;
+}) {
   const [failedLogo, setFailedLogo] = useState<string>();
   if (entry.logo && failedLogo !== entry.logo) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={entry.logo} alt="" className={`${className} object-contain`} onError={() => setFailedLogo(entry.logo)} />;
+    return (
+      <img
+        src={entry.logo}
+        alt=""
+        className={`${className} object-contain`}
+        onError={() => setFailedLogo(entry.logo)}
+      />
+    );
   }
   const Icon = CATEGORIES.find((category) => category.id === bucketEntry(entry))?.icon ?? "window";
   return <UiIcon name={Icon} className={className} />;
 }
 
-export function AddServiceModal({ open, projectId, projectName, isCloudProject, onClose, onSubmit }: AddServiceModalProps) {
+export function AddServiceModal(props: AddServiceModalProps) {
+  const resourceKey = useCloudResourceKey();
+  // Source/destination changes must not reuse a different project's draft.
+  return (
+    <AddServiceForm
+      key={JSON.stringify([props.open, props.projectId, props.repository, resourceKey])}
+      {...props}
+    />
+  );
+}
+
+function AddServiceForm({
+  open,
+  projectId,
+  projectName,
+  isCloudProject,
+  repository,
+  onClose,
+  onSubmit,
+}: AddServiceModalProps) {
   const { t } = useI18n();
   const { deployMode } = usePlatform();
   const cloud = useCloud();
@@ -227,15 +287,21 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
   // Step state - "pick" shows the catalog, "configure" shows the form.
   const [step, setStep] = useState<"pick" | "configure">("pick");
-  const [sourceMode, setSourceMode] = useState<"new" | "existing">("new");
+  const [sourceMode, setSourceMode] = useState<"catalog" | "repository" | "image" | "existing">(
+    "catalog",
+  );
+  const [buildContext, setBuildContext] = useState(".");
+  const [dockerfile, setDockerfile] = useState("Dockerfile");
+  const scope = useRef(getApiRequestScopeVersion());
   const [selected, setSelected] = useState<ImageCatalogEntry | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // Active category in the left rail. null = "All". Special sentinel
-  // "__custom__" filters down to just the custom-image tile.
+  // Catalog category is a compact filter, available at every screen size.
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // Every application service uses the shared Docker engine and OCI catalog.
-  const catalog = cloudOnly ? LOCAL_SERVICE_CATALOG.filter(entry => !entry.gpus && entry.supportsCloud !== false) : LOCAL_SERVICE_CATALOG;
+  const catalog = cloudOnly
+    ? LOCAL_SERVICE_CATALOG.filter((entry) => !entry.gpus && entry.supportsCloud !== false)
+    : LOCAL_SERVICE_CATALOG;
 
   // Configure step state. Ports is a single-line, comma-separated string -
   // 95% of services have one port and the old textarea wasted vertical space.
@@ -255,27 +321,11 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset everything when the modal opens - never carry state between sessions
+  // The keyed form owns draft lifetime. Capture request scope after parent
+  // layout effects have established the account used by API calls.
   useEffect(() => {
-    if (!open) return;
-    setStep("pick");
-    setSelected(null);
-    setSourceMode("new");
-    setSearchQuery("");
-    setActiveCategory(null);
-    setName("");
-    setImage("");
-    setPorts("");
-    setVolumeRows([]);
-    setEnvRows([]);
-    setExposed(false);
-    setExposedPort("");
-    setDomain("");
-    setCustomDomain("");
-    setDomainType("free");
-    setSaving(false);
-    setError(null);
-  }, [open]);
+    scope.current = getApiRequestScopeVersion();
+  }, []);
 
   // Bucket every catalog entry once into a curated category. We memoize
   // the assignments so search/filter doesn't re-run bucketEntry per render.
@@ -284,7 +334,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   }, [catalog]);
 
   // Counts per curated category - only includes buckets that actually have
-  // entries, in the curated order (so the rail stays predictable). "Other"
+  // entries, in curated order. "Other"
   // is appended at the end if it has anything.
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -295,11 +345,17 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
     const ordered: Array<{ id: string; label: string; icon: IconName; count: number }> = [];
     for (const cat of CATEGORIES) {
       const count = counts.get(cat.id) ?? 0;
-      if (count > 0) ordered.push({ id: cat.id, label: catLabels[cat.id] ?? cat.label, icon: cat.icon, count });
+      if (count > 0)
+        ordered.push({ id: cat.id, label: catLabels[cat.id] ?? cat.label, icon: cat.icon, count });
     }
     const otherCount = counts.get(OTHER_CATEGORY_ID) ?? 0;
     if (otherCount > 0) {
-      ordered.push({ id: OTHER_CATEGORY_ID, label: catLabels.other, icon: "window", count: otherCount });
+      ordered.push({
+        id: OTHER_CATEGORY_ID,
+        label: catLabels.other,
+        icon: "window",
+        count: otherCount,
+      });
     }
     return ordered;
   }, [bucketed, t]);
@@ -309,7 +365,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
     const q = searchQuery.trim().toLowerCase();
     return bucketed
       .filter(({ entry, bucket }) => {
-        if (activeCategory && activeCategory !== CUSTOM_CATEGORY_ID) {
+        if (activeCategory) {
           if (bucket !== activeCategory) return false;
         }
         if (!q) return true;
@@ -322,11 +378,20 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       .map(({ entry }) => entry);
   }, [bucketed, searchQuery, activeCategory]);
 
-  // The custom-image tile shows in "All" and in the dedicated "Custom" category.
-  const showCustomTile = activeCategory === null || activeCategory === CUSTOM_CATEGORY_ID;
-
-  const handlePick = (entry: ImageCatalogEntry) => {
+  const handlePick = (entry: ImageCatalogEntry, resetDraft = false) => {
+    if (!resetDraft && entry.id === selected?.id) {
+      setStep("configure");
+      return;
+    }
     setSelected(entry);
+    // A different service/source starts a new draft, including public exposure.
+    setExposed(false);
+    setExposedPort("");
+    setDomain("");
+    setCustomDomain("");
+    setDomainType(newEndpointDomainType);
+    setBuildContext(".");
+    setDockerfile("Dockerfile");
     // Seed configure step from catalog defaults. Custom image gets blank fields.
     if (isCustom(entry)) {
       setName("");
@@ -359,7 +424,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (submitting.current) return;
+    if (submitting.current || scope.current !== getApiRequestScopeVersion()) return;
 
     const trimmedName = name.trim();
     const trimmedImage = image.trim();
@@ -368,9 +433,23 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       setError(t.projectDetail.services.addModal.serviceNameRequired);
       return;
     }
-    if (!trimmedImage) {
+    if (sourceMode !== "repository" && !trimmedImage) {
       setError(t.projectDetail.services.addModal.imageRequired);
       return;
+    }
+
+    let buildFields = { build: "", dockerfile: "" };
+    if (sourceMode === "repository") {
+      if (!repository) {
+        setError(t.projectDetail.services.addModal.repositorySource.noRepository);
+        return;
+      }
+      const fields = repositoryBuildFields(repository, buildContext, dockerfile);
+      if (typeof fields === "string") {
+        setError(t.projectDetail.services.addModal.repositorySource[fields]);
+        return;
+      }
+      buildFields = fields;
     }
 
     submitting.current = true;
@@ -385,9 +464,8 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
     const payload: ServiceInput = {
       name: trimmedName,
-      image: trimmedImage,
-      build: "",
-      dockerfile: "",
+      image: sourceMode === "repository" ? "" : trimmedImage,
+      ...buildFields,
       ports: portList,
       dependsOn: [],
       environment: envObjectFromRows(envRows),
@@ -415,9 +493,10 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
     try {
       await onSubmit(payload);
-      onClose();
+      if (scope.current === getApiRequestScopeVersion()) onClose();
     } catch (err) {
-      setError(getApiErrorMessage(err, t.projectDetail.services.addModal.addServiceFailed));
+      if (scope.current === getApiRequestScopeVersion())
+        setError(getApiErrorMessage(err, t.projectDetail.services.addModal.addServiceFailed));
     } finally {
       submitting.current = false;
       setSaving(false);
@@ -427,19 +506,25 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   return (
     <Modal
       isOpen={open}
-      onClose={onClose}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+      closable={!saving}
       showCloseButton={false}
-      maxWidth={step === "pick" ? "1080px" : "760px"}
+      maxWidth="920px"
       width="100%"
-      maxHeight="92vh"
+      maxHeight="90vh"
+      surface="frosted"
+      overflow="hidden"
     >
-      <div className="flex max-h-[92vh] flex-col">
+      <div className="flex max-h-[90vh] flex-col">
         {/* Header */}
         <div className="flex items-center justify-between gap-3 border-b border-border/40 px-6 py-5">
           <div className="flex items-center gap-3 min-w-0">
-            {step === "configure" && (
+            {sourceMode === "catalog" && step === "configure" && (
               <button
                 type="button"
+                disabled={saving}
                 onClick={handleBackToCatalog}
                 className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                 aria-label={t.projectDetail.services.addModal.backToCatalog}
@@ -449,21 +534,25 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
             )}
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-foreground truncate">
-                {step === "pick"
+                {step === "pick" || sourceMode !== "catalog"
                   ? t.projectDetail.services.addModal.addTitle
-                  : interpolate(t.projectDetail.services.addModal.configureTitle, { name: selected?.name ?? t.projectDetail.services.addModal.fallbackService })}
+                  : interpolate(t.projectDetail.services.addModal.configureTitle, {
+                      name: selected?.name ?? t.projectDetail.services.addModal.fallbackService,
+                    })}
               </h2>
-              <p className={`mt-0.5 text-xs text-muted-foreground ${sourceMode === "new" ? "truncate" : ""}`}>
-                {sourceMode === "existing" ? t.projects.connections.existingHint : step === "pick"
-                  ? t.projectDetail.services.addModal.pickSubtitle
-                  : t.projectDetail.services.addModal.configureSubtitle}
+              <p className="mt-1 text-sm text-muted-foreground">
+                {sourceMode === "existing"
+                  ? t.projects.connections.existingHint
+                  : step === "pick"
+                    ? t.projectDetail.services.addModal.repositorySource.subtitle
+                    : t.projectDetail.services.addModal.configureSubtitle}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {sourceMode === "new" && <ModeBadge mode={cloudOnly ? "cloud" : "local"} />}
             <button
               type="button"
+              disabled={saving}
               onClick={onClose}
               className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
               aria-label={t.projectDetail.services.addModal.close}
@@ -473,37 +562,96 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
           </div>
         </div>
 
-        {step === "pick" && projectId && (
-          <div className="flex gap-2 border-b border-border/40 px-6 py-3" role="tablist" aria-label={t.projectDetail.services.addModal.addTitle}>
-            {([
-              { id: "new", label: t.projects.connections.createNew, icon: "plus" },
-              { id: "existing", label: t.projects.connections.connectExisting, icon: "plug" },
-            ] as const).map(item => (
-              <button key={item.id} type="button" role="tab" aria-selected={sourceMode === item.id}
-                onClick={() => setSourceMode(item.id)}
-                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${sourceMode === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"}`}>
-                <UiIcon name={item.icon} className="size-4" />{item.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div
+          className="flex flex-wrap gap-1 px-6 py-3"
+          role="tablist"
+          aria-label={t.projectDetail.services.addModal.addTitle}
+        >
+          {(
+            [
+              {
+                id: "catalog",
+                label: t.projectDetail.services.addModal.repositorySource.catalog,
+                icon: "layers",
+              },
+              {
+                id: "repository",
+                label: t.projectDetail.services.addModal.repositorySource.title,
+                icon: "github",
+              },
+              { id: "image", label: t.projectDetail.services.addModal.customImage, icon: "docker" },
+              ...(projectId
+                ? [
+                    {
+                      id: "existing" as const,
+                      label: t.projects.connections.connectExisting,
+                      icon: "plug" as const,
+                    },
+                  ]
+                : []),
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={sourceMode === item.id}
+              disabled={saving}
+              onClick={() => {
+                if (sourceMode === item.id) return;
+                setSourceMode(item.id);
+                handlePick(CUSTOM_ENTRY, true);
+                if (item.id === "catalog" || item.id === "existing") setStep("pick");
+              }}
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${sourceMode === item.id ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+            >
+              <UiIcon name={item.icon} className="size-4" />
+              {item.label}
+            </button>
+          ))}
+        </div>
 
         {sourceMode === "existing" && projectId ? (
-          <div className="overflow-y-auto"><ProjectConnectionForm targetProjectId={projectId} onClose={onClose} hideHeader /></div>
-        ) : step === "pick" ? (
+          <div className="overflow-y-auto">
+            <ProjectConnectionForm targetProjectId={projectId} onClose={onClose} hideHeader />
+          </div>
+        ) : sourceMode === "repository" && !repository ? (
+          <div className="space-y-4 px-6 py-10 text-center">
+            <UiIcon name="github" className="mx-auto size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              {t.projectDetail.services.addModal.repositorySource.noRepository}
+            </p>
+            {projectId && (
+              <Button asChild variant="secondary">
+                <Link href={`/projects/${projectId}/source`} onClick={onClose}>
+                  {t.projectDetail.services.addModal.repositorySource.connectRepository}
+                </Link>
+              </Button>
+            )}
+          </div>
+        ) : sourceMode === "catalog" && step === "pick" ? (
           <CatalogPickStep
             catalog={visibleCatalog}
             categories={categories}
             activeCategory={activeCategory}
             onCategoryChange={setActiveCategory}
-            totalCount={catalog.length}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
-            showCustomTile={showCustomTile}
             onPick={handlePick}
           />
         ) : (
           <ConfigureStep
+            repositoryFields={
+              sourceMode === "repository" && repository ? (
+                <RepositoryBuildFields
+                  source={repository}
+                  context={buildContext}
+                  dockerfile={dockerfile}
+                  onContext={setBuildContext}
+                  onDockerfile={setDockerfile}
+                />
+              ) : undefined
+            }
             projectName={projectName}
             selected={selected}
             name={name}
@@ -544,216 +692,90 @@ function CatalogPickStep({
   categories,
   activeCategory,
   onCategoryChange,
-  totalCount,
   searchQuery,
   onSearchChange,
-  showCustomTile,
   onPick,
 }: {
   catalog: ImageCatalogEntry[];
   categories: Array<{ id: string; label: string; icon: IconName; count: number }>;
   activeCategory: string | null;
   onCategoryChange: (c: string | null) => void;
-  totalCount: number;
   searchQuery: string;
   onSearchChange: (v: string) => void;
-  showCustomTile: boolean;
   onPick: (entry: ImageCatalogEntry) => void;
 }) {
   const { t } = useI18n();
   const m = t.projectDetail.services.addModal;
-  const hasNoResults = catalog.length === 0 && !showCustomTile;
-
-  const activeLabel =
-    activeCategory === null
-      ? m.allServices
-      : activeCategory === CUSTOM_CATEGORY_ID
-        ? m.customImage
-        : categories.find((c) => c.id === activeCategory)?.label ?? m.services;
-
   return (
-    <div className="flex flex-1 min-h-0">
-      {/* ── Left rail: curated categories ───────────────────────────── */}
-      <aside className="hidden md:flex md:flex-col w-[240px] shrink-0 border-e border-border/40 bg-muted/[0.04]">
-        <div className="px-5 pt-5 pb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
-          {m.browse}
-        </div>
-        <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-0.5">
-          <CategoryItem
-            icon={"sparkles"}
-            label={m.allServices}
-            count={totalCount}
-            active={activeCategory === null}
-            onClick={() => onCategoryChange(null)}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-col gap-3 px-6 pb-4 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <UiIcon
+            name="search"
+            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
-          {categories.map((c) => (
-            <CategoryItem
-              key={c.id}
-              icon={c.icon}
-              label={c.label}
-              accent={CATEGORY_ACCENTS[c.id]}
-              count={c.count}
-              active={activeCategory === c.id}
-              onClick={() => onCategoryChange(c.id)}
-            />
-          ))}
-        </div>
-        <div className="border-t border-border/30 px-2.5 py-3">
-          <CategoryItem
-            icon={"plus"}
-            label={m.customImage}
-            active={activeCategory === CUSTOM_CATEGORY_ID}
-            onClick={() => onCategoryChange(CUSTOM_CATEGORY_ID)}
+          <Input
+            variant="filled"
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={m.searchPlaceholder}
+            aria-label={m.searchPlaceholder}
+            className="ps-9"
           />
         </div>
-      </aside>
-
-      {/* ── Right pane: search + grid ───────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-7 pt-5 pb-4 border-b border-border/30 space-y-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-[15px] font-semibold text-foreground truncate">{activeLabel}</h3>
-            {catalog.length > 0 && (
-              <span className="text-[11px] font-medium text-muted-foreground/70 tabular-nums shrink-0">
-                {interpolate(catalog.length === 1 ? m.serviceCountOne : m.serviceCountOther, { count: String(catalog.length) })}
-              </span>
-            )}
+        <CustomSelect
+          variant="filled"
+          value={activeCategory ?? "all"}
+          className="sm:w-52"
+          aria-label={m.browse}
+          onChange={(value) => onCategoryChange(value === "all" ? null : value)}
+          options={[
+            { value: "all", label: m.allServices },
+            ...categories.map((c) => ({ value: c.id, label: c.label })),
+          ]}
+        />
+      </div>
+      <div className="min-h-0 max-h-[55vh] overflow-y-auto px-6 pb-6">
+        {catalog.length ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {catalog.map((entry) => (
+              <CatalogCard key={entry.id} entry={entry} onClick={() => onPick(entry)} />
+            ))}
           </div>
-          <div className="relative">
-            <UiIcon name="search" className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder={m.searchPlaceholder}
-              spellCheck={false}
-              autoComplete="off"
-              className="h-10 w-full rounded-xl border border-border/50 bg-muted/20 ps-9 pe-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40"
-            />
+        ) : (
+          <div className="py-12 text-center">
+            <UiIcon name="search" className="mx-auto mb-3 size-7 text-muted-foreground" />
+            <p className="text-sm font-medium">{m.noMatchesTitle}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{m.repositorySource.noMatches}</p>
           </div>
-
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-7 py-5">
-          {hasNoResults ? (
-            <div className="flex flex-col items-center justify-center text-center py-16">
-              <div className="size-11 rounded-xl bg-muted/40 flex items-center justify-center mb-3">
-                <UiIcon name="search" className="size-4 text-muted-foreground/60" />
-              </div>
-              <p className="text-sm font-medium text-foreground">{m.noMatchesTitle}</p>
-              <p className="text-xs text-muted-foreground/70 mt-1 max-w-[280px]">
-                {m.noMatchesBody}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {catalog.map((entry, idx) => (
-                <CatalogCard
-                  key={entry.id ?? entry.name ?? idx}
-                  entry={entry}
-                  onClick={() => onPick(entry)}
-                />
-              ))}
-              {showCustomTile && (
-                <CatalogCard
-                  entry={CUSTOM_ENTRY}
-                  onClick={() => onPick(CUSTOM_ENTRY)}
-                  highlight
-                />
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function CategoryItem({
-  icon: Icon,
-  label,
-  count,
-  active,
-  accent,
-  onClick,
-}: {
-  icon: IconName;
-  label: string;
-  count?: number;
-  active?: boolean;
-  accent?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full group flex items-center gap-3 rounded-xl px-3 py-2.5 text-start transition-all ${
-        active
-          ? "bg-foreground/[0.06] text-foreground"
-          : "text-muted-foreground hover:bg-muted/30 hover:text-foreground"
-      }`}
-    >
-      <span
-        className={`flex size-7 items-center justify-center rounded-lg shrink-0 transition-colors ${
-          accent ?? (active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground/70 group-hover:text-foreground")
-        }`}
-      >
-        <UiIcon name={Icon} className="size-3.5" />
-      </span>
-      <span className="flex-1 min-w-0 truncate text-[13px] font-medium">{label}</span>
-      {typeof count === "number" && (
-        <span
-          className={`text-[11px] font-semibold tabular-nums shrink-0 ${
-            active ? "text-foreground/70" : "text-muted-foreground/50"
-          }`}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function CatalogCard({
-  entry,
-  onClick,
-  highlight,
-}: {
-  entry: ImageCatalogEntry;
-  onClick: () => void;
-  highlight?: boolean;
-}) {
+function CatalogCard({ entry, onClick }: { entry: ImageCatalogEntry; onClick: () => void }) {
   const { t } = useI18n();
   const m = t.projectDetail.services.addModal;
-  const custom = isCustom(entry);
   const accent = CATEGORY_ACCENTS[bucketEntry(entry)] ?? "bg-muted/30 text-muted-foreground";
   return (
     <button
       type="button"
       onClick={onClick}
-      title={custom ? m.customEntryDescription : (entry.description ?? undefined)}
-      className={`group relative flex items-center gap-3 text-start rounded-xl border p-3 transition-all ${
-        highlight
-          ? "border-dashed border-border/60 bg-muted/[0.04] hover:border-primary/50 hover:bg-primary/[0.03]"
-          : "border-border/40 bg-card hover:border-primary/40 hover:bg-foreground/[0.015]"
-      }`}
+      title={entry.description ?? undefined}
+      className="group flex min-w-0 items-center gap-3 rounded-xl bg-background/60 p-3.5 text-start transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-ring"
     >
-      <div className={`size-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${accent}`}>
-        {custom ? (
-          <UiIcon name="plus" className="size-4 text-muted-foreground/80" />
-        ) : (
-          <CatalogIcon entry={entry} />
-        )}
+      <div
+        className={`size-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${accent}`}
+      >
+        <CatalogIcon entry={entry} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold text-foreground truncate leading-tight">
-          {custom ? m.customImage : (entry.name ?? entry.image ?? m.unnamed)}
+        <p className="text-sm font-medium text-foreground truncate leading-tight">
+          {entry.name ?? entry.image ?? m.unnamed}
         </p>
-        {!custom && entry.image && (
-          <p className="text-[11px] text-muted-foreground/60 truncate font-mono mt-0.5">
-            {entry.image}
-          </p>
+        {entry.image && (
+          <p className="text-xs text-muted-foreground truncate font-mono mt-1">{entry.image}</p>
         )}
       </div>
     </button>
@@ -763,6 +785,7 @@ function CatalogCard({
 /* ─── Configure (Step 2) ───────────────────────────────────────────────── */
 
 function ConfigureStep({
+  repositoryFields,
   projectName,
   selected,
   name,
@@ -790,6 +813,7 @@ function ConfigureStep({
   onCancel,
   onSubmit,
 }: {
+  repositoryFields?: React.ReactNode;
   projectName: string;
   selected: ImageCatalogEntry | null;
   name: string;
@@ -829,162 +853,187 @@ function ConfigureStep({
   );
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-        {error && (
-          <div className="rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
-            {error}
-          </div>
-        )}
-
-        {selected && !isCustom(selected) && (
-          <div className="rounded-2xl border border-border/40 bg-muted/15 px-4 py-3 flex items-center gap-3">
-            <div className={`size-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${CATEGORY_ACCENTS[bucketEntry(selected)] ?? "bg-card/60 text-muted-foreground"}`}>
-              <CatalogIcon entry={selected} className="size-6" />
+    <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <fieldset disabled={saving} className="min-w-0 space-y-5 px-6 py-5">
+          {selected && !isCustom(selected) && (
+            <div className="rounded-2xl border border-border/40 bg-muted/15 px-4 py-3 flex items-center gap-3">
+              <div
+                className={`size-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${CATEGORY_ACCENTS[bucketEntry(selected)] ?? "bg-card/60 text-muted-foreground"}`}
+              >
+                <CatalogIcon entry={selected} className="size-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{selected.name}</p>
+                <p className="text-xs text-muted-foreground/80 truncate">
+                  {selected.description ?? selected.image}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground truncate">{selected.name}</p>
-              <p className="text-xs text-muted-foreground/80 truncate">{selected.description ?? selected.image}</p>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Two-col: name + ports together - most services have one short port,
+          {repositoryFields}
+
+          {/* Two-col: name + ports together - most services have one short port,
             wasting a full row on it just for "5432" felt off. */}
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
-          <Field label={m.serviceName}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="postgres"
-              spellCheck={false}
-              autoComplete="off"
-              className="h-11 w-full rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40"
-            />
-          </Field>
-          <Field label={m.ports}>
-            <input
-              type="text"
-              value={ports}
-              onChange={(e) => setPorts(e.target.value)}
-              placeholder="5432"
-              spellCheck={false}
-              autoComplete="off"
-              className="h-11 w-full rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
-            />
-          </Field>
-        </div>
-
-        <Field label={m.image}>
-          <input
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
-            placeholder="postgres:16-alpine"
-            spellCheck={false}
-            autoComplete="off"
-            className="h-11 w-full rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
-          />
-        </Field>
-
-        {/* Volumes - structured name/path pairs instead of raw compose syntax */}
-        <div>
-          <div className="flex items-baseline justify-between mb-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{m.persistentVolumes}</span>
-            <span className="text-[11px] text-muted-foreground/60">
-              {selected?.defaultVolumes?.length
-                ? m.preSeeded
-                : m.optional}
-            </span>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
+            <Field label={m.serviceName}>
+              <Input
+                variant="filled"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={repositoryFields ? "api" : "postgres"}
+                spellCheck={false}
+                autoComplete="off"
+                className="w-full"
+              />
+            </Field>
+            <Field label={m.ports}>
+              <Input
+                variant="filled"
+                type="text"
+                value={ports}
+                onChange={(e) => setPorts(e.target.value)}
+                placeholder={repositoryFields ? "3000" : "5432"}
+                spellCheck={false}
+                autoComplete="off"
+                className="w-full font-mono"
+              />
+            </Field>
           </div>
-          {volumeRows.length > 0 ? (
-            <div className="space-y-2">
-              {volumeRows.map((row, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={row.name}
-                    onChange={(e) =>
-                      setVolumeRows((rows) => rows.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)))
-                    }
-                    placeholder="volume_name"
-                    spellCheck={false}
-                    autoComplete="off"
-                    className="h-10 w-[180px] shrink-0 rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
-                  />
-                  <span className="text-muted-foreground/50 text-sm shrink-0">→</span>
-                  <input
-                    type="text"
-                    value={row.path}
-                    onChange={(e) =>
-                      setVolumeRows((rows) => rows.map((r, i) => (i === idx ? { ...r, path: e.target.value } : r)))
-                    }
-                    placeholder="/path/in/container"
-                    spellCheck={false}
-                    autoComplete="off"
-                    className="h-10 flex-1 min-w-0 rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setVolumeRows((rows) => rows.filter((_, i) => i !== idx))}
-                    className="size-10 shrink-0 rounded-xl text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground inline-flex items-center justify-center"
-                    aria-label={m.removeVolume}
-                  >
-                    <UiIcon name="close" className="size-4" />
-                  </button>
-                </div>
-              ))}
+
+          {!repositoryFields && (
+            <Field label={m.image}>
+              <Input
+                variant="filled"
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="postgres:16-alpine"
+                spellCheck={false}
+                autoComplete="off"
+                className="w-full font-mono"
+              />
+            </Field>
+          )}
+
+          {/* Volumes - structured name/path pairs instead of raw compose syntax */}
+          <div>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {m.persistentVolumes}
+              </span>
+              <span className="text-[11px] text-muted-foreground/60">
+                {selected?.defaultVolumes?.length ? m.preSeeded : m.optional}
+              </span>
             </div>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setVolumeRows((rows) => [...rows, { name: "", path: "" }])}
-            className={`inline-flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors ${
-              volumeRows.length > 0 ? "mt-2" : ""
-            }`}
-          >
-            <UiIcon name="plus" className="size-3.5" />
-            {m.addVolume}
-          </button>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {m.volumesHint}
-          </p>
-        </div>
+            {volumeRows.length > 0 ? (
+              <div className="space-y-2">
+                {volumeRows.map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Input
+                      variant="filled"
+                      type="text"
+                      value={row.name}
+                      onChange={(e) =>
+                        setVolumeRows((rows) =>
+                          rows.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)),
+                        )
+                      }
+                      placeholder="volume_name"
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="h-10 w-[180px] shrink-0 rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
+                    />
+                    <span className="text-muted-foreground/50 text-sm shrink-0">→</span>
+                    <Input
+                      variant="filled"
+                      type="text"
+                      value={row.path}
+                      onChange={(e) =>
+                        setVolumeRows((rows) =>
+                          rows.map((r, i) => (i === idx ? { ...r, path: e.target.value } : r)),
+                        )
+                      }
+                      placeholder="/path/in/container"
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="h-10 flex-1 min-w-0 rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setVolumeRows((rows) => rows.filter((_, i) => i !== idx))}
+                      className="size-10 shrink-0 rounded-xl text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground inline-flex items-center justify-center"
+                      aria-label={m.removeVolume}
+                    >
+                      <UiIcon name="close" className="size-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setVolumeRows((rows) => [...rows, { name: "", path: "" }])}
+              className={`inline-flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors ${
+                volumeRows.length > 0 ? "mt-2" : ""
+              }`}
+            >
+              <UiIcon name="plus" className="size-3.5" />
+              {m.addVolume}
+            </button>
+            <p className="mt-1.5 text-sm text-muted-foreground">{m.volumesHint}</p>
+          </div>
 
-        {/* Env vars - reuses the shared editor in settings mode (no DeploymentContext required). */}
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">{m.environmentVariables}</p>
-          <EnvironmentVariables
-            mode="settings"
-            envVars={envRows}
-            onEnvVarsChange={setEnvRows}
-            isEditingMode={true}
-            setIsEditingMode={() => { /* always editing in this modal */ }}
-            showSettingsActions={false}
-            borderless
-          />
-        </div>
+          {/* Env vars - reuses the shared editor in settings mode (no DeploymentContext required). */}
+          <div>
+            <EnvironmentVariables
+              mode="settings"
+              envVars={envRows}
+              onEnvVarsChange={setEnvRows}
+              isEditingMode={true}
+              setIsEditingMode={() => {
+                /* always editing in this modal */
+              }}
+              showSettingsActions={false}
+              borderless
+            />
+          </div>
 
-        <div className="rounded-2xl border border-border/50 bg-muted/10 p-4">
-          <RoutingSettingsCard
-            projectName={projectName}
-            domain={domain}
-            customDomain={customDomain}
-            domainType={domainType}
-            exposed={exposed}
-            ports={portList}
-            exposedPort={exposedPort}
-            onExposedChange={setExposed}
-            onDomainTypeChange={setDomainType}
-            onDomainChange={setDomain}
-            onCustomDomainChange={setCustomDomain}
-            onExposedPortChange={setExposedPort}
-            saveMode="change"
-          />
-        </div>
+          <div className="rounded-2xl border border-border/50 bg-muted/10 p-4">
+            <RoutingSettingsCard
+              projectName={projectName}
+              domain={domain}
+              customDomain={customDomain}
+              domainType={domainType}
+              exposed={exposed}
+              ports={portList}
+              exposedPort={exposedPort}
+              onExposedChange={setExposed}
+              onDomainTypeChange={setDomainType}
+              onDomainChange={setDomain}
+              onCustomDomainChange={setCustomDomain}
+              onExposedPortChange={setExposedPort}
+              saveMode="change"
+            />
+          </div>
+        </fieldset>
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          className="mx-6 mb-3 shrink-0 rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger"
+        >
+          {error}
+        </div>
+      )}
+      {repositoryFields && (
+        <p className="shrink-0 px-6 pb-3 text-xs text-muted-foreground">
+          {m.repositorySource.deployHint}
+        </p>
+      )}
       {/* Footer */}
-      <div className="flex items-center justify-end gap-2 border-t border-border/40 px-6 py-4">
+      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/40 px-6 py-4">
         <button
           type="button"
           onClick={onCancel}
@@ -999,7 +1048,11 @@ function ConfigureStep({
           disabled={saving}
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
+          {saving ? (
+            <UiIcon name="spinner" className="size-4 animate-spin" />
+          ) : (
+            <UiIcon name="plus" className="size-4" />
+          )}
           {m.addService}
         </button>
       </div>
@@ -1024,16 +1077,5 @@ function Field({
       {children}
       {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
     </label>
-  );
-}
-
-function ModeBadge({ mode }: { mode: "cloud" | "local" }) {
-  const { t } = useI18n();
-  const Icon = mode === "cloud" ? "cloud" : "cpu";
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-      <UiIcon name={Icon} className="size-3" />
-      {mode === "cloud" ? t.projectDetail.services.addModal.openshipCloud : t.projectDetail.services.addModal.localDocker}
-    </span>
   );
 }

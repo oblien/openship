@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "需要托管数据库或对象存储吗？",
       "cloudConnectBody": "连接 Openship Cloud，在此项目旁配置无服务器 Postgres、Redis 和兼容 S3 的存储桶。",
-      "cloudConnectButton": "浏览 Cloud 附加组件"
+      "cloudConnectButton": "浏览 Cloud 附加组件",
+      "repositorySource": {
+        "catalog": "目录",
+        "title": "从仓库构建",
+        "subtitle": "选择现成的服务、从仓库构建或连接已有服务。",
+        "context": "构建上下文",
+        "dockerfile": "Dockerfile",
+        "browseContext": "浏览文件夹",
+        "browseDockerfile": "浏览文件",
+        "pathHint": "两个路径均从仓库根目录开始。Dockerfile 必须位于构建上下文内。",
+        "deployHint": "保存服务后部署，使用此项目的源代码和目标构建镜像。",
+        "noRepository": "将 GitHub 仓库连接到此项目，以从代码构建服务。",
+        "connectRepository": "连接仓库",
+        "invalidPath": "请输入不含“..”、反斜杠或开头斜杠的仓库相对路径。",
+        "outsideContext": "Dockerfile 必须位于构建上下文内。请选择包含它的上级文件夹。",
+        "noMatches": "尝试其他搜索或分类，或选择自定义镜像。"
+      }
     },
     "detail": {
       "tabs": {

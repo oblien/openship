@@ -862,3 +862,9 @@ user choices and manually added folders. Keep each route on its owning app. The 
 shows at most three domain rows, a total count and **View all**; the shared domain editor
 uses an app selector and a public-access toggle. Changing wizard settings takes effect
 when saved or deployed, according to the existing wizard action.
+
+### Adding project services
+
+- Services and Topology share the same Add service modal. Its compact source selector offers Catalog, From repository, Custom image, and Connect existing; a searchable category dropdown replaces a permanent catalog sidebar.
+- Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
+- Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.

@@ -135,6 +135,22 @@
         "mail": "E-posta ve SMTP",
         "runtime": "Çalışma Zamanları",
         "other": "Diğer"
+      },
+      "repositorySource": {
+        "catalog": "Katalog",
+        "title": "Depodan",
+        "subtitle": "Hazır bir hizmet seçin, deponuzdan derleyin veya mevcut bir hizmeti bağlayın.",
+        "context": "Derleme bağlamı",
+        "dockerfile": "Dockerfile",
+        "browseContext": "Klasörlere göz at",
+        "browseDockerfile": "Dosyalara göz at",
+        "pathHint": "Her iki yol da depo kökünden başlar. Dockerfile, derleme bağlamının içinde olmalıdır.",
+        "deployHint": "Hizmeti kaydedip dağıtarak bu projenin kaynağı ve hedefiyle imajı derleyin.",
+        "noRepository": "Koddan hizmet derlemek için bu projeye bir GitHub deposu bağlayın.",
+        "connectRepository": "Depo bağla",
+        "invalidPath": "“..”, ters eğik çizgi veya başında eğik çizgi olmayan göreli bir depo yolu girin.",
+        "outsideContext": "Dockerfile, derleme bağlamının içinde olmalıdır. Üst klasörü seçin.",
+        "noMatches": "Başka bir arama veya kategori deneyin ya da özel imaj seçin."
       }
     },
     "detail": {

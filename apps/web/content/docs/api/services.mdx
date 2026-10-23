@@ -65,6 +65,12 @@ or its owning project.
 
 ## Add a service
 
+In **Services → Add → From repository** (also available from Topology), choose a build context and Dockerfile from the project's connected GitHub repository. The browser uses the project's branch. You can enter paths manually if repository browsing is unavailable. Both paths in the dashboard start at the repository root; the Dockerfile must be inside the selected context. A project without a connected repository offers a link to its Source settings.
+
+Saving creates the service configuration. Use its normal **Deploy** action to build and start it on the project's destination, including self-hosted and Cloud servers. This uses the same service API and build pipeline as existing Compose services. Catalog images, custom images, and connections to existing services remain separate source choices.
+
+The dashboard translates the chosen paths into the existing API conventions: `build` is relative to the project's Compose directory, and `dockerfile` is relative to that build context. For a project rooted at `deploy/compose`, selecting `apps/api` and `apps/api/Dockerfile.prod` sends `build: "../../apps/api"` and `dockerfile: "Dockerfile.prod"`.
+
 A service row is a union: `kind: "compose"` uses the container fields (image, build, ports…), while
 `kind: "monorepo"` uses the sub-app build fields (rootDirectory, framework…). Both field sets are accepted
 and optional; the `kind` decides which subset is the source of truth. Unknown keys are rejected.

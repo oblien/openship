@@ -135,7 +135,23 @@
       },
       "cloudConnectTitle": "マネージドデータベースまたはオブジェクトストレージが必要ですか？",
       "cloudConnectBody": "Openship Cloud に接続して、このプロジェクトと一緒にサーバーレス Postgres、Redis、S3 互換バケットをプロビジョニングします。",
-      "cloudConnectButton": "Cloud アドオンを見る"
+      "cloudConnectButton": "Cloud アドオンを見る",
+      "repositorySource": {
+        "catalog": "カタログ",
+        "title": "リポジトリから",
+        "subtitle": "既製のサービス、リポジトリからのビルド、または既存サービスへの接続を選択します。",
+        "context": "ビルドコンテキスト",
+        "dockerfile": "Dockerfile",
+        "browseContext": "フォルダーを参照",
+        "browseDockerfile": "ファイルを参照",
+        "pathHint": "両方のパスはリポジトリのルートから指定します。Dockerfile はビルドコンテキスト内に配置してください。",
+        "deployHint": "サービスを保存してからデプロイすると、このプロジェクトのソースとデプロイ先を使用してイメージをビルドします。",
+        "noRepository": "このプロジェクトに GitHub リポジトリを接続して、コードからサービスをビルドします。",
+        "connectRepository": "リポジトリを接続",
+        "invalidPath": "「..」、バックスラッシュ、先頭のスラッシュを含まない相対パスを入力してください。",
+        "outsideContext": "Dockerfile はビルドコンテキスト内に必要です。親フォルダーを選択してください。",
+        "noMatches": "別の検索やカテゴリーを試すか、カスタムイメージを選択してください。"
+      }
     },
     "detail": {
       "tabs": {

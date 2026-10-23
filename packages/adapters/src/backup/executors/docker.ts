@@ -17,7 +17,7 @@ import type Dockerode from "dockerode";
 import { PassThrough, Readable } from "node:stream";
 import { posix } from "node:path";
 import { safeErrorMessage, withTimeout, shellQuote } from "@repo/core";
-import { DockerRuntime, resolveExecExitCode } from "../../runtime/docker";
+import { DockerRuntime, resolveExecExitCode, splitDockerFrames } from "../../runtime/docker";
 import { demuxDockerStream } from "../../runtime/docker-demux";
 import {
   daemonConnectionFrom,
@@ -82,6 +82,9 @@ const DEFAULT_HELPER_IDLE_MS = CAPTURE_IDLE_TIMEOUT_MS;
 const DEFAULT_HELPER_TIMEOUT_MS = CAPTURE_TIMEOUT_MS;
 /** How often to ask the daemon directly whether the helper has exited. */
 const EXIT_POLL_INTERVAL_MS = 2000;
+/** Error diagnostics must not keep a failed restore alive or download an unbounded log. */
+const HELPER_LOG_TIMEOUT_MS = 3000;
+const HELPER_LOG_MAX_BYTES = 64 * 1024;
 /**
  * Quiet window the lost-`end` backstop needs before it force-closes the sinks.
  *
@@ -150,6 +153,55 @@ function createAbortWatch(
     promise,
     dispose: () => signal.removeEventListener("abort", onAbort),
   };
+}
+
+/** Best-effort, bounded diagnostics from an exited helper, under the restore's existing guards. */
+async function helperLogText(
+  helper: Dockerode.Container,
+  timeoutMs: number,
+  interruptions: Promise<never>[],
+): Promise<Buffer> {
+  if (timeoutMs <= 0) return Buffer.alloc(0);
+  const controller = new AbortController();
+  const parts: Buffer[] = [];
+  let stream: Readable | undefined;
+  const read = async () => {
+    // follow:true exposes the response as a stream so even one huge log line cannot
+    // be buffered in full. The helper has already exited, so the response can end.
+    const output = (await helper.logs({
+      follow: true,
+      stdout: true,
+      stderr: true,
+      tail: 40,
+      abortSignal: controller.signal,
+    })) as unknown as Readable;
+    if (controller.signal.aborted) {
+      destroyQuietly(output); // A transport can deliver its response after cancellation.
+      return;
+    }
+    stream = output;
+    let captured = 0;
+    for await (const value of output) {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      const part = Buffer.from(chunk.subarray(0, HELPER_LOG_MAX_BYTES - captured));
+      parts.push(part);
+      captured += part.length;
+      if (captured >= HELPER_LOG_MAX_BYTES) break;
+    }
+  };
+  try {
+    await withTimeout(
+      Promise.race([read(), ...interruptions]),
+      Math.min(timeoutMs, HELPER_LOG_TIMEOUT_MS),
+      "Restore helper log retrieval timed out",
+    );
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/backup/executors/docker");
+  } finally {
+    controller.abort();
+    destroyQuietly(stream);
+  }
+  return Buffer.concat(splitDockerFrames(Buffer.concat(parts)).map((frame) => frame.data));
 }
 
 /** Destroy a stream without caring whether it was already gone. */
@@ -815,14 +867,28 @@ export class DockerBackupExecutor implements BackupExecutor {
           });
           body.pipe(stream);
 
+          const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+          const exitDeadline = timeoutMs === 0 ? Infinity : Date.now() + timeoutMs;
           const waitResult = await this.awaitHelperExit(helper, watchdog, () => bodyEnded, {
-            timeoutMs: opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS,
+            timeoutMs,
             label: `Restore of "${targetSourceId}" on service ${service.name}`,
             note: "The target may hold partial data.",
             cancelled: abortWatch?.promise,
           });
           if (waitResult.StatusCode !== 0) {
-            const detail = Buffer.concat(errChunks)
+            // The attach stream can close before the helper's stderr reaches it, so
+            // fall back to the daemon's log of the (still existing) helper.
+            const attached = Buffer.concat(
+              splitDockerFrames(Buffer.concat(errChunks)).map((frame) => frame.data),
+            );
+            const raw =
+              attached.length > 0
+                ? attached
+                : await helperLogText(helper, exitDeadline - Date.now(), [
+                    watchdog.promise,
+                    ...(abortWatch ? [abortWatch.promise] : []),
+                  ]);
+            const detail = raw
               .toString("utf8")
               .replace(/[^\x20-\x7e\n]+/g, " ")
               .trim()
