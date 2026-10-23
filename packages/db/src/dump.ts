@@ -620,6 +620,29 @@ const TABLES: ReadonlyArray<TableSpec> = [
       { in: "project", via: "fk", column: "projectId" },
     ],
   },
+  // Autoscaling intent (one policy per project) and the decision trail. Not
+  // encryption-bearing; events are derivable audit data but travel with the
+  // project so a restored clone keeps its "why did it scale" history.
+  {
+    sqlName: "project_autoscale_policy",
+    table: schema.projectAutoscalePolicy,
+    hasOrganizationId: false,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+  },
+  {
+    sqlName: "project_autoscale_event",
+    table: schema.projectAutoscaleEvent,
+    hasOrganizationId: false,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+  },
   // Inbound webhook SOURCES (Settings → Webhooks). MUST be catalogued: `domain`
   // carries a `webhookSourceId` FK to it, so the first row this table ever holds
   // makes an import fail on a violation no reordering can fix. Latent rather than
@@ -1336,6 +1359,16 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
  */
 export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
   for (const row of tables.route_protection ?? []) row.appliedRevision = null;
+  // An application import carries policy settings, not permission to resume
+  // the source controller's pending writes against its old Kubernetes objects.
+  for (const row of tables.project_autoscale_policy ?? []) {
+    row.enabled = 0;
+    row.pendingScale = null;
+    row.nextAttemptAt = null;
+    row.failureCount = 0;
+    row.suspendedAt = null;
+    row.suspendedReason = null;
+  }
   for (const [table, columns] of Object.entries(INSTANCE_SCOPED_REFS)) {
     const rows = tables[table];
     if (!rows || rows.length === 0) continue;

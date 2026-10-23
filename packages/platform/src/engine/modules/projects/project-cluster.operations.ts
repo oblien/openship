@@ -29,6 +29,7 @@ import {
   authorizeMember,
   assertClusterManagementAvailable,
 } from "../system/server-cluster.operations";
+import { suspendAutoscaleOnOverride } from "./autoscale/project-autoscale.operations";
 import { projectToClass, snapshotToClass } from "../deployments/deployment-class";
 
 export function createProjectClusterOperations(
@@ -81,6 +82,16 @@ export function createProjectClusterOperations(
         result.status = await withDeploymentRuntime(active, async (runtime) => {
           if (!runtime.supports("clusterStatus") || !runtime.status)
             throw new Error("The active release does not use the cluster runtime.");
+          // Only opted-in policies query metrics; ordinary cluster reads keep their existing cost.
+          if (runtime.supports("podMetrics") && runtime.podMetrics && active.containerId !== "compose" &&
+            (await repos.autoscale.get(id))?.enabled) {
+            try {
+              result.metrics = await runtime.podMetrics(active.containerId!);
+            } catch (metricsError) {
+              observeCaughtError(metricsError, "platform/engine/modules/projects/project-cluster.operations");
+              result.metrics = null;
+            }
+          }
           if (active.containerId === "compose") {
             const rows = await repos.service.listByDeployment(active.id);
             const statuses: ClusterWorkloadStatus[] = [];
@@ -207,6 +218,15 @@ export function createProjectClusterOperations(
           input.clusterId ? input.config! : null,
           input.expectedUpdatedAt,
         );
+        if (project.clusterId) {
+          // A human moved the target (including its replica count). The
+          // autoscaler stops owning replicas until the operator re-arms it.
+          await suspendAutoscaleOnOverride(
+            id,
+            project.clusterConfig?.replicas,
+            input.clusterId ? input.config!.replicas : (project.clusterConfig?.replicas ?? 0),
+          );
+        }
         record(ctx, id, {
           action: "cluster.target",
           clusterId: input.clusterId,
@@ -251,6 +271,12 @@ export function createProjectClusterOperations(
           project.clusterId,
           config,
           input.expectedUpdatedAt,
+        );
+        // Human scale op: the autoscaler stops owning replicas until re-armed.
+        await suspendAutoscaleOnOverride(
+          id,
+          project.clusterConfig?.replicas,
+          input.replicas,
         );
         record(ctx, id, { action: "cluster.replicas", replicas: input.replicas });
         // A configuration release reuses the immutable image. It uses the same

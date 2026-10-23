@@ -27,6 +27,7 @@ import {
   SourceScanOptionsSchema,
   UpdateCloneTokenSchema,
   ProjectClusterSchemas,
+  ProjectAutoscaleSchemas,
   ProjectDatabaseSchemas,
   ProjectVolumeSchemas,
   CreateProjectBody,
@@ -1065,6 +1066,46 @@ r.post(
     },
   },
   ctrl.scaleClusterWorkload,
+);
+
+/* ─── Autoscaling ──────────────────────────────────────────────────────────── */
+r.get(
+  "/:id/autoscale",
+  {
+    tag: "project:read",
+    localOnly: true,
+    mcp: {
+      description:
+        "Read the project's autoscaling policy: target CPU, min/max instances, step, cooldown, suspension state (suspendedAt/suspendedReason) and the last decision. 404 means no policy was saved yet.",
+    },
+  },
+  ctrl.getAutoscalePolicy,
+);
+r.put(
+  "/:id/autoscale",
+  {
+    tag: "project:write",
+    localOnly: true,
+    auditHandledByOperation: true,
+    body: ProjectAutoscaleSchemas.setAutoscalePolicy.input,
+    mcp: {
+      description:
+        "Save or update the autoscaling policy. Passing rearm:true is the only way to resume a suspended policy. Saving requires the project to be cluster-deployed with a CPU limit; the loop then owns the instance count.",
+    },
+  },
+  ctrl.setAutoscalePolicy,
+);
+r.get(
+  "/:id/autoscale/events",
+  {
+    tag: "project:read",
+    localOnly: true,
+    mcp: {
+      description:
+        "List the autoscaler's recent decisions (scale up/down/hold/fail/suspend) with observations and reasons — the 'why did it scale' trail.",
+    },
+  },
+  ctrl.listAutoscaleEvents,
 );
 r.get(
   "/:id/resources",

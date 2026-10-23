@@ -299,6 +299,34 @@ export async function scaleClusterWorkload(c: Context) {
   return c.json({ data: result.data });
 }
 
+export async function getAutoscalePolicy(c: Context) {
+  const result = await getPlatformKernel().projects.getAutoscalePolicy(
+    operationContext(c),
+    param(c, "id"),
+  );
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
+export async function setAutoscalePolicy(c: Context) {
+  const result = await getPlatformKernel().projects.setAutoscalePolicy(
+    operationContext(c),
+    param(c, "id"),
+    await c.req.json(),
+  );
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
+export async function listAutoscaleEvents(c: Context) {
+  const result = await getPlatformKernel().projects.listAutoscaleEvents(
+    operationContext(c),
+    param(c, "id"),
+  );
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
 export async function listClusterDatabases(c: Context) {
   const result = await getPlatformKernel().projects.listClusterDatabases(
     operationContext(c),

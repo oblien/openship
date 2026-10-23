@@ -221,6 +221,20 @@ describe("instance-scope FK references (servers / mail_servers)", () => {
     expect(tables.project![0]!.id).toBe("prj_1");
   });
 
+  it("keeps imported autoscaling settings disabled and drops source runtime receipts", () => {
+    const tables = { project_autoscale_policy: [{
+      projectId: "project", enabled: 1, targetCpuPercent: 70,
+      pendingScale: { operationId: "source-op", uid: "source-workload" },
+      nextAttemptAt: new Date(), failureCount: 2,
+      suspendedAt: new Date(), suspendedReason: "source failure",
+    }] };
+    stripInstanceRefsInPlace(tables);
+    expect(tables.project_autoscale_policy[0]).toEqual({
+      projectId: "project", enabled: 0, targetCpuPercent: 70, pendingScale: null,
+      nextAttemptAt: null, failureCount: 0, suspendedAt: null, suspendedReason: null,
+    });
+  });
+
   it("does not carry preview automation or host cache receipts in a portable project export", () => {
     const tables = { project: [{ id: "source", previewSettings: { enabled: true }, previewScannedAt: new Date(), buildCacheReceipts: { source: { deploymentId: "old-host-build" } } }] };
     stripInstanceRefsInPlace(tables);

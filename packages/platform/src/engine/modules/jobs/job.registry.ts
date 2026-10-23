@@ -80,6 +80,16 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     run: async () => (await import("../deployments/deployment-checks")).runDeploymentChecksSweep(),
   },
   {
+    key: "projects:autoscaler",
+    label: "Project autoscaling",
+    // Half-minute cadence: tight enough for spikes, far above the tick's own
+    // SSH/API round-trips. Per-project backoff and cooldowns live in the loop.
+    defaultCron: "*/30 * * * * *",
+    available: () => !env.CLOUD_MODE,
+    run: async () =>
+      (await import("../projects/autoscale/autoscaler")).runAutoscaleTick(),
+  },
+  {
     key: "cloud:workspace-recovery",
     label: "Cloud workspace operations",
     defaultCron: "* * * * *",

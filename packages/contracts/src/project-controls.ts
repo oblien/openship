@@ -31,6 +31,7 @@ import { ProjectRuntimeLogsInputSchema, ProjectRuntimeRolesSchema, RuntimeRoleCo
 import { ProjectTransferSchemas } from "./project-transfer";
 import { AppProjectSchemas } from "./apps";
 import { ProjectClusterSchemas } from "./project-cluster";
+import { ProjectAutoscaleSchemas } from "./project-autoscale";
 import { ProjectDatabaseSchemas } from "./cluster-database";
 import { ProjectVolumeSchemas } from "./cluster-storage";
 import { BranchPageInput, BranchPaginationSchema } from "./github";
@@ -560,6 +561,7 @@ export const ProjectControlSchemas = {
   },
 
   ...ProjectClusterSchemas,
+  ...ProjectAutoscaleSchemas,
   updateResources: { action: "write", input: UpdateResourcesBody, output: ProjectResourcesSchema },
   setSleepMode: {
     action: "write",

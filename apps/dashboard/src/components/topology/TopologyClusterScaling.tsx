@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/Modal";
 import { useResourceScope } from "@/hooks/use-scoped-resource";
 import { TopologyScalingSetup } from "./TopologyScalingSetup";
+import { AutoscalePolicyPanel } from "./AutoscalePolicyPanel";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Checkbox } from "@/components/ui/Checkbox";
 import {
@@ -352,6 +353,11 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                 </p>
               )}
               {view.status.message && <p className="text-xs text-warning">{view.status.message}</p>}
+              {view.metrics && view.status.desired > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  CPU {Math.round(view.metrics.cpuMillicores / Math.max(1, view.metrics.pods.length))} mCPU per instance · memory {Math.round(view.metrics.memoryMiB / view.metrics.pods.length)} MiB
+                </p>
+              )}
               {view.observedAt && (
                 <p className="text-xs text-muted-foreground">
                   Checked {new Date(view.observedAt).toLocaleTimeString()}
@@ -566,6 +572,15 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
             <p className="text-xs leading-relaxed text-muted-foreground">
               Keep capacity for the current and new instances during deployment.
             </p>
+          )}
+          {!!clusterId && ready && !databaseNeedsOperator && selected?.scaling?.provider !== "swarm" && (
+            <div className="border-t pt-3">
+              <AutoscalePolicyPanel
+                projectId={project.id}
+                clusterReady={ready}
+                disabled={disabled || busy}
+              />
+            </div>
           )}
           {(view.activeClusterId || view.internalHost) && (
             <details className="text-xs">

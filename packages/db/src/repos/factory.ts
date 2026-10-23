@@ -359,6 +359,8 @@ import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
 import { createComputeClusterRepo } from "./compute-cluster.repo";
 import { createClusterRuntimeRepo } from "./cluster-runtime.repo";
+import { createAutoscaleRepo } from "./project-autoscale.repo";
+export { createAutoscaleRepo, type AutoscalePolicyRecord, type AutoscaleEventRecord, type SetAutoscalePolicyInput } from "./project-autoscale.repo";
 import { createClusterDatabaseRepo } from "./cluster-database.repo";
 import { createServerClusterRepo } from "./server-cluster.repo";
 import { createNetworkPreparationRepo } from "./network-preparation.repo";
@@ -453,6 +455,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     serverCluster: createServerClusterRepo(db),
     computeCluster: createComputeClusterRepo(db),
     clusterRuntime: createClusterRuntimeRepo(db),
+    autoscale: createAutoscaleRepo(db),
     clusterStorage: createClusterStorageRepo(db),
     clusterDatabase: createClusterDatabaseRepo(db),
     networkPreparation: createNetworkPreparationRepo(db),

@@ -26,7 +26,7 @@ import type {
   ShellOptions,
   ShellSession,
 } from "../types";
-import type { ComposeAdvanced, StackRole } from "@repo/core";
+import type { ComposeAdvanced, StackRole, ClusterScalePrecondition, ClusterWorkloadMetrics } from "@repo/core";
 import type { BuildLogger } from "./build-pipeline";
 import type { PortProbeExecutor } from "../system/port-listen";
 import type { ContainerStabilitySample } from "./stability";
@@ -50,6 +50,10 @@ export type RuntimeCapability =
   | "multiServiceDeploy"
   /** Scheduler-level replica/task status, independent of Docker task containers. */
   | "clusterStatus"
+  /** In-place scheduler replica count change on a live release (no redeploy). */
+  | "scaleInPlace"
+  /** Aggregated per-intance resource usage from the metrics source. */
+  | "podMetrics"
   /** A service release can be stopped, restored on failure, then retired on success. */
   | "retainedServiceCutover"
   /** Mount resolved service config files through the scheduler, without host bind paths. */
@@ -217,6 +221,22 @@ export interface RuntimeAdapter {
   /** Check if a specific feature is supported */
   supports(cap: RuntimeCapability): boolean;
   status?(containerId: string): Promise<import("@repo/core").ClusterWorkloadStatus>;
+  /**
+   * Change the scheduler-level replica count of a LIVE release in place —
+   * WITHOUT a new Deployment/release. Must commit only this count (annotation
+   * plus workload spec together). Re-read resource-version conflicts while
+   * preserving the caller's workload precondition. Callers gate on
+   * `supports("scaleInPlace")`. Returns on acceptance; status reports readiness.
+   * A same-count write with a new operation ID must also advance the generation:
+   * the autoscaler uses its receipt to retire a stale, possibly in-flight request.
+   */
+  scaleInPlace?(containerId: string, replicas: number, precondition?: ClusterScalePrecondition): Promise<void>;
+  /**
+   * Read aggregated resource usage for a deployment's instances. Callers gate on
+   * `supports("podMetrics")`; a missing metrics source throws, it never reads
+   * as zero usage.
+   */
+  podMetrics?(containerId: string): Promise<ClusterWorkloadMetrics>;
   /** Prepare an artifact's settings/storage before stopping its previous release. */
   prepareDeployment?(config: DeployConfig): Promise<void>;
 

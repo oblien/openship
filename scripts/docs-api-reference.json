@@ -3799,6 +3799,24 @@
       "section": "Hosted management",
       "description": "Open payment details and invoices for the Manage subscription.",
       "route": "POST /api/billing/manage/portal"
+    },
+    "projects.getAutoscalePolicy": {
+      "page": "projects",
+      "section": "Cluster autoscaling",
+      "route": "GET /api/projects/:id/autoscale",
+      "description": "Read the opt-in K3s autoscaling policy and its current revision; 404 means no saved policy."
+    },
+    "projects.setAutoscalePolicy": {
+      "page": "projects",
+      "section": "Cluster autoscaling",
+      "route": "PUT /api/projects/:id/autoscale",
+      "description": "Save, disable or explicitly resume K3s autoscaling. Send expectedUpdatedAt from the last read, or null to create a policy. Managed Cloud and Swarm are unsupported."
+    },
+    "projects.listAutoscaleEvents": {
+      "page": "projects",
+      "section": "Cluster autoscaling",
+      "route": "GET /api/projects/:id/autoscale/events",
+      "description": "List the most recent 100 autoscaling decisions and failures for this project."
     }
   },
   "http": {

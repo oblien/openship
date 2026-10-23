@@ -16,11 +16,11 @@ Openship's MCP tools use the same HTTP routes, authorization and engine operatio
 | Shared files                | Keep two or three independent copies, mount across servers, expand, schedule external backups and restore into a new volume.                                                                                                     |
 | Recovery                    | Inspect logs and observed pods, retry failed setup, redeploy or roll back retained application images, and remove resources in dependency order.                                                                                 |
 | Managed databases           | PostgreSQL primary/read replicas, Redis replication with Sentinel or sharded Redis Cluster, backups, recovery and imports into new databases, plus PostgreSQL 17-to-18 upgraded copies and explicit connection replacement.      |
-| Policy-driven autoscaling   | **Not implemented.** CPU/traffic thresholds, automatic node provisioning and a continuous autoscaling controller are not available.                                                                                              |
+| Policy-driven autoscaling   | Opt-in CPU-based application autoscaling on self-hosted K3s. Off by default; does not provision nodes. Cloud, Swarm and database autoscaling are not supported.                                                                                              |
 | Live worker changes         | **Not implemented.** Changing cluster membership requires removing its runtime first.                                                                                                                                            |
 | Compose application scaling | Supported on connected Docker Swarm managers; **not supported by the Kubernetes application path.** Node-local bind mounts and Docker private links also require separate migration. Managed databases have their own lifecycle. |
 
-Kubernetes can replace failed application pods inside the prepared cluster. That recovery behavior does not provision new servers or implement an Openship autoscaling policy.
+Kubernetes can replace failed application pods inside the prepared cluster. That recovery behavior does not provision new servers and is independent of the optional application autoscaling policy.
 
 ## Quick scaling from topology
 
@@ -372,3 +372,49 @@ replica is blocked while a local or shared reader connection remains; disconnect
 or change those consumers and deploy their updated connections before scaling
 back to one instance. The runtime also checks live application references before
 removing the final reader.
+
+
+## Automatic application scaling
+
+Autoscaling is **off by default**. On an application already deployed to a ready
+self-hosted K3s cluster, open **Topology → Automatic scaling**, enable it, review
+its CPU target, minimum/maximum instances, maximum step size and cooldown, then
+save. The running release must have a CPU limit and metrics-server must report
+fresh CPU usage for every ready instance. Databases, Compose projects, static
+sites, Swarm, managed Cloud and the Openship control plane are not eligible.
+
+The `get_projects_by_id_autoscale`, `put_projects_by_id_autoscale` and
+`get_projects_by_id_autoscale_events` tools use the same authorized operations.
+Send `expectedUpdatedAt: null` when creating a policy; updates must send the
+revision from a fresh read. A 409 means reload before saving. Enablement and
+resuming a suspended policy always require an explicit write.
+
+The background job checks every 30 seconds. With no enabled policies or unfinished changes, it reads
+instance settings and the policy list without contacting Kubernetes. Enabled
+policies query their active release only. Healthy holds do not write policy
+rows or invalidate an open settings form. No new instances are created by a
+missing, stale or partial CPU sample. Unfinished rollouts also hold the count.
+CPU utilization uses the limit of the running workload, not unsaved settings.
+
+Changes patch the active Kubernetes Deployment in place. Each step has a durable
+operation identity and checks the workload UID, generation and replica count.
+The project, active-release snapshot and event are committed in one database
+transaction. If Kubernetes accepts a change but the response or database commit
+is lost, the next eligible tick reconciles that exact receipt without scaling
+again. Runtime acceptance and database commit are separate systems; recovery
+closes that gap rather than pretending there is a distributed transaction.
+
+Scaling shares the project's lock with policy saves, stopping, deletion and
+runtime changes. Disabling prevents new steps once the save completes; it does
+not undo a step already accepted by Kubernetes. The global instance switch stops
+new admission too. A pending accepted receipt may need reconciliation when the
+switch is turned back on. Failed operations back off and suspend after the saved
+failure threshold. Suspension is visible in the policy panel and recent events.
+
+Manual scaling, target changes and rollback suspend autoscaling. External
+workload changes are detected by generation and replica checks. If replicas were
+changed outside Openship, apply the intended count through manual scaling first,
+then select **Resume autoscaling**. Do not delete ownership records to recover.
+The cooldown starts when an accepted change is recorded; another change also
+requires the rollout to be fully ready. Scale-down decisions wait at least five
+minutes after the last step. History retains the most recent 100 events.

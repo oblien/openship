@@ -23,6 +23,8 @@ export const PROJECT_TRANSFER_TABLES = new Set([
   "incoming_webhook",
   "route_rule",
   "route_protection",
+  "project_autoscale_policy",
+  "project_autoscale_event",
   "project_connection",
   "backup_destination",
   "backup_policy",

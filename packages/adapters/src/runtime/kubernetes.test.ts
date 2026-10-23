@@ -65,6 +65,12 @@ function setup(
       if (body.metadata.resourceVersion !== found.metadata.resourceVersion)
         throw new KubernetesApiError(409, "Changed");
       found.spec = { ...found.spec, ...body.spec };
+      // Real Kubernetes merges each subfield of a strategic-merge patch.
+      if (body.metadata.annotations)
+        found.metadata.annotations = {
+          ...found.metadata.annotations,
+          ...body.metadata.annotations,
+        };
       found.metadata.resourceVersion = String(version++);
       found.metadata.generation!++;
       if (found.kind === "Deployment") ready(found);
@@ -611,6 +617,184 @@ describe("Kubernetes workload lifecycle", () => {
     });
     await runtime.start(result.containerId!);
     expect((await runtime.status(result.containerId!)).desired).toBe(3);
+  });
+  it("scales a live release in place without creating a new deployment", async () => {
+    const { runtime, request } = setup();
+    const result = await runtime.deploy(config());
+    const posts = request.mock.calls.filter(
+      ([method, path]) => method === "POST" && path.endsWith("/deployments"),
+    );
+    await runtime.scaleInPlace(result.containerId!, 5);
+    const deployment = await runtime.status(result.containerId!);
+    expect(deployment.desired).toBe(5);
+    expect(posts).toHaveLength(1); // same release, no blue/green redeploy
+  });
+  it("scales and restores from the autoscaler's last intent, not a stale pre-scale count", async () => {
+    const { runtime } = setup();
+    const result = await runtime.deploy(config());
+    await runtime.scaleInPlace(result.containerId!, 4);
+    await runtime.stop(result.containerId!);
+    await runtime.start(result.containerId!);
+    expect((await runtime.status(result.containerId!)).desired).toBe(4);
+  });
+  it("rejects a replica count outside the configurable range", async () => {
+    const { runtime } = setup();
+    const result = await runtime.deploy(config());
+    await expect(runtime.scaleInPlace(result.containerId!, 0)).rejects.toThrow();
+    await expect(runtime.scaleInPlace(result.containerId!, 101)).rejects.toThrow();
+  });
+  it("guards an observed generation and persists the operation receipt without waiting for rollout", async () => {
+    const { runtime, watch } = setup();
+    const deployed = await runtime.deploy(config());
+    const before = await runtime.status(deployed.containerId!);
+    const watches = watch.mock.calls.length;
+    const precondition = { uid: before.scaling!.uid, generation: before.generation, replicas: before.desired, operationId: "operation-1" };
+    await runtime.scaleInPlace(deployed.containerId!, 4, precondition);
+    expect(watch.mock.calls).toHaveLength(watches);
+    const after = await runtime.status(deployed.containerId!);
+    expect(after.scaling).toMatchObject({ operationId: "operation-1", cpuLimitMillicores: 500 });
+    await expect(runtime.scaleInPlace(deployed.containerId!, 5, precondition)).rejects.toMatchObject({ code: "CLUSTER_WORKLOAD_CONFLICT" });
+    expect((await runtime.status(deployed.containerId!)).desired).toBe(4);
+  });
+
+  it("does not overwrite an operator during Kubernetes resource-version retry", async () => {
+    const { runtime, request, resources } = setup();
+    const deployed = await runtime.deploy(config());
+    const before = await runtime.status(deployed.containerId!);
+    const original = request.getMockImplementation()!;
+    let conflict = true;
+    request.mockImplementation(async (method, path, body) => {
+      if (method === "PATCH" && path.includes("/deployments/") && conflict) {
+        conflict = false;
+        const current = resources.get(path)!;
+        current.spec.replicas = 7;
+        current.metadata.generation!++;
+        throw new KubernetesApiError(409, "operator changed replicas");
+      }
+      return original(method, path, body);
+    });
+    await expect(runtime.scaleInPlace(deployed.containerId!, 4, {
+      uid: before.scaling!.uid, generation: before.generation, replicas: before.desired, operationId: "operation-2",
+    })).rejects.toMatchObject({ code: "CLUSTER_WORKLOAD_CONFLICT" });
+    expect((await runtime.status(deployed.containerId!)).desired).toBe(7);
+  });
+
+  it("retires a scale intent without changing replicas and fences its late retry", async () => {
+    const { runtime, resources, request } = setup();
+    const deployed = await runtime.deploy(config());
+    const before = await runtime.status(deployed.containerId!);
+    const pending = {
+      uid: before.scaling!.uid,
+      generation: before.generation,
+      replicas: before.desired,
+      operationId: "stale-request",
+    };
+    const originalDeployment = [...resources.values()].find((value) => value.kind === "Deployment")!;
+    const template = structuredClone(originalDeployment.spec.template);
+    await runtime.scaleInPlace(deployed.containerId!, pending.replicas, {
+      ...pending,
+      operationId: `${pending.operationId}:cancelled`,
+    });
+    const after = await runtime.status(deployed.containerId!);
+    expect(after.desired).toBe(before.desired);
+    expect(after.generation).toBe(before.generation + 1);
+    expect(after.scaling!.operationId).toBe("stale-request:cancelled");
+    expect(originalDeployment.spec.template).toEqual(template);
+    const patches = request.mock.calls.filter(([method]) => method === "PATCH").length;
+    await expect(runtime.scaleInPlace(deployed.containerId!, 5, pending)).rejects.toMatchObject({
+      code: "CLUSTER_WORKLOAD_CONFLICT",
+    });
+    expect(request.mock.calls.filter(([method]) => method === "PATCH")).toHaveLength(patches);
+  });
+
+  it("does not undo an original scale accepted while its retirement patch is in flight", async () => {
+    const { runtime, request, resources } = setup();
+    const deployed = await runtime.deploy(config());
+    const before = await runtime.status(deployed.containerId!);
+    const pending = {
+      uid: before.scaling!.uid,
+      generation: before.generation,
+      replicas: before.desired,
+      operationId: "late-request",
+    };
+    const original = request.getMockImplementation()!;
+    let race = true;
+    request.mockImplementation(async (method, path, body) => {
+      if (method === "PATCH" && path.includes("/deployments/") && race) {
+        race = false;
+        // Accept the old PATCH between the retirement's GET and PATCH.
+        await original("PATCH", path, {
+          spec: { replicas: 5 },
+          metadata: {
+            resourceVersion: resources.get(path)!.metadata.resourceVersion,
+            annotations: { "openship.io/scale-operation": pending.operationId, "openship.io/replicas": "5" },
+          },
+        });
+      }
+      return original(method, path, body);
+    });
+    await expect(runtime.scaleInPlace(deployed.containerId!, pending.replicas, {
+      ...pending,
+      operationId: `${pending.operationId}:cancelled`,
+    })).rejects.toMatchObject({ code: "CLUSTER_WORKLOAD_CONFLICT" });
+    const after = await runtime.status(deployed.containerId!);
+    expect(after.desired).toBe(5);
+    expect(after.scaling!.operationId).toBe(pending.operationId);
+  });
+
+  it("keeps missing and malformed container CPU readings unknown, never zero", async () => {
+    const { runtime, request } = setup();
+    const deployed = await runtime.deploy(config());
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (method, path, body) => {
+      if (path.startsWith("/apis/metrics.k8s.io/")) return { items: [
+        { metadata: { name: "partial" }, timestamp: "2026-10-23T12:00:00Z", containers: [{ name: "app", usage: { cpu: "100m" } }, { name: "sidecar", usage: {} }] },
+        { metadata: { name: "invalid" }, containers: [{ name: "app", usage: { cpu: "broken" } }] },
+        { metadata: { name: "empty" }, containers: [] },
+        { metadata: { name: "zero" }, containers: [{ name: "app", usage: { cpu: "0" } }] },
+      ] } as any;
+      return original(method, path, body);
+    });
+    const metrics = await runtime.podMetrics(deployed.containerId!);
+    expect(metrics.pods.map((pod) => [pod.name, pod.cpuMillicores])).toEqual([
+      ["empty", null], ["invalid", null], ["partial", null], ["zero", 0],
+    ]);
+    expect(metrics.pods.find((pod) => pod.name === "partial")!.timestamp).toBe("2026-10-23T12:00:00Z");
+  });
+  it("fails closed when the cluster metrics source is missing", async () => {
+    const { runtime } = setup();
+    const result = await runtime.deploy(config());
+    await expect(runtime.podMetrics(result.containerId!)).rejects.toMatchObject({
+      code: "CLUSTER_METRICS_UNAVAILABLE",
+    });
+  });
+  it("aggregates per-instance usage from the metrics source", async () => {
+    const { runtime, request } = setup();
+    const result = await runtime.deploy(config());
+    const metricsPath =
+      `/apis/metrics.k8s.io/v1beta1/namespaces/${runtime.namespace}/pods` +
+      `?labelSelector=${encodeURIComponent("openship.io/deployment=deploy-1")}`;
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (method: string, path: string, body?: any) => {
+      if (method === "GET" && path === metricsPath)
+        return {
+          items: [
+            {
+              metadata: { name: "release-a" },
+              containers: [{ name: "app", usage: { cpu: "100m", memory: "64Mi" } }],
+            },
+            {
+              metadata: { name: "release-b" },
+              containers: [{ name: "app", usage: { cpu: "50m", memory: "32Mi" } }],
+            },
+          ],
+        } as any;
+      return original(method, path, body);
+    });
+    const metrics = await runtime.podMetrics(result.containerId!);
+    expect(metrics.pods).toHaveLength(2);
+    expect(metrics.cpuMillicores).toBe(150);
+    expect(metrics.memoryMiB).toBe(96);
   });
   it("keeps the old internal service when a new rollout fails and removes only the failed release", async () => {
     const { runtime, resources, watch } = setup();

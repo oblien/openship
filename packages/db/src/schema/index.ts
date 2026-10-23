@@ -17,6 +17,7 @@ export { deployment, buildSession } from "./deployment";
 export { domain } from "./domain";
 export { acmeAccount, domainDnsChallenge } from "./domain-dns-challenge";
 export { routeProtection } from "./route-protection";
+export { projectAutoscalePolicy, projectAutoscaleEvent } from "./project-autoscale";
 export { routeRule } from "./route-rule";
 export { webhookSource } from "./webhook-source";
 export {

@@ -226,6 +226,11 @@ export const instanceSettings = pgTable("instance_settings", {
    */
   hostControlEnabled: boolean("host_control_enabled"),
 
+  /** Global autoscaler kill switch: when true no policy tick runs at all,
+   *  regardless of per-project policies. Per-project re-arm is the other
+   *  half of the two-level stop. */
+  autoscalerDisabled: boolean("autoscaler_disabled").notNull().default(false),
+
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -369,7 +374,7 @@ export const userSettings = pgTable("user_settings", {
    */
   patScope: jsonb("pat_scope").$type<string[] | null>(),
 
-  // ── Timestamps ─────────────────────────────────────────────────────────────
+  // ── Timestamps ─────────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -272,6 +272,21 @@ export function createRemoteProjectOperations(
         path: (id) => path(id) + "/cluster/scale",
         envelope: "data",
       },
+      getAutoscalePolicy: {
+        method: "GET",
+        path: (id) => path(id) + "/autoscale",
+        envelope: "data",
+      },
+      setAutoscalePolicy: {
+        method: "PUT",
+        path: (id) => path(id) + "/autoscale",
+        envelope: "data",
+      },
+      listAutoscaleEvents: {
+        method: "GET",
+        path: (id) => path(id) + "/autoscale/events",
+        envelope: "data",
+      },
       updateResources: { method: "PATCH", path: (id) => path(id) + "/resources", envelope: "data" },
       setSleepMode: { method: "POST", path: (id) => path(id) + "/sleep-mode" },
       setOptions: { method: "POST", path: (id) => path(id) + "/options", envelope: "data" },

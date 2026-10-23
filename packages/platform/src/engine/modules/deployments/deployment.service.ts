@@ -19,6 +19,7 @@ import {
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
+import { suspendAutoscaleOnOverride } from "../projects/autoscale/project-autoscale.operations";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { maskDeploymentEnv } from "../../lib/secret-env";
@@ -195,6 +196,11 @@ export async function rollbackDeployment(deploymentId: string, organizationId: s
   // Existence + org-scope check (throws if deployment isn't in this org).
   const dep = await getDeployment(deploymentId, organizationId);
   await assertNotControlPlaneById(dep.projectId);
+  // Rollback IS a human count decision: the restored release brings its own
+  // replica intent. Suspend the autoscaler so it cannot fight the operator's
+  // rollback; re-arm is explicit in the dashboard.
+  if (dep.projectId)
+    await suspendAutoscaleOnOverride(dep.projectId, undefined, undefined);
   await rollback(deploymentId);
   // Return the post-rollback deployment row (now with any updated container id).
   return (await repos.deployment.findById(dep.id)) ?? dep;

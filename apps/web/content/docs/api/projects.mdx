@@ -120,7 +120,7 @@ Replica changes are configuration releases. They reuse the active image, wait fo
 use the existing update/rollback history. Allow capacity for the old and new releases together.
 `status` and `observedAt` describe the last observation; saved `config` describes future intent.
 OpenShip Edge currently enters through the first cluster control server. Automatic gateway
-failover and policy-driven autoscaling are not implemented.
+failover is not implemented. CPU autoscaling is opt-in on self-hosted K3s.
 
 ### Share application files
 
@@ -612,6 +612,14 @@ IDs.
 | Enable or disable automatic same-repository pull request environments. | `projects.configurePreviews(id, input)` | `POST /api/projects/:id/previews`<br />`project:write` |
 | Read preview configuration, deployment URLs and reconciliation errors. | `projects.listPreviews(id)` | `GET /api/projects/:id/previews`<br />`project:read` |
 | Atomically move literal command variables into the selected environment without overwriting conflicting values. | `projects.migrateCommandEnvironment(id, input)` | `POST /api/projects/:id/env/migrate-commands`<br />`project:write` |
+
+### Cluster autoscaling
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the opt-in K3s autoscaling policy and its current revision; 404 means no saved policy. | `projects.getAutoscalePolicy(id)` | `GET /api/projects/:id/autoscale`<br />`project:read` · Self-hosted |
+| Save, disable or explicitly resume K3s autoscaling. Send expectedUpdatedAt from the last read, or null to create a policy. Managed Cloud and Swarm are unsupported. | `projects.setAutoscalePolicy(id, input)` | `PUT /api/projects/:id/autoscale`<br />`project:write` · Self-hosted |
+| List the most recent 100 autoscaling decisions and failures for this project. | `projects.listAutoscaleEvents(id)` | `GET /api/projects/:id/autoscale/events`<br />`project:read` · Self-hosted |
 
 ### HTTP endpoints
 

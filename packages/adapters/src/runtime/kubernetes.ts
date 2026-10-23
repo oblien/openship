@@ -15,6 +15,8 @@ import {
   registryForImage,
   validateClusterWorkload,
   type ClusterWorkloadConfig,
+  type ClusterWorkloadMetrics,
+  type ClusterScalePrecondition,
   type ClusterWorkloadStatus,
 } from "@repo/core";
 import type {
@@ -38,6 +40,26 @@ import {
 } from "../cluster/kubernetes-api";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import { ClusterImageBuilder, clusterBuildImageTag } from "./cluster-image-builder";
+
+const parseCpu = (value?: string) => {
+  if (!value) return null;
+  const match = value.match(/^([0-9.]+)(m|u|n)?$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  return match[2] === "m"
+    ? amount
+    : match[2] === "u"
+      ? amount / 1000
+      : match[2] === "n"
+        ? amount / 1_000_000
+        : amount * 1000; // plain cores
+};
+
+const sumKnown = (values: Array<number | null>): number | null =>
+  values.length && values.every((value) => value !== null)
+    ? values.reduce<number>((sum, value) => sum + value!, 0)
+    : null;
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 export { kubernetesProjectNamespace } from "../cluster/namespace";
@@ -86,6 +108,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
     "projectContainerSweep",
     "deploymentContainerQuery",
     "clusterStatus",
+    "scaleInPlace",
+    "podMetrics",
   ]);
   readonly namespace: string;
   private readonly lifetime = new AbortController();
@@ -461,7 +485,10 @@ export class KubernetesRuntime implements RuntimeAdapter {
       return { deploymentId: config.deploymentId, containerId: this.ref(name), status: "running" };
     } catch (error) {
       observeCaughtError(error, "adapters/runtime/kubernetes");
-      const observed = await this.status(this.ref(name)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes"); return null; });
+      const observed = await this.status(this.ref(name)).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes");
+        return null;
+      });
       const detail = observed?.pods
         .filter((pod) => !pod.ready)
         .map((pod) => `${pod.nodeName ?? pod.name}: ${pod.phase}`)
@@ -601,6 +628,16 @@ export class KubernetesRuntime implements RuntimeAdapter {
       this.lifetime.signal,
     );
     return {
+      scaling: {
+        uid: deployment.metadata.uid!,
+        operationId: deployment.metadata.annotations?.["openship.io/scale-operation"] ?? null,
+        cpuLimitMillicores: sumKnown(
+          deployment.spec.template.spec.containers.map(
+            (container: { resources?: { limits?: { cpu?: string } } }) =>
+              parseCpu(container.resources?.limits?.cpu),
+          ),
+        ),
+      },
       desired: deployment.spec.replicas,
       ready: deployment.status?.readyReplicas ?? 0,
       available: deployment.status?.availableReplicas ?? 0,
@@ -654,6 +691,129 @@ export class KubernetesRuntime implements RuntimeAdapter {
       this.lifetime.signal,
     );
   }
+  /** Scale a LIVE release in place. Patches the replica spec and the saved
+   * intent annotation together, so a stop/start cycle restores what the
+   * autoscaler (or operator) last intended, never a stale pre-scale count.
+   * Only volumes/database preconditions are revalidated; a count change must
+   * never rebuild the release. A same-count patch still changes the operation
+   * annotation, which advances a Deployment's generation and fences old requests.
+   * Returns after the conditional patch is accepted; status reports readiness. */
+  async scaleInPlace(ref: string, replicas: number, precondition?: ClusterScalePrecondition) {
+    if (!Number.isSafeInteger(replicas) || replicas < 1 || replicas > 100)
+      throw new AppError(
+        "Choose between 1 and 100 application instances.",
+        422,
+        "CLUSTER_CONFIG_INVALID",
+      );
+    const path = `${this.base}/${this.refName(ref)}`;
+    const before = await this.owned(path);
+    await patchKubernetesObject(
+      this.options.api,
+      path,
+      async (value) => {
+        this.assertOwned(value);
+        if (value.metadata.uid !== before.metadata.uid)
+          throw new AppError(
+            "This release was replaced while scaling it.",
+            409,
+            "CLUSTER_WORKLOAD_CONFLICT",
+          );
+        if (
+          precondition &&
+          (value.metadata.uid !== precondition.uid ||
+            value.metadata.generation !== precondition.generation ||
+            value.spec.replicas !== precondition.replicas)
+        )
+          throw new AppError(
+            "The workload changed after the scale decision. Observe it again before scaling.",
+            409,
+            "CLUSTER_WORKLOAD_CONFLICT",
+          );
+        await this.validateSavedVolumes(value);
+        await this.validateSavedDatabases(value);
+        return {
+          spec: { replicas },
+          metadata: {
+            annotations: {
+              "openship.io/replicas": String(replicas),
+              ...(precondition ? { "openship.io/scale-operation": precondition.operationId } : {}),
+            },
+          },
+        };
+      },
+      this.signal,
+    );
+  }
+
+  async podMetrics(ref: string): Promise<ClusterWorkloadMetrics> {
+    const deployment = await this.owned(`${this.base}/${this.refName(ref)}`);
+    const selector = encodeURIComponent(
+      `openship.io/deployment=${deployment.metadata.labels!["openship.io/deployment"]}`,
+    );
+    let result: {
+      items: Array<{
+        metadata: { name: string };
+        timestamp?: string;
+        containers: Array<{ name: string; usage: { cpu?: string; memory?: string } }>;
+      }>;
+    };
+    try {
+      result = await this.options.api.request(
+        "GET",
+        `/apis/metrics.k8s.io/v1beta1/namespaces/${this.namespace}/pods?labelSelector=${selector}`,
+        undefined,
+        this.lifetime.signal,
+      );
+    } catch (error) {
+      if (isMissing(error))
+        throw new AppError(
+          "Resource usage is unavailable: the cluster's metrics source did not answer.",
+          409,
+          "CLUSTER_METRICS_UNAVAILABLE",
+        );
+      throw error;
+    }
+    // Fail closed: an empty metrics answer must never read as zero load —
+    // the autoscaler holds rather than scaling down on absent data.
+    if (!result.items?.length)
+      throw new AppError(
+        "Resource usage is unavailable: the cluster's metrics source has no data for this release.",
+        409,
+        "CLUSTER_METRICS_UNAVAILABLE",
+      );
+    // K8s Quantity values: memory uses Ki/Mi/Gi (or plain bytes), CPU uses
+    // u/n/m or plain cores. Unparseable usage contributes nothing to the
+    // aggregate; if every pod ends up unparseable that reads as "no data"
+    // (all nulls) and the tick holds instead of scaling on garbage.
+    const parseMemory = (value?: string) => {
+      if (!value) return null;
+      const match = value.match(/^([0-9.]+)(Ki|Mi|Gi)?$/);
+      if (!match) return null;
+      const amount = Number(match[1]);
+      if (!Number.isFinite(amount)) return null;
+      return match[2] === "Mi"
+        ? amount
+        : match[2] === "Gi"
+          ? amount * 1024
+          : match[2] === "Ki"
+            ? amount / 1024
+            : amount / 1024 / 1024; // plain bytes
+    };
+    const pods = result.items.map((pod) => ({
+      name: pod.metadata.name,
+      timestamp: pod.timestamp,
+      // Usage may be missing while a pod is still starting; it contributes
+      // nothing to the aggregate instead of reading as zero-load.
+      cpuMillicores: sumKnown(pod.containers.map((container) => parseCpu(container.usage.cpu))),
+      memoryMiB: sumKnown(pod.containers.map((container) => parseMemory(container.usage.memory))),
+    }));
+    return {
+      cpuMillicores: pods.reduce((sum: number, pod) => sum + (pod.cpuMillicores ?? 0), 0),
+      memoryMiB: pods.reduce((sum: number, pod) => sum + (pod.memoryMiB ?? 0), 0),
+      pods: pods.sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }
+
   async stop(ref: string) {
     await this.replicas(ref, 0);
   }

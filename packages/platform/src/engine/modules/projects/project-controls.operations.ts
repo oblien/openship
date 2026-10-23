@@ -14,6 +14,7 @@ import { projectLogOperations } from "./project-logs.operations";
 import { createProjectTransferOperations } from "./project-transfer.operations";
 import { appProjectOperations } from "../apps/app.operations";
 import { createProjectClusterOperations } from "./project-cluster.operations";
+import { createAutoscaleOperations } from "./autoscale/project-autoscale.operations";
 import { createClusterDatabaseOperations } from "./cluster-database.operations";
 import { createClusterVolumeOperations } from "./cluster-volume.operations";
 import { retryProjectRoutingOperation } from "./project-routing-retry.operations";
@@ -32,6 +33,7 @@ export function createProjectControls(
     });
   return {
     ...createProjectClusterOperations(recordAudit),
+    ...createAutoscaleOperations(recordAudit),
     ...createClusterDatabaseOperations(recordAudit),
     ...createClusterVolumeOperations(recordAudit),
     ...appProjectOperations,

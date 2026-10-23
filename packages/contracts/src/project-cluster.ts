@@ -41,6 +41,16 @@ export const ClusterWorkloadStatusSchema = Type.Object({
     }),
   ),
 });
+export const ClusterPodMetricSchema = Type.Object({
+  name: Type.String(),
+  cpuMillicores: Type.Union([Type.Number(), Type.Null()]),
+  memoryMiB: Type.Union([Type.Number(), Type.Null()]),
+});
+export const ClusterWorkloadMetricsSchema = Type.Object({
+  cpuMillicores: Type.Number(),
+  memoryMiB: Type.Number(),
+  pods: Type.Array(ClusterPodMetricSchema),
+});
 export const ProjectClusterSchema = Type.Object({
   clusterId: nullableString,
   serverId: Type.Optional(nullableString),
@@ -53,6 +63,7 @@ export const ProjectClusterSchema = Type.Object({
   activeReplicas: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   internalHost: nullableString,
   observedAt: Type.Optional(nullableString),
+  metrics: Type.Optional(Type.Union([ClusterWorkloadMetricsSchema, Type.Null()])),
   status: Type.Union([ClusterWorkloadStatusSchema, Type.Null()]),
   error: nullableString,
 });
