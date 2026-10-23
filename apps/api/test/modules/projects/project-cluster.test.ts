@@ -21,11 +21,13 @@ const h = vi.hoisted(() => ({
   runtime: vi.fn(),
   serviceRows: vi.fn(),
   clusterRuntime: vi.fn(),
+  domains: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
     routeProtection: { list: h.protection },
     project: { findById: h.find },
+    domain: { listByProject: h.domains },
     deployment: { findLatestByProject: h.latest },
     clusterRuntime: { bindProject: h.bind, get: h.clusterRuntime },
     clusterDatabase: { list: vi.fn(async () => []) },
@@ -73,6 +75,7 @@ const operations = createProjectClusterOperations(h.audit);
 beforeEach(() => {
   vi.resetAllMocks();
   h.find.mockResolvedValue(project());
+  h.domains.mockResolvedValue([]);
   h.protection.mockResolvedValue([]);
   h.services.mockResolvedValue([]);
   h.clusterRuntime.mockResolvedValue({ provider: "k3s" });
@@ -85,6 +88,54 @@ beforeEach(() => {
 });
 
 describe("project cluster lifecycle admission", () => {
+  it.each(["k3s", "swarm"])(
+    "blocks binding saved domain caps to %s and admits the target after clearing them",
+    async (provider) => {
+      h.find.mockResolvedValue({ ...project(), clusterId: null });
+      h.active.mockResolvedValue(null);
+      h.domains.mockResolvedValue([{ proxy: { clientMaxBodySize: "0" } }]);
+      h.ready.mockResolvedValue({
+        runtime: { provider, plan: { hosts: [{ serverId: "manager" }] } },
+      });
+      const input = {
+        clusterId: "cluster",
+        config: { replicas: 2, imageRepository: "ghcr.io/team/api" },
+        expectedUpdatedAt: now.toISOString(),
+        stateless: true,
+        acknowledgePlacement: true as const,
+      };
+      await expect(operations.setClusterTarget(ctx, "project", input)).rejects.toMatchObject({
+        code: "DOMAIN_PROXY_SETTINGS_UNSUPPORTED",
+      });
+      expect(h.bind).not.toHaveBeenCalled();
+      expect(h.ready).not.toHaveBeenCalled();
+      expect(h.audit).not.toHaveBeenCalled();
+      h.domains.mockResolvedValue([{ proxy: null }]);
+      h.bind.mockImplementationOnce(async () => {
+        h.find.mockResolvedValue(project());
+      });
+      await expect(operations.setClusterTarget(ctx, "project", input)).resolves.toMatchObject({
+        clusterId: "cluster",
+        config: input.config,
+      });
+      expect(h.bind).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("rejects replica rebinding with saved domain caps before changing configuration", async () => {
+    h.domains.mockResolvedValue([{ proxy: { clientMaxBodySize: "1m" } }]);
+    await expect(
+      operations.scaleClusterWorkload(ctx, "project", {
+        replicas: 4,
+        expectedDeploymentId: "release",
+        expectedUpdatedAt: now.toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: "DOMAIN_PROXY_SETTINGS_UNSUPPORTED" });
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(h.trigger).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+
   it("refuses an unsupported target before changing a private site's destination", async () => {
     h.find.mockResolvedValue({ ...project(), clusterId: null });
     h.protection.mockResolvedValue([{ enabled: true }]);
