@@ -627,7 +627,7 @@
     "projects.getEdgeConfig": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Read the project’s edge configuration.",
+      "description": "Read generated edge configuration on disk; see [read-back semantics](/docs/api/domains#set-a-domain-http-body-limit).",
       "route": "GET /api/projects/:id/edge-config"
     },
     "projects.getServerLogStreamToken": {

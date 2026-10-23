@@ -414,7 +414,7 @@ The current API has **526 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_connections_consumers`<br />`GET /api/projects/:id/connections/consumers` | List the projects that consume THIS app's connection (a shared database has many). | `project:read` |
 | `get_projects_by_id_deletion_preview`<br />`GET /api/projects/:id/deletion-preview` | Preview what deleting this project would remove (read-only). | `project:read` |
 | `get_projects_by_id_deployments`<br />`GET /api/projects/:id/deployments` | List a project's deployments (history, statuses). | `project:deployment:list` |
-| `get_projects_by_id_edge_config`<br />`GET /api/projects/:id/edge-config` | Compare saved project routes with the configuration currently served by the self-hosted edge. Use this to investigate routing drift before retrying. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_edge_config`<br />`GET /api/projects/:id/edge-config` | Compare saved project and domain settings with the self-hosted edge's generated server-block configuration on disk. Use this to investigate routing drift before retrying; configuration files do not prove what running workers serve. | `project:read`<br />Self-hosted |
 | `get_projects_by_id_env`<br />`GET /api/projects/:id/env` | List a project's environment variables (secret values masked). | `project:read` |
 | `get_projects_by_id_environments`<br />`GET /api/projects/:id/environments` | List a project's environments (production / previews). | `project:read` |
 | `get_projects_by_id_git`<br />`GET /api/projects/:id/git` | Get the project's linked git repository info. | `project:read` |
