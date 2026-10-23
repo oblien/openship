@@ -49,11 +49,8 @@ const commandPath = join(out, "commands.log");
 const configTestPath = join(out, "config-tests.log");
 const container = `openship-cap-proof-${process.pid}-${randomBytes(4).toString("hex")}`;
 const image =
-  option("--image") ||
   "openresty/openresty@sha256:2f09322c11964de09cbc53c9dbda84ed299a9f777a5824a67a46c85260bcda92";
-const nodeImage =
-  option("--node-image") ||
-  "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53";
+const nodeImage = "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53";
 const dockerConfig = join(runtime, "docker-config");
 const hosts = ["api.fixture.test", "events.fixture.test"];
 const MiB = 1024 * 1024;
