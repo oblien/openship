@@ -152,6 +152,23 @@ function createAbortWatch(
   };
 }
 
+/** Payload of a finished helper's log (stdout and stderr), minus the 8-byte frame headers. */
+async function helperLogText(helper: Dockerode.Container): Promise<Buffer> {
+  try {
+    const logs = (await helper.logs({ follow: false, stdout: true, stderr: true })) as Buffer;
+    const parts: Buffer[] = [];
+    for (let at = 0; at + 8 <= logs.length; ) {
+      const end = at + 8 + logs.readUInt32BE(at + 4);
+      parts.push(logs.subarray(at + 8, end));
+      at = end;
+    }
+    return Buffer.concat(parts);
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/backup/executors/docker");
+    return Buffer.alloc(0);
+  }
+}
+
 /** Destroy a stream without caring whether it was already gone. */
 function destroyQuietly(stream: { destroy?: (err?: Error) => void } | undefined): void {
   try {
@@ -822,7 +839,10 @@ export class DockerBackupExecutor implements BackupExecutor {
             cancelled: abortWatch?.promise,
           });
           if (waitResult.StatusCode !== 0) {
-            const detail = Buffer.concat(errChunks)
+            // The attach stream can close before the helper's stderr reaches it, so
+            // fall back to the daemon's log of the (still existing) helper.
+            const raw = errChunks.length > 0 ? Buffer.concat(errChunks) : await helperLogText(helper);
+            const detail = raw
               .toString("utf8")
               .replace(/[^\x20-\x7e\n]+/g, " ")
               .trim()

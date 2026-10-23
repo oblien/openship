@@ -34,7 +34,7 @@ vi.mock("../src/runtime/docker-exec-stream", () => ({
 
 import { DockerRuntime } from "../src/runtime/docker";
 import type { ServiceHandle } from "../src/backup/types";
-import { drive, FakeAttachStream, harness } from "./helpers/docker-helper-harness";
+import { dockerFrame, drive, FakeAttachStream, harness } from "./helpers/docker-helper-harness";
 
 const SERVICE: ServiceHandle = {
   id: "svc_1",
@@ -139,6 +139,23 @@ describe("receiveStream no longer depends on wait() answering", () => {
     stream.emitStderr("tar: can't create directory: Read-only file system\n");
 
     await expect(drive(p, 10_000)).rejects.toThrow(/Read-only file system/);
+    expect(h.removals).toEqual([{ force: true }]);
+  });
+
+  it("reads the helper's log when the attach stream closed before any stderr arrived (#1417)", async () => {
+    const log = Buffer.concat([
+      dockerFrame(2, "zstd: Read error (39): premature end\n"),
+      dockerFrame(2, "tar: short read\n"),
+    ]);
+    const h = harness({ wait: 1 }, () => ({ logs: async () => log }));
+    const exec = await h.executor();
+
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+      compression: "none",
+    });
+    p.catch(() => {});
+
+    await expect(drive(p, 10_000)).rejects.toThrow(/premature end[\s\S]*tar: short read/);
     expect(h.removals).toEqual([{ force: true }]);
   });
 });
