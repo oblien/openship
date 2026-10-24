@@ -59,10 +59,12 @@ export const ServiceSchema = Type.Object({
   publicEndpoints: Type.Union([
     Type.Array(
       Type.Object({
-        port: Type.Number(),
+        port: Type.Optional(Type.Number()),
         domainType: Type.Union([Type.Literal("free"), Type.Literal("custom")]),
         domain: Type.Optional(Type.String()),
         customDomain: Type.Optional(Type.String()),
+        redirectTo: Type.Optional(Type.String()),
+        redirectStatus: Type.Optional(Type.Number()),
       }),
     ),
     Type.Null(),

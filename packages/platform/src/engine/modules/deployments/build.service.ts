@@ -1,3 +1,4 @@
+import { assertServiceRedirects } from "../../lib/service-redirects";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
 /**
@@ -2057,6 +2058,7 @@ export async function requestBuildAccess(
     const composeOnly = effectiveServices.filter((s) => serviceKind(s) === "compose");
     if (composeOnly.length) {
       const storedServices = await repos.service.listByProject(project.id);
+      await assertServiceRedirects(project, composeOnly);
       const routes = composeEndpointChanges(composeOnly, storedServices);
       await assertFreeEndpointsAllowed(project.organizationId, routes.endpoints, {
         capability: "managed-compose-domains", workspaceId: project.workspaceId,

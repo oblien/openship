@@ -6,6 +6,7 @@ import {
   sortJsonKeys,
   mergeAdvanced,
   normalizeCustomHostname,
+  resolveRedirectStatus,
   resolveCommandArgv,
   resolveWorkload,
   type ComposeAdvanced,
@@ -27,6 +28,8 @@ export type PublicEndpointInputLike = {
   customDomain?: string | null;
   domainType?: string | null;
   targetPath?: string | null;
+  redirectTo?: string | null;
+  redirectStatus?: number | null;
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -512,7 +515,7 @@ export function normalizeServicePublicEndpoints(
   const seenHostnames = new Set<string>();
   for (const endpoint of endpoints ?? []) {
     const port = normalizeRoutePort(endpoint.port);
-    if (port === null) continue;
+    if (port === null && !endpoint.redirectTo) continue;
     const domainType = endpoint.domainType === "custom" ? "custom" : "free";
     const domain = domainType === "free" ? endpoint.domain?.trim() || undefined : undefined;
     const customDomain =
@@ -525,10 +528,14 @@ export function normalizeServicePublicEndpoints(
     if (seenHostnames.has(identity)) continue;
     seenHostnames.add(identity);
     out.push({
-      port,
+      ...(port !== null ? { port } : {}),
       domainType,
       ...(domain ? { domain } : {}),
       ...(customDomain ? { customDomain } : {}),
+      ...(endpoint.redirectTo !== undefined ? {
+        redirectTo: normalizeCustomHostname(endpoint.redirectTo ?? ""),
+        ...(endpoint.redirectTo && endpoint.redirectStatus != null ? { redirectStatus: resolveRedirectStatus(endpoint.redirectStatus) } : {}),
+      } : {}),
     });
   }
   return out;
@@ -581,7 +588,7 @@ export function normalizeRoutingFields(input: {
     const primary = endpoints[0];
     return {
       exposed,
-      exposedPort: String(primary.port),
+      exposedPort: primary.port === undefined ? null : String(primary.port),
       domain: primary.domainType === "free" ? (primary.domain ?? null) : null,
       customDomain: primary.domainType === "custom" ? (primary.customDomain ?? null) : null,
       domainType: primary.domainType,

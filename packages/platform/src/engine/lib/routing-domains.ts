@@ -15,7 +15,7 @@ import {
   type StoredPublicEndpoint,
 } from "./public-endpoints";
 import { acmeIssueLockKey, domainDnsProvisionOptions, LOCAL_ACME_SCOPE, persistSslResult, resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
-import { resolveRouteRedirect } from "./domain-redirect";
+import { normalizeRedirect, resolveRouteRedirect } from "./domain-redirect";
 import { createProvisionLock } from "./provision-lock";
 import { generateToken } from "./domain-token";
 import { routableWithoutOwnership } from "./domain-claims";
@@ -523,7 +523,7 @@ export function buildServiceRouteDomains(opts: {
   const seen = new Set<string>();
 
   for (const endpoint of endpoints) {
-    if (endpoint.port === undefined) continue;
+    if (endpoint.port === undefined && !endpoint.redirectTo) continue;
 
     // Monorepo sub-apps always get a namespaced hostname (`<project>-<app>`).
     // Compose services keep the "frontend"/"web"/"app" → bare-project-label
@@ -579,8 +579,10 @@ export function buildServiceRouteDomains(opts: {
       // A service-scoped hostname can carry a redirect too (its own www sibling),
       // and it's stored on the same row — so read it from there rather than
       // silently ignoring it for compose/service routes.
-      redirectTo: domainRow?.redirectTo ?? null,
-      redirectStatus: domainRow?.redirectStatus ?? null,
+      redirectTo: endpoint.redirectTo ?? domainRow?.redirectTo ?? null,
+      redirectStatus: endpoint.redirectTo !== undefined
+        ? (endpoint.redirectStatus ?? null)
+        : (domainRow?.redirectStatus ?? null),
     });
   }
 
@@ -632,22 +634,26 @@ export function serviceCustomHostnames(service: Service): string[] {
  * best-effort from the matching endpoint — it is a routing hint on the row, not
  * the reason the row exists, so a portless hostname still gets one.
  */
-export function serviceDomainRowsToEnsure(
-  service: Service,
-): Array<{ hostname: string; targetPort?: number }> {
-  // Read with `exposed: true` so the ports of a PAUSED service still resolve;
-  // `serviceCustomHostnames` already decides which hostnames count.
-  const portByHostname = new Map<string, number>();
-  for (const endpoint of resolveServicePublicEndpoints({ ...service, exposed: true })) {
-    if (endpoint.domainType !== "custom" || endpoint.port === undefined) continue;
-    const hostname = endpoint.customDomain
-      ? normalizeCustomHostname(endpoint.customDomain)
-      : undefined;
-    if (hostname && !portByHostname.has(hostname)) portByHostname.set(hostname, endpoint.port);
-  }
-  return serviceCustomHostnames(service).map((hostname) => {
-    const targetPort = portByHostname.get(hostname);
-    return targetPort === undefined ? { hostname } : { hostname, targetPort };
+export function serviceDomainRowsToEnsure(service: Service): Array<{
+  hostname: string;
+  targetPort?: number;
+  redirectTo?: string;
+  redirectStatus?: number;
+}> {
+  const endpoints = new Map(
+    resolveServicePublicEndpoints({ ...service, exposed: true })
+      .filter(endpoint => endpoint.domainType === "custom" && endpoint.customDomain)
+      .map(endpoint => [normalizeCustomHostname(endpoint.customDomain!), endpoint]),
+  );
+  return serviceCustomHostnames(service).map(hostname => {
+    const endpoint = endpoints.get(hostname);
+    return {
+      hostname,
+      ...(endpoint?.port !== undefined ? { targetPort: endpoint.port } : {}),
+      ...(endpoint?.redirectTo !== undefined
+        ? { redirectTo: endpoint.redirectTo, redirectStatus: endpoint.redirectStatus }
+        : {}),
+    };
   });
 }
 
@@ -881,6 +887,11 @@ export async function ensureRouteDomainRecord(opts: {
   const hasExistingPrimary = [...domainByHostname.values()].some((d) => d.isPrimary);
   if (existing) {
     const patch: Record<string, unknown> = {};
+    if (route.serviceId) {
+      const redirect = normalizeRedirect(route);
+      if (existing.redirectTo !== redirect.redirectTo || existing.redirectStatus !== redirect.redirectStatus)
+        Object.assign(patch, redirect);
+    }
     const expectedDomainType = route.domainType ?? null;
     const expectedTargetPort = route.targetPort ?? null;
     const expectedTargetPath = route.targetPath ?? null;
@@ -928,6 +939,7 @@ export async function ensureRouteDomainRecord(opts: {
     hostname: route.hostname,
     targetPort: route.targetPort,
     targetPath: route.targetPath,
+    ...(route.serviceId ? normalizeRedirect(route) : {}),
     domainType: route.domainType,
     isPrimary: hasExistingPrimary || isWildcardHostname(route.hostname)
       ? false

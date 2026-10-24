@@ -255,6 +255,8 @@ const ServiceDomainSection: React.FC<{
             hasServer
             runtimePort={primaryPort}
             allowPortEdit
+            allowRedirects
+            allowWww
             saveMode="change"
             hideHeader
             portInline
