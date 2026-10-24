@@ -181,6 +181,15 @@
       "show": "Show values",
       "hide": "Hide values",
       "error": "Couldn’t reveal values"
+    },
+    "timezone": {
+      "label": "Timezone",
+      "imageDefault": "Image default (no TZ)",
+      "search": "Search timezones…",
+      "hint": "Sets TZ. The image must include timezone data (tzdata). Save and apply to restart with this timezone.",
+      "hidden": "Hidden TZ value",
+      "hiddenHint": "Edit the TZ variable to change its hidden value.",
+      "duplicate": "Remove duplicate TZ rows before using the timezone picker."
     }
   },
   "composeServices": {

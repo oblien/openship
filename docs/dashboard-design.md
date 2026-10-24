@@ -64,6 +64,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 [CustomSelect](../apps/dashboard/src/components/ui/CustomSelect.tsx), and
 [Button](../apps/dashboard/src/components/ui/button.tsx) instead of copying their implementations.
 
+The environment editor's **Timezone** picker edits the existing `TZ` row and uses
+the existing save/apply actions. Reuse it for project and service editors, with
+the shared searchable filled dropdown. Clearing means the image default, not a
+forced timezone. Preserve custom values and masked secrets; keep inherited-row
+removal restrictions and read-only states intact.
+
 ## Actions
 
 Actions reuses the shared topology canvas, server selector, page layout and filled

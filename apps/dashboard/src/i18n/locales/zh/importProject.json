@@ -181,6 +181,15 @@
       "show": "显示值",
       "hide": "隐藏值",
       "error": "无法显示值"
+    },
+    "timezone": {
+      "label": "时区",
+      "imageDefault": "镜像默认值（无 TZ）",
+      "search": "搜索时区…",
+      "hint": "设置 TZ。镜像必须包含时区数据（tzdata）。保存并应用后，将使用此时区重启。",
+      "hidden": "隐藏的 TZ 值",
+      "hiddenHint": "编辑 TZ 变量以更改其隐藏值。",
+      "duplicate": "使用时区选择器前，请删除重复的 TZ 行。"
     }
   },
   "composeServices": {

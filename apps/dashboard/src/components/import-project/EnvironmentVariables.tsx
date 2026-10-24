@@ -3,6 +3,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { Input } from "@/components/ui/input";
+import { EnvironmentTimezone } from "@/components/EnvironmentTimezone";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ENV_MASK, isMaskedValue, looksLikeSecretKey } from "@repo/core";
@@ -888,6 +889,12 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           onPasteCapture={handleContainerPaste}
           onClick={handlePasteZoneClick}
         >
+          <EnvironmentTimezone
+            rows={currentEnvVars}
+            onChange={updateEnvVars}
+            createRow={(value) => ({ key: "TZ", value, visible: true, isSecret: false })}
+            disabled={!isEditingMode || isSaving}
+          />
           {currentEnvVars.map((env, index) => {
             const resolution = getEnvResolutionState(
               envMeta?.[env.key],

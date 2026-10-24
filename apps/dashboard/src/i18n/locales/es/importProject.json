@@ -181,6 +181,15 @@
       "show": "Mostrar valores",
       "hide": "Ocultar valores",
       "error": "No se pudieron mostrar los valores"
+    },
+    "timezone": {
+      "label": "Zona horaria",
+      "imageDefault": "Predeterminada de la imagen (sin TZ)",
+      "search": "Buscar zonas horarias…",
+      "hint": "Establece TZ. La imagen debe incluir datos de zonas horarias (tzdata). Guarda y aplica para reiniciar con esta zona.",
+      "hidden": "Valor TZ oculto",
+      "hiddenHint": "Edita la variable TZ para cambiar su valor oculto.",
+      "duplicate": "Elimina las filas TZ duplicadas antes de usar el selector."
     }
   },
   "composeServices": {

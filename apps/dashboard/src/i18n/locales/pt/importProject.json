@@ -181,6 +181,15 @@
       "show": "Mostrar valores",
       "hide": "Ocultar valores",
       "error": "Não foi possível revelar os valores"
+    },
+    "timezone": {
+      "label": "Fuso horário",
+      "imageDefault": "Padrão da imagem (sem TZ)",
+      "search": "Buscar fusos horários…",
+      "hint": "Define TZ. A imagem deve incluir dados de fusos horários (tzdata). Salve e aplique para reiniciar com este fuso.",
+      "hidden": "Valor TZ oculto",
+      "hiddenHint": "Edite a variável TZ para alterar seu valor oculto.",
+      "duplicate": "Remova as linhas TZ duplicadas antes de usar o seletor."
     }
   },
   "composeServices": {

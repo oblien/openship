@@ -181,6 +181,15 @@
       "show": "Afficher les valeurs",
       "hide": "Masquer les valeurs",
       "error": "Impossible d’afficher les valeurs"
+    },
+    "timezone": {
+      "label": "Fuseau horaire",
+      "imageDefault": "Valeur de l’image (sans TZ)",
+      "search": "Rechercher un fuseau…",
+      "hint": "Définit TZ. L’image doit inclure les données de fuseaux horaires (tzdata). Enregistrez et appliquez pour redémarrer avec ce fuseau.",
+      "hidden": "Valeur TZ masquée",
+      "hiddenHint": "Modifiez la variable TZ pour changer sa valeur masquée.",
+      "duplicate": "Supprimez les lignes TZ en double avant d’utiliser le sélecteur."
     }
   },
   "composeServices": {

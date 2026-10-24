@@ -90,6 +90,21 @@ never re-typed it, so it's never re-sent.
   the new values take effect the next time you deploy.
 </Callout>
 
+## Choose an app timezone
+
+Use **Timezone** in the environment editor to select an IANA timezone such as
+`America/Caracas`. This edits the ordinary `TZ` variable: manually editing that
+row updates the picker too. **Image default (no TZ)** removes the variable without
+forcing UTC or inheriting the server's timezone. Existing custom `TZ` values are
+preserved, even when they are not in the suggested list.
+
+Save, then use **Apply (restart, no rebuild)** for a running app. Service settings
+use the same environment apply flow; a new deployment uses its draft values.
+The image must include timezone data (`tzdata`), for example `apk add --no-cache tzdata`
+on Alpine or `apt-get install -y tzdata` on Debian. Openship does not install it or
+change your Dockerfile. An application with its own timezone configuration may
+also need that setting changed.
+
 ## When your app sees these values
 
 Project-level variables are available at **two moments**:

@@ -181,6 +181,15 @@
       "show": "Werte anzeigen",
       "hide": "Werte ausblenden",
       "error": "Werte konnten nicht angezeigt werden"
+    },
+    "timezone": {
+      "label": "Zeitzone",
+      "imageDefault": "Image-Standard (ohne TZ)",
+      "search": "Zeitzonen suchen…",
+      "hint": "Setzt TZ. Das Image muss Zeitzonendaten (tzdata) enthalten. Speichern und anwenden, um mit dieser Zeitzone neu zu starten.",
+      "hidden": "Verborgener TZ-Wert",
+      "hiddenHint": "Bearbeite die Variable TZ, um ihren verborgenen Wert zu ändern.",
+      "duplicate": "Entferne doppelte TZ-Zeilen, bevor du die Zeitzone auswählst."
     }
   },
   "composeServices": {

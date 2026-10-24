@@ -181,6 +181,15 @@
       "show": "Değerleri göster",
       "hide": "Değerleri gizle",
       "error": "Değerler gösterilemedi"
+    },
+    "timezone": {
+      "label": "Saat dilimi",
+      "imageDefault": "İmaj varsayılanı (TZ yok)",
+      "search": "Saat dilimi ara…",
+      "hint": "TZ değerini ayarlar. İmaj, saat dilimi verilerini (tzdata) içermelidir. Bu saat dilimiyle yeniden başlatmak için kaydedip uygulayın.",
+      "hidden": "Gizli TZ değeri",
+      "hiddenHint": "Gizli değeri değiştirmek için TZ değişkenini düzenleyin.",
+      "duplicate": "Seçiciyi kullanmadan önce yinelenen TZ satırlarını kaldırın."
     }
   },
   "composeServices": {

@@ -3,6 +3,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { AppLogo } from "@/components/AppLogo";
+import { EnvironmentTimezone } from "@/components/EnvironmentTimezone";
 import { projectsApi, deployApi } from "@/lib/api";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -260,6 +261,12 @@ export function EnvVarsEditor({
           </div>
         ) : (
           <div className="space-y-2">
+            <EnvironmentTimezone
+              rows={rows}
+              onChange={setRows}
+              createRow={(value) => ({ uid: nextUid(), key: "TZ", value, visible: true, isSecret: false })}
+              disabled={saving || applying || pendingApply || baseline === null || Boolean(linked.TZ)}
+            />
             {rows.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-6 text-center text-sm text-muted-foreground">
                 {t.projectSettings.envVars.empty}

@@ -90,7 +90,7 @@ describe("repos.backupRun.latestByPolicy", () => {
         { ...base, id: "wrong-policy", policyId: "pol2", finishedAt: later },
         { ...base, id: "wrong-destination", destinationId: "dest2", finishedAt: later },
         { ...base, id: "sibling-service", serviceId: "svc2", finishedAt: later },
-        { ...base, id: "mail-source", serviceId: null, mailServerId: "mail1", finishedAt: later },
+        { ...base, id: "mail-source", sourceKind: "mail_server", serviceId: null, mailServerId: "mail1", finishedAt: later },
         { ...base, id: "wrong-mail", mailServerId: "mail1", finishedAt: later },
         { ...base, id: "failed", status: "failed", finishedAt: later },
         { ...base, id: "deleted", deletedAt: later, finishedAt: later },
