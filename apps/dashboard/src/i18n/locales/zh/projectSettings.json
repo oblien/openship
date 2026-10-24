@@ -1156,6 +1156,29 @@
       "description": "应用将继续运行 — 仅删除此路由及其边缘注册。您可以随时重新添加它。",
       "confirm": "删除路由",
       "removing": "正在删除…"
+    },
+    "bodyLimit": {
+      "title": "HTTP 请求体限制",
+      "inherit": "继承项目",
+      "custom": "自定义",
+      "unlimited": "无限制 (0)",
+      "hint": "限制 HTTP 请求体，包括上传和轮询。WebSocket 帧和应用限制独立设置。使用 k、m 或 g；0 表示无限制。",
+      "saved": "已保存的覆盖值",
+      "effective": "有效限制",
+      "source": "来源",
+      "domain": "域名",
+      "project": "项目",
+      "edge": "Edge 默认值",
+      "observed": "观察到的限制",
+      "status": "配置检查",
+      "matches": "与已保存的值一致(未确认已生效)",
+      "pending": "配置不一致 — 请重试路由",
+      "unknown": "未知",
+      "unsupported": "需要自托管 nginx/OpenResty Edge。",
+      "invalid": "请输入 2m、1g 或表示无限制的 0。",
+      "save": "保存",
+      "saving": "正在保存…",
+      "refresh": "刷新状态"
     }
   },
   "serviceEnvironment": {

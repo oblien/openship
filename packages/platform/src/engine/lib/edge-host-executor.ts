@@ -17,6 +17,7 @@ import { createExecutor, type CommandExecutor } from "@repo/adapters";
 import { isLocalHostRow } from "./box-org";
 import type { DeploymentMeta } from "./deployment-runtime";
 import { sshManager } from "./ssh-manager";
+import { resolveProjectLiveDeployTarget } from "../modules/projects/project-deploy-target";
 import { env } from "../config/env";
 
 /** The server the project's active deployment runs on (for edge/cert reads). */
@@ -63,6 +64,42 @@ export async function withServerHostExecutor<T>(
   // local row. The old branch handed out a fresh `createHostExecutor()` per call and
   // never closed it — one leaked sshd session per domain/SSL status read (#291).
   return sshManager.withExecutor(serverId, fn).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
+}
+
+/**
+ * The edge host of the project's ACTIVE deployment destination, local included.
+ *
+ * A local deployment records no server: "local" is the absence of a binding and
+ * means this box, reached through the same pooled host channel the deploy used.
+ * It is authorized by the same check as a local deploy. Everything else — a
+ * foreign, deleted, cluster or cloud destination — still yields null, never the
+ * control plane's own host.
+ */
+export async function withDeploymentEdgeExecutor<T>(
+  project: Project,
+  fn: (exec: CommandExecutor) => Promise<T>,
+): Promise<T | null> {
+  if (env.CLOUD_MODE) return null;
+  const serverId = await resolveServerIdForProject(project);
+  const run = serverId ? sshManager.withExecutor(serverId, fn) : runOnLocalDestination(project, fn);
+  return run.catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor");
+    return null;
+  });
+}
+
+async function runOnLocalDestination<T>(
+  project: Project,
+  fn: (exec: CommandExecutor) => Promise<T>,
+): Promise<T | null> {
+  const { deployTarget } = await resolveProjectLiveDeployTarget(project);
+  if (deployTarget !== "local") return null;
+  const { assertLocalDeploymentAccess } = await import("./deployment-runtime");
+  const allowed = await assertLocalDeploymentAccess(project.organizationId).then(
+    () => true,
+    () => false,
+  );
+  return allowed ? sshManager.withHostExecutor(fn) : null;
 }
 
 /**

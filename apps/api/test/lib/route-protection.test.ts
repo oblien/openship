@@ -42,6 +42,7 @@ vi.mock("@repo/db", () => ({
       enqueue: state.enqueue,
     },
     domain: {
+      listByProject: async () => [{ hostname: "private.test", ...state.domain }],
       findByHostname: async (hostname: string) =>
         hostname === "dev.test" ? { ...state.domain, projectId: "source" } : state.domain,
     },

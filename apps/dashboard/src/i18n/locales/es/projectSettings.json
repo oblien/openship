@@ -1156,6 +1156,29 @@
       "description": "La aplicación seguirá ejecutándose; solo se eliminan esta ruta y su registro en el edge. Puedes volver a agregarla en cualquier momento.",
       "confirm": "Eliminar ruta",
       "removing": "Eliminando…"
+    },
+    "bodyLimit": {
+      "title": "Límite del cuerpo HTTP",
+      "inherit": "Heredar del proyecto",
+      "custom": "Personalizado",
+      "unlimited": "Sin límite (0)",
+      "hint": "Limita cuerpos HTTP, incluidas cargas y sondeo. Los frames WebSocket y límites de la aplicación son independientes. Use k, m o g; 0 significa sin límite.",
+      "saved": "Valor guardado",
+      "effective": "Límite efectivo",
+      "source": "Origen",
+      "domain": "Dominio",
+      "project": "Proyecto",
+      "edge": "Predeterminado del Edge",
+      "observed": "Límite observado",
+      "status": "Comprobación de configuración",
+      "matches": "Coincide con el valor guardado (aplicación no confirmada)",
+      "pending": "La configuración difiere — reintente el enrutamiento",
+      "unknown": "Desconocido",
+      "unsupported": "Requiere un Edge nginx/OpenResty autohospedado.",
+      "invalid": "Introduzca 2m, 1g o 0 para no limitar.",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "refresh": "Actualizar estado"
     }
   },
   "serviceEnvironment": {

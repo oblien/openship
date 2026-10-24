@@ -364,6 +364,124 @@ beforeEach(async () => {
 });
 
 describe("project control-plane export and import", () => {
+  it.each(["explicit", "unlimited", "null", "missing", "empty"])(
+    "round-trips %s domain proxy settings through legacy project archives",
+    async (kind) => {
+      await source();
+      const proxy =
+        kind === "explicit"
+          ? { clientMaxBodySize: "2m" }
+          : kind === "unlimited"
+            ? { clientMaxBodySize: "0" }
+            : null;
+      await db.update(schema.domain).set({ proxy }).where(eq(schema.domain.id, "domain_web"));
+      const file = await exportFile({}, true);
+      const row = file.dump.tables.domain!.find((row) => row.id === "domain_web")!;
+      expect(row.proxy).toEqual(proxy);
+      if (kind === "missing") delete row.proxy;
+      if (kind === "empty") row.proxy = {};
+      await destination();
+      expect((await previewInstanceImport({ file, context })).blockers).toEqual([]);
+      await importInstance({ file, passphrase: password, mode: "merge", context });
+      expect(await db.select().from(schema.domain)).toEqual([
+        expect.objectContaining({
+          id: "domain_web",
+          projectId: "web",
+          hostname: "web.example.test",
+          proxy,
+        }),
+      ]);
+    },
+  );
+
+  it.each(["missing", "null"])(
+    "restores %s inheritance when overwriting an explicit destination cap",
+    async (kind) => {
+      await source();
+      const file = await exportFile({}, false);
+      const row = file.dump.tables.domain![0]!;
+      if (kind === "missing") delete row.proxy;
+      else row.proxy = null;
+      await db
+        .update(schema.domain)
+        .set({ proxy: { clientMaxBodySize: "2m" } })
+        .where(eq(schema.domain.id, "domain_web"));
+      await importInstance({
+        file,
+        mode: "merge",
+        context: sourceContext,
+        selection: { scope: "projects", conflictPolicy: "overwrite" },
+      });
+      expect(await repos.domain.findById("domain_web")).toMatchObject({
+        proxy: null,
+        projectId: "web",
+      });
+    },
+  );
+
+  it.each([
+    { proxy: { clientMaxBodySize: "1m; return 200;" } },
+    { proxy: { clientMaxBodySize: "25" } },
+    { proxy: { clientMaxBodySize: "1mb" } },
+    { proxy: { clientMaxBodySize: "999999999999999999999999999999g" } },
+    { proxy: { clientMaxBodySize: 1 } },
+    { proxy: { clientMaxBodySize: null } },
+    { proxy: { clientMaxBodySize: "1m", serverTokens: true } },
+    { proxy: { unknown: "1m" } },
+    { proxy: ["1m"] },
+    { proxy: "1m" },
+  ])("rejects invalid imported domain settings $proxy before writing", async ({ proxy }) => {
+    await source();
+    const file = await exportFile({}, false);
+    file.dump.tables.domain![0]!.proxy = proxy;
+    await destination();
+    await expect(previewInstanceImport({ file, context })).rejects.toThrow(/domain.*proxy/i);
+    await expect(importInstance({ file, mode: "merge", context })).rejects.toThrow(
+      /domain.*proxy/i,
+    );
+    expect(await db.select().from(schema.project)).toHaveLength(0);
+    expect(await db.select().from(schema.domain)).toHaveLength(0);
+  });
+
+  it("does not let an imported proxy override claim a domain owned by another project", async () => {
+    await source();
+    await db
+      .update(schema.domain)
+      .set({ proxy: { clientMaxBodySize: "2m" } })
+      .where(eq(schema.domain.id, "domain_web"));
+    const file = await exportFile({}, false);
+    await destination();
+    await db.insert(schema.projectGroup).values({
+      id: "foreign-group",
+      organizationId: context.organizationId,
+      name: "Foreign",
+      slug: "foreign",
+    });
+    await db.insert(schema.project).values({
+      id: "foreign-project",
+      groupId: "foreign-group",
+      organizationId: context.organizationId,
+      name: "Foreign",
+      slug: "foreign",
+    });
+    await db.insert(schema.domain).values({
+      id: "foreign-domain",
+      projectId: "foreign-project",
+      hostname: "web.example.test",
+      proxy: { clientMaxBodySize: "1m" },
+    });
+    expect((await previewInstanceImport({ file, context })).blockers.join(" ")).toContain(
+      "already belongs to another project",
+    );
+    await expect(importInstance({ file, mode: "merge", context })).rejects.toThrow(
+      "already belongs to another project",
+    );
+    expect(await repos.domain.findById("foreign-domain")).toMatchObject({
+      projectId: "foreign-project",
+      proxy: { clientMaxBodySize: "1m" },
+    });
+  });
+
   it.each(["missing", "other-project", "other-organization"])(
     "rejects a %s active-deployment binding in both preview and apply before writing",
     async (kind) => {

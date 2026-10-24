@@ -1,5 +1,11 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { AddDomainBody, PreviewDomainBody, UploadCertBody } from "./domain-inputs";
+import {
+  AddDomainBody,
+  PreviewDomainBody,
+  UploadCertBody,
+  DomainProxySettingsSchema,
+  UpdateDomainBody,
+} from "./domain-inputs";
 import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type { StreamOptions } from "./services";
 import type { ResourceOperations, ResourceOperationSchema, ScopedOperations } from "./resource-operations";
@@ -35,6 +41,7 @@ export type DomainDiagnostics = Static<typeof DomainDiagnosticsSchema>;
 export const DomainSchema = Type.Object({
   id: Type.String(), ownerType: Type.String(), projectId: nullableString,
   webhookSourceId: nullableString, serviceId: nullableString,
+  proxy: Type.Optional(Type.Union([DomainProxySettingsSchema, Type.Null()])),
   hostname: Type.String(), targetPort: nullableNumber, targetPath: nullableString,
   domainType: nullableString, isPrimary: Type.Boolean(), redirectTo: nullableString,
   redirectStatus: nullableNumber, externalIngress: Type.Boolean(), manualSsl: Type.Boolean(),
@@ -159,6 +166,7 @@ export const DomainCollectionSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const DomainResourceSchemas = {
   get: { action: "read", output: DomainSchema },
+  update: { action: "write", input: UpdateDomainBody, output: DomainSchema },
   remove: { action: "admin", output: Type.Object({ message: Type.Literal("domain removed") }) },
   verify: { action: "write", input: VerifyDomainInputSchema, optionalInput: true, output: DomainVerificationSchema },
   records: { action: "read", input: DomainDnsTargetSchema, optionalInput: true, output: DomainRecordsSchema },

@@ -627,7 +627,7 @@
     "projects.getEdgeConfig": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Read the project’s edge configuration.",
+      "description": "Read generated edge configuration on disk; see [read-back semantics](/docs/api/domains#set-a-domain-http-body-limit).",
       "route": "GET /api/projects/:id/edge-config"
     },
     "projects.getServerLogStreamToken": {
@@ -3799,6 +3799,12 @@
       "section": "Hosted management",
       "description": "Open payment details and invoices for the Manage subscription.",
       "route": "POST /api/billing/manage/portal"
+    },
+    "domains.update": {
+      "page": "domains",
+      "section": "Operations",
+      "description": "Replace or clear a self-hosted nginx/OpenResty domain HTTP body cap. Omitted proxy leaves it unchanged; null inherits the project; 0 means unlimited. Read project Edge config to compare the saved cap with the observed server-block configuration.",
+      "route": "PATCH /api/domains/:id"
     }
   },
   "http": {

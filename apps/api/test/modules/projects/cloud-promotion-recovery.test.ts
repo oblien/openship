@@ -46,6 +46,7 @@ vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", async 
 
 import {
   promoteProjectToCloud,
+  transferProjectToCloud,
   TransferConflictError,
 } from "@repo/platform/engine/modules/projects/transfer.service";
 import { projectPromotionDigest } from "@repo/platform/engine/lib/cloud/project-promotion";
@@ -126,6 +127,49 @@ afterEach(() => {
 });
 
 describe("project promotion recovery", () => {
+  it.each(["transfer", "promote"])(
+    "blocks %s before saving a receipt or contacting Cloud until domain caps are cleared",
+    async (operation) => {
+      await repos.project.update(projectId, {
+        routingConfig: { proxy: { clientMaxBodySize: "2m" } },
+      });
+      const domain = await repos.domain.create({
+        projectId,
+        hostname: `${projectId.toLowerCase()}.example.com`,
+        proxy: { clientMaxBodySize: "1m" },
+      });
+      const transfer = () =>
+        operation === "promote"
+          ? promoteProjectToCloud(context, projectId)
+          : transferProjectToCloud({ projectId, organizationId: context.organizationId });
+      await expect(transfer()).rejects.toMatchObject({
+        code: "DOMAIN_PROXY_SETTINGS_UNSUPPORTED",
+      });
+      expect(remote.calls).toEqual([]);
+      expect(imported).toBeUndefined();
+      expect(remote.cleanup).not.toHaveBeenCalled();
+      expect(await repos.project.findById(projectId)).toMatchObject({
+        cloudPromotion: null,
+        deletionInProgress: false,
+      });
+      expect(await repos.deployment.findById(`dep_${projectId}`)).toBeDefined();
+      expect(await repos.domain.findById(domain.id)).toMatchObject({
+        proxy: { clientMaxBodySize: "1m" },
+      });
+      await repos.domain.update(domain.id, { proxy: null });
+      await expect(transfer()).resolves.toMatchObject({ projectId, imported: { project: 1 } });
+      expect(remote.calls).toHaveLength(1);
+      expect(imported?.tables.domain[0].proxy).toBeNull();
+      expect(imported?.tables.project[0].routingConfig).toEqual({
+        proxy: { clientMaxBodySize: "2m" },
+      });
+      if (operation === "promote") {
+        expect(await repos.project.findById(projectId)).toBeUndefined();
+        expect(remote.cleanup).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
   it("retries real local teardown after a failed cleanup, preserving the original import receipt", async () => {
     remote.cleanup.mockResolvedValueOnce({
       total: 1,

@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **519 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **520 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -216,6 +216,7 @@ The current API has **519 unique tools**. Permission tags below describe the rou
 | `get_domains_by_id_dns_challenge`<br />`GET /api/domains/:id/dns/challenge` | Read the current DNS-01 HTTPS setup, including the actual ACME TXT record, deadline, logs, and result. Safe to poll or reopen after reconnecting; contains no certificate keys. | `domain:read` |
 | `get_domains_by_id_dns_plan`<br />`GET /api/domains/:id/dns/plan` | Preview what auto-configuring this domain's DNS through a connected provider would change. | `domain:read` |
 | `get_domains_by_id_records`<br />`GET /api/domains/:id/records` | Get the DNS records for a domain. | `domain:read` |
+| `patch_domains_by_id`<br />`PATCH /api/domains/:id` | Replace or clear a domain HTTP body cap on a self-hosted nginx/OpenResty edge. Omitted proxy is unchanged; null inherits the project; 0 means unlimited. Read project Edge config to compare the saved cap with the observed server-block configuration. | `domain:write` |
 | `post_domains`<br />`POST /api/domains` | Add a domain (free subdomain or custom). | `domain:write` |
 | `post_domains_by_id_certificate`<br />`POST /api/domains/:id/certificate` | Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA). | `domain:write` |
 | `post_domains_by_id_dns_apply`<br />`POST /api/domains/:id/dns/apply` | Auto-configure this domain's DNS through a connected provider. | `domain:write` |
@@ -413,7 +414,7 @@ The current API has **519 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_connections_consumers`<br />`GET /api/projects/:id/connections/consumers` | List the projects that consume THIS app's connection (a shared database has many). | `project:read` |
 | `get_projects_by_id_deletion_preview`<br />`GET /api/projects/:id/deletion-preview` | Preview what deleting this project would remove (read-only). | `project:read` |
 | `get_projects_by_id_deployments`<br />`GET /api/projects/:id/deployments` | List a project's deployments (history, statuses). | `project:deployment:list` |
-| `get_projects_by_id_edge_config`<br />`GET /api/projects/:id/edge-config` | Compare saved project routes with the configuration currently served by the self-hosted edge. Use this to investigate routing drift before retrying. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_edge_config`<br />`GET /api/projects/:id/edge-config` | Compare saved project and domain settings with the self-hosted edge's generated server-block configuration on disk. Use this to investigate routing drift before retrying; configuration files do not prove what running workers serve. | `project:read`<br />Self-hosted |
 | `get_projects_by_id_env`<br />`GET /api/projects/:id/env` | List a project's environment variables (secret values masked). | `project:read` |
 | `get_projects_by_id_environments`<br />`GET /api/projects/:id/environments` | List a project's environments (production / previews). | `project:read` |
 | `get_projects_by_id_git`<br />`GET /api/projects/:id/git` | Get the project's linked git repository info. | `project:read` |

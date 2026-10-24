@@ -22,6 +22,8 @@ import type { RouteProtection } from "./route-protection";
 export type ProjectRouteCleanupResult = "removed" | "absent" | "foreign";
 
 export interface RoutingProvider {
+  /** Applies per-domain request-body limits through a validated config reload. */
+  readonly supportsDomainProxy?: boolean;
   /** Validated atomic update of an already-published hostname; false means no route yet. */
   setRouteProtection?(
     domain: string,

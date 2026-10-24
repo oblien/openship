@@ -10,14 +10,9 @@
  * Adding a directive is one row here plus an i18n label — do not hand-add a field to
  * any consumer, or the halves drift and a setting saves but never renders.
  *
- * Configured at exactly ONE level: `project.routingConfig.proxy`, applied to every
- * route the project owns (`route-apply.service.ts`, `build-pipeline.ts` and the
- * compose deploy service are the readers). Self-hosted only.
- *
- * A server-default layer under it and a per-service override above it were
- * intended and are not built — there is no storage for either, so don't infer
- * a cascade from this file. Adding one means new columns plus a field-by-field
- * merge at the read sites; the ordering to implement is server < project < service.
+ * Project settings apply to every project-owned route. A domain may override
+ * only clientMaxBodySize through domain-proxy-settings.ts: domain > project >
+ * installed Edge HTTP default. No service override is currently exposed.
  */
 
 /**
@@ -297,6 +292,14 @@ export function coerceProxyValue(
   }
   const re = proxyKindRegex(spec.kind);
   if (typeof value !== "string" || !re || !re.test(value)) return undefined;
+  // nginx parses sizes into an integer. Bound the expanded byte count as well
+  // as its syntax so huge numeric input cannot overflow during config loading.
+  if (spec.kind === "size" && value !== "0") {
+    const scale = ({ k: 1024, m: 1024 ** 2, g: 1024 ** 3 } as Record<string, number>)[
+      value.at(-1)!
+    ];
+    if (!scale || !Number.isSafeInteger(Number(value.slice(0, -1)) * scale)) return undefined;
+  }
   return value;
 }
 

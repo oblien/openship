@@ -1205,6 +1205,29 @@
       "description": "Uygulama çalışmaya devam eder — yalnızca bu rota ve edge kaydı kaldırılır. İstediğiniz zaman tekrar ekleyebilirsiniz.",
       "confirm": "Rotayı kaldır",
       "removing": "Kaldırılıyor…"
+    },
+    "bodyLimit": {
+      "title": "HTTP gövde sınırı",
+      "inherit": "Projeden devral",
+      "custom": "Özel",
+      "unlimited": "Sınırsız (0)",
+      "hint": "Yükleme ve yoklama dahil HTTP gövdelerini sınırlar. WebSocket çerçeveleri ve uygulama sınırları ayrıdır. k, m veya g kullanın; 0 sınırsızdır.",
+      "saved": "Kaydedilen değer",
+      "effective": "Etkin sınır",
+      "source": "Kaynak",
+      "domain": "Alan adı",
+      "project": "Proje",
+      "edge": "Edge varsayılanı",
+      "observed": "Gözlenen sınır",
+      "status": "Yapılandırma denetimi",
+      "matches": "Kayıtlı değerle eşleşiyor (uygulama doğrulanmadı)",
+      "pending": "Yapılandırma farklı — yönlendirmeyi yeniden deneyin",
+      "unknown": "Bilinmiyor",
+      "unsupported": "Kendi sunucunuzda nginx/OpenResty Edge gerektirir.",
+      "invalid": "2m, 1g veya sınırsız için 0 girin.",
+      "save": "Kaydet",
+      "saving": "Kaydediliyor…",
+      "refresh": "Durumu yenile"
     }
   },
   "serviceEnvironment": {
