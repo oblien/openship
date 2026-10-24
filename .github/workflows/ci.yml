@@ -131,6 +131,7 @@ jobs:
               test/e2e/migration-direct-transfer.e2e.test.ts
               test/e2e/migration-takeover.e2e.test.ts
               test/e2e/backup-volume-roundtrip.e2e.test.ts
+              test/e2e/volume-restore-integrity.e2e.test.ts
               test/e2e/backup-project-app.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
           # Inventory identity, atomic cutover and role handover use real Docker.
