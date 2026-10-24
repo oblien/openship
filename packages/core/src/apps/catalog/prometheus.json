@@ -1,0 +1,75 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "id": "prometheus",
+  "name": "Prometheus",
+  "description": "Metrics collection and alerting toolkit: scrape your services, query time series and power Grafana dashboards.",
+  "kind": "template",
+  "logo": "prometheus",
+  "category": "analytics",
+  "tags": [
+    "monitoring",
+    "metrics",
+    "observability"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "prometheus",
+      "image": "prom/prometheus:v3.15.1",
+      "ports": [
+        "8221:9090"
+      ],
+      "exposedPort": 9090,
+      "exposed": true,
+      "volumes": [
+        "prometheus_data:/prometheus",
+        "prometheus_config:/etc/prometheus"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "connection": {
+    "title": "Open Prometheus",
+    "description": "Prometheus has no login of its own. Anyone who can reach this URL can browse and query every metric it collects.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Prometheus",
+        "source": "publicUrl:prometheus",
+        "kind": "url",
+        "recommended": true
+      }
+    ],
+    "firstLogin": {
+      "note": "Turn on Password protection for this domain, or don't give it a public domain. It starts by scraping itself; add your own targets in /etc/prometheus/prometheus.yml (kept in the prometheus_config volume) from the service terminal, then restart the service. Metrics are kept in the prometheus_data volume."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Metrics collection",
+        "description": "Scrape metrics from your apps, servers and exporters."
+      },
+      {
+        "title": "PromQL queries",
+        "description": "Query and graph time series from the built-in UI."
+      },
+      {
+        "title": "Works with Grafana",
+        "description": "Add it as a data source in the Grafana app."
+      }
+    ]
+  }
+}
