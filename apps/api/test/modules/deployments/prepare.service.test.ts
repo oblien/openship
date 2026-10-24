@@ -125,6 +125,38 @@ describe("resolveProjectInfo", () => {
     expect(ambiguous.rolePresets).toBeUndefined();
   });
 
+  it.each([
+    ["good_job", "good-job"],
+    ["delayed_job", "delayed-job"],
+    ["resque", "resque"],
+  ])("suggests %s from the selected Rails app without enabling it", async (gem, name) => {
+    const path = await mkdtemp(join(tmpdir(), "openship-rails-queue-"));
+    tempDirs.push(path);
+    const root = join(path, "backend");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(join(root, "Gemfile"), `gem 'rails'\ngem '${gem}'\n`);
+    await writeFile(join(root, "bin/rails"), "#!/usr/bin/env ruby\n");
+    if (gem === "delayed_job") {
+      // A root-level binstub cannot satisfy a selected subdirectory's gate.
+      await mkdir(join(path, "bin"));
+      await writeFile(join(path, "bin/delayed_job"), "#!/usr/bin/env ruby\n");
+      expect(
+        (await resolveProjectInfo({ source: "local", path, rootDirectory: "backend" })).rolePresets,
+      ).toBeUndefined();
+      await writeFile(join(root, "bin/delayed_job"), "#!/usr/bin/env ruby\n");
+    }
+    const detected = await resolveProjectInfo({ source: "local", path, rootDirectory: "backend" });
+    expect(detected.rolePresets).toEqual([expect.objectContaining({ name, stopGracePeriod: "90s" })]);
+    expect(detected.roles).toBeUndefined();
+    expect(detected.rolePresets?.every((role) => !role.slot && !role.when && !role.unless)).toBe(
+      true,
+    );
+    await writeFile(join(root, "openship.json"), JSON.stringify({ roles: [] }));
+    expect(
+      (await resolveProjectInfo({ source: "local", path, rootDirectory: "backend" })).rolePresets,
+    ).toBeUndefined();
+  });
+
   it("reads the listed Dockerfile path on case-sensitive sources", async () => {
     const reads: string[] = [];
     const info = await resolveFromReader(

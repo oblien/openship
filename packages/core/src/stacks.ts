@@ -833,6 +833,38 @@ export const STACKS = {
         stopGracePeriod: "45s",
         when: { deps: ["sidekiq"] },
       },
+      // These backends drain the current job rather than sharing a fixed
+      // shutdown timeout. 90s is a platform budget, not a job-duration limit;
+      // longer jobs need an explicit role with a matching stopGracePeriod.
+      {
+        name: "good-job",
+        kind: "worker",
+        slot: "queue",
+        command: "exec bundle exec good_job start",
+        stopSignal: "SIGTERM",
+        stopGracePeriod: "90s",
+        when: { deps: ["good_job"] },
+      },
+      {
+        name: "delayed-job",
+        kind: "worker",
+        slot: "queue",
+        command: "exec bin/delayed_job run",
+        stopSignal: "SIGTERM",
+        stopGracePeriod: "90s",
+        when: { deps: ["delayed_job"], files: ["bin/delayed_job"] },
+      },
+      {
+        name: "resque",
+        kind: "worker",
+        slot: "queue",
+        // Resque requires QUEUE; respect an operator's selection, defaulting
+        // to all queues. QUIT drains the forked job; TERM kills it by default.
+        command: 'exec env QUEUE="${QUEUE:-*}" bundle exec rake resque:work',
+        stopSignal: "SIGQUIT",
+        stopGracePeriod: "90s",
+        when: { deps: ["resque"] },
+      },
     ],
   },
   sinatra: {

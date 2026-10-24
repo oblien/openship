@@ -422,6 +422,22 @@ keeps the roles it has saved, so change those through the project API/SDK (`role
 | `stopSignal`      | Optional. A signal name such as `SIGQUIT`, or a positive integer. When omitted, the image's `STOPSIGNAL` applies, or `SIGTERM` if the image sets none.                 |
 | `stopGracePeriod` | Optional. How long to wait after the stop signal before the process is killed: `90s`, `1m30s`, `10m`, or a bare number of seconds. When omitted, the Docker daemon's default stop timeout applies. |
 
+### Rails queue suggestions
+
+Rails scans recognize Solid Queue, Sidekiq, GoodJob, Delayed Job and Resque.
+Delayed Job also requires `bin/delayed_job` in the selected application folder.
+If multiple queue backends match, choose your worker explicitly in `roles`;
+Openship does not guess or start any worker automatically.
+
+GoodJob and Delayed Job receive `SIGTERM`. Resque receives `SIGQUIT` so its
+current forked job can finish; its preset preserves `QUEUE`, defaulting to `*`.
+All three new presets allow 90 seconds to stop. This is a container shutdown
+budget, **not a job timeout or a guarantee that every job will finish**.
+GoodJob can wait indefinitely by default, and Delayed Job's default job timeout
+is four hours. Configure an explicit role's `stopGracePeriod` to exceed your
+longest job and any application-specific shutdown timeout. Jobs must tolerate
+retries after a forced stop. The presets do not rewrite queue-library settings.
+
 ### Where roles run
 
 Source scans expose matching framework roles as `rolePresets`. These are suggestions,

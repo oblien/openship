@@ -145,15 +145,21 @@ describe("resolveStackRoles", () => {
 });
 
 describe("STACKS.rails.defaultRoles (issue #935)", () => {
-  it("registers the jobs and sidekiq worker presets, no scheduler", () => {
+  it("registers the five Rails queue backends, no scheduler", () => {
     const roles = STACKS.rails.defaultRoles;
-    expect(roles?.map((r) => r.name)).toEqual(["jobs", "sidekiq"]);
+    expect(roles?.map((r) => r.name)).toEqual([
+      "jobs",
+      "sidekiq",
+      "good-job",
+      "delayed-job",
+      "resque",
+    ]);
     expect(roles?.every((r) => r.kind === "worker")).toBe(true);
   });
 
   it("gives sidekiq more stop grace than Solid Queue, both parser-valid", () => {
     const roles: readonly StackRole[] = STACKS.rails.defaultRoles ?? [];
-    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["10s", "45s"]);
+    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["10s", "45s", "90s", "90s", "90s"]);
     // Presets bypass the parser, so run each value through it here.
     const { config, errors } = parseOpenshipConfig({
       roles: roles.map(({ name, kind, command, stopGracePeriod }) => ({
@@ -164,7 +170,13 @@ describe("STACKS.rails.defaultRoles (issue #935)", () => {
       })),
     });
     expect(errors).toEqual([]);
-    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual(["10s", "45s"]);
+    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual([
+      "10s",
+      "45s",
+      "90s",
+      "90s",
+      "90s",
+    ]);
   });
 
   it("resolves against Gemfile-shaped deps end to end", () => {
@@ -176,6 +188,66 @@ describe("STACKS.rails.defaultRoles (issue #935)", () => {
       }),
     ).toEqual([sidekiq]);
   });
+
+  it.each([
+    ["good_job", "good-job", []],
+    ["delayed_job", "delayed-job", ["bin/delayed_job"]],
+    ["resque", "resque", []],
+  ] as const)("selects %s only with its required evidence", (gem, name, files) => {
+    const selected = resolveStackRoles({
+      defaultRoles: STACKS.rails.defaultRoles,
+      deps: ["rails", gem],
+      files,
+    });
+    expect(selected.map((role) => role.name)).toEqual([name]);
+    const parsed = parseOpenshipConfig({
+      roles: selected.map(({ name, kind, command, stopSignal, stopGracePeriod }) => ({
+        name,
+        kind,
+        command,
+        stopSignal,
+        stopGracePeriod,
+      })),
+    });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.config?.roles?.[0]).toMatchObject({
+      name,
+      stopSignal: name === "resque" ? "SIGQUIT" : "SIGTERM",
+      stopGracePeriod: "90s",
+    });
+    expect(
+      resolveStackRoles({
+        defaultRoles: STACKS.rails.defaultRoles,
+        deps: [gem],
+        files,
+        configRoles: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it("requires the Delayed Job binstub instead of suggesting a missing command", () => {
+    expect(
+      resolveStackRoles({
+        defaultRoles: STACKS.rails.defaultRoles,
+        deps: ["rails", "delayed_job"],
+        files: [],
+      }),
+    ).toEqual([]);
+  });
+
+  const backends = ["solid_queue", "sidekiq", "good_job", "delayed_job", "resque"];
+  it.each(backends.flatMap((a, index) => backends.slice(index + 1).map((b) => [a, b])))(
+    "does not guess between %s and %s",
+    (a, b) => {
+      expect(
+        resolveStackRoles({
+          defaultRoles: STACKS.rails.defaultRoles,
+          deps: [a, b],
+          files: ["bin/jobs", "bin/delayed_job"],
+        }),
+      ).toEqual([]);
+    },
+  );
 });
 
 describe("STACKS.laravel.defaultRoles", () => {
