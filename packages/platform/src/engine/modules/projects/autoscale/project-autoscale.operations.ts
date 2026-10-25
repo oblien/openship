@@ -53,8 +53,10 @@ export function createAutoscaleOperations(
     });
 
   return {
-    async getAutoscalePolicy(_ctx, id): Promise<ProjectAutoscalePolicy> {
+    async getAutoscalePolicy(ctx, id): Promise<ProjectAutoscalePolicy> {
       assertClusterManagementAvailable();
+      const project = await repos.project.findById(id);
+      assertResourceInOrg(project, "Project", ctx.organizationId, id);
       const row = await repos.autoscale.get(id);
       if (!row)
         // The dashboard renders defaults + the eligibility gates from this.
@@ -114,8 +116,10 @@ export function createAutoscaleOperations(
         return present(row);
       });
     },
-    async listAutoscaleEvents(_ctx, id) {
+    async listAutoscaleEvents(ctx, id) {
       assertClusterManagementAvailable();
+      const project = await repos.project.findById(id);
+      assertResourceInOrg(project, "Project", ctx.organizationId, id);
       return {
         events: (await repos.autoscale.listEvents(id)).map((event) => ({
           id: event.id,

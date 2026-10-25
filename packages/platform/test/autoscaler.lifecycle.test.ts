@@ -587,6 +587,20 @@ describe("autoscaler lifecycle with real repositories and project locks", () => 
     });
   });
 
+  it("hides another tenant's policy and decision trail", async () => {
+    const other = { organizationId: "other" } as ExecutionContext;
+    await expect(operations.getAutoscalePolicy(other, "project")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(operations.listAutoscaleEvents(other, "project")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(operations.getAutoscalePolicy(ctx, "project")).resolves.toMatchObject({
+      projectId: "project",
+    });
+    await expect(operations.listAutoscaleEvents(ctx, "project")).resolves.toHaveProperty("events");
+  });
+
   it("uses the longer cooldown for a DOWN decision after an UP step", async () => {
     await h.repos.autoscale.insertEvent("project", {
       createdAt: new Date(Date.now() - 180_000).toISOString(),
