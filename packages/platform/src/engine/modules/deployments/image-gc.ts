@@ -21,8 +21,12 @@ import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
 import { DockerRuntime, ownsBuiltImage, kubernetesBuildImageTag } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
-import { resolveDeploymentRuntime, createServerDockerRuntime, type DeploymentMeta } from "../../lib/deployment-runtime";
+import { deploymentBelongsToProject, safeErrorMessage } from "@repo/core";
+import {
+  resolveDeploymentRuntime,
+  createServerDockerRuntime,
+  type DeploymentMeta,
+} from "../../lib/deployment-runtime";
 import { refreshRollbackCapacity } from "./release-retention";
 import { computeKeepSet } from "./retained-artifacts";
 import { withRetentionLock } from "./retention-lock";
@@ -67,10 +71,13 @@ export function selectImageRemovalRefs(
   if (keep.has(img.id)) return [];
   // A cluster build's local publish alias is temporary. Only its exact
   // generated tag is owned; all other tags in the same repository are not.
-  const publishTag = clusterImageRepository && img.buildId
-    ? kubernetesBuildImageTag(clusterImageRepository, img.buildId)
-    : undefined;
-  const ownTags = img.repoTags.filter((t) => (ownsBuiltImage(t) || t === publishTag) && !keep.has(t));
+  const publishTag =
+    clusterImageRepository && img.buildId
+      ? kubernetesBuildImageTag(clusterImageRepository, img.buildId)
+      : undefined;
+  const ownTags = img.repoTags.filter(
+    (t) => (ownsBuiltImage(t) || t === publishTag) && !keep.has(t),
+  );
   if (ownTags.length > 0) return ownTags;
   if (img.repoTags.length === 0) return [img.id];
   return []; // only foreign tags → never touch
@@ -88,31 +95,56 @@ export function selectImageRemovalRefs(
  * every rollback-eligible image, and volumes/backups aren't images.
  */
 export async function reapProjectImages(project: Project): Promise<ReapResult> {
-  return await withRetentionLock(project.id, reapProjectImagesUnlocked)
-    ?? { removed: 0, bytes: 0, skippedInUse: 0, errors: 0 };
+  return (
+    (await withRetentionLock(project.id, reapProjectImagesUnlocked)) ?? {
+      removed: 0,
+      bytes: 0,
+      skippedInUse: 0,
+      errors: 0,
+    }
+  );
 }
 
 async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> {
   const out: ReapResult = { removed: 0, bytes: 0, skippedInUse: 0, errors: 0 };
-  if (!project.activeDeploymentId) return out; // no host to resolve
-  const activeDep = await findActiveDeployment(project);
-  if (!activeDep) return out;
+  // Interrupted first builds can export images before recording a completed
+  // artifact. Their project has no active release, but still needs collection
+  // on the attempted deployment's verified host. Keep the normal retention
+  // inventory and never use a foreign/missing active release as a fallback.
+  const deployment = project.activeDeploymentId
+    ? await findActiveDeployment(project)
+    : await repos.deployment.findLatestByProject(project.id);
+  if (!deployment || !deploymentBelongsToProject(project, deployment)) return out;
 
-  const meta = (activeDep.meta ?? {}) as DeploymentMeta;
+  const meta = (deployment.meta ?? {}) as DeploymentMeta;
   const resolved = meta.clusterId
     ? await (async () => {
-        const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
-        const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId!, meta.clusterRuntimeId);
-        return { runtime: await createServerDockerRuntime(runtime.plan.hosts.find(host => host.role === "server")!.serverId, project.organizationId) };
+        const { requireClusterDeploymentTarget } =
+          await import("../../lib/cluster-deployment-target");
+        const { runtime } = await requireClusterDeploymentTarget(
+          project.organizationId,
+          meta.clusterId!,
+          meta.clusterRuntimeId,
+        );
+        return {
+          runtime: await createServerDockerRuntime(
+            runtime.plan.hosts.find((host) => host.role === "server")!.serverId,
+            project.organizationId,
+          ),
+        };
       })()
-    : await resolveDeploymentRuntime(activeDep);
+    : await resolveDeploymentRuntime(deployment);
   const { runtime } = resolved;
   try {
     if (!(runtime instanceof DockerRuntime)) return out;
     const keep = await computeKeepSet(project);
     const images = await runtime.listProjectImages(project.id);
     for (const img of images) {
-      const refs = selectImageRemovalRefs(img, keep, meta.clusterId ? meta.clusterConfig?.imageRepository : undefined);
+      const refs = selectImageRemovalRefs(
+        img,
+        keep,
+        meta.clusterId ? meta.clusterConfig?.imageRepository : undefined,
+      );
       if (refs.length === 0) continue; // kept, or operator-repurposed → leave it
       try {
         for (const ref of refs) await runtime.removeImage(ref);
@@ -123,7 +155,11 @@ async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> 
           out.skippedInUse += 1;
         } else {
           out.errors += 1;
-          errorDiagnostics.error("platform/engine/modules/deployments/image-gc", `[image-gc] project ${project.id}: image removal failed: ${safeErrorMessage(err)}`, err);
+          errorDiagnostics.error(
+            "platform/engine/modules/deployments/image-gc",
+            `[image-gc] project ${project.id}: image removal failed: ${safeErrorMessage(err)}`,
+            err,
+          );
         }
       }
     }
@@ -132,10 +168,13 @@ async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> 
     // on the containerd image store even a label-filtered prune deletes active
     // build/pull leases across projects before applying image filters (#1369).
 
-    if (!meta.clusterId) await refreshRollbackCapacity({
-      projectId: project.id,
-      imageSizes: images.filter((img) => img.repoTags.some(ownsBuiltImage)).map((img) => img.size),
-    });
+    if (!meta.clusterId)
+      await refreshRollbackCapacity({
+        projectId: project.id,
+        imageSizes: images
+          .filter((img) => img.repoTags.some(ownsBuiltImage))
+          .map((img) => img.size),
+      });
   } finally {
     await runtime.dispose?.();
   }
@@ -200,7 +239,12 @@ export async function runImageGcSweep(): Promise<ImageGcSummary> {
       summary.errors += r.errors;
     } catch (err) {
       summary.errors += 1;
-      errorDiagnostics.error("platform/engine/modules/deployments/image-gc", `[image-gc] project ${project.id} sweep failed:`, safeErrorMessage(err), err);
+      errorDiagnostics.error(
+        "platform/engine/modules/deployments/image-gc",
+        `[image-gc] project ${project.id} sweep failed:`,
+        safeErrorMessage(err),
+        err,
+      );
     }
   }
   return summary;

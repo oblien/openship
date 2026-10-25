@@ -15,7 +15,12 @@ const h = vi.hoisted(() => ({
   runtime: undefined as unknown,
 }));
 vi.mock("@repo/platform/engine/lib/active-deployment", () => ({
-  findActiveDeployment: async () => ({ id: "image-gc-active", meta: {} }),
+  findActiveDeployment: async () => ({
+    id: "image-gc-active",
+    projectId: (h.project as Project).id,
+    organizationId: (h.project as Project).organizationId,
+    meta: {},
+  }),
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: async () => ({ runtime: h.runtime }),

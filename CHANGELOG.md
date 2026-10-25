@@ -4,6 +4,18 @@ All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+- **Recover storage from slow build-cache scans** — when free disk space or inodes
+  already block deployment, allow up to two minutes to measure unused, owned build
+  caches before reclaiming them. Healthy hosts retain the short best-effort scan;
+  active builders and application volumes remain protected.
+- **Reclaim images from interrupted first deployments** — include projects that
+  have never reached a running release in managed image collection. Resolve the
+  last attempt through the existing tenant checks and retain the same rollback,
+  retry, pin and in-use protections, so failed builds cannot fill the server with
+  orphaned images.
+
 ## 0.9.5
 
 This hotfix restores self-hosted Compose startup after the 0.9.4 update.
