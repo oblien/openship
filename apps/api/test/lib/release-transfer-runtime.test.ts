@@ -23,6 +23,12 @@ beforeEach(async () => {
   await copyReleaseTransferScripts(directory);
   // Model the real flat source layout while reusing the installed workspace
   // dependencies. The copied entry scripts and their relative imports are real.
+  // Bun can hoist workspace dependencies to the root instead of api/node_modules.
+  await symlink(
+    resolve(import.meta.dirname, "../../../../node_modules"),
+    join(directory, "node_modules"),
+    "dir",
+  );
   await symlink(resolve(import.meta.dirname, "../../src"), join(directory, "api/src"), "dir");
   await symlink(
     resolve(import.meta.dirname, "../../../../packages/db/src"),
@@ -36,7 +42,7 @@ afterEach(async () => {
 
 async function run(relative: string, args: string[] = []) {
   try {
-    const result = await exec("bun", [join(directory, relative), ...args], {
+    const result = await exec("bun", ["--no-install", join(directory, relative), ...args], {
       cwd: directory,
       env,
       timeout: 30_000,
