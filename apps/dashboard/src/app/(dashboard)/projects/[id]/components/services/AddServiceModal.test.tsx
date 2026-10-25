@@ -166,10 +166,7 @@ it.each(["cloud", "local", "linked"])(
         image: "cockroachdb/cockroach:latest",
         command: "",
         commandArgv: ["start-single-node", "--certs-dir=/cockroach/certs"],
-        volumes: [
-          "cockroach_data:/cockroach/cockroach-data",
-          "cockroach_certs:/cockroach/certs",
-        ],
+        volumes: ["cockroach_data:/cockroach/cockroach-data", "cockroach_certs:/cockroach/certs"],
         environment: {
           COCKROACH_DATABASE: "app",
           COCKROACH_USER: "app",

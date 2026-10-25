@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { DockerRuntime, type MultiServiceDeployConfig, type MultiServiceGroupHandle } from "@repo/adapters";
+import {
+  DockerRuntime,
+  type MultiServiceDeployConfig,
+  type MultiServiceGroupHandle,
+} from "@repo/adapters";
 import { LOCAL_SERVICE_CATALOG } from "../../../dashboard/src/app/(dashboard)/projects/[id]/components/services/local-service-catalog";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 
@@ -44,7 +48,9 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
 
   /** A separate container proves service DNS, TLS and password authentication. */
   async function sql(query: string, password = environment.COCKROACH_PASSWORD) {
-    const url = new URL(`postgresql://database:${entry.ports![0]}/${environment.COCKROACH_DATABASE}`);
+    const url = new URL(
+      `postgresql://database:${entry.ports![0]}/${environment.COCKROACH_DATABASE}`,
+    );
     url.username = environment.COCKROACH_USER;
     url.password = password;
     // The upstream image generates a private CA. Encrypt the connection without
@@ -67,13 +73,18 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
   }
 
   async function ready(id: string) {
-    await vi.waitFor(async () => {
-      const state = (await runtime.docker.getContainer(id).inspect()).State;
-      expect(state.Running).toBe(true);
-      const result = await sql("SELECT current_user, current_database()");
-      expect(result.code, result.output).toBe(0);
-      expect(result.output).toContain(`${environment.COCKROACH_USER},${environment.COCKROACH_DATABASE}`);
-    }, { timeout: 90_000, interval: 1000 });
+    await vi.waitFor(
+      async () => {
+        const state = (await runtime.docker.getContainer(id).inspect()).State;
+        expect(state.Running).toBe(true);
+        const result = await sql("SELECT current_user, current_database()");
+        expect(result.code, result.output).toBe(0);
+        expect(result.output).toContain(
+          `${environment.COCKROACH_USER},${environment.COCKROACH_DATABASE}`,
+        );
+      },
+      { timeout: 90_000, interval: 1000 },
+    );
   }
 
   beforeAll(async () => {
@@ -109,13 +120,17 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
       commandArgv: undefined,
     });
     const brokenId = await remember(broken.containerId!);
-    await vi.waitFor(async () => {
-      const state = (await runtime.docker.getContainer(brokenId).inspect()).State;
-      expect(state.Running).toBe(false);
-      expect(state.ExitCode).not.toBe(0);
-    }, { timeout: 15_000 });
-    expect((await runtime.docker.getContainer(brokenId).logs({ stdout: true, stderr: true })).toString())
-      .toContain("mode unset");
+    await vi.waitFor(
+      async () => {
+        const state = (await runtime.docker.getContainer(brokenId).inspect()).State;
+        expect(state.Running).toBe(false);
+        expect(state.ExitCode).not.toBe(0);
+      },
+      { timeout: 15_000 },
+    );
+    expect(
+      (await runtime.docker.getContainer(brokenId).logs({ stdout: true, stderr: true })).toString(),
+    ).toContain("mode unset");
     await runtime.destroy(brokenId);
 
     const first = await runtime.deployServiceWorkload(group, config("first"));
@@ -124,9 +139,13 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
     const denied = await sql("SELECT 1", "incorrect-password");
     expect(denied.code).not.toBe(0);
     expect(denied.output).toContain("password authentication failed");
-    const write = await sql(`CREATE TABLE persistence_check (value STRING PRIMARY KEY); INSERT INTO persistence_check VALUES ('${marker}')`);
+    const write = await sql(
+      `CREATE TABLE persistence_check (value STRING PRIMARY KEY); INSERT INTO persistence_check VALUES ('${marker}')`,
+    );
     expect(write.code, write.output).toBe(0);
-    const cert = await (await runtime.inContainerExecutor(firstId)).exec("sha256sum /cockroach/certs/ca.crt");
+    const cert = await (
+      await runtime.inContainerExecutor(firstId)
+    ).exec("sha256sum /cockroach/certs/ca.crt");
     const firstVolumes = await runtime.inspectNamedVolumes(firstId);
     let previousId = firstId;
     for (const next of [
@@ -144,8 +163,11 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
       const replacementId = await remember(replacement.containerId!);
       await ready(replacementId);
       expect(await runtime.inspectNamedVolumes(replacementId)).toEqual(firstVolumes);
-      expect(await (await runtime.inContainerExecutor(replacementId)).exec("sha256sum /cockroach/certs/ca.crt"))
-        .toBe(cert);
+      expect(
+        await (
+          await runtime.inContainerExecutor(replacementId)
+        ).exec("sha256sum /cockroach/certs/ca.crt"),
+      ).toBe(cert);
       const read = await sql("SELECT value FROM persistence_check");
       expect(read.code, read.output).toBe(0);
       expect(read.output).toContain(marker);
