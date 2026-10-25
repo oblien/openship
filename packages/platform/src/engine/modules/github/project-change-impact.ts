@@ -1,4 +1,4 @@
-/** Read-only impact analysis for a project rooted inside a JS workspace.
+/** Read-only path policies and workspace dependency analysis.
  * Unknown metadata always deploys. No repository scripts or Turbo binaries run
  * in the control plane. All reads use the existing authorized GitHub boundary. */
 import { diagnostics } from "@repo/core/diagnostics";
@@ -104,7 +104,6 @@ export async function resolveProjectChangeImpact(
   commitSha?: string | null,
 ): Promise<ProjectChangeImpact> {
   const root = normalizeProjectRootDirectory(project.rootDirectory ?? undefined);
-  if (!root) return { affected: true, reason: "repository-root" };
   if (!files.length || files.some((file) => !file || normalizeRepoPath(file) !== file))
     return { affected: true, reason: "unknown-changes" };
   const global = classifyChangedFiles(files, {
@@ -144,7 +143,7 @@ export async function resolveProjectChangeImpact(
     });
   try {
     // The selected app's policy takes precedence over a repository-wide policy.
-    const appConfig = await read(`${root}/openship.json`);
+    const appConfig = root ? await read(`${root}/openship.json`) : null;
     const configText = appConfig ?? (await read("openship.json"));
     let policy;
     if (configText !== null) {
