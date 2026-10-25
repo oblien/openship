@@ -189,8 +189,18 @@
       "startShellHint": "Starten Sie den Dienst, um eine Shell zu öffnen.",
       "saveEnvironment": "Umgebung speichern",
       "environmentState": {
+        "shared": {
+          "title": "Gemeinsame Konfiguration aktualisieren?",
+          "description": "Werte für verknüpfte Dienste auswählen. Nicht ausgewählte Werte ändern sich nur für {name}.",
+          "source": "Gemeinsame Quelle: {key}",
+          "repositoryHint": "Gemeinsame Werte gelten für dieses Projekt und seine Apps. Dateien im Repository bleiben unverändert.",
+          "onlyService": "Nur dieser Dienst",
+          "updateSelected": "Auswahl aktualisieren",
+          "saved": "Auch für diese Dienste gespeichert. Umgebung anwenden oder erneut bereitstellen, um die neuen Werte zu verwenden.",
+          "reviewFailed": "Gemeinsame Konfiguration konnte nicht geprüft werden. Ihre Änderungen wurden nicht gespeichert."
+        },
         "helpTitle": "So funktionieren Umgebungsvariablen",
-        "description": "In Openship gespeichert. Dienstspezifische Werte haben Vorrang vor Compose und gemeinsamen Projektwerten. Das Bearbeiten eines geerbten Werts erstellt eine Überschreibung für diesen Dienst.",
+        "description": "In Openship gespeichert. Beim Speichern werden gemeinsame Änderungen geprüft, wenn eine Projektquelle vorhanden ist. Dienstüberschreibungen haben Vorrang vor Compose- und Projektwerten.",
         "sources": {
           "service": "Dienstspezifische Überschreibung",
           "compose": "Compose",

@@ -1,3 +1,5 @@
+import { referralRoutes } from "./modules/affiliates/referral.routes";
+import { affiliateRoutes } from "./modules/affiliates/affiliate.routes";
 import { actionRoutes } from "./modules/actions/action.routes";
 import { actionRuntimeRoutes, actionTwirpRoutes } from "./modules/actions/action-runtime.routes";
 import { actionOidcRoutes } from "./modules/actions/action-oidc.routes";
@@ -218,6 +220,8 @@ app.route("/api/settings", settingsRoutes);
 app.route("/api/tokens", tokenRoutes);
 app.route("/api/mcp", mcpRoutes);
 app.route("/api/billing", billingPlansRoutes);
+app.route("/api/affiliates", affiliateRoutes);
+app.route("/api/referrals", referralRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);

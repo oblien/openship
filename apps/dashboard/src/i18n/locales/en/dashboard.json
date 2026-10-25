@@ -55,6 +55,7 @@
     }
   },
   "nav": {
+    "affiliates": "Affiliates",
     "resources": "Cloud spaces",
     "support": "Support",
     "scale": "Scale",

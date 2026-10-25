@@ -795,8 +795,14 @@
     "services.mergeEnvVars": {
       "page": "services",
       "section": "Operations",
-      "description": "Save named service overrides without replacing unrelated values.",
+      "description": "Save named environment edits, optionally updating reviewed shared project values.",
       "route": "PATCH /api/projects/:id/services/:serviceId/env"
+    },
+    "services.reviewEnvVars": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Review affected services before updating a shared environment value.",
+      "route": "POST /api/projects/:id/services/:serviceId/env/review"
     },
     "services.listEnvVars": {
       "page": "services",
@@ -3829,6 +3835,72 @@
       "section": "Hosted management",
       "description": "Open payment details and invoices for the Manage subscription.",
       "route": "POST /api/billing/manage/portal"
+    },
+    "affiliates.overview": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Read your program, payout minimum, net earnings and reserved or paid totals.",
+      "route": "GET /api/affiliates"
+    },
+    "affiliates.enroll": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Join the configured program without changing operator overrides.",
+      "route": "POST /api/affiliates/enroll"
+    },
+    "affiliates.offers": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "List your links and immutable discount/commission terms.",
+      "route": "GET /api/affiliates/offers"
+    },
+    "affiliates.createOffer": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Create an idempotent link or code within the operator-authorized commission budget.",
+      "route": "POST /api/affiliates/offers"
+    },
+    "affiliates.revokeOffer": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Revoke your link for new referrals; accepted contracts retain their terms.",
+      "route": "POST /api/affiliates/offers/revoke"
+    },
+    "affiliates.referrals": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "List anonymized customers, renewals, paid-through dates and reward expiry.",
+      "route": "GET /api/affiliates/referrals"
+    },
+    "affiliates.payments": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Read invoice and commission history for one of your referrals.",
+      "route": "GET /api/affiliates/referrals/payments"
+    },
+    "affiliates.payouts": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "List your cash payout requests and their review status.",
+      "route": "GET /api/affiliates/payouts"
+    },
+    "affiliates.setPayoutDestination": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Save a private manual payout account; requests retain their own immutable destination snapshot.",
+      "route": "POST /api/affiliates/payout-destination"
+    },
+    "affiliates.requestPayout": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Reserve earned funds for a manually reviewed payout; amount is integer USD cents.",
+      "route": "POST /api/affiliates/payouts"
+    },
+    "affiliates.cancelPayout": {
+      "page": "affiliates",
+      "section": "Operations",
+      "description": "Cancel a pending request and release its reservation exactly once.",
+      "route": "POST /api/affiliates/payouts/cancel"
     }
   },
   "http": {
@@ -4667,6 +4739,10 @@
       "page": "actions",
       "section": "Job runtime protocols",
       "description": "Request a five-minute identity for an approved running job with id-token: write. Requires a job-bound OIDC capability and rechecks authority, destination and cancellation."
+    },
+    "GET /api/referrals/:code": {
+      "page": "affiliates",
+      "description": "Public commercial terms for one code; no account, customer or earnings information."
     }
   }
 }

@@ -15,6 +15,26 @@ Runtime security notices use the signed feed published from `security-advisories
   last attempt through the existing tenant checks and retain the same rollback,
   retry, pin and in-use protections, so failed builds cannot fill the server with
   orphaned images.
+- **Cloud affiliate program** — create and revoke referral links with optional
+  customer discounts, follow verified payments, renewals and expiry, and request
+  reviewed cash payouts. Staff can review pending requests in a private operator
+  queue and reconcile transfers, including after an account is deleted.
+  Oblien owns the ledger and atomically reserves payout
+  funds. The default minimum is $50, with trusted per-user overrides. Eligible
+  monthly and annual Cloud compute starts at $10 per month equivalent; Manage,
+  PAYG and top-ups are excluded. Program guidance lives beside the referral lists,
+  with illustrated empty states, a two-step discount and plan picker, monthly/yearly
+  eligibility enforced at checkout, encrypted manual payout accounts with immutable
+  request destinations, payment-method guidance and a screenshot
+  walkthrough in the docs. The program remains off until the provider and
+  its explicit policy grant are configured.
+- **Review shared environment edits** — preview which services inherit an edited
+  project variable, then save shared values and service overrides together. Stale
+  reviews are rejected inside the write transaction; project write access is
+  required, and saving alone does not restart applications.
+- **Clarify referral checkout and earnings** — retain unavailable referral codes
+  through sign-in until the customer removes them, and show commission per
+  confirmed payment with renewals limited to the program's reward period.
 
 ## 0.9.5
 

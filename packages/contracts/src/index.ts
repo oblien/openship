@@ -87,6 +87,7 @@ export * from "./github";
 export * from "./notices";
 
 export * from "./billing";
+export * from "./affiliates";
 export * from "./cloud-workspaces";
 export * from "./server-managed";
 

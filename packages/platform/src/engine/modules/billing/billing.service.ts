@@ -1,4 +1,6 @@
 /** Customer billing delegates to Oblien Mode B; no Stripe SDK or credit writes. */
+import { repos } from "@repo/db";
+import { affiliateCheckoutBinding } from "../affiliates/affiliate-checkout";
 import { createHash } from "node:crypto";
 import type { CustomSubscriptionSelection } from "@repo/contracts";
 import { AppError, PRICING, type PlanTierId } from "@repo/core";
@@ -54,6 +56,7 @@ export async function createCheckoutSession(
   requestKey?: string,
   workspaceId?: CloudWorkspaceScope,
   custom?: CustomSubscriptionSelection,
+  affiliateCode?: string,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
   const { offer, customLimits } = await resolveSubscriptionSelection(planTierId, interval, custom);
@@ -83,7 +86,11 @@ export async function createCheckoutSession(
       }
     }
     await getOblienBillingApi().assertResellerSupport();
+    const referral = affiliateCheckoutBinding({ enabled: env.AFFILIATES_ENABLED, namespace: env.OBLIEN_AFFILIATE_NAMESPACE,
+      userId: ctx.userId, memberIds: env.AFFILIATES_ENABLED ? (await repos.member.listByOrganization(ctx.organizationId)).map(member => member.userId) : [],
+      offer, interval, affiliateCode });
     const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
+      ...referral,
       namespace,
       kind: "subscription",
       offer,

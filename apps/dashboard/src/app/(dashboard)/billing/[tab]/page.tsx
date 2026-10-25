@@ -53,13 +53,14 @@ export default async function BillingTabPage({
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
     return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
-      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt } : undefined} embedded /></BillingPageView>;
+      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt, referralCode: typeof query.ref === "string" ? query.ref : undefined } : undefined} embedded /></BillingPageView>;
   }
   // Buying another server is separate from inspecting an existing subscription.
   // The shared purchase component creates an explicitly scoped identity on selection.
   if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
     <BillingWorkspaceProvider>
       <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase
+        initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
         requestedPlanId={requestedPlanId}
         requestedInterval={requestedInterval}
         autoCheckout={autoCheckout}
@@ -101,6 +102,7 @@ export default async function BillingTabPage({
       case "plans":
         return (
           <BillingPlansRoute
+            initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
             billingState={plansOnly ? undefined : state}
             currentPlan={state.tier as PlanTierId}
             currentOffer={state.plan}

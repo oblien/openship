@@ -503,6 +503,37 @@ check retryable before starting the move.
   Manage is open and disable switching while checkout is in progress. Deployment and
   server-acquisition dialogs retain their compute-only choices. The direct Manage URL
   remains available for payment returns and reuses the same view.
+- Affiliates uses full-width tabs for links, customers and payout history. Keep the
+  four earnings cards above the tabs. Place program terms and first-use guidance in
+  the standard 340px right column below the tabs, stacking beneath the list on narrow
+  containers. Reuse the loaded overview for these terms, keeping each program's
+  commission budget and reward duration paired. Enrollment and empty lists use neutral
+  layered-card SVG illustrations from the Actions/Backups family, with an actionable
+  heading and no invented earnings or success indication.
+  Keep the minimum beside available earnings. Show Request payout only for an enabled participant
+  with enough available funds, opening the shared modal on demand. Public referral pages
+  reuse the Cloud catalog, pricing cards and interval control; a chosen plan continues
+  through sign-in to the existing checkout with its referral intact.
+  Link creation starts with a compact discount step, then expands to plan and billing
+  interval selection with per-payment earnings. Use one card per plan with monthly and
+  yearly choices inside; the whole choice is a keyboard-accessible checkbox. Keep link
+  name, commission terms and optional expiration in a compact side card on wide screens.
+  Distinguish all eligible plans (including
+  future plans) from explicit checked combinations. Annual earnings use the full annual
+  payment. Separate the customer's billing cadence and charge from the affiliate's
+  commission per confirmed payment. Explain that earnings start with the first payment,
+  without waiting for the billing period to end. Renewal copy follows the program's
+  reward window: a 12-month window covers the first annual payment, not next year's
+  renewal. Cash payout approval remains a separate flow. The public referral page must
+  choose a supported interval automatically.
+  Use shared filled controls and checkboxes; keep the actions fixed while the body
+  scrolls. Expiration is optional and separate from the reward period. The Payouts
+  sidebar shows locally bundled, original payment-provider artwork and supported manual
+  methods. Reuse those marks in visible radio cards for choosing a payout method and in
+  saved-account summaries. Account editing opens a separate modal with method cards
+  beside the recipient fields, stacking on narrow screens. Keep masked summaries in
+  account and history views.
+
 - Cloud plan purchases place the compact Monthly / Yearly control before Plans / Custom
   in the same purchase header. Use the existing secondary fill for the selected interval;
   do not add a decorative ring or another label row.
@@ -946,6 +977,14 @@ Service detail headers keep Open, Redeploy and image-update actions in the share
 menu. Reuse the existing runtime-update actions and operation guards; Settings remains the
 place for the full lifecycle controls. Volume cards must allow their action menu to extend
 outside the card instead of clipping it with `overflow-hidden`.
+
+Service environment saves review inherited project values and direct Compose references
+before offering a shared update. List the affected services by name, allow per-variable
+selection and keep **Only this service** explicit. Derive the review from the existing
+environment resolver; equal names or literals do not establish a shared source. Keep
+secret values out of the review. Save shared and local edits together, reject stale
+reviews, and link to each affected service's existing environment apply/redeploy flow.
+Explain that these settings live in Openship and do not edit repository files.
 
 ### Adding project services
 

@@ -207,6 +207,37 @@ describe("Manage purchase tab", () => {
   });
 });
 
+describe("referral checkout handoff", () => {
+  const code = "AF-0123456789";
+  const referral = { code, name: "Community", productId: "workspace_vm", planId: null,
+    discountBps: 500, durationMonths: 12, expiresAt: null, minimumMonthlyCents: 1000 };
+  const purchase = () => <ManagedServerPurchase requestedPlanId="starter" initialReferralCode={code} autoCheckout />;
+
+  it("waits for verified terms then uses the ordinary checkout with the referral", async () => {
+    let resolve!: (value: unknown) => void;
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === `referrals/${code}` ? new Promise(r => { resolve = r; }) : ordinary(path, options));
+    await render(purchase());
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+    await act(async () => resolve({ data: referral }));
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
+      workspaceId: server.id, planTierId: "starter", affiliateCode: code,
+    }));
+  });
+
+  it("does not silently charge full price when the referral is unavailable", async () => {
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === `referrals/${code}` ? Promise.reject(new Error("Referral expired")) : ordinary(path, options));
+    await render(purchase());
+    expect(host.textContent).toContain("Referral expired");
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+    await click(baseDictionary.affiliates.remove);
+    expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.not.objectContaining({ affiliateCode: expect.anything() }));
+  });
+});
+
 describe("annual Cloud purchases", () => {
   beforeEach(() => {
     h.get.mockImplementation(async (path, options) => {
@@ -586,7 +617,7 @@ describe("buying another managed server", () => {
   it("creates a server with its default name only after a plan is chosen", async () => {
     await render(<ManagedServerPurchase preserveProject />);
     expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
-    expect(host.querySelector("input")).toBeNull();
+    expect(host.querySelector('input:not([aria-label="Referral code"])')).toBeNull();
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
     await click("Choose Starter");

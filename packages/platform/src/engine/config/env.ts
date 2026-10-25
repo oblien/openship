@@ -183,6 +183,8 @@ const envSchema = z.object({
    * "coming soon" surface and live usage/capacity.
    */
   BILLING_ENABLED: envBool("false"),
+  AFFILIATES_ENABLED: envBool("false"),
+  OBLIEN_AFFILIATE_NAMESPACE: z.string().max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).default("openship"),
   /**
    * Sub-switch for one-time credit top-ups WITHIN billing. Top-ups are
    * available only when BILLING_ENABLED is also on. OFF by default → the state

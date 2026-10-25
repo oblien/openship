@@ -193,8 +193,18 @@
       "startShellHint": "Bir kabuk (shell) açmak için servisi başlatın.",
       "saveEnvironment": "Ortamı kaydet",
       "environmentState": {
+        "shared": {
+          "title": "Paylaşılan yapılandırma güncellensin mi?",
+          "description": "Bağlı hizmetlerde güncellenecek değerleri seçin. Seçilmeyenler yalnızca {name} için değişir.",
+          "source": "Paylaşılan kaynak: {key}",
+          "repositoryHint": "Paylaşılan değerler, uygulamaları dahil bu proje genelinde geçerlidir. Depo dosyaları değiştirilmez.",
+          "onlyService": "Yalnızca bu hizmet",
+          "updateSelected": "Seçilenleri güncelle",
+          "saved": "Bu hizmetler için de kaydedildi. Yeni değerleri kullanmak için ortamlarını uygulayın veya yeniden dağıtın.",
+          "reviewFailed": "Paylaşılan yapılandırma incelenemedi. Değişiklikleriniz kaydedilmedi."
+        },
         "helpTitle": "Ortam değişkenleri nasıl çalışır",
-        "description": "Openship üzerinde kaydedildi. Hizmetin özel değerleri, Compose ve paylaşılan proje değerlerinden önceliklidir. Devralınan bir değeri düzenlemek bu hizmet için özel bir değer oluşturur.",
+        "description": "Openship’e kaydedilir. Proje kaynağı varsa kaydederken paylaşılan değişiklikler incelenir. Hizmetin geçersiz kılmaları Compose ve proje değerlerinden önceliklidir.",
         "sources": {
           "service": "Hizmete özel değer",
           "compose": "Compose",
