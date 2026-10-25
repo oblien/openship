@@ -261,14 +261,26 @@ r.post("/connect-address", { tag: "settings:admin" }, admin, limited, async (c) 
   );
   return c.json({ success: true });
 });
-r.post("/disconnect", { tag: "settings:admin" }, admin, async (c) => {
-  await disconnectInstance();
-  c.header(
-    "Set-Cookie",
-    "openship.instance.session_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
-  );
-  return c.json({ success: true });
-});
+// Disconnecting only drops this Desktop's link; nothing moves. While connected
+// the dashboard scopes requests to the remote workspace, which has no local
+// membership, so an org-scoped settings check could never pass here.
+r.public(
+  "post",
+  "/disconnect",
+  {
+    reason:
+      "Authenticated instance administrator, or the trusted loopback Desktop owner leaving a remote instance.",
+  },
+  recoveryAccess,
+  async (c) => {
+    await disconnectInstance();
+    c.header(
+      "Set-Cookie",
+      "openship.instance.session_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+    );
+    return c.json({ success: true });
+  },
+);
 r.post("/return", { tag: "settings:admin" }, admin, limited, async (c) => {
   const input = z.object({ mapping, confirmReplace: z.literal(true) }).parse(await c.req.json());
   return c.json(

@@ -124,7 +124,13 @@ it("relays streams and terminal frames to one authenticated peer without leaking
     expect(rejected.readyState).not.toBe(WebSocket.OPEN);
     expect(upgrades).toBe(1); // the untrusted browser never reached the peer
 
-    await post("/api/system/instance/disconnect");
+    // The dashboard keeps scoping requests to the remote workspace, which has
+    // no local membership; leaving must still work.
+    await jsonRequest(desktop.baseUrl, "/api/system/instance/disconnect", {
+      method: "POST",
+      body: "{}",
+      headers: { "x-organization-id": "selected-org" },
+    });
     await expect(
       (async () => {
         while (!(await reader.read()).done) {
