@@ -152,6 +152,34 @@ it.each(["cloud", "local", "linked"])(
     );
   },
 );
+it.each(["cloud", "local", "linked"])(
+  "starts CockroachDB securely with persistent data and certificates (%s)",
+  async (mode) => {
+    h.mode = mode === "cloud" ? "cloud" : "local";
+    await render(mode === "linked");
+    await pick("cockroachdb/cockroach:latest");
+    await act(async () => {
+      submit();
+    });
+    expect(h.submit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        image: "cockroachdb/cockroach:latest",
+        command: "",
+        commandArgv: ["start-single-node", "--certs-dir=/cockroach/certs"],
+        volumes: [
+          "cockroach_data:/cockroach/cockroach-data",
+          "cockroach_certs:/cockroach/certs",
+        ],
+        environment: {
+          COCKROACH_DATABASE: "app",
+          COCKROACH_USER: "app",
+          COCKROACH_PASSWORD: expect.stringMatching(GENERATED),
+        },
+        exposed: false,
+      }),
+    );
+  },
+);
 it("sends the GPU request of Ollama (NVIDIA GPU)", async () => {
   h.mode = "local";
   const name = "Ollama (NVIDIA GPU)";
