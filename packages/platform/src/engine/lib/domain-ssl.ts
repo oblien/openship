@@ -500,6 +500,12 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
     }
   }
 
+  // A never-deployed project bound to a server issues on that server's edge, where it will serve.
+  if (!depId && project.serverId) {
+    const provider = await resolveSslOnly({ serverId: project.serverId } as DeploymentMeta, project.organizationId);
+    return { ...provider, lockScope: project.serverId };
+  }
+
   // Fallback anchor. `platform().ssl` is the API's OWN context — for a
   // containerized API that's the API container (no edge/OpenResty there) or a
   // DockerEdgeExecutor for a non-existent `openship-edge`, so certbot's HTTP-01
