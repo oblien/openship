@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Prevent false stale-role warnings after deployments** — background image
+  cleanup updates storage measurements without changing the project's configuration
+  revision. Real configuration edits still invalidate previously reviewed changes.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
