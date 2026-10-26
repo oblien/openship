@@ -85,7 +85,7 @@ export function getNavSections(
   // Billing is available on Cloud and on installations linked to a Cloud account.
   if (isSaaS) {
     settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card" });
-    settingsItems.push({ key: "affiliates", href: "/affiliates", icon: "link" });
+    settingsItems.push({ key: "affiliates", href: "/affiliates", icon: "gift" });
   }
   // Keep audit history alongside account settings and billing.
   settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });

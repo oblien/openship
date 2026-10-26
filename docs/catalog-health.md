@@ -19,6 +19,18 @@ Containers have no external network, capped CPU/RAM and disposable named volumes
 Run it locally with `bun scripts/smoke-catalog-minio.ts` against your test Docker
 daemon. `CATALOG_TEST_PLATFORM` can select either architecture.
 
+CockroachDB companion services also run on native AMD64 and ARM64. The test
+deploys the dashboard catalog recipe through the normal Docker runtime. It
+reproduces the missing-command error, connects from a separate container using
+TLS and the generated password, rejects an incorrect password, and verifies
+database rows and the CA certificate after container replacement. It also checks
+the environment-based recovery below. The test uses an internal network, capped
+CPU/RAM and disposable named volumes, with no published ports.
+
+```sh
+DOCKER_CONTEXT=your-test-context RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e test/e2e/cockroach-catalog.e2e.test.ts
+```
+
 WordPress, Odoo Community, PostgreSQL + pgAdmin, MariaDB + Adminer, RabbitMQ,
 Authentik, Nextcloud, Paperless-ngx, Wiki.js, Homepage, Immich, and Jellyfin have
 native AMD64 and ARM64 smoke jobs as well. They
@@ -52,6 +64,35 @@ a reviewed ownership migration. Test upgrades on a backup/clone first. Do not
 recursively change production volume ownership as a generic repair step.
 
 ## Existing failed installs
+
+### CockroachDB: missing command mode
+
+The official image requires a command and has no default startup mode. New
+CockroachDB services use `start-single-node --certs-dir=/cockroach/certs`, a
+generated password for the `app` SQL user, and separate persistent volumes for
+data and certificates. This provisions one database node; it does not configure
+a replicated cluster. TLS and password authentication remain enabled.
+
+Catalog updates do not rewrite saved service settings. For an existing service
+that has never initialized and reports `mode unset`, use its normal settings:
+
+1. Keep the existing `cockroach_data:/cockroach/cockroach-data` mount. Add the
+   named-volume mount `cockroach_certs:/cockroach/certs`.
+2. Add `COCKROACH_ARGS=start-single-node --certs-dir=/cockroach/certs`. This is
+   the image's supported command override. Leave the service's shell command blank.
+3. Keep the intended `COCKROACH_DATABASE`; set `COCKROACH_USER=app` and
+   `COCKROACH_PASSWORD` to a strong, unique password.
+4. Save and redeploy the service through the normal deployment action so the
+   new environment and certificate mount take effect.
+
+Connect with the saved database, user and password over TLS. Clients can use
+`sslmode=require` for encryption, or trust the generated CA and configure matching
+server certificates for full hostname verification. These environment defaults
+initialize a new store; they do not reset existing SQL users. For an already
+initialized database, retain its existing credentials and certificate files.
+Do not delete the data volume to repair a missing command.
+
+### Retired catalog images
 
 From a checkout containing the updated catalog, set `OPENSHIP_URL` to the intended
 instance and `OPENSHIP_TOKEN` to a token authorized for the project. Preview:

@@ -6,6 +6,16 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
+  an interactive commission split, monthly and annual reward timing, payout
+  guidance, and a dedicated social preview. Label the dashboard affiliate entry
+  Earn with a gift-box icon in the left sidebar.
+- **Start CockroachDB services correctly** — pass the required single-node
+  command to the official image, generate an application password, and persist
+  TLS certificates alongside the existing data volume. New services keep TLS and
+  password authentication enabled; container replacement preserves both data and
+  certificates. Include recovery steps for saved services missing the command
+  (#1484).
 - **Recover storage from slow build-cache scans** — when free disk space or inodes
   already block deployment, allow up to two minutes to measure unused, owned build
   caches before reclaiming them. Healthy hosts retain the short best-effort scan;

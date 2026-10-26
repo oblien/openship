@@ -503,7 +503,9 @@ check retryable before starting the move.
   Manage is open and disable switching while checkout is in progress. Deployment and
   server-acquisition dialogs retain their compute-only choices. The direct Manage URL
   remains available for payment returns and reuses the same view.
-- Affiliates uses full-width tabs for links, customers and payout history. Keep the
+- The affiliate program is labeled **Earn** in the sidebar and page heading, with
+  the shared `gift` icon in the sidebar. It uses full-width tabs for links,
+  customers and payout history. Keep the
   four earnings cards above the tabs. Place program terms and first-use guidance in
   the standard 340px right column below the tabs, stacking beneath the list on narrow
   containers. Reuse the loaded overview for these terms, keeping each program's
