@@ -73,6 +73,7 @@ describe("repos.backupRun.latestByPolicy", () => {
       destinationId: "dest1",
       serviceId: "svc1",
       mailServerId: null,
+      sourceKind: "service",
       projectId: "p1",
       organizationId: "org1",
       status: "succeeded",
@@ -90,7 +91,7 @@ describe("repos.backupRun.latestByPolicy", () => {
         { ...base, id: "wrong-policy", policyId: "pol2", finishedAt: later },
         { ...base, id: "wrong-destination", destinationId: "dest2", finishedAt: later },
         { ...base, id: "sibling-service", serviceId: "svc2", finishedAt: later },
-        { ...base, id: "mail-source", sourceKind: "mail_server", serviceId: null, mailServerId: "mail1", finishedAt: later },
+        { ...base, id: "mail-source", sourceKind: "mail_server", projectId: null, serviceId: null, mailServerId: "mail1", finishedAt: later },
         { ...base, id: "wrong-mail", mailServerId: "mail1", finishedAt: later },
         { ...base, id: "failed", status: "failed", finishedAt: later },
         { ...base, id: "deleted", deletedAt: later, finishedAt: later },
@@ -99,7 +100,33 @@ describe("repos.backupRun.latestByPolicy", () => {
     expect(recent.map((run) => run.id)).toEqual(["history-4", "history-3", "history-2"]);
     const mail = await repos.run.recentSucceededForSource("pol1", "dest1", null, "mail1");
     expect(mail.map((run) => run.id)).toEqual(["mail-source"]);
+    expect(await repos.run.latestSucceededForSource("pol1", "dest1", null, "mail1"))
+      .toMatchObject({ id: "mail-source", sourceKind: "mail_server" });
     expect(await repos.run.recentSucceededForSource("pol1", "dest1", "unknown", null)).toEqual([]);
+  });
+
+  it("keeps standalone project history separate from deleted-service history", async () => {
+    const base = {
+      policyId: "pol1",
+      destinationId: "dest1",
+      projectId: "p1",
+      organizationId: "org1",
+      serviceId: null,
+      mailServerId: null,
+      status: "succeeded",
+      triggeredBy: "manual",
+    };
+    await repos.db.insert(schema.backupRun).values([
+      { ...base, id: "project-source", sourceKind: "project", finishedAt: new Date("2026-10-01T01:00:00Z") },
+      { ...base, id: "deleted-service-source", sourceKind: "service", finishedAt: new Date("2026-10-01T02:00:00Z") },
+    ]);
+
+    for (const [sourceKind, id] of [["project", "project-source"], ["service", "deleted-service-source"]]) {
+      const recent = await repos.run.recentSucceededForSource("pol1", "dest1", null, null, sourceKind);
+      expect(recent.map((run) => run.id)).toEqual([id]);
+      expect(await repos.run.latestSucceededForSource("pol1", "dest1", null, null, sourceKind))
+        .toMatchObject({ id, sourceKind });
+    }
   });
 
   it("keeps a moved policy's latest run scoped to the displayed destination", async () => {

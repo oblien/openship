@@ -9,6 +9,7 @@ import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
 import { sshManager } from "../../lib/ssh-manager";
 import * as service from "./service.service";
 import { applyServiceEnvironment } from "./service-environment";
+import { reviewSharedServiceEnvironment } from "./service-environment-sharing";
 import {
   getServiceEnvironment,
   mergeServiceEnvVars,
@@ -135,6 +136,8 @@ export const serviceDependencies: ServiceDependencies = {
       run(() => service.listServiceEnvVars(ctx, projectId, id, input?.environment)),
     getEnvironment: (ctx, projectId, id, input) =>
       run(() => getServiceEnvironment(ctx, projectId, id, input)),
+    reviewEnvVars: (ctx, projectId, id, input) =>
+      run(async () => (await reviewSharedServiceEnvironment(ctx, projectId, id, input)).review),
     async mergeEnvVars(ctx, projectId, id, input) {
       const result = await run(() => mergeServiceEnvVars(ctx, projectId, id, input));
       record(ctx, id, "write", {
@@ -143,6 +146,8 @@ export const serviceDependencies: ServiceDependencies = {
         environment: input.environment,
         keys: input.upserts.map((row) => row.key),
         deletedKeys: input.deletes.map((row) => row.key),
+        sharedKeys: input.shared?.keys,
+        affectedServices: "affectedServices" in result ? result.affectedServices : undefined,
       });
       return result;
     },

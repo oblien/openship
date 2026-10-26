@@ -24,13 +24,15 @@ export function scopedBillingHref(path: string, { workspaceId, organizationId }:
 }
 
 export function newServerBillingHref(organizationId?: string | null, purchase?: {
-  planId?: string; startCheckout?: boolean; checkoutIntent?: string; checkoutAttempt?: string;
+  planId?: string; interval?: "monthly" | "annual"; startCheckout?: boolean; checkoutIntent?: string; checkoutAttempt?: string; referralCode?: string;
 }) {
   const params = new URLSearchParams({ newServer: "1" });
   if (purchase?.planId) params.set("plan", purchase.planId);
+  if (purchase?.interval) params.set("interval", purchase.interval);
   if (purchase?.startCheckout) params.set("startCheckout", "1");
   if (purchase?.checkoutIntent) params.set("checkoutIntent", purchase.checkoutIntent);
   if (purchase?.checkoutAttempt) params.set("checkoutAttempt", purchase.checkoutAttempt);
+  if (purchase?.referralCode) params.set("ref", purchase.referralCode);
   return scopedBillingHref(`/billing/plans?${params}`, { organizationId });
 }
 

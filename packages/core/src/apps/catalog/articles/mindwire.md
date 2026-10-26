@@ -1,11 +1,9 @@
-## A control plane for coding-agent runtimes
+## Retired container template
 
-MindWire gives you one console for managing agents, credentials, and sessions while keeping the underlying runtime private.
+Mindwire no longer publishes the Console and runtime images used by this template. It is unavailable for new installations. Its definition remains in the catalog for existing project configuration.
 
-The catalog defines the control plane and runtime together. The runtime stays behind the project network, and users enter through the console's public route.
+## Connect a computer to Mindwire
 
-## Build around the control plane
+Install the current runtime from checksum-verified [GitHub Releases](https://github.com/oblien/mindwire/releases) using the [runtime installation guide](https://mindwire.sh/docs/guides/destinations). Manage your account and Cloud Computers in the [hosted portal](https://console.mindwire.sh).
 
-Open the console after deployment and configure the credentials and runtime settings your agents need. Keep private runtime access separate from the console address.
-
-See the [MindWire source project](https://github.com/oblien/mindwire) for supported integrations and application APIs. Use the normal app configuration and backup flows to protect persistent data.
+See [Mindwire's deployment documentation](https://github.com/oblien/mindwire/blob/main/docker/README.md) for the supported distribution model. Existing deployments and their stored data are not migrated by this catalog change.

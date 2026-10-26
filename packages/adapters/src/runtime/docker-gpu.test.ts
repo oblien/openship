@@ -33,7 +33,11 @@ function baseConfig(overrides: Partial<MultiServiceDeployConfig> = {}): MultiSer
 async function createWith(config: MultiServiceDeployConfig) {
   const creates: Array<Record<string, any>> = [];
   const docker = {
-    getContainer: () => ({ stop: async () => undefined, remove: async () => undefined }),
+    getContainer: () => ({
+      inspect: async () => { throw Object.assign(new Error("No such container"), { statusCode: 404 }); },
+      stop: async () => undefined,
+      remove: async () => undefined,
+    }),
     createContainer: async (args: Record<string, any>) => {
       creates.push(args);
       return {

@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: "Blog", href: "/blog" },
   { label: "Changelog", href: "/changelog" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Earn", href: "/affiliates" },
 ];
 
 const GITHUB_URL = "https://github.com/oblien/openship";

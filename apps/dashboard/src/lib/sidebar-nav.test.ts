@@ -76,7 +76,8 @@ describe("getNavSections (the platform rail)", () => {
       href: "/actions",
     });
     expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
-    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "audit"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
+    expect(find(s, "settings")?.items.find((item) => item.key === "affiliates")).toMatchObject({ href: "/affiliates" });
     expect(keysOf(find(s, "infrastructure"))).toEqual(["resources", "servers", "emails", "jobs", "backups"]);
     expect(find(s, "infrastructure")?.items[0]).toMatchObject({ href: "/resources" });
   });
@@ -89,7 +90,7 @@ describe("getNavSections (the platform rail)", () => {
     for (const host of ["servers", "emails", "jobs", "backups"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
-    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "audit"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
   });
 
   it("keeps /emails in the platform rail", () => {

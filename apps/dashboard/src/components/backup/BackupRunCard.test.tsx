@@ -14,6 +14,7 @@ const w = baseDictionary.widgets.backup.runCard;
 const start = "2026-09-25T11:04:49.604Z";
 const initial: BackupRun = {
   id: "backup-one",
+  sourceKind: "service",
   projectId: "project",
   policyId: null,
   destinationId: null,

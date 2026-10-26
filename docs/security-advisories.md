@@ -23,8 +23,18 @@ application has no vulnerabilities. Runtime probes report installed versions;
 they are not cryptographic attestation and cannot establish whether a particular
 application exposes a vulnerable code path.
 
-Settings → Notifications keeps the same **Security advisories** review and per-app
-automatic-refresh controls accessible after a warning is dismissed or resolved.
+**Monitoring → Security** keeps the same app/service review and per-app automatic-refresh
+controls accessible after the banner is dismissed. Dismissal only hides the banner;
+active findings remain in Monitoring until new evidence no longer matches the advisory.
+After the dashboard observes a successful deployment of an affected app, it rereads that
+app's deployment-keyed security inventory and refreshes the shared overview. Starting a
+redeploy, a failed deploy, or a successful build that still contains the affected runtime
+does not resolve a finding. Unavailable or incomplete checks remain marked as such.
+The Open tab links to these findings. Settings → Notifications also opens the shared review.
+The public advisory feed is global, but findings belong to projects in the current
+organization and are filtered by the viewer's project access. They are not host-wide
+alerts and are not private to the person who first saw them. Banner dismissal is a
+browser/app preference, scoped to that account and organization for runtime advisories.
 Each enabled, verified notification channel inherits these alerts, including channels added later.
 Users can turn individual channels off; administrators can change workspace
 defaults. Membership, resource access, channel ownership and current opt-outs are

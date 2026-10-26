@@ -1254,21 +1254,28 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Vuelve a compilar esta aplicación desde su código fuente guardado antes de actualizar su entorno de ejecución. La imagen actual no tiene una revisión de código verificada. Una nueva implementación desde el código fuente puede incluir código más reciente; revísalo en Implementaciones y vuelve a comprobar este aviso.",
+    "openSourceRedeploy": "Abrir implementación desde el código fuente",
     "reviewApps": "Revisar apps afectadas ({count})",
     "pendingApps": "Hay comprobaciones pendientes para {count} apps. Los resultados aparecerán automáticamente.",
     "checkAgain": "Volver a comprobar",
     "checking": "Comprobando…",
     "title": "Avisos de seguridad",
     "unavailable": "Las comprobaciones de seguridad no están disponibles o están desactualizadas. Los avisos anteriores siguen visibles.",
-    "affected": "Revisa el entorno afectado y las instrucciones publicadas antes de actualizar.",
+    "affected": "Hallazgos de apps a las que tienes acceso en la organización actual.",
     "noMatches": "No hay avisos que coincidan con los datos comprobados. No es un análisis completo de vulnerabilidades.",
-    "partial": "No se pudieron identificar algunos entornos. Los procesos del host, contenedores detenidos e imágenes no compatibles pueden necesitar una revisión manual.",
+    "partial": "No se pudieron comprobar algunos entornos de ejecución.",
     "guidance": "Leer aviso",
     "automatic": "Actualizar automáticamente los parches de seguridad verificados",
     "automaticDescription": "Desactivado por defecto. Solo se actualizan servicios de imágenes con una corrección firmada en su etiqueta actual. Las compilaciones, imágenes fijadas y cambios de versión requieren revisión. Se mantienen las comprobaciones habituales de despliegue y salud.",
     "notifications": "Los avisos de seguridad están activos por defecto en los canales. Puedes configurar cada canal en Ajustes → Notificaciones.",
     "publicFeed": "Ver fuente pública",
     "checked": "Evidencia comprobada",
-    "possible": "La etiqueta de imagen coincide; es necesario verificar la versión desplegada."
+    "possible": "La etiqueta de imagen coincide; es necesario verificar la versión desplegada.",
+    "tab": "Seguridad",
+    "monitoring": "Ver en Monitorización",
+    "persistent": "Los hallazgos activos permanecen aquí al cerrar el aviso.",
+    "otherApps": "Otras apps ({count})",
+    "details": "Detalles y recomendaciones"
   }
 }

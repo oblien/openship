@@ -6,6 +6,7 @@ import { isControlPlaneProject } from "../../lib/resource-access";
 import { getAdvisoryFeed, type AdvisoryFeedState } from "./advisory-feed";
 import { securityProbeKey, type SecurityInventory } from "./security-inventory";
 import { buildProjectSecurityResult } from "./security-status";
+import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
 /** Read current observations only. The existing scheduler owns bounded runtime inspection. */
 export async function securityOverview(
@@ -58,6 +59,8 @@ export async function securityOverview(
     const names = new Map((services.get(project.projectId) ?? []).map((s) => [s.id, s.name]));
     for (const finding of project.findings)
       finding.serviceName = finding.serviceId ? (names.get(finding.serviceId) ?? null) : null;
+    if (project.findings.some((finding) => finding.canRefresh))
+      await annotateSecurityRefreshAvailability(ctx, project);
   }
   return overview;
 }

@@ -29,6 +29,7 @@ import { projectSecurityInventory } from "./security-inventory";
 import { updateProjectRuntime } from "./runtime-update";
 import { buildProjectSecurityResult } from "./security-status";
 import { approveSecurityUpdate } from "./security-refresh-guard";
+import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
 const key = (...parts: (string | number | null)[]) =>
   createHash("sha256").update(JSON.stringify(parts)).digest("hex");
@@ -100,7 +101,7 @@ export async function projectSecurityStatus(
     upstream.security?.advisories ?? [],
     refresh,
   );
-  return buildProjectSecurityResult(
+  const result = buildProjectSecurityResult(
     projectId,
     inventory,
     upstream,
@@ -109,6 +110,8 @@ export async function projectSecurityStatus(
       (await repos.service.listByProject(projectId)).map((service) => [service.id, service.name]),
     ),
   );
+  await annotateSecurityRefreshAvailability(ctx, result);
+  return result;
 }
 
 export async function setProjectSecurityPolicy(

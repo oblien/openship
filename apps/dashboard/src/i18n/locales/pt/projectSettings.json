@@ -1254,21 +1254,28 @@
     "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Recompile este aplicativo a partir do código-fonte salvo antes de atualizar seu ambiente de execução. A imagem atual não tem uma revisão de código verificada. Uma nova implantação a partir do código-fonte pode incluir código mais recente; revise-o em Implantações e verifique este aviso novamente.",
+    "openSourceRedeploy": "Abrir reimplantação a partir do código-fonte",
     "reviewApps": "Rever apps afetadas ({count})",
     "pendingApps": "Verificações pendentes para {count} apps. Os resultados aparecerão automaticamente.",
     "checkAgain": "Verificar novamente",
     "checking": "Verificando…",
     "title": "Avisos de segurança",
     "unavailable": "As verificações de segurança estão indisponíveis ou desatualizadas. Os avisos anteriores continuam visíveis.",
-    "affected": "Revise o ambiente afetado e as orientações publicadas antes de atualizar.",
+    "affected": "Resultados das aplicações às quais tem acesso na organização atual.",
     "noMatches": "Nenhum aviso corresponde aos dados verificados. Isto não é uma análise completa de vulnerabilidades.",
-    "partial": "Alguns ambientes não puderam ser identificados. Processos do host, contêineres parados e imagens não compatíveis podem exigir verificação manual.",
+    "partial": "Não foi possível verificar alguns ambientes de execução.",
     "guidance": "Ler aviso",
     "automatic": "Atualizar automaticamente correções de segurança verificadas",
     "automaticDescription": "Desativado por padrão. Apenas serviços de imagens com uma correção assinada na tag atual são atualizados automaticamente. Compilações, imagens fixadas e mudanças de versão exigem revisão. As verificações normais de implantação e saúde continuam ativas.",
     "notifications": "Alertas de segurança são ativados por padrão nos canais. Configure cada canal em Configurações → Notificações.",
     "publicFeed": "Ver fonte pública",
     "checked": "Evidências verificadas",
-    "possible": "A tag da imagem corresponde; a versão implantada precisa ser verificada."
+    "possible": "A tag da imagem corresponde; a versão implantada precisa ser verificada.",
+    "tab": "Segurança",
+    "monitoring": "Ver em Monitorização",
+    "persistent": "Os resultados ativos permanecem aqui após fechar o aviso.",
+    "otherApps": "Outras aplicações ({count})",
+    "details": "Detalhes e orientações"
   }
 }

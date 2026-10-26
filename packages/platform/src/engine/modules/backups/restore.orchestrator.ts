@@ -55,6 +55,7 @@ import {
 import { staticReleaseDir, usableRef } from "../deployments/rollback/restore-plan";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
+import { resolveProjectBackupSource } from "./project-source";
 import {
   disposeRuntime,
   resolveDeploymentPlatform,
@@ -1534,22 +1535,27 @@ export class RestoreOrchestrator {
       return { executor: built.executor, serviceHandle: built.handle, runtime: built.runtime };
     }
 
-    if (!sourceRun.serviceId) throw new Error("Source run has no serviceId");
-    const serviceRow = await repos.service.findById(sourceRun.serviceId);
-    if (!serviceRow) throw new Error("Target service disappeared");
-    const project = await repos.project.findById(serviceRow.projectId);
+    if (sourceRun.sourceKind !== "project" && !sourceRun.serviceId) throw new Error("Source run has no serviceId");
+    if (sourceRun.sourceKind === "project" && sourceRun.serviceId)
+      throw new Error("An app backup cannot also target a service");
+    const app = sourceRun.sourceKind === "project"
+      ? await resolveProjectBackupSource(sourceRun.projectId, destinationRow.organizationId)
+      : null;
+    const serviceRow = app ? null : await repos.service.findById(sourceRun.serviceId!);
+    if (!app && !serviceRow) throw new Error("Target service disappeared");
+    const project = app?.project ?? await repos.project.findById(serviceRow!.projectId);
     if (!project) throw new Error("Project disappeared");
     // Resolved through the SAME rule the backup used (source-platform.ts): a
     // container-backed service whose adopt deployment says `runtimeMode: "bare"`
     // must restore through Docker, exactly as it was captured through Docker. If
     // these two diverged, a dump taken with `pg_dump` inside the container would be
     // handed to a host that has no `pg_restore`.
-    const serviceHandle = await this.buildServiceHandle(serviceRow);
+    const serviceHandle = app?.handle ?? await this.buildServiceHandle(serviceRow!);
     const target = await resolveSourceExecutor({
-      meta: await this.activeDeploymentMeta(project.id),
+      meta: app?.deployment.meta ?? await this.activeDeploymentMeta(project.id),
       organizationId: destinationRow.organizationId,
       containerId: serviceHandle.containerId,
-      serviceName: serviceRow.name,
+      serviceName: serviceHandle.name,
     });
     return {
       executor: target.executor,

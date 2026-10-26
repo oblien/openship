@@ -45,6 +45,7 @@ const render = () =>
   );
 const row = (n: number, projectId = "project"): BackupRun => ({
   id: `run-${n}`,
+  sourceKind: "service",
   projectId,
   policyId: "policy",
   destinationId: null,

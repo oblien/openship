@@ -468,19 +468,6 @@ Volumes for single apps shipped (`packages/core/src/volumes.ts`,
 (`apps/api/src/modules/projects/project-storage.service.ts`). Re-verified
 2026-08-20 — **every item below is still open**:
 
-- [ ] **Backups don't cover a single app's volumes.** The backup subsystem targets
-      `service` rows: the project-default fan-out is
-      `repos.service.listByProject(...)` and throws `"Project has no services to
-      back up"` on zero services
-      (`apps/api/src/modules/backups/backup.orchestrator.ts:163-165`), with the
-      execute path re-asserting it. A true single-app project has ZERO service rows
-      (the #231 app row is only materialized once a `compose` sidecar exists), so a
-      project with `project.volumes` set has no policy that can back it up — and a
-      policy CAN be saved with `serviceId: null`, so the failure lands at first run,
-      not at save. It is purely a TARGETING gap: the docker executor already reads
-      mounts off the live container. Fix needs a project-level/app source kind, or
-      a fan-out that synthesizes the app unit (`project.volumes` resolves via
-      `appRowVolumes`).
 - [ ] **Cloud has no volume primitive.** `CloudRuntime.deploy` still warns and
       drops a declared mount (`packages/adapters/src/runtime/cloud.ts:1637-1648`,
       "Oblien has no volume primitive"). Neither alternative shipped: the API

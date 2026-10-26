@@ -1,0 +1,153 @@
+# Frozen CLI template from v0.9.5:apps/cli/src/lib/compose.ts.
+# Only test isolation (paths, images and container name) is applied at runtime.
+# Managed by `openship up` — do not edit; re-run `openship up` to regenerate.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Keep the data dir in a subdirectory of the volume so a fresh install never
+      # runs initdb against a bare mount root (which fails on quirky host
+      # filesystems with EPERM — #350). OPENSHIP_PGDATA is decided ONCE at install
+      # by the CLI (fresh → subdir, pre-existing volume → root) and preserved in
+      # .env, so this never moves an existing database.
+      PGDATA: ${OPENSHIP_PGDATA:-/var/lib/postgresql/data/pgdata}
+      POSTGRES_USER: ${POSTGRES_USER:-openship}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing from .env — re-run openship up to regenerate it}
+      POSTGRES_DB: ${POSTGRES_DB:-openship}
+    expose: ["5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openship} -d ${POSTGRES_DB:-openship}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes"]
+    expose: ["6379"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:${OPENSHIP_VERSION:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    # Loopback by default — the host-net edge reaches it over loopback, so nothing
+    # sits on a public interface. OPENSHIP_BIND_ADDR opts into a public/LAN interface
+    # (set by `openship up` when a public URL is configured for off-box access).
+    ports: ["${OPENSHIP_BIND_ADDR:-127.0.0.1}:${API_PORT:-4000}:${API_PORT:-4000}"]
+    volumes:
+      # The daemon socket, at the path the api's own default expects INSIDE the
+      # container. The HOST side is a variable because it MOVES: a rootless daemon
+      # keeps its socket under the invoking user's runtime dir, and Docker creates a
+      # missing bind source as an empty DIRECTORY instead of failing — so the rootful
+      # path there brings the stack up and then fails every container operation in
+      # the transport, naming neither the path nor the cause (#482). `openship up`
+      # writes OPENSHIP_DOCKER_SOCKET when the detected path isn't this default.
+      - ${OPENSHIP_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # Registry credentials for private-image pulls. The API talks to the daemon over
+      # the socket above via dockerode, which — unlike the docker CLI — reads no
+      # config.json of its own, so a private pull went out anonymous on a logged-in
+      # host (#581). Mounted READ-ONLY and only into this service; absent entirely when
+      # the host has no config, so nothing is invented. Substituted at write time (the
+      # path depends on DOCKER_CONFIG and on the file existing), hence the marker.
+      # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
+      # EDGE_CONTAINER_MOUNTS): the vhost tree, /etc/letsencrypt, the ACME webroot
+      # and the static doc-roots the API writes and the edge serves. Named volumes
+      # hid all of it from every host-side reader (migrate's proxy scan, cert carry,
+      # cert reuse, mail cert symlinks), each of which then silently saw "nothing".
+      - /var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z
+      - /etc/letsencrypt:/etc/letsencrypt:z
+      - /var/lib/openship/edge/acme:/var/www/acme:z
+      - /opt/openship/static:/opt/openship/static:z
+      # Host-op SSH key (createHostExecutor → host.docker.internal). /dev/null
+      # when the host channel isn't provisioned → OPENSHIP_HOST_SSH_HOST stays
+      # unset, and host operations REFUSE (they'd otherwise run against this
+      # container's filesystem, #509) while ordinary deploys keep working over
+      # the socket below.
+      - ${OPENSHIP_HOST_KEY_PATH:-/dev/null}:/run/secrets/openship_host_key:ro
+    # `host-gateway` is resolved by the daemon and is right on a stock rootful
+    # install. It is NOT universally right: under rootless Docker it lands in
+    # RootlessKit's namespace rather than the host's, so the host's sshd isn't
+    # there (#482). OPENSHIP_HOST_GATEWAY re-points the alias (e.g. at the box's
+    # LAN address) without patching this file, which `openship up` rewrites.
+    extra_hosts: ["host.docker.internal:${OPENSHIP_HOST_GATEWAY:-host-gateway}"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      PORT: "${API_PORT:-4000}"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openship}:${POSTGRES_PASSWORD:?missing from .env — re-run openship up to regenerate it}@postgres:5432/${POSTGRES_DB:-openship}
+      REDIS_URL: redis://redis:6379
+      OPENSHIP_EDGE_MODE: docker
+      OPENSHIP_EDGE_CONTAINER: openship-edge
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  dashboard:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:${OPENSHIP_VERSION:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    # Loopback by default (see api note); OPENSHIP_BIND_ADDR opts into a public interface.
+    ports: ["${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      PORT: "${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
+      INTERNAL_API_URL: http://api:${API_PORT:-4000}
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  edge:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:${OPENSHIP_VERSION:-latest}
+    # PINNED, and it must stay pinned: the api reaches the edge by NAME through
+    # DockerEdgeExecutor (OPENSHIP_EDGE_CONTAINER above), and "ours" edge
+    # detection greps `docker ps --filter name=openship-edge`. Without this,
+    # compose derives `<project>-edge-1` from the directory and every
+    # `docker exec` into the edge fails with "No such container: openship-edge" —
+    # which silently migrated 0 sites after the operator's proxy was stopped.
+    # Safe here: the edge is a singleton (host networking, one per box).
+    container_name: openship-edge
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: host
+    depends_on:
+      api: { condition: service_healthy }
+      dashboard: { condition: service_healthy }
+    volumes:
+      - /var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z
+      - /etc/letsencrypt:/etc/letsencrypt:z
+      - /var/lib/openship/edge/acme:/var/www/acme:z
+      - /opt/openship/static:/opt/openship/static:z
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -172,6 +172,26 @@ describe("retention defaults", () => {
 });
 
 describe("runRetentionSweep policy selection", () => {
+  it("retains app restore points separately from deleted service history", async () => {
+    const policy = await seedBackupPolicy(destinationId, { projectId, retainCount: 1 });
+    const app = await seedRuns(policy.id, 2, { sourceKind: "project", serviceId: null });
+    const orphan = await seedBackupRun(organizationId, {
+      policyId: policy.id,
+      projectId,
+      destinationId,
+      sourceKind: "service",
+      serviceId: null,
+      status: "succeeded",
+      finishedAt: new Date(Date.UTC(2026, 0, 10)),
+      artifacts: [{ key: "orphan-service.tar" }],
+    });
+    await prunePolicy(policy);
+    expect((await repos.backupRun.findById(app[0].id))?.deletedAt).toBeTruthy();
+    expect((await repos.backupRun.findById(app[1].id))?.deletedAt).toBeNull();
+    expect((await repos.backupRun.findById(orphan.id))?.deletedAt).toBeNull();
+    expect(h.deleted).toEqual(["artifact-0.tar"]);
+  });
+
   it("prunes a cron-less policy that auto-triggers on pre-deploy", async () => {
     // The second bug. This policy fires on every deploy and had a ceiling set;
     // the cron filter meant it was never swept.

@@ -31,6 +31,8 @@
 /// <reference path="./tar-fs.d.ts" />
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { currentManagedCommandTracking } from "./cloud/command-tracking";
+import { gracefulStopBeforeRemoval, removeDockerContainer } from "./docker-container-removal";
+export { gracefulStopBeforeRemoval } from "./docker-container-removal";
 import Dockerode from "dockerode";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
@@ -887,21 +889,6 @@ export function inspectGpuConfig(
   return gpu;
 }
 
-/**
- * Stop before recreate/teardown, including when Compose omitted a grace period
- * (#986). Docker owns the default timeout, explicit zero/custom grace, and the
- * image's stop signal. Unexpected failures must prevent the caller's removal;
- * a failed stop is not permission to fall back to SIGKILL.
- */
-export async function gracefulStopBeforeRemoval(container: Dockerode.Container): Promise<void> {
-  try {
-    await container.stop();
-  } catch (error) {
-    if ((error as { statusCode?: number } | null)?.statusCode !== 304 && !isDockerNotFoundError(error)) {
-      throw error;
-    }
-  }
-}
 
 /**
  * Detect whether a buffer chunk starts with Docker's 8-byte multiplexed
@@ -4675,16 +4662,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       await removeManagedArtifact(null, containerId);
       return;
     }
-    const container = this.docker.getContainer(containerId);
-    try {
-      await gracefulStopBeforeRemoval(container);
-      await container.remove({ force: true });
-    } catch (err) {
-      // Idempotent: swallow "no such container" / 404 so partial-cleanup
-      // retries don't re-fail on already-deleted containers. Re-throw
-      // anything else (permission denied, daemon down, dependent state).
-      if (!isDockerNotFoundError(err)) throw err;
-    }
+    await removeDockerContainer(this.docker, containerId, {
+      assertAccess: (id) => this.assertContainerAccess(id),
+    });
   }
 
   /**
@@ -4725,24 +4705,6 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       deploymentId: img.Labels?.[OPENSHIP_LABEL.deployment],
       size: img.Size ?? 0,
     }));
-  }
-
-  /**
-   * Reclaim dangling (untagged) images carrying THIS project's label — the
-   * superseded final-stage layers a rebuild leaves behind. NEVER a bare
-   * `docker image prune`: the label filter guarantees base/other-project/other-
-   * tool dangling layers are untouched. (Unlabeled multi-stage intermediate
-   * layers under the classic builder aren't caught — BuildKit avoids them.)
-   */
-  async pruneProjectDanglingImages(projectId: string): Promise<void> {
-    try {
-      await this.docker.pruneImages({
-        filters: { dangling: ["true"], label: [`openship.project=${projectId}`] },
-      });
-    } catch (diagnosticFailure) {
-      observeCaughtError(diagnosticFailure, "adapters/runtime/docker");
-      /* best-effort — a prune failure must never fail a build/deploy */
-    }
   }
 
   /**
@@ -6416,14 +6378,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     // Flush the existing service before removing it, using Docker's normal
     // shutdown semantics even without an explicit Compose grace period.
     if (!staged) {
-      try {
-        const existing = this.docker.getContainer(containerName);
-        await this.assertContainerAccess(containerName);
-        await gracefulStopBeforeRemoval(existing);
-        await existing.remove({ force: true });
-      } catch (error) {
-        if (!isDockerNotFoundError(error)) throw error;
-      }
+      await removeDockerContainer(this.docker, containerName, {
+        assertAccess: (id) => this.assertContainerAccess(id),
+      });
     }
 
     // Environment variables. Inject PORT=<service port> (like the single-app

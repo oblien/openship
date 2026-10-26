@@ -176,7 +176,7 @@ async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   // single group, so their behavior is unchanged.
   const groups = new Map<string, BackupRun[]>();
   for (const run of candidates) {
-    const key = run.serviceId ?? run.mailServerId ?? "__project__";
+    const key = `${run.sourceKind}:${run.serviceId ?? run.mailServerId ?? "__project__"}`;
     const arr = groups.get(key);
     if (arr) arr.push(run);
     else groups.set(key, [run]);

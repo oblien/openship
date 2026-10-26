@@ -39,6 +39,7 @@ export default async function BillingTabPage({
   const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
   const newServer = activeTab === "plans" && query.newServer === "1" && !checkoutReturn;
   const requestedPlanId = typeof query.plan === "string" ? query.plan : undefined;
+  const requestedInterval = query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined;
   const autoCheckout = query.startCheckout === "1" && (query.checkoutIntent === undefined || isCloudPurchaseIntent(query.checkoutIntent));
   const checkoutIntent = isCloudPurchaseIntent(query.checkoutIntent) ? query.checkoutIntent : undefined;
   const checkoutAttempt = isCloudPurchaseIntent(query.checkoutAttempt) ? query.checkoutAttempt : undefined;
@@ -52,14 +53,16 @@ export default async function BillingTabPage({
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
     return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
-      purchase={newServer ? { planId: requestedPlanId, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt } : undefined} embedded /></BillingPageView>;
+      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt, referralCode: typeof query.ref === "string" ? query.ref : undefined } : undefined} embedded /></BillingPageView>;
   }
   // Buying another server is separate from inspecting an existing subscription.
   // The shared purchase component creates an explicitly scoped identity on selection.
   if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
     <BillingWorkspaceProvider>
       <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase
+        initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
         requestedPlanId={requestedPlanId}
+        requestedInterval={requestedInterval}
         autoCheckout={autoCheckout}
         checkoutIntent={checkoutIntent}
         checkoutAttempt={checkoutAttempt}
@@ -99,6 +102,7 @@ export default async function BillingTabPage({
       case "plans":
         return (
           <BillingPlansRoute
+            initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
             billingState={plansOnly ? undefined : state}
             currentPlan={state.tier as PlanTierId}
             currentOffer={state.plan}

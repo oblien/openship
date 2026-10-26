@@ -30,7 +30,11 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
 
   const stream = useRestoreRunStream(restoreId);
   const { restore } = stream;
-  const confirmationName = serviceName ?? sourceRun.serviceId ?? "";
+  const confirmationName =
+    serviceName ??
+    sourceRun.serviceId ??
+    (sourceRun.sourceKind === "project" ? sourceRun.projectId : null) ??
+    "";
 
   // Step transitions follow the restore FSM.
   useEffect(() => {

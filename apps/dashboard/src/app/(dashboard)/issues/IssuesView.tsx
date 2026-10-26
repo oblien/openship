@@ -41,6 +41,8 @@ import { useBrowserOnline } from "@/hooks/useBrowserOnline";
 import { monitoringScanIncomplete, useMonitoringScan } from "@/hooks/useMonitoringScan";
 import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
+import { useUpdates } from "@/components/updates/useUpdates";
+import { SecurityOverviewPanel } from "@/components/updates/SecurityOverviewPanel";
 
 type SeverityFilter = "all" | IssueSeverity;
 
@@ -62,6 +64,11 @@ const SEVERITY_FILTERS: SeverityFilter[] = ["all", "outage", "action_required", 
 export function IssuesView() {
   const { t } = useI18n();
   const c = t.issues;
+  const security = useUpdates();
+  const securityCount = security.securityOverview.projects.filter(
+    (project) => project.findings.length,
+  ).length;
+  const securityCopy = t.projectSettings.securityAdvisories;
   const { selfHosted, deployMode } = usePlatform();
   const online = useBrowserOnline();
   const { toast } = useToast();
@@ -69,7 +76,7 @@ export function IssuesView() {
   const apiBaseUrl = getApiBaseUrl();
   const searchParams = useSearchParams();
   const requestedTab = searchParams?.get("tab");
-  const tab: MonitoringTab = requestedTab === "health" || requestedTab === "resolved" || requestedTab === "deployments" || requestedTab === "notifications"
+  const tab: MonitoringTab = requestedTab === "health" || requestedTab === "security" || requestedTab === "resolved" || requestedTab === "deployments" || requestedTab === "notifications"
     ? requestedTab : "open";
   const setTab = (next: MonitoringTab) => {
     const url = new URL(window.location.href);
@@ -138,7 +145,7 @@ export function IssuesView() {
       const baseUrl = getApiBaseUrl();
       const inScope = () => mounted.current && activeTab.current === tab &&
         organizationId === getActiveOrganizationId() && baseUrl === getApiBaseUrl();
-      if (tab === "health" || tab === "deployments" || tab === "notifications" || !inScope()) return Promise.resolve();
+      if (tab === "health" || tab === "security" || tab === "deployments" || tab === "notifications" || !inScope()) return Promise.resolve();
       const key = `${baseUrl}:${organizationId}:${tab}`;
       const pending = pendingLoad.current;
       if (pending?.key === key) {
@@ -280,7 +287,7 @@ export function IssuesView() {
 
   useEffect(() => {
     void load();
-    if (tab === "health" || tab === "deployments" || tab === "notifications" || !online) return;
+    if (tab === "health" || tab === "security" || tab === "deployments" || tab === "notifications" || !online) return;
     const refresh = () => {
       if (document.visibilityState !== "hidden") void load({ silent: true });
     };
@@ -368,9 +375,9 @@ export function IssuesView() {
         )}
       </div>
 
-      <MonitoringNavigation value={tab} onChange={setTab} selfHosted={selfHosted} />
+      <MonitoringNavigation value={tab} onChange={setTab} selfHosted={selfHosted} securityCount={securityCount} />
 
-      {tab !== "deployments" && tab !== "notifications" && online && (monitoringScan.error || feedError) && (
+      {tab !== "deployments" && tab !== "notifications" && tab !== "security" && online && (monitoringScan.error || feedError) && (
         <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-warning-bg px-4 py-3 text-sm text-warning">
           <p>{monitoringScan.error || feedError}</p>
           <button type="button" onClick={monitoringScan.error ? monitoringScan.refresh : reloadAfterChange} className="shrink-0 rounded-lg bg-warning/10 px-3 py-2 font-medium">
@@ -401,6 +408,17 @@ export function IssuesView() {
         className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
       {scan && tab === "open" && <ScanProgress session={scan} />}
+      {tab === "open" && securityCount > 0 && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-warning-bg p-4">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <UiIcon name="shield" className="size-4 text-warning" />
+            {securityCopy.title}
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setTab("security")}>
+            {interpolate(securityCopy.reviewApps, { count: securityCount })}
+          </Button>
+        </div>
+      )}
 
       {/* The Resolved tab is honest about its coverage: only incidents have a lifecycle,
           so its silence is not a claim that nothing else ever broke. Sits above the
@@ -428,7 +446,26 @@ export function IssuesView() {
         </section>
       )}
 
-      {tab === "deployments" ? (
+      {tab === "security" ? (
+        <div className="space-y-5">
+          <header className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-medium">{securityCopy.title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{securityCopy.persistent}</p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={security.refresh} disabled={security.securityAvailable === null}>
+              {t.actions.refresh}
+            </Button>
+          </header>
+          {security.securityAvailable === null ? (
+            <p role="status" className="text-sm text-muted-foreground">{securityCopy.checking}</p>
+          ) : security.securityAvailable === false ? (
+            <p role="alert" className="text-sm text-warning">{securityCopy.unavailable}</p>
+          ) : (
+            <SecurityOverviewPanel overview={security.securityOverview} onChecked={security.refresh} />
+          )}
+        </div>
+      ) : tab === "deployments" ? (
         <DeploymentsContent monitoring hideHeader hideSidebar />
       ) : tab === "notifications" ? (
         <NotificationSettings mode="monitoring" />
@@ -477,7 +514,7 @@ export function IssuesView() {
       ) : (!online || feedError) && issues.length === 0 ? null : issues.length === 0 && (!showFleet || infra.empty) ? (
         // Nothing at all for this tab: the empty state stands alone, full width and
         // centred, with no filters or summary rail to frame an absence.
-        <EmptyIssues filtered={false} resolved={tab === "resolved"} />
+        tab === "open" && securityCount > 0 ? null : <EmptyIssues filtered={false} resolved={tab === "resolved"} />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
           {/* ── LEFT COLUMN — the feed ── */}

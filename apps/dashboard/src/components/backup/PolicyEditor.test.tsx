@@ -424,6 +424,7 @@ function policy(patch: Partial<BackupPolicy> = {}): BackupPolicy {
 function run(patch: Partial<BackupRun> = {}): BackupRun {
   return {
     id: "run-1",
+    sourceKind: "service",
     policyId: "policy-1",
     destinationId: previousDestination.id,
     projectId: "project-1",

@@ -17,6 +17,7 @@ const footerLinks = {
   ],
   Company: [
     { label: "Blog", href: "/blog" },
+    { label: "Earn", href: "/affiliates" },
     { label: "Trust & Security", href: "/trust" },
     { label: "About", href: "/about" },
     { label: "Contact", href: "/contact" },

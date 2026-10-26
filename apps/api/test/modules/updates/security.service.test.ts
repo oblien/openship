@@ -183,6 +183,77 @@ async function fixture(owner?: Awaited<ReturnType<typeof seedOwner>>) {
 }
 
 describe("security operations", () => {
+  it.each([
+    { trigger: "rollback", meta: {} },
+    { trigger: "manual", meta: { adopt: true } },
+    { trigger: "manual", meta: { handoverAppImage: "openship/app:bld_old" } },
+    { trigger: "manual", meta: { refreshAppDeploymentId: "older-source" } },
+  ])(
+    "reports the source redeploy prerequisite consistently before a replayed-source action ($trigger/$meta)",
+    async ({ trigger, meta }) => {
+      const f = await fixture();
+      await repos.service.remove(f.service.id);
+      await repos.project.update(f.project.id, {
+        framework: "laravel",
+        runtimeVersion: "8.4",
+        gitProvider: "github",
+        gitUrl: "https://github.com/example/source.git",
+        gitOwner: "example",
+        gitRepo: "source",
+      });
+      const source = (await repos.project.findById(f.project.id))!;
+      const snapshot = {
+        ...buildConfigSnapshot(source, "main"),
+        ...(await resolveSnapshotTarget(source)),
+      };
+      await db
+        .update(schema.deployment)
+        .set({
+          trigger,
+          commitSha: "1111111111111111111111111111111111111111",
+          meta: { ...snapshot, ...meta },
+        })
+        .where(eq(schema.deployment.id, f.deployment.id));
+      await repos.securityAdvisory.saveInventory(
+        f.project.id,
+        f.owner.orgId,
+        f.deployment.id,
+        {
+          deploymentId: f.deployment.id,
+          checkedAt: new Date().toISOString(),
+          probeKey: securityProbeKey((await h.feed()).security.advisories),
+          images: [
+            { serviceId: null, serviceName: null, ref: "node:22", role: "image", digest: OLD },
+          ],
+          runtimes: [],
+          unknownServices: [],
+        },
+        new Date(),
+      );
+      const detail = await f.client.updates.security(f.project.id);
+      const overview = await securityOverview(f.ctx, await h.feed());
+      for (const result of [detail, overview.projects.find((p) => p.projectId === f.project.id)!]) {
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0]).toMatchObject({
+          canRefresh: false,
+          sourceRedeployRequired: true,
+        });
+        expect(result.findings[0].refreshBlockedReason).toContain("replayed artifact");
+      }
+      // Eligibility is checked live from the existing deployment records; repairing
+      // provenance does not need a duplicate inventory cache or another runtime probe.
+      await db
+        .update(schema.deployment)
+        .set({ trigger: "manual", meta: snapshot })
+        .where(eq(schema.deployment.id, f.deployment.id));
+      const repaired = await f.client.updates.security(f.project.id);
+      expect(repaired.findings[0]).toMatchObject({ canRefresh: true });
+      expect(repaired.findings[0]).not.toHaveProperty("sourceRedeployRequired");
+      expect(h.deploy).not.toHaveBeenCalled();
+      expect(h.digest).not.toHaveBeenCalled();
+    },
+  );
+
   it("aggregates only authorized current observations, without running a deployment or registry check", async () => {
     const f = await fixture(),
       other = await fixture();

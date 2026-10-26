@@ -134,6 +134,7 @@ export interface CancelRestoreResult {
 
 export interface BackupRun {
   id: string;
+  sourceKind: string;
   policyId: string | null;
   destinationId: string | null;
   projectId: string | null;

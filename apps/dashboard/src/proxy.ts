@@ -8,6 +8,7 @@ import { authContinuationHref } from "@/lib/cloud-auth";
 // case to skip the layout fetch.
 
 const PUBLIC_ROUTES = [
+  "/r/",
   "/login",
   "/two-factor",
   "/register",

@@ -854,11 +854,13 @@ export function createBackupRunRepo(db: Database) {
       destinationId: string,
       serviceId: string | null,
       mailServerId: string | null,
+      sourceKind = mailServerId ? "mail_server" : "service",
     ): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
         where: and(
           eq(backupRun.policyId, policyId),
           eq(backupRun.destinationId, destinationId),
+          eq(backupRun.sourceKind, sourceKind),
           serviceId ? eq(backupRun.serviceId, serviceId) : isNull(backupRun.serviceId),
           mailServerId ? eq(backupRun.mailServerId, mailServerId) : isNull(backupRun.mailServerId),
           eq(backupRun.status, "succeeded"),
@@ -874,11 +876,13 @@ export function createBackupRunRepo(db: Database) {
       destinationId: string,
       serviceId: string | null,
       mailServerId: string | null,
+      sourceKind = mailServerId ? "mail_server" : "service",
     ): Promise<BackupRun | undefined> {
       return db.query.backupRun.findFirst({
         where: and(
           eq(backupRun.policyId, policyId),
           eq(backupRun.destinationId, destinationId),
+          eq(backupRun.sourceKind, sourceKind),
           serviceId ? eq(backupRun.serviceId, serviceId) : isNull(backupRun.serviceId),
           mailServerId ? eq(backupRun.mailServerId, mailServerId) : isNull(backupRun.mailServerId),
           eq(backupRun.status, "succeeded"),

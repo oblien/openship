@@ -10,6 +10,7 @@ export type CloudPlan = BillingPlans["plans"][number];
 export type PricedPlan = CloudPlan & { price: { monthly: number; annual: number | null } };
 export interface CloudPricing {
   available: boolean;
+  annual: BillingPlans["annual"];
   tiers: PricedPlan[];
   customTiers: CloudPlan[];
   management?: BillingPlans["management"];
@@ -33,16 +34,17 @@ export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
     const tiers = data.plans.filter(
       (plan): plan is PricedPlan => plan.price.monthly !== null && plan.price.monthly > 0 && plan.availableForPurchase !== false,
     );
-    if (data.provider !== "oblien" || !tiers.length) throw new Error("Cloud plans unavailable");
+    if (data.provider !== "oblien") throw new Error("Cloud plans unavailable");
     return {
-      available: true,
+      available: tiers.length > 0,
+      annual: data.annual,
       management: data.management,
       tiers,
       customTiers: data.plans.filter((plan) => plan.price.monthly === null),
     };
   } catch (error) {
     reportCaughtError(error, "web/lib/pricing");
-    return { available: false, tiers: [], customTiers: [] };
+    return { available: false, annual: { enabled: false, monthsFree: 0 }, tiers: [], customTiers: [] };
   }
 });
 
@@ -62,10 +64,10 @@ export function chooseLabel(name: string): string {
   return UI.ctaChoose.replace(/\{name\}/g, name);
 }
 
-export function priceParts(plan: CloudPlan) {
-  const price = plan.price.monthly;
+export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {
+  const price = plan.price[interval];
   return {
-    amount: price === null ? UI.custom : price === 0 ? UI.free : money(price),
+    amount: price === null ? UI.custom : price === 0 ? UI.free : money(interval === "annual" ? price / 12 : price),
     per: price !== null && price > 0 ? UI.perMonth : null,
   };
 }

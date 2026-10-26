@@ -52,6 +52,7 @@ vi.mock("@repo/db", () => ({
     backupRun: {
       findById: async () => ({
         id: "bkr_live",
+        sourceKind: "service",
         status: typeof h.row.status === "string" ? h.row.status : "queued",
         policyId: "pol_1",
         destinationId: "dst_1",
@@ -285,7 +286,7 @@ describe("PostgreSQL capture completion", () => {
       await run;
     }
     expect(h.row.status).toBe("succeeded");
-    expect(h.historyReads).toEqual([["pol_1", "dst_1", "svc_1", null]]);
+    expect(h.historyReads).toEqual([["pol_1", "dst_1", "svc_1", null, "service"]]);
   });
 
   it.each([1, null])("rejects nonempty output when the dump exit is %s", async (code) => {

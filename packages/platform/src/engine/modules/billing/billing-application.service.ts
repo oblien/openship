@@ -89,6 +89,7 @@ export async function createSubscription(ctx: ExecutionContext, input: NonNullab
     input.idempotencyKey,
     input.workspaceId,
     input.custom,
+    input.affiliateCode,
   );
 
   return { checkoutUrl };

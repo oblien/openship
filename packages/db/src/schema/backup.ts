@@ -230,7 +230,8 @@ export const backupRun = pgTable(
       onDelete: "set null",
     }),
 
-    /** "service" | "mail_server" — mirrors the policy's source kind. */
+    /** Concrete source: "service", "project" (standalone app), or "mail_server".
+     * A project-default policy can produce app runs without a service row. */
     sourceKind: text("source_kind").notNull().default("service"),
     projectId: text("project_id").references(() => project.id, { onDelete: "set null" }),
     serviceId: text("service_id").references(() => service.id, { onDelete: "set null" }),

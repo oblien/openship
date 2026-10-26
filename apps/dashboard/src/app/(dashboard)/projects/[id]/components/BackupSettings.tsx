@@ -312,6 +312,8 @@ export function BackupSettings(): React.JSX.Element {
   const liveRunIds = trackedRunIds.filter((id) => !dismissedRunIds.has(id));
   const scopeName = (serviceId: string | null) =>
     scopes.find((scope) => scope.serviceId === serviceId)?.serviceName ?? b.overview.serviceBackup;
+  const runName = (run: BackupRun) =>
+    run.sourceKind === "project" ? projectData.name : scopeName(run.serviceId);
 
   return (
     <div className="space-y-5">
@@ -423,7 +425,7 @@ export function BackupSettings(): React.JSX.Element {
                             <tr key={run.id} className="transition-colors hover:bg-muted/20">
                               <td className="max-w-[240px] px-5 py-3.5">
                                 <div className="flex items-center gap-1.5 font-medium text-foreground">
-                                  <span className="truncate">{scopeName(run.serviceId)}</span>
+                                  <span className="truncate">{runName(run)}</span>
                                   {protectedRun && (
                                     <Icon
                                       name="lock"
@@ -517,7 +519,7 @@ export function BackupSettings(): React.JSX.Element {
                                       });
                                     }}
                                     title={b.recent.viewDetails}
-                                    aria-label={`${b.recent.viewDetails}: ${scopeName(run.serviceId)}`}
+                                    aria-label={`${b.recent.viewDetails}: ${runName(run)}`}
                                   >
                                     <Icon name="activity" className="size-3.5" />
                                   </Button>
@@ -576,7 +578,7 @@ export function BackupSettings(): React.JSX.Element {
                         runId={runId}
                         initial={run}
                         visible={!dismissedRunIds.has(runId)}
-                        serviceName={run ? scopeName(run.serviceId) : undefined}
+                        serviceName={run ? runName(run) : undefined}
                         onUpdate={updateRun}
                       />
                     );
@@ -783,7 +785,11 @@ export function BackupSettings(): React.JSX.Element {
       {restoreFromRun && (
         <RestoreWizard
           sourceRun={restoreFromRun}
-          serviceName={restoreFromRun.serviceId ? scopeName(restoreFromRun.serviceId) : undefined}
+          serviceName={
+            restoreFromRun.sourceKind === "project" || restoreFromRun.serviceId
+              ? runName(restoreFromRun)
+              : undefined
+          }
           onClose={() => {
             setRestoreFromRun(null);
             void reload();

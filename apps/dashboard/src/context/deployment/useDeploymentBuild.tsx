@@ -23,6 +23,7 @@ import { serviceEnvironmentChanges } from "@/lib/service-environment-editor";
 import { randomUUID } from "@/lib/random-uuid";
 import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
+import { refreshSecurityAfterDeployment } from "@/components/updates/useUpdates";
 import { ApiError, getActiveOrganizationId, getApiErrorMessage } from "@/lib/api/client";
 import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
 import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
@@ -260,6 +261,10 @@ export function useDeploymentBuild(
   const openGithubConnect = useServerGitHubConnectModal();
   const { installUrl, state: githubState } = useGitHub();
   const [state, setState] = useState<DeploymentState>(INITIAL_STATE);
+  useEffect(() => {
+    if (state.deploymentSuccess && state.projectId && state.deploymentId)
+      void refreshSecurityAfterDeployment(cloudScope, state.projectId, state.deploymentId);
+  }, [cloudScope, state.deploymentSuccess, state.projectId, state.deploymentId]);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
 

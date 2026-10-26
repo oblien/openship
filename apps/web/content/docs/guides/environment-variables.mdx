@@ -142,9 +142,24 @@ variables. The list includes Compose values, shared project variables and explic
 service overrides, with a source label on each row. Openship stores these values;
 the list remains available when the deployment server is offline.
 
-Editing an inherited value creates an override for that service. Saving changes
-only the rows you edited; it does not copy the other inherited values into
-overrides. Removing an override restores the inherited value, if one exists.
+When you edit an inherited project value or a direct Compose reference such as
+`TOKEN: ${TOKEN}`, **Save** shows the affected services. Choose **Only this service**
+to create an override, or select the values to update at their shared project
+source. Derived values, such as a connection URL using that token, are included
+in the review. Existing service overrides remain independent.
+
+Shared changes are saved together with your other edits. If the configuration
+changes after review, Openship asks you to review again. Saving does not restart
+containers: use **Apply & restart** or redeploy each affected service. Settings
+used during an image build require a rebuild.
+
+This edits configuration stored in Openship, not files in your repository. Literal
+Compose values and already-expanded imports do not establish a shared source;
+matching names or values are never automatically linked. Use project variables
+and Compose references when you want a shared editable value.
+
+Saving changes only the rows you edited; it does not copy other inherited values
+into overrides. Removing an override restores the inherited value, if one exists.
 Remove inherited keys at their Compose or project source. Conflicting edits from
 another session are rejected before anything is saved.
 

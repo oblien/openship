@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { newServerBillingHref } from "./billing-links";
 
 vi.mock("@/lib/api/urls", () => ({
   getCloudApiOrigin: () => "https://api.openship.io",
@@ -70,6 +71,18 @@ it("preserves a landing-page plan purchase through login without allowing arbitr
   expect(getPostAuthRedirect(new URL(signup, "https://app.openship.io").searchParams)).toBe(destination);
   for (const unsafe of ["//evil.test/billing/plans", "/billing/plans/../../settings", "/billing/plans\\evil.test", "/billing/plans%2fextra", "/billing/payment"])
     expect(validateReturnTo(unsafe)).toBeNull();
+});
+
+it.each(["monthly", "annual"] as const)("keeps a referral and %s plan through signup, verification and organization selection", (interval) => {
+  const destination = newServerBillingHref("team", { planId: "starter", interval, startCheckout: true, referralCode: "AF-PARTNER" });
+  let href = authContinuationHref("/login", destination);
+  for (const route of ["/register", "/two-factor", "/select-organization"] as const) {
+    href = buildAuthPageHref(route, new URL(href, "https://app.openship.io").searchParams);
+    expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+  }
+  href = emailVerificationHref("customer@example.test", new URL(href, "https://app.openship.io").searchParams);
+  expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+  expect(new URL(destination, "https://app.openship.io").searchParams.get("ref")).toBe("AF-PARTNER");
 });
 
 describe("invitation post-auth return", () => {

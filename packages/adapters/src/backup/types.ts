@@ -21,7 +21,7 @@ import type { Readable } from "node:stream";
  *  into the DB. Everything an executor or producer might need about
  *  the service is on this handle. */
 export interface ServiceHandle {
-  /** Stable service id from the DB. */
+  /** Stable source id: a service, standalone project, or mail server. */
   id: string;
   projectId: string;
   /** Compose-style service name; used for hostnames + container names. */
@@ -33,7 +33,7 @@ export interface ServiceHandle {
    *  `pg_dump -U $POSTGRES_USER` etc. The orchestrator decrypts the
    *  per-service env_vars before constructing the handle. */
   env: Record<string, string>;
-  /** Raw compose-syntax volume strings from `service.volumes`. The
+  /** Declared persistent volumes in Compose syntax. The
    *  executor parses these to discover sources. */
   volumes: string[];
   /** Runtime-specific container/workspace id when the service is

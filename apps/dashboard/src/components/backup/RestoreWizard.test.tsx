@@ -44,11 +44,11 @@ const source = {
 let stream: UseRestoreRunStreamResult;
 let root: Root;
 let host: HTMLDivElement;
-const render = () =>
+const render = (run = source, name: string | null = "Database") =>
   act(async () =>
     root.render(
       <I18nProvider>
-        <RestoreWizard sourceRun={source} serviceName="Database" onClose={api.close} />
+        <RestoreWizard sourceRun={run} serviceName={name ?? undefined} onClose={api.close} />
       </I18nProvider>,
     ),
   );
@@ -107,6 +107,18 @@ afterEach(async () => {
 });
 
 describe("restore workflow", () => {
+  it("requires the project identity to confirm a standalone-app restore without a service row", async () => {
+    const appRun = { ...source, sourceKind: "project", projectId: "project-app", serviceId: null };
+    await render(appRun, null);
+    await click(m.continuePrepare);
+    stream.restore = { id: "restore-one", status: "prepared" } as BackupRestore;
+    await render(appRun, null);
+    expect(button(m.applyRestore).disabled).toBe(true);
+    await typeName("project-app");
+    await click(m.applyRestore);
+    expect(api.apply).toHaveBeenCalledWith("restore-one", "one-time-confirmation");
+  });
+
   it("shows the reconstructed backup size and describes protection of the selected restore point", async () => {
     await render();
     expect(host.textContent).toContain("100.0 MB");

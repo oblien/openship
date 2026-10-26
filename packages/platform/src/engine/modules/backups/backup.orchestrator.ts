@@ -67,6 +67,7 @@ import { withBackupPolicyLock } from "./backup-lock";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
+import { projectBackupVolumes, resolveProjectBackupSource } from "./project-source";
 import crypto from "node:crypto";
 import { detectDbImage, incrementalBackupStorage, payloadSpec, safeErrorMessage, ValidationError } from "@repo/core";
 import {
@@ -211,8 +212,7 @@ export class BackupOrchestrator {
     //  - mail_server policy → the mail server
     //  - per-service policy → its service
     //  - project-default policy (no serviceId) → fan out to every ENABLED
-    //    service of the project, one child run each. Single-app projects have
-    //    no service rows → nothing to back up (surfaced as an error).
+    //    service of the project, or its standalone app's persistent storage.
     if (input.serviceId) {
       const service = await repos.service.findById(input.serviceId);
       if (!service || service.projectId !== policy.projectId ||
@@ -259,7 +259,15 @@ export class BackupOrchestrator {
     if (!policy.projectId) {
       throw new Error(`Backup policy ${policy.id} has neither a service nor a project to back up`);
     }
-    const services = (await repos.service.listByProject(policy.projectId)).filter((s) => s.enabled);
+    const rows = await repos.service.listByProject(policy.projectId);
+    if (policyProject && projectBackupVolumes(policyProject, rows).length > 0) {
+      const runIds = await this.spawnRuns(
+        policy, destination, organizationId, batchId, batchStartedAt,
+        [{ projectId: policyProject.id }], input.trigger,
+      );
+      return { runId: runIds[0]!, runIds };
+    }
+    const services = rows.filter((s) => s.enabled);
     if (services.length === 0) {
       throw new Error("Project has no services to back up — add a service or pick one.");
     }
@@ -288,7 +296,7 @@ export class BackupOrchestrator {
     organizationId: string,
     batchId: string,
     batchStartedAt: Date,
-    targets: Array<{ serviceId: string } | { mailServerId: string | null }>,
+    targets: Array<{ serviceId: string } | { mailServerId: string | null } | { projectId: string }>,
     trigger: BackupTrigger,
   ): Promise<string[]> {
     const rows = targets.map(target => ({
@@ -296,7 +304,7 @@ export class BackupOrchestrator {
       batchId,
       policyId: policy.id,
       destinationId: destination.id,
-      sourceKind: policy.sourceKind,
+      sourceKind: "projectId" in target ? "project" : policy.sourceKind,
       projectId: policy.projectId,
       serviceId: "serviceId" in target ? target.serviceId : null,
       mailServerId: "mailServerId" in target ? target.mailServerId : null,
@@ -441,9 +449,8 @@ export class BackupOrchestrator {
       // destination — see there.
       destinationProven = true;
 
-      // 3. Materialize the SOURCE — a deployed project service, or a bare
-      //    mail server. Both yield an opaque ServiceHandle + an executor +
-      //    the key/manifest metadata the shared pipeline below needs.
+      // 3. Resolve the source app, service or mail server to a ServiceHandle,
+      //    an executor and the key/manifest metadata the shared pipeline needs.
       if (policy.sourceKind === "mail_server") {
         if (!policy.mailServerId) throw new Error("mail_server policy has no mailServerId");
         const built = await this.buildMailSource(
@@ -455,17 +462,19 @@ export class BackupOrchestrator {
         sourceRuntime = built.runtime;
         ctx = built.ctx;
       } else {
-        // The concrete service lives on the RUN row (set at spawn for both
-        // per-service policies and project-default fan-out children), so a
-        // project-default policy resolves to a real service here.
-        if (!run.serviceId) {
+        // The durable run identifies its source. A null service FK on an old
+        // service run must never fall back to the standalone app.
+        if (run.sourceKind !== "project" && !run.serviceId) {
           throw new Error(`Backup run ${run.id} has no service to back up`);
         }
-        const serviceRow = await repos.service.findById(run.serviceId);
-        if (!serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
+        const app = run.sourceKind === "project"
+          ? await resolveProjectBackupSource(run.projectId, run.organizationId)
+          : null;
+        const serviceRow = app ? null : await repos.service.findById(run.serviceId!);
+        if (!app && !serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
 
-        const project = await repos.project.findById(serviceRow.projectId);
-        if (!project) throw new Error(`Project ${serviceRow.projectId} disappeared`);
+        const project = app?.project ?? await repos.project.findById(serviceRow!.projectId);
+        if (!project) throw new Error(`Project ${run.projectId} disappeared`);
 
         // Defense-in-depth: project + destination must be in the same org.
         if (project.organizationId !== destinationRow.organizationId) {
@@ -473,17 +482,17 @@ export class BackupOrchestrator {
             `Org mismatch — refusing to run: project.org=${project.organizationId}, destination.org=${destinationRow.organizationId}`,
           );
         }
-        if (serviceRow.projectId !== policy.projectId) {
+        if (project.id !== policy.projectId || (app && (policy.serviceId || run.serviceId))) {
           throw new Error(
-            `Service ${serviceRow.id} does not belong to policy's project ${policy.projectId}`,
+            `Backup source does not belong to policy's project ${policy.projectId}`,
           );
         }
 
-        serviceHandle = await this.buildServiceHandle(serviceRow);
+        serviceHandle = app?.handle ?? await this.buildServiceHandle(serviceRow!);
 
-        const activeDeployment = project.activeDeploymentId
+        const activeDeployment = app?.deployment ?? (project.activeDeploymentId
           ? await findActiveDeployment(project)
-          : null;
+          : null);
         // Resolved from the SERVICE, not just the snapshot: an adopted service (the
         // control plane's own compose stack above all) is a container whose adopt
         // deployment is recorded as bare, and the bare executor cannot see into a
@@ -492,7 +501,7 @@ export class BackupOrchestrator {
           meta: activeDeployment?.meta ?? {},
           organizationId: destinationRow.organizationId,
           containerId: serviceHandle.containerId,
-          serviceName: serviceRow.name,
+          serviceName: serviceHandle.name,
         });
         sourceRuntime = source.runtime;
         executor = source.executor;
@@ -504,16 +513,16 @@ export class BackupOrchestrator {
         ctx = {
           projectSlug: project.slug,
           projectName: project.name,
-          serviceName: serviceRow.name,
+          serviceName: serviceHandle.name,
           manifest: {
             projectId: project.id,
-            serviceId: serviceRow.id,
-            serviceName: serviceRow.name,
-            serviceImage: serviceRow.image,
-            ports: (serviceRow.ports as string[] | null) ?? [],
-            command: serviceRow.command,
+            serviceId: serviceHandle.id,
+            serviceName: serviceHandle.name,
+            serviceImage: serviceHandle.image,
+            ports: (serviceRow?.ports as string[] | null) ?? [],
+            command: serviceRow?.command ?? null,
             environmentKeys: Object.keys(
-              (serviceRow.environment as Record<string, string> | null) ?? {},
+              (serviceRow?.environment as Record<string, string> | null) ?? (app ? serviceHandle.env : {}),
             ),
           },
         };
@@ -582,7 +591,7 @@ export class BackupOrchestrator {
       // compressor's state for the remainder of a filesystem archive.
       if (incremental && payloadSpec(producer.kind).shape === "filesystem") producerOpts.compression = "none";
       const previous = incremental
-        ? await repos.backupRun.latestSucceededForSource(policy.id, destinationRow.id, run.serviceId, run.mailServerId)
+        ? await repos.backupRun.latestSucceededForSource(policy.id, destinationRow.id, run.serviceId, run.mailServerId, run.sourceKind)
         : undefined;
       const previousArtifacts = (previous?.artifacts ?? []) as typeof artifactsRecorded;
       const artifactNames = new Set<string>();
@@ -689,6 +698,7 @@ export class BackupOrchestrator {
           destinationRow.id,
           run.serviceId,
           run.mailServerId,
+          run.sourceKind,
         );
         assertPlausibleBackupSizes(artifactsRecorded, recent);
       }

@@ -4,6 +4,83 @@ All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+- **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
+  an interactive commission split, monthly and annual reward timing, payout
+  guidance, and a dedicated social preview. Label the dashboard affiliate entry
+  Earn with a gift-box icon in the left sidebar.
+- **Start CockroachDB services correctly** — pass the required single-node
+  command to the official image, generate an application password, and persist
+  TLS certificates alongside the existing data volume. New services keep TLS and
+  password authentication enabled; container replacement preserves both data and
+  certificates. Include recovery steps for saved services missing the command
+  (#1484).
+- **Recover storage from slow build-cache scans** — when free disk space or inodes
+  already block deployment, allow up to two minutes to measure unused, owned build
+  caches before reclaiming them. Healthy hosts retain the short best-effort scan;
+  active builders and application volumes remain protected.
+- **Reclaim images from interrupted first deployments** — include projects that
+  have never reached a running release in managed image collection. Resolve the
+  last attempt through the existing tenant checks and retain the same rollback,
+  retry, pin and in-use protections, so failed builds cannot fill the server with
+  orphaned images.
+- **Cloud affiliate program** — create and revoke referral links with optional
+  customer discounts, follow verified payments, renewals and expiry, and request
+  reviewed cash payouts. Staff can review pending requests in a private operator
+  queue and reconcile transfers, including after an account is deleted.
+  Oblien owns the ledger and atomically reserves payout
+  funds. The default minimum is $50, with trusted per-user overrides. Eligible
+  monthly and annual Cloud compute starts at $10 per month equivalent; Manage,
+  PAYG and top-ups are excluded. Program guidance lives beside the referral lists,
+  with illustrated empty states, a two-step discount and plan picker, monthly/yearly
+  eligibility enforced at checkout, encrypted manual payout accounts with immutable
+  request destinations, payment-method guidance and a screenshot
+  walkthrough in the docs. The program remains off until the provider and
+  its explicit policy grant are configured.
+- **Review shared environment edits** — preview which services inherit an edited
+  project variable, then save shared values and service overrides together. Stale
+  reviews are rejected inside the write transaction; project write access is
+  required, and saving alone does not restart applications.
+- **Clarify referral checkout and earnings** — retain unavailable referral codes
+  through sign-in until the customer removes them, and show commission per
+  confirmed payment with renewals limited to the program's reward period.
+
+## 0.9.5
+
+This hotfix restores self-hosted Compose startup after the 0.9.4 update.
+
+- **Restore dashboard readiness and edge startup** — bind the dashboard's Next.js
+  server to `0.0.0.0` inside its container so the loopback healthcheck can reach it.
+  Apply the same bind setting in the CLI-generated, reference self-hosted and
+  from-source Compose environments. Published host ports retain their existing
+  loopback defaults (#1461).
+- **Test the complete customer upgrade** — gate image publication on upgrades from
+  0.9.3 and the previous release using their published API, dashboard and edge
+  images and CLI templates. Verify populated PostgreSQL and Redis storage, custom
+  ports, preserved secrets, admin credentials and signed sessions, saved edge
+  routing, dashboard-to-API access, cold
+  restart and fresh installation. Probe both dashboard image architectures before
+  publication; an API-only migration check no longer stands in for a stack upgrade.
+- **Explain source rebuild prerequisites before a security refresh** — global and
+  project advisory views use the same runtime-update preflight as the deployment
+  action. Replayed or revisionless source images show their prerequisite and an
+  **Open source redeploy** action instead of offering a refresh that will fail.
+  Redeploy still uses the existing project deployment controls; source provenance,
+  image pins and tenant authorization remain enforced (#1462).
+- **Include the packaged-worker image correction** — source builds of managed
+  workers require Git checkout metadata. Bundled Dockerfiles in the released API
+  no longer trigger a development worker build.
+
+### Recovery from 0.9.4
+
+Run `openship update` after 0.9.5 is published. The update recreates the API,
+dashboard and edge through the normal pipeline and preserves existing database,
+Redis and application storage. For a temporary recovery on 0.9.4, set
+`HOSTNAME: "0.0.0.0"` in the dashboard service's Compose `environment` and run
+`docker compose up -d` with that installation's existing Compose file and project
+name. A later CLI run regenerates that file; update to 0.9.5 for the permanent fix.
+
 ## 0.9.4
 
 This release adds deployment to existing Docker Swarm clusters, reviewed database
@@ -60,6 +137,16 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Deployments, storage and recovery
 
+- **Pull managed worker images from packaged installations** — bundled workspace
+  files no longer make a release installation look like a development checkout.
+  Automatic source builds require Git checkout metadata; explicit administrator
+  build contexts still work for source archives. Remote builds use the published
+  protected worker matching the release.
+- **Back up standalone app storage** — project backup policies now capture a
+  single app's persistent volumes even when it has no service rows. Manual,
+  scheduled and pre-deploy runs share the existing backup and restore flow,
+  including integrity verification, confirmation and retention. App restore
+  points remain distinct from deleted-service history (#1444).
 - **Use release commands and roles with attached infrastructure** — supported
   self-hosted/Desktop Docker projects can keep one primary source app on the
   normal release-command, worker and scheduler pipeline while preparing attached
@@ -185,6 +272,10 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
   explicit Port only option while PostgreSQL stays internal. New catalog services
   also generate required PostgreSQL, MySQL, MariaDB, MongoDB and Typesense
   credentials instead of leaving their bootstrap secrets empty.
+- **Keep catalog images available** — Convex uses its new official registry
+  namespace with the existing version pin. The retired Mindwire Console/runtime
+  template is hidden and disabled for new installs; existing project data stays
+  unchanged.
 - **Reuse valid parent wildcard certificates** — immediate subdomains can inherit
   a validated parent wildcard certificate when an exact certificate is absent.
   Exact certificates retain precedence; read failures preserve the working route
@@ -274,6 +365,9 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Security and credentials
 
+- **Patch the DOM test environment** — dashboard and webmail tests use Happy DOM
+  21.0.4, which fixes the module import alias code-execution vulnerability
+  (GHSA-834v-8h66-3h79).
 - **Match runtime security advisories to deployed workloads** — verify a public,
   signed advisory feed and match affected image digests or observed runtime
   versions. New runtime rules, deployment changes and Check again refresh bounded
@@ -341,6 +435,9 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Desktop, webmail, website and documentation
 
+- **Build Windows installers with patched runtimes** — stage SSH and Docker
+  dependencies from a package manifest so version ranges do not pass through
+  Windows command shims. The packaged dependency load check remains required.
 - **Restore visible offline Desktop startup** — embed the shared generated theme
   palette in the native loading page so its text and artwork remain visible before
   the dashboard loads.

@@ -150,21 +150,32 @@ async function main(): Promise<void> {
     const adapters = JSON.parse(
       readFileSync(join(REPO_ROOT, "packages/adapters/package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
+    // Keep dependency ranges in a manifest: Windows npm.cmd must not receive
+    // shell metacharacters such as the caret in "^1.17.0" as arguments.
+    writeFileSync(
+      join(RESOURCES, "package.json"),
+      JSON.stringify({
+        name: "openship-desktop-externals",
+        private: true,
+        dependencies: {
+          ssh2: adapters.dependencies.ssh2,
+          dockerode: adapters.dependencies.dockerode,
+        },
+      }, null, 2),
+    );
     execFileSync(
       "npm",
       [
         "install",
         "--prefix",
-        RESOURCES,
+        ".",
         "--omit=dev",
         "--omit=optional",
         "--no-audit",
         "--no-fund",
         "--no-package-lock",
-        `ssh2@${adapters.dependencies.ssh2}`,
-        `dockerode@${adapters.dependencies.dockerode}`,
       ],
-      { cwd: REPO_ROOT, stdio: "inherit" },
+      { cwd: RESOURCES, stdio: "inherit" },
     );
     process.stdout.write(
       `  node_modules: ${existsSync(join(RESOURCES, "node_modules", "ssh2")) ? "ssh2+dockerode staged" : "MISSING"}\n`,

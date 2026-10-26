@@ -795,7 +795,8 @@ describe("compose port resolution", () => {
     expect(file).toContain(
       "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}",
     );
-    expect(file).not.toContain("0.0.0.0");
+    const spec = parseYaml(file);
+    expect([...spec.services.api.ports, ...spec.services.dashboard.ports].join(" ")).not.toContain("0.0.0.0");
     // A local install leaves the key out entirely → the loopback fallback applies.
     expect(writtenEnv().OPENSHIP_BIND_ADDR).toBeUndefined();
   });
@@ -932,6 +933,7 @@ describe("composeUpdate", () => {
     expect(up).not.toContain("postgres");
     expect(up).not.toContain("redis");
     const spec = parseYaml(h.written.get(composePaths.file)!);
+    expect(spec.services.dashboard.environment.HOSTNAME).toBe("0.0.0.0");
     expect(spec.services.dashboard.healthcheck.test).toContain("node");
     expect(spec.services.edge.depends_on).toEqual({
       api: { condition: "service_healthy" },

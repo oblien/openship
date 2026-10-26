@@ -15,6 +15,15 @@ settings creates a service policy. Running the project policy from the project p
 backs up its eligible enabled services, with a separate run and progress stream for
 each. All child rows are admitted in one database transaction before workers start.
 
+For a standalone app with no service rows, the project policy backs up the app's
+persistent volumes, including framework storage defaults. No deployment service
+is created. These runs identify their source as `project` and keep `serviceId`
+null; scheduled, webhook and pre-deploy triggers use the same behavior. Restore
+uses the app's current deployment and requires confirmation of its name (or its
+project ID when a name is unavailable). If the project has since become a service
+stack, restore stops for review instead of selecting a different container.
+Deleted-service backups are never reinterpreted as app backups.
+
 The API and SDK return `runId` for compatibility and `runIds` for the complete batch.
 An optional `serviceId` selects one service within a project policy; services outside
 the policy's project are rejected. Reconnecting a progress stream never starts a

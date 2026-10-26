@@ -171,7 +171,7 @@ function dockerConfigMountYaml(indent: string): string {
  * would freeze it at import, which both hides a config created since startup and makes
  * the generator untestable (a test setting DOCKER_CONFIG would never be observed).
  */
-function renderComposeYaml(): string {
+export function renderComposeYaml(): string {
   const mount = dockerConfigMountYaml("      ");
   return COMPOSE_YAML.split(`${DOCKER_CONFIG_MOUNT_MARKER}\n`).join(mount ? `${mount}\n` : "");
 }
@@ -621,6 +621,7 @@ ${edgeVolumeYaml("      ")}
     environment:
       NODE_ENV: production
       PORT: "\${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
       INTERNAL_API_URL: http://api:\${API_PORT:-4000}
     depends_on:
       api: { condition: service_healthy }

@@ -131,6 +131,7 @@ jobs:
               test/e2e/migration-direct-transfer.e2e.test.ts
               test/e2e/migration-takeover.e2e.test.ts
               test/e2e/backup-volume-roundtrip.e2e.test.ts
+              test/e2e/backup-project-app.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
           # Inventory identity, atomic cutover and role handover use real Docker.
           - suite: Compose cutover and rollback
@@ -142,6 +143,7 @@ jobs:
               test/e2e/runtime-roles.e2e.test.ts
               test/e2e/primary-app-infrastructure.e2e.test.ts
               test/e2e/image-volume-persistence.e2e.test.ts
+              test/e2e/image-gc-concurrent-build.e2e.test.ts
               test/e2e/image-refresh.e2e.test.ts
               test/e2e/service-swap.e2e.test.ts
               test/e2e/compose-overlap-cutover.e2e.test.ts

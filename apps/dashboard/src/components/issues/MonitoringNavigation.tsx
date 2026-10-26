@@ -7,16 +7,18 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 
-export type MonitoringTab = "open" | "health" | "resolved" | "notifications" | "deployments";
+export type MonitoringTab = "open" | "health" | "security" | "resolved" | "notifications" | "deployments";
 
 export function MonitoringNavigation({
   value,
   onChange,
   selfHosted,
+  securityCount = 0,
 }: {
   value: MonitoringTab;
   onChange: (tab: MonitoringTab) => void;
   selfHosted: boolean;
+  securityCount?: number;
 }) {
   const { t, dir } = useI18n();
   const c = t.issues;
@@ -24,6 +26,7 @@ export function MonitoringNavigation({
   const tabs: TabDef<MonitoringTab>[] = [
     { key: "open", label: c.tabs.open },
     { key: "health", label: c.tabs.health },
+    { key: "security", label: t.projectSettings.securityAdvisories.tab, count: securityCount || undefined },
     { key: "resolved", label: c.tabs.resolved },
     { key: "notifications", label: c.tabs.notifications },
     { key: "deployments", label: t.deployments.header.title },

@@ -48,10 +48,14 @@ const SURVIVORS = [
 /** A daemon that records the create payload and reports a bare running container. */
 function recordingDaemon() {
   const creates: Array<Record<string, any>> = [];
+  let removed = false;
   const docker = {
     getContainer: () => ({
-      remove: async () => undefined,
-      inspect: async () => ({ Config: {}, State: {}, NetworkSettings: { Networks: {} } }),
+      remove: async () => { removed = true; },
+      inspect: async () => {
+        if (removed) throw Object.assign(new Error("No such container"), { statusCode: 404 });
+        return { Id: "a".repeat(64), Config: {}, State: {}, NetworkSettings: { Networks: {} } };
+      },
       stop: async () => undefined,
     }),
     createContainer: async (args: Record<string, any>) => {

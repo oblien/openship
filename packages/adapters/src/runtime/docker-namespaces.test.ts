@@ -40,7 +40,11 @@ function baseConfig(overrides: Partial<MultiServiceDeployConfig> = {}): MultiSer
 function recordingDaemon() {
   const creates: Array<Record<string, any>> = [];
   const docker = {
-    getContainer: () => ({ stop: async () => undefined, remove: async () => undefined }),
+    getContainer: () => ({
+      inspect: async () => { throw Object.assign(new Error("No such container"), { statusCode: 404 }); },
+      stop: async () => undefined,
+      remove: async () => undefined,
+    }),
     createContainer: async (args: Record<string, any>) => {
       creates.push(args);
       return {
@@ -76,7 +80,11 @@ describe("deployServiceWorkload — shared namespaces", () => {
   it("rejects malformed mappings and shared network mappings before removing a live container", async () => {
     const { docker } = recordingDaemon();
     let removed = false;
-    docker.getContainer = () => ({ stop: async () => undefined, remove: async () => { removed = true; } });
+    docker.getContainer = () => ({
+      inspect: async () => { throw Object.assign(new Error("No such container"), { statusCode: 404 }); },
+      stop: async () => undefined,
+      remove: async () => { removed = true; },
+    });
     const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
     (runtime as unknown as { _docker: unknown })._docker = docker;
     await expect(runtime.deployServiceWorkload(GROUP, baseConfig({ advanced: { extraHosts: { mail: "invalid" } } }))).rejects.toThrow(/addresses/);

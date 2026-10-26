@@ -5,6 +5,19 @@ import type { MultiServiceDeployConfig, MultiServiceGroupHandle } from "./types"
 
 const GROUP: MultiServiceGroupHandle = { id: "net-openship-demo" };
 
+/** A real daemon pins names to a full ID and returns 404 after removal. */
+function removableContainer(stop: (...args: unknown[]) => unknown, remove: (...args: unknown[]) => unknown) {
+  let gone = false;
+  return {
+    inspect: async () => {
+      if (gone) throw Object.assign(new Error("No such container"), { statusCode: 404 });
+      return { Id: "a".repeat(64), State: { Status: "exited" } };
+    },
+    stop,
+    remove: async (...args: unknown[]) => { await remove(...args); gone = true; },
+  };
+}
+
 const CONFIG: MultiServiceDeployConfig = {
   deploymentId: "dep-1",
   projectId: "proj-1",
@@ -27,9 +40,10 @@ describe("Docker service replacement ordering", () => {
     });
     const stop = vi.fn(async () => undefined);
     const remove = vi.fn(async () => undefined);
+    const existing = removableContainer(stop, remove);
     const docker = {
       getImage: vi.fn(() => ({ inspect: inspectImage })),
-      getContainer: vi.fn(() => ({ stop, remove })),
+      getContainer: vi.fn(() => existing),
       createContainer: vi.fn().mockRejectedValue(new Error("replacement payload reached")),
     };
     const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
@@ -64,9 +78,10 @@ describe("Docker service replacement ordering", () => {
     const inspectImage = vi.fn(async () => ({}));
     const stop = vi.fn(async () => undefined);
     const remove = vi.fn(async () => undefined);
+    const existing = removableContainer(stop, remove);
     const docker = {
       getImage: vi.fn(() => ({ inspect: inspectImage })),
-      getContainer: vi.fn(() => ({ stop, remove })),
+      getContainer: vi.fn(() => existing),
       createContainer: vi.fn().mockRejectedValue(new Error("stop after proving ordering")),
     };
     const runtime = await DockerRuntime.create({
@@ -83,7 +98,7 @@ describe("Docker service replacement ordering", () => {
     ).rejects.toThrow("stop after proving ordering");
 
     expect(inspectImage).toHaveBeenCalled();
-    expect(stop).toHaveBeenCalledExactlyOnceWith();
+    expect(stop).toHaveBeenCalledExactlyOnceWith({ abortSignal: expect.any(AbortSignal) });
     expect(remove).toHaveBeenCalledOnce();
     expect(inspectImage.mock.invocationCallOrder.at(-1)).toBeLessThan(
       stop.mock.invocationCallOrder[0]!,
@@ -160,9 +175,10 @@ describe("Docker service replacement ordering", () => {
 
   it("skips a second pull only when the orchestrator explicitly prepared the image", async () => {
     const remove = vi.fn(async () => undefined);
+    const existing = removableContainer(vi.fn(async () => undefined), remove);
     const docker = {
       getImage: () => ({ inspect: async () => ({ Config: {} }) }),
-      getContainer: vi.fn(() => ({ stop: vi.fn(async () => undefined), remove })),
+      getContainer: vi.fn(() => existing),
       createContainer: vi.fn().mockRejectedValue(new Error("stop after proving no pull")),
     };
     const runtime = await DockerRuntime.create({
@@ -190,7 +206,7 @@ describe("Docker service replacement ordering", () => {
         getContainer: vi.fn(() => ({
           stop,
           remove,
-          inspect: async () => ({ Config: { StopTimeout: 30 } }),
+          inspect: async () => ({ Id: "a".repeat(64), Config: { StopTimeout: 30 } }),
         })),
         createContainer: vi.fn(),
       };
@@ -214,6 +230,7 @@ describe("Docker service replacement ordering", () => {
     const docker = {
       getImage: () => ({ inspect: async () => ({ Config: {} }) }),
       getContainer: vi.fn(() => ({
+        inspect: async () => ({ Id: "a".repeat(64), State: { Status: "exited" } }),
         stop: vi.fn(async () => undefined),
         remove: vi.fn().mockRejectedValue(error),
       })),

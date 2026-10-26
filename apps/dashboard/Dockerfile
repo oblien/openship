@@ -33,5 +33,8 @@ COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
 COPY --from=builder /app/apps/dashboard/standalone-server.mjs ./apps/dashboard/standalone-server.mjs
 
 ENV NODE_ENV=production
+# Next's standalone server otherwise inherits Docker's container-id HOSTNAME,
+# which excludes loopback and makes the Compose readiness probe fail.
+ENV HOSTNAME=0.0.0.0
 EXPOSE 3001
 CMD ["node", "apps/dashboard/standalone-server.mjs"]
