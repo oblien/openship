@@ -14,6 +14,8 @@ import {
   ServiceEnvironmentInputSchema,
   ServiceEnvironmentSchema,
   MergeServiceEnvVarsBody,
+  ReviewServiceEnvVarsBody,
+  ServiceEnvironmentReviewSchema,
 } from "./service-environment";
 export * from "./service-environment";
 import { LogEntrySchema, type DeploymentEvent } from "./deployment-resources";
@@ -186,7 +188,15 @@ export const ServiceResourceSchemas = {
   mergeEnvVars: {
     action: "write",
     input: MergeServiceEnvVarsBody,
-    output: Type.Object({ success: Type.Literal(true) }),
+    output: Type.Object({
+      success: Type.Literal(true),
+      affectedServices: Type.Optional(Type.Array(Type.Object({ id: Type.String(), name: Type.String() }))),
+    }),
+  },
+  reviewEnvVars: {
+    action: "write",
+    input: ReviewServiceEnvVarsBody,
+    output: ServiceEnvironmentReviewSchema,
   },
   revealEnv: {
     action: "write",

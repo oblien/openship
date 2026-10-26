@@ -1254,21 +1254,28 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Rebuild this app from its saved source before refreshing its runtime. The current image has no verified source revision. A source redeploy may include newer code; review it in Deployments, then check this advisory again.",
+    "openSourceRedeploy": "Open source redeploy",
     "reviewApps": "Review affected apps ({count})",
     "pendingApps": "Checks pending for {count} apps. Results will appear automatically.",
     "checkAgain": "Check again",
     "checking": "Checking…",
     "title": "Security advisories",
     "unavailable": "Security checks are unavailable or out of date. Existing notices remain visible.",
-    "affected": "Review the affected runtime and the published guidance before updating.",
+    "affected": "Findings for apps you can access in the current organization.",
     "noMatches": "No matching advisories in the checked evidence. This is not a complete vulnerability scan.",
-    "partial": "Some runtimes could not be identified. Bare processes, stopped containers and unsupported images may need a manual check.",
+    "partial": "Some runtimes could not be checked.",
     "guidance": "Read advisory",
     "automatic": "Automatically refresh verified security patches",
     "automaticDescription": "Off by default. Only image services with a signed fix on their existing tag can update automatically. Source builds, pinned images and version changes require review. Normal deployment and health checks still apply.",
     "notifications": "Security alerts are enabled on notification channels by default. You can change each channel in Settings → Notifications.",
     "publicFeed": "View public feed",
     "checked": "Evidence checked",
-    "possible": "Image tag matches; the deployed version needs verification."
+    "possible": "Image tag matches; the deployed version needs verification.",
+    "tab": "Security",
+    "monitoring": "View in Monitoring",
+    "persistent": "Active findings stay here when the banner is dismissed.",
+    "otherApps": "Other apps ({count})",
+    "details": "Details & guidance"
   }
 }

@@ -123,6 +123,44 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
 
+      - name: Verify packaged managed-image resolution
+        if: steps.resume.outputs.reused != 'true' && matrix.image == 'api'
+        env:
+          API_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-api@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --network none --entrypoint node "$API_IMAGE" \
+            --import tsx --input-type=module -e '
+              import assert from "node:assert/strict";
+              import { readFileSync } from "node:fs";
+              import { buildKitBuildSpec, pinnedBuildKitImage } from "/app/packages/platform/src/engine/lib/buildkit-image.ts";
+              import { edgeBuildSpec } from "/app/packages/platform/src/engine/lib/edge-image.ts";
+              import { mailBuildSpec } from "/app/packages/platform/src/engine/lib/mail-image.ts";
+              const version = JSON.parse(readFileSync("/app/apps/api/package.json", "utf8")).version;
+              assert.equal(buildKitBuildSpec(), undefined);
+              assert.equal(edgeBuildSpec(), undefined);
+              assert.equal(mailBuildSpec(), undefined);
+              assert.equal(pinnedBuildKitImage(), `ghcr.io/oblien/openship-buildkit:${version}`);
+              console.log(`Packaged API resolves published managed images for ${version}.`);
+            '
+
+      - name: Verify dashboard loopback readiness
+        if: steps.resume.outputs.reused != 'true' && matrix.image == 'dashboard'
+        env:
+          DASHBOARD_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-dashboard@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          container="dashboard-readiness-${GITHUB_RUN_ID}-${{ matrix.platform }}"
+          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
+          docker run -d --name "$container" --network none -e PORT=3001 "$DASHBOARD_IMAGE"
+          for attempt in $(seq 1 40); do
+            if docker exec "$container" node -e "fetch('http://127.0.0.1:3001/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'The packaged dashboard is unreachable through its loopback readiness probe.' >&2
+          exit 1
+
       - name: Export digest
         if: steps.resume.outputs.reused != 'true'
         run: |
@@ -140,9 +178,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The update path itself: the PREVIOUS release's stack, with rows in its database,
-  # recreated onto the api this run just built — `up -d --force-recreate api`, the same
-  # command `openship update` issues.
+  # Full customer stack: previous release and 0.9.3, populated storage, regenerated
+  # CLI template, API/dashboard/edge replacement, cold restart and fresh install.
   #
   # Positioned between the build and the manifest publish on purpose. `build-images`
   # pushes by digest under no tag, so at this point the new image exists but nothing
@@ -150,10 +187,14 @@ jobs:
   # bytes `merge-images` is about to tag. Testing `:latest` after publishing it would be
   # testing what operators already got.
   update-e2e:
-    name: E2E (update from previous release)
+    name: E2E (full stack update from ${{ matrix.baseline }})
     needs: build-images
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: [previous, '0.9.3']
     steps:
       - name: Checkout
         # Tags, and all of them: the test resolves which release to upgrade FROM by
@@ -187,23 +228,25 @@ jobs:
 
       # This runner is amd64, so it needs the amd64 half of the build. The artifact holds
       # one empty file NAMED for the digest (see "Export digest" above).
-      - name: Resolve the new api image digest
+      - name: Resolve the new control-plane image digests
         id: newimage
         uses: actions/download-artifact@v8
         with:
-          name: digests-api-amd64
-          path: /tmp/api-digest
+          pattern: digests-*-amd64
+          path: /tmp/update-digests
 
       - name: Build the image reference
         id: ref
         run: |
           set -euo pipefail
-          digest="$(ls /tmp/api-digest | head -1)"
-          if [ -z "$digest" ]; then
-            echo "No digest artifact — build-images did not export one for api/amd64." >&2
-            exit 1
-          fi
-          echo "image=ghcr.io/${{ github.repository_owner }}/openship-api@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          for component in api dashboard edge; do
+            digest="$(ls /tmp/update-digests/digests-${component}-amd64)"
+            if [[ ! "$digest" =~ ^[a-f0-9]{64}$ ]]; then
+              echo "Missing or ambiguous digest artifact for ${component}/amd64." >&2
+              exit 1
+            fi
+            echo "${component}=ghcr.io/${{ github.repository_owner }}/openship-${component}@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          done
 
       # Fail here rather than inside vitest, so "the runner lost Docker" is
       # distinguishable at a glance from "the update broke".
@@ -216,9 +259,14 @@ jobs:
         env:
           RUN_DOCKER_E2E: "1"
           E2E_SCOPE: update
-          OPENSHIP_E2E_NEW_API_IMAGE: ${{ steps.ref.outputs.image }}
+          OPENSHIP_E2E_OLD_VERSION: ${{ matrix.baseline }}
+          OPENSHIP_E2E_NEW_API_IMAGE: ${{ steps.ref.outputs.api }}
+          OPENSHIP_E2E_NEW_DASHBOARD_IMAGE: ${{ steps.ref.outputs.dashboard }}
+          OPENSHIP_E2E_NEW_EDGE_IMAGE: ${{ steps.ref.outputs.edge }}
           OPENSHIP_E2E_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
-        run: bun run --cwd apps/api test:e2e
+        run: |
+          bun x tsc --noEmit --project apps/api/tsconfig.update-e2e.json
+          bun run --cwd apps/api test:e2e
 
   # Does the dashboard image actually CONTAIN every page in src/app?
   #

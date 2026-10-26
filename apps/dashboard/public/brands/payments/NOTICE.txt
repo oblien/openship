@@ -1,0 +1,12 @@
+Payment artwork bundled from the providers' public assets:
+
+PayPal monogram:
+https://www.paypalobjects.com/paypal-ui/logos/svg/paypal-mark-color.svg
+Wise mark (referenced by wise.com):
+https://dq8dwmysp7hk1.cloudfront.net/logos/wise-mark.svg
+Payoneer app mark:
+https://www.payoneer.com/wp-content/themes/payo/assets/img/favicons/android-icon-192x192.png
+
+Brand names and artwork belong to their respective owners. Their presence
+identifies manual recipient methods; it does not imply integration or endorsement.
+The artwork is bundled locally so no recipient data is sent to these providers.

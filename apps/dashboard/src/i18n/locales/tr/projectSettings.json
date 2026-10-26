@@ -1254,21 +1254,28 @@
     "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Çalışma ortamını yenilemeden önce bu uygulamayı kayıtlı kaynak kodundan yeniden derleyin. Mevcut imajın doğrulanmış bir kaynak revizyonu yok. Kaynaktan yeniden dağıtım daha yeni kod içerebilir; Dağıtımlar bölümünde inceleyin, ardından bu güvenlik duyurusunu tekrar kontrol edin.",
+    "openSourceRedeploy": "Kaynaktan yeniden dağıtımı aç",
     "reviewApps": "Etkilenen uygulamaları incele ({count})",
     "pendingApps": "{count} uygulama için kontroller bekleniyor. Sonuçlar otomatik olarak görünecek.",
     "checkAgain": "Tekrar kontrol et",
     "checking": "Kontrol ediliyor…",
     "title": "Güvenlik bildirimleri",
     "unavailable": "Güvenlik kontrolleri kullanılamıyor veya güncel değil. Önceki bildirimler görünür kalır.",
-    "affected": "Güncellemeden önce etkilenen çalışma ortamını ve yayımlanan önerileri inceleyin.",
+    "affected": "Geçerli kuruluşta erişebildiğiniz uygulamalara ait bulgular.",
     "noMatches": "Kontrol edilen verilerle eşleşen bildirim yok. Bu, tam bir güvenlik açığı taraması değildir.",
-    "partial": "Bazı çalışma ortamları belirlenemedi. Ana makine süreçleri, durdurulmuş konteynerler ve desteklenmeyen imajlar elle kontrol gerektirebilir.",
+    "partial": "Bazı çalışma ortamları kontrol edilemedi.",
     "guidance": "Bildirimi oku",
     "automatic": "Doğrulanmış güvenlik yamalarını otomatik güncelle",
     "automaticDescription": "Varsayılan olarak kapalıdır. Yalnızca mevcut etiketinde imzalı düzeltme bulunan imaj servisleri otomatik güncellenir. Kaynak derlemeleri, sabitlenmiş imajlar ve sürüm değişiklikleri inceleme gerektirir. Normal dağıtım ve sağlık kontrolleri geçerlidir.",
     "notifications": "Güvenlik bildirimleri kanallarda varsayılan olarak açıktır. Her kanalı Ayarlar → Bildirimler bölümünden yönetebilirsiniz.",
     "publicFeed": "Herkese açık akışı gör",
     "checked": "Kanıtlar kontrol edildi",
-    "possible": "İmaj etiketi eşleşiyor; dağıtılan sürüm doğrulanmalı."
+    "possible": "İmaj etiketi eşleşiyor; dağıtılan sürüm doğrulanmalı.",
+    "tab": "Güvenlik",
+    "monitoring": "İzlemede görüntüle",
+    "persistent": "Etkin bulgular, bildirim kapatıldıktan sonra da burada kalır.",
+    "otherApps": "Diğer uygulamalar ({count})",
+    "details": "Ayrıntılar ve öneriler"
   }
 }

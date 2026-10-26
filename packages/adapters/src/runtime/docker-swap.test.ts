@@ -3,7 +3,8 @@ import { DockerRuntime } from "./docker";
 import type { MultiServiceDeployConfig, MultiServiceGroupHandle } from "./types";
 
 async function fixture(swapInfo: Record<string, unknown>) {
-  const remove = vi.fn(async () => {});
+  let removed = false;
+  const remove = vi.fn(async () => { removed = true; });
   const create = vi.fn(async (_args: Record<string, any>) => ({
     id: "c".repeat(64),
     start: async () => {},
@@ -16,7 +17,13 @@ async function fixture(swapInfo: Record<string, unknown>) {
   });
   const docker = {
     info,
-    getContainer: () => ({ stop: async () => {}, remove }),
+    getContainer: () => ({
+      stop: async () => {}, remove,
+      inspect: async () => {
+        if (removed) throw Object.assign(new Error("No such container"), { statusCode: 404 });
+        return { Id: "a".repeat(64), State: { Status: "exited" } };
+      },
+    }),
     createContainer: create,
     getImage: () => ({ inspect: async () => ({ RepoDigests: [] }) }),
   };

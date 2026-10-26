@@ -150,6 +150,25 @@ describeDockerE2E("image-declared data survives real Docker replacement", () => 
     }
   });
 
+  it("joins concurrent removal before recreating a stateful service", async () => {
+    const cfg = config();
+    const old = await legacy(cfg, "db");
+    const names = await runtime.inspectNamedVolumes(old);
+    const group = await runtime.ensureServiceGroup({ projectId: cfg.projectId, slug: cfg.slug! });
+    const next: MultiServiceDeployConfig = {
+      projectId: cfg.projectId, deploymentId: `${cfg.projectId}-v2`, slug: cfg.slug,
+      serviceName: "db", image: images[1], ports: [], environment: {}, volumes: [],
+      namespaceVolumes: true, previousContainerId: old, imageAlreadyPrepared: true,
+    };
+    await runtime.prepareServiceVolumes(next);
+    await Promise.all([runtime.destroy(old), runtime.destroy(old)]);
+    await expect(runtime.docker.getContainer(old).inspect()).rejects.toMatchObject({ statusCode: 404 });
+    const replacement = await runtime.deployServiceWorkload(group, next);
+    await remember(replacement.containerId!);
+    expect(await runtime.inspectNamedVolumes(replacement.containerId!)).toEqual(names);
+    expect(await command(replacement.containerId!, "cat /version /data/record")).toBe("2\ncustomer-data");
+  });
+
   it("reuses a legacy anonymous volume for release commands, web and roles across redeploys", async () => {
     const cfg = config();
     const old = await legacy(cfg);

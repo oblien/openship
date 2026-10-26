@@ -778,7 +778,7 @@
       "id": "convex",
       "name": "Convex",
       "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
-      "repository": "https://github.com/get-convex/convex-backend",
+      "repository": "https://github.com/convex/convex-backend",
       "kind": "template",
       "logo": "convex",
       "category": "backend",
@@ -791,7 +791,7 @@
       "services": [
         {
           "name": "backend",
-          "image": "ghcr.io/get-convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+          "image": "ghcr.io/convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
           "ports": [
             "3210:3210",
             "3211:3211"
@@ -833,7 +833,7 @@
         },
         {
           "name": "dashboard",
-          "image": "ghcr.io/get-convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+          "image": "ghcr.io/convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
           "ports": [
             "6791:6791"
           ],
@@ -4779,11 +4779,12 @@
       }
     },
     {
-      "available": true,
-      "verified": true,
+      "available": false,
+      "verified": false,
+      "unlisted": true,
       "id": "mindwire",
       "name": "MindWire",
-      "description": "Run coding-agent runtimes behind a self-hosted control plane. MindWire keeps the runtime private and gives you one console to manage agents, credentials, and sessions.",
+      "description": "Retired Console/runtime container template. Mindwire now distributes its runtime through GitHub Releases and provides a hosted account portal.",
       "repository": "https://github.com/oblien/mindwire",
       "kind": "template",
       "logo": "mindwire",
@@ -4964,7 +4965,7 @@
             "description": "Manage access and agent sessions in one place."
           }
         ],
-        "article": "## A control plane for coding-agent runtimes\n\nMindWire gives you one console for managing agents, credentials, and sessions while keeping the underlying runtime private.\n\nThe catalog defines the control plane and runtime together. The runtime stays behind the project network, and users enter through the console's public route.\n\n## Build around the control plane\n\nOpen the console after deployment and configure the credentials and runtime settings your agents need. Keep private runtime access separate from the console address.\n\nSee the [MindWire source project](https://github.com/oblien/mindwire) for supported integrations and application APIs. Use the normal app configuration and backup flows to protect persistent data."
+        "article": "## Retired container template\n\nMindwire no longer publishes the Console and runtime images used by this template. It is unavailable for new installations. Its definition remains in the catalog for existing project configuration.\n\n## Connect a computer to Mindwire\n\nInstall the current runtime from checksum-verified [GitHub Releases](https://github.com/oblien/mindwire/releases) using the [runtime installation guide](https://mindwire.sh/docs/guides/destinations). Manage your account and Cloud Computers in the [hosted portal](https://console.mindwire.sh).\n\nSee [Mindwire's deployment documentation](https://github.com/oblien/mindwire/blob/main/docker/README.md) for the supported distribution model. Existing deployments and their stored data are not migrated by this catalog change."
       }
     },
     {

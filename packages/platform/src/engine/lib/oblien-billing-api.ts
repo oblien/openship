@@ -248,7 +248,11 @@ const checkoutInput = z.object({
   idempotencyKey: z.string().min(1), offer: oblienOfferSchema, metadata: z.record(z.string(), z.string()),
 });
 export const oblienCheckoutInputSchema = z.discriminatedUnion("kind", [
-  checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]) }),
+  checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]),
+    affiliateCode: z.string().regex(/^AF-[A-Z0-9][A-Z0-9-]{5,59}$/).optional(),
+    affiliateBuyer: z.object({ namespace: z.string(), buyerKey: z.string().regex(/^[a-f0-9]{64}$/),
+      relatedKeys: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(100) }).strict().optional(),
+  }),
   checkoutInput.extend({ kind: z.literal("topup") }),
 ]).refine(value => value.offer.billingMode !== "monthly" ||
   value.kind === "subscription",
@@ -282,6 +286,11 @@ const PROVIDER_FAILURES = new Set([
 ]);
 
 export class OblienBillingApi {
+  /** Uses the same authenticated, bounded provider transport as checkout. */
+  affiliateRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
+    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid affiliate endpoint");
+    return this.request<unknown>({ method, path, ...(method === "GET" ? { query: Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])) } : { body: input }) });
+  }
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
   private readonly billing: Oblien["billing"];
@@ -358,6 +367,21 @@ export class OblienBillingApi {
         ...diagnostic,
       });
       const known: Record<string, string> = {
+        affiliate_unavailable: "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
+        affiliate_paused: "Affiliate access is paused. Contact support.",
+        affiliate_not_found: "This affiliate record was not found for your account.",
+        affiliate_payout_minimum: "The payout amount is below your minimum. Refresh your balance to see the current minimum.",
+        affiliate_payout_balance: "Your available earnings changed. Refresh your balance before requesting a payout.",
+        affiliate_payout_funding: "Payout funding is temporarily unavailable. Contact support.",
+        affiliate_payout_state: "This payout can no longer be changed. Refresh its status.",
+        affiliate_payout_destination_required: "Add a payout account before requesting a payout.",
+        affiliate_payout_destination_changed: "Your payout account changed. Review it before trying again.",
+        affiliate_payout_destination_invalid: "Your payout account needs review. Contact support.",
+        affiliate_payout_configuration: "Payout accounts are not available yet. Contact support.",
+        affiliate_settlement_pending: "Recent payments or refunds are still being reconciled. Please retry shortly.",
+        affiliate_idempotency_conflict: "This request no longer matches its original terms. Refresh its status before trying again.",
+        affiliate_payment_reference_used: "This transfer reference is already recorded for another payout. Reconcile the existing transfer before retrying.",
+        affiliate_rate_limit: "Please wait a minute before trying again.",
         invalid_plan: "This plan is no longer available. Refresh the plans page.",
         invalid_pack: "This credit pack is no longer available. Refresh the billing page.",
         no_customer: "No billing account exists yet. Complete a checkout first.",
@@ -645,7 +669,7 @@ export class OblienBillingApi {
     // and this saved namespace offer before creating the Stripe session.
     const parsed = oblienCheckoutInputSchema.parse(input);
     const request = { ...parsed, allowPromotionCodes: parsed.offer?.unitAmount !== 0 };
-    const result = await this.validate(request.offer?.billingMode === "service"
+    const result = await this.validate((request.offer?.billingMode === "service" || (request.kind === "subscription" && !!request.affiliateBuyer))
       ? this.request({ method: "POST", path: "/billing/checkout", body: request })
       : this.billing.checkout({ ...request, offer: request.offer ? { ...request.offer, billingMode: request.offer.billingMode === "monthly" ? "monthly" : request.offer.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
     this.validateCheckoutUrl(result.url);

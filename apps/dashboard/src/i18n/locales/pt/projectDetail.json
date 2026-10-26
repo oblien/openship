@@ -189,8 +189,18 @@
       "startShellHint": "Inicie o serviço para abrir um shell.",
       "saveEnvironment": "Salvar ambiente",
       "environmentState": {
+        "shared": {
+          "title": "Atualizar a configuração compartilhada?",
+          "description": "Selecione valores para atualizar nos serviços vinculados. Os demais mudam apenas para {name}.",
+          "source": "Origem compartilhada: {key}",
+          "repositoryHint": "Os valores compartilhados se aplicam a este projeto e seus aplicativos. Os arquivos do repositório permanecem inalterados.",
+          "onlyService": "Somente este serviço",
+          "updateSelected": "Atualizar selecionados",
+          "saved": "Também salvo para estes serviços. Aplique o ambiente ou faça um novo deploy para usar os novos valores.",
+          "reviewFailed": "Não foi possível revisar a configuração compartilhada. Suas alterações não foram salvas."
+        },
         "helpTitle": "Como funcionam as variáveis de ambiente",
-        "description": "Guardadas no Openship. As substituições do serviço têm prioridade sobre o Compose e os valores partilhados do projeto. Editar um valor herdado cria uma substituição para este serviço.",
+        "description": "Salvo no Openship. Ao salvar, as alterações compartilhadas são revisadas quando existe uma origem no projeto. As substituições do serviço prevalecem sobre os valores do Compose e do projeto.",
         "sources": {
           "service": "Substituição do serviço",
           "compose": "Compose",

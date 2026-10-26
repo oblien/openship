@@ -184,14 +184,62 @@ function refreshConsumers(resourceKey: string) {
   });
 }
 
+const deploymentChecks = new Map<string, Promise<void>>();
+/** A successful deploy is a reason to recheck, never proof that an advisory is fixed. */
+export function refreshSecurityAfterDeployment(
+  resourceKey: string,
+  projectId: string,
+  deploymentId: string,
+): Promise<void> {
+  const version = getApiRequestScopeVersion();
+  const scope = `${resourceKey}:${version}`;
+  if (remoteCache?.scope !== scope) return Promise.resolve();
+  const key = `${scope}:${projectId}:${deploymentId}`;
+  const pending = deploymentChecks.get(key);
+  if (pending) return pending;
+  const snapshot = remoteCache.promise;
+  const current = () => version === getApiRequestScopeVersion() && remoteCache?.scope === scope;
+  const task = (async () => {
+    const feed = await snapshot;
+    if (!current()) return;
+    const project = feed?.overview.projects.find((item) => item.projectId === projectId);
+    if (!project || (!project.findings.length && project.checkedAt && !project.autoRefresh)) return;
+    if (project.deploymentId === deploymentId && project.checkedAt) return;
+    // This read reuses the backend's deployment-keyed inventory. Replays of a
+    // completed build do not rerun version commands on the same container.
+    const { data } = await updatesApi.security(projectId);
+    if (current() && data.projectId === projectId && data.deploymentId === deploymentId)
+      refreshConsumers(resourceKey);
+  })()
+    .catch((error) => {
+      observeCaughtError(error, "dashboard/components/updates/deployment-security-check");
+    })
+    .finally(() => {
+      deploymentChecks.delete(key);
+    });
+  deploymentChecks.set(key, task);
+  return task;
+}
+
 const EMPTY_OVERVIEW: SecurityOverview = { projects: [], pendingProjects: 0, unknownProjects: 0 };
-function runtimeNotices(overview: SecurityOverview, scope: string): Advisory[] {
-  const notices = new Map<string, Advisory>();
+interface RuntimeAdvisory extends Advisory {
+  projects: SecurityOverview["projects"];
+}
+function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvisory[] {
+  const notices = new Map<string, RuntimeAdvisory>();
   for (const project of overview.projects)
     for (const finding of project.findings) {
       const id = `runtime:${scope}:${finding.id}:${finding.revision}`;
+      const existing = notices.get(id);
+      if (existing) {
+        const affected = existing.projects.find((item) => item.projectId === project.projectId);
+        if (affected) affected.findings.push(finding);
+        else existing.projects.push({ ...project, findings: [finding] });
+        continue;
+      }
       notices.set(id, {
         id,
+        projects: [{ ...project, findings: [finding] }],
         title: finding.title,
         message: finding.message,
         severity:
@@ -233,7 +281,9 @@ export interface UseUpdates {
   state: UpdateState | null;
   latest: LatestRelease | null;
   securityOverview: SecurityOverview;
-  runtimeAdvisories: Advisory[];
+  runtimeAdvisories: RuntimeAdvisory[];
+  /** null while loading; false when no trustworthy snapshot is available. */
+  securityAvailable: boolean | null;
   muted: boolean;
   desktop: boolean;
   /**
@@ -281,6 +331,7 @@ export function useUpdates(): UseUpdates {
     state: UpdateState;
     latest: LatestRelease | null;
     overview: SecurityOverview;
+    securityAvailable: boolean;
   } | null>(null);
   const currentResult = result?.scope === scope ? result : null;
   const state = currentResult?.state ?? null;
@@ -383,6 +434,7 @@ export function useUpdates(): UseUpdates {
         state: { ...base, advisories },
         latest: mode === "cloud" ? null : (remote?.release.latest ?? null),
         overview,
+        securityAvailable: remote !== null,
       });
       if (mode !== "cloud") {
         if (prefs.lastSeen === null) await persistLastSeen(current);
@@ -502,6 +554,7 @@ export function useUpdates(): UseUpdates {
       : null,
     latest,
     securityOverview,
+    securityAvailable: currentResult?.securityAvailable ?? null,
     runtimeAdvisories,
     muted,
     desktop: isDesktop(),

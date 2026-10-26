@@ -68,10 +68,37 @@ export const MergeServiceEnvVarsBody = Type.Object(
       ),
       { maxItems: 100 },
     ),
+    shared: Type.Optional(
+      Type.Object({
+        keys: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), {
+          minItems: 1, maxItems: 100, uniqueItems: true,
+        }),
+        revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+      }, { additionalProperties: false }),
+    ),
   },
   { additionalProperties: false },
 );
 
+export const ReviewServiceEnvVarsBody = Type.Omit(MergeServiceEnvVarsBody, ["shared"]);
+export const ServiceEnvironmentReviewSchema = Type.Object({
+  revision: Type.String(),
+  changes: Type.Array(
+    Type.Object({
+      key: Type.String(),
+      projectKey: Type.String(),
+      services: Type.Array(
+        Type.Object({
+          id: Type.String(),
+          name: Type.String(),
+          keys: Type.Array(Type.String()),
+        }),
+      ),
+    }),
+  ),
+});
+
 export type ServiceEnvironmentInput = Static<typeof ServiceEnvironmentInputSchema>;
 export type ServiceEnvironment = Static<typeof ServiceEnvironmentSchema>;
 export type MergeServiceEnvVarsInput = Static<typeof MergeServiceEnvVarsBody>;
+export type ServiceEnvironmentReview = Static<typeof ServiceEnvironmentReviewSchema>;

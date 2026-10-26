@@ -16,6 +16,7 @@ export function faq(pricing: CloudPricing): FaqItem[] {
         ladder
           ? `Plans are ${ladder}, ${UI.billedMonthly}.`
           : "See your dashboard for current Cloud plans and availability.",
+        pricing.annual.enabled ? "Yearly billing is also available; the cards show the monthly equivalent and full yearly charge." : null,
         "Each subscription includes one Cloud Space for your projects, with no per-seat fees. Choose a plan and deploy; Openship handles server setup.",
         pricing.customTiers.length > 0
           ? "Enterprise limits and pricing are agreed with sales."
@@ -25,8 +26,8 @@ export function faq(pricing: CloudPricing): FaqItem[] {
         .join(" "),
     },
     {
-      q: "What does a monthly Cloud Space include?",
-      a: "A monthly Cloud Space covers its purchased CPU, RAM and disk for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
+      q: "What does a Cloud Space include?",
+      a: "A Cloud Space subscription covers its purchased CPU, RAM and disk for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
     },
     {
       q: "How is capacity shared?",

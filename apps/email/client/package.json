@@ -123,7 +123,7 @@
     "@types/sanitize-html": "2.13.0",
     "drizzle-kit": "^0.31.9",
     "eslint": "9.27.0",
-    "happy-dom": "20.11.2",
+    "happy-dom": "21.0.4",
     "jiti": "2.4.2",
     "remeda": "2.21.3",
     "tailwind-scrollbar": "4.0.2",

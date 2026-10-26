@@ -243,10 +243,6 @@ export class CloudDockerRuntime extends DockerRuntime {
     this.assertProject(id);
     return super.listProjectImages(id);
   }
-  override async pruneProjectDanglingImages(id: string) {
-    this.assertProject(id);
-    return super.pruneProjectDanglingImages(id);
-  }
   override async listDeploymentContainers(id: string) {
     const containers = await super.listDeploymentContainers(id);
     const owned = new Set(await this.listProjectContainerIds(this.projectId));

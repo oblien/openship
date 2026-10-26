@@ -208,6 +208,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
       INTERNAL_API_URL: http://api:${API_PORT:-4000}
     depends_on:
       api:

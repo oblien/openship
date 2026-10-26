@@ -201,6 +201,16 @@ export async function pruneManagedBuildCaches(
   const requestedKeepBytes = options.keepBytes ?? DEFAULT_BUILD_CACHE_KEEP_BYTES;
   if (!Number.isSafeInteger(requestedKeepBytes) || requestedKeepBytes < 0)
     throw new RangeError("Invalid build-cache budget");
+  // When admission is already blocked on storage, deferring a slow idle cache
+  // guarantees another failed deployment. Give that measurement the same bounded
+  // budget as explicit cleanup; healthy hosts keep the short best-effort scan.
+  let storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
+  const storageBlocked =
+    storage.freeBytes < buildStorageReserve(storage) || storage.freeInodes === 0;
+  const measurementTimeoutMs =
+    options.projectId || requestedKeepBytes === 0
+      ? 120_000
+      : (options.measurementTimeoutMs ?? (storageBlocked ? 120_000 : 15_000));
   // A full /system/df also scans application/database volumes. Measure ONLY
   // recognized cache volumes so GC never walks a user's database to size caches.
   const inventory = await docker.listVolumes({ filters: { label: [`${CACHE_LABEL}=1`] } });
@@ -225,16 +235,23 @@ export async function pruneManagedBuildCaches(
       let raw: string;
       try {
         raw = await executor.exec(`du -sk -- ${sq(volume.Mountpoint)}`, {
-          timeout: options.projectId || requestedKeepBytes === 0 ? 120_000 : (options.measurementTimeoutMs ?? 15_000),
+          timeout: measurementTimeoutMs,
         });
       } catch (error) {
         // Accounting is optional during automatic retention. A large idle cache
         // can take longer to walk than a command deadline; retain that volume
         // for a later sweep instead of failing an otherwise successful build.
         // Explicit removal and unconfirmed command exits remain failures.
-        if (error instanceof Error && error.name === "TimeoutError" && !options.projectId && requestedKeepBytes > 0) {
-          diagnostics.warn("adapters/runtime/docker-build-cache",
-            `Build-cache size inspection timed out for ${volume.Name}; retained for a later cleanup.`);
+        if (
+          error instanceof Error &&
+          error.name === "TimeoutError" &&
+          !options.projectId &&
+          requestedKeepBytes > 0
+        ) {
+          diagnostics.warn(
+            "adapters/runtime/docker-build-cache",
+            `Build-cache size inspection timed out for ${volume.Name}; retained for a later cleanup.`,
+          );
           return null;
         }
         throw error;
@@ -254,7 +271,8 @@ export async function pruneManagedBuildCaches(
   )
     throw new AppError("The project's build cache is still in use", 409, "BUILD_CACHE_IN_USE");
   let total = caches.reduce((sum, cache) => sum + cache.bytes, 0);
-  let storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
+  // Other, attached builders can consume storage during a long measurement.
+  storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
   const keepBytes = Math.min(requestedKeepBytes, buildCacheKeepBytes(storage));
   const idle = caches.filter(
     (cache) =>

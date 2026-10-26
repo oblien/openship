@@ -28,6 +28,8 @@ export const ProjectSecurityResultSchema = Type.Object({
       evidence: Type.Array(Type.String()),
       confidence: Type.Union([Type.Literal("confirmed"), Type.Literal("possible")]),
       canRefresh: Type.Boolean(),
+      refreshBlockedReason: Type.Optional(Type.String()),
+      sourceRedeployRequired: Type.Optional(Type.Boolean()),
     }),
   ),
 });

@@ -26,7 +26,7 @@ import { apiRootPath } from "./release-resolver";
  *   1. `envVar` — an explicit repo root.
  *   2. Auto: the repo root above this API package, via the single on-disk anchor
  *      ({@link apiRootPath}) rather than a second `import.meta.url` derivation. Guarded
- *      by the Dockerfile existing there, so a compiled binary or a bundled install —
+ *      by a Git checkout marker and the Dockerfile existing there, so a compiled binary or a bundled install —
  *      where that anchor points nowhere useful — returns undefined and bring-up falls
  *      through to the registry pull.
  *
@@ -41,7 +41,13 @@ export function detectBuildContext(
   if (explicit) return { context: explicit, dockerfile };
 
   const repoRoot = apiRootPath("..", "..");
-  return existsSync(join(repoRoot, dockerfile)) ? { context: repoRoot, dockerfile } : undefined;
+  // Runtime distributions retain workspace sources for module resolution. A
+  // bundled Dockerfile alone does not make them a development checkout. Accept
+  // both Git directories and worktree marker files; source archives can use the
+  // explicit administrator override above.
+  return existsSync(join(repoRoot, ".git")) && existsSync(join(repoRoot, dockerfile))
+    ? { context: repoRoot, dockerfile }
+    : undefined;
 }
 
 // Generated / vendored trees whose contents are not "the code I just changed":

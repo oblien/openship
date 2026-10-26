@@ -1,8 +1,8 @@
 # Client icons
 
 The dashboard, Openship Cloud UI, and desktop chrome use the same icon catalog
-from `@repo/ui/icons`. The default theme is `outline-modern`, with 198 bundled
-PNGs in `apps/dashboard/public/icons` (about 456 KB total). Source files retain
+from `@repo/ui/icons`. The default theme is `outline-modern`, with 199 bundled
+PNGs in `apps/dashboard/public/icons` (about 448 KiB total). Source files retain
 their original square dimensions.
 
 The dashboard's `ThemeIcon` shares the current-theme symbols across the sidebar,
@@ -57,6 +57,7 @@ files stay identical. Sidebar navigation uses 20px viewports; its collapse and
 expand controls use the selected rounded-panel-and-chevron artwork at 16px.
 Source variants use complete outlines instead of decorative breaks; gaps in
 arrows, spinners, and dashed status symbols convey their normal meaning.
+The Earn sidebar entry uses the shared `gift` icon from the same outline library.
 
 MCP links, settings, and authorization use the shared `mcp` ID and the supplied
 `mcp.png` logo. Platform components share `server-settings`, projects use
@@ -160,7 +161,7 @@ separate marketing site and `apps/email/client` are outside this pass.
 
 ## Asset provenance
 
-- 181 assets were selected from the supplied `~/Documents/png-icons` library;
+- 182 assets were selected from the supplied `~/Documents/png-icons` library;
   their filenames are preserved for CDN mirroring.
 - 9 symbols retain the previous Lucide artwork as bundled outline PNGs where
   the library did not offer a suitable equivalent: `archive`, `bug`,

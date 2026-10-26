@@ -23,6 +23,12 @@ export type NewProject = typeof project.$inferInsert;
 export type EnvVar = typeof envVar.$inferSelect;
 export type NewEnvVar = typeof envVar.$inferInsert;
 
+type EnvScopeEdit = {
+  serviceId?: string | null;
+  upserts: { key: string; value: string; isSecret?: boolean }[];
+  deletes: string[];
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Build Drizzle conditions for env var queries scoped by project/environment/service */
@@ -96,7 +102,55 @@ export async function rebindGitHubInstallationRows(
 
 export function createProjectRepo(db: Database, encryption: ConfigurationEncryption) {
   const codec = createConfigurationSecrets(encryption);
+  async function environmentSnapshot(
+    connection: Database | DatabaseTransaction,
+    projectId: string,
+    environment: string,
+  ) {
+    const [vars, services] = await Promise.all([
+      connection.select().from(envVar).where(and(...envVarScope(projectId, environment))),
+      connection.select().from(service).where(eq(service.projectId, projectId)),
+    ]);
+    return { vars, services: services.map(codec.openService) };
+  }
+  async function mergeEnvVarScopes(
+    projectId: string,
+    environment: string,
+    edits: EnvScopeEdit[],
+    validate?: (snapshot: Awaited<ReturnType<typeof environmentSnapshot>>) => void,
+  ) {
+    await db.transaction(async (tx) => {
+      await assertProjectConfigurationWritable(tx, eq(project.id, projectId));
+      // Recheck the reviewed sources under the same configuration lock as the
+      // writes. A concurrent edit cannot partially update a shared value.
+      if (validate) validate(await environmentSnapshot(tx, projectId, environment));
+      for (const edit of edits) {
+        const affectedKeys = [...new Set([...edit.deletes, ...edit.upserts.map((row) => row.key)])];
+        if (!affectedKeys.length) continue;
+        await tx.delete(envVar).where(
+          and(
+            ...envVarScope(projectId, environment, edit.serviceId ?? null),
+            inArray(envVar.key, affectedKeys),
+          ),
+        );
+        if (edit.upserts.length) {
+          await tx.insert(envVar).values(edit.upserts.map((row) => ({
+            id: generateId("env"),
+            projectId,
+            environment,
+            serviceId: edit.serviceId ?? null,
+            key: row.key,
+            value: row.value,
+            isSecret: row.isSecret ?? false,
+          })));
+        }
+      }
+    });
+  }
   return {
+    environmentSnapshot: (projectId: string, environment: string) =>
+      environmentSnapshot(db, projectId, environment),
+    mergeEnvVarScopes,
     // ── Projects ───────────────────────────────────────────────────────
 
     async findById(id: string | null | undefined) {
@@ -899,34 +953,8 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       deletes: string[],
       serviceId?: string | null,
     ) {
-      const affectedKeys = Array.from(new Set([...deletes, ...upserts.map((u) => u.key)]));
-      if (affectedKeys.length === 0) return;
-
-      await db.transaction(async (tx) => {
-        await assertProjectConfigurationWritable(tx, eq(project.id, projectId));
-        await tx
-          .delete(envVar)
-          .where(
-            and(
-              ...envVarScope(projectId, environment, serviceId ?? null),
-              inArray(envVar.key, affectedKeys),
-            ),
-          );
-
-        if (upserts.length > 0) {
-          await tx.insert(envVar).values(
-            upserts.map((v) => ({
-              id: generateId("env"),
-              projectId,
-              environment,
-              serviceId: serviceId ?? null,
-              key: v.key,
-              value: v.value,
-              isSecret: v.isSecret ?? false,
-            })),
-          );
-        }
-      });
+      if (!upserts.length && !deletes.length) return;
+      return mergeEnvVarScopes(projectId, environment, [{ serviceId, upserts, deletes }]);
     },
 
     /** Commands and encrypted variables move together, under the configuration lock. */

@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **524 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **525 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -502,11 +502,12 @@ The current API has **524 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_services_by_serviceId_volume_sizes`<br />`GET /api/projects/:id/services/:serviceId/volume-sizes` | Measure the on-disk size (du) of each of a service's volumes. | `project:service:read` |
 | `get_projects_by_id_services_containers`<br />`GET /api/projects/:id/services/containers` | List the running containers for a project's services. | `project:read` |
 | `patch_projects_by_id_services_by_serviceId`<br />`PATCH /api/projects/:id/services/:serviceId` | Update a service's configuration. Partial: an omitted field is left alone. `environment` and `advanced` are MERGED onto the stored values rather than replacing them — omit a key to keep it, set a key to null to remove it, send null for the whole field to clear it. Env values read back masked as `••••••••`; echo the sentinel to keep one unchanged. Every other field (`ports`, `volumes`, `dependsOn`, `publicEndpoints`, …) REPLACES its stored value wholesale, so send the complete list. | `project:service:write` |
-| `patch_projects_by_id_services_by_serviceId_env`<br />`PATCH /api/projects/:id/services/:serviceId/env` | Save only the named service environment overrides. Preserve other variables; source IDs reject stale edits. | `project:service:write` |
+| `patch_projects_by_id_services_by_serviceId_env`<br />`PATCH /api/projects/:id/services/:serviceId/env` | Save named service environment changes. By default edits are service overrides. To update inherited project values, review with env/review and supply its shared keys and revision. Project write access is required. Saving does not restart containers or edit repository files. | `project:service:write` |
 | `post_projects_by_id_services`<br />`POST /api/projects/:id/services` | Add a service to a project. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_apply_env`<br />`POST /api/projects/:id/services/:serviceId/apply-env` | Apply saved runtime environment to this service using its current image and runtime configuration. Gracefully replaces its container without a build or deployment session. Returns after the replacement starts; preserves the previous configuration on failure. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_drift_accept`<br />`POST /api/projects/:id/services/:serviceId/drift/accept` | Accept upstream docker-compose changes for this service. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_drift_keep`<br />`POST /api/projects/:id/services/:serviceId/drift/keep` | Keep local edits over upstream docker-compose changes for this service. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_env_review`<br />`POST /api/projects/:id/services/:serviceId/env/review` | Review shared project values affected by service environment edits. Returns variable names, affected services and a revision for confirmation; no values are exposed or saved. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_exec`<br />`POST /api/projects/:id/services/:serviceId/exec` | Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_restart`<br />`POST /api/projects/:id/services/:serviceId/restart` | Restart (bounce) this service's container. Answers 409 SERVICE_CONFIG_STALE when saved env is pending. Use POST /api/projects/:id/services/:serviceId/apply-env to apply it, or ?force=true to bounce with the old env. | `project:service:write` |
 | `post_projects_by_id_services_by_serviceId_start`<br />`POST /api/projects/:id/services/:serviceId/start` | Start this service's container. | `project:service:write` |
@@ -689,6 +690,17 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `GET /api/affiliates` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/enroll` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/offers/revoke` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payout-destination` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payouts/cancel` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/referrals` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/referrals/payments` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
@@ -861,6 +873,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/projects/:id/services/:serviceId/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/projects/folder/scan/:sessionId/env-reveal` | Explicit dashboard secret reveal. MCP passes uploadSessionId to project ensure so real values stay server-side. |
 | `POST /api/projects/folder/upload/:sessionId` | Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC. |
+| `GET /api/referrals/:code` | Public commercial referral terms for signup and checkout; contains no account or earnings data. |
 | `POST /api/services/terminal/ticket` | Single-use browser WebSocket terminal ticket. Use the service exec tool for bounded commands over MCP. |
 | `GET /api/services/terminal/ws/:serviceId` | WebSocket upgrade — auth happens inside upgradeWebSocket via ticket subprotocol or session-cookie fallback (HTTP middleware blocks the handshake) |
 | `PUT /api/settings` | Compatibility settings update; use the dedicated build-mode tool for this preference. |

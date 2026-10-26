@@ -15,7 +15,7 @@ export class PublicHttpHandler {
   async handle(
     request: Parameters<NodeHttpHandler["handle"]>[0],
     options: Parameters<NodeHttpHandler["handle"]>[1] = {},
-  ) {
+  ): ReturnType<NodeHttpHandler["handle"]> {
     if (request.protocol !== "https:" && request.protocol !== "http:") {
       throw new SsrfError("Only HTTP(S) backup endpoints are allowed");
     }

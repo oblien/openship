@@ -15,6 +15,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { changelogUrl, type AdvisorySeverity } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
@@ -77,9 +78,8 @@ export function UpdateCenter() {
   useEffect(() => setSecurityOpen(false), [pathname]);
 
   const advisory = state?.advisories[0]; // most severe first
-  const runtimeAdvisory = runtimeAdvisories?.some((item) => item.id === advisory?.id);
-  const affectedProjects =
-    securityOverview?.projects.filter((project) => project.findings.length) ?? [];
+  const runtimeAdvisory = runtimeAdvisories?.find((item) => item.id === advisory?.id);
+  const affectedProjects = runtimeAdvisory?.projects ?? [];
   // An in-flight download/install owns the top surface — suppress the advisory
   // banner so we never stack it next to its own progress bar.
   const updating = desktop && updatePhase !== "idle";
@@ -166,9 +166,39 @@ export function UpdateCenter() {
                       {advisory.title}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
-                    {advisory.message}
-                  </p>
+                  {runtimeAdvisory ? (
+                    <ul
+                      className="mt-2 flex flex-wrap gap-2 text-[13px]"
+                      aria-label={t.projectSettings.securityAdvisories.affected}
+                    >
+                      {affectedProjects.slice(0, 3).map((project) => (
+                        <li
+                          key={project.projectId}
+                          className="min-w-0 break-words rounded-lg bg-background/30 px-2.5 py-1"
+                        >
+                          <span className="font-medium">{project.name}</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            ·{" "}
+                            {project.findings
+                              .map((finding) =>
+                                [finding.serviceName, ...finding.evidence]
+                                  .filter(Boolean)
+                                  .join(" · "),
+                              )
+                              .join("; ")}
+                          </span>
+                        </li>
+                      ))}
+                      {affectedProjects.length > 3 && (
+                        <li className="self-center">+{affectedProjects.length - 3}</li>
+                      )}
+                    </ul>
+                  ) : (
+                    <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+                      {advisory.message}
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                     {runtimeAdvisory && (
                       <button
@@ -204,6 +234,14 @@ export function UpdateCenter() {
                     ) : null}
                     {!runtimeAdvisory && (
                       <ExternalLinkBtn href={changelog}>{w.viewChangelog}</ExternalLinkBtn>
+                    )}
+                    {runtimeAdvisory && (
+                      <Link
+                        href="/monitoring?tab=security"
+                        className="text-[13px] underline-offset-4 hover:underline"
+                      >
+                        {t.projectSettings.securityAdvisories.monitoring}
+                      </Link>
                     )}
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@repo/workspace",
@@ -15,7 +16,7 @@
     },
     "apps/api": {
       "name": "@repo/api",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "dependencies": {
         "@better-auth/drizzle-adapter": "^1.5.4",
         "@hono/node-server": "^1.19.15",
@@ -53,7 +54,7 @@
     },
     "apps/cli": {
       "name": "@repo/cli",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -119,7 +120,7 @@
         "@types/node": "^22.13.0",
         "@types/react": "^19.1.0",
         "@types/react-dom": "^19.1.0",
-        "happy-dom": "^20.11.2",
+        "happy-dom": "21.0.4",
         "postcss": "^8.5.8",
         "tailwindcss": "^4.2.1",
         "typescript": "^5.9.3",
@@ -128,7 +129,7 @@
     },
     "apps/desktop": {
       "name": "@repo/desktop",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
@@ -151,11 +152,11 @@
     },
     "apps/email": {
       "name": "@repo/email",
-      "version": "0.8.2",
+      "version": "0.9.3",
     },
     "apps/web": {
       "name": "@repo/web",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "dependencies": {
         "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
@@ -295,7 +296,7 @@
     },
     "packages/openship": {
       "name": "openship",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -319,7 +320,7 @@
     },
     "packages/platform": {
       "name": "@repo/platform",
-      "version": "0.8.2",
+      "version": "0.9.3",
       "dependencies": {
         "@actions/expressions": "0.3.61",
         "@actions/workflow-parser": "0.3.61",
@@ -2135,7 +2136,7 @@
 
     "gsap": ["gsap@3.14.2", "", {}, "sha512-P8/mMxVLU7o4+55+1TCnQrPmgjPKnwkzkXOK1asnR9Jg2lna4tEY5qBJjMmAaOBDDZWtlRjBXjLa0w53G/uBLA=="],
 
-    "happy-dom": ["happy-dom@20.14.0", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-4bRh1KzRvKDnFNTlLhzT1RZTpkKhQbQDl9j+7GXszWsvuspYdo29k6OHRf4PwiM6oLb8r/pMWeYiJjkfod5AvQ=="],
+    "happy-dom": ["happy-dom@21.0.4", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw=="],
 
     "has-bigints": ["has-bigints@1.1.0", "", {}, "sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg=="],
 

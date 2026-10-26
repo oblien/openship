@@ -2750,3 +2750,11 @@
 .pp-product-tabs button { padding: 12px 20px; border: 0; border-radius: 12px; background: transparent; color: var(--th-text-body); font: inherit; cursor: pointer; }
 .pp-product-tabs button[aria-pressed="true"] { background: var(--th-bg-card, #202020); color: var(--th-text-heading); }
 .pp-product-tabs button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pp-plan-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+.pp-plan-controls .pp-product-tabs { margin-bottom: 0; }
+.pp-billing-interval { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 14px; background: var(--th-bg-card); }
+.pp-billing-interval button { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-radius: 10px; background: transparent; color: var(--th-text-body); font: inherit; cursor: pointer; }
+.pp-billing-interval button[aria-pressed="true"] { background: var(--th-text-heading); color: var(--th-bg-page); }
+.pp-billing-interval button:focus-visible { outline: 2px solid var(--th-text-heading); outline-offset: 3px; }
+.pp-billing-interval span { font-size: 12px; }
+.pp-plans--management { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
