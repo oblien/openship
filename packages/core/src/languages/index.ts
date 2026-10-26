@@ -13,6 +13,7 @@ export type { LanguageDetector, PortDetectionContext } from "./types";
 
 /** Ruby's version files carry no deps, so this sits outside the detector API. */
 export { parseRubyVersion } from "./ruby";
+export { parseComposerDependencies } from "./php";
 
 /**
  * All registered language detectors. Add a language family by:

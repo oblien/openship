@@ -56,6 +56,7 @@ import {
   STACKS,
   resolveStackRoles,
   runtimeRoleDefinition,
+  parseComposerDependencies,
 } from "@repo/core";
 import { env } from "../../config/index";
 import { createGitHubReader, type ProjectReader } from "./project-reader";
@@ -1165,16 +1166,28 @@ export async function resolveFromReader(
   const overlaid = applyOpenshipOverlay(info, openship.config);
   // A scan suggests roles; it must not start a queue or scheduler implicitly,
   // including when the destination cannot run roles. Explicit [] is an opt-out.
-  const presets = (STACKS[overlaid.stack] as StackDefinition).defaultRoles;
+  const stack = STACKS[overlaid.stack] as StackDefinition;
+  const presets = stack.defaultRoles;
   if (
     overlaid.roles === undefined &&
     presets?.length &&
     !overlaid.services?.length &&
     !root.monorepo
   ) {
+    // PHP's managed install uses --no-dev. Suggest only workers present in the
+    // production image, using the selected app's already-read manifest (#1171).
+    const dependencies =
+      stack.language === "php"
+        ? parseComposerDependencies(
+            Object.entries(root.selected.fileContents).find(
+              ([name]) => name.toLowerCase() === "composer.json",
+            )?.[1] ?? "",
+            { includeDev: false },
+          )
+        : root.selected.stack.dependencies;
     const roles = resolveStackRoles({
       defaultRoles: presets,
-      deps: Object.keys(root.selected.stack.dependencies),
+      deps: Object.keys(dependencies),
       files: root.selected.files.map((file) => file.name),
     });
     if (roles.length) overlaid.rolePresets = roles.map(runtimeRoleDefinition);

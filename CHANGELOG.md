@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Match Laravel worker suggestions to production dependencies** — suggest the
+  standard queue worker when Horizon is only in `require-dev`, matching the
+  default Composer `--no-dev` install. Explicit role choices remain available (#1171).
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
