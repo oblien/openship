@@ -186,7 +186,7 @@ capability restrictions; `migrations` is the separate workload move/copy API.
 | Cancel before retirement and restore the receiver only after source confirmation. | HTTP only | `POST /api/system/instance/cancel`<br />`Handler authentication` · Self-hosted |
 | Connect Desktop with a one-use device code without copying instance data. | HTTP only | `POST /api/system/instance/connect`<br />`settings:admin` · Self-hosted |
 | Connect Desktop to a confirmed API address; remote sign-in is still required. | HTTP only | `POST /api/system/instance/connect-address`<br />`settings:admin` · Self-hosted |
-| Resume an unrelated paused local instance; a migrated source must use a reverse handoff. | HTTP only | `POST /api/system/instance/disconnect`<br />`settings:admin` · Self-hosted |
+| Resume an unrelated paused local instance; a migrated source must use a reverse handoff. | HTTP only | `POST /api/system/instance/disconnect`<br />`Handler authentication` · Self-hosted |
 | Pull the latest remote instance back into Desktop with remote administrator authorization. | HTTP only | `POST /api/system/instance/return`<br />`settings:admin` · Self-hosted |
 | Move current Desktop data back to the previously paired server installation. | HTTP only | `POST /api/system/instance/move-previous`<br />`settings:admin` · Self-hosted |
 | Issue a ten-minute device code for the signed-in user’s own permissions. | HTTP only | `POST /api/system/instance/pair`<br />`Handler authentication` · Self-hosted |
