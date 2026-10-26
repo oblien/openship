@@ -327,7 +327,7 @@ envCmd
   .action(
     action(async (id: string, pairs: string[], opts) => {
       const environment = parseOptionalEnvironmentScope(opts.environment) ?? "production";
-      const upserts = Object.entries(parsePairs([...pairs, ...opts.set])).map(([key, value]) => ({ key, value, isSecret: !!opts.secret }));
+      const upserts = Object.entries(parsePairs([...pairs, ...opts.set])).map(([key, value]) => ({ key, value, ...(opts.secret && { isSecret: true }) }));
       const deletes = opts.unset as string[];
       if (upserts.length === 0 && deletes.length === 0) {
         err("  Nothing to do — pass KEY=VALUE pairs, --set and/or --unset.");

@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Preserve project environment secrets** — round trips through API and CLI
+  keep masked values and secrecy flags intact. Reject a stale save under the
+  existing configuration lock so it cannot undo a concurrent credential rotation.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry

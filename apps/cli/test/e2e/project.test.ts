@@ -286,13 +286,18 @@ describe("openship project env set (#844)", () => {
       url: "http://api.test/api/projects/p1/env",
       body: {
         environment: "production",
-        upserts: [
-          { key: "A", value: "1", isSecret: false },
-          { key: "B", value: "x=y", isSecret: false },
-        ],
         deletes: ["OLD"],
       },
     });
+    // No isSecret unless --secret: the API then keeps each stored flag, so
+    // rotating a secret's value never turns it into a plain variable.
+    expect(fetchStub.calls[2].body.upserts).toEqual([
+      { key: "A", value: "1" },
+      { key: "B", value: "x=y" },
+    ]);
+
+    await runCommand(projectCommand, ["env", "set", "p1", "--secret", "TOKEN=t"]);
+    expect(fetchStub.calls[3].body.upserts).toEqual([{ key: "TOKEN", value: "t", isSecret: true }]);
   });
 
   it("rejects a malformed positional pair before sending a write", async () => {
