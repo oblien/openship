@@ -17,6 +17,17 @@ import type { BuildConfig, CommandExecutor } from "../types";
 import { BuildLogger } from "./build-pipeline";
 import { DockerRuntime } from "./docker";
 
+// These pipeline tests supply daemon progress responses rather than a daemon.
+// Stub the shared request boundary for both builders; reverse-session lifecycle
+// and real health probes are covered by docker-buildkit-session and its E2E.
+vi.mock("./docker-buildkit-session", () => ({
+  buildDockerImage: (
+    docker: Dockerode,
+    body: NodeJS.ReadableStream,
+    options: Dockerode.ImageBuildOptions,
+  ) => docker.buildImage(body, options),
+}));
+
 const exec = promisify(execFile);
 const cleanups: Array<() => Promise<void>> = [];
 
