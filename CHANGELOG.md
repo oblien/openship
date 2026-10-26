@@ -6,6 +6,11 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep runtime roles available after removing attached services** — a single
+  source app retains its existing deployment and role configuration flow after
+  the last attached service is removed or disabled, preserving its service and
+  routing identity (#1308).
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
