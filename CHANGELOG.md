@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep Cloud diagnostics available during replica startup** — allow bounded
+  schema initialization to wait for another replica, while preserving the short
+  write deadlines and local-log fallback used during normal operation.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
