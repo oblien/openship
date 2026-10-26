@@ -109,6 +109,17 @@ describe("runtime role configuration admission", () => {
       (await repos.deployment.listInFlightByProject(f.project.id)).map((row) => row.id),
     ).toEqual([dep.id]);
   });
+  it("keeps a reviewed role edit valid when background cleanup refreshes capacity", async () => {
+    const f = await fixture();
+    const { refreshRollbackCapacity } =
+      await import("@repo/platform/engine/modules/deployments/release-retention");
+    await refreshRollbackCapacity({ projectId: f.project.id, imageSizes: [100, 300] });
+    const project = (await repos.project.findById(f.project.id))!;
+    expect(project.snapshotSizeBytes).toBe(200);
+    expect(project.capacityMeasuredAt).toBeInstanceOf(Date);
+    expect(project.updatedAt.toISOString()).toBe(f.config.updatedAt);
+    expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
   it("supports a headless Docker primary process using the same workload classification as deployment", async () => {
     const f = await fixture();
     await repos.deployment.updateStatus(f.active.id, "ready", {
