@@ -34,6 +34,7 @@ import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import { gracefulStopBeforeRemoval, removeDockerContainer } from "./docker-container-removal";
 export { gracefulStopBeforeRemoval } from "./docker-container-removal";
 import Dockerode from "dockerode";
+import { buildDockerImage } from "./docker-buildkit-session";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
@@ -2521,7 +2522,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     try {
       await this.retainNativeBuildCache(log);
-      const stream = await this.docker.buildImage(body, {
+      const stream = await buildDockerImage(this.docker, body, {
         t: tag,
         pull: config.refreshBaseImages === true,
         dockerfile: buildContext.dockerfileName,

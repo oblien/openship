@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep BuildKit sessions alive** — answer Docker’s session health checks so
+  builds can use optional secret mounts after long install/build steps. Close
+  sessions on completion, cancellation, and transport errors (#1488).
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
