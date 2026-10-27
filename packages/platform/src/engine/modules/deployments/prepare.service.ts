@@ -56,6 +56,7 @@ import {
   STACKS,
   resolveStackRoles,
   runtimeRoleDefinition,
+  collectDependencies,
 } from "@repo/core";
 import { env } from "../../config/index";
 import { createGitHubReader, type ProjectReader } from "./project-reader";
@@ -1176,7 +1177,7 @@ export async function resolveFromReader(
   ) {
     const roles = resolveStackRoles({
       defaultRoles: presets,
-      deps: Object.keys(root.selected.stack.dependencies),
+      deps: Object.keys(collectDependencies(root.selected.fileContents, "roles")),
       files: root.selected.files.map((file) => file.name),
     });
     if (roles.length) overlaid.rolePresets = roles.map(runtimeRoleDefinition);

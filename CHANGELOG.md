@@ -13,6 +13,10 @@ Runtime security notices use the signed feed published from `security-advisories
   requires repository access and server write permission; SSH provisioning,
   GitHub mutations and Cloud authentication remain unchanged (#1500).
 
+- **Match Laravel worker suggestions to production dependencies** — suggest the
+  standard queue worker when Horizon is only in `require-dev`, matching the
+  default Composer `--no-dev` install. Explicit role choices remain available (#1171).
+
 - **Keep runtime roles available after removing attached services** — a single
   source app retains its existing deployment and role configuration flow after
   the last attached service is removed or disabled, preserving its service and

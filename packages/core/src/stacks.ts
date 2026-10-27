@@ -892,9 +892,8 @@ export const STACKS = {
     // killed after the grace period (Laravel 13.33.0, see #935). Horizon's
     // shutdown was not measured separately.
     //
-    // `deps` merges `require` and `require-dev`, so a dev-only
-    // laravel/horizon still selects `horizon`. Callers that need
-    // production-only matching must read `require` from composer.json.
+    // Role suggestions use production Composer dependencies to match --no-dev;
+    // framework detection can still inspect both require and require-dev.
     //
     // Explicit shutdown budgets. The workers' 90s exceeds the default 60s queue
     // and Horizon supervisor timeouts, so size it to the application's own
