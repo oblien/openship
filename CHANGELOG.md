@@ -10,6 +10,15 @@ Runtime security notices use the signed feed published from `security-advisories
   standard queue worker when Horizon is only in `require-dev`, matching the
   default Composer `--no-dev` install. Explicit role choices remain available (#1171).
 
+- **Keep runtime roles available after removing attached services** — a single
+  source app retains its existing deployment and role configuration flow after
+  the last attached service is removed or disabled, preserving its service and
+  routing identity (#1308).
+
+- **Prevent false stale-role warnings after deployments** — background image
+  cleanup updates storage measurements without changing the project's configuration
+  revision. Real configuration edits still invalidate previously reviewed changes.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
