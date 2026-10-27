@@ -1,4 +1,4 @@
-import { eq, and, asc, inArray, or, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   commandToArgv,
   generateId,
@@ -1433,6 +1433,101 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
           updatedAt: now,
         })
         .where(eq(serviceDeployment.id, id));
+    },
+
+    /** Heal one observed runtime identity without rewriting the release or its
+     * image, timings, ports or outcome. Serialize with activation and teardown;
+     * a stale observation must never overwrite a newer binding. */
+    async refreshContainerBinding(input: {
+      projectId: string;
+      organizationId: string;
+      deploymentId: string;
+      serviceId: string;
+      expectedContainerId: string;
+      containerId: string;
+      expectedProjectUpdatedAt: Date;
+      expectedServiceUpdatedAt: Date;
+    }): Promise<boolean> {
+      return db.transaction(async (tx) => {
+        const [owner] = await tx
+          .select({ id: project.id, updatedAt: project.updatedAt })
+          .from(project)
+          .where(
+            and(
+              eq(project.id, input.projectId),
+              eq(project.organizationId, input.organizationId),
+              eq(project.activeDeploymentId, input.deploymentId),
+              eq(project.deletionInProgress, false),
+              isNull(project.disabledAt),
+              isNull(project.deletedAt),
+            ),
+          )
+          .for("update");
+        if (!owner || owner.updatedAt.getTime() !== input.expectedProjectUpdatedAt.getTime())
+          return false;
+        const [target] = await tx
+          .select({ updatedAt: service.updatedAt })
+          .from(service)
+          .where(
+            and(
+              eq(service.id, input.serviceId),
+              eq(service.projectId, input.projectId),
+              eq(service.enabled, true),
+            ),
+          );
+        if (!target || target.updatedAt.getTime() !== input.expectedServiceUpdatedAt.getTime())
+          return false;
+        const [inFlight] = await tx
+          .select({ id: deployment.id })
+          .from(deployment)
+          .where(
+            and(
+              eq(deployment.projectId, input.projectId),
+              eq(deployment.organizationId, input.organizationId),
+              or(
+                inArray(deployment.status, ["queued", "building", "deploying", "reconciling"]),
+                liveBuildExecutionCondition(),
+              ),
+            ),
+          )
+          .limit(1);
+        if (inFlight) return false;
+        const [changed] = await tx
+          .update(serviceDeployment)
+          .set({
+            containerId: input.containerId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(serviceDeployment.deploymentId, input.deploymentId),
+              eq(serviceDeployment.serviceId, input.serviceId),
+              eq(serviceDeployment.containerId, input.expectedContainerId),
+              ne(serviceDeployment.status, "stopped"),
+              inArray(
+                serviceDeployment.serviceId,
+                tx
+                  .select({ id: service.id })
+                  .from(service)
+                  .where(and(eq(service.projectId, input.projectId), eq(service.enabled, true))),
+              ),
+              inArray(
+                serviceDeployment.deploymentId,
+                tx
+                  .select({ id: deployment.id })
+                  .from(deployment)
+                  .where(
+                    and(
+                      eq(deployment.projectId, input.projectId),
+                      eq(deployment.organizationId, input.organizationId),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          .returning();
+        return Boolean(changed);
+      });
     },
 
     /** Commit a runtime-only env apply without creating a release/build session.

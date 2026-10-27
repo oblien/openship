@@ -73,6 +73,30 @@ export function fromSourceImageMissingMessage(label: string, image: string): str
 
 // ─── Inspection primitives ─────────────────────────────────────────────────────
 
+/** Read before replacement: a failed identity read must not become permission
+ * to remove the predecessor and recreate it without its ownership labels. */
+export async function containerIdentity(
+  executor: CommandExecutor,
+  container: string,
+): Promise<{ id: string; labels: Record<string, string> } | null> {
+  let raw: string;
+  try {
+    raw = await executor.exec(`docker inspect -f '{{.Id}}\t{{json .Config.Labels}}' ${sq(container)}`);
+  } catch (error) {
+    if (isRuntimeNotFoundError(error) || /no such object:/i.test(safeErrorMessage(error))) return null;
+    throw error;
+  }
+  const separator = raw.indexOf("\t");
+  const id = raw.slice(0, separator).trim();
+  if (separator < 0 || !/^[a-f0-9]{64}$/.test(id))
+    throw new Error("Docker did not return a valid container identity; replacement was not started.");
+  const labels: unknown = JSON.parse(raw.slice(separator + 1).trim());
+  if (labels !== null && (typeof labels !== "object" || Array.isArray(labels) ||
+      Object.values(labels).some(value => typeof value !== "string" || value.includes("\0"))))
+    throw new Error("Docker did not return valid container labels; replacement was not started.");
+  return { id, labels: (labels ?? {}) as Record<string, string> };
+}
+
 /** Is Docker usable on this box? A container edge/engine needs it; a bare one doesn't. */
 export async function dockerAvailable(executor: CommandExecutor): Promise<boolean> {
   return executor

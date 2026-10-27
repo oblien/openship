@@ -6,6 +6,12 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Recover health after a service container is replaced** — refresh only the
+  stale service binding when the continuous watcher verifies a healthy successor
+  under the same active deployment. Preserve native and Compose service identity
+  through managed edge updates and rollback; leave unrelated services and
+  deployment history intact (#1496).
+
 - **Match Laravel worker suggestions to production dependencies** — suggest the
   standard queue worker when Horizon is only in `require-dev`, matching the
   default Composer `--no-dev` install. Explicit role choices remain available (#1171).
