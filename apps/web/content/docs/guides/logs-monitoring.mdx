@@ -135,6 +135,20 @@ and services with monitoring disabled do not create this attention state. A **Li
 the deployed release; it does not guarantee a fresh workload health observation. This behavior does not add
 continuous container monitoring to Openship Cloud.
 
+### Replaced service containers
+
+The continuous watcher can refresh a configured service's stored container ID
+when an unambiguous replacement is healthy and retains its native project/service
+identity, or the Compose identity of an explicitly adopted stack. This updates
+only that service under the same active deployment. Its siblings, deployment
+history and saved image configuration stay intact. Managed edge recreation
+preserves these identity labels through image updates and rollback.
+
+An older edge replacement that already lost these labels cannot be linked safely
+from an arbitrary name or matching image. Redeploy the affected service through Openship, or have
+an administrator independently verify and correct its stored binding. Openship
+cannot reconstruct missing ownership history.
+
 ## When monitoring cannot connect
 
 **Connection unavailable** means Openship could not observe the affected servers. Their current

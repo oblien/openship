@@ -3,6 +3,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { OwnerRepoParams } from "./github-inputs";
 import { CreateDeploymentSchema } from "./deployments";
 import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
 import { SourceScanOptionsSchema } from "./env-reveal";
@@ -182,6 +183,9 @@ export const BuildAccessBody = Type.Object({
 // the controller resolves source from (owner,repo) vs path and enforces the
 // conditional requireds (owner+repo for github, path for local).
 export const PrepareDeployBody = Type.Object({
+  serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200,
+    description: "Deployment server whose stored GitHub token may be used for repository reads (self-hosted only). Defaults to this organization's local server.",
+  })),
   rootDirectory: Type.Optional(
     Type.String({
       minLength: 1,
@@ -197,8 +201,8 @@ export const PrepareDeployBody = Type.Object({
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
-  owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
-  repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
+  owner: Type.Optional(Type.String({ ...OwnerRepoParams.properties.owner, description: "GitHub repo owner (github source)." })),
+  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "GitHub repo name (github source)." })),
   branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
   path: Type.Optional(
     Type.String({ description: "Local filesystem path (local source; self-hosted only)." }),

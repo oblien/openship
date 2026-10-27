@@ -534,6 +534,26 @@ describe("compose deploy — host channel unavailable", () => {
     );
   });
 
+  it("does not advertise an unchanged image again after a sibling update", async () => {
+    const { isBehind } = await import("@repo/core");
+    const f = imageRefreshFixture();
+    h.previousServiceRows[0]!.imageRef = "postgres:16.15";
+    h.previousServiceRows[0]!.imageDigest = `postgres@${f.dbId}`;
+    f.pull.mockImplementation(async (ref) => {
+      f.images.set(ref, f.metadata(ref, f.nextId));
+    });
+
+    await f.run({ targetServiceIds: new Set(["svc-api"]), strictScope: true }, "update");
+
+    const carried = h.upsertServiceDeployment.mock.calls
+      .map(([row]) => row)
+      .find((row) => row.serviceId === "svc-db");
+    const current = { kind: "image" as const, ref: carried.imageRef, digest: carried.imageDigest };
+    expect(isBehind(current, { kind: "image", ref: f.dbRef, digest: f.dbId })).toBe(false);
+    expect(isBehind(current, { kind: "image", ref: f.dbRef, digest: f.nextId })).toBe(true);
+    expect(f.runtime.destroy).not.toHaveBeenCalledWith("old-db");
+  });
+
   it("applies a project replica change even when service image and configuration are unchanged", async () => {
     const f = imageRefreshFixture();
     h.previousDeployment.meta = { clusterConfig: { replicas: 2 } };

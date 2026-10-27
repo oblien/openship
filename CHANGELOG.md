@@ -10,6 +10,36 @@ Runtime security notices use the signed feed published from `security-advisories
   builds can use optional secret mounts after long install/build steps. Close
   sessions on completion, cancellation, and transport errors (#1488).
 
+- **Keep Cloud diagnostics available during replica startup** — allow bounded
+  schema initialization to wait for another replica, while preserving the short
+  write deadlines and local-log fallback used during normal operation.
+
+- **Recover health after a service container is replaced** — refresh only the
+  stale service binding when the continuous watcher verifies a healthy successor
+  under the same active deployment. Preserve native and Compose service identity
+  through managed edge updates and rollback; leave unrelated services and
+  deployment history intact (#1496).
+
+- **Scan private repositories with server credentials** — repository preparation,
+  monorepo folder selection and branch rescans use the shared GitHub credential
+  chain, including the selected self-hosted server's saved token. Without a
+  selection, only the active organization's local server is eligible. Borrowing
+  requires repository access and server write permission; SSH provisioning,
+  GitHub mutations and Cloud authentication remain unchanged (#1500).
+
+- **Match Laravel worker suggestions to production dependencies** — suggest the
+  standard queue worker when Horizon is only in `require-dev`, matching the
+  default Composer `--no-dev` install. Explicit role choices remain available (#1171).
+
+- **Keep runtime roles available after removing attached services** — a single
+  source app retains its existing deployment and role configuration flow after
+  the last attached service is removed or disabled, preserving its service and
+  routing identity (#1308).
+
+- **Prevent false stale-role warnings after deployments** — background image
+  cleanup updates storage measurements without changing the project's configuration
+  revision. Real configuration edits still invalidate previously reviewed changes.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry

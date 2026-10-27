@@ -10,6 +10,7 @@ export function serviceRepositorySource(project: {
   gitOwner?: string | null;
   gitRepo?: string | null;
   gitBranch?: string | null;
+  serverId?: string | null;
   gitProvider?: string | null;
   rootDirectory?: string | null;
   options?: { rootDirectory?: unknown };
@@ -25,6 +26,7 @@ export function serviceRepositorySource(project: {
     owner: project.gitOwner,
     repo: project.gitRepo,
     branch: project.gitBranch || undefined,
+    serverId: project.serverId ?? undefined,
     projectDirectory:
       project.rootDirectory ??
       (typeof project.options?.rootDirectory === "string" ? project.options.rootDirectory : "."),

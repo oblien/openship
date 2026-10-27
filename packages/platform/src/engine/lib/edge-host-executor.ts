@@ -21,14 +21,17 @@ import { env } from "../config/env";
 
 /** The server the project's active deployment runs on (for edge/cert reads). */
 export async function resolveServerIdForProject(project: Project): Promise<string | null> {
-  if (!project.activeDeploymentId) return null;
-  const dep = await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
-  const meta = dep?.meta as DeploymentMeta | undefined;
-  let serverId = meta?.serverId ?? null;
-  if (meta?.clusterId) {
-    const { requireClusterDeploymentTarget } = await import("./cluster-deployment-target");
-    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId, meta.clusterRuntimeId);
-    serverId = runtime.plan.hosts.find(host => host.role === "server")!.serverId;
+  // Before the first deploy, the project's server binding is where its edge will live.
+  let serverId = project.serverId ?? null;
+  if (project.activeDeploymentId) {
+    const dep = await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/edge-host-executor"); return null; });
+    const meta = dep?.meta as DeploymentMeta | undefined;
+    serverId = meta?.serverId ?? null;
+    if (meta?.clusterId) {
+      const { requireClusterDeploymentTarget } = await import("./cluster-deployment-target");
+      const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId, meta.clusterRuntimeId);
+      serverId = runtime.plan.hosts.find(host => host.role === "server")!.serverId;
+    }
   }
   if (!serverId) return null;
   // A deployment snapshot is historical configuration, not authority to use

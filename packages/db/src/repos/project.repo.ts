@@ -650,6 +650,17 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       );
     },
 
+    /** Retention observations must not invalidate a user's configuration revision. */
+    async updateRollbackCapacity(
+      id: string,
+      data: { snapshotSizeBytes: number; capacityMeasuredAt: Date },
+    ) {
+      await db.update(project).set({
+        snapshotSizeBytes: data.snapshotSizeBytes,
+        capacityMeasuredAt: data.capacityMeasuredAt,
+      }).where(eq(project.id, id));
+    },
+
     /** Update favicon cache metadata without touching the user-visible updatedAt field. */
     async updateFaviconCache(
       id: string,

@@ -34,6 +34,9 @@ import { env } from "../../config/env";
 import { resolveApiPublicUrl, sharedWebhookUrl, domainWebhookUrl } from "../../lib/public-url";
 import { hasActiveGitHubSource } from "./github-source.service";
 
+/** Repository read identity. Credentials remain inside the shared dispatcher. */
+export interface GitHubReadOptions { serverId?: string }
+
 export const GITHUB_DEPLOY_WEBHOOK_EVENTS = ["push", "pull_request"] as const;
 const MAX_FALLBACK_TREE_ENTRIES = 5000;
 const MAX_COMPARE_FILES_PER_RESPONSE = 300;
@@ -62,7 +65,7 @@ async function listRepositoryTreeViaContents(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string; signal?: AbortSignal } = {},
+  opts: GitHubReadOptions & { branch?: string; signal?: AbortSignal } = {},
 ): Promise<Array<{ path: string; type: "file" | "dir" }>> {
   const tree: Array<{ path: string; type: "file" | "dir" }> = [];
   const visited = new Set<string>();
@@ -186,10 +189,11 @@ export async function getRepository(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { withBranches?: boolean } = {},
+  opts: GitHubReadOptions & { withBranches?: boolean } = {},
 ): Promise<RepositoryDetail> {
   const data = await githubFetch<GitHubRepository>({
     ctx,
+    serverId: opts.serverId,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
@@ -198,7 +202,7 @@ export async function getRepository(
   let branches: GitHubBranch[] | undefined;
   let branchesHasMore: boolean | undefined;
   if (opts.withBranches) {
-    const branchPage = await listBranches(ctx, owner, repo);
+    const branchPage = await listBranches(ctx, owner, repo, opts);
     branches = branchPage.branches;
     branchesHasMore = branchPage.hasMore;
   }
@@ -350,12 +354,13 @@ export async function listBranches(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { page?: number } = {},
+  opts: GitHubReadOptions & { page?: number } = {},
 ): Promise<GitHubBranchPage> {
   const requestedPage = opts.page ?? 1;
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const branches = await githubFetch<GitHubBranch[]>({
     ctx,
+    serverId: opts.serverId,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
@@ -403,10 +408,12 @@ export async function getCommitByRef(
   owner: string,
   repo: string,
   ref: string,
+  opts: GitHubReadOptions = {},
 ): Promise<{ sha: string; message: string } | null> {
   try {
     const data = await githubFetch<{ sha: string; commit: { message: string } }>({
       ctx,
+      serverId: opts.serverId,
       owner,
       repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
@@ -427,8 +434,9 @@ export async function getLatestCommit(
   owner: string,
   repo: string,
   branch: string,
+  opts: GitHubReadOptions = {},
 ): Promise<{ sha: string; message: string } | null> {
-  return getCommitByRef(ctx, owner, repo, branch);
+  return getCommitByRef(ctx, owner, repo, branch, opts);
 }
 
 /**
@@ -580,11 +588,12 @@ export async function listFiles(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string; path?: string; signal?: AbortSignal } = {},
+  opts: GitHubReadOptions & { branch?: string; path?: string; signal?: AbortSignal } = {},
 ): Promise<GitHubFileContent[]> {
   const filePath = opts.path ?? "";
   return githubFetch<GitHubFileContent[]>({
     ctx,
+    serverId: opts.serverId,
     signal: opts.signal,
     owner,
     repo,
@@ -600,11 +609,12 @@ export async function listRepositoryTree(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string; requireComplete?: boolean; signal?: AbortSignal } = {},
+  opts: GitHubReadOptions & { branch?: string; requireComplete?: boolean; signal?: AbortSignal } = {},
 ): Promise<Array<{ path: string; type: "file" | "dir" }>> {
   const ref = opts.branch?.trim() || "HEAD";
   const data = await githubFetch<GitHubTreeResponse>({
     ctx,
+    serverId: opts.serverId,
     signal: opts.signal,
     owner,
     repo,
@@ -639,7 +649,7 @@ export async function getFileContent(
   owner: string,
   repo: string,
   file: string,
-  opts: { branch?: string; json?: boolean; signal?: AbortSignal } = {},
+  opts: GitHubReadOptions & { branch?: string; json?: boolean; signal?: AbortSignal } = {},
 ): Promise<{
   sha: string;
   size: number;
@@ -648,6 +658,7 @@ export async function getFileContent(
 }> {
   const data = await githubFetch<GitHubFileContent>({
     ctx,
+    serverId: opts.serverId,
     signal: opts.signal,
     owner,
     repo,

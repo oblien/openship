@@ -172,7 +172,7 @@ export async function shouldUseProjectServicePipeline(
   return isMultiServiceProject(project);
 }
 
-/** One inherited source app plus image-only infrastructure, not general Compose.
+/** One inherited source app with optional image-only infrastructure, not general Compose.
  * Overrides on the app row belong to the multi-app pipeline and are never lost
  * by treating that row as its parent project's single app. */
 export function primaryAppWithInfrastructure(
@@ -223,7 +223,6 @@ export function primaryAppWithInfrastructure(
     return null;
   const infrastructure = enabled.filter((service) => service.id !== app.id);
   if (
-    !infrastructure.length ||
     infrastructure.some(
       (service) =>
         serviceKind(service) !== "compose" ||

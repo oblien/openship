@@ -2533,6 +2533,7 @@ async function deployComposeServicesCore(
               : carried.allocatedResources,
             status: "success",
             imageRef: carried.imageRef ?? null,
+            imageDigest: carried.imageDigest ?? null,
             hostPort: carriedHostPort,
             hostPorts: carriedHostPorts,
             ip: carriedIp,
