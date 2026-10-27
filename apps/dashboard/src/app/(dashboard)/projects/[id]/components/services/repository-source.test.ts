@@ -62,3 +62,9 @@ describe("repository service build fields", () => {
     ).toBeNull();
   });
 });
+
+
+it("retains the project's server identity for repository browsing", () => {
+  expect(serviceRepositorySource({ gitOwner: "example", gitRepo: "platform", serverId: "saved-server" }))
+    .toMatchObject({ owner: "example", repo: "platform", serverId: "saved-server" });
+});

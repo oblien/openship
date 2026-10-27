@@ -108,6 +108,7 @@ const h = vi.hoisted(() => {
     renew: vi.fn(async (_groupKeys: readonly string[]) => {}),
     stopEvents: vi.fn(async () => {}),
     watcherEnabled: true,
+    runtimeBusy: false,
     disconnected: false,
     disconnectOnList: false,
     logLines: ["panic: dial tcp 127.0.0.1:5432: connect: connection refused"],
@@ -126,6 +127,7 @@ vi.mock("@repo/db", () => {
   const find = (id: string) => h.incidents.find((r) => r.id === id);
 
   return {
+    tryAcquireAdvisoryLock: vi.fn(async () => h.runtimeBusy ? null : { release: async () => {} }),
     incidentSeverity: (kind: string) => SEVERITY[kind] ?? 0,
     repos: {
       job: { findByKey: vi.fn(async () => ({ enabled: h.watcherEnabled, scheduleType: "recurring", cronExpression: "* * * * *" })) },
@@ -162,6 +164,16 @@ vi.mock("@repo/db", () => {
           return out;
         }),
         listByDeployment: vi.fn(async (depId: string) => h.serviceDeployments.get(depId) ?? []),
+        refreshContainerBinding: vi.fn(async (input: {
+          projectId: string; organizationId: string; deploymentId: string; serviceId: string;
+          expectedContainerId: string; containerId: string;
+        }) => {
+          const project = h.projects.find(row => row.id === input.projectId && row.organizationId === input.organizationId);
+          const row = h.serviceDeployments.get(input.deploymentId)?.find(row => row.serviceId === input.serviceId);
+          if (project?.activeDeploymentId !== input.deploymentId || row?.containerId !== input.expectedContainerId) return false;
+          row.containerId = input.containerId;
+          return true;
+        }),
       },
       server: {
         findLocal: vi.fn(async () => h.localServer ?? undefined),
@@ -636,6 +648,7 @@ beforeEach(() => {
   h.renew.mockClear();
   h.stopEvents.mockClear();
   h.watcherEnabled = true;
+  h.runtimeBusy = false;
   h.disconnected = false;
   h.disconnectOnList = false;
 });
@@ -2625,6 +2638,206 @@ describe("filtered run", () => {
 
 
 describe("project attention from the existing watcher", () => {
+  it.each(["label", "compose"] as const)(
+    "heals one healthy %s replacement among five services without a new deployment (#1496)",
+    async (identity) => {
+      const { projectId, containerId, serviceId } = seedComposeService({ services: 5 });
+      const project = h.projects.find(row => row.id === projectId)!;
+      const deploymentId = project.activeDeploymentId as string;
+      const original = h.containers.get(containerId)!;
+      const bindings = h.serviceDeployments.get(deploymentId)!;
+      const siblings = bindings.slice(1).map(row => ({ ...row }));
+      if (identity === "compose") h.deployments.find(row => row.id === deploymentId)!.meta = {
+        serverId: "srv1", runtimeMode: "docker", adopt: true,
+      };
+      setState(containerId, "gone");
+      await confirm();
+      expect(openFor(projectId)).toHaveLength(1);
+      const replacementId = `healthy-replacement-${projectId}`;
+      h.containers.set(replacementId, {
+        ...original, id: replacementId, names: ["replacement-edge"],
+        labels: identity === "label" ? original.labels : {
+          "com.docker.compose.project": project.slug, "com.docker.compose.service": "web",
+        },
+      });
+      h.containerBox.set(replacementId, "srv1");
+      setState(replacementId, "running", { health: "healthy" });
+      const result = await tick();
+      expect(result.resolved).toBe(1);
+      expect(openFor(projectId)).toHaveLength(0);
+      expect(bindings.find(row => row.serviceId === serviceId)!.containerId).toBe(replacementId);
+      expect(bindings.slice(1)).toEqual(siblings);
+      expect(project.activeDeploymentId).toBe(deploymentId);
+      expect(h.deployments).toHaveLength(1);
+      expect(emitted("service.recovered")).toHaveLength(1);
+      await tick();
+      expect(emitted("service.recovered")).toHaveLength(1);
+    },
+  );
+
+  it.each(["no identity", "other project", "ambiguous", "unhealthy"])(
+    "keeps the binding and outage for a replacement with %s", async (reason) => {
+      const { projectId, containerId } = seedComposeService({ services: 5 });
+      const project = h.projects.find(row => row.id === projectId)!;
+      const original = h.containers.get(containerId)!;
+      setState(containerId, "gone");
+      await confirm();
+      const replacementId = `unsafe-replacement-${projectId}`;
+      const replacement = {
+        ...original, id: replacementId, names: ["unverified-edge"],
+        labels: reason === "no identity" ? {} : {
+          ...(original.labels as Record<string, string>),
+          ...(reason === "other project" ? { "openship.project": "another-project" } : {}),
+        },
+      };
+      h.containers.set(replacementId, replacement);
+      h.containerBox.set(replacementId, "srv1");
+      setState(replacementId, "running", { health: reason === "unhealthy" ? "unhealthy" : "healthy" });
+      if (reason === "ambiguous") {
+        const duplicateId = `${replacementId}-duplicate`;
+        h.containers.set(duplicateId, { ...replacement, id: duplicateId, names: ["second-claim"] });
+        h.containerBox.set(duplicateId, "srv1");
+      }
+      const result = await tick();
+      expect(result.resolved).toBe(0);
+      expect(openFor(projectId)).toHaveLength(1);
+      expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(containerId);
+    },
+  );
+
+  it("does not announce recovery when a concurrent binding change rejects the repair", async () => {
+    const { repos } = await import("@repo/db");
+    const { projectId, containerId } = seedComposeService();
+    const original = h.containers.get(containerId)!;
+    setState(containerId, "gone");
+    await confirm();
+    const replacementId = `raced-replacement-${projectId}`;
+    h.containers.set(replacementId, { ...original, id: replacementId });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    vi.mocked(repos.service.refreshContainerBinding).mockResolvedValueOnce(false);
+    const result = await tick();
+    expect(result.resolved).toBe(0);
+    expect(result.indeterminate).toBe(1);
+    expect(openFor(projectId)).toHaveLength(1);
+    expect(emitted("service.recovered")).toHaveLength(0);
+  });
+
+  it("keeps an explicit current scan read-only and repairs once in the continuous watcher", async () => {
+    const { repos } = await import("@repo/db");
+    vi.mocked(repos.service.refreshContainerBinding).mockClear();
+    const { projectId, containerId } = seedComposeService();
+    const project = h.projects.find(row => row.id === projectId)!;
+    const original = h.containers.get(containerId)!;
+    setState(containerId, "gone");
+    const replacementId = `current-only-${projectId}`;
+    h.containers.set(replacementId, { ...original, id: replacementId });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    await checkCurrent();
+    expect(repos.service.refreshContainerBinding).not.toHaveBeenCalled();
+    expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(containerId);
+    await tick();
+    expect(repos.service.refreshContainerBinding).toHaveBeenCalledTimes(1);
+    await tick();
+    expect(repos.service.refreshContainerBinding).toHaveBeenCalledTimes(1);
+  });
+
+  it("can repair a service carried forward from an earlier partial deployment", async () => {
+    const { projectId, containerId } = seedComposeService({ services: 5 });
+    const original = h.containers.get(containerId)!;
+    setState(containerId, "gone");
+    await confirm();
+    const replacementId = `carried-forward-${projectId}`;
+    h.containers.set(replacementId, {
+      ...original, id: replacementId,
+      labels: { ...(original.labels as Record<string, string>), "openship.deployment": "earlier-release" },
+    });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    const result = await tick();
+    expect(result.resolved).toBe(1);
+    const project = h.projects.find(row => row.id === projectId)!;
+    expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(replacementId);
+  });
+
+  it("retains a flapping outage's binding until its replacement earns the existing recovery hold", async () => {
+    const { projectId, containerId } = seedComposeService();
+    const project = h.projects.find(row => row.id === projectId)!;
+    const original = h.containers.get(containerId)!;
+    setState(containerId, "exited", { exitCode: 1 });
+    await confirm();
+    setState(containerId, "running", { health: "healthy" });
+    await tick();
+    setState(containerId, "gone");
+    await confirm();
+    const replacementId = `flapping-replacement-${projectId}`;
+    h.containers.set(replacementId, { ...original, id: replacementId });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    const held = await tick();
+    expect(held.recovering).toBe(1);
+    expect(openFor(projectId)).toHaveLength(1);
+    expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(containerId);
+    for (let i = 0; i < 25; i++) await tick();
+    expect(openFor(projectId)).toHaveLength(0);
+    expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(replacementId);
+    expect(emitted("service.recovered")).toHaveLength(2);
+  });
+
+  it("rejects contradictory native ownership on an adopted Compose replacement", async () => {
+    const { projectId, containerId } = seedComposeService();
+    const project = h.projects.find(row => row.id === projectId)!;
+    const original = h.containers.get(containerId)!;
+    h.deployments.find(row => row.id === project.activeDeploymentId)!.meta = {
+      adopt: true, runtimeMode: "docker", serverId: "srv1",
+    };
+    setState(containerId, "gone");
+    await confirm();
+    const replacementId = `foreign-native-${projectId}`;
+    h.containers.set(replacementId, {
+      ...original, id: replacementId, names: ["other-owner"], labels: {
+        "openship.project": "foreign-project", "openship.service": "web",
+        "com.docker.compose.project": project.slug, "com.docker.compose.service": "web",
+      },
+    });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    const result = await tick();
+    expect(result.resolved).toBe(0);
+    expect(openFor(projectId)).toHaveLength(1);
+    expect(h.serviceDeployments.get(project.activeDeploymentId as string)![0]!.containerId).toBe(containerId);
+  });
+
+  it.each(["local", "another process"])("skips repair while %s holds the existing runtime lock", async (owner) => {
+    const { repos } = await import("@repo/db");
+    const { withKeyedMutex } = await import("@repo/core");
+    const { projectRuntimeLockKey } = await import("@repo/platform/engine/lib/project-runtime-lock");
+    vi.mocked(repos.service.refreshContainerBinding).mockClear();
+    const { projectId, containerId } = seedComposeService();
+    const original = h.containers.get(containerId)!;
+    setState(containerId, "gone");
+    await confirm();
+    const replacementId = `uncommitted-${projectId}`;
+    h.containers.set(replacementId, { ...original, id: replacementId });
+    h.containerBox.set(replacementId, "srv1");
+    setState(replacementId, "running", { health: "healthy" });
+    let result;
+    if (owner === "local") {
+      result = await withKeyedMutex(projectRuntimeLockKey(projectId), () => tick());
+    } else {
+      h.runtimeBusy = true;
+      result = await tick();
+      h.runtimeBusy = false;
+    }
+    expect(result.resolved).toBe(0);
+    expect(repos.service.refreshContainerBinding).not.toHaveBeenCalled();
+    expect(openFor(projectId)).toHaveLength(1);
+    await tick();
+    expect(repos.service.refreshContainerBinding).toHaveBeenCalledTimes(1);
+    expect(openFor(projectId)).toHaveLength(0);
+  });
+
   it.each(["label", "name", "compose"] as const)(
     "records the release and stored hint for a recreated container discovered by %s",
     async (identity) => {

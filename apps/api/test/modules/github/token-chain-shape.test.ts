@@ -30,6 +30,14 @@ describe("credential chain — structural invariants", () => {
     expect(CHAINS.saas.remote).not.toContain("gh-cli");
   });
 
+  it("server tokens are confined to self-hosted local reads", () => {
+    expect(SPECS["server-token"].shippable).toBe(false);
+    expect(CHAINS.selfhosted.local).toContain("server-token");
+    expect(CHAINS.selfhosted.remote).not.toContain("server-token");
+    expect(CHAINS.saas.local).not.toContain("server-token");
+    expect(CHAINS.saas.remote).not.toContain("server-token");
+  });
+
   it("every kind named in a chain has a spec, and every spec's kind is self-consistent", () => {
     for (const byPurpose of Object.values(CHAINS)) {
       for (const kind of [...byPurpose.local, ...byPurpose.remote]) {

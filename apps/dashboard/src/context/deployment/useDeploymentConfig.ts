@@ -937,6 +937,7 @@ export function useDeploymentConfig() {
       force?: string,
       context?: {
         branch?: string;
+        serverId?: string;
         projectId?: string;
         composePath?: string;
         env?: Record<string, string>;
@@ -976,6 +977,7 @@ export function useDeploymentConfig() {
           owner: sourceOwner,
           repo: sourceRepo,
           branch: requestedBranch,
+          serverId: context?.serverId ?? project?.serverId ?? config.serverId,
           force,
           ...scanComposePath(context?.composePath, changesSavedBranch ? null : project),
           ...(context?.env ? { env: { ...context.env } } : {}),
@@ -1066,7 +1068,7 @@ export function useDeploymentConfig() {
         };
       }
     },
-    [buildPreparedConfig],
+    [buildPreparedConfig, config.serverId],
   );
 
   // A branch is a different source tree. Commit its name and detection together,
@@ -1093,6 +1095,7 @@ export function useDeploymentConfig() {
         const response = await deployApi.prepare({
           owner: config.owner,
           repo: config.repo,
+          serverId: config.serverId,
           branch: requestedBranch,
           ...scanEnv(config.envVars),
           includeEnv: true,
@@ -1105,7 +1108,8 @@ export function useDeploymentConfig() {
             prev.projectId !== config.projectId ||
             prev.owner !== config.owner ||
             prev.repo !== config.repo ||
-            prev.branch !== config.branch
+            prev.branch !== config.branch ||
+            prev.serverId !== config.serverId
           )
             return prev;
 
@@ -1279,6 +1283,7 @@ export function useDeploymentConfig() {
         }
         const result = await initializeFromRepo(config.owner, config.repo, undefined, {
           branch: config.branch,
+          serverId: config.serverId,
           projectId: config.projectId,
           composePath: trimmed,
           preserveEnvState: true,
@@ -1296,6 +1301,7 @@ export function useDeploymentConfig() {
       config.repo,
       config.branch,
       config.projectId,
+      config.serverId,
       config.envVars,
       initializeFromLocal,
       initializeFromRepo,

@@ -19,12 +19,13 @@ export function createGitHubReader(
   owner: string,
   repo: string,
   branch: string,
+  opts: githubService.GitHubReadOptions = {},
 ): ProjectReader {
   let treePromise: Promise<RepoTreeEntry[]> | null = null;
 
   const readText = async (path: string) => {
     try {
-      const file = await githubService.getFileContent(ctx, owner, repo, path, { branch });
+      const file = await githubService.getFileContent(ctx, owner, repo, path, { ...opts, branch });
       return file?.content;
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/project-reader");
@@ -36,6 +37,7 @@ export function createGitHubReader(
     listDirectory: async (path: string) => {
       try {
         const contents = await githubService.listFiles(ctx, owner, repo, {
+          ...opts,
           branch,
           ...(path ? { path } : {}),
         });
@@ -63,7 +65,7 @@ export function createGitHubReader(
     },
     listTree: async () => {
       if (!treePromise) {
-        treePromise = githubService.listRepositoryTree(ctx, owner, repo, { branch });
+        treePromise = githubService.listRepositoryTree(ctx, owner, repo, { ...opts, branch });
       }
       return treePromise;
     },
