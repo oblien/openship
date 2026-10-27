@@ -133,6 +133,7 @@ const SOURCE_LABEL: Record<GitHubTokenSource, string> = {
   project: "pat-project",
   "user-pat": "pat-user",
   "gh-cli": "gh-cli",
+  "server-token": "server-token",
 };
 
 interface ResolveExtras {

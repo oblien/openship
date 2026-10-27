@@ -182,6 +182,9 @@ export const BuildAccessBody = Type.Object({
 // the controller resolves source from (owner,repo) vs path and enforces the
 // conditional requireds (owner+repo for github, path for local).
 export const PrepareDeployBody = Type.Object({
+  serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200,
+    description: "Deployment server whose stored GitHub token may be used for repository reads (self-hosted only). Defaults to this organization's local server.",
+  })),
   rootDirectory: Type.Optional(
     Type.String({
       minLength: 1,

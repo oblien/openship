@@ -534,6 +534,7 @@ describe("deploy branch detection", () => {
       owner: "example",
       repo: "demo",
       branch: "openship",
+      serverId: "server-1",
       env: { APP_MODE: "preview" },
       includeEnv: true,
     });

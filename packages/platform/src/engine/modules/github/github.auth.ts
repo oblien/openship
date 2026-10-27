@@ -652,6 +652,8 @@ export interface GitHubFetchOptions {
    * PAT can administer hooks, and pinning would break self-hosts with no App.
    */
   credential?: GitHubTokenSource[];
+  /** Selected server identity, eligible only for read-only github.com requests. */
+  serverId?: string;
   installationId?: number;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
@@ -676,7 +678,14 @@ export interface GitHubFetchOptions {
 export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promise<T> {
   const method = opts.method ?? "GET";
   const readOnly = method === "GET" && (opts.authorizeAs ?? "read") === "read";
-  const rejectedSources: GitHubTokenSource[] = [];
+  // Bind the borrowed identity to the repository actually authorized, including
+  // its API origin. Read-tier POSTs and account/other-repository URLs cannot use it.
+  const repositoryUrl = opts.owner && opts.repo
+    ? `https://api.github.com/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`
+    : null;
+  const serverRead = readOnly && repositoryUrl !== null &&
+    (opts.url === repositoryUrl || opts.url.startsWith(`${repositoryUrl}/`));
+  const rejectedSources: GitHubTokenSource[] = serverRead ? [] : ["server-token"];
   let authError: unknown;
   const rejectedCredential = (error: unknown) =>
     error instanceof Error && "credentialRejected" in error && error.credentialRejected === true;
@@ -712,6 +721,8 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     owner: opts.owner,
     repo: opts.repo,
     installationId: opts.installationId,
+    ...(serverRead && !customApiBase
+      ? { serverId: opts.serverId } : {}),
     // A GET is a read; anything else mutates unless the caller declared its tier
     // explicitly. Threading the op means a mutating GitHub call can only mint a
     // token when the caller holds a WRITE grant on THIS repo — closing

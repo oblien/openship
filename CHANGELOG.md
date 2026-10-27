@@ -6,6 +6,13 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Scan private repositories with server credentials** — repository preparation,
+  monorepo folder selection and branch rescans use the shared GitHub credential
+  chain, including the selected self-hosted server's saved token. Without a
+  selection, only the active organization's local server is eligible. Borrowing
+  requires repository access and server write permission; SSH provisioning,
+  GitHub mutations and Cloud authentication remain unchanged (#1500).
+
 - **Keep runtime roles available after removing attached services** — a single
   source app retains its existing deployment and role configuration flow after
   the last attached service is removed or disabled, preserving its service and

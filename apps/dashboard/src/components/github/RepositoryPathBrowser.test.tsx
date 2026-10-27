@@ -23,12 +23,12 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-const render = (repo: string, onChange = vi.fn()) =>
+const render = (repo: string, onChange = vi.fn(), serverId?: string) =>
   act(async () =>
     root.render(
       <I18nProvider>
         <RepositoryPathBrowser
-          source={{ owner: "example", repo, branch: "dev" }}
+          source={{ owner: "example", repo, branch: "dev", serverId }}
           kind="file"
           value="Dockerfile"
           onChange={onChange}
@@ -71,4 +71,16 @@ it("does not publish a delayed tree from a disconnected account", async () => {
   setApiResourceScope("disconnected");
   await act(async () => resolveTree({ data: [{ path: "private.Dockerfile", type: "file" }] }));
   expect(host.textContent).not.toContain("private.Dockerfile");
+});
+
+it("discards a previous server's pending tree when the destination changes", async () => {
+  let finish!: (data: unknown) => void;
+  tree.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await render("repo", vi.fn(), "server-old");
+  tree.mockResolvedValueOnce({ data: [{ path: "current.Dockerfile", type: "file" }] });
+  await render("repo", vi.fn(), "server-new");
+  expect(tree).toHaveBeenLastCalledWith("example", "repo", "dev", "server-new");
+  await act(async () => finish({ data: [{ path: "previous.Dockerfile", type: "file" }] }));
+  expect(host.textContent).toContain("current.Dockerfile");
+  expect(host.textContent).not.toContain("previous.Dockerfile");
 });

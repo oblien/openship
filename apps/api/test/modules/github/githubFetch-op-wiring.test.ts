@@ -168,3 +168,23 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
     expect(ghFetchSpy).not.toHaveBeenCalled();
   });
 });
+
+
+describe("server identity capability boundary (#1500)", () => {
+  it("threads the selected server only into repository reads", async () => {
+    await githubFetch({ ctx, owner: "acme", repo: "app", serverId: "s1", url: "https://api.github.com/repos/acme/app" });
+    expect(tokenForSpy).toHaveBeenCalledWith(ctx, "local", expect.objectContaining({ serverId: "s1", op: "read" }));
+  });
+  it.each([
+    { method: "POST", authorizeAs: "read" as const, url: "https://api.github.com/repos/acme/app/keys" },
+    { method: "DELETE", url: "https://api.github.com/repos/acme/app" },
+    { method: "GET", url: "https://github.example.test/api/v3/repos/acme/app" },
+    { method: "GET", url: "https://api.github.com/user" },
+    { method: "GET", url: "https://api.github.com/repos/acme/another-repo" },
+  ])("refuses server credentials for %j", async request => {
+    await githubFetch({ ctx, owner: "acme", repo: "app", serverId: "s1", ...request });
+    const target = tokenForSpy.mock.calls[0][2];
+    expect(target.serverId).toBeUndefined();
+    expect(target.exclude).toContain("server-token");
+  });
+});

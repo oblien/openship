@@ -18,11 +18,12 @@ export const GitHubRepoListInput = Type.Object({
   visibility: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("public"), Type.Literal("private")])),
   sort: Type.Optional(Type.Union([Type.Literal("updated"), Type.Literal("name"), Type.Literal("stars")])),
 });
+const readTarget = { serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) };
 const branch = Type.Optional(Type.String({ minLength: 1, maxLength: 200 }));
-const RepoBranchInput = Type.Object({ ...OwnerRepoParams.properties, branch });
-const FileInput = Type.Object({ ...OwnerRepoParams.properties, branch, path: Type.Optional(Type.String({ maxLength: 4096 })) });
+const RepoBranchInput = Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branch });
+const FileInput = Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branch, path: Type.Optional(Type.String({ maxLength: 4096 })) });
 export const GitHubBranchSchema = Type.Unsafe<GitHubBranch>(Type.Object({ name: Type.String(), commit: Type.Object({ sha: Type.String(), url: Type.String() }), protected: bool }));
-export const BranchPageInput = Type.Object({ page: Type.Optional(Type.Integer({ minimum: 1 })) });
+export const BranchPageInput = Type.Object({ ...readTarget, page: Type.Optional(Type.Integer({ minimum: 1 })) });
 export const BranchPaginationSchema = Type.Object({
   page: Type.Integer({ minimum: 1 }),
   perPage: Type.Integer({ minimum: 1 }),
@@ -116,7 +117,7 @@ export const GitHubCollectionSchemas = {
   disconnect: { action: "write", input: GitHubDisconnectInput, optionalInput: true, output: Type.Object({ success: Type.Literal(true), source: Type.Union([Type.Literal("oauth"), Type.Literal("cli"), Type.Literal("all")]) }) },
   listRepos: { action: "read", input: GitHubRepoListInput, optionalInput: true, output: repoList },
   listOrgRepos: { action: "read", input: Type.Object({ ...GitHubRepoListInput.properties, org: OwnerRepoParams.properties.owner }), output: repoList },
-  getRepo: { action: "read", input: Type.Object({ ...OwnerRepoParams.properties, branches: Type.Optional(bool) }), output: RepoDetail },
+  getRepo: { action: "read", input: Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branches: Type.Optional(bool) }), output: RepoDetail },
   createRepo: { action: "write", input: CreateRepoBody, output: CreatedRepository },
   deleteRepo: { action: "admin", input: OwnerRepoParams, output: success },
   listBranches: {
