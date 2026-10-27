@@ -150,10 +150,9 @@ export const githubApi = {
    * render a collapsible tree AND search it without a request per directory.
    * Server-side it's filtered to paths the caller may themselves read.
    */
-  getRepoTree: (owner: string, repo: string, branch?: string) =>
+  getRepoTree: (owner: string, repo: string, branch?: string, serverId?: string) =>
     api.get<{ data: RepoTreeEntry[] }>(
-      endpoints.github.repoTree(owner, repo) +
-        (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
+      endpoints.github.repoTree(owner, repo), { params: { branch, serverId } },
     ),
 
   /** Repos for a specific GitHub org */
@@ -170,9 +169,9 @@ export const githubApi = {
 
   /** List a repo's branches (used before a project exists — e.g. the migration
    *  wizard's link-repo step, which can't use projectsApi.getBranches). */
-  listBranches: (owner: string, repo: string, page = 1) =>
+  listBranches: (owner: string, repo: string, page = 1, serverId?: string) =>
     api.get<BranchPageResponse>(endpoints.github.repoBranches(owner, repo), {
-      params: { page },
+      params: { page, serverId },
     }),
 
   /**

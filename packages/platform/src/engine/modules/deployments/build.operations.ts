@@ -28,6 +28,7 @@ async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentI
     }
     return {
       source,
+      serverId: body.serverId,
       owner: body.owner,
       repo: body.repo,
       branch: body.branch,

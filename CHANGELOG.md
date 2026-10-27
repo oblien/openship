@@ -12,6 +12,13 @@ Runtime security notices use the signed feed published from `security-advisories
   through managed edge updates and rollback; leave unrelated services and
   deployment history intact (#1496).
 
+- **Scan private repositories with server credentials** — repository preparation,
+  monorepo folder selection and branch rescans use the shared GitHub credential
+  chain, including the selected self-hosted server's saved token. Without a
+  selection, only the active organization's local server is eligible. Borrowing
+  requires repository access and server write permission; SSH provisioning,
+  GitHub mutations and Cloud authentication remain unchanged (#1500).
+
 - **Match Laravel worker suggestions to production dependencies** — suggest the
   standard queue worker when Horizon is only in `require-dev`, matching the
   default Composer `--no-dev` install. Explicit role choices remain available (#1171).

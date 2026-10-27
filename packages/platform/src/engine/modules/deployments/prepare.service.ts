@@ -82,6 +82,7 @@ const COMPOSE_FILES = [
 export type Source =
   | {
       source: "github";
+      serverId?: string;
       owner: string;
       repo: string;
       branch?: string;
@@ -110,7 +111,7 @@ export type Source =
       expectCompose?: boolean;
     };
 
-export interface ResolveOptions {
+export interface ResolveOptions extends githubService.GitHubReadOptions {
   /**
    * Where the compose file lives when it is NOT at the auto-detected project
    * root — either the file itself (`"deploy/stack.yml"`, which also covers
@@ -968,6 +969,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
       throw new Error("resolveProjectInfo(github): ctx is required");
     }
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
+      serverId: input.serverId,
       composePath: input.composePath,
       rootDirectory: input.rootDirectory,
       env: input.env,
@@ -1004,9 +1006,9 @@ export async function resolveProjectSourceEnv(
     }
     const branch =
       input.branch?.trim() ||
-      (await githubService.getRepository(input.ctx, input.owner, input.repo)).default_branch;
+      (await githubService.getRepository(input.ctx, input.owner, input.repo, { serverId: input.serverId })).default_branch;
     return resolveSourceEnvFromReader(
-      createGitHubReader(input.ctx, input.owner, input.repo, branch),
+      createGitHubReader(input.ctx, input.owner, input.repo, branch, { serverId: input.serverId }),
       rootDirectory,
     );
   }
@@ -1209,20 +1211,21 @@ async function resolveFromGitHub(
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
   const repository = await githubService.getRepository(ctx, owner, repo, {
+    serverId: opts.serverId,
     withBranches: true,
   });
   const requestedBranch = branch?.trim();
   const selectedBranch = requestedBranch || repository.default_branch;
 
   if (requestedBranch) {
-    const head = await githubService.getLatestCommit(ctx, owner, repo, selectedBranch);
+    const head = await githubService.getLatestCommit(ctx, owner, repo, selectedBranch, opts);
     if (!head) {
       throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
     }
   }
 
   return resolveFromReader(
-    createGitHubReader(ctx, owner, repo, selectedBranch),
+    createGitHubReader(ctx, owner, repo, selectedBranch, opts),
     repository,
     selectedBranch,
     opts,

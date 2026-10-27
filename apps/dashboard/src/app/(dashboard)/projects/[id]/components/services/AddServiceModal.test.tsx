@@ -374,6 +374,7 @@ const repository: ServiceRepositorySource = {
   owner: "example",
   repo: "platform",
   branch: "dev",
+  serverId: "server-pat-host",
   projectDirectory: "deploy/compose",
 };
 it.each(["cloud", "local", "linked"])(
@@ -412,7 +413,7 @@ it("browses actual repository folders and files before saving", async () => {
       .querySelector<HTMLButtonElement>(`[aria-label="${copy.repositorySource.browseContext}"]`)!
       .click(),
   );
-  expect(h.tree).toHaveBeenCalledWith("example", "platform", "dev");
+  expect(h.tree).toHaveBeenCalledWith("example", "platform", "dev", "server-pat-host");
   await pick("apps");
   await pick("api");
   expect(host.querySelector<HTMLInputElement>('input[placeholder="."]')!.value).toBe("apps/api");

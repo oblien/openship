@@ -61,6 +61,7 @@ export interface RestorePlanUI {
 export type PrepareProjectSource = { includeEnv?: boolean; rootDirectory?: string } & (
   | {
       source?: "github";
+      serverId?: string;
       owner: string;
       repo: string;
       branch?: string;
