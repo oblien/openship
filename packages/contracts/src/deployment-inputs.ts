@@ -3,6 +3,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { OwnerRepoParams } from "./github-inputs";
 import { CreateDeploymentSchema } from "./deployments";
 import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
 import { SourceScanOptionsSchema } from "./env-reveal";
@@ -200,8 +201,8 @@ export const PrepareDeployBody = Type.Object({
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
-  owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
-  repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
+  owner: Type.Optional(Type.String({ ...OwnerRepoParams.properties.owner, description: "GitHub repo owner (github source)." })),
+  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "GitHub repo name (github source)." })),
   branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
   path: Type.Optional(
     Type.String({ description: "Local filesystem path (local source; self-hosted only)." }),

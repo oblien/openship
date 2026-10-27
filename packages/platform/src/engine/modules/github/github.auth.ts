@@ -683,8 +683,11 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   const repositoryUrl = opts.owner && opts.repo
     ? `https://api.github.com/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`
     : null;
+  // WHATWG URL normalization removes plain and percent-encoded dot segments.
+  // Compare what fetch will send, rather than a prefix that traversal can escape.
+  const requestUrl = new URL(opts.url).href;
   const serverRead = readOnly && repositoryUrl !== null &&
-    (opts.url === repositoryUrl || opts.url.startsWith(`${repositoryUrl}/`));
+    (requestUrl === repositoryUrl || requestUrl.startsWith(`${repositoryUrl}/`));
   const rejectedSources: GitHubTokenSource[] = serverRead ? [] : ["server-token"];
   let authError: unknown;
   const rejectedCredential = (error: unknown) =>

@@ -181,6 +181,8 @@ describe("server identity capability boundary (#1500)", () => {
     { method: "GET", url: "https://github.example.test/api/v3/repos/acme/app" },
     { method: "GET", url: "https://api.github.com/user" },
     { method: "GET", url: "https://api.github.com/repos/acme/another-repo" },
+    { method: "GET", url: "https://api.github.com/repos/acme/app/../../../user" },
+    { method: "GET", url: "https://api.github.com/repos/acme/app/%2e%2e/another-repo" },
   ])("refuses server credentials for %j", async request => {
     await githubFetch({ ctx, owner: "acme", repo: "app", serverId: "s1", ...request });
     const target = tokenForSpy.mock.calls[0][2];

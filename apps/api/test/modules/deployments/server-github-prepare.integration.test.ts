@@ -211,6 +211,21 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     expect(requests.some((req) => req.token === "Bearer rejected-account-pat")).toBe(true);
     expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
   });
+  it.each([
+    { owner: "..", repo: "user" },
+    { owner: "acme", repo: ".." },
+    { owner: "acme/private-workspace", repo: "another" },
+  ])("rejects invalid repository identities before any provider request: %j", async (target) => {
+    const result = await app.request(`${origin}/api/deployments/prepare`, {
+      method: "POST",
+      headers: { ...owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...source, ...target, serverId }),
+    });
+    expect(result.status).toBe(400);
+    expect(requests).toHaveLength(0);
+    expect(await result.text()).not.toContain(pat);
+  });
+
   it("never borrows another organization's server token", async () => {
     const foreign = await seedOwner();
     const foreignId = await seedServer(foreign.orgId);
@@ -230,16 +245,14 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       .update(schema.member)
       .set({ role: "restricted" })
       .where(eq(schema.member.id, member!.id));
-    await db
-      .insert(schema.resourceGrant)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId: owner.orgId,
-        userId: owner.userId,
-        resourceType: "github_repository",
-        resourceId: "acme/private-workspace",
-        permissionsJson: '["read"]',
-      });
+    await db.insert(schema.resourceGrant).values({
+      id: crypto.randomUUID(),
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "github_repository",
+      resourceId: "acme/private-workspace",
+      permissionsJson: '["read"]',
+    });
     const ctx = buildBackgroundContext({
       userId: owner.userId,
       organizationId: owner.orgId,
@@ -249,16 +262,14 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       statusCode: 403,
     });
     expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
-    await db
-      .insert(schema.resourceGrant)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId: owner.orgId,
-        userId: owner.userId,
-        resourceType: "server",
-        resourceId: serverId,
-        permissionsJson: '["write"]',
-      });
+    await db.insert(schema.resourceGrant).values({
+      id: crypto.randomUUID(),
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "server",
+      resourceId: serverId,
+      permissionsJson: '["write"]',
+    });
     expect((await buildDependencies.prepare(ctx, { ...source, serverId })).projectType).toBe(
       "monorepo",
     );
