@@ -7,13 +7,12 @@ import { phpLanguageDetector } from "./php";
 import { pythonLanguageDetector } from "./python";
 import { rubyLanguageDetector } from "./ruby";
 import { rustLanguageDetector } from "./rust";
-import type { LanguageDetector, PortDetectionContext } from "./types";
+import type { DependencyPurpose, LanguageDetector, PortDetectionContext } from "./types";
 
-export type { LanguageDetector, PortDetectionContext } from "./types";
+export type { DependencyPurpose, LanguageDetector, PortDetectionContext } from "./types";
 
 /** Ruby's version files carry no deps, so this sits outside the detector API. */
 export { parseRubyVersion } from "./ruby";
-export { parseComposerDependencies } from "./php";
 
 /**
  * All registered language detectors. Add a language family by:
@@ -51,12 +50,15 @@ export const LANGUAGE_MANIFEST_FILES: readonly string[] = Array.from(
 /**
  * Merge deps from every present manifest into a single map.
  *
- * Keys are lowercased package identifiers; later languages don't overwrite
- * earlier ones (Object.assign semantics) - typically deps don't collide across
+ * Keys are lowercased package identifiers; later manifests overwrite earlier
+ * ones (Object.assign semantics) - typically deps don't collide across
  * languages, so this just unions cleanly.
+ * Each language owns any filtering for role suggestions; callers do not parse
+ * its manifests or branch on the selected stack's language.
  */
 export function collectDependencies(
   fileContents: Record<string, string> | undefined,
+  purpose: DependencyPurpose = "detection",
 ): Record<string, string> {
   const normalized: Record<string, string> = {};
   if (fileContents) {
@@ -68,7 +70,7 @@ export function collectDependencies(
     for (const manifest of detector.manifestFiles) {
       const content = normalized[manifest];
       if (!content) continue;
-      Object.assign(deps, detector.parseManifest(manifest, content));
+      Object.assign(deps, detector.parseManifest(manifest, content, purpose));
     }
   }
   return deps;

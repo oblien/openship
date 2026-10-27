@@ -4,7 +4,7 @@ import type { LanguageDetector } from "./types";
  * PHP - `composer.json` `require` + `require-dev` blocks. Keys are package
  * names (`vendor/package`) and values are version constraints.
  */
-export function parseComposerDependencies(
+function parseComposerDependencies(
   content: string,
   { includeDev = true }: { includeDev?: boolean } = {},
 ): Record<string, string> {
@@ -24,5 +24,8 @@ export const phpLanguageDetector: LanguageDetector = {
   id: "php",
   label: "PHP",
   manifestFiles: ["composer.json"],
-  parseManifest: (_filename, content) => parseComposerDependencies(content),
+  // Managed PHP installs use --no-dev. Discovery still inspects require-dev,
+  // while suggested workers must be present in that production install.
+  parseManifest: (_filename, content, purpose) =>
+    parseComposerDependencies(content, { includeDev: purpose !== "roles" }),
 };
