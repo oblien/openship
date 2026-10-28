@@ -36,6 +36,7 @@ import {
   isStaticService,
   hasSourceBuildRecipe,
   resolveSubAppRecipe,
+  resolveSubAppImages,
 } from "../../../lib/deployable-service";
 import { normalizeProjectRootDirectory } from "../../../lib/project-root-detector";
 import {
@@ -312,9 +313,11 @@ export function resolveComposeBuildContext(composeDirectory: string, context: st
  * The DB invariant is that monorepo rows MAY have null columns even when the
  * project-level fields are populated - e.g. the workspace shares a package
  * manager and root build image. We accept the inheritance for legitimately
- * shared fields (framework, buildImage, packageManager, outputDirectory) and
+ * shared fields (framework, packageManager, outputDirectory) and
  * for the command fields (install/build/start) where the user hasn't bothered
  * to set a per-app override.
+ * Image pairs use resolveSubAppImages so a different toolchain cannot inherit
+ * the parent runtime, and missing images receive the effective stack defaults.
  *
  * `logger` receives a one-line warning whenever a COMMAND falls back to the
  * project-level value. Commands are the most common per-app misconfiguration
@@ -338,6 +341,9 @@ interface SubAppOverrideInputs {
     BuildConfigSnapshotLike,
     | "framework"
     | "buildImage"
+    | "runtimeImage"
+    | "runtimeImageOverride"
+    | "runtimeVersion"
     | "packageManager"
     | "installCommand"
     | "buildCommand"
@@ -349,7 +355,10 @@ interface SubAppOverrideInputs {
 
 function resolveSubAppOverrides(opts: SubAppOverrideInputs): {
   stack: string | undefined;
-  buildImage: string | undefined;
+  buildImage: string;
+  runtimeImage: string;
+  runtimeImageOverride: boolean;
+  runtimeVersion: string | undefined;
   packageManager: string | undefined;
   installCommand: string | undefined;
   buildCommand: string | undefined;
@@ -388,7 +397,7 @@ function resolveSubAppOverrides(opts: SubAppOverrideInputs): {
 
   return {
     stack: recipe.framework ?? undefined,
-    buildImage: service.buildImage ?? snapshot.buildImage ?? undefined,
+    ...resolveSubAppImages(service, snapshot),
     packageManager: service.packageManager ?? snapshot.packageManager ?? undefined,
     installCommand,
     buildCommand,

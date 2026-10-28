@@ -6,6 +6,12 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep monorepo runtime images aligned with each service** — use the service's
+  framework and selected builder for its runtime instead of inheriting an
+  unrelated parent image. Fill missing builders from the stack registry, preserve
+  explicit runtime selections for unchanged apps, and use the same resolution
+  when checking whether runtime images can be refreshed.
+
 - **Add a scoped Kubernetes manifest foundation** — admit supported resources into
   a project's namespace with ownership checks on objects, pod/job templates and
   selectors. Validate the full change against Kubernetes before writing, reject

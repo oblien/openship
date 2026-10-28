@@ -6,6 +6,8 @@ import {
   type OblienOptions, type RequestOptions,
 } from "oblien";
 
+export { OblienError } from "oblien";
+
 const capacityErrors = new Map([
   [
     "plan_limit_exceeded",

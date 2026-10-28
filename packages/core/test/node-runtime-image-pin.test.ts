@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { getRuntimeImage } from "../src/stacks";
 
 describe("Node runtime image pinning", () => {
+  it("keeps a selected toolchain for an undetected app without changing static or Docker defaults", () => {
+    const image = `node:22-bookworm-slim@sha256:${"b".repeat(64)}`;
+    expect(getRuntimeImage("unknown", "npm", image)).toBe(image);
+    expect(getRuntimeImage("unknown", "npm", "node:22 && echo bad")).toBe("ubuntu:22.04");
+    expect(getRuntimeImage("docker", "npm", image)).toBe(getRuntimeImage("docker", "npm"));
+  });
   it.each(["node", "express", "nextjs"] as const)(
     "keeps the selected Node version for %s",
     (stack) => {

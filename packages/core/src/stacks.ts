@@ -1371,6 +1371,11 @@ export function getRuntimeImage(
   buildImage?: string | null,
 ): string {
   const stack = STACKS[stackId] as StackDefinition;
+  // An undetected/custom stack has no known runtime to switch to. Keep its
+  // selected toolchain instead of copying the app into a bare Ubuntu image.
+  if (stack.category === "generic" && buildImage && !validateImageReference(buildImage)) {
+    return buildImage;
+  }
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
     if (
       buildImage && !validateImageReference(buildImage) &&
