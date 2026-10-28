@@ -23,6 +23,16 @@ local host = ngx.var.host
 if not host then return end
 
 local raw = rules:get(host)
+if not raw then
+    -- A wildcard vhost's rules are stored under its server_name ("*.example.com"),
+    -- while $host is the concrete name the visitor asked for. Each vhost declares
+    -- exactly one server_name, so it is the rule key for any subdomain depth.
+    local name = ngx.var.server_name
+    if name and name ~= host and string.sub(name, 1, 2) == "*." then
+        host = name
+        raw = rules:get(host)
+    end
+end
 if not raw then return end          -- fast path: nothing configured for this host
 
 local lib = require "openship.rules_lib"

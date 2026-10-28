@@ -437,6 +437,11 @@ http {
         targetUrl: "http://127.0.0.1:9901",
       });
     }
+    out["wildcard.wild.test"] = await renderVhost({
+      domain: "*.wild.test",
+      tls: false,
+      targetUrl: "http://127.0.0.1:9901",
+    });
 
     return out;
   }
@@ -785,6 +790,19 @@ http {
       expect((await ask(port, "/literalXYZ", "rules.test", { method: "POST" })).status).toBe(403);
       expect((await ask(port, "/literal.+", "rules.test", { method: "POST" })).status).toBe(200);
     }
+  });
+
+  it("enforces a wildcard domain's rules on every subdomain it serves", async () => {
+    // Rules are stored under the domain row's hostname, which for a wildcard
+    // domain is the pattern itself, while $host is the concrete name requested.
+    await pushRules("*.wild.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]);
+    for (const host of ["app.wild.test", "a.b.wild.test"]) {
+      expect((await ask(port, "/", host)).status).toBe(200);
+      expect((await ask(port, "/", host, { method: "POST" })).status).toBe(403);
+    }
+    // A concrete host with its own ruleset keeps it: the exact key wins.
+    await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["POST"] } } }]);
+    expect((await ask(port, "/", "rules.test", { method: "POST" })).status).toBe(200);
   });
 
   it("enforces null-prefix IP restrictions, user-agent bans and hotlink protection", async () => {
