@@ -5,8 +5,7 @@
  */
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { createHash } from "node:crypto";
-import { Oblien } from "@repo/adapters";
-import { OblienError } from "oblien";
+import { Oblien, OblienError } from "@repo/adapters";
 import { OperationError } from "@repo/contracts";
 import { AppError, safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";

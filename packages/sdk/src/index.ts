@@ -27,3 +27,5 @@ export {
   ForbiddenError,
   ValidationError,
 } from "@repo/contracts";
+
+export type { AffiliateOperations, AffiliateOverview, AffiliateOffer, AffiliateReferral, AffiliatePayment, AffiliatePayout } from "@repo/contracts";

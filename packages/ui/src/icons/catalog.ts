@@ -90,6 +90,7 @@ export const outlineModern = {
   "folder-tree": mask("folder server-65-1658435257.png", [4.5, 2.25, 15.0, 19.5]),
   "forward": mask("reply share right-74-1696832523.png", [2.25, 3.75, 19.5, 16.5]),
   "gauge": mask("speed test circle-71-1693375217.png", [2.25, 2.25, 19.5, 19.5]),
+  "gift": mask("gift-70-1658434754.png", [2.4375, 2.25, 18.5625, 19.5]),
   "git-branch": mask("git branch-159-1658431404.png", [3.375, 3.1875, 16.875, 17.625]),
   "git-commit": mask("commit git-149-1658431404.png", [3.1875, 8.4375, 17.0625, 7.125]),
   "git-fork": mask("git fork-164-1658431404.png", [3.375, 3.375, 16.875, 17.25]),

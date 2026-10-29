@@ -105,6 +105,7 @@ jobs:
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/deployment-automation.e2e.test.ts
+              test/e2e/monorepo-runtime-images.e2e.test.ts
           - suite: Database
             command: bun run --cwd packages/db test
           - suite: Mail database actions
@@ -138,6 +139,7 @@ jobs:
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/deployment-artifact-retry.e2e.test.ts
+              test/e2e/buildkit-session-health.e2e.test.ts
               test/e2e/compose-port-preflight-atomic.e2e.test.ts
               test/e2e/rollback-compose-cycle.e2e.test.ts
               test/e2e/runtime-roles.e2e.test.ts
@@ -160,6 +162,10 @@ jobs:
               test/e2e/routing-rules.e2e.test.ts
               test/e2e/route-protection.e2e.test.ts
               test/e2e/edge-not-found-page.e2e.test.ts
+          - suite: Kubernetes manifests
+            command: >-
+              RUN_KUBERNETES_E2E=1 bun run --cwd packages/adapters test
+              test/project-manifests.e2e.test.ts
           - suite: Swarm inspection and deployment
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e

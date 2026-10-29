@@ -1254,21 +1254,28 @@
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Erstelle diese App aus ihrer gespeicherten Quelle neu, bevor du ihre Laufzeit aktualisierst. Das aktuelle Image hat keine verifizierte Quellrevision. Eine erneute Bereitstellung aus der Quelle kann neueren Code enthalten. Prüfe ihn unter „Bereitstellungen“ und überprüfe diesen Hinweis anschließend erneut.",
+    "openSourceRedeploy": "Bereitstellung aus Quelle öffnen",
     "reviewApps": "Betroffene Apps prüfen ({count})",
     "pendingApps": "Prüfungen für {count} Apps stehen aus. Ergebnisse erscheinen automatisch.",
     "checkAgain": "Erneut prüfen",
     "checking": "Wird geprüft…",
     "title": "Sicherheitshinweise",
     "unavailable": "Sicherheitsprüfungen sind nicht verfügbar oder veraltet. Bisherige Hinweise bleiben sichtbar.",
-    "affected": "Prüfe die betroffene Laufzeit und die veröffentlichten Hinweise vor dem Update.",
+    "affected": "Befunde für Apps, auf die du in der aktuellen Organisation zugreifen kannst.",
     "noMatches": "Keine passenden Hinweise in den geprüften Daten. Dies ist kein vollständiger Schwachstellenscan.",
-    "partial": "Einige Laufzeiten konnten nicht ermittelt werden. Host-Prozesse, gestoppte Container und nicht unterstützte Images müssen eventuell manuell geprüft werden.",
+    "partial": "Einige Laufzeitumgebungen konnten nicht geprüft werden.",
     "guidance": "Hinweis lesen",
     "automatic": "Verifizierte Sicherheitsupdates automatisch anwenden",
     "automaticDescription": "Standardmäßig aus. Nur Image-Dienste mit einer signierten Korrektur unter ihrem bestehenden Tag werden automatisch aktualisiert. Quellcode-Builds, festgelegte Images und Versionswechsel erfordern eine Prüfung. Normale Deployment- und Zustandsprüfungen gelten weiterhin.",
     "notifications": "Sicherheitshinweise sind standardmäßig für Benachrichtigungskanäle aktiv. Jeden Kanal kannst du unter Einstellungen → Benachrichtigungen ändern.",
     "publicFeed": "Öffentlichen Feed ansehen",
     "checked": "Nachweise geprüft",
-    "possible": "Das Image-Tag stimmt überein; die bereitgestellte Version muss geprüft werden."
+    "possible": "Das Image-Tag stimmt überein; die bereitgestellte Version muss geprüft werden.",
+    "tab": "Sicherheit",
+    "monitoring": "In Monitoring anzeigen",
+    "persistent": "Aktive Befunde bleiben hier sichtbar, auch wenn das Banner geschlossen wird.",
+    "otherApps": "Weitere Apps ({count})",
+    "details": "Details und Hinweise"
   }
 }

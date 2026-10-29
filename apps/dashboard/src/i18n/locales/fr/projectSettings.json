@@ -1254,21 +1254,28 @@
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Reconstruisez cette application à partir de sa source enregistrée avant de mettre à jour son environnement d’exécution. L’image actuelle ne possède aucune révision source vérifiée. Un redéploiement depuis la source peut inclure du code plus récent ; vérifiez-le dans Déploiements, puis consultez à nouveau cet avis.",
+    "openSourceRedeploy": "Ouvrir le redéploiement depuis la source",
     "reviewApps": "Examiner les apps concernées ({count})",
     "pendingApps": "Vérifications en attente pour {count} apps. Les résultats apparaîtront automatiquement.",
     "checkAgain": "Vérifier à nouveau",
     "checking": "Vérification…",
     "title": "Avis de sécurité",
     "unavailable": "Les vérifications de sécurité sont indisponibles ou périmées. Les avis précédents restent visibles.",
-    "affected": "Consultez le runtime concerné et les recommandations publiées avant la mise à jour.",
+    "affected": "Alertes des applications auxquelles vous avez accès dans l’organisation actuelle.",
     "noMatches": "Aucun avis ne correspond aux données vérifiées. Ceci ne constitue pas une analyse complète des vulnérabilités.",
-    "partial": "Certains runtimes n’ont pas pu être identifiés. Les processus hôtes, conteneurs arrêtés et images non prises en charge peuvent nécessiter une vérification manuelle.",
+    "partial": "Certains environnements d’exécution n’ont pas pu être vérifiés.",
     "guidance": "Lire l’avis",
     "automatic": "Appliquer automatiquement les correctifs de sécurité vérifiés",
     "automaticDescription": "Désactivé par défaut. Seuls les services d’images ayant un correctif signé sur leur tag actuel sont mis à jour automatiquement. Les compilations, images épinglées et changements de version nécessitent une vérification. Les contrôles habituels de déploiement et de santé restent actifs.",
     "notifications": "Les alertes de sécurité sont activées par défaut sur les canaux. Chaque canal se configure dans Paramètres → Notifications.",
     "publicFeed": "Voir le flux public",
     "checked": "Éléments vérifiés",
-    "possible": "Le tag de l’image correspond ; la version déployée doit être vérifiée."
+    "possible": "Le tag de l’image correspond ; la version déployée doit être vérifiée.",
+    "tab": "Sécurité",
+    "monitoring": "Voir dans Surveillance",
+    "persistent": "Les alertes actives restent ici après la fermeture de la bannière.",
+    "otherApps": "Autres applications ({count})",
+    "details": "Détails et recommandations"
   }
 }

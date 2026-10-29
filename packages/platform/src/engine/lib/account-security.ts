@@ -12,6 +12,7 @@ import { twoFactor } from "better-auth/plugins";
 import { resolvePasskeyConfig } from "./passkey-config";
 import { atomicSecurityEndpoint } from "./account-security-transaction";
 import type { Database } from "@repo/db/factory";
+import { isOidcRequest } from "./oidc";
 
 interface AccountSecurityOptions {
   database: Database;
@@ -25,6 +26,7 @@ function isPrimarySignIn(path: string | undefined) {
   return (
     path.startsWith("/sign-in/") ||
     path.startsWith("/callback/") ||
+    path.startsWith("/oauth2/callback/") ||
     path === "/passkey/verify-authentication" ||
     path === "/verify-email" ||
     path === "/email-otp/verify-email"
@@ -105,6 +107,17 @@ export function accountSecurityPlugins(options: AccountSecurityOptions) {
                 return record && new Date(record.expiresAt).getTime() > Date.now() ? record : null;
               },
             };
+          }),
+        },
+        {
+          matcher: isOidcRequest,
+          handler: createAuthMiddleware(async () => {
+            if ((await options.getAuthMode()) !== "local") {
+              throw new APIError("FORBIDDEN", {
+                code: "OAUTH_DISABLED",
+                message: "OIDC sign-in requires an instance with local accounts.",
+              });
+            }
           }),
         },
         {

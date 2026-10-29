@@ -68,7 +68,8 @@ local function form(p, path, error_message)
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
     ngx.header["X-Frame-Options"] = "DENY"
     ngx.header["X-Content-Type-Options"] = "nosniff"
-    ngx.header["Referrer-Policy"] = "no-referrer"
+    -- Preserve Origin on same-origin form POSTs; external referrers stay hidden.
+    ngx.header["Referrer-Policy"] = "same-origin"
     ngx.header["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
     ngx.print([[<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Private site</title><style>

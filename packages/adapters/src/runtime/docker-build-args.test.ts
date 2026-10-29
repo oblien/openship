@@ -45,3 +45,32 @@ describe("resolveDockerBuildArgs (#689)", () => {
     ).toThrow(/BAD-KEY/);
   });
 });
+
+describe("OPENSHIP_COMMIT_SHA (#1495)", () => {
+  const head = "9f2c4e1a7b3d5f6e8a0c2b4d6f8e0a1c3b5d7f9e";
+
+  it("passes the deployment's commit to the build", () => {
+    expect(resolveDockerBuildArgs({ envVars: {}, commitSha: head })).toEqual({
+      NODE_ENV: "production",
+      OPENSHIP_COMMIT_SHA: head,
+    });
+  });
+
+  it("overrides a stale stored value of the same name", () => {
+    const stale = "0000000aaaaaaabbbbbbbcccccccdddddddeeeee";
+    expect(
+      resolveDockerBuildArgs({
+        envVars: { OPENSHIP_COMMIT_SHA: stale },
+        buildArgs: { OPENSHIP_COMMIT_SHA: stale, REVISION: stale },
+        commitSha: head,
+      }),
+    ).toMatchObject({ OPENSHIP_COMMIT_SHA: head, REVISION: stale });
+  });
+
+  it("is omitted when the source has no commit or the value is not a commit hash", () => {
+    expect(resolveDockerBuildArgs({ envVars: {} })).not.toHaveProperty("OPENSHIP_COMMIT_SHA");
+    expect(resolveDockerBuildArgs({ envVars: {}, commitSha: "main; rm -rf /" })).not.toHaveProperty(
+      "OPENSHIP_COMMIT_SHA",
+    );
+  });
+});

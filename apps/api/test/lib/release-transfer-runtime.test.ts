@@ -23,6 +23,12 @@ beforeEach(async () => {
   await copyReleaseTransferScripts(directory);
   // Model the real flat source layout while reusing the installed workspace
   // dependencies. The copied entry scripts and their relative imports are real.
+  // Bun can hoist workspace dependencies to the root instead of api/node_modules.
+  await symlink(
+    resolve(import.meta.dirname, "../../../../node_modules"),
+    join(directory, "node_modules"),
+    "dir",
+  );
   await symlink(resolve(import.meta.dirname, "../../src"), join(directory, "api/src"), "dir");
   await symlink(
     resolve(import.meta.dirname, "../../../../packages/db/src"),
@@ -36,7 +42,7 @@ afterEach(async () => {
 
 async function run(relative: string, args: string[] = []) {
   try {
-    const result = await exec("bun", [join(directory, relative), ...args], {
+    const result = await exec("bun", ["--no-install", join(directory, relative), ...args], {
       cwd: directory,
       env,
       timeout: 30_000,
@@ -49,6 +55,18 @@ async function run(relative: string, args: string[] = []) {
 }
 
 describe("source release transfer entry points (#869)", () => {
+  it("ships runnable affiliate administration and its account lookup without opening local storage", async () => {
+    await symlink(resolve(import.meta.dirname, "../../node_modules"), join(directory, "api/node_modules"), "dir");
+    const help = await run("api/scripts/affiliate.ts", ["--help"]);
+    expect(help.code, help.stderr).toBe(0);
+    expect(help.stdout).toContain("affiliate queue");
+    const refused = await run("api/scripts/affiliate.ts", ["queue"]);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("Run in the Cloud API environment with PostgreSQL");
+    expect(await readFile(join(directory, "api/scripts/affiliate-accounts.ts"), "utf8"))
+      .toContain("affiliateQueueAccounts");
+  });
+
   it("ships dependency patches with the manifest that installs the source release", async () => {
     await writeReleaseRootPackage(directory, "0.0.0-test");
     const repo = resolve(import.meta.dirname, "../../../..");

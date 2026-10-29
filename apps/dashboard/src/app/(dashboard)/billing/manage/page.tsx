@@ -1,7 +1,13 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { ManagementBilling } from "@/components/billing/ManagementPlan";
 
 export default function ManagePage() {
-  return <ManagementBilling />;
+  const requested = useSearchParams()?.get("plan");
+  return (
+    <ManagementBilling
+      initialPlan={requested === "basic" || requested === "priority" ? requested : undefined}
+    />
+  );
 }

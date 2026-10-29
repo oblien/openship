@@ -56,4 +56,13 @@ describe("OAuthButtons renders the server's list", () => {
     expect(html).toContain("Continue with Google");
     expect(html).not.toContain("Continue with GitHub");
   });
+
+  it("renders the generic OIDC button with its display name or SSO default", () => {
+    const customHtml = render([{ id: "oidc", kind: "oidc", name: "Keycloak" }]);
+    expect(customHtml).toContain("Continue with Keycloak");
+    expect(customHtml).toContain("or");
+
+    const defaultHtml = render([{ id: "oidc", kind: "oidc" }]);
+    expect(defaultHtml).toContain("Continue with SSO");
+  });
 });

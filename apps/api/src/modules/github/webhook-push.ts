@@ -12,7 +12,7 @@ import {
 } from "@repo/platform/engine/modules/github/github.service";
 import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
-import { safeErrorMessage, normalizeProjectRootDirectory } from "@repo/core";
+import { safeErrorMessage } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
@@ -131,8 +131,7 @@ async function deployProjectFromPush(
   const enabledServices = services.filter((s) => s.enabled);
 
   // Treat compose- and monorepo-kind services as "real" routable
-  // services. A project with zero such rows is a single-app
-  // project and always rebuilds (no smart routing to do).
+  // services. Single-app projects use the shared path policy below.
   const routableServices = enabledServices.filter(
     (s) => s.kind === "compose" || s.kind === "monorepo",
   );
@@ -184,7 +183,7 @@ async function deployProjectFromPush(
       routingReason = routingReason ?? "force-deploy-next";
     }
 
-    if (!forceAll && routableServices.length === 0 && normalizeProjectRootDirectory(p.rootDirectory ?? undefined)) {
+    if (!forceAll) {
       // Compare with the deployed release, not just this push's before SHA: a
       // previous failed deployment may contain app changes still waiting to ship.
       const active = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;

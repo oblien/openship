@@ -5,10 +5,14 @@ import { UpdateCenter } from "@/components/updates/UpdateCenter";
 import { useSearchParams } from "next/navigation";
 import { SecurityAdvisorySettings } from "@/app/(dashboard)/settings/_components/SecurityAdvisorySettings";
 import { Icon } from "@repo/ui/icons";
+import Link from "next/link";
+import { IssuesView } from "@/app/(dashboard)/issues/IssuesView";
+import { PlatformProvider } from "@/context/PlatformContext";
 
 /** Real root update banner and dialog; capture.mjs supplies synthetic API responses. */
 export default function Preview() {
   const settings = useSearchParams().get("settings") === "1";
+  const monitoring = useSearchParams().get("monitoring") === "1";
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl" data-security-capture>
@@ -17,10 +21,17 @@ export default function Preview() {
             <Logo size={28} /> OpenShip
           </div>
           <p className="text-xs text-muted-foreground">Preview · sample application data</p>
+          <Link href="/security-advisory-capture?monitoring=1&tab=security">
+            Preview monitoring
+          </Link>
         </header>
         <UpdateCenter />
         <section className="space-y-6 px-6 py-8">
-          {settings ? (
+          {monitoring ? (
+            <PlatformProvider selfHosted={false} authMode="cloud">
+              <IssuesView />
+            </PlatformProvider>
+          ) : settings ? (
             <SecurityAdvisorySettings />
           ) : (
             <>

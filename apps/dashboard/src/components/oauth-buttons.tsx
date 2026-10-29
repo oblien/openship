@@ -11,6 +11,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import {
   renderableOAuthProviders,
+  renderableOidcProvider,
   type AdvertisedAuthProvider,
   type RenderableOAuthProviderId,
 } from "@/lib/auth-providers";
@@ -42,11 +43,12 @@ export function OAuthButtons({
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
-  const [loading, setLoading] = useState<RenderableOAuthProviderId | null>(null);
+  const [loading, setLoading] = useState<RenderableOAuthProviderId | "oidc" | null>(null);
 
   const visible = renderableOAuthProviders(providers);
+  const oidc = renderableOidcProvider(providers);
 
-  async function handleOAuth(provider: RenderableOAuthProviderId) {
+  async function handleOAuth(provider: RenderableOAuthProviderId | "oidc") {
     setLoading(provider);
     try {
       // Resolve callbackURL against the DASHBOARD origin. Better Auth resolves
@@ -55,17 +57,26 @@ export function OAuthButtons({
       // subdomain after the OAuth callback instead of returning to the app.
       const appOrigin = window.location.origin;
       const cb = new URL(callbackURL, appOrigin).toString();
+      const errorCb = new URL("/login", appOrigin).toString();
       // better-auth resolves sign-in errors into `{ error }` rather than
       // throwing, so inspecting the return value is what actually surfaces a
       // misconfigured/failed provider — the try/catch only covers thrown
       // network/abort errors. Without this the spinner spun forever.
-      const { error } = await signIn.social({
-        provider,
-        callbackURL: cb,
-        // First-time OAuth users take the newUser branch; keep them on the app.
-        newUserCallbackURL: cb,
-        errorCallbackURL: new URL("/login", appOrigin).toString(),
-      });
+      const { error } =
+        provider === "oidc"
+          ? await signIn.oauth2({
+              providerId: "oidc",
+              callbackURL: cb,
+              newUserCallbackURL: cb,
+              errorCallbackURL: errorCb,
+            })
+          : await signIn.social({
+              provider,
+              callbackURL: cb,
+              // First-time OAuth users take the newUser branch; keep them on the app.
+              newUserCallbackURL: cb,
+              errorCallbackURL: errorCb,
+            });
       if (error) {
         toast("error", error.message ?? t.auth.errors.oauthFailed);
         setLoading(null);
@@ -84,7 +95,15 @@ export function OAuthButtons({
 
   // Nothing configured server-side → no divider, no buttons. This is what makes
   // the callers' unconditional `<OAuthButtons providers={…} />` safe.
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && !oidc) return null;
+
+  // Every shipped locale's GitHub label contains the literal "GitHub", so the
+  // OIDC button reuses that sentence with the IdP display name in its place.
+  const oidcLabel = oidc
+    ? t.auth.oauth.github.includes("GitHub")
+      ? t.auth.oauth.github.replace("GitHub", oidc.name)
+      : `Continue with ${oidc.name}`
+    : null;
 
   return (
     <>
@@ -109,6 +128,18 @@ export function OAuthButtons({
             {t.auth.oauth[provider]}
           </Button>
         ))}
+        {oidc && (
+          <Button
+            key="oidc"
+            variant="ghost"
+            disabled={loading !== null}
+            onClick={() => handleOAuth("oidc")}
+            className="w-full border-0 bg-foreground/[0.04] hover:bg-foreground/[0.08]"
+          >
+            {loading === "oidc" ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="key" size={17} />}
+            {oidcLabel}
+          </Button>
+        )}
       </div>
     </>
   );

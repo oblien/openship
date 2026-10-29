@@ -34,6 +34,7 @@ import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import { gracefulStopBeforeRemoval, removeDockerContainer } from "./docker-container-removal";
 export { gracefulStopBeforeRemoval } from "./docker-container-removal";
 import Dockerode from "dockerode";
+import { buildDockerImage } from "./docker-buildkit-session";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
@@ -521,8 +522,13 @@ export async function resolveExecExitCode(exec: ExecInspectable, label?: string)
   return info.ExitCode;
 }
 
-function resolveRestartPolicy(policy?: string) {
-  return RESTART_POLICIES[policy ?? "always"] ?? RESTART_POLICIES.always;
+/** Map a restart policy, including Compose's `on-failure:<max-retries>` form, to
+ *  Docker's HostConfig shape. Exported for unit tests. */
+export function resolveRestartPolicy(policy?: string) {
+  const name = policy?.trim() ?? "always";
+  const retries = /^on-failure:(\d+)$/.exec(name);
+  if (retries) return { Name: "on-failure", MaximumRetryCount: Number(retries[1]) };
+  return RESTART_POLICIES[name] ?? RESTART_POLICIES.always;
 }
 
 /**
@@ -643,6 +649,18 @@ function normalizeInspectPorts(data: Dockerode.ContainerInspectInfo): DockerPort
  */
 const DEFAULT_EXTRA_PORT_HOST_IP = "127.0.0.1";
 
+/** One container port can be published on several host ports ("8080:80" and
+ *  "8081:80"), so bindings accumulate per key; an exact repeat is kept once. */
+function addPortBinding(
+  portBindings: Record<string, { HostIp?: string; HostPort: string }[]>,
+  key: string,
+  binding: { HostIp: string; HostPort: string },
+) {
+  const existing = (portBindings[key] ??= []);
+  if (!existing.some((b) => b.HostIp === binding.HostIp && b.HostPort === binding.HostPort))
+    existing.push(binding);
+}
+
 /** Parse port specs ("8080:3000", "3000", "127.0.0.1:8080:80") into Docker
  *  ExposedPorts + PortBindings. Exported for unit tests. */
 export function parsePortBindings(portSpecs: string[]): {
@@ -666,7 +684,7 @@ export function parsePortBindings(portSpecs: string[]): {
       // loopback (see DEFAULT_EXTRA_PORT_HOST_IP).
       const key = `${parts[0]}/${protocol}`;
       exposedPorts[key] = {};
-      portBindings[key] = [{ HostIp: DEFAULT_EXTRA_PORT_HOST_IP, HostPort: "" }];
+      addPortBinding(portBindings, key, { HostIp: DEFAULT_EXTRA_PORT_HOST_IP, HostPort: "" });
     } else {
       // [hostIp:]hostPort:containerPort. Parse from the RIGHT so both the
       // 2-part (hostPort:containerPort) and 3-part IP-scoped form
@@ -680,7 +698,10 @@ export function parsePortBindings(portSpecs: string[]): {
       // An explicit interface (including "0.0.0.0" to publish deliberately) is
       // preserved verbatim; only a spec with no pinned interface falls back to
       // loopback rather than Docker's all-interfaces default.
-      portBindings[key] = [{ HostIp: hostIp || DEFAULT_EXTRA_PORT_HOST_IP, HostPort: hostPort }];
+      addPortBinding(portBindings, key, {
+        HostIp: hostIp || DEFAULT_EXTRA_PORT_HOST_IP,
+        HostPort: hostPort,
+      });
     }
   }
   return { exposedPorts, portBindings };
@@ -937,11 +958,6 @@ function stripDockerHeaders(buf: Buffer): string {
   return splitDockerFrames(buf)
     .map((f) => f.data.toString("utf-8"))
     .join("");
-}
-
-/** Strip a single Docker frame header from one streaming chunk. */
-function stripDockerChunkHeader(chunk: Buffer): Buffer {
-  return hasDockerFrameHeader(chunk) ? chunk.subarray(8) : chunk;
 }
 
 /** Parse a Docker timestamp-prefixed log line into timestamp + message. */
@@ -2521,7 +2537,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     try {
       await this.retainNativeBuildCache(log);
-      const stream = await this.docker.buildImage(body, {
+      const stream = await buildDockerImage(this.docker, body, {
         t: tag,
         pull: config.refreshBaseImages === true,
         dockerfile: buildContext.dockerfileName,
@@ -5564,6 +5580,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   ): Promise<() => void> {
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
+    // Framing is a container property, not something to guess from log contents.
+    const tty = (await container.inspect()).Config?.Tty === true;
     const stream = (await container.logs({
       stdout: true,
       stderr: true,
@@ -5574,45 +5592,69 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     let destroyed = false;
     let ended = false;
-
+    const stop = () => {
+      (stream as Readable).destroy();
+      stdout.sink.destroy();
+      stderr.sink.destroy();
+    };
     const notifyEnd = (error?: Error) => {
       if (destroyed || ended) return;
       ended = true;
+      stop();
       opts?.onEnd?.(error);
     };
-
-    let buffer = "";
-    stream.on("data", (chunk: Buffer) => {
-      if (destroyed) return;
-      buffer += stripDockerChunkHeader(chunk).toString("utf-8");
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line) continue;
-        const { timestamp, message } = parseTimestampedLine(line);
-        onLog({ timestamp, message, level: parseLogLevel(message) });
-      }
-    });
-
+    const emitLine = (line: string) => {
+      if (!line || destroyed || ended) return;
+      const { timestamp, message } = parseTimestampedLine(line);
+      onLog({ timestamp, message, level: parseLogLevel(message) });
+    };
+    // stdout and stderr are independent byte streams: neither UTF-8 decoder state
+    // nor partial lines can be shared, even when Docker interleaves their frames.
+    const lineSink = () => {
+      const decoder = new StringDecoder("utf8");
+      let pending = "";
+      const sink = new Writable({
+        write(chunk: Buffer, _encoding, done) {
+          if (!destroyed && !ended) {
+            pending += decoder.write(chunk);
+            const lines = pending.split("\n");
+            pending = lines.pop() ?? "";
+            for (const line of lines) emitLine(line);
+          }
+          done();
+        },
+      });
+      sink.on("error", notifyEnd);
+      return {
+        sink,
+        flush() {
+          emitLine(pending + decoder.end());
+          pending = "";
+        },
+      };
+    };
+    const stdout = lineSink();
+    const stderr = lineSink();
+    if (tty) {
+      stream.pipe(stdout.sink);
+    } else {
+      // Reuse the bounded parser used by attach/exec. In particular, do not
+      // reinterpret malformed frames as text or silently discard a truncated tail.
+      demuxDockerStream(stream, stdout.sink, stderr.sink, notifyEnd);
+    }
     stream.on("end", () => {
-      if (buffer && !destroyed) {
-        onLog({
-          timestamp: new Date().toISOString(),
-          message: buffer,
-          level: parseLogLevel(buffer),
-        });
-        buffer = "";
-      }
+      if (destroyed || ended) return;
+      stdout.flush();
+      stderr.flush();
       notifyEnd();
     });
     stream.on("error", notifyEnd);
     stream.on("close", () => notifyEnd(new Error("Runtime log connection closed before completion")));
 
     return () => {
-      if (!destroyed) {
-        destroyed = true;
-        (stream as any).destroy?.();
-      }
+      if (destroyed) return;
+      destroyed = true;
+      stop();
     };
   }
 

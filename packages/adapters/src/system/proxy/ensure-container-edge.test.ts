@@ -57,6 +57,8 @@ interface BoxOpts {
   canonicalMounts?: Record<string, string>;
   /** Bind sources reported by Docker for an existing edge, keyed by container path. */
   mountedSources?: Record<string, string>;
+  identityLabels?: Record<string, string> | null;
+  identityReadFails?: boolean;
 }
 
 /** procfs socket table rows: state 0A = LISTEN, hex 0050 = 80, 01BB = 443. */
@@ -105,6 +107,11 @@ function box(opts: BoxOpts = {}) {
     if (cmd.startsWith("docker ps --filter name=openship-edge")) return opts.edgeContainer ?? "";
     if (cmd.startsWith("docker ps")) return "";
     if (cmd.startsWith("docker version")) return opts.dockerMissing ? "" : "27.0.0";
+    if (cmd.includes("{{json .Config.Labels}}")) {
+      if (opts.identityReadFails) throw new Error("Docker permission denied");
+      if (!edgeState) throw new Error("No such container: openship-edge");
+      return `${"a".repeat(64)}\t${JSON.stringify(opts.identityLabels ?? {})}`;
+    }
     if (cmd.includes("{{.State.Status}}")) return edgeState;
     // `containerState` asks for run state AND image in one inspect, TAB-separated —
     // answering with a bare image ref parses as `running:"<ref>", image:undefined`,
@@ -433,6 +440,56 @@ describe("ensureContainerEdge", () => {
     // Pull before the old one is removed, same rule as the migration path.
     expect(idx(commands, "docker pull")).toBeLessThan(idx(commands, "docker rm -f"));
     expect(commands.some((c) => c.includes(`docker run -d --name 'openship-edge'`))).toBe(true);
+  });
+
+  it.each([false, true])("preserves service identity through image update and rollback (failure=%s)", async (runFails) => {
+    const identityLabels = {
+      "openship.project": "proj-native", "openship.deployment": "dep-current", "openship.service": "edge",
+      "com.docker.compose.project": "imported-stack", "com.docker.compose.service": "edge",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.config-hash": "stale-build-hash",
+      "org.opencontainers.image.revision": "old-image-revision",
+    };
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge", edgeContainerImage: "edge:old", identityLabels, runFails,
+    });
+    await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+    const runs = commands.filter(command => command.startsWith("docker run -d"));
+    expect(runs).toHaveLength(runFails ? 2 : 1);
+    for (const run of runs) {
+      expect(run).toContain("--label 'openship.project=proj-native'");
+      expect(run).toContain("--label 'openship.deployment=dep-current'");
+      expect(run).toContain("--label 'openship.service=edge'");
+      expect(run).toContain("--label 'com.docker.compose.project=imported-stack'");
+      expect(run).toContain("--label 'com.docker.compose.service=edge'");
+      expect(run).not.toContain("config-hash");
+      expect(run).not.toContain("image.revision");
+    }
+    expect(commands.find(command => command.startsWith("docker rm -f"))).toBe(`docker rm -f '${"a".repeat(64)}'`);
+    expect(idx(commands, "{{json .Config.Labels}}")).toBeLessThan(idx(commands, "docker rm -f"));
+  });
+
+  it.each(["running", "restarting"])("keeps the existing %s edge when its identity cannot be read", async (edgeStatus) => {
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge", edgeContainerImage: "edge:old", identityReadFails: true, edgeStatus,
+    });
+    await expect(ensureContainerEdge(executor, { onLog, image: IMAGE })).rejects.toThrow("permission denied");
+    expect(commands.some(command => command.startsWith("docker rm") || command.startsWith("docker run"))).toBe(false);
+  });
+
+  it.each(["restarting", "stale mounts"])("keeps a renamed edge's identity when recreating for %s", async (cause) => {
+    const { executor, commands, onLog } = box({
+      edgeContainer: "renamed-edge", edgeContainerImage: IMAGE,
+      edgeStatus: cause === "restarting" ? "restarting" : "running",
+      mountedSources: cause === "stale mounts" ? { [EDGE_CONTAINER_MOUNTS[0]!.container]: "/stale/source" } : undefined,
+      identityLabels: { "openship.project": "project-one", "openship.service": "edge" },
+    });
+    await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+    const inspect = commands.find(command => command.includes("{{json .Config.Labels}}"));
+    expect(inspect).toContain("'renamed-edge'");
+    const run = commands.find(command => command.startsWith("docker run -d"));
+    expect(run).toContain("--label 'openship.project=project-one'");
+    expect(run).toContain("--label 'openship.service=edge'");
   });
 
   // The mounted vhost dir is HOST state that outlives every container. Our own

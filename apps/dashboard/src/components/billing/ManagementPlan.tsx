@@ -20,23 +20,45 @@ const money = (cents: number) =>
 type Quote = Awaited<ReturnType<BillingOperations["purchaseManagement"]>>;
 
 /** Account-scoped billing view shared by the purchase tab and payment returns. */
-export function ManagementBilling({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
+export function ManagementBilling({
+  initialPlan,
+  onBusyChange,
+}: {
+  initialPlan?: ManagementPlanId;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const scope = useResourceScope();
-  return <ManagementBillingContent key={scope} onBusyChange={onBusyChange} />;
+  return (
+    <ManagementBillingContent
+      key={`${scope}:${initialPlan ?? ""}`}
+      initialPlan={initialPlan}
+      onBusyChange={onBusyChange}
+    />
+  );
 }
 
-function ManagementBillingContent({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
+function ManagementBillingContent({
+  initialPlan,
+  onBusyChange,
+}: {
+  initialPlan?: ManagementPlanId;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const resource = useManagementPlan();
-  return <ManagementPlan resource={resource} onBusyChange={onBusyChange} />;
+  return (
+    <ManagementPlan resource={resource} initialPlan={initialPlan} onBusyChange={onBusyChange} />
+  );
 }
 
 /** The same purchase and recovery flow in Billing and the server connection form. */
 export function ManagementPlan({
   resource,
+  initialPlan,
   embedded = false,
   onBusyChange,
 }: {
   resource: ManagementPlanResource;
+  initialPlan?: ManagementPlanId;
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
@@ -50,7 +72,7 @@ export function ManagementPlan({
     onBusyChange?.(action.busy);
     return () => onBusyChange?.(false);
   }, [action.busy, onBusyChange]);
-  const [selectedPlan, setSelectedPlan] = useState<ManagementPlanId | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<ManagementPlanId | null>(initialPlan ?? null);
   const [servers, setServers] = useState<number | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [cancel, setCancel] = useState(false);
@@ -85,7 +107,8 @@ export function ManagementPlan({
       : data.pricing.monthlyCents) -
     (data.cloudIncluded ? data.pricing.monthlyCents : 0) +
     Math.max(0, count - data.pricing.includedServers) * data.pricing.extraServerMonthlyCents;
-  const monthly = planPrice(plan);
+  const planAvailable = plan !== "priority" || !!data.pricing.priorityMonthlyCents;
+  const monthly = planAvailable ? planPrice(plan) : null;
   const selectionDisabled = action.busy || data.pendingCheckout || !!data.change;
   const selectedMatches =
     !!data.subscription &&
@@ -119,6 +142,11 @@ export function ManagementPlan({
           {copy.description}
         </p>
       </div>
+      {!planAvailable && (
+        <p role="alert" className="text-sm text-warning">
+          {t.billing.plansRoute.requestedPlanUnavailable}
+        </p>
+      )}
       {embedded && data.active && data.connectedServers >= data.serverLimit && (
         <p className="text-sm text-muted-foreground">
           All {data.serverLimit} connected-server slots are in use. Increase the allowance below to
@@ -350,36 +378,40 @@ export function ManagementPlan({
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-xs text-muted-foreground">{copy.monthlyTotal}</p>
                 <p className="text-lg font-medium tabular-nums text-foreground">
-                  {money(monthly)}
+                  {monthly === null ? "—" : money(monthly)}
                   <span className="ms-1 text-sm font-normal text-muted-foreground">
                     {copy.perMonth}
                   </span>
                 </p>
               </div>
-              {!quote && !data.pendingCheckout && !data.change && monthly > 0 && (
-                <Button
-                  className="w-full"
-                  disabled={
-                    action.busy ||
-                    !data.purchasesAvailable ||
-                    selectedMatches ||
-                    (data.subscription?.status !== "canceled" &&
-                      !!data.subscription?.cancelAtPeriodEnd) ||
-                    !Number.isInteger(count) ||
-                    count < Math.max(data.pricing.includedServers, data.connectedServers) ||
-                    count > data.pricing.maxServers
-                  }
-                  onClick={() => void purchase()}
-                >
-                  {action.busy
-                    ? "Checking…"
-                    : selectedMatches
-                      ? t.billing.pricing.currentPlan
-                      : data.subscription && data.subscription.status !== "canceled"
-                        ? "Review change"
-                        : "Continue to checkout"}
-                </Button>
-              )}
+              {!quote &&
+                !data.pendingCheckout &&
+                !data.change &&
+                (monthly === null || monthly > 0) && (
+                  <Button
+                    className="w-full"
+                    disabled={
+                      action.busy ||
+                      !data.purchasesAvailable ||
+                      !planAvailable ||
+                      selectedMatches ||
+                      (data.subscription?.status !== "canceled" &&
+                        !!data.subscription?.cancelAtPeriodEnd) ||
+                      !Number.isInteger(count) ||
+                      count < Math.max(data.pricing.includedServers, data.connectedServers) ||
+                      count > data.pricing.maxServers
+                    }
+                    onClick={() => void purchase()}
+                  >
+                    {action.busy
+                      ? "Checking…"
+                      : selectedMatches
+                        ? t.billing.pricing.currentPlan
+                        : data.subscription && data.subscription.status !== "canceled"
+                          ? "Review change"
+                          : "Continue to checkout"}
+                  </Button>
+                )}
             </div>
           </section>
           {data.pendingCheckout && (

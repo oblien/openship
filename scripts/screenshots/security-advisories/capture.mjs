@@ -8,7 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../..");
 const origin = process.env.SCREENSHOT_ORIGIN ?? "http://localhost:3001";
 const routeDir = resolve(root, "apps/dashboard/src/app/security-advisory-capture");
-const output = resolve(root, "docs/screenshots/security-advisories");
+const output =
+  process.env.SCREENSHOT_OUTPUT ?? resolve(root, "docs/screenshots/security-advisories");
 const require = createRequire(import.meta.url);
 const modulePath = process.env.PLAYWRIGHT_MODULE ?? require.resolve("playwright");
 const { chromium } = await import(pathToFileURL(modulePath).href);
@@ -148,6 +149,7 @@ try {
     return route.abort();
   });
   page = await context.newPage();
+  page.setDefaultTimeout(15_000);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/security-advisory-capture`, {
     waitUntil: "domcontentloaded",
@@ -176,10 +178,11 @@ try {
   const consent = page.getByRole("switch", {
     name: "Automatically refresh verified security patches",
     exact: true,
+    includeHidden: true,
   });
   assert.equal(await consent.getAttribute("aria-checked"), "false");
   assert.equal(writes.length, 0);
-  assert.equal(await page.locator("details").getAttribute("open"), "");
+  assert.equal(await page.locator("details").first().getAttribute("open"), "");
   assert.equal(await refresh.isEnabled(), true);
   await page.screenshot({
     path: resolve(output, "advisory-review.png"),
@@ -199,6 +202,10 @@ try {
     page.waitForResponse((response) => response.url().endsWith("/security/check")),
     page.getByRole("button", { name: "Check again", exact: true }).click(),
   ]);
+  await page
+    .locator("summary")
+    .filter({ hasText: "Automatically refresh verified security patches" })
+    .click();
   await consent.click();
   await page.waitForFunction(
     () => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "true",
@@ -226,6 +233,22 @@ try {
   await refresh.waitFor();
   assert.equal(await refresh.isDisabled(), true);
   assert.equal(writes.length, 4);
+  await page.locator("[data-modal-surface] > button").click();
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+  assert.equal(await review.count(), 0);
+  await page.getByRole("link", { name: "Preview monitoring", exact: true }).click();
+  await page.getByRole("tab", { name: /Security/ }).waitFor();
+  await page.locator("summary").filter({ hasText: "Commerce API" }).waitFor();
+  assert.equal(await review.count(), 0);
+  assert.equal(await refresh.isDisabled(), true);
+  await page.setViewportSize({ width: 1400, height: 1060 });
+  await page.screenshot({ path: resolve(output, "monitoring-security.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({
+    path: resolve(output, "monitoring-security-mobile.png"),
+    fullPage: true,
+  });
   // A resolved advisory must not make existing automatic-refresh consent unreachable.
   status = { ...status, findings: [], autoRefresh: true, feedStale: false, feedError: null };
   await page.goto(`${origin}/security-advisory-capture?settings=1`, {
@@ -234,12 +257,14 @@ try {
   await page.getByRole("button", { name: "Security advisories", exact: true }).click();
   assert.equal(await review.count(), 0);
   await page.getByText("Commerce API", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: "Automatically refresh verified security patches" })
+    .click();
   await consent.waitFor();
   assert.equal(await consent.getAttribute("aria-checked"), "true");
   await consent.click();
-  await page.waitForFunction(
-    () => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "false",
-  );
+  await page.getByRole("button", { name: "Other apps (1)", exact: true }).waitFor();
   assert.equal(writes.length, 5);
   assert.deepEqual(writes[4].body, { autoRefresh: false });
   assert.deepEqual(errors, []);
@@ -259,6 +284,8 @@ try {
           "exact apply scope",
           "changed deployment error",
           "stale feed blocks refresh",
+          "dismissal keeps active findings accessible in Monitoring",
+          "Monitoring review fits desktop and mobile",
           "no banner for resolved runtime findings",
           "consent can be revoked globally after resolution",
         ],
@@ -269,7 +296,7 @@ try {
       2,
     ) + "\n",
   );
-  console.log(`Captured the real advisory component and verified 11 browser checks in ${output}`);
+  console.log(`Captured the real advisory component and verified 13 browser checks in ${output}`);
 } catch (error) {
   if (page) {
     console.error((await page.locator("body").innerText()).slice(0, 2500));

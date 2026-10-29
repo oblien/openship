@@ -109,6 +109,33 @@ describe("resolveProjectInfo", () => {
     expect(optedOut.rolePresets).toBeUndefined();
   });
 
+  it.each([".", "backend"])("does not suggest dev-only Horizon in %s (#1171)", async (directory) => {
+    const path = await mkdtemp(join(tmpdir(), "openship-php-production-roles-"));
+    tempDirs.push(path);
+    const selected = join(path, directory);
+    await mkdir(selected, { recursive: true });
+    await writeFile(
+      join(selected, "composer.json"),
+      JSON.stringify({
+        require: { "laravel/framework": "^12" },
+        "require-dev": { "laravel/horizon": "^5" },
+      }),
+    );
+    await writeFile(join(selected, "artisan"), "<?php\n");
+    const source = { source: "local" as const, path, rootDirectory: directory };
+    const detected = await resolveProjectInfo(source);
+    expect(detected.stack).toBe("laravel");
+    expect(detected.rolePresets?.map((role) => role.name)).toEqual(["queue", "scheduler"]);
+    expect(detected.roles).toBeUndefined();
+
+    // An operator with a custom image/install remains free to choose Horizon.
+    const roles = [{ name: "horizon", kind: "worker", command: "php artisan horizon" }];
+    await writeFile(join(selected, "openship.json"), JSON.stringify({ roles }));
+    const explicit = await resolveProjectInfo(source);
+    expect(explicit.roles).toEqual(expect.arrayContaining([expect.objectContaining(roles[0]!)]));
+    expect(explicit.rolePresets).toBeUndefined();
+  });
+
   it("checks a preset's nested files in the selected application root", async () => {
     const path = await mkdtemp(join(tmpdir(), "openship-rails-role-suggestions-"));
     tempDirs.push(path);

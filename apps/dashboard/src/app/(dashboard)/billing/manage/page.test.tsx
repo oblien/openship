@@ -8,6 +8,7 @@ import ManagePage from "./page";
 
 const h = vi.hoisted(() => ({
   org: "org-one",
+  query: "",
   get: vi.fn(),
   purchase: vi.fn(),
   confirm: vi.fn(),
@@ -15,6 +16,7 @@ const h = vi.hoisted(() => ({
   resumeCheckout: vi.fn(),
   portal: vi.fn(),
 }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(h.query) }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: h.org } } }),
 }));
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.org = "org-one";
+  h.query = "";
   state = {
     pricing: PRICING.management,
     purchasesAvailable: true,
@@ -174,3 +177,30 @@ it.each(["resumeCheckout", "portal"] as const)(
     expect(button("Continue to checkout").disabled).toBe(false);
   },
 );
+
+it("preserves the website's Priority choice and waits for checkout confirmation", async () => {
+  h.query = "plan=priority";
+  h.purchase.mockResolvedValue({
+    kind: "quote",
+    quoteId: "priority",
+    monthlyCents: 2000,
+    url: null,
+  });
+  await render();
+  expect(host.querySelector<HTMLInputElement>('input[value="priority"]')?.checked).toBe(true);
+  expect(h.purchase).not.toHaveBeenCalled();
+  await click("Continue to checkout");
+  expect(h.purchase).toHaveBeenCalledWith(expect.objectContaining({ plan: "priority" }));
+});
+
+it("requires another choice if the requested management plan is no longer offered", async () => {
+  h.query = "plan=priority";
+  state.pricing = { ...state.pricing, priorityMonthlyCents: undefined };
+  await render();
+  expect(host.textContent).toContain("The selected plan is no longer available");
+  expect(button("Continue to checkout").disabled).toBe(true);
+  await click("Continue to checkout");
+  expect(h.purchase).not.toHaveBeenCalled();
+  await act(async () => host.querySelector<HTMLInputElement>('input[value="basic"]')!.click());
+  expect(button("Continue to checkout").disabled).toBe(false);
+});

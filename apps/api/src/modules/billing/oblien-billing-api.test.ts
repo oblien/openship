@@ -30,6 +30,31 @@ function setup(body: unknown, status = 200) {
   return { api, fetcher };
 }
 describe("Oblien billing SDK and transport contract", () => {
+  it.each([
+    ["affiliate_payout_destination_required", 400, "Add a payout account before requesting a payout."],
+    ["affiliate_payout_destination_changed", 409, "Your payout account changed. Review it before trying again."],
+    ["affiliate_payout_destination_invalid", 409, "Your payout account needs review. Contact support."],
+    ["affiliate_payout_configuration", 503, "Payout accounts are not available yet. Contact support."],
+  ] as const)("explains recipient account errors without exposing provider details: %s", async (code, status, message) => {
+    const { api } = setup({ success: false, code, message: "private recipient account 123456789" }, status);
+    await expect(api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts", {}))
+      .rejects.toMatchObject({ message, statusCode: status });
+    expect(JSON.stringify(vi.mocked(errorDiagnostics.warn).mock.calls)).not.toContain("123456789");
+  });
+  it("preserves server-derived affiliate attribution through the bounded checkout transport", async () => {
+    const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
+    const affiliateBuyer = { namespace: "openship", buyerKey: "a".repeat(64), relatedKeys: ["b".repeat(64)] };
+    await api.createCheckout({ namespace: "os-one", kind: "subscription", billingInterval: "yearly",
+      offer: { ...monthlyCloudBilling().subscription.offer!, unitAmount: 12000 }, metadata,
+      affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "affiliate-transport" });
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith("https://api.oblien.com/billing/checkout", expect.objectContaining({
+      method: "POST", redirect: "error", signal: expect.any(AbortSignal),
+      headers: expect.objectContaining({ "X-Client-ID": "test-id", "X-Client-Secret": "test-secret" }),
+    }));
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toMatchObject({
+      affiliateBuyer, affiliateCode: "AF-0123456789", billingInterval: "yearly", allowPromotionCodes: true,
+    });
+  });
   it("quotes the live VM credit meter and ignores preview rate cards without sending credentials", async () => {
     const live = { success: true, credits_per_dollar: 100, rate_card_id: "live", rates: { cpu_per_min: 1.5, memory_per_gb_min: 0.2, disk_per_gb: 0, network_per_gb: 0.15 } };
     const { api, fetcher } = setup({ ...live, compute_rate_cards: [{ chargeEnabled: false, cpu_per_min: 0.001 }] });
@@ -746,4 +771,12 @@ describe("Oblien subscription changes", () => {
     expect(JSON.stringify(failure)).not.toContain("secret");
     expect(JSON.stringify(vi.mocked(errorDiagnostics.warn).mock.calls)).not.toContain("private_change");
   });
+});
+
+it("explains a reused payout transfer reference without forwarding provider payment details", async () => {
+  const { api } = setup({ success: false, code: "affiliate_payment_reference_used", message: "private bank-transfer-reference" }, 409);
+  const error = await api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts/payout-id/review", {}).catch(error => error);
+  expect(error).toMatchObject({ statusCode: 409, details: { providerCode: "affiliate_payment_reference_used" },
+    message: expect.stringContaining("already recorded for another payout") });
+  expect(JSON.stringify(error)).not.toContain("private bank-transfer-reference");
 });

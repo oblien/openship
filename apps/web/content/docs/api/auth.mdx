@@ -26,8 +26,10 @@ and response shapes. The endpoints it serves (all under `/api/auth`) include:
   8–128 characters. Email verification and password reset use codes through
   `POST /email-otp/send-verification-otp`, `POST /email-otp/verify-email`, and
   `POST /email-otp/reset-password`; delivery requires working instance mail or Cloud mail.
-- **OAuth** — `POST /sign-in/social` and `GET /callback/:provider` for GitHub and Google (each enabled only
-  when its client ID/secret is set).
+- **OAuth and OIDC:** `POST /sign-in/social` and `GET /callback/:provider` for GitHub and Google (each enabled only
+  when its client ID/secret is set), plus `POST /sign-in/oauth2` (`providerId: "oidc"`) and
+  `GET /oauth2/callback/oidc` for a generic OpenID Connect provider when `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and
+  `OIDC_CLIENT_SECRET` are configured.
 - **Passkeys** — `GET /passkey/generate-register-options`, `POST /passkey/verify-registration`,
   `GET /passkey/generate-authenticate-options`, `POST /passkey/verify-authentication`,
   `GET /passkey/list-user-passkeys`, and `POST /passkey/delete-passkey`. Use the Better Auth browser

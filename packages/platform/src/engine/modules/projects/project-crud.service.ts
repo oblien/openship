@@ -55,7 +55,6 @@ import {
   readApiVersion,
 } from "../../lib/release-resolver";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
-import { normalizeProjectRootDirectory } from "../../lib/project-root-detector";
 import { env } from "../../config/index";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -2545,8 +2544,7 @@ export async function evaluateDrift(
     // drift — otherwise a project deployed at `1eeaf76` is told a new commit
     // `1eeaf76` is available, forever. See compareCommitSha.
     let behind = compareCommitSha(latestSha, deployedSha) === "different";
-    const root = normalizeProjectRootDirectory(p.rootDirectory ?? undefined);
-    if (behind && ctx && root) {
+    if (behind && ctx) {
       const compare = await compareCommits(ctx, p.gitOwner!, p.gitRepo!, deployedSha!, latestSha!);
       if (compare && !compare.truncated) {
         behind = (await resolveProjectChangeImpact(ctx, p, compare.files, latestSha)).affected;

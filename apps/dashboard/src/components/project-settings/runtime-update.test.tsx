@@ -390,3 +390,25 @@ it("refreshes runtime observations explicitly without deploying or changing poli
     baseDictionary.projectSettings.securityAdvisories.noMatches,
   );
 });
+
+it("explains a source redeploy prerequisite before offering a refresh and opens the normal deployment controls", async () => {
+  const result = await h.security();
+  result.data.findings[0] = {
+    ...result.data.findings[0],
+    canRefresh: false,
+    sourceRedeployRequired: true,
+    refreshBlockedReason:
+      "Runtime update cannot confirm the source revision of a replayed artifact.",
+  };
+  h.security.mockResolvedValue(result);
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  const copy = baseDictionary.projectSettings.securityAdvisories;
+  expect(element.textContent).toContain(copy.sourceRedeployRequired);
+  expect(
+    [...element.querySelectorAll("button")].some((item) => item.textContent === c.refresh),
+  ).toBe(false);
+  await click(copy.openSourceRedeploy);
+  expect(h.push).toHaveBeenCalledExactlyOnceWith("/projects/project-a/deployments");
+  expect(h.applySecurity).not.toHaveBeenCalled();
+  expect(h.update).not.toHaveBeenCalled();
+});

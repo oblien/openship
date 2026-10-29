@@ -1,0 +1,71 @@
+---
+title: Affiliates
+description: Account-owned referral links, renewal reporting and cash payout requests.
+---
+
+Affiliate operations belong to the authenticated person. They do not accept a
+beneficiary, namespace or commission rate from the caller. Project and
+organization-bound credentials cannot access personal earnings. A read-only
+account credential can read but cannot join, create links or request payouts.
+
+Use a remote SDK connected to OpenShip Cloud. Desktop HTTP requests can use the
+person's linked Cloud account; a fixed native SDK scope cannot widen its local
+authority to a Cloud account. The provider extension and an enabled program are
+required; `overview()` reports `available: false` when disabled.
+
+```ts
+const overview = await client.affiliates.overview();
+const links = await client.affiliates.offers({ limit: 25, offset: 0 });
+const customers = await client.affiliates.referrals({ limit: 25, offset: 0 });
+const request = await client.affiliates.requestPayout({
+  amountCents: 5000,
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Amounts are integer USD cents; rates are basis points (500 means 5%). The default
+payout minimum is $50, and the actual per-user minimum is in `overview.member`.
+Save the idempotency key before requesting a payout and reuse it after an uncertain
+response. Changing the amount requires a new key. Payout requests reserve funds;
+they do not send cash. Only pending requests can be canceled by the affiliate.
+Approval and external transfer recording are trusted operator actions, with no
+tenant-facing API.
+
+`createOffer` takes `policyId`, `name`, `discountBps`, `idempotencyKey`, and optional
+`planId` and `expiresAt`. The policy sets the commission allowance; the customer
+discount reduces the affiliate share. A plan restriction uses the VM capacity
+fingerprint from the live catalog. Revoking a link prevents new reservations and
+preserves accepted checkout and subscription terms.
+
+Eligible purchases use the normal subscription endpoint with optional
+`affiliateCode`. Only monthly or annual Cloud VM plans at least $10 monthly
+equivalent qualify. Manage, PAYG and top-ups do not. Reporting uses anonymized
+customer labels, not their email, credentials or project data.
+
+See the [affiliate guide](/docs/guides/affiliates) for the customer workflow.
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read your program, payout minimum, net earnings and reserved or paid totals. | `affiliates.overview()` | `GET /api/affiliates`<br />`billing:read` |
+| Join the configured program without changing operator overrides. | `affiliates.enroll()` | `POST /api/affiliates/enroll`<br />`billing:write` |
+| List your links and immutable discount/commission terms. | `affiliates.offers(input?)` | `GET /api/affiliates/offers`<br />`billing:read` |
+| Create an idempotent link or code within the operator-authorized commission budget. | `affiliates.createOffer(input)` | `POST /api/affiliates/offers`<br />`billing:write` |
+| Revoke your link for new referrals; accepted contracts retain their terms. | `affiliates.revokeOffer(input)` | `POST /api/affiliates/offers/revoke`<br />`billing:write` |
+| List anonymized customers, renewals, paid-through dates and reward expiry. | `affiliates.referrals(input?)` | `GET /api/affiliates/referrals`<br />`billing:read` |
+| Read invoice and commission history for one of your referrals. | `affiliates.payments(input)` | `GET /api/affiliates/referrals/payments`<br />`billing:read` |
+| List your cash payout requests and their review status. | `affiliates.payouts(input?)` | `GET /api/affiliates/payouts`<br />`billing:read` |
+| Save a private manual payout account; requests retain their own immutable destination snapshot. | `affiliates.setPayoutDestination(input)` | `POST /api/affiliates/payout-destination`<br />`billing:write` |
+| Reserve earned funds for a manually reviewed payout; amount is integer USD cents. | `affiliates.requestPayout(input)` | `POST /api/affiliates/payouts`<br />`billing:write` |
+| Cancel a pending request and release its reservation exactly once. | `affiliates.cancelPayout(input)` | `POST /api/affiliates/payouts/cancel`<br />`billing:write` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Public commercial terms for one code; no account, customer or earnings information. | HTTP only | `GET /api/referrals/:code`<br />`Handler authentication` |
+
+{/* api-operations:end */}

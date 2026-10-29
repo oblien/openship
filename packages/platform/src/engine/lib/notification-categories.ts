@@ -216,7 +216,7 @@ export const CATEGORIES: readonly NotificationCategory[] = [
     group: "domains",
     label: "SSL cert expiring",
     description:
-      "Daily check — fires when any of your custom domain certs has under 7 days left and the renewer can't reach the host.",
+      "Daily check — fires when any custom domain certificate renewal fails and has under 14 days left.",
     defaultEnabled: true,
   },
   {

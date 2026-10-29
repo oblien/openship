@@ -601,7 +601,7 @@ export {
 } from "./platform";
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
-export { Oblien, cloudWorkspaceCreationFailure } from "./oblien";
+export { Oblien, OblienError, cloudWorkspaceCreationFailure } from "./oblien";
 export type {
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
@@ -632,6 +632,7 @@ export * from "./cluster/storage";
 export * from "./cluster/storage-host";
 export * from "./cluster/volumes";
 export * from "./cluster/kubernetes-label";
+export * from "./cluster/project-manifests";
 export * from "./cluster/database";
 export { databaseArchiveName } from "./cluster/redis-backups";
 export * from "./runtime/kubernetes";

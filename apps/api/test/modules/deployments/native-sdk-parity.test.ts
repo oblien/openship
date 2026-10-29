@@ -178,6 +178,7 @@ vi.mock("@repo/db", () => ({
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({
   env: h.env,
+  get selfHostedOidcAllowed() { return !h.env.CLOUD_MODE; },
   trustedOrigins: [],
   runtimeTargetId: "local",
   cloudRuntimeTarget: { dashboard: "https://openship.test", api: "https://api.openship.test" },
@@ -463,7 +464,7 @@ describe("deployment preparation HTTP/native parity", () => {
   it.each(["owner", "admin", "member"])("retains scanner inputs and public output for a %s", async role => {
     h.members.set("org-a:alice", { id: "member-a", role });
     const original = structuredClone(info);
-    const input = { owner: "acme", repo: "app", branch: "preview", composePath: "  deploy/compose.yaml  ", env: { API_TOKEN: secret } };
+    const input = { owner: "acme", repo: "app", serverId: "server-a", branch: "preview", composePath: "  deploy/compose.yaml  ", env: { API_TOKEN: secret } };
     const local = await native();
     const result = await local.deployments.prepare(input);
     expect(await remote().deployments.prepare(input)).toEqual(result);
@@ -481,7 +482,7 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
       expect(source).toEqual({
-        source: "github", owner: "acme", repo: "app", branch: "preview",
+        source: "github", owner: "acme", repo: "app", serverId: "server-a", branch: "preview",
         composePath: "deploy/compose.yaml", env: { API_TOKEN: secret }, ctx: expect.any(Object),
       });
       expect(source.ctx).toMatchObject({ userId: "alice", organizationId: "org-a", membershipId: "member-a", role });

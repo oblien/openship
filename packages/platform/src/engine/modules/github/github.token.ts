@@ -23,7 +23,8 @@
  *     3. Project clone token   (per-project user PAT override)
  *     4. User-global clone token (user PAT, when marked as default)
  *     5. User OAuth (Better-Auth)
- *     6. null
+ *     6. Selected server token (repository reads; local server by default)
+ *     7. null
  *
  *   SaaS priority:
  *     1. Project clone token
@@ -86,6 +87,7 @@ export type GitHubTokenSource =
   | "user-pat"         // user_settings clone_token_encrypted (cloneTokenAsDefault=true)
   | "gh-cli"           // local gh CLI token
   | "app-installation" // Openship App installation token (short-lived, scoped)
+  | "server-token"     // selected self-hosted server; repository reads only
   | "user-oauth";      // Better-Auth GitHub OAuth (rare fallback)
 
 export interface TokenResult {
@@ -119,10 +121,9 @@ export interface TokenContext {
   installationId?: number;
   /** Project id — for per-project clone token lookup. */
   projectId?: string;
-  /** Target server id — threaded so `canResolveTokenFor` (preflight) can stay
-   *  in lockstep with a per-server credential consulted upstream in
-   *  clone-auth.ts. `tokenFor` itself has no per-server branch (SSH can't be a
-   *  TokenResult); this is plumbing for parity, not resolution. */
+  /** Selected deployment server. Allows a read-only fallback to its stored
+   * token (or the organization's local server when absent); never makes that
+   * token shippable to another build server. */
   serverId?: string;
   /** Restrict resolution to these credential kinds. NARROWING ONLY — the chain
    *  still owns the ORDER, and this can neither promote a kind nor add one.
@@ -242,6 +243,23 @@ function borrowableForOp(c: ChainCtx): boolean {
   return c.targetAuthorized;
 }
 
+/** A borrowed server identity needs both source access and deployment authority.
+ * Resolve only the selected server or the organization's canonical local server;
+ * never search other connected servers for a credential that happens to work. */
+async function serverReadTarget(c: ChainCtx): Promise<{ serverId: string; owner: string; repo: string } | null> {
+  const { owner, repo } = c.tokenCtx;
+  if (env.CLOUD_MODE || c.purpose !== "local" || (c.tokenCtx.op ?? "read") !== "read" ||
+      !c.organizationId || !owner || !repo || !c.targetAuthorized) return null;
+  const serverId = c.tokenCtx.serverId ?? (await repos.server.findLocal(c.organizationId))?.id;
+  if (!serverId) return null;
+  const { requireOrgServer } = await import("../../lib/server-target");
+  await requireOrgServer(serverId, c.organizationId);
+  const { authorization } = await import("../../lib/authorization");
+  return await authorization.checkPermissionOnResource(c.ctx, {
+    resourceType: "server", resourceId: serverId, action: "write",
+  }) ? { serverId, owner, repo } : null;
+}
+
 export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
   "gh-cli": {
     kind: "gh-cli",
@@ -332,6 +350,27 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
     },
   },
 
+  "server-token": {
+    kind: "server-token",
+    // The deployment resolver may forward this identity to ITS server only.
+    shippable: false,
+    resolve: async (c) => {
+      const target = await serverReadTarget(c);
+      if (!target) return null;
+      const { resolveServerGitCredential } = await import("./server-github.service");
+      const credential = await resolveServerGitCredential({
+        ctx: c.ctx, ...target, tokenOnly: true,
+      });
+      return credential?.token ?? null;
+    },
+    probe: async (c) => {
+      const target = await serverReadTarget(c);
+      if (!target) return false;
+      const { canResolveServerGitCredential } = await import("./server-github.service");
+      return canResolveServerGitCredential(target.serverId, { tokenOnly: true });
+    },
+  },
+
   "user-oauth": {
     kind: "user-oauth",
     /**
@@ -376,7 +415,7 @@ export const CHAINS: Record<GitHubPlatform, Record<GitHubPurpose, GitHubTokenSou
   selfhosted: {
     // gh-cli first: least configuration, and it reaches any repo the operator's
     // account can see, whereas the App needs an install on that owner.
-    local: ["gh-cli", "app-installation", "project", "user-pat", "user-oauth"],
+    local: ["gh-cli", "app-installation", "project", "user-pat", "user-oauth", "server-token"],
     // No gh-cli (not shippable) and deliberately no OAuth tail either.
     remote: ["project", "user-pat", "app-installation"],
   },

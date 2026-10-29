@@ -1,18 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DockerRuntime } from "@repo/adapters";
-import type { Project } from "@repo/db";
+import type { Deployment, Project } from "@repo/db";
 
 const h = vi.hoisted(() => ({
-  project: { id: "project-b", organizationId: "org", activeDeploymentId: "dep-b" },
+  project: { id: "project-b", organizationId: "org", activeDeploymentId: "dep-b" as string | null },
+  latest: undefined as Deployment | undefined,
+  activeMissing: false,
+  resolve: vi.fn(),
   runtime: undefined as unknown,
   keep: new Set<string>(),
 }));
 
 vi.mock("@repo/platform/engine/lib/active-deployment", () => ({
-  findActiveDeployment: async () => ({ id: "dep-b", meta: {} }),
+  findActiveDeployment: async () =>
+    h.activeMissing
+      ? undefined
+      : {
+          id: "dep-b",
+          projectId: h.project.id,
+          organizationId: h.project.organizationId,
+          meta: {},
+        },
+}));
+vi.mock("@repo/db", () => ({
+  repos: { deployment: { findLatestByProject: async () => h.latest } },
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
-  resolveDeploymentRuntime: async () => ({ runtime: h.runtime }),
+  resolveDeploymentRuntime: async (deployment: Deployment) => {
+    h.resolve(deployment.id);
+    return { runtime: h.runtime };
+  },
 }));
 vi.mock("@repo/platform/engine/modules/deployments/retention-lock", () => ({
   withRetentionLock: async (_id: string, action: (project: unknown) => Promise<unknown>) =>
@@ -82,9 +99,69 @@ function image(id: string, tags: string[] = [], projectId = h.project.id): Image
   return { Id: id, RepoTags: tags, Labels: { "openship.project": projectId }, Size: 100 };
 }
 
-beforeEach(() => h.keep.clear());
+beforeEach(() => {
+  h.keep.clear();
+  h.project.activeDeploymentId = "dep-b";
+  h.latest = undefined;
+  h.activeMissing = false;
+  h.resolve.mockClear();
+});
 
 describe("project image retention on a shared Docker daemon (#1369)", () => {
+  it("reclaims failed first-build leftovers without removing retained or foreign images", async () => {
+    h.project.activeDeploymentId = null;
+    h.latest = {
+      id: "failed-first-build",
+      projectId: h.project.id,
+      organizationId: "org",
+      status: "failed",
+      meta: { deployTarget: "cloud" },
+    } as Deployment;
+    h.keep.add("openship/b:bld_retryable");
+    const state = daemon([
+      image("orphan", ["openship/b:bld_interrupted"]),
+      image("retryable", ["openship/b:bld_retryable"]),
+      { ...image("in-use", ["openship/b:bld_in_use"]), inUse: true },
+      image("foreign", ["openship/a:bld_interrupted"], "project-a"),
+    ]);
+
+    expect(await reapProjectImages(h.project as Project)).toEqual({
+      removed: 1,
+      bytes: 100,
+      skippedInUse: 1,
+      errors: 0,
+    });
+    expect(h.resolve).toHaveBeenCalledWith("failed-first-build");
+    expect([...state.inventory.keys()]).toEqual(["retryable", "in-use", "foreign"]);
+    expect(state.pruneImages).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing", "foreign-org", "foreign-project", "missing-active"])(
+    "does not open an unverified fallback host (%s)",
+    async (scenario) => {
+      h.project.activeDeploymentId = scenario === "missing-active" ? "missing" : null;
+      h.activeMissing = true;
+      if (scenario !== "missing")
+        h.latest = {
+          id: "last-attempt",
+          projectId: scenario === "foreign-project" ? "another-project" : h.project.id,
+          organizationId: scenario === "foreign-org" ? "another-org" : "org",
+          status: "failed",
+          meta: {},
+        } as Deployment;
+      const state = daemon([image("orphan", ["openship/b:bld_interrupted"])]);
+
+      expect(await reapProjectImages(h.project as Project)).toEqual({
+        removed: 0,
+        bytes: 0,
+        skippedInUse: 0,
+        errors: 0,
+      });
+      expect(h.resolve).not.toHaveBeenCalled();
+      expect(state.remove).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not invoke host-wide image prune after a registry-only deployment", async () => {
     const state = daemon([image("foreign", ["openship/a:bld_live"], "project-a")]);
     const result = await reapProjectImages(h.project as Project);

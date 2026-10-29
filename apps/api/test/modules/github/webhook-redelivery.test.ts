@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, eq, repos, schema } from "@repo/db";
-import { seedOrg, seedProject, seedDeployment } from "../../helpers/seed";
+import { seedOrg, seedProject, seedDeployment, seedService } from "../../helpers/seed";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
 import { env } from "@repo/platform/engine/config/env";
@@ -319,6 +319,25 @@ describe("single-root workspace push decisions (#1339)", () => {
       }
     },
   );
+  it.each([
+    { rootDirectory: "", compose: false, paths: ["README.md", "AGENTS.md"], deploy: false },
+    { rootDirectory: "", compose: true, paths: ["README.md", "AGENTS.md"], deploy: false },
+    { rootDirectory: "apps/storefront", compose: true, paths: ["apps/storefront/README.md"], deploy: false },
+    { rootDirectory: "", compose: false, paths: ["pocketbase/pb_migrations/new.js"], deploy: false },
+    { rootDirectory: "", compose: false, paths: ["README.md", "app.ts"], deploy: true },
+    { rootDirectory: "", compose: true, paths: ["README.md", "app.ts"], deploy: true },
+  ])("applies path policy at the webhook boundary: %j", async ({ rootDirectory, compose, paths, deploy }) => {
+    const f = await workspace();
+    await repos.project.update(f.project.id, { rootDirectory });
+    if (compose) await seedService(f.project.id, { name: "web", kind: "compose", rootDirectory: "." });
+    impactIO.read.mockImplementation(async () => ({ content: JSON.stringify({
+      autoDeployPaths: { exclude: ["**/README.md", "**/AGENTS.md", "pocketbase/**"] },
+    }), size: 100 }));
+    f.body.commits[0]!.modified = ["README.md"];
+    impactIO.compare.mockResolvedValue({ files: paths, truncated: false });
+    expect((await f.send(f.deliveryId)).status).toBe(200);
+    expect(dispatch).toHaveBeenCalledTimes(deploy ? 1 : 0);
+  });
   it("builds a dependent shared package", async () => {
     const f = await workspace();
     impactIO.compare.mockResolvedValue({ files: ["packages/ui/index.ts"], truncated: false });

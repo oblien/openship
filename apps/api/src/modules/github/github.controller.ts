@@ -62,7 +62,7 @@ export async function listOrgRepos(c: Context) {
 }
 export async function getRepo(c: Context) {
   
-  const data = await operationData(c, ops().getRepo(call(c), { ...repo(c), branches: c.req.query("branches") === "true" }));
+  const data = await operationData(c, ops().getRepo(call(c), { ...repo(c), serverId: c.req.query("serverId"), branches: c.req.query("branches") === "true" }));
   return c.json({ data }, 200);
 }
 export async function createRepo(c: Context) {
@@ -78,6 +78,7 @@ export async function deleteRepo(c: Context) {
 export async function listBranches(c: Context) {
   const data = await operationData(c, ops().listBranches(call(c), {
     ...repo(c),
+    serverId: c.req.query("serverId"),
     page: Number(c.req.query("page") ?? 1),
   }));
   return c.json(data, 200);
@@ -89,22 +90,22 @@ export async function getCloneToken(c: Context) {
 }
 export async function detectStack(c: Context) {
   
-  const data = await operationData(c, ops().detectStack(call(c), { ...repo(c), branch: c.req.query("branch"), composePath: c.req.query("composePath") }));
+  const data = await operationData(c, ops().detectStack(call(c), { ...repo(c), serverId: c.req.query("serverId"), branch: c.req.query("branch"), composePath: c.req.query("composePath") }));
   return c.json({ data }, 200);
 }
 export async function listFiles(c: Context) {
   
-  const data = await operationData(c, ops().listFiles(call(c), { ...repo(c), branch: c.req.query("branch"), path: c.req.query("path") }));
+  const data = await operationData(c, ops().listFiles(call(c), { ...repo(c), serverId: c.req.query("serverId"), branch: c.req.query("branch"), path: c.req.query("path") }));
   return c.json({ data }, 200);
 }
 export async function listTree(c: Context) {
   
-  const data = await operationData(c, ops().listTree(call(c), { ...repo(c), branch: c.req.query("branch") }));
+  const data = await operationData(c, ops().listTree(call(c), { ...repo(c), serverId: c.req.query("serverId"), branch: c.req.query("branch") }));
   return c.json({ data }, 200);
 }
 export async function getFile(c: Context) {
   
-  const data = await operationData(c, ops().getFile(call(c), { ...repo(c), branch: c.req.query("branch"), file: c.req.query("file")! }));
+  const data = await operationData(c, ops().getFile(call(c), { ...repo(c), serverId: c.req.query("serverId"), branch: c.req.query("branch"), file: c.req.query("file")! }));
   return c.json({ data }, 200);
 }
 export async function listWebhooks(c: Context) {

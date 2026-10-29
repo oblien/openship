@@ -118,6 +118,9 @@ async function settleReload() {
 async function login(value = password, returnPath = "/") {
   const page = await ask(returnPath);
   expect(page.status).toBe(401);
+  // no-referrer makes real browser form POSTs send Origin: null, which
+  // the strict origin check correctly rejects before password verification.
+  expect(page.headers["referrer-policy"]).toBe("same-origin");
   const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1];
   expect(csrf).toBeTruthy();
   return ask("/_openship/access", {

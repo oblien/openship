@@ -74,6 +74,17 @@ of a self-hosted edge, configure which proxy addresses it trusts:
 Reapply routing after changing these settings. A reload alone does not
 regenerate configuration.
 
+### Visitor country
+
+The self-hosted edge sends `x-visitor-country` to upstream apps using its local
+GeoIP database and the resolved client address. It overwrites a supplied header
+and removes it when the country is unknown. Apps can use this ISO country code
+as a default, with a manual region choice for visitors. Analytics and route rules
+reuse the same request result, including unknown countries. Lookups retain the
+existing in-memory LRU of up to 50,000 IPs per worker, with no external requests.
+This header does not change response cache settings. The database is bundled with
+edge releases and refreshed with `bun run update:geoip` when preparing a release.
+
 ### Moving a project between deployment types
 
 Review proxy settings, route rules, and client-IP handling on the destination.

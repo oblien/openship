@@ -274,6 +274,11 @@ http {
     server {
         listen 80;
         server_name management.test;
+        location = /country-cache-check {
+            content_by_lua_block {
+                ngx.say(assert(loadfile("/tmp/visitor-country.lua"))())
+            }
+        }
         location / { content_by_lua_file ${LUA_DEST}/mgmt_api.lua; }
     }
 
@@ -281,6 +286,7 @@ http {
     server { listen 9902; location / { return 200 "THIRDPARTY uri=$request_uri host=$http_host\\n"; } }
     server { listen 9903; location / { return 200 "WEBHOOK uri=$request_uri\\n"; } }
     server { listen 9904; location / { return 200 "BACKEND uri=$request_uri host=$http_host\\n"; } }
+    server { listen 9905; location / { return 200 "country=$http_x_visitor_country\\n"; } }
 
     include ${SITES_DIR}/*.conf;
 }
@@ -438,6 +444,12 @@ http {
       });
     }
 
+    out["country.test"] = await renderVhost({
+      domain: "country.test",
+      tls: false,
+      targetUrl: "http://127.0.0.1:9905",
+    });
+
     return out;
   }
 
@@ -448,6 +460,10 @@ http {
       `set -e\n` +
       `mkdir -p ${SITES_DIR} ${LUA_DEST} ${WWW}/docs ${WWW}/dir-no-index /var/www/acme/oblien\n` +
       heredoc(CONF_PATH, ENVELOPE) +
+      heredoc(
+        "/tmp/visitor-country.lua",
+        await readFile(join(REPO_ROOT, "apps/api/test/fixtures/visitor-country.lua"), "utf8"),
+      ) +
       Object.entries(lua)
         .map(([name, body]) => heredoc(join(LUA_DEST, name), body))
         .join("") +
@@ -875,6 +891,22 @@ http {
     expect((await ask(port, "/api/first", "rate.test")).status).toBe(200);
     await sleep(1_100);
     expect((await ask(port, "/next-window", "rate.test")).status).toBe(200);
+  });
+
+  it("shares country results across access/log phases and caches repeated and unknown IPs", async () => {
+    const response = await ask(port, "/country-cache-check", "management.test");
+    expect(response.status, response.body).toBe(200);
+    expect(response.body.trim()).toBe("country cache and failure checks passed");
+  });
+
+  it("removes a forged country before proxying a no-rules host when GeoIP is unavailable", async () => {
+    // This base-image fixture has no GeoIP database; the app must still answer,
+    // with the client-supplied country removed rather than passed through.
+    const response = await ask(port, "/", "country.test", {
+      headers: { "x-visitor-country": "RU" },
+    });
+    expect(response.status, response.body).toBe(200);
+    expect(response.body.trim()).toBe("country=");
   });
 
   // ── Negative control ─────────────────────────────────────────────────────────

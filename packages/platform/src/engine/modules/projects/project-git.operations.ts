@@ -254,11 +254,12 @@ export function createProjectGitOperations(
     },
     async listBranches(ctx, id, input) {
       const { organizationId } = ctx;
-      const info = await projectService.getGitInfo(id, organizationId);
+      const info = await repos.project.findByIdInOrganization(id, organizationId);
+      assertResourceInOrg(info, "Project", organizationId, id);
       if (!info.gitOwner || !info.gitRepo) {
         return failOperation({ success: false, error: "No repository connected" }, 400);
       }
-      const { branches, page, perPage, hasMore } = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, input);
+      const { branches, page, perPage, hasMore } = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, { ...input, serverId: info.serverId ?? undefined });
       return {
         data: branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected })),
         pagination: { page, perPage, hasMore },

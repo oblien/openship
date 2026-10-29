@@ -38,6 +38,61 @@ you never handle it yourself.
 The cookie name is prefixed with your instance mode — `openship.session_token` on a self-hosted install,
 `openship-cloud.session_token` on Openship Cloud.
 
+### OAuth and generic OIDC (SSO)
+
+Self-hosted instances can enable social login (GitHub, Google) or a generic OpenID Connect identity
+provider (Authentik, Keycloak, Okta, Microsoft Entra ID, Google Workspace) via environment variables:
+
+- **GitHub / Google:** `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET`, or `GOOGLE_CLIENT_ID` +
+  `GOOGLE_CLIENT_SECRET`.
+- **Generic OIDC:** `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` (all three required;
+  partial configuration is ignored with a boot warning), plus optional `OIDC_DISPLAY_NAME` for the
+  login button label (defaults to `"SSO"`). Openship discovers endpoints from
+  `${OIDC_ISSUER}/.well-known/openid-configuration` (a trailing slash is removed only when constructing the discovery URL) and
+  requests `openid email profile`. The authorization request uses PKCE and a nonce tied to the
+  same single-use sign-in state. Discovery must report the exact configured issuer. Production
+  issuers and endpoints must use HTTPS; local development permits HTTP only on loopback.
+  Redirects from discovery, token, key and UserInfo endpoints are refused.
+
+Generic OIDC is available only on a self-hosted instance using local accounts
+(`OPENSHIP_AUTH_MODE=local`). Openship Cloud ignores these settings and keeps its
+existing login providers. Account-free mode and instances that delegate login to
+Cloud reject OIDC sign-in and account-linking requests, including direct API calls.
+
+ID tokens must have a valid asymmetric signature from the issuer’s JWKS, the correct issuer and
+client audience, valid expiry and issuance times, and the matching nonce. Multiple audiences require
+a matching authorized party (`azp`). If profile claims come from UserInfo, its subject must match the
+verified ID token. Missing or invalid ID tokens fail sign-in; an access token alone is not accepted.
+
+Register this callback at the identity provider. It is the public origin plus `/api/auth/oauth2/callback/oidc`:
+
+```
+https://openship.example.com/api/auth/oauth2/callback/oidc
+```
+
+Locally, use `http://localhost:4000/api/auth/oauth2/callback/oidc`. When `OPENSHIP_PUBLIC_URL` is set,
+use that origin in place of `https://openship.example.com`.
+
+Account-linking and sign-up rules for OIDC:
+
+- **Verified email required:** The IdP must return boolean `email_verified: true` for OIDC sign-in,
+  account linking and invitation-based signup. An unverified address cannot claim an invitation
+  or an existing account. Check the provider's email scope mapping; Authentik's default email
+  mapping may need configuring to return its verified email claim.
+- **Issuer-scoped accounts:** Openship identifies OIDC accounts by the exact issuer and subject
+  pair. Changing the IdP does not transfer an old subject's login to the new issuer. A verified
+  email can still link through the existing account-linking rules; IdP roles and groups never
+  grant Openship permissions.
+- **Invite-only sign-up stays enforced:** Self-hosted instances remain invite-only after the initial
+  admin is created. A new OIDC user must have a pending, unexpired invitation from an instance admin;
+  there is no automatic email-domain join.
+- **Zero-auth mode:** When `authMode` is `"none"`, the OIDC provider is not advertised, and
+  OIDC sign-in, linking and callback endpoints are rejected. GitHub and
+  Google stay unadvertised the same way they already are in that mode.
+- **Deprovisioning (v1 limitation):** Removing a user at the IdP blocks future OIDC sign-ins, but
+  there is no SCIM push and existing Openship sessions remain valid until they expire (30 days by
+  default) or an admin removes the member in Openship.
+
 ### Passkeys
 
 On Openship Cloud or a self-hosted instance with local accounts, open **Settings → Security → Passkeys**

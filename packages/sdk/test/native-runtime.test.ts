@@ -121,6 +121,7 @@ describe("owned native platform on Node", () => {
       expect(Object.keys(scope.notices)).toEqual(["list"]);
       expect((await scope.notices.list()).advisories.map(row => row.id)).toEqual([notice.id]);
       expect((await scope.billing.listPlans({ locale: "ar" })).locale).toBe("ar");
+      await expect(scope.affiliates.overview()).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
       await expect(scope.billing.getState()).rejects.toMatchObject({ code: "CLOUD_NOT_CONNECTED" });
       await ship.close();
       ship = await createShip(options);

@@ -44,7 +44,8 @@ vi.mock("@repo/platform/engine/modules/services/service-container", async (origi
   ...(await original<object>()),
   liveContainerIdWithRuntime: async () => "fixture-container",
 }));
-vi.mock("@repo/platform/engine/modules/updates/runtime-update", () => ({
+vi.mock("@repo/platform/engine/modules/updates/runtime-update", async (original) => ({
+  ...(await original<object>()),
   updateProjectRuntime: h.refresh,
 }));
 installFakeRunner();

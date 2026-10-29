@@ -4,6 +4,141 @@ All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+- **Keep monorepo runtime images aligned with each service** — use the service's
+  framework and selected builder for its runtime instead of inheriting an
+  unrelated parent image. Fill missing builders from the stack registry, preserve
+  explicit runtime selections for unchanged apps, and use the same resolution
+  when checking whether runtime images can be refreshed.
+
+- **Add a scoped Kubernetes manifest foundation** — admit supported resources into
+  a project's namespace with ownership checks on objects, pod/job templates and
+  selectors. Validate the full change against Kubernetes before writing, reject
+  changed Job definitions, and preserve conflict checks when updating or pruning.
+  Exercise apply, update and cleanup against K3s in CI and the release gate. This
+  foundation does not yet expose a manifest upload UI or deployment route (#1039).
+
+- **Preserve live Docker logs** — decode stdout and stderr independently across
+  split frames and UTF-8 characters, keep TTY logs intact, and report malformed or
+  truncated streams so the existing reconnect flow can recover (#1482).
+
+- **Support verified self-hosted OIDC sign-in** — discover a configured identity provider and
+  verify signed ID tokens, issuer, audience, expiry and sign-in nonce before
+  creating sessions. Preserve invitation and two-factor checks, require matching
+  UserInfo subjects, and refuse insecure or redirected provider endpoints. Require
+  verified email, scope accounts to the issuer and exact subject, and keep instance
+  OIDC disabled on Openship Cloud and outside local-account auth mode (#1489).
+
+- **Keep BuildKit sessions alive** — answer Docker’s session health checks so
+  builds can use optional secret mounts after long install/build steps. Close
+  sessions on completion, cancellation, and transport errors (#1488).
+
+- **Keep Cloud diagnostics available during replica startup** — allow bounded
+  schema initialization to wait for another replica, while preserving the short
+  write deadlines and local-log fallback used during normal operation.
+
+- **Recover health after a service container is replaced** — refresh only the
+  stale service binding when the continuous watcher verifies a healthy successor
+  under the same active deployment. Preserve native and Compose service identity
+  through managed edge updates and rollback; leave unrelated services and
+  deployment history intact (#1496).
+
+- **Scan private repositories with server credentials** — repository preparation,
+  monorepo folder selection and branch rescans use the shared GitHub credential
+  chain, including the selected self-hosted server's saved token. Without a
+  selection, only the active organization's local server is eligible. Borrowing
+  requires repository access and server write permission; SSH provisioning,
+  GitHub mutations and Cloud authentication remain unchanged (#1500).
+
+- **Match Laravel worker suggestions to production dependencies** — suggest the
+  standard queue worker when Horizon is only in `require-dev`, matching the
+  default Composer `--no-dev` install. Explicit role choices remain available (#1171).
+
+- **Keep runtime roles available after removing attached services** — a single
+  source app retains its existing deployment and role configuration flow after
+  the last attached service is removed or disabled, preserving its service and
+  routing identity (#1308).
+
+- **Prevent false stale-role warnings after deployments** — background image
+  cleanup updates storage measurements without changing the project's configuration
+  revision. Real configuration edits still invalidate previously reviewed changes.
+
+- **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
+  an interactive commission split, monthly and annual reward timing, payout
+  guidance, and a dedicated social preview. Label the dashboard affiliate entry
+  Earn with a gift-box icon in the left sidebar.
+- **Start CockroachDB services correctly** — pass the required single-node
+  command to the official image, generate an application password, and persist
+  TLS certificates alongside the existing data volume. New services keep TLS and
+  password authentication enabled; container replacement preserves both data and
+  certificates. Include recovery steps for saved services missing the command
+  (#1484).
+- **Recover storage from slow build-cache scans** — when free disk space or inodes
+  already block deployment, allow up to two minutes to measure unused, owned build
+  caches before reclaiming them. Healthy hosts retain the short best-effort scan;
+  active builders and application volumes remain protected.
+- **Reclaim images from interrupted first deployments** — include projects that
+  have never reached a running release in managed image collection. Resolve the
+  last attempt through the existing tenant checks and retain the same rollback,
+  retry, pin and in-use protections, so failed builds cannot fill the server with
+  orphaned images.
+- **Cloud affiliate program** — create and revoke referral links with optional
+  customer discounts, follow verified payments, renewals and expiry, and request
+  reviewed cash payouts. Staff can review pending requests in a private operator
+  queue and reconcile transfers, including after an account is deleted.
+  Oblien owns the ledger and atomically reserves payout
+  funds. The default minimum is $50, with trusted per-user overrides. Eligible
+  monthly and annual Cloud compute starts at $10 per month equivalent; Manage,
+  PAYG and top-ups are excluded. Program guidance lives beside the referral lists,
+  with illustrated empty states, a two-step discount and plan picker, monthly/yearly
+  eligibility enforced at checkout, encrypted manual payout accounts with immutable
+  request destinations, payment-method guidance and a screenshot
+  walkthrough in the docs. The program remains off until the provider and
+  its explicit policy grant are configured.
+- **Review shared environment edits** — preview which services inherit an edited
+  project variable, then save shared values and service overrides together. Stale
+  reviews are rejected inside the write transaction; project write access is
+  required, and saving alone does not restart applications.
+- **Clarify referral checkout and earnings** — retain unavailable referral codes
+  through sign-in until the customer removes them, and show commission per
+  confirmed payment with renewals limited to the program's reward period.
+
+## 0.9.5
+
+This hotfix restores self-hosted Compose startup after the 0.9.4 update.
+
+- **Restore dashboard readiness and edge startup** — bind the dashboard's Next.js
+  server to `0.0.0.0` inside its container so the loopback healthcheck can reach it.
+  Apply the same bind setting in the CLI-generated, reference self-hosted and
+  from-source Compose environments. Published host ports retain their existing
+  loopback defaults (#1461).
+- **Test the complete customer upgrade** — gate image publication on upgrades from
+  0.9.3 and the previous release using their published API, dashboard and edge
+  images and CLI templates. Verify populated PostgreSQL and Redis storage, custom
+  ports, preserved secrets, admin credentials and signed sessions, saved edge
+  routing, dashboard-to-API access, cold
+  restart and fresh installation. Probe both dashboard image architectures before
+  publication; an API-only migration check no longer stands in for a stack upgrade.
+- **Explain source rebuild prerequisites before a security refresh** — global and
+  project advisory views use the same runtime-update preflight as the deployment
+  action. Replayed or revisionless source images show their prerequisite and an
+  **Open source redeploy** action instead of offering a refresh that will fail.
+  Redeploy still uses the existing project deployment controls; source provenance,
+  image pins and tenant authorization remain enforced (#1462).
+- **Include the packaged-worker image correction** — source builds of managed
+  workers require Git checkout metadata. Bundled Dockerfiles in the released API
+  no longer trigger a development worker build.
+
+### Recovery from 0.9.4
+
+Run `openship update` after 0.9.5 is published. The update recreates the API,
+dashboard and edge through the normal pipeline and preserves existing database,
+Redis and application storage. For a temporary recovery on 0.9.4, set
+`HOSTNAME: "0.0.0.0"` in the dashboard service's Compose `environment` and run
+`docker compose up -d` with that installation's existing Compose file and project
+name. A later CLI run regenerates that file; update to 0.9.5 for the permanent fix.
+
 ## 0.9.4
 
 This release adds deployment to existing Docker Swarm clusters, reviewed database

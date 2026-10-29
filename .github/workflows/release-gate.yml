@@ -146,6 +146,12 @@ jobs:
           bun run test
           bun run test:scripts
 
+      - name: Verify project manifests against a real Kubernetes API
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          RUN_KUBERNETES_E2E: "1"
+        run: bun run --cwd packages/adapters test test/project-manifests.e2e.test.ts
+
       - name: Verify Cloud build coordination on PostgreSQL
         if: steps.resume.outputs.reused != 'true'
         env:

@@ -1,3 +1,4 @@
+import type { AffiliateOperations } from "@repo/contracts";
 import type { ActionOperations } from "@repo/contracts";
 import { createDeploymentHandle, type DeploymentHandle } from "./deployment-handle";
 import {
@@ -100,6 +101,7 @@ export interface ScopedShip {
   readonly backupDestinations: BackupDestinationOperations;
   readonly backups: BackupOperations;
   readonly billing: BillingOperations;
+  readonly affiliates: AffiliateOperations;
   readonly notices: NoticeOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
@@ -540,6 +542,7 @@ function createAttachedShip<Assertion>({
         backupDestinations: bindGroup(platform.backupDestinations),
         backups,
         billing: bindGroup(platform.billing),
+        affiliates: bindGroup(platform.affiliates),
         notices: bindGroup(platform.notices),
         github: bindGroup(platform.github),
         permissions: bindGroup(platform.permissions),

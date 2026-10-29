@@ -9,7 +9,7 @@ import type { CreateDeploymentResult, UpdateRuntimeInput } from "@repo/contracts
 import { repos } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { findActiveDeployment } from "../../lib/active-deployment";
-import { resolveSubAppRecipe, serviceKind } from "../../lib/deployable-service";
+import { resolveSubAppImages, resolveSubAppRecipe, serviceKind } from "../../lib/deployable-service";
 import { resolveSnapshotRuntimeMode } from "../../lib/deployment-runtime";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import {
@@ -17,6 +17,7 @@ import {
   resolveSnapshotTarget,
   triggerDeployment,
   type DeploymentConfigSnapshot,
+  type DeploymentTriggerInput,
 } from "../deployments/build.service";
 import { resolveServicePipelineMode } from "../deployments/build-pipeline";
 import { projectToClass } from "../deployments/deployment-class";
@@ -29,13 +30,16 @@ import type { SecurityUpdateApproval } from "./security-refresh-guard";
 const hasMutableImage = (...refs: (string | null | undefined)[]) =>
   refs.some((ref) => !!ref && isMutableImageRef(ref));
 
-/** Refresh runtime artifacts through the normal deployment funnel, keeping code fixed. */
-export async function updateProjectRuntime(
+/** A rebuild is required before the current source revision can be trusted. */
+export class RuntimeSourceRedeployRequired extends ValidationError {}
+
+/** Shared read-only preflight for advisory actions and the normal runtime refresh. */
+export async function planProjectRuntimeUpdate(
   ctx: ExecutionContext,
   projectId: string,
   input: UpdateRuntimeInput = {},
   approval?: SecurityUpdateApproval,
-): Promise<CreateDeploymentResult> {
+): Promise<{ deploymentId: string; input: DeploymentTriggerInput }> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   assertNotControlPlane(project);
@@ -90,7 +94,7 @@ export async function updateProjectRuntime(
     usesServices &&
     selected.some((service) => (service.advanced as ComposeAdvanced | null)?.build)
   ) {
-    throw new ValidationError(
+    throw new RuntimeSourceRedeployRequired(
       "Inline template build contexts do not retain a deployed source revision. Use Redeploy to rebuild that template.",
     );
   }
@@ -105,14 +109,14 @@ export async function updateProjectRuntime(
       snapshot.build === "dockerfile" ||
       snapshot.build === "static";
   if (hasSourceBuild && deploymentClass.source !== "git") {
-    throw new ValidationError(
+    throw new RuntimeSourceRedeployRequired(
       "Runtime updates need a deployed Git revision to keep application code unchanged. Use Redeploy for local or uploaded source.",
     );
   }
   // Image-only scopes need registry images, even if their project also has a
   // repository. A retained Git revision is required only when rebuilding source.
   if (hasSourceBuild && !isFullCommitSha(active.commitSha)) {
-    throw new ValidationError(
+    throw new RuntimeSourceRedeployRequired(
       "The active deployment has no retained Git revision. Redeploy it before updating its runtime.",
     );
   }
@@ -122,7 +126,7 @@ export async function updateProjectRuntime(
       meta.adopt ||
       (!usesServices && (meta.handoverAppImage || meta.refreshAppDeploymentId)))
   ) {
-    throw new ValidationError(
+    throw new RuntimeSourceRedeployRequired(
       "Runtime update cannot confirm the deployed source revision of a replayed artifact. Redeploy the source app explicitly before updating its runtime.",
     );
   }
@@ -141,7 +145,7 @@ export async function updateProjectRuntime(
     ) {
       // Carried services retain an earlier image even when the project advances
       // to another commit. There is no per-service source revision to replay.
-      throw new ValidationError(
+      throw new RuntimeSourceRedeployRequired(
         "Runtime update cannot confirm the deployed revision for source services carried forward from another deployment. Redeploy those services explicitly before updating their runtime, or select services built by the active deployment.",
       );
     }
@@ -151,9 +155,10 @@ export async function updateProjectRuntime(
     ? selected.some((service) => {
         if (serviceKind(service) === "monorepo" && !service.image) {
           const recipe = resolveSubAppRecipe(service, snapshot);
+          const images = resolveSubAppImages(service, snapshot);
           return (
             recipe.framework === "docker" ||
-            hasMutableImage(snapshot.runtimeImage, service.buildImage ?? snapshot.buildImage)
+            hasMutableImage(images.runtimeImage, images.buildImage)
           );
         }
         return !!service.build || !!service.dockerfile || hasMutableImage(service.image);
@@ -185,20 +190,34 @@ export async function updateProjectRuntime(
       "Runtime updates require a retained container release version. Use Update or Redeploy for archive releases.",
     );
   }
-  const result = await triggerDeployment(ctx, {
-    projectId,
-    environment: active.environment,
-    branch: active.branch ?? undefined,
-    commitSha: active.commitSha ?? undefined,
-    commitMessage: active.commitMessage ?? undefined,
-    ...(isReleaseProvider(project.gitProvider) && { releaseVersion }),
-    trigger: "update",
-    forcePullImages: true,
-    ...(approval && { securityApproval: approval }),
-    ...(input.serviceIds
-      ? { serviceIds: input.serviceIds, strictServiceScope: true }
-      : { forceAll: true }),
-  });
+  return {
+    deploymentId: active.id,
+    input: {
+      projectId,
+      environment: active.environment,
+      branch: active.branch ?? undefined,
+      commitSha: active.commitSha ?? undefined,
+      commitMessage: active.commitMessage ?? undefined,
+      ...(isReleaseProvider(project.gitProvider) && { releaseVersion }),
+      trigger: "update",
+      forcePullImages: true,
+      ...(approval && { securityApproval: approval }),
+      ...(input.serviceIds
+        ? { serviceIds: input.serviceIds, strictServiceScope: true }
+        : { forceAll: true }),
+    },
+  };
+}
+
+/** Refresh runtime artifacts through the normal deployment funnel, keeping code fixed. */
+export async function updateProjectRuntime(
+  ctx: ExecutionContext,
+  projectId: string,
+  input: UpdateRuntimeInput = {},
+  approval?: SecurityUpdateApproval,
+): Promise<CreateDeploymentResult> {
+  const plan = await planProjectRuntimeUpdate(ctx, projectId, input, approval);
+  const result = await triggerDeployment(ctx, plan.input);
   return result.awaitingActions
     ? {
         awaiting_actions: true,

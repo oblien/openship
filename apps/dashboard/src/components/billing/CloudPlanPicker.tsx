@@ -1,11 +1,13 @@
 "use client";
 
+import { ReferralCode, useReferralCode } from "@/components/affiliates/ReferralCode";
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PricingCards } from "@/components/billing/PricingCards";
+import { BillingIntervalPicker } from "./BillingIntervalPicker";
 import type { PlanTierId } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
 import type { BillingSubscription } from "@repo/contracts";
@@ -55,11 +57,15 @@ function PlanPicker({
   purchaseDisabled = false,
   billingState,
   requestedPlanId,
+  requestedInterval,
   autoCheckout = false,
   checkoutKey,
   onCheckoutSettled,
+  initialReferralCode,
 }: {
+  initialReferralCode?: string;
   requestedPlanId?: string;
+  requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
   checkoutKey?: string;
   onCheckoutSettled?: () => void;
@@ -82,6 +88,7 @@ function PlanPicker({
   purchaseDisabled?: boolean;
 }) {
   const { t } = useI18n();
+  const referral = useReferralCode(initialReferralCode);
   const purchase = useCloudPurchase();
   const billingWorkspaceId = useBillingWorkspace();
   const selectedWorkspaceId = workspaceId ?? billingWorkspaceId;
@@ -90,8 +97,8 @@ function PlanPicker({
     Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  // Public pricing links already selected a monthly offer; keep that explicit intent.
-  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(autoCheckout ? "monthly" : "annual");
+  // Preserve the website choice. Older links without an interval advertised monthly billing.
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? (autoCheckout ? "monthly" : "annual"));
   const interval =
     subscription && subscription.status !== "canceled" ? subscription.interval : !complimentary && payload?.annual.enabled ? purchaseInterval : "monthly";
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
@@ -127,6 +134,8 @@ function PlanPicker({
     setChoice({ key: choiceKey, configuration, other });
   const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
   const requestedPlan = hasPlan ? undefined : choices.available.find((plan) => plan.id === requestedPlanId);
+  const requestedIntervalAvailable = requestedInterval !== "annual" ||
+    (payload?.annual.enabled && requestedPlan?.price.annual != null);
   const showRequestedPlan = requestedPlan && expandedRequest !== requestedPlanId;
   const visiblePlans = showRequestedPlan
     ? [requestedPlan]
@@ -193,7 +202,8 @@ function PlanPicker({
     dismissUnavailable,
     recovery,
   } = useCloudCheckout({
-    enabled: canPurchase && !purchaseDisabled && !payg && !managing,
+    enabled: canPurchase && !purchaseDisabled && !payg && !managing && referral.ready,
+    affiliateCode: referral.verified,
     preserveProject,
     onCheckoutStarted,
     workspaceId,
@@ -208,7 +218,7 @@ function PlanPicker({
     // The website click selected this preset. Wait for authenticated scope and
     // live availability, and schedule after effect replay so Strict Mode cannot
     // cancel the only attempt during its initial mount cleanup.
-    if (autoCheckout && requestedPlan && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && configuration === "plans") {
+    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && referral.ready && configuration === "plans") {
       void Promise.resolve().then(() => {
         if (disposed || autoStarted.current) return;
         autoStarted.current = true;
@@ -216,7 +226,7 @@ function PlanPicker({
       });
     }
     return () => { disposed = true; };
-  }, [autoCheckout, requestedPlan?.id, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, configuration, startCheckout, interval]);
+  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, referral.ready, configuration, startCheckout, interval]);
   const selectedCurrentPlan =
     hasPlan && subscription?.configuration !== "custom" ? choices.current : null;
   const busy = subscribing !== null || changes.busy;
@@ -300,25 +310,7 @@ function PlanPicker({
       )}
       {payload.annual.enabled && !complimentary &&
         (!subscription || subscription.status === "canceled") && (
-          <div
-            className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
-            role="group"
-            aria-label={t.billing.pricing.billingInterval}
-          >
-            {(["monthly", "annual"] as const).map((value) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                aria-pressed={interval === value}
-                onClick={() => setInterval(value)}
-                disabled={busy}
-                variant={interval === value ? "secondary" : "ghost"}
-              >
-                {value === "monthly" ? t.billing.pricing.monthly : t.billing.pricing.annual}
-              </Button>
-            ))}
-          </div>
+          <BillingIntervalPicker value={interval} onChange={setInterval} disabled={busy} />
         )}
       {payload.custom && visiblePlans.length > 0 && (
         <div
@@ -385,6 +377,7 @@ function PlanPicker({
           className={`min-w-0 space-y-5 ${summaryAside ? "@min-[64rem]/plans:col-start-1 @min-[64rem]/plans:row-start-1" : ""}`}
         >
           {canChooseMode && purchase.tabs === "inline" && !purchase.management && <CloudPurchaseTabs />}
+          {canPurchase && !payg && !managing && <ReferralCode referral={referral} disabled={busy} />}
           {canChooseMode ? (
             <CloudPurchaseHeaderContent details={details} controls={controls} />
           ) : (
@@ -410,7 +403,7 @@ function PlanPicker({
                 {checkoutError}
               </p>
             )}
-            {requestedPlanId && !hasPlan && !requestedPlan && (
+            {requestedPlanId && !hasPlan && (!requestedPlan || !requestedIntervalAvailable) && (
               <p role="status" className="rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">
                 {t.billing.plansRoute.requestedPlanUnavailable}
               </p>
@@ -431,7 +424,7 @@ function PlanPicker({
                 currentOffer={currentOffer}
                 subscription={subscription}
                 allocatedDiskGb={allocatedDiskGb}
-                disabled={!selectable || purchaseDisabled || payg || managing}
+                disabled={!selectable || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
                 busy={busy}
                 actionLabel={canModify ? t.billing.planChange.review : undefined}
                 quoteRevision={quoteRevision}
@@ -449,7 +442,7 @@ function PlanPicker({
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}
                 subscribingPlan={subscribing}
-                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg || managing}
+                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
                 selectionLabel={canModify ? t.billing.planChange.review : undefined}
                 interval={interval}
                 workspaceScoped={workspaceScoped}

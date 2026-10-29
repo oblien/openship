@@ -66,7 +66,7 @@ import {
 } from "@repo/platform/engine/lib/deployment-runtime";
 import { deploymentIsInFlight } from "@repo/platform/engine/modules/projects/deployment-flags";
 import { mapWithLimit } from "@repo/platform/engine/lib/map-with-limit";
-import { liveContainerStatus, resolveLiveServiceState } from "@repo/platform/engine/modules/services/live-state";
+import { liveContainerStatus, liveMatchTiersForDeployment, resolveLiveServiceState } from "@repo/platform/engine/modules/services/live-state";
 import { readLogTail } from "@repo/platform/engine/modules/deployments/stability-audit.service";
 import {
   classifySteadyState,
@@ -84,6 +84,8 @@ import {
 import { HEALTH_WATCH_JOB, healthWatchActive, isManagedServerIdle } from "./health-watch-policy";
 import { desktopNetworkDisconnected } from "../../lib/desktop-network";
 import { isNetworkUnavailableError } from "../../lib/remote-state";
+import { projectRuntimeLockKey } from "../../lib/project-runtime-lock";
+import { tryWithProvisionLock } from "../../lib/provision-lock";
 
 /** Consecutive observations that must agree before a fault opens or escalates. */
 const AGREE_TICKS = 2;
@@ -351,6 +353,8 @@ interface Workload {
   serviceName: string;
   containerId: string;
   trackedContainerId?: string | null;
+  /** Only an unambiguous native/adopted identity can heal a stored binding. */
+  refreshBinding?: { serviceUpdatedAt: Date };
   /** False when the operator stopped this specific service. */
   expectRunning: boolean;
 }
@@ -1376,6 +1380,7 @@ async function readServerGroup(
           openByKey: ctx.openByKey,
           summary,
           currentOnly: ctx.currentOnly,
+          isAbandoned: () => handle.abandoned === true,
         });
       } catch (err) {
         // One workload's incident write rejecting (a service row deleted mid-sweep
@@ -1455,6 +1460,7 @@ async function resolveWorkloads(
     projectId: project.id,
     slug: project.slug,
     trackedIds: Object.fromEntries([...hints].map(([id, row]) => [id, row.containerId])),
+    tiers: liveMatchTiersForDeployment({ adopt: meta.adopt }),
   });
 
   const workloads: Workload[] = [];
@@ -1466,7 +1472,19 @@ async function resolveWorkloads(
     const hint = hints.get(service.id);
     // Not part of the active release (added but never deployed, or skipped).
     if (!hint) continue;
-    const containerId = matches.get(service.id)?.containerId ?? hint.containerId;
+    const match = matches.get(service.id);
+    const replacement = live.find((row) => row.id === match?.containerId);
+    // A carried service may retain an older deployment label. Its stable
+    // project/service identity is the lookup key; the active DB release is
+    // independently guarded when the observed binding is committed.
+    const nativeProject = replacement?.labels["openship.project"];
+    const nativeService = replacement?.labels["openship.service"];
+    const replacementConflicts = match?.containerId !== hint.containerId && (
+      (nativeProject && nativeProject !== project.id) ||
+      (nativeService && nativeService !== service.name) ||
+      (match?.duplicates.length ?? 0) > 0
+    );
+    const containerId = replacementConflicts ? hint.containerId : (match?.containerId ?? hint.containerId);
     if (!containerId) continue;
     workloads.push({
       serviceId: service.id,
@@ -1474,6 +1492,11 @@ async function resolveWorkloads(
       serviceName: service.name,
       containerId,
       trackedContainerId: hint.containerId,
+      refreshBinding: (
+        hint.containerId && containerId !== hint.containerId && match?.status === "running" && match.duplicates.length === 0 &&
+        !replacementConflicts &&
+        (match.matchedBy === "label" || (meta.adopt === true && match.matchedBy === "compose"))
+      ) ? { serviceUpdatedAt: service.updatedAt } : undefined,
       // Gate 2. `service_deployment.status` is never read for LIVENESS — but it
       // is the only record of INTENT, written by stopServiceContainer.
       expectRunning: service.enabled !== false && hint.status !== "stopped",
@@ -1574,6 +1597,7 @@ async function evaluate(args: {
   openByKey: Map<string, ServiceIncident>;
   summary: HealthWatchSummary;
   currentOnly: boolean;
+  isAbandoned: () => boolean;
 }): Promise<void> {
   const { candidate, workload, key, container, summary } = args;
   const previous = MEMORY.get(key);
@@ -1670,6 +1694,50 @@ async function evaluate(args: {
     healthySince: verdict.kind ? null : (previous?.kind === null ? (previous.healthySince ?? nowMs) : nowMs),
     lastResolvedAtMs: previous?.lastResolvedAtMs ?? null,
   };
+  // Keep an unstable recovery visible until it earns its all-clear. Heal the
+  // binding only when this observation may also resolve the existing incident.
+  if (verdict.clear === "healthy" && existing) {
+    const flapping =
+      memory.lastResolvedAtMs !== null &&
+      existing.openedAt.getTime() - memory.lastResolvedAtMs < FLAP_WINDOW_MS;
+    if (flapping && nowMs - (memory.healthySince ?? nowMs) < RECOVERY_HOLD_MS) {
+      MEMORY.set(key, memory);
+      summary.recovering++;
+      return;
+    }
+  }
+
+  // A healthy successor is a runtime observation, not a new release. Rebind
+  // before resolving its outage, and abandon the sample if a concurrent deploy,
+  // stop or another repair already changed the authoritative identity.
+  if (verdict.clear === "healthy" && workload.expectRunning && workload.refreshBinding &&
+      workload.serviceId && workload.trackedContainerId) {
+    const input = {
+      projectId: candidate.project.id,
+      organizationId: candidate.project.organizationId,
+      deploymentId: candidate.dep.id,
+      serviceId: workload.serviceId,
+      expectedContainerId: workload.trackedContainerId,
+      containerId: workload.containerId,
+      expectedProjectUpdatedAt: candidate.project.updatedAt,
+      expectedServiceUpdatedAt: workload.refreshBinding.serviceUpdatedAt,
+    };
+    // Never contend with an environment apply, restart or deployment. Their
+    // replacement may be healthy but not committed yet. Reuse the runtime
+    // writer's two-layer lock, skipping busy projects instead of queuing a stale
+    // observation behind a live cutover.
+    const refreshed = await tryWithProvisionLock(projectRuntimeLockKey(candidate.project.id), () =>
+      args.isAbandoned() ? Promise.resolve(false) : repos.service.refreshContainerBinding(input),
+    );
+    if (args.isAbandoned()) return;
+    if (!refreshed) {
+      summary.indeterminate++;
+      publishHealthSnapshot(candidate, workload, "unknown", nowMs);
+      return;
+    }
+    workload.trackedContainerId = workload.containerId;
+  }
+
   MEMORY.set(key, memory);
 
   if (!verdict.kind) {
@@ -1687,18 +1755,6 @@ async function evaluate(args: {
         summary.stale++;
         args.openByKey.delete(key);
       }
-      return;
-    }
-    // Healthy, with an incident to close. Normally that happens on this one good
-    // observation. The exception is a workload we have already watched break right
-    // after a recovery — see `RECOVERY_HOLD_MS`. Re-breaking inside the hold leaves
-    // the SAME incident open, so the whole episode stays one alert instead of one
-    // per cycle.
-    const flapping =
-      memory.lastResolvedAtMs !== null &&
-      existing.openedAt.getTime() - memory.lastResolvedAtMs < FLAP_WINDOW_MS;
-    if (flapping && nowMs - (memory.healthySince ?? nowMs) < RECOVERY_HOLD_MS) {
-      summary.recovering++;
       return;
     }
     if (await resolveWorkloadIncident(existing, candidate.project.name)) {
