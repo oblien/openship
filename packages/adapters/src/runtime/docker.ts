@@ -2733,7 +2733,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       const hint = chooseDockerBuildFailureHint(fatalBuildError, streamedFailureHint);
       throw new Error(
         hint && !hint.includes(fatalBuildError)
-          ? `${fatalBuildError}\n${hint}`
+          ? `${hint}\n${fatalBuildError}`
           : (hint ?? fatalBuildError),
       );
     }
