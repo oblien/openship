@@ -10,6 +10,11 @@ Runtime security notices use the signed feed published from `security-advisories
   reused PIDs cannot strand the database or admit an owner in another container.
   Preserve conservative checks for older locks and other operating systems (#1524).
 
+- **Keep Docker build failures readable** — surface the cause before long generated
+  commands, preserve the full output in build logs, and retain Cloud recovery
+  guidance after reload. Exit 137 is reported as a killed process with possible
+  memory pressure, without claiming a confirmed out-of-memory event.
+
 - **Keep monorepo runtime images aligned with each service** — use the service's
   framework and selected builder for its runtime instead of inheriting an
   unrelated parent image. Fill missing builders from the stack registry, preserve

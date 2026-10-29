@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { AppError, DEPLOYMENT_RESOURCE_FAILURE_CODE, type LogEntry } from "@repo/core";
+import {
+  AppError,
+  DEPLOYMENT_RESOURCE_FAILURE_CODE,
+  safeErrorMessage,
+  type LogEntry,
+} from "@repo/core";
 import { BuildLogger, type RuntimeAdapter } from "@repo/adapters";
 import { db, repos, schema } from "@repo/db";
 import {
@@ -12,6 +17,7 @@ import { verifyDeployedContainers } from "@repo/platform/engine/modules/deployme
 import { collapseTerminalLogs } from "@repo/platform/engine/modules/deployments/terminal-logs";
 import { sanitizeLogsForPersistence } from "@repo/platform/engine/modules/deployments/build-log-sanitize";
 import { seedOrg, seedProject, seedDeployment } from "../../helpers/seed";
+import { extractDockerBuildFailureHint } from "../../../../../packages/adapters/src/runtime/docker-build-diagnostics";
 
 async function attempt(cloud = true) {
   const owner = await seedOrg();
@@ -75,6 +81,28 @@ it("persists the diagnosis with failure and restores it without an active stream
     status: "failed",
     errorDetails: { resourceIssue: "memory-allocation", workspaceId: ctx.project.workspaceId },
   });
+});
+
+it("restores the killed-build diagnosis when Docker repeats a long generated command", async () => {
+  const ctx = await attempt();
+  const command = `node -e '${"var bootstrap = true;".repeat(400)}' && yarn build`;
+  const output = `#10 ERROR: process \"/bin/sh -c ${command}\" did not complete successfully: exit code: 137`;
+  const message = `Docker build failed: ${safeErrorMessage(new Error(extractDockerBuildFailureHint(output)!))}`;
+
+  await onFailure(ctx, message, 1234);
+
+  expect(await getBuildSessionStatus(ctx.dep.id)).toMatchObject({
+    status: "failed",
+    errorCode: DEPLOYMENT_RESOURCE_FAILURE_CODE,
+    errorDetails: {
+      resourceIssue: "process-killed",
+      workspaceId: ctx.project.workspaceId,
+      projectId: ctx.project.id,
+    },
+  });
+  const saved = (await repos.deployment.findById(ctx.dep.id))?.errorMessage;
+  expect(saved).toContain("killed by SIGKILL (exit code 137)");
+  expect(saved).toContain("does not prove OOM");
 });
 
 it("retains authoritative container OOM evidence even when no terminal logs can be retained", async () => {
