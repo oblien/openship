@@ -30,6 +30,7 @@ import { env } from "../config/index";
 import { trackBackgroundWork } from "./background-work";
 import { isArtifactRef, isRealContainerRef } from "./container-ref";
 import { assertManagedServerCanWork } from "./cloud-workspace-access";
+import { isEdgeConfigRefusal } from "./edge-vhost-repair";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./platform-config";
@@ -1360,6 +1361,9 @@ export async function withDeploymentPlatform<T>(
  */
 function asHostUnreachable(err: unknown): unknown {
   if (err instanceof HostUnreachableError) return err;
+  // A refusing edge was reached. Its message may quote a timed-out reload, but callers
+  // must still see the refusal and stop before the next route write.
+  if (isEdgeConfigRefusal(err)) return err;
   // isConnectionLoss, not the raw adapter predicate: lib/remote-state.ts is this
   // app's one present/absent/unreachable classifier, and it additionally catches
   // the executor's lowercase command-timeout string.

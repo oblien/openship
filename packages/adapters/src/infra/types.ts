@@ -54,6 +54,8 @@ export interface RoutingProvider {
     scanned: number;
     repaired: string[];
     failed: { slug: string; reason: string }[];
+    /** The sweep first restored the files of an interrupted config transaction. */
+    recovered?: boolean;
   }>;
 
   /**

@@ -10,6 +10,7 @@ import { createEncryption } from "@repo/db/encryption";
 import {
   DockerRuntime,
   BuildLogger,
+  EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
   NginxProvider,
   OPENRESTY_DEFAULT_PATHS,
   type RootChecked,
@@ -221,6 +222,15 @@ beforeAll(async () => {
       if (move && h.files.has(move[1]!)) {
         h.files.set(move[2]!, h.files.get(move[1]!)!);
         h.files.delete(move[1]!);
+      }
+      // The sweep lists the sites directory through the command channel.
+      const list = command.match(/^ls -1 '([^']+)'/);
+      if (list) {
+        const prefix = `${list[1]}/`;
+        return [...h.files.keys()]
+          .filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes("/"))
+          .map((path) => path.slice(prefix.length))
+          .join("\n");
       }
       return "";
     },
@@ -874,3 +884,116 @@ it("routes a recreated app on its first deploy after mid-build certificate reuse
     issues.mockRejectedValue(new Error("Existing certificates must be reused"));
   }
 });
+
+it("Retry switches PROXY protocol for every vhost on the box at once, or reports why it did not", async () => {
+  const sites = OPENRESTY_DEFAULT_PATHS.sitesDir;
+  const include = "_openship-proxy-protocol-realip.in[c];";
+  const listener = `${sites}/${EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME}`;
+  // Another project's TLS route on the same box, written before the setting existed.
+  const sibling = "other-project.example.com";
+  const siblingConf = `${sites}/other-project-example-com.conf`;
+  const siblingState = `${sites}/other-project-example-com.route.json`;
+  const cert = makeTestCert([sibling]);
+  h.files.set(`/etc/letsencrypt/live/${sibling}/fullchain.pem`, cert.certPem);
+  h.files.set(`/etc/letsencrypt/live/${sibling}/privkey.pem`, cert.keyPem);
+  await nginx.registerRoute({ domain: sibling, tls: true, targetUrl: "http://127.0.0.1:3981" });
+  const projectConfs = () =>
+    routes.map(({ hostname }) => `${sites}/${hostname.replace(/\./g, "-")}.conf`);
+
+  const edge = (edgeProxyProtocol: { mode: "off" } | { mode: "https"; trusted: string[] }) =>
+    new NginxProvider({
+      executor: h.resolved.platform.executor as RootChecked,
+      paths: OPENRESTY_DEFAULT_PATHS,
+      pinPaths: true,
+      containerEdge: true,
+      edgeProxyProtocol,
+    });
+  // The api restarted with OPENSHIP_EDGE_PROXY_PROTOCOL=https.
+  const proxied = edge({ mode: "https", trusted: ["192.0.2.10"] });
+  Object.assign(h.resolved.platform, { routing: proxied, ssl: proxied });
+  try {
+    // The sibling cannot be re-rendered, so the socket must not switch for anyone.
+    const saved = h.files.get(siblingState)!;
+    h.files.set(siblingState, "{");
+    const refused = await retryProjectRoutingOperation(context, "project");
+    expect(h.files.has(listener)).toBe(false);
+    for (const path of [siblingConf, ...projectConfs()]) {
+      expect(h.files.get(path), path).toContain("listen 443 ssl;");
+      expect(h.files.get(path), path).not.toContain(include);
+    }
+    expect(refused.ok).toBe(false);
+    expect(refused.warning).toMatch(
+      /PROXY protocol was not enabled on port 443.*other-project-example-com\.conf/,
+    );
+    expect((await h.repos.deployment.findById("deployment"))?.meta).toMatchObject({
+      deployWarning: expect.stringMatching(/PROXY protocol was not enabled/),
+    });
+
+    // Repaired: one Retry on ANY project switches the whole box.
+    h.files.set(siblingState, saved);
+    expect(await retryProjectRoutingOperation(context, "project")).toEqual({ ok: true });
+    expect(h.files.get(listener)).toContain("listen 443 ssl proxy_protocol;");
+    for (const path of [siblingConf, ...projectConfs()]) {
+      expect(h.files.get(path), path).toContain(include);
+    }
+    expect((await h.repos.deployment.findById("deployment"))?.meta).not.toHaveProperty(
+      "deployWarning",
+    );
+  } finally {
+    // Leave the shared box as the other cases found it.
+    Object.assign(h.resolved.platform, { routing: nginx, ssl: nginx });
+    await edge({ mode: "off" }).reapplyStoredRoutes();
+    await nginx.removeRoute(sibling);
+  }
+  expect(h.files.has(listener)).toBe(false);
+  for (const path of projectConfs()) expect(h.files.get(path), path).not.toContain(include);
+}, 30_000);
+
+it("Retry stops before writing the project's routes while an edge change is half restored, and recovers it", async () => {
+  const sites = OPENRESTY_DEFAULT_PATHS.sitesDir;
+  const journal = `${sites}/_openship-config.journal`;
+  const projectConf = `${sites}/${routes[0]!.hostname.replace(/\./g, "-")}.conf`;
+  const exec = vi.spyOn(
+    (nginx as unknown as { executor: { exec: (command: string) => Promise<string> } }).executor,
+    "exec",
+  );
+  try {
+    // A journal no one can read: the sweep cannot restore it, so nothing may be reloaded.
+    h.files.set(journal, "{");
+    const before = new Map(h.files);
+    writes.mockClear();
+    exec.mockClear();
+
+    const refused = await retryProjectRoutingOperation(context, "project");
+    expect(refused.ok).toBe(false);
+    expect(refused.warning).toMatch(
+      /_openship-config\.journal records an interrupted edge change but cannot be read/,
+    );
+    expect(writes).not.toHaveBeenCalled();
+    expect(exec.mock.calls.some(([command]) => command.includes(" -s reload"))).toBe(false);
+    expect(new Map(h.files)).toEqual(before);
+    expect((await h.repos.deployment.findById("deployment"))?.meta).toMatchObject({
+      deployWarning: expect.stringMatching(/cannot be read/),
+    });
+
+    // A readable journal: Retry restores the recorded file, reloads, removes the
+    // journal, and only then applies the project's routes.
+    const recorded = h.files.get(projectConf)!;
+    h.files.set(projectConf, "server { half restored }\n");
+    h.files.set(
+      journal,
+      JSON.stringify({
+        version: 1,
+        files: [{ path: projectConf, exists: true, content: recorded, mode: 0o600 }],
+      }),
+    );
+    exec.mockClear();
+    expect(await retryProjectRoutingOperation(context, "project")).toEqual({ ok: true });
+    expect(h.files.has(journal)).toBe(false);
+    expect(h.files.get(projectConf)).toBe(recorded);
+    expect(exec.mock.calls.some(([command]) => command.includes(" -s reload"))).toBe(true);
+  } finally {
+    h.files.delete(journal);
+    exec.mockRestore();
+  }
+}, 30_000);

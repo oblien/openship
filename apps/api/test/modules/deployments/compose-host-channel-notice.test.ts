@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BuildLogger, CommandExecutor, MultiServiceRuntimeAdapter, DockerRuntime as DockerRuntimeType, CloudDockerRuntime as CloudDockerRuntimeType } from "@repo/adapters";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import type {
+  BuildLogger,
+  CommandExecutor,
+  EdgeProxyProtocolSetting,
+  MultiServiceRuntimeAdapter,
+  DockerRuntime as DockerRuntimeType,
+  CloudDockerRuntime as CloudDockerRuntimeType,
+} from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
 
 /**
@@ -651,6 +663,136 @@ describe("compose deploy — host channel unavailable", () => {
     expect(result.cutover).toBeUndefined();
     expect(f.publish).not.toHaveBeenCalled();
     expect(f.retire).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The routing provider is the real NginxProvider on a temporary sites directory. Only
+   * the edge reload is simulated; every other command runs in `sh` on that directory.
+   */
+  async function realEdge(edgeProxyProtocol: EdgeProxyProtocolSetting) {
+    const { LocalExecutor, NginxProvider, OPENRESTY_DEFAULT_PATHS, rootChecked } =
+      await import("@repo/adapters");
+    const root = await mkdtemp(join(tmpdir(), "openship-compose-edge-"));
+    const sites = join(root, "sites-enabled");
+    await mkdir(sites);
+    const executor = new LocalExecutor();
+    const reload = vi.fn(async () => "");
+    vi.spyOn(executor, "exec").mockImplementation(async (command: string) => {
+      if (command.includes(" -s reload")) return reload();
+      const mapped = command.split(`'${OPENRESTY_DEFAULT_PATHS.sitesDir}'`).join(`'${sites}'`);
+      return (await promisify(execFile)("sh", ["-c", mapped])).stdout;
+    });
+    const edge = new NginxProvider({
+      paths: { ...OPENRESTY_DEFAULT_PATHS, sitesDir: sites },
+      certDir: join(root, "live"),
+      challengeDir: join(root, "tokens"),
+      executor: rootChecked(executor, "test: temporary edge directory"),
+      pinPaths: true,
+      containerEdge: true,
+      edgeProxyProtocol,
+    });
+    return { root, sites, edge, reload };
+  }
+
+  const INVALID: EdgeProxyProtocolSetting = {
+    mode: "invalid",
+    error: "OPENSHIP_EDGE_PROXY_PROTOCOL=https requires OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED",
+  };
+
+  it.each([
+    [
+      "an exposed service, an invalid PROXY protocol setting",
+      "exposed",
+      "invalid",
+      /requires OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED/,
+    ],
+    [
+      "a fan-out hostname only, an invalid PROXY protocol setting",
+      "fanout",
+      "invalid",
+      /requires OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED/,
+    ],
+    [
+      "an exposed service, an earlier change that cannot be restored",
+      "exposed",
+      "half-restored",
+      /Could not restore .*Nothing was reloaded/,
+    ],
+  ])(
+    "stops before replacing any service when the edge refuses every change (%s)",
+    async (_, shape, state, refusal) => {
+      const f = stagedFixture();
+      const { root, sites, edge, reload } = await realEdge(
+        state === "invalid" ? INVALID : { mode: "off" },
+      );
+      try {
+        if (state === "half-restored") {
+          // A failed change whose rollback could not finish: its journal names a file the
+          // sweep cannot write back (a directory now stands in its place).
+          await mkdir(join(sites, "a-example-com.conf"));
+          await writeFile(
+            join(sites, "_openship-config.journal"),
+            JSON.stringify({
+              version: 1,
+              files: [
+                { path: join(sites, "a-example-com.conf"), exists: true, content: "server {}\n" },
+              ],
+            }),
+          );
+        }
+        const overrides =
+          shape === "fanout"
+            ? {
+                compositeRoutes: [
+                  {
+                    hostname: "app.example.com",
+                    isCustomDomain: true,
+                    rootServiceId: "svc-api",
+                    locations: [],
+                  },
+                ],
+              }
+            : {};
+        if (shape === "fanout")
+          Object.assign(h.services[0]!, { exposed: false, customDomain: null, domainType: null });
+
+        await expect(
+          f.run({ ...f.routingOptions, routing: edge, ssl: edge }, "manual", overrides),
+        ).rejects.toThrow(refusal);
+        // The incumbent keeps serving: nothing was prepared, activated, published,
+        // stopped, retired or reaped, and the edge was not reloaded.
+        expect(f.pull).not.toHaveBeenCalled();
+        expect(f.prepared).not.toHaveBeenCalled();
+        expect(f.activate).not.toHaveBeenCalled();
+        expect(f.publish).not.toHaveBeenCalled();
+        expect(f.retire).not.toHaveBeenCalled();
+        expect(f.runtime.destroy).not.toHaveBeenCalled();
+        expect(h.upsertServiceDeployment).not.toHaveBeenCalled();
+        expect(reload).not.toHaveBeenCalled();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("applies a pending PROXY protocol setting to the whole edge before the first service is replaced", async () => {
+    const f = stagedFixture();
+    const { root, sites, edge, reload } = await realEdge({
+      mode: "https",
+      trusted: ["192.0.2.10"],
+    });
+    try {
+      const result = await f.run({ ...f.routingOptions, routing: edge, ssl: edge });
+      expect(result.status).toBe("ready");
+      expect(await readFile(join(sites, "_openship-proxy-protocol.conf"), "utf8")).toContain(
+        "listen 443 ssl proxy_protocol;",
+      );
+      expect(reload.mock.invocationCallOrder[0]).toBeLessThan(
+        f.activate.mock.invocationCallOrder[0]!,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("includes a composite route's additional upstream in the predecessor port proof", async () => {

@@ -1,6 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
+import { EdgeProxyProtocolConfigError } from "@repo/adapters";
 import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 
 type Routing = Parameters<typeof repairEdgeVhosts>[0];
@@ -101,5 +102,16 @@ describe("repairEdgeVhosts", () => {
       failed: [{ slug: "*", reason: "edge unreachable" }],
     });
     expect(String(warn.mock.calls[0]?.[1])).toContain("edge unreachable");
+  });
+
+  it("rethrows an edge that refuses every change, so a deploy can stop before its cutover", async () => {
+    const refusal = new EdgeProxyProtocolConfigError("Edge configuration was not changed: bad list");
+    await expect(
+      repairEdgeVhosts(
+        sweeper(() => {
+          throw refusal;
+        }),
+      ),
+    ).rejects.toBe(refusal);
   });
 });
