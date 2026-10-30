@@ -71,7 +71,7 @@ import { resolveGitHubApiBaseUrl } from "./github-source.service";
  */
 export interface BuildGitCredential {
   token?: string;
-  /** Ephemeral exact repository grant returned by the expanded App mint. */
+  /** Exact repositories allowed to use the deployment-scoped token helper. */
   tokenRepositories?: string[];
   relay?: boolean;
   /**
@@ -200,12 +200,12 @@ async function diagnoseEmptyAppStep(
 }
 
 /**
- * Parent-only App tokens 404 private submodules (`../other.git` inherits the
- * parent URL's userinfo). Read `.gitmodules` with the parent token, then remint
- * an App token covering the same-owner submodule repos. Soft: a missing file
- * keeps the parent token silently; a read error keeps it with a warning.
+ * Discover same-owner submodules for the scoped clone credential helper.
+ * App tokens need a new mint covering those repos; user tokens keep their
+ * existing permissions. A missing file keeps parent URL authentication, while
+ * a read error also emits a warning.
  */
-async function expandAppTokenForSubmodules(
+async function prepareTokenForSubmodules(
   ctx: RequestContext,
   purpose: "local" | "remote",
   tokenCtx: TokenContext,
@@ -214,7 +214,7 @@ async function expandAppTokenForSubmodules(
 ): Promise<{ result: TokenResult | null; repos: number }> {
   const owner = tokenCtx.owner;
   const repo = tokenCtx.repo;
-  if (!minted?.token || minted.source !== "app-installation" || !owner || !repo) {
+  if (!minted?.token || !owner || !repo) {
     return { result: minted, repos: minted?.token ? 1 : 0 };
   }
   let extra = await fetchSameOwnerSubmoduleRepos(minted.token, owner, repo, ctx, tokenCtx, extras);
@@ -227,6 +227,11 @@ async function expandAppTokenForSubmodules(
     extra = extra.slice(0, MAX_SUBMODULE_REPOS);
   }
   if (!extra.length) return { result: minted, repos: 1 };
+  // User tokens already carry their GitHub permissions, but absolute submodule
+  // URLs still need the scoped helper rather than parent URL credentials.
+  if (minted.source !== "app-installation") {
+    return { result: { ...minted, repositories: [repo, ...extra] }, repos: 1 + extra.length };
+  }
   const reminted = await tokenFor(ctx, purpose, {
     ...tokenCtx,
     only: ["app-installation"],
@@ -333,7 +338,10 @@ async function resolveLocalCredential(
     if (ghToken) {
       trace.source = "gh-cli";
       trace.repos = "all";
-      return { token: ghToken };
+      const { result } = await prepareTokenForSubmodules(
+        ctx, "local", tokenCtx, { token: ghToken, source: "gh-cli" }, extras,
+      );
+      return { token: ghToken, ...(result?.repositories ? { tokenRepositories: result.repositories } : {}) };
     }
   }
   const localCtx: TokenContext = {
@@ -344,7 +352,7 @@ async function resolveLocalCredential(
   if (!first?.token || (first.source !== "app-installation" && first.source !== "gh-cli")) {
     await diagnoseEmptyAppStep(ctx, "local", localCtx, extras, trace);
   }
-  const { result: r, repos } = await expandAppTokenForSubmodules(ctx, "local", localCtx, first, extras);
+  const { result: r, repos } = await prepareTokenForSubmodules(ctx, "local", localCtx, first, extras);
   if (r?.token) {
     recordToken(trace, r, repos);
     return { token: r.token, ...(r.repositories ? { tokenRepositories: r.repositories } : {}) };
@@ -537,6 +545,13 @@ async function resolveBuildGitTokenTraced(
     if (serverCred) {
       trace.source = serverCred.ssh ? `server-ssh:${serverCred.ssh.keyKind}` : "server-token";
       trace.repos = serverCred.token ? "all" : 0;
+      if (serverCred.token && !serverCred.ssh) {
+        const { result } = await prepareTokenForSubmodules(
+          opts.ctx, "remote", tokenCtx,
+          { token: serverCred.token, source: "server-token" }, extras,
+        );
+        return { ...serverCred, ...(result?.repositories ? { tokenRepositories: result.repositories } : {}) };
+      }
       return serverCred;
     }
   }
@@ -547,7 +562,7 @@ async function resolveBuildGitTokenTraced(
   //    cloud mode, where none of steps 1-3 apply.
   const first = await tokenFor(opts.ctx, "remote", tokenCtx);
   if (!first?.token) await diagnoseEmptyAppStep(opts.ctx, "remote", tokenCtx, extras, trace);
-  const { result: r, repos } = await expandAppTokenForSubmodules(
+  const { result: r, repos } = await prepareTokenForSubmodules(
     opts.ctx,
     "remote",
     tokenCtx,
