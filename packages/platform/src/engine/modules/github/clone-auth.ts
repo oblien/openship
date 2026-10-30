@@ -339,9 +339,16 @@ async function resolveLocalCredential(
       trace.source = "gh-cli";
       trace.repos = "all";
       const { result } = await prepareTokenForSubmodules(
-        ctx, "local", tokenCtx, { token: ghToken, source: "gh-cli" }, extras,
+        ctx,
+        "local",
+        tokenCtx,
+        { token: ghToken, source: "gh-cli" },
+        extras,
       );
-      return { token: ghToken, ...(result?.repositories ? { tokenRepositories: result.repositories } : {}) };
+      return {
+        token: ghToken,
+        ...(result?.repositories ? { tokenRepositories: result.repositories } : {}),
+      };
     }
   }
   const localCtx: TokenContext = {
@@ -352,7 +359,13 @@ async function resolveLocalCredential(
   if (!first?.token || (first.source !== "app-installation" && first.source !== "gh-cli")) {
     await diagnoseEmptyAppStep(ctx, "local", localCtx, extras, trace);
   }
-  const { result: r, repos } = await prepareTokenForSubmodules(ctx, "local", localCtx, first, extras);
+  const { result: r, repos } = await prepareTokenForSubmodules(
+    ctx,
+    "local",
+    localCtx,
+    first,
+    extras,
+  );
   if (r?.token) {
     recordToken(trace, r, repos);
     return { token: r.token, ...(r.repositories ? { tokenRepositories: r.repositories } : {}) };
@@ -547,10 +560,16 @@ async function resolveBuildGitTokenTraced(
       trace.repos = serverCred.token ? "all" : 0;
       if (serverCred.token && !serverCred.ssh) {
         const { result } = await prepareTokenForSubmodules(
-          opts.ctx, "remote", tokenCtx,
-          { token: serverCred.token, source: "server-token" }, extras,
+          opts.ctx,
+          "remote",
+          tokenCtx,
+          { token: serverCred.token, source: "server-token" },
+          extras,
         );
-        return { ...serverCred, ...(result?.repositories ? { tokenRepositories: result.repositories } : {}) };
+        return {
+          ...serverCred,
+          ...(result?.repositories ? { tokenRepositories: result.repositories } : {}),
+        };
       }
       return serverCred;
     }

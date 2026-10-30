@@ -206,19 +206,31 @@ describe("submodule token expansion", () => {
     expect(logs.join("\n")).toMatch(/remint .* returned no token/);
   });
 
-  it.each(["project", "user-pat", "user-oauth"])("scopes %s credentials to same-owner submodules without reminting", async (source) => {
-    const token = "ghp_fixture0003";
-    tokenFor.mockResolvedValue({ token, source });
-    fetchMock.mockResolvedValue(gitmodulesResponse(`url = https://github.com/${OWNER}/private-api.git\nurl = https://github.com/other/secret.git\n`));
-    const res = await resolveBuildGitToken({ ...base, buildStrategy: "server", onLog });
-    expect(res).toEqual({ token, tokenRepositories: ["webapp", "private-api"] });
-    expect(tokenFor).toHaveBeenCalledTimes(1);
-  });
+  it.each(["project", "user-pat", "user-oauth"])(
+    "scopes %s credentials to same-owner submodules without reminting",
+    async (source) => {
+      const token = "ghp_fixture0003";
+      tokenFor.mockResolvedValue({ token, source });
+      fetchMock.mockResolvedValue(
+        gitmodulesResponse(
+          `url = https://github.com/${OWNER}/private-api.git\nurl = https://github.com/other/secret.git\n`,
+        ),
+      );
+      const res = await resolveBuildGitToken({ ...base, buildStrategy: "server", onLog });
+      expect(res).toEqual({ token, tokenRepositories: ["webapp", "private-api"] });
+      expect(tokenFor).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("scopes stored server tokens without consulting the App chain", async () => {
     resolveServerGitCredential.mockResolvedValue({ token: "server-fixture" });
     fetchMock.mockResolvedValue(gitmodulesResponse(`url = ../private-api.git\n`));
-    const res = await resolveBuildGitToken({ ...base, serverId: "s1", buildStrategy: "server", onLog });
+    const res = await resolveBuildGitToken({
+      ...base,
+      serverId: "s1",
+      buildStrategy: "server",
+      onLog,
+    });
     expect(res).toEqual({ token: "server-fixture", tokenRepositories: ["webapp", "private-api"] });
     expect(tokenFor).not.toHaveBeenCalled();
   });
@@ -226,8 +238,15 @@ describe("submodule token expansion", () => {
   it("scopes the local gh CLI token to absolute private submodules", async () => {
     const token = "gho_fixture0004";
     getLocalGhToken.mockResolvedValue(token);
-    fetchMock.mockResolvedValue(gitmodulesResponse(`url = https://github.com/${OWNER}/private-api.git\n`));
-    const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", gitRef: "abc123", onLog });
+    fetchMock.mockResolvedValue(
+      gitmodulesResponse(`url = https://github.com/${OWNER}/private-api.git\n`),
+    );
+    const res = await resolveBuildGitToken({
+      ...base,
+      buildStrategy: "local",
+      gitRef: "abc123",
+      onLog,
+    });
     expect(res).toEqual({ token, tokenRepositories: ["webapp", "private-api"] });
     expect(fetchMock.mock.calls[0][0]).toContain("?ref=abc123");
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${token}`);
