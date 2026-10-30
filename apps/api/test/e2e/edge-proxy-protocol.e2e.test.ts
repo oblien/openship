@@ -364,7 +364,10 @@ async function startEdge(
 
   for (const name of await readdir(LUA_SOURCE)) {
     if (name.endsWith(".lua")) {
-      await executor.writeFile(`${LUA_DIR}/${name}`, await readFile(join(LUA_SOURCE, name), "utf8"));
+      await executor.writeFile(
+        `${LUA_DIR}/${name}`,
+        await readFile(join(LUA_SOURCE, name), "utf8"),
+      );
     }
   }
   await opts.seed?.(executor);
@@ -726,7 +729,10 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
     }
     expect(await sitesSnapshot()).toEqual(unchanged);
     await eventually(async () => {
-      const answer = await askTls(ports.https, { sni: REAL, proxy: { version: 2, src: "198.51.100.8" } });
+      const answer = await askTls(ports.https, {
+        sni: REAL,
+        proxy: { version: 2, src: "198.51.100.8" },
+      });
       expect(xri(answer.body)).toBe("198.51.100.8");
     });
     await expect(askTls(ports.https, { sni: REAL })).rejects.toThrow();
@@ -746,7 +752,10 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
       askTls(ports.https, { sni: REAL, proxy: { version: 2, src: "198.51.100.7" } }),
     ).rejects.toThrow();
     // The Cloud host is back to its own trust on :443, as before the feature.
-    const cloudyBack = await askTls(ports.https, { sni: CLOUDY, headers: { "X-Real-IP": "9.9.9.9" } });
+    const cloudyBack = await askTls(ports.https, {
+      sni: CLOUDY,
+      headers: { "X-Real-IP": "9.9.9.9" },
+    });
     expect(xri(cloudyBack.body)).toBe("9.9.9.9");
 
     // ── On again ─────────────────────────────────────────────────────────────
@@ -847,7 +856,11 @@ describeDockerE2E("edge PROXY protocol on :443, mounted sites directory", () => 
       await writeFile(join(hostLive, domain, "privkey.pem"), pair.keyPem);
     }
     // The vhost names certificates by their host path, so that path exists inside too.
-    ({ container, ports, executor: commands } = await startEdge(runtime, {
+    ({
+      container,
+      ports,
+      executor: commands,
+    } = await startEdge(runtime, {
       binds: [`${hostSites}:${SITES}`, `${hostLive}:${hostLive}:ro`],
     }));
     mounted = new DockerEdgeExecutor({
@@ -913,11 +926,16 @@ describeDockerE2E("edge PROXY protocol on :443, mounted sites directory", () => 
     });
     await rm(join(hostSites, "zz-broken.conf"));
     expect(await hostSnapshot()).toEqual(enabled);
-    const still = await askTls(ports.https, { sni: REAL, proxy: { version: 1, src: "198.51.100.7" } });
+    const still = await askTls(ports.https, {
+      sni: REAL,
+      proxy: { version: 1, src: "198.51.100.7" },
+    });
     expect(xri(still.body)).toBe("198.51.100.7");
 
     // Off.
-    expect((await reloaded(() => provider({ mode: "off" }).reapplyStoredRoutes())).failed).toEqual([]);
+    expect((await reloaded(() => provider({ mode: "off" }).reapplyStoredRoutes())).failed).toEqual(
+      [],
+    );
     expect(await readdir(hostSites)).not.toContain(EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME);
     await eventually(async () => {
       expect(xri((await askTls(ports.https, { sni: REAL })).body)).toBe(peer);

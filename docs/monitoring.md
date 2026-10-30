@@ -392,9 +392,13 @@ never loaded by nginx). While that file exists, every change to the edge is refu
 any process: route writes, certificates, challenges, rate limits and deploys with domains,
 which stop before replacing anything. The routing sweep that the next deploy or Retry
 routing runs restores every recorded file, validates and reloads, and only then removes
-the journal. If that fails too, the journal stays and the error names the file. A
-container restart still loads whatever is on disk, so fix the cause and run Retry routing
-before restarting the edge.
+the journal. If that fails too, the journal stays and the error names the file. After a
+successful reload the journal records that the change is committed before cleanup, so a
+failed cleanup cannot revert a route to its previous upstream. Certificate operations wait
+for an active configuration transaction before checking the journal, and renewals check it
+again under the lock before publishing or reloading after Certbot finishes. A container
+restart still loads whatever is on disk, so fix the cause and run Retry routing before
+restarting the edge.
 
 Where the sweep runs: a single-app deploy with domains and a Compose (multi-service)
 deploy with exposed services, project domains or fan-out hostnames run it before the first

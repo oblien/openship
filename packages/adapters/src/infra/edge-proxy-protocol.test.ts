@@ -24,6 +24,28 @@ import {
 } from "../system/proxy/ensure-container-edge";
 import type { CommandExecutor } from "../types";
 
+// Fail below LocalExecutor's file API, so the recovery tests also verify that the
+// mounted backend preserves filesystem errors instead of silently swallowing them.
+const ioFailures = vi.hoisted(() => ({ remove: "", read: "" }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      if (args[0] === ioFailures.remove) {
+        throw Object.assign(new Error("filesystem removal denied"), { code: "EACCES" });
+      }
+      return actual.rm(...args);
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      if (args[0] === ioFailures.read) {
+        throw Object.assign(new Error("filesystem read failed"), { code: "EIO" });
+      }
+      return actual.readFile(...args);
+    },
+  };
+});
+
 const execFileAsync = promisify(execFile);
 
 const env = (mode?: string, trusted?: string) => ({
@@ -276,6 +298,8 @@ describe("PROXY protocol transactions on the container edge", () => {
   });
 
   afterEach(async () => {
+    ioFailures.remove = "";
+    ioFailures.read = "";
     vi.restoreAllMocks();
     await rm(root, { recursive: true, force: true });
   });
@@ -498,6 +522,135 @@ describe("PROXY protocol transactions on the container edge", () => {
       return tree();
     };
 
+    it("does not reload when the mounted filesystem cannot remove a candidate file during recovery", async () => {
+      await provider(OFF).registerRoute(tls(A));
+      await converge(on("192.0.2.10"));
+      await writeFile(
+        journal(),
+        JSON.stringify({
+          version: 1,
+          files: [
+            { path: listener(), exists: false },
+            { path: realIp(), exists: false },
+          ],
+        }),
+      );
+      ioFailures.remove = listener();
+      reloads = 0;
+
+      await expect(provider(OFF).reapplyStoredRoutes()).rejects.toBeInstanceOf(
+        EdgeConfigRecoveryError,
+      );
+      expect(reloads).toBe(0);
+      expect(await read(listener())).not.toBeNull();
+      expect(await read(journal())).not.toBeNull();
+    });
+
+    it("reports an unreadable journal as a recovery refusal and preserves its cause", async () => {
+      await setUp();
+      await writeFile(journal(), JSON.stringify({ version: 1, files: [] }));
+      ioFailures.read = journal();
+      reloads = 0;
+
+      const sweep = provider(OFF).reapplyStoredRoutes();
+      await expect(sweep).rejects.toBeInstanceOf(EdgeConfigRecoveryError);
+      await expect(sweep).rejects.toMatchObject({ cause: { code: "EIO" } });
+      expect(reloads).toBe(0);
+    });
+
+    it.each(["off", "unspecified"])(
+      "journals writes for an active socket when the provider's setting is %s",
+      async (setting) => {
+        await provider(OFF).registerRoute(tls(A));
+        await converge(on("192.0.2.10"));
+        const rename = executor.rename.bind(executor);
+        let writes = 0;
+        vi.spyOn(executor, "rename").mockImplementation(async (from, to) => {
+          if (to === vhost(A) && ++writes === 2) throw new Error("restore denied");
+          return rename(from, to);
+        });
+        failNextReload = true;
+
+        await expect(
+          provider(setting === "off" ? OFF : undefined).registerRoute(tls(A, 3002)),
+        ).rejects.toBeInstanceOf(EdgeConfigRecoveryError);
+        expect(await read(journal())).not.toBeNull();
+        await expect(provider().registerRoute(tls(B))).rejects.toBeInstanceOf(
+          EdgeConfigRecoveryError,
+        );
+      },
+    );
+
+    it("preserves a committed route when journal cleanup fails", async () => {
+      await provider(OFF).registerRoute(tls(A));
+      await converge(on("192.0.2.10"));
+      ioFailures.remove = journal();
+
+      await expect(provider(on("192.0.2.10")).registerRoute(tls(A, 3002))).rejects.toBeInstanceOf(
+        EdgeConfigRecoveryError,
+      );
+      expect(await read(vhost(A))).toContain("127.0.0.1:3002");
+      ioFailures.remove = "";
+      await converge(on("192.0.2.10"));
+      expect(await read(vhost(A))).toContain("127.0.0.1:3002");
+      expect(JSON.parse((await read(sidecar(A)))!).targetUrl).toBe("http://127.0.0.1:3002");
+      expect(await read(journal())).toBeNull();
+    });
+
+    it("rolls back the route if recording its committed state fails", async () => {
+      await provider(OFF).registerRoute(tls(A));
+      await converge(on("192.0.2.10"));
+      const before = await tree();
+      const write = executor.writeFile.bind(executor);
+      vi.spyOn(executor, "writeFile").mockImplementation(async (path, content, ...rest) => {
+        if (path.startsWith(journal()) && content === JSON.stringify({ version: 1, files: [] })) {
+          throw new Error("commit record refused");
+        }
+        return write(path, content, ...rest);
+      });
+
+      await expect(provider(on("192.0.2.10")).registerRoute(tls(A, 3002))).rejects.toThrow(
+        "commit record refused",
+      );
+      expect(await tree()).toEqual(before);
+    });
+
+    it.each([
+      ["parent directory", (dir: string) => ({ path: `${dir}/..`, exists: false })],
+      ["current directory", (dir: string) => ({ path: `${dir}/.`, exists: false })],
+      [
+        "noncanonical path",
+        (dir: string) => ({ path: `${dir}/../sites-enabled/a.conf`, exists: false }),
+      ],
+      ["unknown filename", (dir: string) => ({ path: join(dir, "unowned.inc"), exists: false })],
+      [
+        "symlink field",
+        (dir: string) => ({
+          path: join(dir, "a.conf"),
+          exists: true,
+          content: "old",
+          linkTarget: "elsewhere",
+        }),
+      ],
+      [
+        "unexpected permissions",
+        (dir: string) => ({ path: join(dir, "a.conf"), exists: true, content: "old", mode: 0o777 }),
+      ],
+    ])("refuses a journal with %s before attempting any restoration", async (_, entry) => {
+      await writeFile(journal(), JSON.stringify({ version: 1, files: [entry(sites)] }));
+      const fresh = provider(OFF);
+      // Keep an invalid record from touching even the isolated fixture directory on
+      // the old implementation: validation must happen before the restore boundary.
+      const restore = vi
+        .spyOn(fresh as any, "_restoreFile")
+        .mockRejectedValue(new Error("journal validation was bypassed"));
+      reloads = 0;
+
+      await expect(fresh.reapplyStoredRoutes()).rejects.toThrow(/unexpected entry/);
+      expect(restore).not.toHaveBeenCalled();
+      expect(reloads).toBe(0);
+    });
+
     it("stops the sweep with the journal kept, and nothing reloaded or written after it", async () => {
       const before = await setUp();
       const writes = breakTurningOn();
@@ -661,6 +814,108 @@ describe("PROXY protocol transactions on the container edge", () => {
     expect(reloads).toBe(1);
   });
 
+  it.each(["provisionCert", "renewCert", "dnsChallengeProvider"] as const)(
+    "%s waits for a healthy configuration transaction instead of treating its journal as interrupted",
+    async (method) => {
+      await provider(OFF).registerRoute(tls(A));
+      await converge(on("192.0.2.10"));
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let entered = () => {};
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const previousExec = exec.getMockImplementation()!;
+      let hold = true;
+      exec.mockImplementation(async (command: string) => {
+        if (hold && command.includes(" -s reload")) {
+          hold = false;
+          entered();
+          await gate;
+        }
+        return previousExec(command);
+      });
+      const writing = provider(on("192.0.2.10")).registerRoute(tls(A, 3002));
+      await ready;
+      const fresh = provider(on("192.0.2.10"));
+      const checked = vi.spyOn(fresh as any, "assertEdgeAcceptsChanges");
+      const afterEntry = new Error("certificate entry check completed");
+      // Stop certificate work at its first read after the entry check. No CA or
+      // Certbot is needed to exercise the real transaction lock and journal.
+      vi.spyOn(fresh as any, "resolveCertificate").mockRejectedValue(afterEntry);
+      const pending =
+        method === "dnsChallengeProvider" ? fresh.dnsChallengeProvider() : fresh[method](A);
+      const outcome = pending.then(
+        (value) => ({ value, error: null as Error | null }),
+        (error: Error) => ({ value: null, error }),
+      );
+      try {
+        expect(checked).not.toHaveBeenCalled();
+      } finally {
+        release();
+      }
+      await writing;
+      const result = await outcome;
+      expect(checked).toHaveBeenCalled();
+      if (method === "dnsChallengeProvider") {
+        expect(result.error).toBeNull();
+        expect(result.value).toBeTruthy();
+      } else {
+        expect(result.error).toBe(afterEntry);
+      }
+    },
+  );
+
+  it("does not publish or reload after a pending renewal encounters an interrupted transition", async () => {
+    await provider(OFF).registerRoute(tls(A));
+    await converge(on("192.0.2.10"));
+    const renewing = provider(on("192.0.2.10"));
+    vi.spyOn(renewing as any, "findCertbotLineage").mockResolvedValue(A);
+    vi.spyOn(renewing as any, "lineageServerMatches").mockResolvedValue(true);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = () => {};
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    vi.spyOn(renewing as any, "_execCertbot").mockImplementation(async () => {
+      entered();
+      await gate;
+      return "renewed";
+    });
+    const renewal = renewing.renewCert(A);
+    const outcome = renewal.then(
+      () => null,
+      (error: Error) => error,
+    );
+    await ready;
+    const write = executor.writeFile.bind(executor);
+    let includeWrites = 0;
+    const failingWrite = vi
+      .spyOn(executor, "writeFile")
+      .mockImplementation(async (path, ...rest) => {
+        if (path.startsWith(realIp()) && ++includeWrites === 2) throw new Error("restore denied");
+        return write(path, ...rest);
+      });
+    try {
+      failNextReload = true;
+      await expect(provider(on("198.51.100.0/24")).reapplyStoredRoutes()).rejects.toBeInstanceOf(
+        EdgeConfigRecoveryError,
+      );
+    } finally {
+      failingWrite.mockRestore();
+      reloads = 0;
+      release();
+    }
+    expect(await outcome).toBeInstanceOf(EdgeConfigRecoveryError);
+    expect(reloads).toBe(0);
+    expect(await read(join(sites, EDGE_CONFIG_JOURNAL_NAME))).not.toBeNull();
+  });
+
   it("turns off completely, even past a vhost it cannot re-render", async () => {
     const off = provider(OFF);
     await off.registerRoute(tls(A));
@@ -702,9 +957,15 @@ describe("PROXY protocol transactions on the container edge", () => {
       ["setRouteProtection", () => invalid.setRouteProtection(A, null)],
       ["removeRoute", () => invalid.removeRoute(A)],
       ["reapplyStoredRoutes", () => invalid.reapplyStoredRoutes()],
-      ["serveEdgeChallenge", () => invalid.serveEdgeChallenge({ host: "new.example.com", tokens: ["tok-123456"] })],
+      [
+        "serveEdgeChallenge",
+        () => invalid.serveEdgeChallenge({ host: "new.example.com", tokens: ["tok-123456"] }),
+      ],
       ["installCert (with a vhost)", () => invalid.installCert(A, makeTestCert([A]))],
-      ["installCert (no vhost)", () => invalid.installCert("certonly.example.com", makeTestCert(["certonly.example.com"]))],
+      [
+        "installCert (no vhost)",
+        () => invalid.installCert("certonly.example.com", makeTestCert(["certonly.example.com"])),
+      ],
       ["provisionCert", () => invalid.provisionCert("new.example.com")],
       ["renewCert", () => invalid.renewCert(A)],
       ["activateCert", () => invalid.activateCert(A)],
@@ -713,7 +974,13 @@ describe("PROXY protocol transactions on the container edge", () => {
     ];
     const outcomes: [string, unknown][] = [];
     for (const [name, change] of changes) {
-      outcomes.push([name, await change().then((value) => ({ resolved: value }), (error: Error) => error.message)]);
+      outcomes.push([
+        name,
+        await change().then(
+          (value) => ({ resolved: value }),
+          (error: Error) => error.message,
+        ),
+      ]);
     }
 
     expect(await tree()).toEqual(before);

@@ -75,7 +75,7 @@ export async function repairEdgeVhosts(
 
   if (result.recovered) {
     const line =
-      "Restored the edge files of an earlier change that had not been rolled back, and reloaded the edge.";
+      "Completed edge configuration recovery and reloaded the edge.";
     opts.onLog?.(`${line}\n`, "warn");
     errorDiagnostics.warn("platform/engine/lib/edge-vhost-repair", `[edge-vhost-repair] ${line}`);
   }

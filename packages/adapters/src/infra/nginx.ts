@@ -1329,7 +1329,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    *  certbot issuance: an issued certificate would otherwise be wasted on an edge that
    *  then refuses to install it. */
   async dnsChallengeProvider() {
-    await this.assertEdgeAcceptsChanges();
+    await this.withConfigLock(() => this.assertEdgeAcceptsChanges());
     const { createAcmeDnsProvider } = await import("./acme-dns");
     return createAcmeDnsProvider({
       directoryUrl: this.acmeDirectoryUrl,
@@ -1943,14 +1943,20 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const snapshots = await Promise.all(
       changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
     );
-    const journaled = opts.transition || this.edgeProxyProtocol?.mode === "https";
+    const journaled =
+      !!opts.transition || this.edgeProxyProtocol?.mode === "https" ||
+      (await this.proxyProtocolActive());
     if (journaled) await this.writeJournal(snapshots);
     try {
       for (const { path, content } of changes) {
         if (content === null) await this._rm(path);
         else await this._writeFile(path, content, 0o600);
       }
-      await this.reload();
+      await this.reload({ journalOwned: journaled });
+      // A completed change must not be reverted merely because deleting its
+      // journal fails. If this atomic write fails, the normal rollback below
+      // still has the original snapshots.
+      if (journaled) await this.markJournalCommitted();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
@@ -2031,8 +2037,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     );
   }
 
-  /** The transaction finished or was fully rolled back. A journal that cannot be removed
-   *  only means the next sweep restores the same files again, so this reports it. */
+  /** Record a successful reload before cleanup, so recovery keeps its applied routes. */
+  private async markJournalCommitted(): Promise<void> {
+    await this._writeFile(this.journalPath(), JSON.stringify({ version: 1, files: [] }), 0o600);
+  }
+
+  /** Remove a completed or fully rolled-back transaction's recovery record. */
   private async removeJournal(): Promise<void> {
     await this._rm(this.journalPath()).catch((err) => {
       observeCaughtError(err, "adapters/infra/nginx");
@@ -2063,19 +2073,35 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    */
   private async recoverFromJournal(): Promise<boolean> {
     if (!this.containerEdge) return false;
-    const journal = await this._captureFile(this.journalPath());
-    if (!journal.exists) return false;
     let files: JournalEntry[];
     try {
+      const journal = await this._captureFile(this.journalPath());
+      if (!journal.exists) return false;
       const parsed = JSON.parse(journal.content ?? "") as { version?: unknown; files?: unknown };
       if (parsed.version !== 1 || !Array.isArray(parsed.files)) throw new Error("unknown format");
       files = parsed.files as JournalEntry[];
-      const allowed = (path: unknown) =>
-        typeof path === "string" &&
-        (path === this.paths.confPath ||
-          (dirname(path) === this.sitesDir && !path.endsWith(EDGE_CONFIG_JOURNAL_NAME)));
+      const allowed = (path: unknown) => {
+        if (typeof path !== "string") return false;
+        if (path === this.paths.confPath) return true;
+        const name = edgePath.basename(path);
+        return (
+          path === join(this.sitesDir, name) &&
+          (/^[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:conf|route\.json)$/.test(name) ||
+            name === EDGE_PROXY_PROTOCOL_REAL_IP_NAME)
+        );
+      };
+      const fields = new Set(["path", "exists", "content", "mode"]);
       for (const file of files) {
-        if (!allowed(file.path) || typeof file.exists !== "boolean")
+        if (
+          !file ||
+          typeof file !== "object" ||
+          Array.isArray(file) ||
+          Object.keys(file).some((key) => !fields.has(key)) ||
+          !allowed(file.path) ||
+          typeof file.exists !== "boolean" ||
+          (file.mode !== undefined && file.mode !== 0o600) ||
+          (!file.exists && file.content !== undefined)
+        )
           throw new Error("unexpected entry");
         if (file.exists && typeof file.content !== "string")
           throw new Error("entry without content");
@@ -3151,7 +3177,7 @@ ${serveLocation}
     assertValidDomain(domain);
     // Before certbot: an issued certificate lands on disk even when its activation
     // is then refused.
-    await this.assertEdgeAcceptsChanges();
+    await this.withConfigLock(() => this.assertEdgeAcceptsChanges());
 
     // Reuse an existing cert unless the caller forces a reissue. `force` is set
     // when the service layer has already decided the current cert is missing /
@@ -3389,7 +3415,7 @@ ${serveLocation}
    */
   async renewCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult> {
     assertValidDomain(domain);
-    await this.assertEdgeAcceptsChanges();
+    await this.withConfigLock(() => this.assertEdgeAcceptsChanges());
     // Manual DNS lineages persist hook paths in renewal/*.conf. Generated hooks
     // are ephemeral, so reissue with freshly materialized hooks instead.
     if (opts?.challenge === "dns-01" || domain.startsWith("*.")) {
@@ -3434,8 +3460,14 @@ ${serveLocation}
       ["renew", "--cert-name", lineage, "--standalone", "--http-01-port", String(ACME_HTTP01_PORT), ...acmeKeyArgs(this.acmeKeyType), "--non-interactive", "--no-random-sleep-on-renew"],
       opts?.onLog,
     );
-    if (lineage !== domain) await this.useCertbotLineage(domain, join(this.certDir, lineage));
-    await this.reload();
+    // Certbot runs outside the config lock. Recheck after it finishes, while
+    // holding the lock, before publishing lineage links or loading any config
+    // another transaction may have left awaiting recovery in the meantime.
+    await this.withConfigLock(async () => {
+      await this.assertEdgeAcceptsChanges();
+      if (lineage !== domain) await this.useCertbotLineage(domain, join(this.certDir, lineage));
+      await this.reload();
+    });
 
     return this.readCertInfo(domain);
   }
@@ -3763,8 +3795,14 @@ ${serveLocation}
    * config may move). Re-detecting on every reload keeps the provider
    * in sync without requiring an API restart.
    */
-  private async reload(opts: { allowStopped?: boolean } = {}): Promise<void> {
+  private async reload(
+    opts: { allowStopped?: boolean; journalOwned?: boolean } = {},
+  ): Promise<void> {
     return this.withConfigLock(async () => {
+      // Only updateConfig may reload with the journal it just created. Every
+      // other reload must wait for the lock and refuse an interrupted change.
+      if (opts.journalOwned) this.assertEdgeProxyProtocolUsable();
+      else await this.assertEdgeAcceptsChanges();
       if (!this.containerEdge) return this.reloadConfig(opts);
 
       // Stage operator trust with the candidate config, but retain the previous
