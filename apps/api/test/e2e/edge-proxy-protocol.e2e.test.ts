@@ -519,6 +519,51 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
     ).rejects.toThrow();
     for (const [i, path] of sidecars.entries()) await executor.writeFile(path, saved[i]!);
 
+    // ── Refused: valid hand-written :443 vhosts the inventory cannot prove inert ──
+    // Each is accepted by `openresty -t` as written, so a reader that skipped quoted
+    // listeners or trusted a file's own text past an `include` would switch past it.
+    const snippets = `${dirname(CONF_PATH)}/e2e-snippets`;
+    await executor.mkdir(snippets);
+    await executor.writeFile(
+      `${snippets}/app.inc`,
+      "location / { proxy_pass http://127.0.0.1:9; }\n",
+    );
+    await executor.writeFile(`${snippets}/listen-443.inc`, "listen 443 ssl;\n");
+    const tlsFiles = `ssl_certificate ${DEFAULT_CERT};\n    ssl_certificate_key ${DEFAULT_KEY};`;
+    const handWritten: [string, string][] = [
+      [
+        "hand-quoted.conf",
+        `listen "443" ssl;\n    ${tlsFiles}\n    location / { proxy_pass http://127.0.0.1:9; }`,
+      ],
+      ["hand-include.conf", `listen 443 ssl;\n    ${tlsFiles}\n    include ${snippets}/app.inc;`],
+      [
+        "hand-listener.conf",
+        `include ${snippets}/listen-443.inc;\n    ${tlsFiles}\n    location / { proxy_pass http://127.0.0.1:9; }`,
+      ],
+      ["hand-static.conf", `listen '0.0.0.0:443' ssl;\n    ${tlsFiles}`],
+    ];
+    try {
+      for (const [name, body] of handWritten) {
+        const path = `${SITES}/${name}`;
+        await executor.writeFile(
+          path,
+          `server {\n    server_name ${name.slice(0, -5)}.example.com;\n    ${body}\n}\n`,
+        );
+        expect(await configTest()).toMatch(/test is successful/);
+        const unchangedByRefusal = await sitesSnapshot();
+        const blocked = await provider(on(UNTRUSTED_RANGE)).reapplyStoredRoutes();
+        expect(blocked.failed).toContainEqual({
+          slug: EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
+          reason: expect.stringContaining(name),
+        });
+        expect(await sitesSnapshot()).toEqual(unchangedByRefusal);
+        await executor.rm(path);
+      }
+    } finally {
+      for (const [name] of handWritten) await executor.rm(`${SITES}/${name}`);
+      await executor.rm(snippets);
+    }
+
     // ── On: the edge ALONE is updated, from the stored routes, in ONE reload ──
     const applied = await reloaded(() => trusted.reapplyStoredRoutes());
     expect(applied.failed).toEqual([]);

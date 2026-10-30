@@ -72,6 +72,22 @@
  * the mode the socket is IN (the listener file is on disk or not), never for the env,
  * so no other entrypoint can switch the socket or put one vhost ahead of the rest.
  *
+ * Which files have a :443 server is read with nginx's own token rules
+ * ({@link inspectHttpsVhost}). A file without a saved route is only left behind when it
+ * provably answers :443 with nothing but a `return`. An `include`, inherited content or
+ * an unknown directive cannot be proved inert, so such a file refuses the switch by name.
+ *
+ * ── Why a failed rollback is recorded on disk ───────────────────────────────
+ *
+ * The mode is read back from disk (the listener file is there or not), so a switch whose
+ * rollback fails part-way leaves files that describe neither mode. Every PROXY switch,
+ * and every vhost transaction while PROXY is on, first records the previous files in
+ * `_openship-config.journal` (owner-only, atomic, before the first change). It is
+ * removed once the change completes or is fully rolled back. While it exists, every
+ * change from any provider on this edge is refused with {@link EdgeConfigRecoveryError},
+ * and the routing sweep (a deploy or Retry routing) restores it first: every recorded
+ * file, then `openresty -t` and a reload, and only then the journal is removed.
+ *
  * The listener file carries `server_name openship-proxy-protocol.invalid`. `.invalid`
  * is reserved (RFC 6761) and can never be a routed hostname. It also keeps the file
  * through `sanitizeEdgeVhosts`, which drops `.conf` files without a real server_name
@@ -98,6 +114,13 @@ export const EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME = "_openship-proxy-protocol.
 export const EDGE_PROXY_PROTOCOL_REAL_IP_NAME = "_openship-proxy-protocol-realip.inc";
 /** Reserved name for the listener's dead-end server. */
 export const EDGE_PROXY_PROTOCOL_SERVER_NAME = "openship-proxy-protocol.invalid";
+/**
+ * sites-enabled file recording the previous content of every file a journaled config
+ * transaction changes. Written before the first change and removed once the edge is
+ * consistent again, so it outlives a failed rollback or a crash. Not `*.conf`: nginx never
+ * loads it.
+ */
+export const EDGE_CONFIG_JOURNAL_NAME = "_openship-config.journal";
 
 export type EdgeProxyProtocolSetting =
   | { mode: "off" }
@@ -107,6 +130,19 @@ export type EdgeProxyProtocolSetting =
 /** Thrown before any write when the setting is invalid. See the module header. */
 export class EdgeProxyProtocolConfigError extends Error {
   override name = "EdgeProxyProtocolConfigError";
+}
+
+/**
+ * A config transaction failed and its files could not all be restored, or such a
+ * transaction is still recorded in {@link EDGE_CONFIG_JOURNAL_NAME}.
+ *
+ * The edge was not reloaded and still runs its previous configuration, but the files on
+ * disk are partly changed. Any later reload would load them, so every change is refused
+ * until the routing sweep (a deploy or Retry routing) restores the recorded files,
+ * validates them and reloads.
+ */
+export class EdgeConfigRecoveryError extends Error {
+  override name = "EdgeConfigRecoveryError";
 }
 
 /** IPv4/IPv6 literal → integer, or null. IPv6 may compress and may embed IPv4. */
@@ -214,7 +250,12 @@ export function readEdgeProxyProtocolSetting(
  * reject every reload. Temp files from atomic writes (`….inc.tmp-…`) never match.
  */
 export function edgeProxyProtocolRealIpIncludeLine(nginxSitesDir: string): string {
-  return `    include ${nginxSitesDir}/${EDGE_PROXY_PROTOCOL_REAL_IP_NAME.slice(0, -1)}[${EDGE_PROXY_PROTOCOL_REAL_IP_NAME.slice(-1)}];`;
+  return `    include ${edgeProxyProtocolRealIpIncludePath(nginxSitesDir)};`;
+}
+
+/** The argument of {@link edgeProxyProtocolRealIpIncludeLine}. */
+export function edgeProxyProtocolRealIpIncludePath(nginxSitesDir: string): string {
+  return `${nginxSitesDir}/${EDGE_PROXY_PROTOCOL_REAL_IP_NAME.slice(0, -1)}[${EDGE_PROXY_PROTOCOL_REAL_IP_NAME.slice(-1)}]`;
 }
 
 /** Content of {@link EDGE_PROXY_PROTOCOL_REAL_IP_NAME}. `trusted` must be validated. */
@@ -260,4 +301,308 @@ server {
 ${EDGE_NOT_FOUND_LOCATION}
 }
 `;
+}
+
+// ─── Which sites-enabled files have a :443 server ────────────────────────────
+//
+// A switch must re-render every :443 server that serves content, and may only leave
+// behind one it can PROVE serves nothing. So a file is read with nginx's own token
+// rules (quotes, escapes, `#` comments), and anything this reader cannot follow
+// (an `include`, a directive outside a small inert set, a listen it cannot parse)
+// counts as possibly :443 and possibly serving. The transition and the drift pass
+// both ask this one function, so they always pick the same files.
+
+interface ConfDirective {
+  name: string;
+  args: string[];
+  block?: ConfDirective[];
+}
+
+/** A sites-enabled file this reader cannot follow. The message names the construct. */
+class EdgeConfReadError extends Error {
+  override name = "EdgeConfReadError";
+}
+
+/** nginx unescapes these in every token, quoted or not, and keeps any other `\x`. */
+const TOKEN_ESCAPES: Record<string, string> = {
+  '"': '"',
+  "'": "'",
+  "\\": "\\",
+  t: "\t",
+  r: "\r",
+  n: "\n",
+};
+
+/** Directives, by nginx's tokenizer rules (`ngx_conf_read_token`). */
+function readConf(text: string): ConfDirective[] {
+  let i = 0;
+  const isSpace = (ch: string | undefined) =>
+    ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+  const unescape = (raw: string) =>
+    raw.replace(/\\(.)/gs, (all, ch: string) => TOKEN_ESCAPES[ch] ?? all);
+
+  /** Next token, or a `;` `{` `}` punctuator, or null at end of input. */
+  const next = (): { word: string } | { punct: ";" | "{" | "}" } | null => {
+    for (;;) {
+      while (isSpace(text[i])) i++;
+      if (i >= text.length) return null;
+      if (text[i] !== "#") break;
+      while (i < text.length && text[i] !== "\n") i++;
+    }
+    const ch = text[i]!;
+    if (ch === ";" || ch === "{" || ch === "}") {
+      i++;
+      return { punct: ch };
+    }
+    if (ch === '"' || ch === "'") {
+      const start = ++i;
+      while (i < text.length && text[i] !== ch) i += text[i] === "\\" ? 2 : 1;
+      if (i >= text.length) throw new EdgeConfReadError("a quoted value is not closed");
+      const word = unescape(text.slice(start, i));
+      i++;
+      const after = text[i];
+      // `)` closes an `if (...)` condition and starts the next token.
+      if (
+        after !== undefined &&
+        !isSpace(after) &&
+        after !== ";" &&
+        after !== "{" &&
+        after !== ")"
+      ) {
+        throw new EdgeConfReadError(`unexpected ${JSON.stringify(after)} after a quoted value`);
+      }
+      return { word };
+    }
+    const start = i;
+    // An unquoted value ends only at whitespace, `;` or `{`. A `{` right after `$` opens
+    // a `${name}` variable instead, and a `}` or quote inside a value is literal.
+    while (i < text.length) {
+      const c = text[i]!;
+      if (c === "\\") {
+        i += 2;
+        continue;
+      }
+      if (isSpace(c) || c === ";" || (c === "{" && text[i - 1] !== "$")) break;
+      i++;
+    }
+    return { word: unescape(text.slice(start, i)) };
+  };
+
+  /** Skip the body of a `*_by_lua_block`, which ngx_lua reads as Lua, not as nginx. */
+  const skipLua = (): void => {
+    let depth = 1;
+    const longBracket = () => text.slice(i).match(/^\[(=*)\[/);
+    const skipLong = (level: string) => {
+      const close = text.indexOf(`]${level}]`, i);
+      if (close < 0) throw new EdgeConfReadError("a Lua long string is not closed");
+      i = close + level.length + 2;
+    };
+    while (i < text.length) {
+      const c = text[i]!;
+      if (c === "-" && text[i + 1] === "-") {
+        i += 2;
+        const long = longBracket();
+        if (long) {
+          i += long[0].length;
+          skipLong(long[1]!);
+        } else {
+          while (i < text.length && text[i] !== "\n") i++;
+        }
+        continue;
+      }
+      const long = c === "[" ? longBracket() : null;
+      if (long) {
+        i += long[0].length;
+        skipLong(long[1]!);
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        i++;
+        while (i < text.length && text[i] !== c) i += text[i] === "\\" ? 2 : 1;
+        if (i >= text.length) throw new EdgeConfReadError("a Lua string is not closed");
+        i++;
+        continue;
+      }
+      i++;
+      if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) return;
+    }
+    throw new EdgeConfReadError("a Lua block is not closed");
+  };
+
+  const block = (nested: boolean): ConfDirective[] => {
+    const directives: ConfDirective[] = [];
+    let words: string[] = [];
+    for (;;) {
+      const token = next();
+      if (token === null) {
+        if (nested) throw new EdgeConfReadError("a block is not closed");
+        if (words.length) throw new EdgeConfReadError(`"${words[0]}" is not terminated by ";"`);
+        return directives;
+      }
+      if ("word" in token) {
+        words.push(token.word);
+        continue;
+      }
+      if (token.punct === "}") {
+        if (!nested) throw new EdgeConfReadError('unexpected "}"');
+        if (words.length) throw new EdgeConfReadError(`"${words[0]}" is not terminated by ";"`);
+        return directives;
+      }
+      const [name, ...args] = words;
+      if (name === undefined) throw new EdgeConfReadError(`unexpected "${token.punct}"`);
+      if (token.punct === "{" && name.endsWith("_by_lua_block")) {
+        skipLua();
+        directives.push({ name, args, block: [] });
+      } else {
+        directives.push(token.punct === "{" ? { name, args, block: block(true) } : { name, args });
+      }
+      words = [];
+    }
+  };
+
+  return block(false);
+}
+
+/** Port of a `listen` address, 80 when it names only a host, null for a unix socket. */
+function listenPort(address: string): number | null {
+  if (address.startsWith("unix:")) return null;
+  const bracketed = address.match(/^\[[^\]]*\](?::(.*))?$/);
+  const port = bracketed
+    ? bracketed[1]
+    : /^\d+$/.test(address)
+      ? address
+      : address.includes(":")
+        ? address.slice(address.lastIndexOf(":") + 1)
+        : undefined;
+  if (port === undefined) return 80;
+  if (!/^\d{1,5}$/.test(port))
+    throw new EdgeConfReadError(`listen ${JSON.stringify(address)} has no numeric port`);
+  return Number(port);
+}
+
+/** Server-scope directives that neither serve content nor change what is served. */
+const INERT_SERVER = new Set([
+  "listen",
+  "server_name",
+  "server_tokens",
+  "return",
+  "location",
+  "http2",
+  "ssl_certificate",
+  "ssl_certificate_key",
+  "ssl_reject_handshake",
+  "ssl_protocols",
+  "ssl_ciphers",
+  "ssl_prefer_server_ciphers",
+  "ssl_session_cache",
+  "ssl_session_timeout",
+  "ssl_session_tickets",
+  "access_log",
+  "error_log",
+]);
+/** Location-scope ones. `types` only maps extensions, which `return` never reads. */
+const INERT_LOCATION = new Set([
+  "return",
+  "location",
+  "default_type",
+  "types",
+  "server_tokens",
+  "access_log",
+  "error_log",
+]);
+
+/**
+ * Does this server provably answer every request with a `return`?
+ *
+ * A server-scope `return` does, when nothing that could run before it is present.
+ * Otherwise every location must `return` and a `location /` must catch every URI: a
+ * request no location matches is served from the inherited `root`.
+ */
+function returnsOnly(server: ConfDirective[]): boolean {
+  const inert = (directives: ConfDirective[], allowed: Set<string>): boolean =>
+    directives.every((d) => {
+      if (!allowed.has(d.name)) return false;
+      if (d.name === "types") return true;
+      if (d.name !== "location") return !d.block;
+      const body = d.block ?? [];
+      return inert(body, INERT_LOCATION) && body.some((child) => child.name === "return");
+    });
+  if (!inert(server, INERT_SERVER)) return false;
+  if (server.some((d) => d.name === "return")) return true;
+  return server.some(
+    (d) => d.name === "location" && (d.args.join(" ") === "/" || d.args.join(" ") === "^~ /"),
+  );
+}
+
+export interface HttpsVhostShape {
+  /** "unknown" when the file's :443 servers cannot be determined. */
+  https: "no" | "yes" | "unknown";
+  /** Every :443 server it has provably serves nothing but a `return`. */
+  returnOnly: boolean;
+  /** Why `https` is "unknown", or why a :443 server is not provably inert. */
+  reason?: string;
+  /** Does any directive include exactly `includePath`? */
+  includes: (includePath: string) => boolean;
+}
+
+/** What a sites-enabled `.conf` serves on :443, read the way nginx reads it. */
+export function inspectHttpsVhost(conf: string): HttpsVhostShape {
+  let directives: ConfDirective[];
+  try {
+    directives = readConf(conf);
+  } catch (err) {
+    if (!(err instanceof EdgeConfReadError)) throw err;
+    return {
+      https: "unknown",
+      returnOnly: false,
+      reason: `it cannot be read: ${err.message}`,
+      includes: () => false,
+    };
+  }
+  const included = (path: string, list: ConfDirective[]): boolean =>
+    list.some(
+      (d) => (d.name === "include" && d.args[0] === path) || (!!d.block && included(path, d.block)),
+    );
+  const includes = (path: string) => included(path, directives);
+
+  let https: HttpsVhostShape["https"] = "no";
+  let returnOnly = true;
+  let reason: string | undefined;
+  const unknown = (why: string) => {
+    https = "unknown";
+    returnOnly = false;
+    reason ??= why;
+  };
+  for (const d of directives) {
+    if (d.name === "include")
+      unknown(`it includes ${d.args[0] ?? "a file"}, which may add a :443 server`);
+    if (d.name !== "server" || !d.block) continue;
+    let tls = false;
+    try {
+      tls = d.block.some(
+        (child) => child.name === "listen" && listenPort(child.args[0] ?? "") === 443,
+      );
+    } catch (err) {
+      if (!(err instanceof EdgeConfReadError)) throw err;
+      unknown(`it has ${err.message}`);
+      continue;
+    }
+    const include = d.block.find((child) => child.name === "include");
+    if (!tls) {
+      if (include)
+        unknown(
+          `its server includes ${include.args[0] ?? "a file"}, which may add a :443 listener`,
+        );
+      continue;
+    }
+    if (https === "no") https = "yes";
+    if (!returnsOnly(d.block)) {
+      returnOnly = false;
+      reason ??= include
+        ? `its :443 server includes ${include.args[0] ?? "a file"}`
+        : "its :443 server is not provably a return-only dead end";
+    }
+  }
+  return { https, returnOnly: https !== "no" && returnOnly, reason, includes };
 }

@@ -1982,10 +1982,6 @@ function buildDeployEnvironment(
                   serverId: phase.serverId ?? undefined,
                   onLog: (m) => logger.log(m, "warn"),
                 });
-                // Converge the box's other vhosts only when this deploy needs edge routing.
-                await repairEdgeVhosts(phase.routing, {
-                  onLog: (m, level) => logger.log(m, level ?? "info"),
-                });
               }
             } catch (err) {
               observeCaughtError(err, "platform/engine/modules/deployments/build-pipeline");
@@ -1998,6 +1994,17 @@ function buildDeployEnvironment(
                 "warn",
               );
             }
+          }
+
+          // Converge the box's other vhosts, and apply a pending edge-wide setting, before
+          // anything is stopped, whenever this deploy needs edge routing, with or without
+          // a system manager. Any other repair failure is a logged warning; an edge that
+          // refuses every change throws here, while the previous deployment still serves.
+          if (plannedDomains.length > 0) {
+            throwIfDeploymentCancelled(phase.cancellationSignal);
+            await repairEdgeVhosts(phase.routing, {
+              onLog: (m, level) => logger.log(m, level ?? "info"),
+            });
           }
 
           throwIfDeploymentCancelled(phase.cancellationSignal);

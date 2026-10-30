@@ -355,7 +355,7 @@ OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153   # the proxy; IPs or CIDRs
   - certificates are not issued, installed or renewed, so fix it before a renewal is
     due;
   - removing a domain or project leaves its route in place;
-  - Retry routing fails with the same error.
+  - Retry routing fails with the same error, before it writes any of the project's routes.
 - Once on, every TLS connection to :443 must start with a PROXY header. Plain TLS is
   refused, so the proxy must send it for every hostname it forwards to this edge.
 
@@ -375,10 +375,34 @@ Turning it on is refused, with nothing changed, while any :443 vhost that serves
 cannot be re-rendered: a vhost without a saved route (`<name>.route.json`), with a corrupt
 one, or whose route no longer renders. Left behind, it would keep its previous trust on a
 socket where the peer is now the proxy. A Cloud-fronted `*.opsh.io` vhost, which trusts
-`X-Real-IP` from any peer, is the dangerous case. Retry routing reports the files by name.
-Fix or remove them, then retry. Turning it off is not blocked: a vhost that cannot be
-re-rendered keeps an include that matches no file once the include is removed, which is
-the behaviour without this feature.
+`X-Real-IP` from any peer, is the dangerous case. Files are read with nginx's own quoting
+rules, and a file without a saved route is only left behind when every :443 server in it
+provably answers with a `return` and nothing else (the catch-all shape). A file that uses
+`include`, serves files from the default root, or that cannot be read is treated as
+serving content. Retry routing reports the files by name. Fix or remove them, then retry.
+Turning it off is not blocked: a vhost that cannot be re-rendered keeps an include that
+matches no file once the include is removed, which is the behaviour without this feature.
+
+If a switch fails part-way and a file then cannot be restored (a full disk, a read-only
+mount), the edge has not been reloaded and still runs its previous configuration, but its
+files describe neither mode. Every PROXY switch, and every vhost, challenge or certificate
+activation while PROXY protocol is on, first records the files it will change in
+`sites-enabled/_openship-config.journal` (owner-only, written before the first change, and
+never loaded by nginx). While that file exists, every change to the edge is refused, from
+any process: route writes, certificates, challenges, rate limits and deploys with domains,
+which stop before replacing anything. The routing sweep that the next deploy or Retry
+routing runs restores every recorded file, validates and reloads, and only then removes
+the journal. If that fails too, the journal stays and the error names the file. A
+container restart still loads whatever is on disk, so fix the cause and run Retry routing
+before restarting the edge.
+
+Where the sweep runs: a single-app deploy with domains and a Compose (multi-service)
+deploy with exposed services, project domains or fan-out hostnames run it before the first
+replacement, with or without a system manager. An edge that refuses every change fails the
+deploy there, while the previous release still serves; any other sweep failure is only
+logged. Retry routing runs the same sweep before the project's routes, on whichever server
+the project's deployment targets. On any box, including remote and bare edges, that also
+re-renders vhosts an older release wrote, as a deploy already does.
 
 1. Edit `.env` and run `openship up`. The changed `.env` recreates the api and the edge,
    since `env_file` is only read when a container is created.

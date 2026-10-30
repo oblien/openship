@@ -14,13 +14,19 @@
  * path rather than behind an operator action.
  *
  * Best-effort like everything else on the routing path: a repair that can't run is a
- * warning, never a failed deploy. The one exception is an edge that refuses EVERY
- * config change (an invalid OPENSHIP_EDGE_PROXY_PROTOCOL setting): that is rethrown so
- * a deploy can stop before its cutover instead of retiring the route it replaces.
+ * warning, never a failed deploy. The exception is an edge that refuses EVERY config
+ * change: an invalid OPENSHIP_EDGE_PROXY_PROTOCOL setting, or an earlier change whose
+ * files could not be restored (and that this sweep could not restore either). That is
+ * rethrown, so a deploy stops before its cutover instead of retiring the route it
+ * replaces, and Retry stops before writing the project's routes.
  */
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import type { Platform } from "@repo/adapters";
+import {
+  EdgeConfigRecoveryError,
+  EdgeProxyProtocolConfigError,
+  type Platform,
+} from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 
 type Routing = Platform["routing"];
@@ -29,15 +35,16 @@ export interface EdgeVhostRepairResult {
   scanned: number;
   repaired: string[];
   failed: { slug: string; reason: string }[];
+  recovered?: boolean;
 }
 
 /**
- * Did the edge refuse a change because its own setting is invalid
- * (`EdgeProxyProtocolConfigError`)? Matched by name: callers run under test doubles of
- * `@repo/adapters` that do not export the class.
+ * Does this edge refuse every change? Its PROXY protocol setting is invalid, or its
+ * files are half restored after a failed change. Either way the next route write would
+ * fail too, or reload the half-restored files.
  */
 export function isEdgeConfigRefusal(err: unknown): boolean {
-  return err instanceof Error && err.name === "EdgeProxyProtocolConfigError";
+  return err instanceof EdgeProxyProtocolConfigError || err instanceof EdgeConfigRecoveryError;
 }
 
 /**
@@ -66,6 +73,12 @@ export async function repairEdgeVhosts(
     return { ...empty, failed: [{ slug: "*", reason }] };
   }
 
+  if (result.recovered) {
+    const line =
+      "Restored the edge files of an earlier change that had not been rolled back, and reloaded the edge.";
+    opts.onLog?.(`${line}\n`, "warn");
+    errorDiagnostics.warn("platform/engine/lib/edge-vhost-repair", `[edge-vhost-repair] ${line}`);
+  }
   if (result.repaired.length > 0) {
     const line =
       `Updated ${result.repaired.length} edge route(s) to this version's config shape: ` +

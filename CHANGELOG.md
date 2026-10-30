@@ -12,7 +12,10 @@ Runtime security notices use the signed feed published from `security-advisories
   the client address to the edge, its rate limits and its apps. Only port 443 of the
   local edge changes. Empty or invalid trust lists are refused before any write.
   Enabling and disabling switch every HTTPS vhost in one reload, from a deploy or
-  Retry routing, or are refused with nothing changed (#1050).
+  Retry routing, or are refused with nothing changed. If a switch fails and cannot
+  be rolled back, the edge refuses every change until a deploy or Retry routing
+  restores the recorded files. Compose deploys now run the same edge sweep as
+  single-app deploys before replacing services (#1050).
 
 - **Keep monorepo runtime images aligned with each service** — use the service's
   framework and selected builder for its runtime instead of inheriting an

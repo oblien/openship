@@ -23,7 +23,7 @@ import { isAbsent, isAlreadyInState } from "../../lib/remote-state";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { reconcileServerEdge } from "../../lib/edge-reconcile";
-import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
+import { isEdgeConfigRefusal, repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 import { sshManager } from "../../lib/ssh-manager";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
@@ -494,11 +494,13 @@ async function retryLiveProjectRouting(
     routeWarnings.push(message);
     log(message);
   };
-  // The box's other vhosts first, through the same sweep a deploy runs. Retry is how an
-  // operator applies an edge-wide change such as a new PROXY protocol setting, and that
-  // has to reach every vhost at once, not only this project's. Not applying it fails
-  // the Retry. Another project's vhost the per-route pass could not update is only
-  // reported (by the sweep's own log), as it is on a deploy.
+  // The box's other vhosts first, through the same sweep a deploy runs, on whichever
+  // server this deployment targets. Retry is how an operator applies an edge-wide change
+  // such as a new PROXY protocol setting, and that has to reach every vhost at once, not
+  // only this project's; on any box it also refreshes vhosts an older release wrote, as
+  // a deploy does. Not applying the edge-wide change fails the Retry. Another project's
+  // vhost the per-route pass could not update is only reported (by the sweep's own log),
+  // as it is on a deploy.
   log("Updating the edge's other routes…");
   try {
     const repair = await withDeploymentPlatform(dep, ({ routing }) =>
@@ -511,6 +513,20 @@ async function retryLiveProjectRouting(
     }
   } catch (error) {
     observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service");
+    // This edge refuses every change, so writing this project's routes would fail the
+    // same way, or reload files a failed change left half restored. Stop here.
+    if (isEdgeConfigRefusal(error)) {
+      const warning = `Edge configuration: ${safeErrorMessage(error)}`;
+      log(warning);
+      const fresh = p.activeDeploymentId ? await findActiveDeployment(p) : null;
+      await markRoutingWarning(fresh, warning).catch((diagnosticFailure) => {
+        observeCaughtError(
+          diagnosticFailure,
+          "platform/engine/modules/projects/project-runtime.service",
+        );
+      });
+      return { ok: false, warning };
+    }
     onWarning(`Edge configuration: ${safeErrorMessage(error)}`);
   }
 

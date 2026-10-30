@@ -239,6 +239,7 @@ export { bakedEdgeNginxConf } from "./infra/edge-baked-conf";
 export {
   EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
   EDGE_PROXY_PROTOCOL_REAL_IP_NAME,
+  EdgeConfigRecoveryError,
   EdgeProxyProtocolConfigError,
   readEdgeProxyProtocolSetting,
   type EdgeProxyProtocolSetting,

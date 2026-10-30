@@ -948,3 +948,52 @@ it("Retry switches PROXY protocol for every vhost on the box at once, or reports
   expect(h.files.has(listener)).toBe(false);
   for (const path of projectConfs()) expect(h.files.get(path), path).not.toContain(include);
 }, 30_000);
+
+it("Retry stops before writing the project's routes while an edge change is half restored, and recovers it", async () => {
+  const sites = OPENRESTY_DEFAULT_PATHS.sitesDir;
+  const journal = `${sites}/_openship-config.journal`;
+  const projectConf = `${sites}/${routes[0]!.hostname.replace(/\./g, "-")}.conf`;
+  const exec = vi.spyOn(
+    (nginx as unknown as { executor: { exec: (command: string) => Promise<string> } }).executor,
+    "exec",
+  );
+  try {
+    // A journal no one can read: the sweep cannot restore it, so nothing may be reloaded.
+    h.files.set(journal, "{");
+    const before = new Map(h.files);
+    writes.mockClear();
+    exec.mockClear();
+
+    const refused = await retryProjectRoutingOperation(context, "project");
+    expect(refused.ok).toBe(false);
+    expect(refused.warning).toMatch(
+      /_openship-config\.journal records an interrupted edge change but cannot be read/,
+    );
+    expect(writes).not.toHaveBeenCalled();
+    expect(exec.mock.calls.some(([command]) => command.includes(" -s reload"))).toBe(false);
+    expect(new Map(h.files)).toEqual(before);
+    expect((await h.repos.deployment.findById("deployment"))?.meta).toMatchObject({
+      deployWarning: expect.stringMatching(/cannot be read/),
+    });
+
+    // A readable journal: Retry restores the recorded file, reloads, removes the
+    // journal, and only then applies the project's routes.
+    const recorded = h.files.get(projectConf)!;
+    h.files.set(projectConf, "server { half restored }\n");
+    h.files.set(
+      journal,
+      JSON.stringify({
+        version: 1,
+        files: [{ path: projectConf, exists: true, content: recorded, mode: 0o600 }],
+      }),
+    );
+    exec.mockClear();
+    expect(await retryProjectRoutingOperation(context, "project")).toEqual({ ok: true });
+    expect(h.files.has(journal)).toBe(false);
+    expect(h.files.get(projectConf)).toBe(recorded);
+    expect(exec.mock.calls.some(([command]) => command.includes(" -s reload"))).toBe(true);
+  } finally {
+    h.files.delete(journal);
+    exec.mockRestore();
+  }
+}, 30_000);

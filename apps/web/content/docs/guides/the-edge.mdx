@@ -95,8 +95,13 @@ OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153
   live, certificates are not issued or renewed, and removed domains keep their
   route. Fix the value before you deploy, renew or remove domains.
 - Port 443 switches for every HTTPS route at once. If one route cannot be
-  updated (for example, its saved route file is missing or corrupt), nothing
-  changes and Retry routing names that route.
+  updated (for example, its saved route file is missing or corrupt, or a
+  hand-written vhost uses `include` or serves files), nothing changes and Retry
+  routing names that file.
+- If a switch fails and its previous files cannot all be restored, the edge
+  keeps running its previous configuration and refuses every change, including
+  deploys with domains. Fix the cause (for example, a full disk), then run Retry
+  routing: it restores the recorded files, checks them and reloads.
 - While it is on, port 443 refuses TLS connections without a PROXY header.
 
 Run `openship up`, apply routing once (a deploy or Retry routing), then enable
