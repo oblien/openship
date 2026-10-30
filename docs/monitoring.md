@@ -322,6 +322,58 @@ If publication or reload fails, it restores the previous include before recoveri
 recovery does not reapply the rejected settings. If restoration itself fails, the operation
 reports the rollback failure and does not reload a partially restored configuration.
 
+### TLS passthrough proxies (PROXY protocol)
+
+A TCP proxy that forwards :443 without terminating TLS (Traefik `HostSNI` with
+`passthrough: true`, HAProxy `mode tcp`, a TCP load balancer) cannot add a header, so every
+HTTPS visitor reaches the edge as the proxy's address. On the **local Compose edge**, the
+edge can instead read the PROXY protocol v1/v2 header such a proxy sends before the TLS
+handshake:
+
+```bash
+# .env next to the Compose stack
+OPENSHIP_EDGE_PROXY_PROTOCOL=https
+OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153   # the proxy; IPs or CIDRs
+```
+
+- Only :443 changes. :80 (ACME http-01, edge challenges, Cloud's free-domain front) keeps
+  plain HTTP and the Cloudflare/`OPENSHIP_EDGE_TRUSTED_PROXIES` behaviour above.
+- The trust list is separate from `OPENSHIP_EDGE_TRUSTED_PROXIES` on purpose. That list
+  trusts `CF-Connecting-IP` from those peers on every port, including :80. Adding the
+  passthrough proxy there would let anyone whose :80 traffic it forwards choose their own
+  address. While PROXY protocol is on, :443 trusts only the PROXY header, and only from
+  the listed peers. `CF-Connecting-IP` is not honoured there.
+- The variable applies only to the edge on the machine running the api. Remote servers
+  and bare OpenResty edges are not changed.
+- An empty list, `/0`, a CIDR with host bits set, or any entry that is not an IP/CIDR is
+  refused, not dropped. Routing changes fail with the variable named in the error, and
+  the edge keeps serving its previous configuration until the value is fixed. Without a
+  list of its own, nginx would trust its inherited Cloudflare list for PROXY headers.
+- Once on, every TLS connection to :443 must start with a PROXY header. Plain TLS is
+  refused, so the proxy must send it for every hostname it forwards to this edge.
+
+How it is applied: the edge writes `sites-enabled/_openship-proxy-protocol.conf` (the one
+`listen 443 ssl proxy_protocol`, which nginx applies to the whole :443 socket, including the
+image's catch-all) and `sites-enabled/_openship-proxy-protocol-realip.inc` (the
+`real_ip_header proxy_protocol` block every generated :443 vhost includes). Both are
+published with the next reload and restored if publication or `openresty -t` fails.
+Changing the trust list rewrites one file and reloads once. Turning the feature on or off
+also re-renders the stored :443 vhosts, without redeploying the apps.
+
+1. Edit `.env` and run `openship up`. The changed `.env` recreates the api and the edge,
+   since `env_file` is only read when a container is created.
+2. Apply routing once: a deploy, or Retry routing on any project served by this edge.
+3. Turn on `proxyProtocol` (for example `version: 2`) in the proxy's TCP service right
+   away. Between steps 2 and 3, HTTPS through the proxy fails, because one side expects
+   the header and the other does not send it. To turn it off, reverse the order: set
+   `OPENSHIP_EDGE_PROXY_PROTOCOL=off`, run `openship up`, apply routing, then remove
+   `proxyProtocol` from the proxy.
+
+The two files survive edge restarts. Unrouted SNI names still get the catch-all page through
+the PROXY header, but that page logs the proxy's address. Before downgrading to a release
+without this feature, turn it off and apply routing first. An older release neither updates
+nor removes the two files, so :443 would keep requiring PROXY headers.
+
 ### Free `*.opsh.io` domains
 
 A free domain is served by Openship Cloud's own edge, which proxies to your box on plain :80

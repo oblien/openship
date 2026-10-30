@@ -74,6 +74,30 @@ of a self-hosted edge, configure which proxy addresses it trusts:
 Reapply routing after changing these settings. A reload alone does not
 regenerate configuration.
 
+### TLS passthrough proxies (PROXY protocol)
+
+If a TCP proxy forwards port 443 to a Compose install without terminating TLS
+(for example Traefik with `passthrough: true`), it cannot add a client-IP
+header. It can send a PROXY protocol header instead:
+
+```bash
+OPENSHIP_EDGE_PROXY_PROTOCOL=https
+OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153
+```
+
+- Only HTTPS on port 443 of the local Compose edge changes. Port 80, ACME,
+  remote servers and Openship Cloud are unchanged.
+- List only the proxies that send the header. This list is separate from
+  `OPENSHIP_EDGE_TRUSTED_PROXIES`, which also trusts headers on port 80.
+- An empty or invalid list is rejected, and routing keeps its previous
+  configuration until you fix it.
+- While it is on, port 443 refuses TLS connections without a PROXY header.
+
+Run `openship up`, apply routing once (a deploy or Retry routing), then enable
+`proxyProtocol` on the proxy. HTTPS through the proxy fails between those two
+steps. To turn it off, set the value to `off` and apply routing before you
+remove `proxyProtocol` from the proxy.
+
 ### Visitor country
 
 The self-hosted edge sends `x-visitor-country` to upstream apps using its local
