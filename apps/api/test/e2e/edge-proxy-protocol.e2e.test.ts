@@ -14,8 +14,14 @@
  *     with zero TLS vhosts, and without a "protocol options redefined" warning;
  *   - the realip trust list REPLACES the http-scope one at server scope, so a trusted
  *     PROXY peer does not also gain CF-Connecting-IP trust, on :443 or on :80;
- *   - on → trust change → off → on converges every vhost with no redeploy;
- *   - a refused reload restores the previous include, and the edge keeps serving it.
+ *   - on → trust change → off → on converges every vhost with no redeploy, and the
+ *     socket and every :443 vhost switch in one reload;
+ *   - a route write never moves the socket, and a transition one vhost cannot follow
+ *     (here the Cloud host, whose own :443 block trusts X-Real-IP from anyone) is
+ *     refused with every file and the running edge unchanged;
+ *   - a refused batch, or a failed certificate install, leaves the previous mode and
+ *     vhosts serving;
+ *   - an invalid setting writes nothing: no vhost, no challenge token, no certificate.
  *
  * The trusted peer is MEASURED, not assumed: it is whatever address the edge sees
  * for this test's own connections (the Docker gateway, which differs between Docker
@@ -27,7 +33,7 @@
 
 import { it, expect, beforeAll, afterAll } from "vitest";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect as http2Connect } from "node:http2";
 import { connect as netConnect, type Socket } from "node:net";
@@ -39,6 +45,7 @@ import { promisify } from "node:util";
 import {
   DockerEdgeExecutor,
   DockerRuntime,
+  EDGE_CHALLENGE_DIR,
   EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
   EDGE_PROXY_PROTOCOL_REAL_IP_NAME,
   NginxProvider,
@@ -261,6 +268,125 @@ async function eventually<T>(fn: () => Promise<T>, timeoutMs = 10_000): Promise<
 
 const xri = (body: string) => body.match(/xri=(\S*)/)?.[1];
 
+/** Worker pids, and whether any old-generation worker is still draining. */
+async function workersOf(executor: DockerEdgeExecutor) {
+  const ps = await executor.exec("ps -o pid,args");
+  const lines = ps.split("\n").filter((l) => l.includes("nginx: worker process"));
+  return {
+    pids: lines.map((l) => l.trim().split(/\s+/)[0]!),
+    draining: lines.some((l) => l.includes("shutting down")),
+  };
+}
+
+/**
+ * Run an action that reloads the edge (possibly several times), then wait until the
+ * workers are all new, none is draining, and the set has stayed the same for a
+ * second. `openresty -s reload` returns once the signal is sent, so an older worker
+ * generation can otherwise answer the next request with a previous config. That
+ * race can both hide a missing reload and fail a correct one. The first assertion
+ * after each change is also retried, and is chosen so the previous config cannot
+ * satisfy it.
+ */
+async function settleReload<T>(executor: DockerEdgeExecutor, action: () => Promise<T>): Promise<T> {
+  const before = (await workersOf(executor)).pids;
+  const result = await action();
+  let stable = "";
+  let since = 0;
+  await eventually(async () => {
+    const now = await workersOf(executor);
+    const key = now.pids.join(",");
+    if (now.draining || !now.pids.length || now.pids.some((p) => before.includes(p))) {
+      stable = "";
+      throw new Error(`edge reload not settled: ${JSON.stringify({ before, now })}`);
+    }
+    if (key !== stable) {
+      stable = key;
+      since = Date.now();
+    }
+    if (Date.now() - since < 1_000) throw new Error("edge workers not yet stable");
+  }, 20_000);
+  return result;
+}
+
+/**
+ * Boot a disposable edge from the base image with the checked-in baked config.
+ *
+ * `binds` mounts host directories into it. `seed` runs before OpenResty starts, through
+ * a container-mode executor, so the baked config finds its placeholder pair and the Lua.
+ */
+async function startEdge(
+  runtime: DockerRuntime,
+  opts: { binds?: string[]; seed?: (executor: DockerEdgeExecutor) => Promise<void> } = {},
+): Promise<{
+  container: Dockerode.Container;
+  ports: { http: number; https: number };
+  executor: DockerEdgeExecutor;
+}> {
+  const image = await edgeBaseImage();
+  await runtime.pullImage(image);
+  const placeholder = await placeholderCert();
+  const baked = await readFile(join(REPO_ROOT, "apps/edge/nginx.conf"), "utf8");
+
+  // Boot only once the test has written certificates and Lua through the executor;
+  // the baked config needs the placeholder pair to exist before it can load at all.
+  const script =
+    `set -e\n` +
+    `mkdir -p ${dirname(DEFAULT_CERT)} ${SITES} ${LUA_DIR} /var/www/acme /etc/letsencrypt/live\n` +
+    heredoc(DEFAULT_CERT, placeholder.cert) +
+    heredoc(DEFAULT_KEY, placeholder.key) +
+    heredoc(CONF_PATH, baked) +
+    `while [ ! -f ${READY} ]; do sleep 0.1; done\n` +
+    `openresty -t\n` +
+    `exec openresty -g 'daemon off;'\n`;
+  const container = await runtime.docker.createContainer({
+    Image: image,
+    Entrypoint: ["sh", "-c"],
+    Cmd: [script],
+    Tty: true,
+    ExposedPorts: { "80/tcp": {}, "443/tcp": {} },
+    HostConfig: {
+      PortBindings: {
+        "80/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
+        "443/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
+      },
+      ...(opts.binds ? { Binds: opts.binds } : {}),
+    },
+  });
+  await container.start();
+  const info = await container.inspect();
+  const portOf = (spec: string) => Number(info.NetworkSettings.Ports?.[spec]?.[0]?.HostPort);
+  const ports = { http: portOf("80/tcp"), https: portOf("443/tcp") };
+  const executor = new DockerEdgeExecutor({
+    containerName: info.Id,
+    socketPath: dockerSocketPath,
+    fileMode: "container",
+  });
+
+  for (const name of await readdir(LUA_SOURCE)) {
+    if (name.endsWith(".lua")) {
+      await executor.writeFile(`${LUA_DIR}/${name}`, await readFile(join(LUA_SOURCE, name), "utf8"));
+    }
+  }
+  await opts.seed?.(executor);
+  await executor.exec(`touch ${READY}`);
+
+  for (let i = 0; ; i++) {
+    const state = await container.inspect();
+    if (!state.State.Running) {
+      const log = (await container.logs({ stdout: true, stderr: true, tail: 40 })).toString();
+      throw new Error(`edge exited (${state.State.ExitCode}):\n${log}`);
+    }
+    try {
+      await askHttp(ports.http, "/", UNROUTED);
+      break;
+    } catch (err) {
+      if (i > 80) throw err;
+      await sleep(250);
+    }
+  }
+  return { container, ports, executor };
+}
+
 describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
   let runtime: DockerRuntime;
   let container: Dockerode.Container;
@@ -299,130 +425,42 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
       .filter(Boolean)
       .map((p) => p.split("/").pop());
   };
+  /** Every generated file in the sites directory, by name. */
+  const sitesSnapshot = async () => {
+    const names = (await executor.exec(`ls -1 ${SITES}`)).split("\n").filter(Boolean).sort();
+    return Object.fromEntries(
+      await Promise.all(names.map(async (n) => [n, await executor.readFile(`${SITES}/${n}`)])),
+    );
+  };
   const configTest = () => executor.exec(`openresty -t -c ${CONF_PATH} 2>&1`);
 
-  /** Worker pids, and whether any old-generation worker is still draining. */
-  const workers = async () => {
-    const ps = await executor.exec("ps -o pid,args");
-    const lines = ps.split("\n").filter((l) => l.includes("nginx: worker process"));
-    return {
-      pids: lines.map((l) => l.trim().split(/\s+/)[0]!),
-      draining: lines.some((l) => l.includes("shutting down")),
-    };
-  };
-  /**
-   * Run an action that reloads the edge (possibly several times), then wait until the
-   * workers are all new, none is draining, and the set has stayed the same for a
-   * second. `openresty -s reload` returns once the signal is sent, so an older worker
-   * generation can otherwise answer the next request with a previous config. That
-   * race can both hide a missing reload and fail a correct one. The first assertion
-   * after each change is also retried, and is chosen so the previous config cannot
-   * satisfy it.
-   */
-  const reloaded = async <T>(action: () => Promise<T>): Promise<T> => {
-    const before = (await workers()).pids;
-    const result = await action();
-    let stable = "";
-    let since = 0;
-    await eventually(async () => {
-      const now = await workers();
-      const key = now.pids.join(",");
-      if (now.draining || !now.pids.length || now.pids.some((p) => before.includes(p))) {
-        stable = "";
-        throw new Error(`edge reload not settled: ${JSON.stringify({ before, now })}`);
-      }
-      if (key !== stable) {
-        stable = key;
-        since = Date.now();
-      }
-      if (Date.now() - since < 1_000) throw new Error("edge workers not yet stable");
-    }, 20_000);
-    return result;
-  };
+  const reloaded = <T>(action: () => Promise<T>) => settleReload(executor, action);
+  const workers = () => workersOf(executor);
 
   beforeAll(async () => {
     await requireDocker();
     runtime = await DockerRuntime.create({ transport: "socket" });
-    const image = await edgeBaseImage();
-    await runtime.pullImage(image);
-    const placeholder = await placeholderCert();
-    const baked = await readFile(join(REPO_ROOT, "apps/edge/nginx.conf"), "utf8");
-
-    // Boot only once the test has written certificates and Lua through the executor;
-    // the baked config needs the placeholder pair to exist before it can load at all.
-    const script =
-      `set -e\n` +
-      `mkdir -p ${dirname(DEFAULT_CERT)} ${SITES} ${LUA_DIR} /var/www/acme /etc/letsencrypt/live\n` +
-      heredoc(DEFAULT_CERT, placeholder.cert) +
-      heredoc(DEFAULT_KEY, placeholder.key) +
-      heredoc(CONF_PATH, baked) +
-      `while [ ! -f ${READY} ]; do sleep 0.1; done\n` +
-      `openresty -t\n` +
-      `exec openresty -g 'daemon off;'\n`;
-    container = await runtime.docker.createContainer({
-      Image: image,
-      Entrypoint: ["sh", "-c"],
-      Cmd: [script],
-      Tty: true,
-      ExposedPorts: { "80/tcp": {}, "443/tcp": {} },
-      HostConfig: {
-        PortBindings: {
-          "80/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
-          "443/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
-        },
-      },
-    });
-    await container.start();
-    const info = await container.inspect();
-    const portOf = (spec: string) => Number(info.NetworkSettings.Ports?.[spec]?.[0]?.HostPort);
-    ports = { http: portOf("80/tcp"), https: portOf("443/tcp") };
-    executor = new DockerEdgeExecutor({
-      containerName: info.Id,
-      socketPath: dockerSocketPath,
-      fileMode: "container",
-    });
-
-    for (const name of await readdir(LUA_SOURCE)) {
-      if (name.endsWith(".lua")) {
-        await executor.writeFile(
-          `${LUA_DIR}/${name}`,
-          await readFile(join(LUA_SOURCE, name), "utf8"),
+    ({ container, ports, executor } = await startEdge(runtime, {
+      seed: async (setup) => {
+        await setup.writeFile(`${SITES}/upstream-standin.conf`, UPSTREAM_CONF);
+        for (const domain of [REAL, DIGIT, CLOUDY]) {
+          const pair = makeTestCert([domain]);
+          await setup.writeFile(`/etc/letsencrypt/live/${domain}/fullchain.pem`, pair.certPem);
+          await setup.writeFile(`/etc/letsencrypt/live/${domain}/privkey.pem`, pair.keyPem);
+        }
+        // Pre-seeded so ensureBootstrapCert reuses it: the base image lacks the openssl CLI
+        // the edge image installs. The vhost is still the product's bootstrap shape.
+        const seed = makeTestCert([BOOT]);
+        await setup.writeFile(
+          `/etc/letsencrypt/openship-bootstrap/${BOOT}/fullchain.pem`,
+          seed.certPem,
         );
-      }
-    }
-    await executor.writeFile(`${SITES}/upstream-standin.conf`, UPSTREAM_CONF);
-    for (const domain of [REAL, DIGIT, CLOUDY]) {
-      const pair = makeTestCert([domain]);
-      await executor.writeFile(`/etc/letsencrypt/live/${domain}/fullchain.pem`, pair.certPem);
-      await executor.writeFile(`/etc/letsencrypt/live/${domain}/privkey.pem`, pair.keyPem);
-    }
-    // Pre-seeded so ensureBootstrapCert reuses it: the base image lacks the openssl CLI
-    // the edge image installs. The vhost is still the product's bootstrap shape.
-    const seed = makeTestCert([BOOT]);
-    await executor.writeFile(
-      `/etc/letsencrypt/openship-bootstrap/${BOOT}/fullchain.pem`,
-      seed.certPem,
-    );
-    await executor.writeFile(
-      `/etc/letsencrypt/openship-bootstrap/${BOOT}/privkey.pem`,
-      seed.keyPem,
-    );
-    await executor.exec(`touch ${READY}`);
-
-    for (let i = 0; ; i++) {
-      const state = await container.inspect();
-      if (!state.State.Running) {
-        const log = (await container.logs({ stdout: true, stderr: true, tail: 40 })).toString();
-        throw new Error(`edge exited (${state.State.ExitCode}):\n${log}`);
-      }
-      try {
-        await askHttp(ports.http, "/", UNROUTED);
-        break;
-      } catch (err) {
-        if (i > 80) throw err;
-        await sleep(250);
-      }
-    }
+        await setup.writeFile(
+          `/etc/letsencrypt/openship-bootstrap/${BOOT}/privkey.pem`,
+          seed.keyPem,
+        );
+      },
+    }));
   }, 300_000);
 
   afterAll(async () => {
@@ -430,7 +468,7 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
     await runtime?.dispose().catch(() => {});
   });
 
-  it("converges on, trust change, invalid, off and on again for every vhost, with rollback", async () => {
+  it("switches every vhost with the socket at once, refuses a partial switch, and rolls back", async () => {
     // ── Off: today's behaviour ───────────────────────────────────────────────
     const off = provider(OFF);
     await off.registerRoute({ domain: PLAIN, tls: false, targetUrl: upstream } as RouteConfig);
@@ -449,9 +487,39 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
     await expect(
       askTls(ports.https, { sni: REAL, proxy: { version: 1, src: "198.51.100.7" } }),
     ).rejects.toThrow();
-
-    // ── On: the edge ALONE is updated, from the stored routes, no redeploy ───
     const trusted = provider(on(peer));
+
+    // ── A route write never moves the socket, even from a provider with it on ─
+    await reloaded(() => trusted.registerRoute(tlsRoute(REAL, { proxy: { http2: true } })));
+    expect(await executor.exists(`${SITES}/${EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME}`)).toBe(false);
+    for (const sni of [REAL, DIGIT]) {
+      expect(xri((await askTls(ports.https, { sni })).body)).toBe(peer);
+    }
+
+    // ── Refused: a vhost that cannot switch keeps EVERY vhost and the socket ──
+    // The Cloud host is the one that matters: on a PROXY socket its unconverted
+    // trust-all X-Real-IP block would let any peer name its own client.
+    const sidecars = [DIGIT, CLOUDY].map((d) => `${SITES}/${d.replace(/\./g, "-")}.route.json`);
+    const saved = await Promise.all(sidecars.map((path) => executor.readFile(path)));
+    for (const path of sidecars) await executor.writeFile(path, "{");
+    const before = await sitesSnapshot();
+    const workersBefore = (await workers()).pids;
+    const refused = await provider(on(UNTRUSTED_RANGE)).reapplyStoredRoutes();
+    expect(refused.failed).toContainEqual({
+      slug: EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
+      reason: expect.stringMatching(/not enabled on port 443.*1st-example-com\.conf/),
+    });
+    expect(await sitesSnapshot()).toEqual(before);
+    expect((await workers()).pids).toEqual(workersBefore);
+    for (const sni of [REAL, DIGIT, CLOUDY]) {
+      expect(xri((await askTls(ports.https, { sni })).body)).toBe(peer);
+    }
+    await expect(
+      askTls(ports.https, { sni: CLOUDY, proxy: { version: 1, src: "198.51.100.10" } }),
+    ).rejects.toThrow();
+    for (const [i, path] of sidecars.entries()) await executor.writeFile(path, saved[i]!);
+
+    // ── On: the edge ALONE is updated, from the stored routes, in ONE reload ──
     const applied = await reloaded(() => trusted.reapplyStoredRoutes());
     expect(applied.failed).toEqual([]);
     expect(applied.repaired.sort()).toEqual([DIGIT, BOOT, CLOUDY, REAL].sort());
@@ -540,38 +608,83 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
       expect(
         xri((await askHttp(ports.http, "/", PLAIN, { "CF-Connecting-IP": "9.9.9.9" })).body),
       ).toBe("9.9.9.9");
+      // An untrusted peer cannot name a client with a header on an unconverted-looking
+      // host either: every :443 block reads the PROXY header only.
+      const forged = await askTls(ports.https, {
+        sni: CLOUDY,
+        proxy: { version: 1, src: "198.51.100.10" },
+        headers: { "X-Real-IP": "9.9.9.9" },
+      });
+      expect(xri(forged.body)).toBe(peer);
     } finally {
       delete process.env.OPENSHIP_EDGE_TRUSTED_PROXIES;
     }
+    expect((await reloaded(() => trusted.reapplyStoredRoutes())).failed).toEqual([]);
 
     // ── Invalid setting: refused before any write; the edge keeps serving ────
-    const includeBefore = await executor.readFile(`${SITES}/${EDGE_PROXY_PROTOCOL_REAL_IP_NAME}`);
     const empty = provider({
       mode: "invalid",
       error: "OPENSHIP_EDGE_PROXY_PROTOCOL=https requires a list",
     });
+    const unchanged = await sitesSnapshot();
+    const token = "e2e-refused-token-1050";
+    const certOnly = "certonly.example.com";
     await expect(empty.registerRoute(tlsRoute("new.example.com"))).rejects.toThrow(
       /requires a list/,
     );
-    expect(await executor.exists(`${SITES}/new-example-com.conf`)).toBe(false);
-    expect(await executor.readFile(`${SITES}/${EDGE_PROXY_PROTOCOL_REAL_IP_NAME}`)).toBe(
-      includeBefore,
-    );
-
-    // ── Rollback: a refused reload restores the previous include ─────────────
-    await executor.writeFile(`${SITES}/zz-broken.conf`, "server { this is not nginx }\n");
     await expect(
-      trusted.registerRoute({ domain: PLAIN, tls: false, targetUrl: upstream } as RouteConfig),
-    ).rejects.toThrow();
-    expect(await executor.readFile(`${SITES}/${EDGE_PROXY_PROTOCOL_REAL_IP_NAME}`)).toBe(
-      includeBefore,
+      empty.serveEdgeChallenge({ host: "new.example.com", tokens: [token] }),
+    ).rejects.toThrow(/requires a list/);
+    await expect(empty.installCert(certOnly, makeTestCert([certOnly]))).rejects.toThrow(
+      /requires a list/,
     );
+    await expect(empty.reapplyStoredRoutes()).rejects.toThrow(/requires a list/);
+    expect(await executor.exists(`${EDGE_CHALLENGE_DIR}/${token}`)).toBe(false);
+    expect(await executor.exists(`/etc/letsencrypt/live/${certOnly}/fullchain.pem`)).toBe(false);
+    expect(await sitesSnapshot()).toEqual(unchanged);
+
+    // ── Rollback: a refused batch restores every vhost and both files ────────
+    await executor.writeFile(`${SITES}/zz-broken.conf`, "server { this is not nginx }\n");
+    const failedOff = await provider(OFF).reapplyStoredRoutes();
+    expect(failedOff.failed).toContainEqual({
+      slug: EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
+      reason: expect.stringMatching(/not applied to port 443/),
+    });
     await executor.rm(`${SITES}/zz-broken.conf`);
+    expect(await sitesSnapshot()).toEqual(unchanged);
     const still = await askTls(ports.https, {
       sni: REAL,
       proxy: { version: 1, src: "198.51.100.7" },
     });
-    expect(xri(still.body)).toBe(peer);
+    expect(xri(still.body)).toBe("198.51.100.7");
+
+    // ── A failed certificate install recovers what is on disk ────────────────
+    // The env now says off, and the install's first reload fails. Its recovery must
+    // not stage that setting again: PROXY stays on and plain TLS stays refused.
+    const execOriginal = executor.exec.bind(executor);
+    let failReload = true;
+    executor.exec = async (command: string, ...rest) => {
+      if (failReload && command.includes(" -s reload")) {
+        failReload = false;
+        throw new Error("injected transient reload failure");
+      }
+      return execOriginal(command, ...rest);
+    };
+    try {
+      await reloaded(async () => {
+        await expect(provider(OFF).installCert(REAL, makeTestCert([REAL]))).rejects.toThrow(
+          "injected transient reload failure",
+        );
+      });
+    } finally {
+      executor.exec = execOriginal;
+    }
+    expect(await sitesSnapshot()).toEqual(unchanged);
+    await eventually(async () => {
+      const answer = await askTls(ports.https, { sni: REAL, proxy: { version: 2, src: "198.51.100.8" } });
+      expect(xri(answer.body)).toBe("198.51.100.8");
+    });
+    await expect(askTls(ports.https, { sni: REAL })).rejects.toThrow();
 
     // ── Off: complete retirement ─────────────────────────────────────────────
     const disabled = await reloaded(() => provider(OFF).reapplyStoredRoutes());
@@ -587,6 +700,9 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
     await expect(
       askTls(ports.https, { sni: REAL, proxy: { version: 2, src: "198.51.100.7" } }),
     ).rejects.toThrow();
+    // The Cloud host is back to its own trust on :443, as before the feature.
+    const cloudyBack = await askTls(ports.https, { sni: CLOUDY, headers: { "X-Real-IP": "9.9.9.9" } });
+    expect(xri(cloudyBack.body)).toBe("9.9.9.9");
 
     // ── On again ─────────────────────────────────────────────────────────────
     expect((await reloaded(() => trusted.reapplyStoredRoutes())).failed).toEqual([]);
@@ -628,5 +744,138 @@ describeDockerE2E("edge PROXY protocol on :443, real OpenResty", () => {
       expect(answer.status).toBe(404);
     }, 30_000);
     await expect(askTls(ports.https, { sni: UNROUTED })).rejects.toThrow();
+  }, 300_000);
+});
+
+/**
+ * The same transitions with the file channel the Compose api uses: `fileMode: "mounted"`,
+ * where vhosts, snapshots and restores go through THIS process's filesystem and only
+ * `ls`, `grep`, `openresty -t` and the reload run in the container. Here the two sides
+ * even name the directory differently (a host temp dir bind-mounted onto the
+ * container's sites-enabled), so a snapshot or listing taken through the wrong channel
+ * fails instead of passing by coincidence.
+ */
+describeDockerE2E("edge PROXY protocol on :443, mounted sites directory", () => {
+  let runtime: DockerRuntime;
+  let container: Dockerode.Container;
+  let ports = { http: 0, https: 0 };
+  let commands: DockerEdgeExecutor;
+  let mounted: DockerEdgeExecutor;
+  let hostSites = "";
+  let hostLive = "";
+  let peer = "";
+
+  const provider = (edgeProxyProtocol: EdgeProxyProtocolSetting) =>
+    new NginxProvider({
+      paths: { ...OPENRESTY_DEFAULT_PATHS, sitesDir: hostSites },
+      certDir: hostLive,
+      executor: rootChecked(mounted, "e2e: host files bind-mounted into a disposable edge"),
+      pinPaths: true,
+      containerEdge: true,
+      edgeProxyProtocol,
+    });
+  const upstream = `http://127.0.0.1:${UPSTREAM_PORT}`;
+  const tlsRoute = (domain: string) =>
+    ({ domain, tls: true, terminatesTlsLocally: true, targetUrl: upstream }) as RouteConfig;
+  const reloaded = <T>(action: () => Promise<T>) => settleReload(commands, action);
+  /** The host side of the sites directory, by name. */
+  const hostSnapshot = async () => {
+    const names = (await readdir(hostSites)).sort();
+    return Object.fromEntries(
+      await Promise.all(names.map(async (n) => [n, await readFile(join(hostSites, n), "utf8")])),
+    );
+  };
+
+  beforeAll(async () => {
+    await requireDocker();
+    runtime = await DockerRuntime.create({ transport: "socket" });
+    // realpath: Docker Desktop shares /private/var/folders, which /var/folders links to.
+    const root = await realpath(await mkdtemp(join(tmpdir(), "openship-pp-mounted-")));
+    hostSites = join(root, "sites-enabled");
+    hostLive = join(root, "live");
+    await mkdir(hostSites);
+    await writeFile(join(hostSites, "upstream-standin.conf"), UPSTREAM_CONF);
+    for (const domain of [REAL, CLOUDY]) {
+      const pair = makeTestCert([domain]);
+      await mkdir(join(hostLive, domain), { recursive: true });
+      await writeFile(join(hostLive, domain, "fullchain.pem"), pair.certPem);
+      await writeFile(join(hostLive, domain, "privkey.pem"), pair.keyPem);
+    }
+    // The vhost names certificates by their host path, so that path exists inside too.
+    ({ container, ports, executor: commands } = await startEdge(runtime, {
+      binds: [`${hostSites}:${SITES}`, `${hostLive}:${hostLive}:ro`],
+    }));
+    mounted = new DockerEdgeExecutor({
+      containerName: (await container.inspect()).Id,
+      socketPath: dockerSocketPath,
+      fileMode: "mounted",
+    });
+  }, 300_000);
+
+  afterAll(async () => {
+    await container?.remove({ force: true }).catch(() => {});
+    await runtime?.dispose().catch(() => {});
+    if (hostSites) await rm(dirname(hostSites), { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("switches, refuses and rolls back through the host filesystem", async () => {
+    const off = provider({ mode: "off" });
+    await off.registerRoute(tlsRoute(REAL));
+    await reloaded(() => off.registerRoute(tlsRoute(CLOUDY)));
+    peer = xri((await askTls(ports.https, { sni: REAL })).body) ?? "";
+    expect(peer).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    const trusted = provider({ mode: "https", trusted: [peer] });
+
+    // Refused: the Cloud host's saved route is unreadable. Nothing changes on either side.
+    const state = join(hostSites, "cloudy-opsh-io.route.json");
+    const saved = await readFile(state, "utf8");
+    await writeFile(state, "{");
+    const before = await hostSnapshot();
+    const refused = await trusted.reapplyStoredRoutes();
+    expect(refused.failed).toContainEqual({
+      slug: EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
+      reason: expect.stringMatching(/not enabled on port 443.*cloudy-opsh-io\.conf/),
+    });
+    expect(await hostSnapshot()).toEqual(before);
+    await expect(
+      askTls(ports.https, { sni: CLOUDY, proxy: { version: 1, src: "198.51.100.10" } }),
+    ).rejects.toThrow();
+    await writeFile(state, saved);
+
+    // On: both vhosts and the socket, one reload, from the host side.
+    const applied = await reloaded(() => trusted.reapplyStoredRoutes());
+    expect(applied).toMatchObject({ failed: [] });
+    expect(applied.repaired.sort()).toEqual([CLOUDY, REAL].sort());
+    for (const sni of [REAL, CLOUDY]) {
+      await eventually(async () => {
+        const answer = await askTls(ports.https, {
+          sni,
+          proxy: { version: 2, src: "198.51.100.8" },
+          headers: { "X-Real-IP": "9.9.9.9" },
+        });
+        expect(xri(answer.body)).toBe("198.51.100.8");
+      });
+    }
+    await expect(askTls(ports.https, { sni: REAL })).rejects.toThrow();
+
+    // A batch the edge refuses is restored on the host, and PROXY keeps serving.
+    const enabled = await hostSnapshot();
+    await writeFile(join(hostSites, "zz-broken.conf"), "server { this is not nginx }\n");
+    const failedOff = await provider({ mode: "off" }).reapplyStoredRoutes();
+    expect(failedOff.failed).toContainEqual({
+      slug: EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME,
+      reason: expect.stringMatching(/not applied to port 443/),
+    });
+    await rm(join(hostSites, "zz-broken.conf"));
+    expect(await hostSnapshot()).toEqual(enabled);
+    const still = await askTls(ports.https, { sni: REAL, proxy: { version: 1, src: "198.51.100.7" } });
+    expect(xri(still.body)).toBe("198.51.100.7");
+
+    // Off.
+    expect((await reloaded(() => provider({ mode: "off" }).reapplyStoredRoutes())).failed).toEqual([]);
+    expect(await readdir(hostSites)).not.toContain(EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME);
+    await eventually(async () => {
+      expect(xri((await askTls(ports.https, { sni: REAL })).body)).toBe(peer);
+    });
   }, 300_000);
 });

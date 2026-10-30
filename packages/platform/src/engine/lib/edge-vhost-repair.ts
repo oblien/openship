@@ -14,7 +14,9 @@
  * path rather than behind an operator action.
  *
  * Best-effort like everything else on the routing path: a repair that can't run is a
- * warning, never a failed deploy.
+ * warning, never a failed deploy. The one exception is an edge that refuses EVERY
+ * config change (an invalid OPENSHIP_EDGE_PROXY_PROTOCOL setting): that is rethrown so
+ * a deploy can stop before its cutover instead of retiring the route it replaces.
  */
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
@@ -27,6 +29,15 @@ export interface EdgeVhostRepairResult {
   scanned: number;
   repaired: string[];
   failed: { slug: string; reason: string }[];
+}
+
+/**
+ * Did the edge refuse a change because its own setting is invalid
+ * (`EdgeProxyProtocolConfigError`)? Matched by name: callers run under test doubles of
+ * `@repo/adapters` that do not export the class.
+ */
+export function isEdgeConfigRefusal(err: unknown): boolean {
+  return err instanceof Error && err.name === "EdgeProxyProtocolConfigError";
 }
 
 /**
@@ -49,6 +60,7 @@ export async function repairEdgeVhosts(
   try {
     result = await routing.reapplyStoredRoutes();
   } catch (err) {
+    if (isEdgeConfigRefusal(err)) throw err;
     const reason = safeErrorMessage(err);
     errorDiagnostics.warn("platform/engine/lib/edge-vhost-repair", `[edge-vhost-repair] sweep failed (non-fatal): ${reason}`, err);
     return { ...empty, failed: [{ slug: "*", reason }] };

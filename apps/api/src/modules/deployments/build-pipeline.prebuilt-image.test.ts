@@ -288,7 +288,10 @@ vi.mock("@repo/platform/engine/lib/project-routing-fields", () => ({
   compileProjectRoutingFields: vi.fn(() => ({})),
 }));
 vi.mock("@repo/platform/engine/lib/edge-challenge", () => ({ ensureEdgeChallengeReady: vi.fn() }));
-vi.mock("@repo/platform/engine/lib/edge-vhost-repair", () => ({ repairEdgeVhosts: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/edge-vhost-repair", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/lib/edge-vhost-repair")>()),
+  repairEdgeVhosts: vi.fn(),
+}));
 vi.mock("@repo/platform/engine/lib/edge-reconcile", () => ({
   ensureRoutingReady: (...args: unknown[]) => mocks.ensureRoutingReady(...args),
 }));
@@ -1533,6 +1536,39 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.convergeTargetHostPortClaimsUnlocked.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.onSuccess.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("stops before activation when the edge refuses every route change", async () => {
+    vi.mocked(buildProjectRouteDomains).mockReturnValueOnce([{
+      hostname: "app.example.com", tls: true, provisionSsl: false,
+      requiresSslTooling: false, terminatesTlsLocally: true, isCloud: false,
+      targetPort: 8080,
+    }]);
+    const refusal = Object.assign(
+      new Error("Edge configuration was not changed: OPENSHIP_EDGE_PROXY_PROTOCOL=https requires OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED"),
+      { name: "EdgeProxyProtocolConfigError" },
+    );
+    vi.mocked(repairEdgeVhosts).mockRejectedValueOnce(refusal);
+    let preflight: unknown;
+    mocks.runDeployPipeline.mockImplementationOnce(async (env, input) => {
+      preflight = await env.preflight(input.config, async () => "migrate").catch((err: unknown) => err);
+      if (preflight instanceof Error) throw preflight;
+      await env.activate(input.config, () => undefined);
+      return { status: "success" };
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await run(deployment(), { routeStrategy: "loopback-port" });
+      await drainDeploymentExecutions();
+    } finally {
+      log.mockRestore();
+    }
+
+    expect(preflight).toBe(refusal);
+    // The previous release keeps its route and its port: nothing was activated.
+    expect(mocks.prepareTargetPinnedHostPorts).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+    expect(mocks.onSuccess).not.toHaveBeenCalled();
   });
 
   it("saves the selected host port for activation, routing and future redeploys", async () => {

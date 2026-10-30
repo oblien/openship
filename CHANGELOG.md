@@ -10,8 +10,9 @@ Runtime security notices use the signed feed published from `security-advisories
   `OPENSHIP_EDGE_PROXY_PROTOCOL=https` and a separate
   `OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED` list. A TLS-passthrough proxy can then pass
   the client address to the edge, its rate limits and its apps. Only port 443 of the
-  local edge changes. Empty or invalid trust lists are refused before any write, and
-  enabling, trust changes and disabling reach every vhost without a redeploy (#1050).
+  local edge changes. Empty or invalid trust lists are refused before any write.
+  Enabling and disabling switch every HTTPS vhost in one reload, from a deploy or
+  Retry routing, or are refused with nothing changed (#1050).
 
 - **Keep monorepo runtime images aligned with each service** — use the service's
   framework and selected builder for its runtime instead of inheriting an

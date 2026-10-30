@@ -38,7 +38,7 @@ import {
   normalizeServiceLabel,
 } from "@repo/core";
 import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
-import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
+import { isEdgeConfigRefusal, repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import type {
   BuildResult,
   CommandExecutor,
@@ -1989,6 +1989,10 @@ function buildDeployEnvironment(
               }
             } catch (err) {
               observeCaughtError(err, "platform/engine/modules/deployments/build-pipeline");
+              // Not optional routing that failed: this edge refuses every route change, so
+              // the cutover would retire the current route and route nothing in its place.
+              // Stop while the previous deployment is still serving.
+              if (isEdgeConfigRefusal(err)) throw err;
               logger.log(
                 `Edge/routing setup failed — deploy continues; the app runs on its port and routing is retried later: ${safeErrorMessage(err)}\n`,
                 "warn",

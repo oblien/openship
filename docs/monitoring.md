@@ -346,19 +346,39 @@ OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153   # the proxy; IPs or CIDRs
 - The variable applies only to the edge on the machine running the api. Remote servers
   and bare OpenResty edges are not changed.
 - An empty list, `/0`, a CIDR with host bits set, or any entry that is not an IP/CIDR is
-  refused, not dropped. Routing changes fail with the variable named in the error, and
-  the edge keeps serving its previous configuration until the value is fixed. Without a
-  list of its own, nginx would trust its inherited Cloudflare list for PROXY headers.
+  refused, not dropped. Without a list of its own, nginx would trust its inherited
+  Cloudflare list for PROXY headers. The edge keeps serving its previous configuration,
+  and every change to it fails with the variable named in the error, before anything is
+  written or run. Until the value is fixed and `openship up` has run:
+  - a deploy with domains stops before the new release goes live, so the previous one
+    keeps its route;
+  - certificates are not issued, installed or renewed, so fix it before a renewal is
+    due;
+  - removing a domain or project leaves its route in place;
+  - Retry routing fails with the same error.
 - Once on, every TLS connection to :443 must start with a PROXY header. Plain TLS is
   refused, so the proxy must send it for every hostname it forwards to this edge.
 
 How it is applied: the edge writes `sites-enabled/_openship-proxy-protocol.conf` (the one
 `listen 443 ssl proxy_protocol`, which nginx applies to the whole :443 socket, including the
 image's catch-all) and `sites-enabled/_openship-proxy-protocol-realip.inc` (the
-`real_ip_header proxy_protocol` block every generated :443 vhost includes). Both are
-published with the next reload and restored if publication or `openresty -t` fails.
-Changing the trust list rewrites one file and reloads once. Turning the feature on or off
-also re-renders the stored :443 vhosts, without redeploying the apps.
+`real_ip_header proxy_protocol` block every generated :443 vhost includes).
+
+Turning the feature on or off changes how every :443 vhost reads its client at once, so it
+is one transaction: the edge re-renders every :443 vhost from its saved route and publishes
+them with the two files behind a single `openresty -t` and reload. If any step fails, all of
+it is restored and the edge keeps its previous mode. Only the routing sweep a deploy or
+Retry routing runs does this. Other route, certificate and challenge changes keep the mode
+the edge is already in. Changing the trust list rewrites one file and reloads once.
+
+Turning it on is refused, with nothing changed, while any :443 vhost that serves content
+cannot be re-rendered: a vhost without a saved route (`<name>.route.json`), with a corrupt
+one, or whose route no longer renders. Left behind, it would keep its previous trust on a
+socket where the peer is now the proxy. A Cloud-fronted `*.opsh.io` vhost, which trusts
+`X-Real-IP` from any peer, is the dangerous case. Retry routing reports the files by name.
+Fix or remove them, then retry. Turning it off is not blocked: a vhost that cannot be
+re-rendered keeps an include that matches no file once the include is removed, which is
+the behaviour without this feature.
 
 1. Edit `.env` and run `openship up`. The changed `.env` recreates the api and the edge,
    since `env_file` is only read when a container is created.

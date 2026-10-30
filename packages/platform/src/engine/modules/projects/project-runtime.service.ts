@@ -9,7 +9,7 @@ import type { ProjectRuntimeLogsInput } from "@repo/contracts";
 import { roleLogContainerId } from "./project-roles";
 import { repos } from "@repo/db";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
-import { checkEdge, edgeProxy } from "@repo/adapters";
+import { EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME, checkEdge, edgeProxy } from "@repo/adapters";
 import type { LogEntry, ImportedSite, RuntimeAdapter } from "@repo/adapters";
 import {
   deploymentContainerIds,
@@ -23,6 +23,7 @@ import { isAbsent, isAlreadyInState } from "../../lib/remote-state";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { reconcileServerEdge } from "../../lib/edge-reconcile";
+import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 import { sshManager } from "../../lib/ssh-manager";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
@@ -493,6 +494,26 @@ async function retryLiveProjectRouting(
     routeWarnings.push(message);
     log(message);
   };
+  // The box's other vhosts first, through the same sweep a deploy runs. Retry is how an
+  // operator applies an edge-wide change such as a new PROXY protocol setting, and that
+  // has to reach every vhost at once, not only this project's. Not applying it fails
+  // the Retry. Another project's vhost the per-route pass could not update is only
+  // reported (by the sweep's own log), as it is on a deploy.
+  log("Updating the edge's other routes…");
+  try {
+    const repair = await withDeploymentPlatform(dep, ({ routing }) =>
+      repairEdgeVhosts(routing, { onLog: (message) => log(message.trim()) }),
+    );
+    for (const failure of repair.failed) {
+      if (failure.slug !== "*" && failure.slug !== EDGE_PROXY_PROTOCOL_LISTENER_CONF_NAME) continue;
+      applyOk = false;
+      routeWarnings.push(`Edge configuration: ${failure.reason}`);
+    }
+  } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service");
+    onWarning(`Edge configuration: ${safeErrorMessage(error)}`);
+  }
+
   log("Applying the project's current routes…");
   await reapplyProjectLiveRoutes(p, [], {
     ...(options.isSelfApp !== undefined ? { isSelfApp: options.isSelfApp } : {}),

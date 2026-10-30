@@ -89,8 +89,14 @@ OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153
   remote servers and Openship Cloud are unchanged.
 - List only the proxies that send the header. This list is separate from
   `OPENSHIP_EDGE_TRUSTED_PROXIES`, which also trusts headers on port 80.
-- An empty or invalid list is rejected, and routing keeps its previous
-  configuration until you fix it.
+- An empty or invalid value is rejected, and the edge keeps its previous
+  configuration. Until you fix it and run `openship up`, every routing change on
+  this edge is refused: deploys with domains stop before the new release goes
+  live, certificates are not issued or renewed, and removed domains keep their
+  route. Fix the value before you deploy, renew or remove domains.
+- Port 443 switches for every HTTPS route at once. If one route cannot be
+  updated (for example, its saved route file is missing or corrupt), nothing
+  changes and Retry routing names that route.
 - While it is on, port 443 refuses TLS connections without a PROXY header.
 
 Run `openship up`, apply routing once (a deploy or Retry routing), then enable

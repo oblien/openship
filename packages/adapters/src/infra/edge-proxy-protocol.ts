@@ -37,10 +37,10 @@
  * `set_real_ip_from` of its own inherits the http-scope one, which is Cloudflare's
  * published ranges plus OPENSHIP_EDGE_TRUSTED_PROXIES. `real_ip_header proxy_protocol`
  * with no list would therefore let any of those peers name an arbitrary client in a
- * PROXY header. So activation without a valid list throws before any file is written,
- * and the edge keeps serving its previous configuration. A malformed entry is refused
- * the same way: dropping it would quietly trust less (or, for a typo in a CIDR, a
- * different network) than the operator wrote.
+ * PROXY header. So an invalid setting makes every mutating edge operation throw before
+ * its first write or command, and the edge keeps serving its previous configuration.
+ * A malformed entry is refused the same way: dropping it would quietly trust less (or,
+ * for a typo in a CIDR, a different network) than the operator wrote.
  *
  * ── Why two files, and why vhosts carry no `proxy_protocol` flag ─────────────
  *
@@ -59,8 +59,18 @@
  *     by every generated :443 block. Changing the trust list rewrites this one file
  *     and reloads once; no vhost has to be re-rendered.
  *
- * Both are written by the edge's `reload()` together with the candidate config and
- * restored with it if publishing or `openresty -t` fails.
+ * ── Why switching is one transaction over every vhost ───────────────────────
+ *
+ * The socket flag changes how EVERY :443 server reads its client at the same instant.
+ * A vhost still rendered for the other mode is then wrong, and dangerously so for a
+ * Cloud-fronted host, whose plain-TLS block trusts X-Real-IP from any peer. So only
+ * `NginxProvider.transitionProxyProtocol` (run by the routing sweep) writes the pair:
+ * it re-renders every :443 vhost from its saved route and publishes them WITH both
+ * files behind one `openresty -t` and reload, restoring all of it on any failure.
+ * Turning it on is refused, with nothing written, while a :443 vhost that serves
+ * content cannot be re-rendered. A route, certificate or challenge write renders for
+ * the mode the socket is IN (the listener file is on disk or not), never for the env,
+ * so no other entrypoint can switch the socket or put one vhost ahead of the rest.
  *
  * The listener file carries `server_name openship-proxy-protocol.invalid`. `.invalid`
  * is reserved (RFC 6761) and can never be a routed hostname. It also keeps the file
@@ -95,7 +105,9 @@ export type EdgeProxyProtocolSetting =
   | { mode: "invalid"; error: string };
 
 /** Thrown before any write when the setting is invalid. See the module header. */
-export class EdgeProxyProtocolConfigError extends Error {}
+export class EdgeProxyProtocolConfigError extends Error {
+  override name = "EdgeProxyProtocolConfigError";
+}
 
 /** IPv4/IPv6 literal → integer, or null. IPv6 may compress and may embed IPv4. */
 function addressBits(address: string, family: 4 | 6): bigint | null {
