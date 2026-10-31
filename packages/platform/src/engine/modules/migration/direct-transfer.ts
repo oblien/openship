@@ -28,7 +28,7 @@
  */
 
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { installRsync, privilegedExecutor, envOps, opScript, type CommandExecutor, type LogEntry } from "@repo/adapters";
+import { installRsync, privilegedExecutor, envOps, opScript, resolveTransferredImageRef, type CommandExecutor, type LogEntry } from "@repo/adapters";
 import { answered, shellQuote } from "@repo/core";
 
 /**
@@ -62,8 +62,8 @@ export interface DirectProgress {
 export interface DirectLink {
   direction: "push" | "pull";
   /** Stream the image source→target (docker save <id> | ssh peer docker load),
-   *  then re-apply the tag on the target (save-by-id loads untagged). */
-  transferImage(image: { id: string; tag: string }, onProgress?: DirectProgress): Promise<void>;
+   *  then restore a tag where possible. Returns a usable target reference. */
+  transferImage(image: { id: string; tag: string }, onProgress?: DirectProgress): Promise<string>;
   /** rsync a volume's data source→target. The shared planner reserves the target
    *  volume first. `dstName` (clone) lands the source
    *  volume's data in a DIFFERENTLY-named target volume; defaults to `volumeName`. */
@@ -488,18 +488,23 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         // which is often a RepoDigest) — so tagging by `image.id` fails with
         // "No such image". Instead retag from what `docker load` actually reported
         // ("Loaded image( ID)?: <ref>"), which comes back over the pipe. Only skip
-        // when the load already restored the exact target tag.
+        // when the load already restored the target ref. Digest inputs keep the
+        // loaded ref: Docker cannot manufacture a repository digest with tag.
         const loaded = output.match(/Loaded image(?: ID)?:\s*(\S+)/i)?.[1]?.trim();
-        const from = loaded && loaded !== image.tag ? loaded : loaded ? null : image.id;
-        if (from) {
-          const tagCmd = `docker tag ${sq(from)} ${sq(image.tag)}`;
+        const imageRef = resolveTransferredImageRef(image.tag, loaded);
+        const from = loaded ?? image.id;
+        if (from !== imageRef) {
+          const tagCmd = `docker tag ${sq(from)} ${sq(imageRef)}`;
           await (pushToPeer
             ? initiatorExec.exec(sshTo(sshCommand, peerConn, sq(`${tagCmd} 2>&1`)))
             : targetExec.exec(`${tagCmd} 2>&1`)
           );
           log(`image ${image.tag}: tagged on target (from ${from})`);
+        } else if (imageRef !== image.tag) {
+          log(`image ${image.tag}: loaded on target as ${imageRef}`);
         }
         if (total) onProgress?.(total, total);
+        return imageRef;
       },
       async transferVolume(volumeName, onProgress, dstName) {
         // The shared transfer plan reserves and labels the target volume.
