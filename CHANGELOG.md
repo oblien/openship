@@ -6,6 +6,11 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Recover PGlite after a container crash** — record Linux process start identity
+  so a restarted API can reclaim a crashed holder's lock even when Docker reuses
+  PID 1. Keep active owners protected and preserve conservative checks for older
+  locks or unavailable process identity (#1524).
+
 - **Keep monorepo runtime images aligned with each service** — use the service's
   framework and selected builder for its runtime instead of inheriting an
   unrelated parent image. Fill missing builders from the stack registry, preserve

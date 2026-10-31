@@ -112,6 +112,28 @@ reverse proxy that sets the forwarded-IP header. Route traffic through your prox
 topology) rather than hitting the API port directly.
 </Callout>
 
+## PGlite API restart loop after a crash
+
+On a self-hosted Docker installation using PGlite, API logs may repeatedly say
+`database at /data is held by pid 1` after an abnormal exit. The dashboard can
+remain reachable while API requests return `502`.
+
+Current Linux locks record the kernel boot ID and process start time. This lets
+the API reclaim a crashed holder's lock when Docker reuses PID 1, while still
+refusing a second active database owner. Older locks without this identity, and
+systems where `/proc` is unavailable, retain conservative PID-only checks.
+
+For an installation already stuck with an older lock, update to an image with
+this fix and recreate only the API container, keeping its existing data volume.
+When `/data` is the mounted volume, `/data.lock` belongs to the old container's
+writable layer; recreating that container clears the lock while retaining the
+database. Restarting the same container leaves that lock in place.
+
+If the lock itself is on a persistent mount, stop every process that could use
+that database before removing the specific `.lock` file named in the error.
+Keep the database directory and volume intact. Investigate the original crash
+separately; recovering the lock does not fix memory exhaustion.
+
 ## Build and deploy failures
 
 The codes above are about the API request itself. If a **deployment** failed — the build screen went red, the

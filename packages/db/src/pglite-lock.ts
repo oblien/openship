@@ -16,8 +16,8 @@ import { randomUUID } from "node:crypto";
  *
  *   - acquisition is atomic (`open(..., "wx")` / O_EXCL) so exactly one process
  *     can ever hold the dir — no concurrent-open corruption is possible;
- *   - it self-heals a crashed previous run (dead pid → reclaim) so a SIGKILL
- *     never wedges the dir shut;
+ *   - it reclaims dead holders and, on Linux, detects PID reuse after a crash
+ *     using the kernel process start time and boot ID;
  *   - it only ever creates/removes its own `<dir>.lock` file (a sibling of the
  *     data dir) and never reads, writes, moves, or deletes cluster data — so it
  *     can never lose data.
@@ -99,6 +99,8 @@ interface LockRecord {
   /** Stable machine UUID — the real identity check. Absent in pre-fix locks. */
   machineId?: string;
   ownerId?: string;
+  /** Linux boot ID + kernel start ticks. Absent in legacy/non-Linux locks. */
+  processStart?: string;
 }
 
 // Path of the lock this process currently holds (null when unheld). Module-
@@ -166,6 +168,7 @@ function readLock(lockPath: string): LockRecord | "unreadable" | "initializing" 
         host: parsed.host,
         machineId: typeof parsed.machineId === "string" ? parsed.machineId : undefined,
         ownerId: typeof parsed.ownerId === "string" ? parsed.ownerId : undefined,
+        processStart: typeof parsed.processStart === "string" ? parsed.processStart : undefined,
       };
     }
     return "invalid";
@@ -186,6 +189,40 @@ function isProcessAlive(pid: number): boolean {
     // ESRCH = no such process (dead). EPERM = exists but not ours (alive).
     return (err as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+function readProcessStart(pid: number): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const bootId = readFileSync(
+      "/proc/sys/kernel/random/boot_id",
+      "utf8",
+    ).trim();
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // comm (field 2) may contain spaces and parentheses. The remaining fields
+    // start after its final ')'; starttime (field 22) is then at index 19.
+    const commEnd = stat.lastIndexOf(")");
+    if (commEnd < 0) return undefined;
+    const ticks = stat
+      .slice(commEnd + 1)
+      .trim()
+      .split(/\s+/)[19];
+    return bootId && ticks && /^\d+$/.test(ticks)
+      ? `${bootId}:${ticks}`
+      : undefined;
+  } catch (error) {
+    observeCaughtError(error, "db/pglite-lock");
+    // Missing/inaccessible procfs is not proof of a dead owner.
+    return undefined;
+  }
+}
+
+function isLockHolderAlive(holder: LockRecord): boolean {
+  if (!isProcessAlive(holder.pid)) return false;
+  if (!holder.processStart) return true;
+  const currentStart = readProcessStart(holder.pid);
+  // Legacy locks and unavailable process identity retain PID-only protection.
+  return currentStart === undefined || currentStart === holder.processStart;
 }
 
 function tryRemove(lockPath: string): void {
@@ -213,6 +250,7 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
         startedAt: Date.now(),
         host: hostname(),
         ownerId,
+        processStart: readProcessStart(process.pid),
         // Only persist a STABLE machine UUID. If we couldn't read one, omit it —
         // the lock then reads as "pre-fix" and gets same-machine pid-liveness
         // treatment instead of a volatile hostname masquerading as identity.
@@ -318,8 +356,8 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
         );
       }
 
-      if (!isProcessAlive(holder.pid)) {
-        // Previous holder crashed without releasing — safe to reclaim.
+      if (!isLockHolderAlive(holder)) {
+        // The holder exited, even if its PID is already reused (e.g. container PID 1).
         tryRemove(lockPath);
         continue;
       }
@@ -329,8 +367,8 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
       // on its own — so waiting only stalls then fails on every save. Take over:
       // terminate the stale holder (SIGTERM → brief grace → SIGKILL) and reclaim.
       // Done ONCE; if it can't be killed (e.g. pid not ours) we fall through to
-      // the wait/error path. NOTE: pid-based — a reused pid is a theoretical risk,
-      // acceptably bounded to the dev `--watch` flow this is gated to.
+      // the wait/error path. Linux process identity also stops escalation if the
+      // PID is reused while waiting; legacy/non-Linux locks use PID liveness.
       if (canTakeover && holder.pid !== process.pid && !takeoverAttempted) {
         takeoverAttempted = true;
         errorDiagnostics.warn("db/pglite-lock",
@@ -344,8 +382,8 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
           /* already gone / not ours — the loop below re-evaluates */
         }
         const graceUntil = Date.now() + DEV_LOCK_TAKEOVER_GRACE_MS;
-        while (isProcessAlive(holder.pid) && Date.now() < graceUntil) await sleep(150);
-        if (isProcessAlive(holder.pid)) {
+        while (isLockHolderAlive(holder) && Date.now() < graceUntil) await sleep(150);
+        if (isLockHolderAlive(holder)) {
           try {
             process.kill(holder.pid, "SIGKILL");
           } catch (diagnosticFailure) {
@@ -353,7 +391,7 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
             /* already gone */
           }
           const hardUntil = Date.now() + DEV_LOCK_HARD_KILL_MS;
-          while (isProcessAlive(holder.pid) && Date.now() < hardUntil) await sleep(100);
+          while (isLockHolderAlive(holder) && Date.now() < hardUntil) await sleep(100);
         }
         // Re-loop: a clean SIGTERM exit already removed the lock (its exit hook),
         // and a SIGKILL leaves a dead-pid lock the next iteration reclaims.
