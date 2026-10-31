@@ -71,7 +71,7 @@ import { resolveGitHubApiBaseUrl } from "./github-source.service";
  */
 export interface BuildGitCredential {
   token?: string;
-  /** Exact repositories allowed to use the deployment-scoped token helper. */
+  /** Ephemeral exact repository grant returned by the App credential resolver. */
   tokenRepositories?: string[];
   relay?: boolean;
   /**
@@ -200,12 +200,12 @@ async function diagnoseEmptyAppStep(
 }
 
 /**
- * Discover same-owner submodules for the scoped clone credential helper.
- * App tokens need a new mint covering those repos; user tokens keep their
- * existing permissions. A missing file keeps parent URL authentication, while
- * a read error also emits a warning.
+ * Parent-only App tokens cannot read private submodules. Read `.gitmodules`
+ * with the parent token, then remint
+ * an App token covering the same-owner submodule repos. Soft: a missing file
+ * keeps the parent token silently; a read error keeps it with a warning.
  */
-async function prepareTokenForSubmodules(
+async function expandAppTokenForSubmodules(
   ctx: RequestContext,
   purpose: "local" | "remote",
   tokenCtx: TokenContext,
@@ -214,9 +214,10 @@ async function prepareTokenForSubmodules(
 ): Promise<{ result: TokenResult | null; repos: number }> {
   const owner = tokenCtx.owner;
   const repo = tokenCtx.repo;
-  if (!minted?.token || !owner || !repo) {
+  if (!minted?.token || minted.source !== "app-installation" || !owner || !repo) {
     return { result: minted, repos: minted?.token ? 1 : 0 };
   }
+  const parentCredential = { ...minted, repositories: [repo] };
   let extra = await fetchSameOwnerSubmoduleRepos(minted.token, owner, repo, ctx, tokenCtx, extras);
   if (extra.length > MAX_SUBMODULE_REPOS) {
     traceLog(
@@ -226,12 +227,7 @@ async function prepareTokenForSubmodules(
     );
     extra = extra.slice(0, MAX_SUBMODULE_REPOS);
   }
-  if (!extra.length) return { result: minted, repos: 1 };
-  // User tokens already carry their GitHub permissions, but absolute submodule
-  // URLs still need the scoped helper rather than parent URL credentials.
-  if (minted.source !== "app-installation") {
-    return { result: { ...minted, repositories: [repo, ...extra] }, repos: 1 + extra.length };
-  }
+  if (!extra.length) return { result: parentCredential, repos: 1 };
   const reminted = await tokenFor(ctx, purpose, {
     ...tokenCtx,
     only: ["app-installation"],
@@ -247,7 +243,7 @@ async function prepareTokenForSubmodules(
         `(private submodules may fail to clone)`,
       "warn",
     );
-    return { result: minted, repos: 1 };
+    return { result: parentCredential, repos: 1 };
   }
   traceLog(extras, `App token expanded for ${extra.length} same-owner submodule repo(s): ${extra.join(", ")}`);
   return { result: reminted, repos: reminted.repositories?.length ?? 1 + extra.length };
@@ -338,17 +334,7 @@ async function resolveLocalCredential(
     if (ghToken) {
       trace.source = "gh-cli";
       trace.repos = "all";
-      const { result } = await prepareTokenForSubmodules(
-        ctx,
-        "local",
-        tokenCtx,
-        { token: ghToken, source: "gh-cli" },
-        extras,
-      );
-      return {
-        token: ghToken,
-        ...(result?.repositories ? { tokenRepositories: result.repositories } : {}),
-      };
+      return { token: ghToken };
     }
   }
   const localCtx: TokenContext = {
@@ -359,13 +345,7 @@ async function resolveLocalCredential(
   if (!first?.token || (first.source !== "app-installation" && first.source !== "gh-cli")) {
     await diagnoseEmptyAppStep(ctx, "local", localCtx, extras, trace);
   }
-  const { result: r, repos } = await prepareTokenForSubmodules(
-    ctx,
-    "local",
-    localCtx,
-    first,
-    extras,
-  );
+  const { result: r, repos } = await expandAppTokenForSubmodules(ctx, "local", localCtx, first, extras);
   if (r?.token) {
     recordToken(trace, r, repos);
     return { token: r.token, ...(r.repositories ? { tokenRepositories: r.repositories } : {}) };
@@ -558,19 +538,6 @@ async function resolveBuildGitTokenTraced(
     if (serverCred) {
       trace.source = serverCred.ssh ? `server-ssh:${serverCred.ssh.keyKind}` : "server-token";
       trace.repos = serverCred.token ? "all" : 0;
-      if (serverCred.token && !serverCred.ssh) {
-        const { result } = await prepareTokenForSubmodules(
-          opts.ctx,
-          "remote",
-          tokenCtx,
-          { token: serverCred.token, source: "server-token" },
-          extras,
-        );
-        return {
-          ...serverCred,
-          ...(result?.repositories ? { tokenRepositories: result.repositories } : {}),
-        };
-      }
       return serverCred;
     }
   }
@@ -581,7 +548,7 @@ async function resolveBuildGitTokenTraced(
   //    cloud mode, where none of steps 1-3 apply.
   const first = await tokenFor(opts.ctx, "remote", tokenCtx);
   if (!first?.token) await diagnoseEmptyAppStep(opts.ctx, "remote", tokenCtx, extras, trace);
-  const { result: r, repos } = await prepareTokenForSubmodules(
+  const { result: r, repos } = await expandAppTokenForSubmodules(
     opts.ctx,
     "remote",
     tokenCtx,
