@@ -1,0 +1,96 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "id": "rclone",
+  "name": "rclone",
+  "description": "rclone remote-control daemon with the web GUI: browse, copy and sync files between cloud storage providers and your server.",
+  "kind": "template",
+  "logo": "rclone",
+  "category": "other",
+  "repository": "https://github.com/rclone/rclone",
+  "tags": ["storage", "sync", "backup", "cloud"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "rclone",
+      "image": "rclone/rclone:1.75.2",
+      "exposed": true,
+      "exposedPort": 5572,
+      "routes": [{ "port": 5572 }],
+      "command": "rcd --rc-addr=:5572 --rc-web-gui --rc-web-gui-no-open-browser",
+      "restart": "unless-stopped",
+      "volumes": ["rclone_config:/config/rclone", "rclone_cache:/root/.cache/rclone"],
+      "environment": {
+        "RCLONE_RC_USER": "rcadmin",
+        "RCLONE_LOG_LEVEL": "ERROR"
+      },
+      "secretEnv": ["RCLONE_RC_PASS"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null --header \"Authorization: Basic $(printf %s:%s \"$RCLONE_RC_USER\" \"$RCLONE_RC_PASS\" | base64 | tr -d '\\n')\" http://127.0.0.1:5572/ || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "RCLONE_RC_PASS",
+      "service": "rclone",
+      "label": "Login password",
+      "help": "Auto-generated. The username is rcadmin. Access to this login is equivalent to shell access as the rclone process and reveals every stored cloud credential, so keep it private.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "rclone",
+      "port": 5572,
+      "label": "Web GUI",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ],
+  "connection": {
+    "title": "Sign in to rclone",
+    "description": "rclone web GUI. Sign in with username rcadmin and the generated password below.",
+    "guide": {
+      "intro": "The rclone remote-control daemon with its web GUI. Cloud provider credentials you add are stored in the persisted config volume.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Web GUI",
+        "source": "publicUrl:rclone",
+        "kind": "url",
+        "recommended": true,
+        "help": "Opens the rclone web GUI. Your browser asks for the username and password."
+      },
+      {
+        "id": "password",
+        "label": "Login password",
+        "source": "env:rclone:RCLONE_RC_PASS",
+        "secret": true
+      }
+    ]
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Cloud-to-cloud sync",
+        "description": "Copy and sync files between dozens of storage providers from a browser GUI."
+      },
+      {
+        "title": "Persistent config",
+        "description": "Remote credentials and cache stay on project-scoped volumes across deployments."
+      }
+    ]
+  }
+}

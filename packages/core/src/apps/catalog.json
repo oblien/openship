@@ -8750,6 +8750,116 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "rclone",
+      "name": "rclone",
+      "description": "rclone remote-control daemon with the web GUI: browse, copy and sync files between cloud storage providers and your server.",
+      "kind": "template",
+      "logo": "rclone",
+      "category": "other",
+      "repository": "https://github.com/rclone/rclone",
+      "tags": [
+        "storage",
+        "sync",
+        "backup",
+        "cloud"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "rclone",
+          "image": "rclone/rclone:1.75.2",
+          "exposed": true,
+          "exposedPort": 5572,
+          "routes": [
+            {
+              "port": 5572
+            }
+          ],
+          "command": "rcd --rc-addr=:5572 --rc-web-gui --rc-web-gui-no-open-browser",
+          "restart": "unless-stopped",
+          "volumes": [
+            "rclone_config:/config/rclone",
+            "rclone_cache:/root/.cache/rclone"
+          ],
+          "environment": {
+            "RCLONE_RC_USER": "rcadmin",
+            "RCLONE_LOG_LEVEL": "ERROR"
+          },
+          "secretEnv": [
+            "RCLONE_RC_PASS"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null --header \"Authorization: Basic $(printf %s:%s \"$RCLONE_RC_USER\" \"$RCLONE_RC_PASS\" | base64 | tr -d '\\n')\" http://127.0.0.1:5572/ || exit 1"
+            ],
+            "interval": "30s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "30s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "RCLONE_RC_PASS",
+          "service": "rclone",
+          "label": "Login password",
+          "help": "Auto-generated. The username is rcadmin. Access to this login is equivalent to shell access as the rclone process and reveals every stored cloud credential, so keep it private.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "rclone",
+          "port": 5572,
+          "label": "Web GUI",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to rclone",
+        "description": "rclone web GUI. Sign in with username rcadmin and the generated password below.",
+        "guide": {
+          "intro": "The rclone remote-control daemon with its web GUI. Cloud provider credentials you add are stored in the persisted config volume.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Web GUI",
+            "source": "publicUrl:rclone",
+            "kind": "url",
+            "recommended": true,
+            "help": "Opens the rclone web GUI. Your browser asks for the username and password."
+          },
+          {
+            "id": "password",
+            "label": "Login password",
+            "source": "env:rclone:RCLONE_RC_PASS",
+            "secret": true
+          }
+        ]
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Cloud-to-cloud sync",
+            "description": "Copy and sync files between dozens of storage providers from a browser GUI."
+          },
+          {
+            "title": "Persistent config",
+            "description": "Remote credentials and cache stay on project-scoped volumes across deployments."
+          }
+        ]
+      }
     }
   ]
 }
