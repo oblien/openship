@@ -63,5 +63,3 @@ pnpm-debug.log*
 .react-router
 .wrangler
 next-env.d.ts
-.custom-apps-reference
-.project-map
