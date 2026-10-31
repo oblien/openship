@@ -266,12 +266,15 @@ fi
     ).rejects.toMatchObject({ code: "BUILD_CACHE_IN_USE" });
   });
 
-  it("retains a cache whose optional size scan times out without blocking healthy builds", async () => {
+  it.each([
+    new DOMException("Cloud command timed out", "TimeoutError"),
+    new Error("Command timed out after 15000ms: du -sk -- '/cache/a'"),
+  ])("retains a cache whose optional size scan times out without blocking healthy builds: %s", async (error) => {
     const h = fixture();
     const exec = h.exec.getMockImplementation()!;
     h.exec.mockImplementation((command) =>
       command.startsWith("du ") && command.includes("/cache/a")
-        ? Promise.reject(new DOMException("Cloud command timed out", "TimeoutError"))
+        ? Promise.reject(error)
         : exec(command),
     );
     const result = await pruneManagedBuildCaches(h.docker as never, h.executor, { keepBytes: GIB });
@@ -307,12 +310,15 @@ fi
     },
   );
 
-  it("still refuses exhausted storage after a cache accounting timeout", async () => {
+  it.each([
+    new DOMException("Cloud command timed out", "TimeoutError"),
+    new Error("Command timed out after 120000ms: du -sk -- '/cache/a'"),
+  ])("still refuses exhausted storage after a cache accounting timeout: %s", async (error) => {
     const h = fixture();
     const storage = "104857600 0\n200000 0\n";
     h.exec.mockImplementation((command) =>
       command.startsWith("du ")
-        ? Promise.reject(new DOMException("Cloud command timed out", "TimeoutError"))
+        ? Promise.reject(error)
         : Promise.resolve(command.includes("df -Pk") ? storage : ""),
     );
     await pruneManagedBuildCaches(h.docker as never, h.executor);
@@ -322,11 +328,15 @@ fi
     expect(h.removed).toEqual([]);
   });
 
-  it.each([{ projectId: "a" }, { keepBytes: 0 }])(
+  it.each([
+    { projectId: "a", timeout: new DOMException("Cloud command timed out", "TimeoutError") },
+    { keepBytes: 0, timeout: new DOMException("Cloud command timed out", "TimeoutError") },
+    { projectId: "a", timeout: new Error("Command timed out after 120000ms: du -sk -- '/cache/a'") },
+    { keepBytes: 0, timeout: new Error("Command timed out after 120000ms: du -sk -- '/cache/a'") },
+  ])(
     "does not report explicit cleanup complete after timeout: %j",
-    async (options) => {
+    async ({ timeout, ...options }) => {
       const h = fixture([volume("a")]);
-      const timeout = new DOMException("Cloud command timed out", "TimeoutError");
       const original = h.exec.getMockImplementation()!;
       h.exec.mockImplementation((command, options) =>
         command.startsWith("du ") ? Promise.reject(timeout) : original(command, options),
@@ -345,9 +355,14 @@ fi
       code: "CLOUD_COMMAND_EXIT_UNCONFIRMED",
     }),
     new DOMException("Cancelled by operator", "AbortError"),
+    new DOMException("Command timed out after 15000ms: cancelled by operator", "AbortError"),
+    new Error("du: permission denied; Command timed out after 15000ms"),
   ])("does not suppress unsafe or cancelled cache inspection: %s", async (error) => {
     const h = fixture();
-    h.exec.mockRejectedValue(error);
+    const original = h.exec.getMockImplementation()!;
+    h.exec.mockImplementation((command, options) =>
+      command.startsWith("du ") ? Promise.reject(error) : original(command, options),
+    );
     await expect(pruneManagedBuildCaches(h.docker as never, h.executor)).rejects.toBe(error);
     expect(h.removed).toEqual([]);
   });

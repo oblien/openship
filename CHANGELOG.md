@@ -77,7 +77,9 @@ Runtime security notices use the signed feed published from `security-advisories
 - **Recover storage from slow build-cache scans** — when free disk space or inodes
   already block deployment, allow up to two minutes to measure unused, owned build
   caches before reclaiming them. Healthy hosts retain the short best-effort scan;
-  active builders and application volumes remain protected.
+  defer timed-out SSH measurements during automatic retention without blocking
+  unrelated builds. Explicit cleanup still reports measurement failures; active
+  builders and application volumes remain protected (#1527).
 - **Reclaim images from interrupted first deployments** — include projects that
   have never reached a running release in managed image collection. Resolve the
   last attempt through the existing tenant checks and retain the same rollback,

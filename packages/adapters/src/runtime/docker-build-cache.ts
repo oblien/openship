@@ -242,9 +242,12 @@ export async function pruneManagedBuildCaches(
         // can take longer to walk than a command deadline; retain that volume
         // for a later sweep instead of failing an otherwise successful build.
         // Explicit removal and unconfirmed command exits remain failures.
+        // Cloud uses TimeoutError; SSH executors use a plain Error with this
+        // deadline prefix. Do not mistake cancellation or remote stderr for it.
         if (
           error instanceof Error &&
-          error.name === "TimeoutError" &&
+          (error.name === "TimeoutError" ||
+            (error.name === "Error" && /^Command timed out after \d+ms:/.test(error.message))) &&
           !options.projectId &&
           requestedKeepBytes > 0
         ) {
