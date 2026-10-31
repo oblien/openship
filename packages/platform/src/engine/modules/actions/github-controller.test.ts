@@ -362,6 +362,93 @@ describe("GitHub-owned workflows", () => {
     });
     expect(await repo.runnerBusy(f.org, f.runner.id)).toBe(false);
   });
+  it("replaces a registration that GitHub assigned to another queued job", async () => {
+    const f = await fixture();
+    const other = {
+      ...f.job,
+      id: generateId("job"),
+      matrixIndex: 1,
+      github: { ...f.job.github, id: "51" },
+    };
+    await repo.upsertGitHubRun(f.workflow, f.run, [f.job, other]);
+    expect(await repo.reserveRunnerSession(f.session)).toBeTruthy();
+    await repo.claimRunnerSession(f.org, f.session.id, "owner");
+    // The label-matched registration ran (and failed) the other job instead.
+    await connection.db
+      .update(schema.actionRunnerSession)
+      .set({ admittedJobId: other.id })
+      .where(eq(schema.actionRunnerSession.id, f.session.id));
+    await repo.updateRunnerSession(f.org, f.session.id, "owner", {
+      state: "finished",
+      cleanedAt: new Date(),
+      error: "GitHub runner failure; rerun the job after cleanup.",
+    });
+    const replacement = {
+      ...f.session,
+      id: generateId("session"),
+      runnerName: `openship-${generateId("runner")}`,
+    };
+    expect(await repo.reserveRunnerSession(replacement)).toBeTruthy();
+    // A failure of the job's own registration still needs an explicit rerun.
+    await repo.claimRunnerSession(f.org, replacement.id, "owner");
+    await repo.updateRunnerSession(f.org, replacement.id, "owner", {
+      state: "finished",
+      cleanedAt: new Date(),
+      error: "GitHub runner failure; rerun the job after cleanup.",
+    });
+    expect(
+      await repo.reserveRunnerSession({
+        ...f.session,
+        id: generateId("session"),
+        runnerName: `openship-${generateId("runner")}`,
+      }),
+    ).toBeUndefined();
+  });
+  it("lets a registration whose demand was taken elsewhere serve another queued job", async () => {
+    const f = await fixture();
+    const runner = await repo.saveRunner({
+      ...f.runner,
+      config: { ...f.runner.config, maxParallel: 2 },
+    });
+    const run = {
+      ...f.run,
+      admission: {
+        ...f.run.admission,
+        runnerKeys: { [runner.id]: actionRunnerAdmissionKey(runner) },
+      },
+    };
+    const other = {
+      ...f.job,
+      id: generateId("job"),
+      matrixIndex: 1,
+      github: { ...f.job.github, id: "51" },
+    };
+    await repo.upsertGitHubRun(f.workflow, run, [f.job, other]);
+    expect(await repo.reserveRunnerSession(f.session)).toBeTruthy();
+    const forOther = {
+      ...f.session,
+      id: generateId("session"),
+      demandJobId: other.id,
+      runnerName: `openship-${generateId("runner")}`,
+    };
+    // While both jobs wait, each needs its own registration.
+    await connection.db
+      .update(schema.actionRunnerSession)
+      .set({ state: "listening" })
+      .where(eq(schema.actionRunnerSession.id, f.session.id));
+    expect(await repo.reserveRunnerSession(forOther)).toBeTruthy();
+    await connection.db
+      .delete(schema.actionRunnerSession)
+      .where(eq(schema.actionRunnerSession.id, forOther.id));
+    // Another registration picked up the first job, so its own is now spare.
+    await connection.db
+      .update(schema.actionJob)
+      .set({ status: "running" })
+      .where(eq(schema.actionJob.id, f.job.id));
+    expect(
+      await repo.reserveRunnerSession({ ...forOther, id: generateId("session") }),
+    ).toBeUndefined();
+  });
   it("does not overwrite a newer mirror with a stale job response", async () => {
     const f = await fixture();
     const first = await repo.upsertGitHubRun(f.workflow, f.run, [f.job], null);
