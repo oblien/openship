@@ -24,7 +24,7 @@ export const ListDeploymentsQuery = ListDeploymentsSchema;
 export const TriggerDeployBody = CreateDeploymentSchema;
 
 /** Public endpoint (domain/route) as sent by the deploy wizard. */
-const PublicEndpointInput = Type.Object({
+export const PublicEndpointInput = Type.Object({
   port: Type.Optional(Type.String()),
   targetPath: Type.Optional(Type.String()),
   domain: Type.Optional(Type.String()),

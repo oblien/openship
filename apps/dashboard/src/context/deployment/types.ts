@@ -639,7 +639,7 @@ export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): P
     domain: overrides.domain ?? "",
     customDomain: overrides.customDomain ?? "",
     domainType: overrides.domainType ?? "free",
-    ...(overrides.redirectTo ? { redirectTo: overrides.redirectTo } : {}),
+    ...(overrides.redirectTo !== undefined ? { redirectTo: overrides.redirectTo } : {}),
     ...(overrides.redirectStatus ? { redirectStatus: overrides.redirectStatus } : {}),
   };
 }

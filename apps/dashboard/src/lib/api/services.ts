@@ -98,10 +98,12 @@ export interface Service {
   domainType: "free" | "custom" | null;
   /** Additional public routes (one per port). Entry[0] mirrors the scalars. */
   publicEndpoints?: Array<{
-    port: number;
+    port?: number;
     domainType: "free" | "custom";
     domain?: string;
     customDomain?: string;
+    redirectTo?: string;
+    redirectStatus?: number;
   }> | null;
   enabled: boolean;
   sortOrder: number;
@@ -210,6 +212,8 @@ export type ServiceInput = {
     port?: number | string;
     domain?: string;
     customDomain?: string;
+    redirectTo?: string;
+    redirectStatus?: number;
     domainType?: "free" | "custom";
   }>;
   enabled?: boolean;

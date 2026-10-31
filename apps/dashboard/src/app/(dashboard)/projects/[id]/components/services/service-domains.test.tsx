@@ -149,11 +149,8 @@ describe("service domain controls", () => {
       await render({ serviceId: service.id, port: 3000, add: true });
       await click(domains.addRoute.custom);
       await input(domains.add.domainName, "www.example.com");
-      const port = host.querySelector<HTMLInputElement>(
-        `input[aria-label="${copy.containerPort}"]`,
-      )!;
-      expect(port.value).toBe("3000");
-      expect(port.readOnly).toBe(true);
+      expect(host.querySelector('input[aria-label="Exposed port"]')).toBeNull();
+      expect(host.textContent).toContain("3000");
       await submitAdd();
       expect(mocks.update).toHaveBeenCalledOnce();
       const [projectId, id, patch] = mocks.update.mock.calls[0];
@@ -363,7 +360,7 @@ describe("service domain controls", () => {
     const fresh = { port: 4000, domainType: "custom" as const, customDomain: "fresh.example.com" };
     mocks.get.mockResolvedValue({ success: true, service: { ...service, publicEndpoints: [primary, secondary, fresh] } });
     await click(domains.editRoute.save);
-    expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([primary, { ...secondary, customDomain: "monitor.example.com" }, fresh]);
+    expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([primary, { ...secondary, customDomain: "monitor.example.com", redirectTo: "" }, fresh]);
   });
 
   it("removes the correct persisted domain and refreshes the service", async () => {
@@ -410,7 +407,7 @@ describe("service domain controls", () => {
     await click(domains.actions.addDomain);
     await click(domains.addRoute.custom);
     await input(domains.add.domainName, "another.example.com");
-    await input(copy.containerPort, "3000");
+    await input(baseDictionary.widgets.routing.settingsCard.exposedPort, "3000");
     await submitAdd();
     expect(mocks.update).not.toHaveBeenCalled();
     const selectService = async (label: string) => {
@@ -421,7 +418,7 @@ describe("service domain controls", () => {
       await act(async () => option!.click());
     };
     await selectService(service.name);
-    const port = host.querySelector<HTMLInputElement>(`input[aria-label="${copy.containerPort}"]`)!;
+    const port = host.querySelector<HTMLInputElement>(`input[aria-label="${baseDictionary.widgets.routing.settingsCard.exposedPort}"]`)!;
     expect(port.value).toBe("3000");
     await selectService(copy.selectService);
     expect(port.value).toBe("");
@@ -453,4 +450,36 @@ describe("service domain controls", () => {
     expect(host.textContent).not.toContain("other.example.com");
     expect(host.querySelector("form")).toBeNull();
   });
+});
+
+it.each(["cloud", "server"] as const)("adds apex and www together on %s through the shared form", async target => {
+  context.projectData.deployTarget = target;
+  await render({ serviceId: service.id, port: 3000, add: true });
+  await click(domains.addRoute.custom);
+  await input(domains.add.domainName, "example.com");
+  await click(domains.add.includeWww);
+  expect(host.textContent).toContain("www.example.com → example.com");
+  await submitAdd();
+  expect(mocks.update).toHaveBeenCalledOnce();
+  expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([
+    primary, secondary,
+    { port: 3000, domainType: "custom", customDomain: "example.com" },
+    { port: 3000, domainType: "custom", customDomain: "www.example.com", redirectTo: "example.com", redirectStatus: 301 },
+  ]);
+  expect(mocks.retry).toHaveBeenCalledOnce();
+});
+
+it("edits an existing service domain into a redirect without changing its siblings", async () => {
+  await render();
+  await click(`${copy.manage} ${secondary.customDomain}`);
+  await click(domains.menu.editRoute);
+  await click(baseDictionary.widgets.routing.settingsCard.redirectTo);
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+    .find(item => item.textContent?.includes(primary.customDomain));
+  expect(option).toBeDefined();
+  await act(async () => option!.click());
+  await click(domains.editRoute.save);
+  expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([
+    primary, { ...secondary, redirectTo: primary.customDomain, redirectStatus: 301 },
+  ]);
 });
