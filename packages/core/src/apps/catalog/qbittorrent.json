@@ -1,0 +1,77 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "id": "qbittorrent",
+  "name": "qBittorrent",
+  "description": "qBittorrent-nox with the web UI: a self-hosted BitTorrent client you control from the browser.",
+  "kind": "template",
+  "logo": "qbittorrent",
+  "category": "other",
+  "repository": "https://github.com/qbittorrent/qBittorrent",
+  "tags": ["torrent", "downloads", "bittorrent"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "qbittorrent",
+      "image": "qbittorrentofficial/qbittorrent-nox:5.2.4-1",
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [{ "port": 8080 }],
+      "restart": "unless-stopped",
+      "volumes": ["qbt_config:/config", "qbt_downloads:/downloads"],
+      "environment": {
+        "TZ": "UTC",
+        "QBT_WEBUI_PORT": "8080",
+        "QBT_LEGAL_NOTICE": "confirm",
+        "QBT_TORRENTING_PORT": "6881"
+      },
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "qbittorrent",
+      "port": 8080,
+      "label": "Web UI",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ],
+  "connection": {
+    "title": "Sign in to qBittorrent",
+    "description": "qBittorrent web UI. The username is admin. qBittorrent prints a temporary password to the container log on each start until you set your own.",
+    "guide": {
+      "intro": "A BitTorrent client with a browser UI. Set a permanent password first: Tools > Options > WebUI > Authentication. Config and downloads live in persisted volumes.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Web UI",
+        "source": "publicUrl:qbittorrent",
+        "kind": "url",
+        "recommended": true,
+        "help": "Opens the qBittorrent web UI. Username admin; the temporary password is in the service log."
+      }
+    ]
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Browser-controlled downloads",
+        "description": "Add, manage, and monitor torrents from a web UI, no desktop client needed."
+      },
+      {
+        "title": "Persistent storage",
+        "description": "Config and downloaded files stay on project-scoped volumes across deployments."
+      }
+    ]
+  }
+}
