@@ -8750,6 +8750,108 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "victoriametrics",
+      "name": "VictoriaMetrics",
+      "description": "Fast, resource-efficient time series database for long-term metrics, compatible with Prometheus and Grafana.",
+      "kind": "template",
+      "logo": "victoriametrics",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "metrics",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "configFields": [
+        {
+          "key": "httpAuth_password",
+          "service": "victoriametrics",
+          "label": "Password",
+          "help": "Auto-generated. Every request except /health needs the username admin and this password.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "services": [
+        {
+          "name": "victoriametrics",
+          "image": "victoriametrics/victoria-metrics:v1.154.1",
+          "ports": [
+            "8223:8428"
+          ],
+          "exposedPort": 8428,
+          "exposed": true,
+          "commandArgv": [
+            "-storageDataPath=/storage",
+            "-retentionPeriod=1y",
+            "-envflag.enable",
+            "-httpAuth.username=admin"
+          ],
+          "secretEnv": [
+            "httpAuth_password"
+          ],
+          "volumes": [
+            "victoriametrics_data:/storage"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8428/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 6,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "connection": {
+        "title": "Connect to VictoriaMetrics",
+        "description": "Use it as a Prometheus data source in Grafana, or as a remote_write target for Prometheus, with basic auth (username admin and the password below).",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "VictoriaMetrics",
+            "source": "publicUrl:victoriametrics",
+            "kind": "url",
+            "recommended": true,
+            "help": "The built-in vmui query page is at /vmui."
+          },
+          {
+            "id": "password",
+            "label": "Password (user: admin)",
+            "source": "env:victoriametrics:httpAuth_password",
+            "secret": true
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "note": "Metrics are kept for one year in the victoriametrics_data volume. Send Prometheus data to /api/v1/write."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Long-term metrics",
+            "description": "Store a year of metrics with high compression."
+          },
+          {
+            "title": "Prometheus compatible",
+            "description": "Accepts remote_write and answers PromQL queries."
+          },
+          {
+            "title": "Protected by default",
+            "description": "Basic auth with a generated password."
+          }
+        ]
+      }
     }
   ]
 }
