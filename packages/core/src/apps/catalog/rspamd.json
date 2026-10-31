@@ -1,0 +1,149 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "rspamd",
+  "name": "Rspamd",
+  "description": "Spam filtering with private HTTP scanning and milter workers, persistent state, and a password-protected controller UI. Features such as greylisting and rate limits require an external Redis server.",
+  "repository": "https://github.com/rspamd/rspamd",
+  "kind": "template",
+  "logo": "rspamd",
+  "category": "mail",
+  "tags": ["spam", "rspamd"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "rspamd",
+      "image": "rspamd/rspamd:4.2.3",
+      "entrypointArgv": ["/bin/sh", "/etc/openship/rspamd-start.sh"],
+      "commandArgv": [],
+      "environment": {
+        "RSPAMD_CONTROLLER_PASSWORD": "{{config:RSPAMD_CONTROLLER_PASSWORD}}"
+      },
+      "secretEnv": ["RSPAMD_CONTROLLER_PASSWORD"],
+      "volumes": ["rspamd_data:/var/lib/rspamd"],
+      "exposed": true,
+      "exposedPort": 11334,
+      "routes": [
+        {
+          "port": 11334
+        }
+      ],
+      "resources": {
+        "cpuCores": 1,
+        "memoryMb": 1024,
+        "diskMb": 1024
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "RSPAMD_CONTROLLER_PASSWORD",
+      "service": "rspamd",
+      "label": "Controller password",
+      "help": "Auto-generated. Use this password for the web UI and controller API, including learning and configuration changes. Changing it requires a redeploy.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Open Rspamd",
+    "description": "Sign in to the controller with the generated password. Connect your mail server to a private scan or milter worker.",
+    "guide": {
+      "intro": "Only the controller UI is routed publicly. HTTP scanning on port 11333 and milter on port 11332 stay on the project's private network.",
+      "useHint": "Use the controller password below; no username is required. Configure Redis separately for the features that need it.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "Controller UI",
+        "source": "publicUrl:rspamd",
+        "kind": "url",
+        "recommended": true,
+        "width": "full"
+      },
+      {
+        "id": "password",
+        "label": "Controller password",
+        "source": "env:rspamd:RSPAMD_CONTROLLER_PASSWORD",
+        "service": "rspamd",
+        "secret": true
+      },
+      {
+        "id": "scan",
+        "label": "HTTP scanner (private)",
+        "source": "template:http://rspamd:11333",
+        "service": "rspamd",
+        "envKey": "RSPAMD_SCAN_URL",
+        "help": "Use the normal worker's /checkv2 endpoint to scan messages on the private network."
+      },
+      {
+        "id": "milter",
+        "label": "Milter (private)",
+        "source": "template:rspamd:11332",
+        "service": "rspamd",
+        "help": "Connect your mail server's milter client to this private host and port."
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "rspamd",
+      "port": 11334,
+      "label": "Controller UI",
+      "kind": "http",
+      "scope": "public",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "internal"]
+    },
+    {
+      "service": "rspamd",
+      "port": 11333,
+      "label": "HTTP scanner (private)",
+      "kind": "http",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    },
+    {
+      "service": "rspamd",
+      "port": 11332,
+      "label": "Milter (private)",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Mail server integration",
+        "description": "Use private HTTP scanning or milter with your existing mail server."
+      },
+      {
+        "title": "Controller access",
+        "description": "Manage Rspamd with a generated password and a persistent data volume."
+      }
+    ],
+    "articleFile": "articles/rspamd.md"
+  },
+  "files": [
+    {
+      "service": "rspamd",
+      "path": "/etc/openship/rspamd-start.sh",
+      "content": "#!/bin/sh\nset -eu\n: \"${RSPAMD_CONTROLLER_PASSWORD:?Controller password is required.}\"\nRSPAMD_CONTROLLER_PASSWORD_HASH=\"$(rspamadm pw --password \"$RSPAMD_CONTROLLER_PASSWORD\")\"\ncase \"$RSPAMD_CONTROLLER_PASSWORD_HASH\" in\n  '$2$'?*'$'?*) ;;\n  *) echo 'Unable to hash the controller password.' >&2; exit 1 ;;\nesac\nexport RSPAMD_CONTROLLER_PASSWORD_HASH\nunset RSPAMD_CONTROLLER_PASSWORD\nexec /usr/bin/rspamd -f\n"
+    },
+    {
+      "service": "rspamd",
+      "path": "/etc/rspamd/override.d/worker-controller.inc",
+      "content": "password = \"{= env.CONTROLLER_PASSWORD_HASH =}\";\nenable_password = \"{= env.CONTROLLER_PASSWORD_HASH =}\";\nsecure_ip = [];\nallow_file_and_shm_inputs = false;\n"
+    }
+  ]
+}
