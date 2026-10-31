@@ -7,6 +7,7 @@ import { useState } from "react";
 import { isValidAppTemplate } from "@repo/core";
 import { Modal } from "@/components/ui/Modal";
 import { appsApi } from "@/lib/api";
+import { refreshCustomAppLogos } from "@/components/AppLogo";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -69,6 +70,7 @@ export function AddCustomAppModal({
     setBusy(true);
     try {
       await appsApi.addCustom(template);
+      refreshCustomAppLogos();
       showToast(interpolate(m.addedToast || "Added \"{name}\" to your catalog.", { name: name || "app" }), "success");
       onAdded();
       onClose();
