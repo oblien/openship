@@ -77,3 +77,56 @@ describe("domain and DNS remote transport", () => {
     await expect(client.domains.dnsChallenge("domain/a")).rejects.toMatchObject({ status: 502 });
   });
 });
+
+describe("domain body limit updates", () => {
+  it("PATCHes the encoded domain with replacement/null/omitted proxy and retains explicit zero", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({ data: { ...domainFixture(), proxy: { clientMaxBodySize: "0" } } }),
+    );
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    for (const input of [
+      { proxy: { clientMaxBodySize: "0" } },
+      { proxy: {} },
+      { proxy: null },
+      {},
+    ]) {
+      expect((await client.domains.update("domain/a", input)).proxy).toEqual({
+        clientMaxBodySize: "0",
+      });
+      expect(fetcher.mock.calls.at(-1)).toMatchObject([
+        "https://ship.test/api/domains/domain%2Fa",
+        { method: "PATCH", body: JSON.stringify(input) },
+      ]);
+    }
+  });
+  it.each(["25", "-1m", "1M", "1m;return 200", "1m\n", "9".repeat(100) + "g"])(
+    "rejects unsafe body cap %s before transport",
+    async (value) => {
+      const fetcher = vi.fn();
+      const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+      await expect(
+        client.domains.update("domain-a", { proxy: { clientMaxBodySize: value } }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects unknown domain/proxy keys and propagates failed apply instead of reporting success", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json(
+        { error: "Saved, but routing apply failed", code: "DOMAIN_PROXY_APPLY_FAILED" },
+        { status: 502 },
+      ),
+    );
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    for (const input of [{ projectId: "other" }, { proxy: { proxyReadTimeout: "1s" } }]) {
+      await expect(client.domains.update("domain-a", input as never)).rejects.toMatchObject({
+        code: "VALIDATION_ERROR",
+      });
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(client.domains.update("domain-a", { proxy: null })).rejects.toMatchObject({
+      status: 502,
+      code: "DOMAIN_PROXY_APPLY_FAILED",
+    });
+  });
+});

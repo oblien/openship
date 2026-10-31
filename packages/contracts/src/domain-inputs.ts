@@ -3,6 +3,8 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { PROXY_SIZE_RE } from "@repo/core";
+export type { DomainProxySettings } from "@repo/core";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -52,6 +54,30 @@ export const AddDomainBody = Type.Object({
   /** ACME challenge method: "http-01" (default) | "dns-01" (required for wildcards). */
   sslChallenge: Type.Optional(Type.Union([Type.Literal("http-01"), Type.Literal("dns-01")])),
 });
+
+/** Only the HTTP request body cap is supported per domain. `0` is unlimited. */
+export const DomainProxySettingsSchema = Type.Object(
+  {
+    clientMaxBodySize: Type.Optional(
+      Type.String({
+        pattern: PROXY_SIZE_RE.source + "(?![\\s\\S])",
+        maxLength: 32,
+        description:
+          "HTTP request body cap, e.g. 2m or 1g. 0 means unlimited. Does not limit WebSocket frames.",
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+/** Omitted proxy leaves it unchanged; null clears it; an object replaces it. */
+export const UpdateDomainBody = Type.Object(
+  {
+    proxy: Type.Optional(Type.Union([DomainProxySettingsSchema, Type.Null()])),
+  },
+  { additionalProperties: false },
+);
+export type UpdateDomainInput = Static<typeof UpdateDomainBody>;
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
  *  domain. The cert/key pair is validated (parse + key match) in the adapter. */

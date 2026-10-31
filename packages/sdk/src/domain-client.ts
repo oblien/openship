@@ -24,6 +24,7 @@ export function createRemoteDomainOperations(http: HttpClient): DomainOperations
     }),
     ...createRemoteResourceOperations(http, DomainResourceSchemas, {
       get: { method: "GET", path: domain, envelope: "data" },
+      update: { method: "PATCH", path: domain, envelope: "data" },
       remove: { method: "DELETE", path: domain },
       verify: { method: "POST", path: id => `${domain(id)}/verify`, inputLocation: "query", resultStatuses: [422] },
       records: { method: "GET", path: id => `${domain(id)}/records`, envelope: "data" },

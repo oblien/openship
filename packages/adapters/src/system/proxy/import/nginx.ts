@@ -376,10 +376,11 @@ function isAcmeWebrootOnly(body: string): boolean {
  * answer different questions:
  *
  *   `raw`   — every declared directive present in the block, verbatim. This is what
- *             the box is actually serving, and it's what the UI must show. A vhost
+ *             the generated vhost file holds, and it's what the UI must show. A vhost
  *             we didn't write can legally hold `client_max_body_size 20M` or
  *             `proxy_read_timeout 1d`; rendering "not set" for a value that IS set
  *             would be a lie, and the operator would chase a limit that isn't there.
+ *             Reading a file does not prove running workers loaded it.
  *   `settings` — the subset that survives `sanitizeProxySettings`, i.e. what can be
  *             adopted into `routingConfig.proxy` and re-rendered unchanged.
  */
@@ -387,10 +388,35 @@ function parseProxyDirectives(body: string): {
   settings?: ProxySettings;
   raw?: Record<string, string>;
 } {
+  // Server inheritance must not be confused with a special location's own cap
+  // (for example the password login endpoint's deliberate 4k). Only declarations
+  // at this scope describe the domain's body limit. Other imported tunables
+  // retain their existing location-aware handling.
+  let depth = 0;
+  let quote = "";
+  let scoped = "";
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (quote) {
+      if (depth === 0) scoped += ch;
+      if (ch === "\\") {
+        if (depth === 0) scoped += body[i + 1] ?? "";
+        i++;
+      } else if (ch === quote) quote = "";
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      if (depth === 0) scoped += ch;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) scoped += ";\n";
+    } else if (depth === 0) scoped += ch;
+  }
   const raw: Record<string, string> = {};
   const candidate: Record<string, string | number | boolean> = {};
   for (const spec of PROXY_DIRECTIVES) {
-    const found = firstDirective(body, spec.directive);
+    const found = firstDirective(spec.key === "clientMaxBodySize" ? scoped : body, spec.directive);
     if (found === undefined) continue;
     raw[spec.key] = found;
     const parsed = parseProxyValue(spec, found);

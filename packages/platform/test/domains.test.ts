@@ -7,6 +7,7 @@ import { domainFixture, domainDnsChallengeFixture, dnsCredentialFixture } from "
 let state: ReturnType<typeof authorizationFixture>;
 let ctx: ExecutionContext;
 let domains: ReturnType<typeof createDomainOperations>;
+const update = vi.fn();
 const get = vi.fn(), create = vi.fn(), verifyPending = vi.fn(), unsubscribe = vi.fn(), challenge = vi.fn();
 let write: (event: string, data: string) => boolean;
 beforeEach(async () => {
@@ -21,10 +22,11 @@ beforeEach(async () => {
   const authorization = createAuthorization(state);
   ctx = await authorization.resolveScope(alice, "org-a");
   get.mockResolvedValue(domainFixture());
+  update.mockResolvedValue(domainFixture());
   challenge.mockResolvedValue(domainDnsChallengeFixture());
   create.mockResolvedValue({ domain: domainFixture(), records: { mode: "external", records: [] } });
   domains = createDomainOperations(authorization, {
-    collection: { create }, resources: { get, dnsChallenge: challenge, startDnsChallenge: challenge, checkDnsChallenge: challenge, cancelDnsChallenge: challenge }, scoped: { verifyPending },
+    collection: { create }, resources: { get, update, dnsChallenge: challenge, startDnsChallenge: challenge, checkDnsChallenge: challenge, cancelDnsChallenge: challenge }, scoped: { verifyPending },
     subscribe: () => (send) => {
       write = send;
       send("session", JSON.stringify({ type: "session" }));
@@ -39,6 +41,29 @@ describe("domain operation boundaries", () => {
     await expect(domains.create(ctx, "project-b", { hostname: "app.example.com" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(get).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
+  });
+  it("requires domain/project write permission and fixed tenant scope for updates", async () => {
+    await expect(domains.update(ctx, "domain-b", { proxy: null })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    await expect(domains.update(ctx, "domain-a", { proxy: null })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(update).not.toHaveBeenCalled();
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["write"] });
+    await domains.update(ctx, "domain-a", { proxy: { clientMaxBodySize: "0" } });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org-a" }),
+      "domain-a",
+      { proxy: { clientMaxBodySize: "0" } },
+    );
+    state.grants.clear();
+    await expect(domains.update(ctx, "domain-a", { proxy: null })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(update).toHaveBeenCalledOnce();
   });
   it("inherits project grants, refreshes them, and snapshots input before authorization", async () => {
     state.members.set("org-a:alice", { id: "member-a", role: "restricted" });

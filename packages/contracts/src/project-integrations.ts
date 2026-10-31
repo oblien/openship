@@ -3,6 +3,7 @@ import { OBJECT_STORAGE_PROVIDERS } from "@repo/core";
 import { CreateConnectionBody, CreateBundleBody } from "./project-connections";
 import { BindObjectStorageBody } from "./project-storage";
 import { ResourceIdSchema } from "./deployment-resources";
+import { DomainProxySettingsSchema } from "./domain-inputs";
 import type { ResourceOperationSchema } from "./resource-operations";
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
@@ -46,13 +47,38 @@ export const ProjectStorageViewSchema = Type.Object({
 });
 const proxyValue = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
 const proxySettings = Type.Record(Type.String(), proxyValue);
+export const DomainBodyLimitStateSchema = Type.Object({
+  saved: Type.Union([DomainProxySettingsSchema, Type.Null()]),
+  effective: nullableString,
+  source: Type.Union([Type.Literal("domain"), Type.Literal("project"), Type.Literal("edge")]),
+  observed: nullableString,
+  configurationMatches: Type.Union([Type.Boolean(), Type.Null()]),
+});
+export type DomainBodyLimitState = Static<typeof DomainBodyLimitStateSchema>;
 export const ProjectEdgeConfigSchema = Type.Object({
   reachable: Type.Boolean(), error: Type.Optional(Type.String()), proxyKind: Type.Optional(Type.String()), ours: Type.Optional(Type.Boolean()), nginxVersion: Type.Optional(Type.String()),
   saved: proxySettings,
-  hosts: Type.Array(Type.Object({
-    hostname: Type.String(), found: Type.Boolean(), tls: Type.Boolean(), driftCount: Type.Integer(), adoptable: proxySettings,
-    directives: Type.Array(Type.Object({ key: Type.String(), directive: Type.String(), group: Type.String(), expected: Type.Optional(proxyValue), live: Type.Optional(proxyValue), liveRaw: Type.Optional(Type.String()), drift: Type.Boolean() })),
-  })),
+  hosts: Type.Array(
+    Type.Object({
+      hostname: Type.String(),
+      found: Type.Boolean(),
+      tls: Type.Boolean(),
+      driftCount: Type.Integer(),
+      adoptable: proxySettings,
+      bodyLimit: Type.Optional(DomainBodyLimitStateSchema),
+      directives: Type.Array(
+        Type.Object({
+          key: Type.String(),
+          directive: Type.String(),
+          group: Type.String(),
+          expected: Type.Optional(proxyValue),
+          live: Type.Optional(proxyValue),
+          liveRaw: Type.Optional(Type.String()),
+          drift: Type.Boolean(),
+        }),
+      ),
+    }),
+  ),
 });
 
 export const ProjectIntegrationSchemas = {

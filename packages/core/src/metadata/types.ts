@@ -60,8 +60,8 @@ export interface RoutingConfig {
   /** Enforce (true) or remove (false) trailing slashes. */
   trailingSlash?: boolean;
   /** Project-level reverse-proxy tunables (client_max_body_size, timeouts,
-   *  buffering, gzip) rendered into every vhost this project owns. Overrides
-   *  the server default; overridden per-service. */
+   *  buffering, gzip) rendered into every vhost this project owns.
+   *  Precedence lives in packages/core/src/proxy-settings.ts. */
   proxy?: ProxySettings;
 }
 

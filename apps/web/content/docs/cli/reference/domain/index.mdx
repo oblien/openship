@@ -30,6 +30,7 @@ openship domain [options] [command]
 | [`remove\|rm [options] <id>`](/docs/cli/reference/domain#openship-domain-remove) | Remove a domain and its managed route |
 | [`upload-cert [options] <id>`](/docs/cli/reference/domain#openship-domain-upload-cert) | Install a manual certificate through the shared hostname and key validation |
 | [`verify-pending [options]`](/docs/cli/reference/domain#openship-domain-verify-pending) | Retry eligible pending domains within the selected organization |
+| [`update [options] <id>`](/docs/cli/reference/domain#openship-domain-update) | Set the HTTP body cap on a self-hosted nginx/OpenResty domain; compare the saved cap with the observed server-block configuration in project Edge config |
 
 ## openship domain add
 
@@ -143,6 +144,23 @@ Renew SSL for every near-expiry domain in your organization
 ```text
 openship domain renew-all [options]
 ```
+
+## openship domain update
+
+Set the HTTP body cap on a self-hosted nginx/OpenResty domain; compare the saved cap with the observed server-block configuration in project Edge config
+
+```text
+openship domain update [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--client-max-body-size <size>` | Custom HTTP body cap (e.g. 2m, 1g; 0 = unlimited) |
+| `--inherit-client-max-body-size` | Clear the domain override and inherit the project body cap |
 
 ## openship domain upload-cert
 

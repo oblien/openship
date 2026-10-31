@@ -7,7 +7,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  */
 
 import { Command, Option } from "commander";
-import { UploadCertBody, parseInput } from "@repo/contracts";
+import { UploadCertBody, UpdateDomainBody, parseInput } from "@repo/contracts";
 import { readFileSync } from "node:fs";
 import { attachCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
 import { getShipClient } from "../lib/ship-client";
@@ -314,3 +314,37 @@ domainCommand.command("verify-pending").description("Retry eligible pending doma
     if (result.failed) process.exitCode = 1;
     return result;
   }));
+
+domainCommand
+  .command("update")
+  .argument("<id>", "Domain ID")
+  .description(
+    "Set the HTTP body cap on a self-hosted nginx/OpenResty domain; compare the saved cap with the observed server-block configuration in project Edge config",
+  )
+  .addOption(
+    new Option(
+      "--client-max-body-size <size>",
+      "Custom HTTP body cap (e.g. 2m, 1g; 0 = unlimited)",
+    ).conflicts("inheritClientMaxBodySize"),
+  )
+  .addOption(
+    new Option(
+      "--inherit-client-max-body-size",
+      "Clear the domain override and inherit the project body cap",
+    ).conflicts("clientMaxBodySize"),
+  )
+  .action((id: string, opts) =>
+    printResult(() => {
+      if (opts.clientMaxBodySize === undefined && !opts.inheritClientMaxBodySize) {
+        throw new Error("Choose --client-max-body-size or --inherit-client-max-body-size");
+      }
+      return getShipClient().domains.update(
+        id,
+        parseInput(UpdateDomainBody, {
+          proxy: opts.inheritClientMaxBodySize
+            ? null
+            : { clientMaxBodySize: opts.clientMaxBodySize },
+        }),
+      );
+    }),
+  );

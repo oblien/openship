@@ -13,10 +13,10 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *    `client_max_body_size 1m` turns any real upload into a 413, and the 60s
  *    timeouts cut off a big one that IS allowed. Grouping them beats discovering
  *    them one 413 at a time.
- *  - Show what the edge is ACTUALLY serving beside what we saved. Saved-equals-served
- *    is an assumption: a hand-edited vhost, a value the sanitizer dropped, or a
- *    directive the box's nginx is too old for all leave the two apart, and until this
- *    read-back nothing surfaced it.
+ *  - Show what the generated edge configuration contains beside what we saved. A
+ *    hand-edited vhost, a value the sanitizer dropped, or a directive the box's nginx
+ *    is too old for all leave the two apart, and until this read-back nothing
+ *    surfaced it. A matching file does not prove the workers reloaded it.
  *
  * Human labels lead; optional technical details keep directive names available.
  * New directives still render from the shared table with a readable fallback label.
@@ -62,7 +62,7 @@ function placeholderFor(spec: ProxyDirectiveSpec): string {
   }
 }
 
-/** What one host is serving for one directive, as text. */
+/** What one host's configuration holds for one directive, as text. */
 function liveText(
   state: { live?: string | number | boolean; liveRaw?: string } | undefined,
   notSet: string,

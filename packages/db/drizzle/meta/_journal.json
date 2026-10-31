@@ -1443,6 +1443,13 @@
       "when": 1792683952081,
       "tag": "0205_security_advisories",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1792745702612,
+      "tag": "0206_domain_proxy",
+      "breakpoints": true
     }
   ]
 }
