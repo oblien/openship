@@ -26,7 +26,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
 import { NotFoundError, capabilityFor, capabilityRoot, normalizeRepoPath } from "@repo/core";
-import { permission, ORG_SINGLETON_RESOURCES, type CheckedResourceType } from "./permission";
+import { permission, ORG_SINGLETON_RESOURCES, isCheckedResourceType, type CheckedResourceType } from "./permission";
 import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
@@ -115,42 +115,6 @@ const ROOT_RESOURCES = new Set<string>([
 ]);
 
 /**
- * Every resource name a permission tag may point at (root or leaf).
- * Source of truth: the `ResourceType` union in @repo/core (access-grants.ts) —
- * its docstring states the nested leaves live there precisely because tags
- * name them — plus the `CheckedResourceType` extras in ./permission
- * (authorization.ts). Keep in sync when either union grows: the boot scanner
- * relies on this set to refuse tags that point at nonexistent resources.
- */
-const KNOWN_TAG_RESOURCES = new Set<string>([
-  "project",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-  "analytics",
-  "github",
-  "github_installation",
-  "github_repository",
-  "permissions",
-  "domain",
-  "settings",
-  "job",
-  "terminal",
-  "cloud",
-  "notifications",
-  "updates",
-  "service",
-  "deployment",
-  "backup_policy",
-  "backup_run",
-  "backup_restore",
-  "env_var",
-  "build_session",
-]);
-
-/**
  * Re-exported from ./permission, which is where this policy now lives so the
  * restricted arm of `checkPermission` can honor org-singleton grants without
  * importing this module (that would cycle). Kept exported here for the existing
@@ -206,16 +170,14 @@ export function parsePermissionTag(tag: PermissionTag): ParsedTag {
   }
   const resourceSegments = parts.slice(0, -1);
   const leaf = resourceSegments[resourceSegments.length - 1];
-  if (!KNOWN_TAG_RESOURCES.has(leaf)) {
-    throw new Error(
-      `Invalid resource "${leaf}" in tag "${tag}" — must be one of ${[...KNOWN_TAG_RESOURCES].join("|")}`,
-    );
+  if (!isCheckedResourceType(leaf)) {
+    throw new Error(`Invalid resource "${leaf}" in tag "${tag}"`);
   }
 
   return {
     raw: tag,
     root: root as CheckedResourceType,
-    leaf: leaf as CheckedResourceType,
+    leaf,
     action: action as Action | "list",
     isList: action === "list",
   };
