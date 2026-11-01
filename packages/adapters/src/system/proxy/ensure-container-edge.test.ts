@@ -104,7 +104,12 @@ function box(opts: BoxOpts = {}) {
     commands.push(cmd);
     if (cmd.includes("{{json .Swarm}}")) return '{"LocalNodeState":"inactive"}';
 
-    if (cmd.startsWith("docker ps --filter name=openship-edge")) return opts.edgeContainer ?? "";
+    if (cmd.startsWith("docker ps --filter name=openship-edge")) {
+      return opts.edgeContainer?.includes("openship-edge") ? opts.edgeContainer : "";
+    }
+    if (cmd.startsWith("docker ps --format") && opts.edgeContainer) {
+      return `${opts.edgeContainer}\t${opts.edgeContainerImage ?? IMAGE}`;
+    }
     if (cmd.startsWith("docker ps")) return "";
     if (cmd.startsWith("docker version")) return opts.dockerMissing ? "" : "27.0.0";
     if (cmd.includes("{{json .Config.Labels}}")) {

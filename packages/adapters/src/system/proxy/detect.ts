@@ -356,7 +356,7 @@ export async function detectEdgeContainer(
   for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const [name, image, state] = line.split("\t");
     if (!name) continue;
-    if (name === EDGE_CONTAINER_NAME || isOurEdgeContainer(name, image)) {
+    if (isOurEdgeContainer(name, image)) {
       return { name, image: image || null, running: state === "running", exists: true };
     }
   }
@@ -366,9 +366,12 @@ export async function detectEdgeContainer(
 async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string | null> {
   const byName = await tryExec(
     executor,
-    `docker ps --filter name=openship-edge --format '{{.Names}}' 2>/dev/null | head -1`,
+    `docker ps --filter name=openship-edge --format '{{.Names}}' 2>/dev/null`,
   );
-  if (byName?.trim()) return byName.trim();
+  // Docker's name filter also returns apps such as openship-edge-demo-app.
+  if (byName?.split("\n").some((name) => name.trim() === EDGE_CONTAINER_NAME)) {
+    return EDGE_CONTAINER_NAME;
+  }
 
   // Renamed container (OPENSHIP_EDGE_CONTAINER): still ours if it runs our image.
   const all = await tryExec(executor, `docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null`);
