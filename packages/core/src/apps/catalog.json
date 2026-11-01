@@ -8750,6 +8750,208 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "miniflux",
+      "name": "Miniflux",
+      "description": "Minimalist, self-hosted RSS and Atom feed reader backed by a private PostgreSQL database.",
+      "kind": "template",
+      "logo": "miniflux",
+      "category": "other",
+      "repository": "https://github.com/miniflux/v2",
+      "tags": [
+        "rss",
+        "feeds",
+        "news",
+        "reader"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "miniflux-db",
+          "image": "postgres:16-alpine",
+          "restart": "unless-stopped",
+          "environment": {
+            "POSTGRES_USER": "miniflux",
+            "POSTGRES_DB": "miniflux"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "miniflux_db_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U miniflux -d miniflux"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "miniflux",
+          "image": "miniflux/miniflux:2.3.4",
+          "exposed": true,
+          "exposedPort": 8080,
+          "ports": [
+            "8080"
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "miniflux-db"
+          ],
+          "environment": {
+            "PORT": "8080",
+            "LISTEN_ADDR": "0.0.0.0:8080",
+            "RUN_MIGRATIONS": "1",
+            "CREATE_ADMIN": "1",
+            "ADMIN_USERNAME": "admin",
+            "DATABASE_URL": "postgres://miniflux:{{config:DB_PASSWORD}}@miniflux-db/miniflux?sslmode=disable"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8080/healthcheck || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "20s"
+          }
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "miniflux",
+          "port": 8080,
+          "label": "Miniflux",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "miniflux-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "miniflux-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "miniflux-db"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "miniflux",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "miniflux-db"
+        },
+        {
+          "key": "ADMIN_USERNAME",
+          "service": "miniflux",
+          "label": "Admin username",
+          "default": "admin"
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "service": "miniflux",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "setup",
+          "label": "Initial account",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "ADMIN_USERNAME",
+              "service": "miniflux",
+              "label": "Admin username",
+              "type": "text",
+              "default": "admin",
+              "required": true,
+              "installStep": true,
+              "help": "Used to create the first administrator account. Manage additional accounts in the app."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "connection": {
+        "title": "Sign in to Miniflux",
+        "description": "Miniflux creates its administrator account on first start, from the username and the generated password below.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Miniflux",
+            "source": "publicUrl:miniflux",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:miniflux:ADMIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:miniflux:ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (password changes, new users) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "RSS and Atom",
+            "description": "Follow publications and feeds without ads or tracking."
+          },
+          {
+            "title": "Private database",
+            "description": "Feeds and read state live in a dedicated, project-scoped Postgres instance."
+          },
+          {
+            "title": "Lightweight",
+            "description": "A minimal Go application with a fast, no-frills reading interface."
+          }
+        ]
+      }
     }
   ]
 }
