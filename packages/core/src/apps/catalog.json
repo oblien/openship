@@ -8750,6 +8750,151 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "description": "A time-series database for metrics and events, with its initial org, bucket, and admin API token set up automatically.",
+      "kind": "template",
+      "logo": "influxdb",
+      "category": "database",
+      "repository": "https://github.com/influxdata/influxdb",
+      "tags": [
+        "database",
+        "time-series",
+        "metrics",
+        "analytics"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "influxdb",
+          "image": "influxdb:2.7.12",
+          "exposed": true,
+          "exposedPort": 8086,
+          "restart": "unless-stopped",
+          "volumes": [
+            "influxdb_data:/var/lib/influxdb2",
+            "influxdb_config:/etc/influxdb2"
+          ],
+          "environment": {
+            "DOCKER_INFLUXDB_INIT_MODE": "setup",
+            "DOCKER_INFLUXDB_INIT_USERNAME": "admin",
+            "DOCKER_INFLUXDB_INIT_ORG": "openship",
+            "DOCKER_INFLUXDB_INIT_BUCKET": "default"
+          },
+          "secretEnv": [
+            "DOCKER_INFLUXDB_INIT_PASSWORD",
+            "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS http://127.0.0.1:8086/health | grep -q '\"status\": *\"pass\"' || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "20s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "DOCKER_INFLUXDB_INIT_PASSWORD",
+          "service": "influxdb",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN",
+          "service": "influxdb",
+          "label": "Admin API token",
+          "help": "Auto-generated. Grants full read/write access to every org and bucket — treat it like a root credential.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "influxdb",
+          "port": 8086,
+          "label": "InfluxDB",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to InfluxDB",
+        "description": "Sign in with the username and generated password below, or use the admin API token for scripts and clients.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "InfluxDB",
+            "source": "publicUrl:influxdb",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:influxdb:DOCKER_INFLUXDB_INIT_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:influxdb:DOCKER_INFLUXDB_INIT_PASSWORD",
+            "secret": true,
+            "width": "half"
+          },
+          {
+            "id": "org",
+            "label": "Organization",
+            "source": "env:influxdb:DOCKER_INFLUXDB_INIT_ORG",
+            "width": "half"
+          },
+          {
+            "id": "bucket",
+            "label": "Initial bucket",
+            "source": "env:influxdb:DOCKER_INFLUXDB_INIT_BUCKET",
+            "width": "half"
+          },
+          {
+            "id": "token",
+            "label": "Admin API token",
+            "source": "env:influxdb:DOCKER_INFLUXDB_INIT_ADMIN_TOKEN",
+            "secret": true,
+            "help": "Use this for the InfluxDB CLI, client libraries, and Telegraf — it never needs a login."
+          }
+        ],
+        "firstLogin": {
+          "note": "Account and token changes made in the app are preserved on redeployment. These are the initial credentials, set up automatically on first start."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Automatic setup",
+            "description": "The initial organization, bucket, and admin API token are created on first start, no manual setup wizard."
+          },
+          {
+            "title": "Time-series storage",
+            "description": "Purpose-built for metrics, events, and other time-stamped data."
+          },
+          {
+            "title": "Persistent storage",
+            "description": "Data and config stay on project-scoped volumes across deployments."
+          }
+        ]
+      }
     }
   ]
 }
