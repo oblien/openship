@@ -175,6 +175,8 @@ export interface ReceiveStreamOpts {
    * continuously, a wedged helper moves nothing — so the idle timer separates
    * them exactly where a wall-clock bound has to choose between strangling the
    * first and missing the second.
+   * Docker stages uploads first: this idle guard ends at upload EOF, while
+   * local validation and extraction remain covered by timeoutMs and signal.
    */
   idleTimeoutMs?: number;
   /** Absolute ceiling regardless of traffic, as a last resort behind
