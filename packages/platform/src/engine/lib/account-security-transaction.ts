@@ -1,7 +1,7 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from "@better-auth/core";
 import { runWithTransaction } from "@better-auth/core/context";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthEndpoint, getSessionFromCtx } from "better-auth/api";
+import { createAuthEndpoint, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { and, eq, gt, schema, type Database } from "@repo/db/factory";
 
 type Endpoint = NonNullable<BetterAuthPlugin["endpoints"]>[string];
@@ -24,6 +24,7 @@ export function atomicSecurityEndpoint<T extends Endpoint>(
     { ...endpoint.options, use: undefined },
     async (ctx: GenericEndpointContext) => {
       const original = ctx.context.adapter;
+      let verificationDenial: unknown;
       try {
         const result = await database.transaction(async (tx) => {
           const adapter = drizzleAdapter(tx, { provider: "pg", schema })(ctx.context.options);
@@ -72,9 +73,27 @@ export function atomicSecurityEndpoint<T extends Endpoint>(
             }
             ctx.context.session = null;
             await before?.(ctx);
-            return endpoint({ ...ctx, asResponse: false, returnHeaders: true, returnStatus: true });
+            try {
+              return await endpoint({ ...ctx, asResponse: false, returnHeaders: true, returnStatus: true });
+            } catch (error) {
+              // These denials follow only failure-counter/challenge writes.
+              // Commit that bookkeeping, then propagate the denial outside the
+              // transaction. Credential mutations and unexpected failures still
+              // roll back, and no authenticated response headers are released.
+              if (
+                (ctx.path === "/two-factor/verify-totp" || ctx.path === "/two-factor/verify-backup-code") &&
+                isAPIError(error) &&
+                ["INVALID_CODE", "INVALID_BACKUP_CODE", "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE"].includes(error.body?.code ?? "")
+              ) {
+                verificationDenial = error;
+                return null;
+              }
+              throw error;
+            }
           });
         });
+        if (verificationDenial) throw verificationDenial;
+        if (!result) throw new Error("Account security endpoint returned no result");
         // A rolled-back change must not send a new session cookie or bearer token.
         // Better Call owns this header collection at runtime. Append Set-Cookie
         // separately: setHeader replaces earlier cookies in a rotation response.

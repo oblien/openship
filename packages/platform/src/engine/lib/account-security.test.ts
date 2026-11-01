@@ -258,6 +258,48 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     expect((await browser.request("/get-session")).data.user.id).toBe(user.id);
   });
 
+  it.each(["/two-factor/verify-totp", "/two-factor/verify-backup-code"])(
+    "persists failed verification counters and locks the account across fresh challenges (%s)",
+    async (path) => {
+      const user = await enroll();
+      const browser = new Browser();
+      await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      const denied = await browser.request(path, { code: "invalid" });
+      expect(denied.status).toBe(401);
+      expect(denied.headers.has("set-auth-token")).toBe(false);
+      const [factor] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+      expect(factor!.failedVerificationCount).toBe(1);
+      await connection.db.update(schema.twoFactor).set({ failedVerificationCount: 9 }).where(eq(schema.twoFactor.userId, user.id));
+      const retry = new Browser(createAuth());
+      await retry.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      expect((await retry.request(path, { code: "invalid" })).status).toBe(401);
+      const [locked] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+      expect(locked!.failedVerificationCount).toBe(10);
+      expect(locked!.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+      const fresh = new Browser(createAuth());
+      await fresh.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      expect((await fresh.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(429);
+      expect((await fresh.request("/get-session")).data).toBeNull();
+    },
+  );
+
+  it("expires a challenge after repeated failures and accepts a new challenge without bypassing 2FA", async () => {
+    const user = await enroll();
+    const browser = new Browser();
+    await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+    for (let i = 0; i < 5; i++)
+      expect((await browser.request("/two-factor/verify-totp", { code: "invalid" })).status).toBe(401);
+    const exhausted = await browser.request("/two-factor/verify-totp", { code: "invalid" });
+    expect(exhausted.status).toBe(400);
+    expect(exhausted.data.code).toBe("TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE");
+    expect((await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(401);
+    expect((await browser.request("/get-session")).data).toBeNull();
+    await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+    expect((await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(200);
+    const [factor] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+    expect(factor!.failedVerificationCount).toBe(0);
+  });
+
   it("keeps 2FA enabled if removing its secret fails", async () => {
     const user = await enroll();
     const [factor] = await connection.db

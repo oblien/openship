@@ -153,6 +153,8 @@ app integrations. Includes dependency security updates and all 0.9.6 fixes.
   as a provider-verified email, preventing pre-registered account hijacking.
   Migrate authenticator confirmation and lockout fields while preserving existing
   active factors and unfinished enrollments, including older instance backups.
+  Preserve failed authenticator and recovery-code counters across denied requests,
+  so challenge attempt limits and account lockouts cannot be reset by transaction rollback.
   Include the assistant type dependency in the public SDK and catalog new audit events.
 
 - **Deployment fixes** — redact long clone tokens from stored errors and skip the
