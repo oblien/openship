@@ -6,6 +6,11 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.6
+
+Recommended update for database recovery, reliable builds and migrations, GitHub
+Actions scheduling, and managed infrastructure updates.
+
 - **Recover PGlite after a container crash** — hold a Linux kernel file lock so
   reused PIDs cannot strand the database or admit an owner in another container.
   Preserve conservative checks for older locks and other operating systems (#1524).
@@ -53,9 +58,10 @@ Runtime security notices use the signed feed published from `security-advisories
   reused containers stay outside the deployment scope. Single apps with mounted
   data remain unsupported and are refused before data movement (#1525).
 
-- **Keep queued GitHub jobs moving** — only count spare runner registrations
-  whose runners remain admitted and capable for the waiting workflow. Excluded
-  runners, stale approvals and incompatible hosts no longer block dispatch (#1505).
+- **Keep queued GitHub jobs moving** — replace a registration that GitHub assigned
+  to another job, and only count spare registrations whose runners remain admitted
+  and capable for the waiting workflow. Excluded runners, stale approvals and
+  incompatible hosts no longer block dispatch (#1505, #1509, #1541).
 
 - **Keep Cloud diagnostics available during replica startup** — allow bounded
   schema initialization to wait for another replica, while preserving the short
@@ -128,6 +134,40 @@ Runtime security notices use the signed feed published from `security-advisories
 - **Clarify referral checkout and earnings** — retain unavailable referral codes
   through sign-in until the customer removes them, and show commission per
   confirmed payment with renewals limited to the program's reward period.
+
+- **Restore managed services after an interrupted image update** — attempt to
+  restore the previous edge or mail image when replacement startup throws,
+  including a lost SSH command channel after removal. Report unsuccessful
+  recovery instead of treating a connection failure as proof of an outage (#1540).
+- **Validate permission resource names at startup** — reject unknown permission
+  leaf types during route registration using the shared authorization validator,
+  so misspelled tags cannot reach request-time resource resolution (#1521).
+- **Load the selected app's source environment** — use the app folder's
+  `openship.json` when present and fall back to the repository root otherwise,
+  matching the configuration shown during setup (#1480).
+- **Authenticate private submodules with the selected GitHub token** — support
+  relative, HTTPS, SSH and recursive private dependencies through the shared
+  deployment credential helper, while preserving repository and namespace scope
+  and keeping credentials out of saved remote URLs (#1522).
+- **Preserve Docker restart retries and port mappings** — retain configured
+  `on-failure` retry limits and every published binding during container creation.
+- **Keep edge routes usable before a first deploy** — resolve domains through the
+  project's saved server binding, preserve the origin of password-form submissions,
+  and forward the visitor country to upstream applications. Document the scope
+  of edge password protection and direct-port access (#1498, #1515, #1506).
+- **Keep deployment source identity intact** — expose the selected revision as
+  `OPENSHIP_COMMIT_SHA`, retain carried Compose image digests, and apply configured
+  deployment paths consistently (#1499, #1475, #1472).
+- **Show the right dashboard feedback** — use custom apps' own logos, keep open
+  card menus above adjacent controls, and clarify expiring-domain notifications
+  (#1508, #1518, #1512).
+- **Retain update advisory scope** — keep installation-specific notices scoped in
+  Monitoring and recheck deployment eligibility before presenting update actions
+  (#1467).
+- **Align Cloud pricing with billing periods** — present management plans and
+  recurring compute charges using their actual billing periods (#1466).
+- **Keep desktop release builds available** — build and notarize macOS installers
+  on the supported macOS 15 runner.
 
 ## 0.9.5
 
