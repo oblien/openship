@@ -38,6 +38,12 @@ Runtime security notices use the signed feed published from `security-advisories
   by Docker load for migration's one-time deployment handover. Direct and relayed
   transfers no longer try to create a Docker tag containing a digest (#1526).
 
+- **Move stateless single-app projects between servers** — deploy a project-owned
+  app with no service rows through its single-app pipeline using the transferred image.
+  Reject unsafe empty service scopes before copying data or stopping the source;
+  reused containers stay outside the deployment scope. Single apps with mounted
+  data remain unsupported and are refused before data movement (#1525).
+
 - **Keep Cloud diagnostics available during replica startup** — allow bounded
   schema initialization to wait for another replica, while preserving the short
   write deadlines and local-log fallback used during normal operation.
