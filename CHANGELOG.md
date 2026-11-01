@@ -34,6 +34,10 @@ Runtime security notices use the signed feed published from `security-advisories
   builds can use optional secret mounts after long install/build steps. Close
   sessions on completion, cancellation, and transport errors (#1488).
 
+- **Move digest-referenced images between servers** — use the reference restored
+  by Docker load for migration's one-time deployment handover. Direct and relayed
+  transfers no longer try to create a Docker tag containing a digest (#1526).
+
 - **Keep Cloud diagnostics available during replica startup** — allow bounded
   schema initialization to wait for another replica, while preserving the short
   write deadlines and local-log fallback used during normal operation.

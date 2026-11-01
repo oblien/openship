@@ -348,6 +348,8 @@ interface MoveResult {
   bytesMoved: number;
   pendingItems: PendingItem[];
   targetVolumes: string[];
+  /** Source image ID → the reference restored on the target daemon. */
+  imageRefs: ReadonlyMap<string, string>;
 }
 
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000; // 20 min for the target deploy
@@ -1079,6 +1081,12 @@ class MigrationOrchestratorImpl {
           emitProgress,
           id,
         ));
+        // A digest may load under a different config ID. Hand that proven target
+        // ref to this deploy without rewriting the project's saved source recipe.
+        for (const service of deployChosen) {
+          const ref = move.imageRefs.get(service.imageId ?? service.image ?? "");
+          if (ref && ref !== service.image) adopt.handover[rowNameOf(service)] = ref;
+        }
         pendingItems = move.pendingItems;
         await this.transition(id, "moving_data", {
           bytesMoved: move.bytesMoved,
@@ -1479,11 +1487,14 @@ class MigrationOrchestratorImpl {
         onProgress?.({ task, kind, totalBytes, movedBytes: [...bytes.values()].reduce((a, b) => a + b, 0) });
       };
       // Image transfer is immutable; failures here must not stop production.
+      const imageRefs = new Map<string, string>();
       for (const image of images) {
         await this.throwIfCancelled(runId);
         const progress = track(`image:${image.tag}`, "image");
-        if (link) await link.transferImage(image, progress);
-        else await transferImage(rtA, rtB, image, { onProgress: progress, log, signal });
+        const ref = link
+          ? await link.transferImage(image, progress)
+          : (await transferImage(rtA, rtB, image, { onProgress: progress, log, signal })).imageRef;
+        imageRefs.set(image.id, ref);
       }
       // Record before creation, and require our exact label when cleaning up.
       if (runId) {
@@ -1520,7 +1531,7 @@ class MigrationOrchestratorImpl {
       // sibling. Rejecting a pool worker early could race a still-live copy.
       await this.throwIfCancelled(runId);
       signal?.throwIfAborted();
-      return { bytesMoved: [...bytes.values()].reduce((a, b) => a + b, 0), pendingItems, targetVolumes: plan.createdVolumes };
+      return { bytesMoved: [...bytes.values()].reduce((a, b) => a + b, 0), pendingItems, targetVolumes: plan.createdVolumes, imageRefs };
     } finally {
       try {
         if (endpoints && runTag) {
