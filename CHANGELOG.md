@@ -6,6 +6,17 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Accept PROXY protocol on the Compose edge's HTTPS listener** — opt in with
+  `OPENSHIP_EDGE_PROXY_PROTOCOL=https` and a separate
+  `OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED` list. A TLS-passthrough proxy can then pass
+  the client address to the edge, its rate limits and its apps. Only port 443 of the
+  local edge changes. Empty or invalid trust lists are refused before any write.
+  Enabling and disabling switch every HTTPS vhost in one reload, from a deploy or
+  Retry routing, or are refused with nothing changed. If a switch fails and cannot
+  be rolled back, the edge refuses every change until a deploy or Retry routing
+  restores the recorded files. Compose deploys now run the same edge sweep as
+  single-app deploys before replacing services (#1050).
+
 ## 0.9.6
 
 Recommended update for database recovery, reliable builds and migrations, GitHub

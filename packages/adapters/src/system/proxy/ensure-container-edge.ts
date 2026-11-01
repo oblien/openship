@@ -28,6 +28,7 @@ import {
   EDGE_CHALLENGE_HOST_DIR,
   OPENRESTY_DEFAULT_PATHS,
 } from "../../infra/openresty-lua";
+import { readEdgeProxyProtocolSetting } from "../../infra/edge-proxy-protocol";
 import { sq } from "../local-shell";
 import {
   containerImageRef,
@@ -110,11 +111,12 @@ export interface ContainerEdgeResult {
 /**
  * Options a caller may pass through to the underlying NginxProvider. `executor`,
  * `paths` and `pinPaths` are decided HERE and are deliberately not overridable —
- * they're the whole point of these two builders.
+ * they're the whole point of these two builders. So is `edgeProxyProtocol`: it comes
+ * from THIS machine's env and only `localContainerEdgeProvider` may apply it.
  */
 export type EdgeProviderOptions = Omit<
   NginxProviderOptions,
-  "executor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir"
+  "executor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir" | "edgeProxyProtocol"
 >;
 
 /**
@@ -216,6 +218,10 @@ export async function localContainerEdgeProvider(
     pinPaths: true,
     // `docker exec`s into the edge, so the master is pid 1 there too (#292).
     containerEdge: true,
+    // OPENSHIP_EDGE_PROXY_PROTOCOL describes the edge on THIS machine, so it is read here
+    // and nowhere else. `containerEdgeProvider` drives another box's edge over SSH,
+    // whose listener and upstream proxy this env says nothing about.
+    edgeProxyProtocol: readEdgeProxyProtocolSetting(),
   });
 }
 

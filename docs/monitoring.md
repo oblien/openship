@@ -322,6 +322,106 @@ If publication or reload fails, it restores the previous include before recoveri
 recovery does not reapply the rejected settings. If restoration itself fails, the operation
 reports the rollback failure and does not reload a partially restored configuration.
 
+### TLS passthrough proxies (PROXY protocol)
+
+A TCP proxy that forwards :443 without terminating TLS (Traefik `HostSNI` with
+`passthrough: true`, HAProxy `mode tcp`, a TCP load balancer) cannot add a header, so every
+HTTPS visitor reaches the edge as the proxy's address. On the **local Compose edge**, the
+edge can instead read the PROXY protocol v1/v2 header such a proxy sends before the TLS
+handshake:
+
+```bash
+# .env next to the Compose stack
+OPENSHIP_EDGE_PROXY_PROTOCOL=https
+OPENSHIP_EDGE_PROXY_PROTOCOL_TRUSTED=192.168.1.153   # the proxy; IPs or CIDRs
+```
+
+- Only :443 changes. :80 (ACME http-01, edge challenges, Cloud's free-domain front) keeps
+  plain HTTP and the Cloudflare/`OPENSHIP_EDGE_TRUSTED_PROXIES` behaviour above.
+- The trust list is separate from `OPENSHIP_EDGE_TRUSTED_PROXIES` on purpose. That list
+  trusts `CF-Connecting-IP` from those peers on every port, including :80. Adding the
+  passthrough proxy there would let anyone whose :80 traffic it forwards choose their own
+  address. While PROXY protocol is on, :443 trusts only the PROXY header, and only from
+  the listed peers. `CF-Connecting-IP` is not honoured there.
+- The variable applies only to the edge on the machine running the api. Remote servers
+  and bare OpenResty edges are not changed.
+- An empty list, `/0`, a CIDR with host bits set, or any entry that is not an IP/CIDR is
+  refused, not dropped. Without a list of its own, nginx would trust its inherited
+  Cloudflare list for PROXY headers. The edge keeps serving its previous configuration,
+  and every change to it fails with the variable named in the error, before anything is
+  written or run. Until the value is fixed and `openship up` has run:
+  - a deploy with domains stops before the new release goes live, so the previous one
+    keeps its route;
+  - certificates are not issued, installed or renewed, so fix it before a renewal is
+    due;
+  - removing a domain or project leaves its route in place;
+  - Retry routing fails with the same error, before it writes any of the project's routes.
+- Once on, every TLS connection to :443 must start with a PROXY header. Plain TLS is
+  refused, so the proxy must send it for every hostname it forwards to this edge.
+
+How it is applied: the edge writes `sites-enabled/_openship-proxy-protocol.conf` (the one
+`listen 443 ssl proxy_protocol`, which nginx applies to the whole :443 socket, including the
+image's catch-all) and `sites-enabled/_openship-proxy-protocol-realip.inc` (the
+`real_ip_header proxy_protocol` block every generated :443 vhost includes).
+
+Turning the feature on or off changes how every :443 vhost reads its client at once, so it
+is one transaction: the edge re-renders every :443 vhost from its saved route and publishes
+them with the two files behind a single `openresty -t` and reload. If any step fails, all of
+it is restored and the edge keeps its previous mode. Only the routing sweep a deploy or
+Retry routing runs does this. Other route, certificate and challenge changes keep the mode
+the edge is already in. Changing the trust list rewrites one file and reloads once.
+
+Turning it on is refused, with nothing changed, while any :443 vhost that serves content
+cannot be re-rendered: a vhost without a saved route (`<name>.route.json`), with a corrupt
+one, or whose route no longer renders. Left behind, it would keep its previous trust on a
+socket where the peer is now the proxy. A Cloud-fronted `*.opsh.io` vhost, which trusts
+`X-Real-IP` from any peer, is the dangerous case. Files are read with nginx's own quoting
+rules, and a file without a saved route is only left behind when every :443 server in it
+provably answers with a `return` and nothing else (the catch-all shape). A file that uses
+`include`, serves files from the default root, or that cannot be read is treated as
+serving content. Retry routing reports the files by name. Fix or remove them, then retry.
+Turning it off is not blocked: a vhost that cannot be re-rendered keeps an include that
+matches no file once the include is removed, which is the behaviour without this feature.
+
+If a switch fails part-way and a file then cannot be restored (a full disk, a read-only
+mount), the edge has not been reloaded and still runs its previous configuration, but its
+files describe neither mode. Every PROXY switch, and every vhost, challenge or certificate
+activation while PROXY protocol is on, first records the files it will change in
+`sites-enabled/_openship-config.journal` (owner-only, written before the first change, and
+never loaded by nginx). While that file exists, every change to the edge is refused, from
+any process: route writes, certificates, challenges, rate limits and deploys with domains,
+which stop before replacing anything. The routing sweep that the next deploy or Retry
+routing runs restores every recorded file, validates and reloads, and only then removes
+the journal. If that fails too, the journal stays and the error names the file. After a
+successful reload the journal records that the change is committed before cleanup, so a
+failed cleanup cannot revert a route to its previous upstream. Certificate operations wait
+for an active configuration transaction before checking the journal, and renewals check it
+again under the lock before publishing or reloading after Certbot finishes. A container
+restart still loads whatever is on disk, so fix the cause and run Retry routing before
+restarting the edge.
+
+Where the sweep runs: a single-app deploy with domains and a Compose (multi-service)
+deploy with exposed services, project domains or fan-out hostnames run it before the first
+replacement, with or without a system manager. An edge that refuses every change fails the
+deploy there, while the previous release still serves; any other sweep failure is only
+logged. Retry routing runs the same sweep before the project's routes, on whichever server
+the project's deployment targets. On any box, including remote and bare edges, that also
+re-renders vhosts an older release wrote, as a deploy already does.
+
+1. Edit `.env` and run `openship up`. The changed `.env` recreates the api and the edge,
+   since `env_file` is only read when a container is created.
+2. Apply routing once: a deploy, or Retry routing on any project served by this edge.
+3. Turn on `proxyProtocol` (for example `version: 2`) in the proxy's TCP service right
+   away. Between steps 2 and 3, HTTPS through the proxy fails, because one side expects
+   the header and the other does not send it. To turn it off, reverse the order: set
+   `OPENSHIP_EDGE_PROXY_PROTOCOL=off`, run `openship up`, apply routing, then remove
+   `proxyProtocol` from the proxy.
+
+The two files survive edge restarts. Unrouted SNI names still get the catch-all page through
+the PROXY header, but that page logs the proxy's address. Before downgrading to a release
+without this feature, turn it off and apply routing first. An older release neither updates
+nor removes the two files, so :443 would keep requiring PROXY headers.
+
 ### Free `*.opsh.io` domains
 
 A free domain is served by Openship Cloud's own edge, which proxies to your box on plain :80

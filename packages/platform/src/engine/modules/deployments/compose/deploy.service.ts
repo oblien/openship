@@ -115,6 +115,7 @@ import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
 import { resolveEdgeProviderOptions } from "../../../lib/edge-provider-options";
 import { pinnedEdgeImage } from "../../../lib/edge-image";
+import { isEdgeConfigRefusal, repairEdgeVhosts } from "../../../lib/edge-vhost-repair";
 import * as sessionManager from "../session-manager";
 import { parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
 import { auditPorts } from "../port-audit.service";
@@ -1223,6 +1224,41 @@ async function deployComposeServicesCore(
     : new Map();
   throwIfDeploymentCancelled(opts?.signal);
 
+  // Every route this pass may register: exposed services, PROJECT-LEVEL rows and
+  // fan-out hostnames. Adoption leaves every service UNEXPOSED on purpose, so the exact
+  // shape that needs a project-level route is the one where `buildServiceRouteDomains`
+  // returns [] for everything; counting only services would skip the edge, certbot and
+  // the sweep below and register against a box that has neither.
+  const plannedRoutes =
+    opts?.system || opts?.routing
+      ? [
+          ...enabled.flatMap((svc) =>
+            buildServiceRouteDomains({
+              project,
+              service: svc,
+              runtimeName: runtime.name,
+              certificateManagement: opts?.ssl?.certificateManagement,
+              usesManagedRouting: opts?.usesManagedRouting ?? false,
+              domainByHostname,
+            }),
+          ),
+          ...buildProjectRouteDomains({
+            project,
+            projectDomains: [...domainByHostname.values()],
+            runtimeName: runtime.name,
+            certificateManagement: opts?.ssl?.certificateManagement,
+            usesManagedRouting: opts?.usesManagedRouting ?? false,
+          }),
+        ]
+      : [];
+  const hasFanoutRoutes =
+    !!(opts?.system || opts?.routing) &&
+    resolveDomainFanoutRoutes({
+      routes: project.compositeRoutes,
+      services: enabled,
+      domainByHostname,
+    }).length > 0;
+
   // Ensure the server has the components this deploy needs — ONCE, before the
   // fan-out — mirroring the single-app deploy preflight (build-pipeline.ts
   // buildDeployEnvironment). Compose previously ensured nothing here, so on a
@@ -1236,33 +1272,6 @@ async function deployComposeServicesCore(
     const systemLog = (entry: { message: string; level: "info" | "warn" | "error" }) => {
       logger.log(`${entry.message}\n`, entry.level);
     };
-    const plannedRoutes = [
-      ...enabled.flatMap((svc) =>
-        buildServiceRouteDomains({
-          project,
-          service: svc,
-          runtimeName: runtime.name,
-          certificateManagement: opts?.ssl?.certificateManagement,
-          usesManagedRouting: opts.usesManagedRouting ?? false,
-          domainByHostname,
-        }),
-      ),
-      // PROJECT-LEVEL rows count too. They are registered (and certed) further down,
-      // and adoption leaves every service UNEXPOSED on purpose — so the exact shape
-      // that needs a project-level route is the one where `buildServiceRouteDomains`
-      // returns [] for everything, leaving this preflight to skip the edge and certbot
-      // and the registration below to run against a box that has neither.
-      ...buildProjectRouteDomains({
-        project,
-        projectDomains: [...domainByHostname.values()],
-        runtimeName: runtime.name,
-          certificateManagement: opts?.ssl?.certificateManagement,
-        usesManagedRouting: opts.usesManagedRouting ?? false,
-      }),
-    ];
-    const hasFanoutRoutes = resolveDomainFanoutRoutes({
-      routes: project.compositeRoutes, services: enabled, domainByHostname,
-    }).length > 0;
 
     await opts.system.ensureFeature("deploy", systemLog);
     // Routing/SSL toolchain is best-effort — domains are optional, so failing to
@@ -1307,12 +1316,27 @@ async function deployComposeServicesCore(
       }
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
+      if (isEdgeConfigRefusal(err)) throw err;
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.log(
         `Edge/routing setup failed — deploy continues; services run and routing is retried later: ${message}\n`,
         "warn",
       );
     }
+  }
+
+  // The same sweep a single-app deploy runs in its preflight, and for the same reason:
+  // it brings the box's other vhosts and any pending edge-wide setting up to date, and
+  // it is the check that this edge accepts route changes at all. It runs BEFORE the
+  // first service is replaced, with or without a system manager. Any other failure is a
+  // logged warning, as for every routing step; an edge that refuses every change throws
+  // here, so no running service is stopped, replaced or reaped for routes that could
+  // not then be written.
+  if (opts?.routing && !cloudHosted && (plannedRoutes.length > 0 || hasFanoutRoutes)) {
+    throwIfDeploymentCancelled(opts.signal);
+    await repairEdgeVhosts(opts.routing, {
+      onLog: (message, level) => logger.log(message, level ?? "info"),
+    });
   }
 
   throwIfDeploymentCancelled(opts?.signal);

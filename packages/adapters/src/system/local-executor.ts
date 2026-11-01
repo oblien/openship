@@ -180,7 +180,9 @@ export class LocalExecutor implements CommandExecutor {
       await fsRm(path, { recursive: true, force: true });
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "adapters/system/local-executor");
-      // Already gone
+      // `force` already ignores a missing path. Permission and I/O failures must
+      // reach callers that need to know whether a rollback actually removed it.
+      throw diagnosticFailure;
     }
   }
 
