@@ -449,6 +449,101 @@ describe("GitHub-owned workflows", () => {
       await repo.reserveRunnerSession({ ...forOther, id: generateId("session") }),
     ).toBeUndefined();
   });
+  it.each(["unlisted", "stale approval", "unsupported job", "eligible"] as const)(
+    "uses only eligible spare registrations (%s)",
+    async (kind) => {
+      const f = await fixture();
+      const spareRunner = await repo.saveRunner({
+        ...f.runner,
+        id: generateId("runner"),
+        name: "spare",
+        cloudPoolId: generateId("pool"),
+        config: {
+          ...f.runner.config,
+          mode: kind === "unsupported job" ? "native" : f.runner.config.mode,
+        },
+      });
+      const workflow = await repo.saveWorkflow({
+        ...f.workflow,
+        runnerIds: kind === "unlisted" ? [f.runner.id] : [f.runner.id, spareRunner.id],
+      });
+      const runnerKeys = { ...f.run.admission.runnerKeys };
+      if (kind !== "unlisted") {
+        runnerKeys[spareRunner.id] =
+          kind === "stale approval" ? "b".repeat(64) : actionRunnerAdmissionKey(spareRunner);
+      }
+      const run = {
+        ...f.run,
+        admission: {
+          ...f.run.admission,
+          workflowVersion: workflow.updatedAt.toISOString(),
+          runnerIds: workflow.runnerIds,
+          runnerKeys,
+        },
+        configuration: { ...f.run.configuration, runnerIds: workflow.runnerIds },
+      };
+      const job = {
+        ...f.job,
+        spec: { ...f.job.spec, requiresDocker: kind === "unsupported job" },
+      };
+      const session = { ...f.session, spec: job.spec };
+      await repo.upsertGitHubRun(workflow, run, [job]);
+      expect(await repo.reserveRunnerSession(session)).toBeTruthy();
+      await connection.db
+        .delete(schema.actionRunnerSession)
+        .where(eq(schema.actionRunnerSession.id, session.id));
+
+      const spareWorkflow = await repo.saveWorkflow({
+        ...f.workflow,
+        id: generateId("wf"),
+        githubWorkflowId: "2",
+        path: ".github/workflows/other.yml",
+        runnerIds: [spareRunner.id],
+      });
+      const spareRun = {
+        ...f.run,
+        id: generateId("run"),
+        workflowId: spareWorkflow.id,
+        idempotencyKey: "spare-run",
+        github: { ...f.run.github, id: "43", workflowId: "2" },
+        admission: {
+          ...f.run.admission,
+          workflowVersion: spareWorkflow.updatedAt.toISOString(),
+          runnerIds: [spareRunner.id],
+          runnerKeys: { [spareRunner.id]: actionRunnerAdmissionKey(spareRunner) },
+        },
+        configuration: { ...f.run.configuration, runnerIds: [spareRunner.id] },
+      };
+      const spareJob = {
+        ...f.job,
+        id: generateId("job"),
+        runId: spareRun.id,
+        github: { ...f.job.github, id: "51" },
+      };
+      await repo.upsertGitHubRun(spareWorkflow, spareRun, [spareJob]);
+      const spare = {
+        ...f.session,
+        id: generateId("session"),
+        workflowId: spareWorkflow.id,
+        runnerId: spareRunner.id,
+        demandJobId: spareJob.id,
+        runnerName: `openship-${generateId("runner")}`,
+      };
+      expect(await repo.reserveRunnerSession(spare)).toBeTruthy();
+      await connection.db
+        .update(schema.actionRunnerSession)
+        .set({ state: "listening" })
+        .where(eq(schema.actionRunnerSession.id, spare.id));
+      await connection.db
+        .update(schema.actionJob)
+        .set({ status: "running" })
+        .where(eq(schema.actionJob.id, spareJob.id));
+
+      const reserved = await repo.reserveRunnerSession(session);
+      if (kind === "eligible") expect(reserved).toBeUndefined();
+      else expect(reserved).toBeTruthy();
+    },
+  );
   it("does not overwrite a newer mirror with a stale job response", async () => {
     const f = await fixture();
     const first = await repo.upsertGitHubRun(f.workflow, f.run, [f.job], null);
