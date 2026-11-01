@@ -1,0 +1,102 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "victoriametrics",
+  "name": "VictoriaMetrics",
+  "description": "Fast, resource-efficient time series database for long-term metrics, compatible with Prometheus and Grafana.",
+  "kind": "template",
+  "logo": "victoriametrics",
+  "category": "analytics",
+  "tags": [
+    "monitoring",
+    "metrics",
+    "observability"
+  ],
+  "framework": "docker-compose",
+  "configFields": [
+    {
+      "key": "httpAuth_password",
+      "service": "victoriametrics",
+      "label": "Password",
+      "help": "Auto-generated. Every request except /health needs the username admin and this password.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "services": [
+    {
+      "name": "victoriametrics",
+      "image": "victoriametrics/victoria-metrics:v1.154.1",
+      "ports": [
+        "8223:8428"
+      ],
+      "exposedPort": 8428,
+      "exposed": true,
+      "commandArgv": [
+        "-storageDataPath=/storage",
+        "-retentionPeriod=1y",
+        "-envflag.enable",
+        "-httpAuth.username=admin"
+      ],
+      "secretEnv": [
+        "httpAuth_password"
+      ],
+      "volumes": [
+        "victoriametrics_data:/storage"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8428/health || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "connection": {
+    "title": "Connect to VictoriaMetrics",
+    "description": "Use it as a Prometheus data source in Grafana, or as a remote_write target for Prometheus, with basic auth (username admin and the password below).",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "VictoriaMetrics",
+        "source": "publicUrl:victoriametrics",
+        "kind": "url",
+        "recommended": true,
+        "help": "The built-in vmui query page is at /vmui."
+      },
+      {
+        "id": "password",
+        "label": "Password (user: admin)",
+        "source": "env:victoriametrics:httpAuth_password",
+        "secret": true
+      }
+    ],
+    "firstLogin": {
+      "username": "admin",
+      "note": "Metrics are kept for one year in the victoriametrics_data volume. Send Prometheus data to /api/v1/write."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Long-term metrics",
+        "description": "Store a year of metrics with high compression."
+      },
+      {
+        "title": "Prometheus compatible",
+        "description": "Accepts remote_write and answers PromQL queries."
+      },
+      {
+        "title": "Protected by default",
+        "description": "Basic auth with a generated password."
+      }
+    ]
+  }
+}
