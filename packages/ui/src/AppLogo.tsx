@@ -118,6 +118,17 @@ export const APP_LOGO: typeof BRAND_LOGO = {
  * gracefully falls back to a monochrome catalog icon (offline / air-gapped /
  * unknown app). Keeps the UI clean while adding a touch of real color.
  */
+/**
+ * The image address a logo value names directly: an `https:` URL or an image data
+ * URI. Brand slugs and every other scheme return undefined.
+ */
+export function logoImageSource(logo: string | undefined): string | undefined {
+  if (!logo) return undefined;
+  if (/^https:\/\/\S+$/i.test(logo)) return logo;
+  if (/^data:image\/(?:png|jpeg|gif|webp|svg\+xml)[;,]/i.test(logo)) return logo;
+  return undefined;
+}
+
 export function AppLogo({
   appId,
   slug,
@@ -142,9 +153,16 @@ export function AppLogo({
   // only a `slug` (e.g. the migrate-sources brand row) can still pick up a
   // vendored src override for brands simpleicons doesn't carry.
   const cfg = APP_LOGO[appId ?? ""] ?? BRAND_LOGO[slug ?? ""];
-  const resolvedSlug = slug ?? cfg?.slug;
+  // A custom app's `logo` can be an image address instead of a brand slug (#1507).
+  // Anything else that looks like an address is not a slug either: show the fallback
+  // rather than asking simpleicons for a path it cannot serve.
+  const slugImage = logoImageSource(slug);
+  const resolvedSlug = slug && /[:/]/.test(slug) ? undefined : (slug ?? cfg?.slug);
   const url =
-    src ?? cfg?.src ?? (resolvedSlug ? `https://cdn.simpleicons.org/${resolvedSlug}` : undefined);
+    src ??
+    slugImage ??
+    cfg?.src ??
+    (resolvedSlug ? `https://cdn.simpleicons.org/${resolvedSlug}` : undefined);
 
   useEffect(() => {
     // Detect images that failed before hydration attached the error handler.
