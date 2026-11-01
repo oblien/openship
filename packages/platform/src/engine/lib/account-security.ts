@@ -86,7 +86,13 @@ export function accountSecurityPlugins(options: AccountSecurityOptions) {
       setAccountPassword: atomic(
         createAuthEndpoint(
           "/account-security/set-password",
-          { ...setPassword.options, use: [...setPassword.options.use, freshSessionMiddleware] },
+          {
+            ...setPassword.options,
+            // Expose only this authenticated, fresh-session wrapper. The
+            // framework's original password endpoint remains server-only.
+            metadata: { SERVER_ONLY: false },
+            use: [...setPassword.options.use, freshSessionMiddleware],
+          },
           async (ctx) => setPassword({ ...ctx, asResponse: false, returnHeaders: false }),
         ),
       ),

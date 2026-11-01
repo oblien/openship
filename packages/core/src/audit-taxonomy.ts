@@ -993,6 +993,18 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "Repository created",
     tone: "info",
   },
+  "github.change.published": {
+    category: "system",
+    action: "published a repository change to",
+    label: "Repository change published",
+    tone: "info",
+  },
+  "assistant.automation": {
+    category: "agent",
+    action: "completed an automation for",
+    label: "Assistant automation",
+    description: "An assistant investigation or approved action reached a final state.",
+  },
   "github.repo.delete": {
     category: "system",
     action: "deleted the repository",

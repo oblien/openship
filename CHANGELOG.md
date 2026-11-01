@@ -151,6 +151,12 @@ app integrations. Includes dependency security updates and all 0.9.6 fixes.
   for published security fixes while retaining the existing OAuth/MCP data model.
   Implicit OAuth account linking now requires a verified local account as well
   as a provider-verified email, preventing pre-registered account hijacking.
+  Migrate authenticator confirmation and lockout fields while preserving existing
+  active factors and unfinished enrollments, including older instance backups.
+  Include the assistant type dependency in the public SDK and catalog new audit events.
+
+- **Deployment fixes** — redact long clone tokens from stored errors and skip the
+  workspace dependency crawl when checking changes for Compose projects (#1546, #1547).
 
 ## 0.9.6
 

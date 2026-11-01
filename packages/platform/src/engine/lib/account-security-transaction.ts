@@ -1,5 +1,5 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from "@better-auth/core";
-import { runWithAdapter } from "@better-auth/core/context";
+import { runWithTransaction } from "@better-auth/core/context";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthEndpoint, getSessionFromCtx } from "better-auth/api";
 import { and, eq, gt, schema, type Database } from "@repo/db/factory";
@@ -27,7 +27,9 @@ export function atomicSecurityEndpoint<T extends Endpoint>(
       try {
         const result = await database.transaction(async (tx) => {
           const adapter = drizzleAdapter(tx, { provider: "pg", schema })(ctx.context.options);
-          return runWithAdapter(adapter, async () => {
+          // Framework verification consumption must join this transaction;
+          // opening a second one can deadlock the single PGlite connection.
+          return runWithTransaction(adapter, async () => {
             ctx.context.adapter = adapter;
             ctx.context.session = null;
             const session = await getSessionFromCtx(ctx, { disableCookieCache: true });

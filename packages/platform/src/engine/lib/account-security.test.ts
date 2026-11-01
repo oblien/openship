@@ -246,7 +246,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
       email: user.email,
       password: PASSWORD,
     });
-    expect(first.data).toEqual({ twoFactorRedirect: true });
+    expect(first.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect(first.headers.has("set-auth-token")).toBe(false);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/passkey/list-user-passkeys")).status).toBe(401);
@@ -286,7 +286,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     const browser = new Browser();
     expect(
       (await browser.request("/sign-in/email", { email: user.email, password: PASSWORD })).data,
-    ).toEqual({ twoFactorRedirect: true });
+    ).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
   });
 
   it("does not expose a cached authenticated session if creating the 2FA challenge fails", async () => {
@@ -430,13 +430,14 @@ describe("account security through real Better Auth HTTP endpoints", () => {
 
   it("does not let social ID-token or email-OTP sign-in bypass the second factor", async () => {
     const user = await enroll();
+    await connection.db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
     oauthEmail = user.email;
     const social = new Browser();
     const result = await social.request("/sign-in/social", {
       provider: "google",
       idToken: { token: "verified-by-test-provider" },
     });
-    expect(result.data).toEqual({ twoFactorRedirect: true });
+    expect(result.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect((await social.request("/get-session")).data).toBeNull();
     const email = new Browser();
     expect(
@@ -449,12 +450,13 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     ).toBe(200);
     expect(
       (await email.request("/sign-in/email-otp", { email: user.email, otp: emailCode })).data,
-    ).toEqual({ twoFactorRedirect: true });
+    ).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect((await email.request("/get-session")).data).toBeNull();
   });
 
   it("preserves an OAuth continuation only after the second factor", async () => {
     const user = await enroll();
+    await connection.db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
     oauthEmail = user.email;
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -546,7 +548,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     const login = await browser.request("/passkey/generate-authenticate-options");
     const assertion = authenticateCredential(credential.response.id, login.data.challenge);
     const result = await browser.request("/passkey/verify-authentication", assertion);
-    expect(result.data).toEqual({ twoFactorRedirect: true });
+    expect(result.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect(result.headers.has("set-auth-token")).toBe(false);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/passkey/verify-authentication", assertion)).status).toBe(400);
@@ -704,7 +706,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     ).toBe(200);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/sign-in/email", { email: user.email, password })).data).toEqual(
-      { twoFactorRedirect: true },
+      { twoFactorRedirect: true, twoFactorMethods: ["totp"] },
     );
     expect((await browser.request("/get-session")).data).toBeNull();
     expect(

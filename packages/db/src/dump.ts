@@ -1807,6 +1807,13 @@ export async function restoreSubgraphInTransaction(
     const prepared = rows.map((r) => {
       const { row: next, dropped } = filterRowToKnownColumns(r, knownCols);
       for (const d of dropped) droppedCols.add(d);
+      // Older instance dumps predate per-factor confirmation. Preserve active
+      // authenticators while keeping unfinished enrollments unconfirmed.
+      if (spec.sqlName === "two_factor" && !Object.hasOwn(r, "verified")) {
+        next.verified = (dump.tables.user ?? []).some(
+          (user) => user.id === next.userId && user.twoFactorEnabled === true,
+        );
+      }
       if (opts.remapOrgId && spec.hasOrganizationId) {
         next.organizationId = opts.remapOrgId;
       }
