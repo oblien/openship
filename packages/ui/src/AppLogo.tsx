@@ -26,6 +26,8 @@ const BRAND_LOGO: Record<
   ollama: { src: "https://github.com/ollama.png?size=80" },
   vllm: { src: "https://github.com/vllm-project.png?size=80" },
   "open-webui": { src: "https://github.com/open-webui.png?size=80" },
+  clamav: { src: "https://raw.githubusercontent.com/Cisco-Talos/clamav/main/logo.png" },
+  rspamd: { src: "https://github.com/rspamd.png?size=80" },
   pocketbase: { slug: "pocketbase" },
   mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },

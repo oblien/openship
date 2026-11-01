@@ -1,0 +1,93 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "clamav",
+  "name": "ClamAV",
+  "description": "Antivirus scanning with clamd on your project's private network and automatic freshclam signature updates. Signature databases persist across deployments.",
+  "repository": "https://github.com/Cisco-Talos/clamav",
+  "kind": "template",
+  "logo": "clamav",
+  "category": "other",
+  "tags": ["antivirus", "clamav", "scan"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "clamav",
+      "image": "clamav/clamav:1.5.4-debian",
+      "volumes": ["clamav_data:/var/lib/clamav"],
+      "healthcheck": {
+        "test": ["CMD", "/usr/local/bin/clamdcheck.sh"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3,
+        "startPeriod": "10m"
+      },
+      "resources": {
+        "cpuCores": 2,
+        "memoryMb": 4096,
+        "diskMb": 8192
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "minResources": {
+    "memoryMb": 3072
+  },
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to ClamAV",
+    "description": "Send files to clamd from another service on the project's private network. Its TCP protocol has no authentication or encryption.",
+    "guide": {
+      "intro": "The container runs clamd and freshclam together. No port is published to the host or routed to a domain.",
+      "useHint": "Configure your ClamAV client with the private host and port below. Stream file contents when the files are not mounted in this container.",
+      "defaultMode": "internal"
+    },
+    "outputs": [
+      {
+        "id": "host",
+        "label": "Host",
+        "source": "template:clamav",
+        "service": "clamav",
+        "envKey": "CLAMAV_HOST",
+        "recommended": true,
+        "width": "half"
+      },
+      {
+        "id": "port",
+        "label": "Port",
+        "source": "template:3310",
+        "service": "clamav",
+        "envKey": "CLAMAV_PORT",
+        "width": "half"
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "clamav",
+      "port": 3310,
+      "label": "ClamAV scanner (private)",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Private antivirus scanner",
+        "description": "Connect applications to clamd on the project's private network."
+      },
+      {
+        "title": "Persistent signatures",
+        "description": "Freshclam updates the signature databases on a persistent volume."
+      }
+    ],
+    "articleFile": "articles/clamav.md"
+  }
+}
